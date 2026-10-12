@@ -522,8 +522,10 @@ export function nowWib(): string { return wib(payroll.clock) }
  *   connection  connect or end Talenta, confirm the source, other-entity answers, confirm the
  *               switch-over month and Block or Flag (Owner, Ultimate + LM).
  *   simulate    demo stand-ins for bank reconciliation and the general journal.
+ *   headcount.view  month headcount and the run's headcount by group (Owner, Ultimate + LM).
  */
 export type PayrollAction = 'view' | 'post' | 'tax' | 'setup' | 'correct' | 'connection' | 'simulate'
+  | 'headcount.view'
 
 const ACTORS: PayrollRole[] = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM']
 const LM: PayrollRole[] = ['Owner', 'Ultimate + LM', 'Accountant + LM']
@@ -535,6 +537,7 @@ const ACCESS: Record<PayrollAction, PayrollRole[]> = {
   correct: LM,
   connection: ['Owner', 'Ultimate + LM'],
   simulate: ACTORS,
+  'headcount.view': ['Owner', 'Ultimate + LM'],
 }
 export function can(action: PayrollAction, role: PayrollRole = payroll.viewAs): boolean { return ACCESS[action].includes(role) }
 export function setPayrollViewAs(role: PayrollRole): void { payroll.viewAs = role }
@@ -938,6 +941,44 @@ function addLog(e: Partial<SyncLogEntry> & Pick<SyncLogEntry, 'type' | 'status' 
   payroll.log.push({ id: payroll.seq++, at: payroll.clock, runId: null, runKey: null, version: null, employees: null, journalNo: null, ...e })
 }
 export const syncLog = computed(() => [...payroll.log].sort((a, b) => b.id - a.id))
+
+/**
+ * Sync log screen and export: only what Talenta sent, one row per send. Decisions, posts,
+ * payments, settings and connection rows stay in payroll.log but are not sends. The posted-run
+ * re-check row ('No change' with no staff count) repeats a send already listed, so it is left out.
+ */
+export type SendOutcome = 'Accepted' | 'Held' | 'Duplicate' | 'Rejected'
+export interface SendLogRow {
+  id: number; at: string; period: string; runId: string | null; version: string
+  staff: number | null; payItems: number | null; result: SendOutcome; reason: string
+}
+const isSendEntry = (l: SyncLogEntry) => l.type === 'Send' && !(l.status === 'No change' && l.employees == null)
+function sendOutcome(l: SyncLogEntry): SendOutcome {
+  if (l.status === 'Held' || l.status === 'Waiting for your choice') return 'Held'
+  if (l.status === 'No change' || (l.status === 'Failed' && l.reason.startsWith('Duplicate'))) return 'Duplicate'
+  if (l.status === 'Failed') return 'Rejected'
+  return 'Accepted'
+}
+function sendLogRow(l: SyncLogEntry): SendLogRow {
+  const run = runById(l.runId) ?? (l.runKey ? payroll.runs.find((r) => r.key === l.runKey) : undefined)
+  const [start, end] = (l.runKey ?? '').split(' / ').slice(2)
+  const v = run ? versionOf(run, l.version) : undefined
+  const result = sendOutcome(l)
+  return {
+    id: l.id, at: l.at, period: start && end ? periodLabel(start, end) : '', runId: run?.id ?? null,
+    version: l.version != null ? `v${l.version}` : '', staff: l.employees,
+    payItems: v ? new Set(v.payload.items.flatMap((it) => SECTIONS.flatMap(([s, k]) => (it.components?.[k] ?? []).map((x) => `${s}:${x.name}`)))).size : null,
+    result, reason: result === 'Held' ? (l.status === 'Waiting for your choice' ? 'Revision or separate run?' : l.reason.split(':')[0]!.replace(/\.$/, '')) : '',
+  }
+}
+export const sendLog = computed<SendLogRow[]>(() => syncLog.value.filter(isSendEntry).map(sendLogRow))
+export const SEND_LOG_COLUMNS = ['Received (WIB)', 'Period', 'Version', 'Staff', 'Pay items', 'Result', 'Run'] as const
+/** The sync log export: the screen's columns, one row per send. */
+export function sendLogCsv(rows: SendLogRow[] = sendLog.value): string {
+  const cell = (x: unknown) => { const t = x == null ? '' : String(x); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t }
+  const body = rows.map((r) => [wib(r.at), r.period, r.version, r.staff, r.payItems, r.reason ? `${r.result}: ${r.reason}` : r.result, r.runId ? `/payroll-runs/${r.runId}` : ''])
+  return [[...SEND_LOG_COLUMNS], ...body].map((row) => row.map(cell).join(',')).join('\r\n')
+}
 function notify(roles: PayrollRole[], text: string, link: string) { payroll.notices.push({ id: payroll.seq++, roles, text, link, at: payroll.clock, read: false }) }
 export function noticesFor(role: PayrollRole = payroll.viewAs): PayrollNotice[] { return payroll.notices.filter((n) => n.roles.includes(role)).slice().reverse() }
 

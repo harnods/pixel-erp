@@ -9,6 +9,7 @@ import {
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf,
 } from '../app/data/payrollStore'
+import { sendLog, sendLogCsv, SEND_LOG_COLUMNS } from '../app/data/payrollStore'
 import { ACC, buildSalaryDetail, FALLBACK_TAG } from '../app/data/payrollMaster'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -677,5 +678,47 @@ describe('privacy: no employee data in anything Jurnal renders or exports', () =
     const w = runWarnings(run(SEP).id).find((x) => x.code === 'duplicate-employee')!
     expect(w.message).toBe('1 employee appears more than once in this send. See who in Talenta.')
     expect(JSON.stringify(w)).not.toMatch(LEAK)
+  })
+})
+
+describe('sync log and month headcount access (round 3)', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
+
+  it('headcount.view: Owner and Ultimate + LM only', () => {
+    const roles = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM', 'View only'] as const
+    expect(roles.filter((r) => can('headcount.view', r))).toEqual(['Owner', 'Ultimate + LM'])
+  })
+
+  it('sync log lists only what Talenta sent, with the agreed columns and results', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    postRun(sep.id)
+    simulateSend('duplicate')
+    simulateSend('revision', { runId: sep.id })
+    simulateSend('old-sync')
+    simulateBankPayment('salary')
+    simulateManualJournal()
+    const sends = payroll.log.filter((l) => l.type === 'Send')
+    expect(payroll.log.some((l) => l.type !== 'Send')).toBe(true)
+    expect(sendLog.value.length).toBeGreaterThan(0)
+    expect(sendLog.value.every((r) => sends.some((l) => l.id === r.id))).toBe(true)
+    expect(sendLog.value.map((r) => Object.keys(r).sort())[0]).toEqual(['at', 'id', 'payItems', 'period', 'reason', 'result', 'runId', 'staff', 'version'])
+    expect(sendLog.value.every((r) => ['Accepted', 'Held', 'Duplicate', 'Rejected'].includes(r.result))).toBe(true)
+    expect(sendLog.value.some((r) => r.result === 'Duplicate')).toBe(true)
+    // Only a held send carries a reason.
+    expect(sendLog.value.filter((r) => r.reason).every((r) => r.result === 'Held')).toBe(true)
+    const accepted = sendLog.value.find((r) => r.result === 'Accepted' && r.runId)!
+    expect(accepted.period).toMatch(/\d{4}/)
+    expect(accepted.staff).toBeGreaterThan(0)
+    expect(accepted.payItems).toBeGreaterThan(0)
+    const csv = sendLogCsv().split('\r\n')
+    expect(csv[0]).toBe(SEND_LOG_COLUMNS.join(','))
+    expect(csv.length).toBe(sendLog.value.length + 1)
+    expect(csv.join('\n')).not.toMatch(/Payment|Manual journal|PAY-\d|BNK-|JV-|Old sync|Next step/)
+  })
+
+  it('a send Jurnal refuses is Rejected', () => {
+    receiveSalaryDetail({ ...buildSalaryDetail(payroll.roster, '2026-09-21', '2026-10-20', {}), company_id: 999 })
+    expect(sendLog.value[0]!.result).toBe('Rejected')
   })
 })

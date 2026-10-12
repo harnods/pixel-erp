@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * Payroll inbox (FG-2: OD-01, OD-02, TS-06). One row per run and its current
- * version, the sync log of every send and decision, and the month headcount: each
- * month's run against the previous posted run, by group, with the employee_ids
- * that are new, not in the run or moved.
+ * version, the sync log of what Talenta sent, and the month headcount (Owner and
+ * Ultimate + LM only): each month's run against the previous posted run, by group,
+ * as counts.
  * Talenta sends arrive from the "Simulate Talenta send" menu. Everything reads
  * the payroll engine; no figure is stored here.
  */
@@ -13,7 +13,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateMenu.vue'
-import { payroll, syncLog, can, today, rupiah, wib, monthLabel, monthOf, runs, runStatus } from '~/data/payrollStore'
+import { payroll, sendLog, sendLogCsv, can, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
 import { runRow, statusType, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
 import { infoToast } from '~/utils/toasts'
 
@@ -22,13 +22,17 @@ const router = useRouter()
 const route = useRoute()
 
 type View = 'runs' | 'log' | 'month'
-const view = ref<View>((['runs', 'log', 'month'] as View[]).includes(route.query.view as View) ? (route.query.view as View) : 'runs')
-watch(view, (v) => router.replace({ query: { ...route.query, view: v === 'runs' ? undefined : v } }))
-watch(() => route.query.view, (q) => { const next = (['log', 'month'] as View[]).includes(q as View) ? (q as View) : 'runs'; if (next !== view.value) view.value = next })
+// Month headcount is for Owner and Ultimate + LM; others fall back to Runs, even from a ?view=month link.
+const canHeadcount = computed(() => can('headcount.view'))
+const allowedViews = computed<View[]>(() => (canHeadcount.value ? ['runs', 'log', 'month'] : ['runs', 'log']))
+const fromQuery = (q: unknown): View => (allowedViews.value.includes(q as View) ? (q as View) : 'runs')
+const view = ref<View>(fromQuery(route.query.view))
+watch(view, (v) => { if ((route.query.view ?? 'runs') !== v) router.replace({ query: { ...route.query, view: v === 'runs' ? undefined : v } }) }, { immediate: true })
+watch([() => route.query.view, allowedViews], ([q]) => { const next = fromQuery(q); if (next !== view.value) view.value = next })
 const viewOptions = computed(() => [
   { id: 'pi-view-runs', value: 'runs', label: t('Runs') },
   { id: 'pi-view-log', value: 'log', label: t('Sync log') },
-  { id: 'pi-view-month', value: 'month', label: t('Month headcount') },
+  ...(canHeadcount.value ? [{ id: 'pi-view-month', value: 'month', label: t('Month headcount') }] : []),
 ])
 
 // ── Stats ──────────────────────────────────────────────────────────────────
@@ -76,36 +80,35 @@ const statusFilterOptions = computed(() => [{ value: 'needs-fix', label: t('Need
 function openRun(id: string) { router.push(`/payroll-runs/${id}`) }
 function drill(filter: string) { view.value = 'runs'; statusFilter.value = filter }
 
-// ── Sync log ───────────────────────────────────────────────────────────────
-const logStatus = ref('')
-const logType = ref('')
+// ── Sync log: what Talenta sent, one row per send ─────────────────────────
+const logResult = ref('')
 const logSearch = ref('')
 const logPage = ref(1)
 const logPerPage = ref(25)
-const logRows = computed(() => syncLog.value.map((l) => ({
-  id: l.id, at: wib(l.at), type: l.type, runId: l.runId, runKey: l.runKey ?? '', version: l.version != null ? `v${l.version}` : '',
-  employees: l.employees ?? '', status: l.status, reason: l.reason, nextStep: l.nextStep, journalNo: l.journalNo ?? '',
-})))
+const RESULT_BADGE: Record<SendOutcome, 'completed' | 'warning' | 'information' | 'critical'> = {
+  Accepted: 'completed', Held: 'warning', Duplicate: 'information', Rejected: 'critical',
+}
+const logRows = computed(() => sendLog.value.map((l) => ({ ...l, at: wib(l.at) })))
 const filteredLog = computed(() => {
   const q = logSearch.value.trim().toLowerCase()
-  return logRows.value.filter((r) => (!logStatus.value || r.status === logStatus.value) && (!logType.value || r.type === logType.value)
-    && (!q || `${r.runKey} ${r.reason} ${r.journalNo}`.toLowerCase().includes(q)))
+  return logRows.value.filter((r) => (!logResult.value || r.result === logResult.value) && (!q || `${r.period} ${r.version}`.toLowerCase().includes(q)))
 })
 const pagedLog = computed(() => filteredLog.value.slice((logPage.value - 1) * logPerPage.value, logPage.value * logPerPage.value))
-watch([logStatus, logType, logSearch], () => { logPage.value = 1 })
-const logStatusOptions = computed(() => [...new Set(logRows.value.map((r) => r.status))].sort().map((s) => ({ value: s, label: t(s) })))
-const logTypeOptions = computed(() => [...new Set(logRows.value.map((r) => r.type))].sort().map((s) => ({ value: s, label: t(s) })))
+watch([logResult, logSearch], () => { logPage.value = 1 })
+const logResultOptions = computed(() => (['Accepted', 'Held', 'Duplicate', 'Rejected'] as SendOutcome[]).map((s) => ({ value: s, label: t(s) })))
 const logColumns = computed<TableColumn[]>(() => [
-  { key: 'at', label: t('Time (WIB)'), kind: 'date' },
-  { key: 'type', label: t('Type'), kind: 'unit' },
-  { key: 'runKey', label: t('Run key'), kind: 'name' },
+  { key: 'at', label: t('Received (WIB)'), kind: 'date' },
+  { key: 'period', label: t('Period'), kind: 'number' },
   { key: 'version', label: t('Version'), kind: 'unit' },
-  { key: 'employees', label: t('Staff'), kind: 'unit', align: 'right' },
-  { key: 'status', label: t('Status'), kind: 'status' },
-  { key: 'reason', label: t('Reason'), kind: 'address' },
-  { key: 'nextStep', label: t('Next step'), kind: 'address' },
-  { key: 'journalNo', label: t('Journal'), kind: 'unit' },
+  { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
+  { key: 'payItems', label: t('Pay items'), kind: 'unit', align: 'right' },
+  { key: 'result', label: t('Result'), kind: 'status' },
+  { key: 'runId', label: t('Run'), kind: 'unit' },
 ])
+function exportLog() {
+  const blob = new Blob([`\ufeff${sendLogCsv(filteredLog.value.map((r) => sendLog.value.find((l) => l.id === r.id)!))}`], { type: 'text/csv;charset=utf-8;' })
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'payroll-sync-log.csv'; el.click(); URL.revokeObjectURL(el.href)
+}
 
 // ── Month headcount ────────────────────────────────────────────────────────
 const monthOptions = computed(() => headcountMonths().map((m) => ({ value: m, label: monthLabel(m) })))
@@ -131,7 +134,6 @@ const groupRows = computed(() => tracker.value.groups.map((g) => ({
   flagged: g.flagged,
   state: !g.flagged ? 'No change' : g.expected ? 'Expected' : 'Check',
 })))
-function notInPrototype() { infoToast(t('Not in this prototype')) }
 function seeInTalenta() { infoToast(t('Opens Talenta')) }
 
 // The run record links back here with ?view=…; keep the month picker in step with resets.
@@ -181,13 +183,13 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
             <div class="stat-amount">{{ rupiah(ready.reduce((s, r) => s + r.takeHome, 0)) }}</div>
             <a v-if="ready.length" class="stat-link" @click="drill('Ready to post')">{{ ready.length }} {{ t(ready.length === 1 ? 'draft' : 'drafts') }}</a>
           </div>
-          <div class="stat-card stat-card--bordered">
+          <div class="stat-card" :class="{ 'stat-card--bordered': canHeadcount }">
             <div class="stat-title">{{ t('Posted this month') }}</div>
             <div class="stat-period">{{ t('PAY journals posted in') }} {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ postedThisMonth.length }}</div>
             <a v-if="postedThisMonth.length" class="stat-link" @click="drill('Posted')">{{ postedThisMonth.map((j) => j.number).join(', ') }}</a>
           </div>
-          <div class="stat-card">
+          <div v-if="canHeadcount" class="stat-card">
             <div class="stat-title">{{ t('Headcount change') }}</div>
             <div class="stat-period">{{ trackedMonth.previous ? `${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : trackedMonth.label }} · {{ t('staff changed') }}</div>
             <div class="stat-amount">{{ trackedMonth.changed }}</div>
@@ -234,24 +236,23 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       :per-page="logPerPage"
       :search="logSearch"
       :has-active-search="!!logSearch"
-      :has-active-filter="!!(logStatus || logType)"
-      filter-empty-label="log row"
+      :has-active-filter="!!logResult"
+      filter-empty-label="send"
       no-row-hover
       @page-change="(p) => logPage = p"
       @per-page-change="(n) => { logPerPage = n; logPage = 1 }"
-      @clear-filters="() => { logStatus = ''; logType = '' }"
+      @clear-filters="logResult = ''"
       @clear-search="logSearch = ''"
-      @clear-all="() => { logStatus = ''; logType = ''; logSearch = '' }"
+      @clear-all="() => { logResult = ''; logSearch = '' }"
     >
       <template #filters>
         <div class="filter-left">
-          <ErpFilterSelect id="pl-status" v-model="logStatus" :placeholder="t('Status')" :options="logStatusOptions" />
-          <ErpFilterSelect id="pl-type" v-model="logType" :placeholder="t('Type')" :options="logTypeOptions" />
-          <MpButton v-if="logStatus || logType" variant="ghost" is-rounded @click="() => { logStatus = ''; logType = '' }">{{ t('Clear filters') }}</MpButton>
+          <ErpFilterSelect id="pl-result" v-model="logResult" :placeholder="t('Result')" :options="logResultOptions" />
+          <MpButton v-if="logResult" variant="ghost" is-rounded @click="logResult = ''">{{ t('Clear filters') }}</MpButton>
         </div>
         <div class="filter-right">
           <MpTooltip v-if="can('view')" :label="t('Export')" placement="bottom">
-            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="notInPrototype" />
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportLog" />
           </MpTooltip>
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
@@ -259,19 +260,19 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           </div>
         </div>
       </template>
-      <template #cell-runKey="{ row }">
-        <span v-if="(row as { runId: string | null }).runId" class="cell-link cell-text" @click.stop="openRun((row as { runId: string }).runId)">{{ (row as { runKey: string }).runKey }}</span>
-        <span v-else class="pi__muted">{{ (row as { runKey: string }).runKey }}</span>
+      <template #cell-result="{ row }">
+        <div class="pi__result">
+          <ErpStatusBadge :status="(row as { result: string }).result" :label="t((row as { result: string }).result)" :type="RESULT_BADGE[(row as { result: SendOutcome }).result]" />
+          <span v-if="(row as { reason: string }).reason" class="pi__muted pi__wrap">{{ (row as { reason: string }).reason }}</span>
+        </div>
       </template>
-      <template #cell-status="{ value }">
-        <ErpStatusBadge :status="String(value)" :label="t(String(value))" :type="statusType(String(value))" />
+      <template #cell-runId="{ row }">
+        <span v-if="(row as { runId: string | null }).runId" class="cell-link cell-text" @click.stop="openRun((row as { runId: string }).runId)">{{ t('Open run') }}</span>
       </template>
-      <template #cell-reason="{ value }"><span class="pi__wrap">{{ value }}</span></template>
-      <template #cell-nextStep="{ value }"><span class="pi__wrap">{{ t(String(value)) }}</span></template>
     </ErpTablePage>
 
     <!-- ── Month headcount ── -->
-    <template v-else>
+    <template v-else-if="view === 'month' && canHeadcount">
       <div class="stats-section pi__stats">
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Status') }}</div>
@@ -336,6 +337,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
 .pi__stats { padding-bottom: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
 .pi__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pi__wrap { white-space: normal; overflow-wrap: anywhere; }
+.pi__result { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
 
 /* House stats band (BillsIndexPage). */
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
