@@ -58,7 +58,7 @@ function repost() {
   repostError.value = ''
   const r = postRun(props.runId)
   if (!r.ok) { repostError.value = t(r.message ?? 'Nothing was posted.'); return }
-  successToast(t(`${r.number} posted`))
+  successToast(t(r.awaitingApproval ? 'Sent for approval' : `${r.number} posted`))
 }
 
 // ── Journals ────────────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
             {{ live.length ? t(`${live.length} live · the ledger reflects v${run.ledgerVersion}`) : t('No live journal') }}
           </div>
         </div>
-        <button v-if="can('reverse') && live.length" class="btn-enterprise btn-enterprise--secondary" type="button" data-testid="prp-reverse" @click="reverseOpen = true">
+        <button v-if="can('correct') && live.length" class="btn-enterprise btn-enterprise--secondary" type="button" data-testid="prp-reverse" @click="reverseOpen = true">
           {{ live.length > 1 ? t(`Reverse all ${live.length}`) : t('Reverse') }}
         </button>
       </div>

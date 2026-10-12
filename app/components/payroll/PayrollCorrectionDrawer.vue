@@ -39,6 +39,7 @@ function confirm() {
   error.value = ''
   const r = props.mode === 'correction' ? postCorrection(props.runId) : reverseAndRepost(props.runId)
   if (!r.ok) { error.value = t(r.message ?? 'Nothing posted.'); return }
+  if (r.awaitingApproval) { successToast(t('Sent for approval')); emit('close'); return }
   const nos = (r.journals as string[] | undefined) ?? []
   successToast(nos.length ? t(`${nos.join(', ')} posted`) : t('No ledger change'))
   for (const w of (r.warnings as string[] | undefined) ?? []) infoToast(t(w))

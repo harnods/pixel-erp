@@ -66,7 +66,7 @@ const actError = ref('')
 function onPassed() {
   const r = markDryRunPassed(runId.value)
   actError.value = r.ok ? '' : t(r.message ?? '')
-  if (r.ok) successToast(t('Dry run marked Passed. A Finance Manager signs off.'))
+  if (r.ok) successToast(t('Dry run marked Passed. Sign off to finish.'))
 }
 function onSignOff() {
   const r = signOffDryRun(runId.value)
@@ -108,8 +108,8 @@ function copyHrText() {
           <div class="pset-card__sub">{{ periodLabel(run.start, run.end) }} · {{ t(run.mode) }}</div>
         </div>
         <div class="pset-card__actions">
-          <MpButton v-if="can('dryrun.pass') && !dr.passedBy" variant="secondary" is-rounded @click="onPassed">{{ t('Mark Passed') }}</MpButton>
-          <MpButton v-if="can('dryrun.signoff') && dr.passedBy && !dr.signedOffBy" is-rounded @click="onSignOff">{{ t('Sign off') }}</MpButton>
+          <MpButton v-if="can('setup') && !dr.passedBy" variant="secondary" is-rounded @click="onPassed">{{ t('Mark Passed') }}</MpButton>
+          <MpButton v-if="can('setup') && dr.passedBy && !dr.signedOffBy" is-rounded @click="onSignOff">{{ t('Sign off') }}</MpButton>
         </div>
       </div>
       <div class="pset-card__body">

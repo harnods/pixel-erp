@@ -77,7 +77,7 @@ const dimOf = (field: string): TagDimension => (field === 'branch' ? 'Branch' : 
 function tagOptions(field: string, value: string) {
   const dim = dimOf(field)
   const opts = payroll.tags.filter((tg) => tg.dimension === dim && tg.name !== FALLBACK_TAG).map((tg) => ({ value: tg.name, label: tg.name }))
-  if (can('settings.edit') && !opts.some((o) => o.value === value)) opts.push({ value: `new:${value}`, label: `${t('Create dimension value')} "${value}"` })
+  if (can('setup') && !opts.some((o) => o.value === value)) opts.push({ value: `new:${value}`, label: `${t('Create dimension value')} "${value}"` })
   return opts
 }
 function saveGroup(g: { field: string; value: string }) {
@@ -156,7 +156,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <div class="ph__title">{{ t('Holds') }} ({{ holds.length }})</div>
         <div class="ph__sub">{{ t('Nothing posts until every hold is fixed. Checks run in this order.') }}</div>
       </div>
-      <MpButton v-if="can('run.release')" variant="secondary" is-rounded @click="release">{{ t('Release run') }}</MpButton>
+      <MpButton v-if="can('post')" variant="secondary" is-rounded @click="release">{{ t('Release run') }}</MpButton>
     </div>
 
     <div v-for="(h, i) in holds" :key="`${h.code}-${i}`" class="ph__hold" :data-hold="h.code">
@@ -176,19 +176,19 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <div><dt>{{ t('Headcount') }}</dt><dd>{{ summary.headcount }}</dd></div>
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(summary.takeHome) }}</dd></div>
         </dl>
-        <MpButton v-if="can('source.confirm')" is-rounded @click="doConfirmSource">{{ t('Confirm source') }}</MpButton>
-        <p v-else class="ph__hint">{{ t('Waiting for the Jurnal Owner to confirm the source.') }}</p>
+        <MpButton v-if="can('connection')" is-rounded @click="doConfirmSource">{{ t('Confirm source') }}</MpButton>
+        <p v-else class="ph__hint">{{ t('Waiting for the Owner to confirm the source.') }}</p>
       </div>
 
       <!-- Revision or separate run (TN-02) -->
       <div v-else-if="h.code === 'choice'" class="ph__fix">
         <p class="ph__hint">{{ t('Staff of the posted run in this send') }}: {{ d(h).overlapPct }}%<template v-if="latestPosted"> · {{ t('posted') }} v{{ latestPosted.no }}</template></p>
-        <div v-if="can('run.choose')" class="ph__row">
+        <div v-if="can('correct')" class="ph__row">
           <MpButton is-rounded @click="pickRevision">{{ t('Revision of the posted run') }}</MpButton>
           <MpButton variant="secondary" is-rounded @click="sep.open = !sep.open">{{ t('Separate run') }}</MpButton>
         </div>
         <p v-else class="ph__hint">{{ t('Waiting for the Accountant to choose.') }}</p>
-        <div v-if="sep.open && can('run.choose')" class="ph__form">
+        <div v-if="sep.open && can('correct')" class="ph__form">
           <div class="ph__field">
             <label class="ph__label" for="ph-sep-type">{{ t('Run type') }}</label>
             <ErpFilterSelect id="ph-sep-type" v-model="sep.type" :placeholder="t('Run type')" :options="['THR', 'Bonus', 'Off-cycle']" :is-clearable="false" width="200px" />
@@ -216,7 +216,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(d(h).thpAfter) }} {{ t('of') }} {{ rupiah(d(h).thpBefore) }}</dd></div>
           <div v-if="d(h).missing?.length"><dt>{{ t('Missing groups') }}</dt><dd>{{ d(h).missing.join(', ') }}</dd></div>
         </dl>
-        <template v-if="can('run.partial')">
+        <template v-if="can('correct')">
           <div class="ph__field">
             <label class="ph__label" for="ph-partial-reason">{{ t('Reason') }}</label>
             <MpInput id="ph-partial-reason" v-model="partial.reason" :is-invalid="!!partial.error" />
@@ -238,9 +238,9 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
               <th class="ph__th">{{ t('Pay item') }}</th>
               <th class="ph__th ph__th--num">{{ t('Amount') }}</th>
               <th class="ph__th ph__th--num">{{ t('Staff') }}</th>
-              <th v-if="can('settings.edit')" class="ph__th">{{ t('Role') }}</th>
-              <th v-if="can('settings.edit')" class="ph__th">{{ t('Debit') }}</th>
-              <th v-if="can('settings.edit')" class="ph__th">{{ t('Credit') }}</th>
+              <th v-if="can('setup')" class="ph__th">{{ t('Role') }}</th>
+              <th v-if="can('setup')" class="ph__th">{{ t('Debit') }}</th>
+              <th v-if="can('setup')" class="ph__th">{{ t('Credit') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -252,13 +252,13 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
                 </td>
                 <td class="ph__td ph__td--num">{{ rupiah(it.amount) }}</td>
                 <td class="ph__td ph__td--num">{{ it.employees }}</td>
-                <template v-if="can('settings.edit')">
+                <template v-if="can('setup')">
                   <td class="ph__td"><ErpFilterSelect :id="`ph-role-${safeId(it.key)}`" v-model="itemForm(it).role" :placeholder="t('Role')" :options="roleOptions" width="180px" /></td>
                   <td class="ph__td"><ErpFilterSelect :id="`ph-dr-${safeId(it.key)}`" v-model="itemForm(it).debit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
                   <td class="ph__td"><ErpFilterSelect :id="`ph-cr-${safeId(it.key)}`" v-model="itemForm(it).credit" :placeholder="t('Account')" :options="accountOptions" width="220px" /></td>
                 </template>
               </tr>
-              <tr v-if="can('settings.edit')">
+              <tr v-if="can('setup')">
                 <td class="ph__td ph__td--sub" colspan="6">
                   <div v-if="itemForm(it).needsOverride.length" class="ph__field">
                     <label class="ph__label" :for="`ph-ovr-${safeId(it.key)}`">{{ t('Override reason') }}</label>
@@ -274,7 +274,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             </template>
           </tbody>
         </table>
-        <p v-if="!can('settings.edit')" class="ph__hint">{{ t('The Accountant maps these items.') }}</p>
+        <p v-if="!can('setup')" class="ph__hint">{{ t('The Accountant maps these items.') }}</p>
       </div>
 
       <!-- Groups with no dimension (OD-08, TN-13: never the fallback dimension value from here) -->
@@ -284,7 +284,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <span class="ph__strong">{{ g.value }}</span>
             <span class="ph__muted"> · {{ t(dimOf(g.field)) }} · {{ g.staff }} {{ t('employees') }}</span>
           </div>
-          <template v-if="can('run.release')">
+          <template v-if="can('post')">
             <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Dimension value')" :options="tagOptions(g.field, g.value)" width="220px" />
             <MpButton variant="secondary" is-rounded @click="saveGroup(g)">{{ t('Map group') }}</MpButton>
           </template>
@@ -299,7 +299,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <span class="ph__strong">{{ v.value }}</span>
             <span class="ph__muted"> · {{ v.field }} · {{ v.staff }} {{ t('employees') }}</span>
           </div>
-          <template v-if="v.field === 'cost_center' ? can('settings.edit') : can('run.release')">
+          <template v-if="v.field === 'cost_center' ? can('setup') : can('post')">
             <ErpFilterSelect v-if="v.field === 'cost_center'" :id="`ph-cc-${safeId(v.value)}`" v-model="ccPick[v.value]" :placeholder="t('Category')" :options="['Direct', 'In-direct']" width="160px" />
             <MpButton variant="secondary" is-rounded @click="acceptValue(v)">{{ t('Accept value') }}</MpButton>
           </template>
@@ -310,9 +310,9 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
       <div v-else-if="h.code === 'empty-field'" class="ph__fix">
         <div v-for="(n, field) in d(h).fields" :key="field" class="ph__line">
           <div class="ph__linetext"><span class="ph__strong">{{ field }}</span><span class="ph__muted"> · {{ n }} {{ t('employees') }}</span></div>
-          <MpButton v-if="can('fieldPolicy.edit')" variant="secondary" is-rounded @click="skipEmpty(String(field))">{{ t('Skip empty values') }}</MpButton>
+          <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="skipEmpty(String(field))">{{ t('Skip empty values') }}</MpButton>
         </div>
-        <p class="ph__hint">{{ t('HR fills the field in Talenta and re-sends, or the Finance Manager sets empty values to skip.') }}</p>
+        <p class="ph__hint">{{ t('HR fills the field in Talenta and re-sends, or a role that can edit and delete (LM) sets empty values to skip.') }}</p>
       </div>
 
       <!-- Build checks fixed in settings -->

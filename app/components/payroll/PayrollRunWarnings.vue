@@ -67,7 +67,7 @@ function undo(w: RunWarning) {
             {{ t('Acknowledged by') }} {{ w.acknowledged.by }} · {{ wib(w.acknowledged.at) }}<template v-if="w.acknowledged.note"> · {{ w.acknowledged.note }}</template>
           </div>
         </div>
-        <div v-if="can('warning.ack')" class="prw__actions">
+        <div v-if="can('post')" class="prw__actions">
           <MpButton v-if="w.acknowledged" variant="ghost" is-rounded @click="undo(w)">{{ t('Undo') }}</MpButton>
           <MpButton v-else variant="secondary" is-rounded @click="ack(w)">{{ t('Acknowledge') }}</MpButton>
         </div>

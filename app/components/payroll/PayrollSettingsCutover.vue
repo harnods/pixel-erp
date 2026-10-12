@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Cut-over (OD-11, LR-14): the Accountant proposes the first live period, the
- * Finance Manager confirms it and picks Block or Flag for old-sync payroll
+ * Owner (or Ultimate + LM) confirms it and picks Block or Flag for old-sync payroll
  * Expense calls. Runs before the first live period hold as Before go-live; a
  * month with a payroll journal blocks old-sync payroll in every mode.
  */
@@ -20,7 +20,7 @@ const { t } = useLocale()
 const router = useRouter()
 
 const c = computed(() => payroll.settings.cutover)
-const state = computed(() => !c.value.firstLive ? 'Not set' : c.value.confirmedBy ? 'Confirmed' : 'Waiting for the Finance Manager')
+const state = computed(() => !c.value.firstLive ? 'Not set' : c.value.confirmedBy ? 'Confirmed' : 'Waiting for the Owner')
 
 // Old sync history: the last month it booked payroll.
 const passedPayroll = computed(() => payroll.oldSync.filter((o) => o.pattern === 'Payroll' && o.outcome !== 'Blocked'))
@@ -40,7 +40,7 @@ const pickWarnings = computed(() => {
     while (gap < 24) { const [y, mm] = m.split('-').map(Number) as [number, number]; m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, '0')}`; if (m >= pick.value) break; gap++ }
     if (gap > 0) out.push(`The old sync last booked ${monthLabel(lastOldMonth.value)}. ${gap} month${gap > 1 ? 's' : ''} before ${monthLabel(pick.value)} would have payroll from neither route.`)
   }
-  if (c.value.confirmedBy && c.value.firstLive && pick.value !== c.value.firstLive) out.push(`Moving the first live period from ${monthLabel(c.value.firstLive)} needs the Finance Manager to confirm again.`)
+  if (c.value.confirmedBy && c.value.firstLive && pick.value !== c.value.firstLive) out.push(`Moving the first live period from ${monthLabel(c.value.firstLive)} needs the Owner to confirm again.`)
   return out
 })
 function onPropose() {
@@ -50,7 +50,7 @@ function onPropose() {
   if (past.length) { proposeError.value = t(`${past.map((j) => j.number).join(', ')} ${past.length > 1 ? 'are' : 'is'} posted before ${monthLabel(pick.value)}. Reverse ${past.length > 1 ? 'them' : 'it'} first.`); return }
   const r = proposeCutover(pick.value)
   proposeError.value = r.ok ? '' : t(r.message ?? '')
-  if (r.ok) successToast(t(`${monthLabel(pick.value)} sent to the Finance Manager for confirmation`))
+  if (r.ok) successToast(t(`${monthLabel(pick.value)} sent to the Owner for confirmation`))
 }
 const confirmError = ref('')
 function onConfirm() {
@@ -122,23 +122,23 @@ const outcomeType = (o: string) => (o === 'Blocked' ? 'critical' : o === 'Flagge
           </span>
         </div>
 
-        <div v-if="can('cutover.propose')" class="pset-row">
+        <div v-if="can('setup')" class="pset-row">
           <div class="pset-field">
             <span class="pset-label">{{ t('First live period') }}</span>
             <ErpFilterSelect id="pset-co-month" v-model="pick" :placeholder="t('Month')" :options="monthOptions" width="100%" :is-clearable="false" @update:model-value="proposeError = ''" />
           </div>
           <MpButton is-rounded @click="onPropose">{{ t('Send for confirmation') }}</MpButton>
         </div>
-        <div v-for="w in (can('cutover.propose') ? pickWarnings : [])" :key="w" class="pset-note pset-note--warn">{{ t(w) }}</div>
+        <div v-for="w in (can('setup') ? pickWarnings : [])" :key="w" class="pset-note pset-note--warn">{{ t(w) }}</div>
         <p v-if="proposeError" class="pset-error">{{ proposeError }}</p>
 
-        <div v-if="can('cutover.confirm') && c.firstLive && !c.confirmedBy" class="pset-bar">
+        <div v-if="can('connection') && c.firstLive && !c.confirmedBy" class="pset-bar">
           <span class="pset-hint">{{ t(`${c.proposedBy} proposed ${monthLabel(c.firstLive)}. From 1 ${monthLabel(c.firstLive)} the payroll page posts and old-sync payroll is controlled.`) }}</span>
           <MpButton is-rounded @click="onConfirm">{{ t('Confirm') }}</MpButton>
         </div>
         <p v-if="confirmError" class="pset-error">{{ confirmError }}</p>
 
-        <div v-if="can('cutover.confirm')" class="pset-field">
+        <div v-if="can('connection')" class="pset-field">
           <span class="pset-label">{{ t('Old-sync payroll Expense from the first live period') }}</span>
           <div><MpSegmentedControl id="pset-co-mode" v-model="mode" name="pset-co-mode" :data="modeOptions" /></div>
           <span class="pset-muted">{{ t('Claims stay on the old route in both modes. Payroll for a month already in Jurnal is blocked in both modes.') }}</span>

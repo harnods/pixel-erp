@@ -40,11 +40,11 @@ const thisMonth = computed(() => monthOf(today()))
 const postedThisMonth = computed(() => payroll.journals.filter((j) => j.type === 'Payroll' && monthOf(wibDate(j.postedAt)) === thisMonth.value))
 function wibDate(iso: string) { return new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10) }
 const trackedMonth = computed(() => monthHeadcount(latestHeadcountMonth()))
-const changeSummary = (m: { joined: string[]; left: string[]; moved: unknown[] }) => [
-  m.joined.length ? `${m.joined.length} ${t('new')}` : '',
-  m.left.length ? `${m.left.length} ${t('not in the run')}` : '',
+const changeSummary = (m: { joined: number; left: number; moved: unknown[] }) => [
+  m.joined ? `${m.joined} ${t('joined')}` : '',
+  m.left ? `${m.left} ${t('left')}` : '',
   m.moved.length ? `${m.moved.length} ${t('moved')}` : '',
-].filter(Boolean).join(' · ')
+].filter(Boolean).join(', ')
 
 // ── Runs table ─────────────────────────────────────────────────────────────
 const statusFilter = ref('')
@@ -122,14 +122,17 @@ const groupColumns = computed<TableColumn[]>(() => [
 const groupRows = computed(() => tracker.value.groups.map((g) => ({
   key: g.key, label: g.label, last: tracker.value.previous ? g.last : '', current: g.current,
   change: tracker.value.previous ? (g.change > 0 ? `+${g.change}` : String(g.change)) : '',
+  // Counts only: who joined, left or moved is read in Talenta.
   people: [
-    g.left.length ? `${t('Not in this run')}: ${g.left.join(', ')}` : '',
-    g.joined.length ? `${t('New in this run')}: ${g.joined.join(', ')}` : '',
-    ...[...g.movedOut, ...g.movedIn].map((m) => `${t('Moved')}: ${m.employee_id} ${m.from} ${t('to')} ${m.to}`),
-  ].filter(Boolean),
+    g.joined ? `${g.joined} ${t('joined')}` : '',
+    g.left ? `${g.left} ${t('left')}` : '',
+    g.movedIn + g.movedOut ? `${g.movedIn + g.movedOut} ${t('moved')}` : '',
+  ].filter(Boolean).join(', '),
+  flagged: g.flagged,
   state: !g.flagged ? 'No change' : g.expected ? 'Expected' : 'Check',
 })))
 function notInPrototype() { infoToast(t('Not in this prototype')) }
+function seeInTalenta() { infoToast(t('Opens Talenta')) }
 
 // The run record links back here with ?view=…; keep the month picker in step with resets.
 watch(() => payroll.runs, () => { if (!headcountMonths().includes(month.value)) month.value = trackedMonth.value.month })
@@ -247,7 +250,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           <MpButton v-if="logStatus || logType" variant="ghost" is-rounded @click="() => { logStatus = ''; logType = '' }">{{ t('Clear filters') }}</MpButton>
         </div>
         <div class="filter-right">
-          <MpTooltip v-if="can('log.export')" :label="t('Export')" placement="bottom">
+          <MpTooltip v-if="can('view')" :label="t('Export')" placement="bottom">
             <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="notInPrototype" />
           </MpTooltip>
           <div class="filter-search">
@@ -310,7 +313,9 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
         </template>
         <template #cell-people="{ row }">
           <div class="pi__wrap">
-            <div v-for="line in (row as { people: string[] }).people" :key="line">{{ line }}</div>
+            <template v-if="(row as { flagged: boolean }).flagged">
+              {{ (row as { people: string }).people }} · <span class="cell-link" @click.stop="seeInTalenta">{{ t('See who in Talenta') }}</span>
+            </template>
           </div>
         </template>
         <template #cell-state="{ value }">

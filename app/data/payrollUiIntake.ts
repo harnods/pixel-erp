@@ -7,7 +7,7 @@
  *   taxRuleRows(runId)              the one PPh 21 rule (LR-10) against the draft's tax lines.
  *   headcountMonths() / latestHeadcountMonth()   months with a regular run plus the current month.
  *   monthHeadcount(month)           the month's run against the previous posted run by group: new, not in this run, moved ids.
- *   hrMessage(ids, period)          the "Copy message for HR" text: employee_id values only.
+ *   hrMessage(count, period)        the "Copy message for HR" text: a staff count, never ids.
  */
 import {
   payroll, runs, currentVersionOf, runStatus, runHolds, liveJournals, journalsOf, headcountChanges, sendFigures, taxFigures,
@@ -24,7 +24,7 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
     case 'Posted': return 'completed'
     case 'Held': case 'Failed': case 'Blocked': case 'Missing send': return 'critical'
     case 'Changed': case 'Check': return 'warning'
-    case 'Waiting for your choice': case 'Confirm source': case 'Correction ready': case 'Looks partial': return 'warning'
+    case 'Waiting for your choice': case 'Confirm source': case 'Awaiting approval': case 'Correction ready': case 'Looks partial': return 'warning'
     case 'Ready to post': case 'Received': case 'Current': return 'information'
     case 'No change': case 'Expected': return 'completed'
     default: return 'announcement'
@@ -32,7 +32,8 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
 }
 
 const NEXT_STEP: Partial<Record<RunStatus, string>> = {
-  'Confirm source': 'The Jurnal Owner confirms the source.',
+  'Confirm source': 'The Owner confirms the source.',
+  'Awaiting approval': 'The approver approves or rejects in Inbox > Awaiting approval.',
   'Waiting for your choice': 'Pick Revision of the posted run or Separate run.',
   'Ready to post': 'Review the draft and post.',
   'Correction ready': 'Review the correction and post it.',
@@ -116,7 +117,7 @@ function periodOfMonth(month: string): { start: string; end: string; run: Run | 
 
 /**
  * Staff in a month's regular run against the previous posted regular run, by group,
- * with the employee_ids that are new, not in the run, or moved (headcountChanges).
+ * as counts of staff who joined, left or moved (headcountChanges); no employee data.
  */
 export function monthHeadcount(month: string) {
   const { start, end, run } = periodOfMonth(month)
@@ -129,14 +130,14 @@ export function monthHeadcount(month: string) {
     runId: run?.id ?? null, runStatus: run ? runStatus(run) : null, version: v ? `v${v.no}` : null,
     previous: hc?.previous ?? null,
     last: hc?.last ?? null, current: hc?.current ?? 0,
-    joined: hc?.joined ?? [], left: hc?.left ?? [], moved: hc?.moved ?? [],
-    changed: (hc?.joined.length ?? 0) + (hc?.left.length ?? 0) + (hc?.moved.length ?? 0),
+    joined: hc?.joined ?? 0, left: hc?.left ?? 0, moved: hc?.moved ?? [],
+    changed: (hc?.joined ?? 0) + (hc?.left ?? 0) + (hc?.moved.length ?? 0),
     groups: hc?.groups ?? [], flagged: hc?.flagged ?? 0, unexpected: hc?.unexpected ?? 0,
   }
 }
 
-export function hrMessage(ids: string[], period: string): string {
-  return `Payroll ${period}: please check and re-send from Talenta. Employee IDs: ${ids.join(', ')}`
+export function hrMessage(count: number, period: string): string {
+  return `Payroll ${period}: please check and re-send from Talenta. ${count} staff to check; see who in Talenta.`
 }
 
 /** Journals of a run, newest first, with their totals. */

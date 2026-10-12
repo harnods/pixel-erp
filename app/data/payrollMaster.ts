@@ -6,7 +6,8 @@
  * This file holds only facts and the account/tag lists. Every figure a screen
  * shows is computed by payrollStore.ts from the payloads built here.
  *
- * No employee names anywhere (LR-7): staff are known by employee_id only.
+ * No employee data on any screen (names, employee_id, user_id): Talenta's payload carries
+ * them, Jurnal counts staff by user_id internally and shows counts only.
  */
 
 export const PAYROLL_COMPANY_ID = 1212
@@ -16,14 +17,20 @@ export const PAYROLL_TODAY = '2026-10-05'
 
 // ── Roles and people (View as; no real sign-in) ──────────────────────────────
 
-export type PayrollRole = 'Jurnal Owner' | 'Accountant' | 'Finance Manager' | 'Tax Staff' | 'Auditor'
+/**
+ * Jurnal roles that reach the Payroll menu, with LM (Jurnal's modifier that lets a role edit
+ * or delete existing records). View only is Ultimate or Accountant with no payroll action on.
+ */
+export type PayrollRole = 'Owner' | 'Ultimate' | 'Ultimate + LM' | 'Accountant' | 'Accountant + LM' | 'View only'
+export const PAYROLL_ROLES: PayrollRole[] = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM', 'View only']
 export interface PayrollPerson { role: PayrollRole; person: string; title: string }
 export const PAYROLL_PEOPLE: PayrollPerson[] = [
-  { role: 'Jurnal Owner', person: 'Ratna Wijaya', title: 'Owner, PT Central Perk Indonesia' },
-  { role: 'Accountant', person: 'Dewi Anggraini', title: 'Accountant' },
-  { role: 'Finance Manager', person: 'Bambang Sutrisno', title: 'Finance Manager' },
-  { role: 'Tax Staff', person: 'Putri Maharani', title: 'Tax Staff' },
-  { role: 'Auditor', person: 'Agus Salim', title: 'External auditor' },
+  { role: 'Owner', person: 'Rizal Candra', title: 'Owner, PT Central Perk Indonesia' },
+  { role: 'Ultimate', person: 'Cinta Ayu', title: 'Ultimate' },
+  { role: 'Ultimate + LM', person: 'Evelyn Bellinda', title: 'Ultimate, can edit and delete' },
+  { role: 'Accountant', person: 'Andi Pratama', title: 'Accountant' },
+  { role: 'Accountant + LM', person: 'Bayu Ferdian', title: 'Accountant, can edit and delete' },
+  { role: 'View only', person: 'Galih Prakoso', title: 'Ultimate, no payroll actions' },
 ]
 export function payrollPerson(role: PayrollRole): PayrollPerson {
   return PAYROLL_PEOPLE.find((p) => p.role === role)!

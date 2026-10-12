@@ -2,7 +2,7 @@
 /**
  * Connection (TS-01): which Talenta company feeds the books, the last send,
  * rejected sends, the HR steps, the first send's source confirmation and the
- * other-entity question. Start, end and restart are the Jurnal Owner's only.
+ * other-entity question. Start, end and restart take the Owner or Ultimate + LM.
  */
 import { computed, ref } from 'vue'
 import { MpButton, MpButtonGroup, MpInput, MpCheckbox, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
@@ -50,7 +50,7 @@ function onConfirmSource() {
 }
 const sourceError = ref('')
 
-// ── Start / end / restart (Jurnal Owner) ──
+// ── Start / end / restart (Owner, Ultimate + LM) ──
 const companyId = ref('')
 const startError = ref('')
 function onStart() {
@@ -106,7 +106,7 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
         </div>
         <div class="pset-card__actions">
           <ErpStatusBadge :status="c.status" :label="t(c.status)" :type="statusType" />
-          <MpButton v-if="can('connection.manage') && (c.status === 'Connected' || c.status === 'Waiting for first send')" variant="secondary" is-rounded @click="endOpen = true">{{ t('End connection') }}</MpButton>
+          <MpButton v-if="can('connection') && (c.status === 'Connected' || c.status === 'Waiting for first send')" variant="secondary" is-rounded @click="endOpen = true">{{ t('End connection') }}</MpButton>
         </div>
       </div>
       <div class="pset-card__body">
@@ -143,8 +143,8 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
       </div>
     </div>
 
-    <!-- Start / restart (Jurnal Owner) -->
-    <div v-if="can('connection.manage') && (c.status === 'Not connected' || c.status === 'Ended')" class="pset-card">
+    <!-- Start / restart (Owner, Ultimate + LM) -->
+    <div v-if="can('connection') && (c.status === 'Not connected' || c.status === 'Ended')" class="pset-card">
       <div class="pset-card__head">
         <div class="pset-card__title">{{ t(c.status === 'Ended' ? 'Restart the connection' : 'Start the connection') }}</div>
       </div>
@@ -182,7 +182,7 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
           <div class="pset-card__title">{{ t(sourceRun ? 'Confirm source' : 'First send') }}</div>
           <div class="pset-card__sub">{{ periodLabel(summaryRun!.start, summaryRun!.end) }}</div>
         </div>
-        <ErpStatusBadge v-if="sourceRun" status="pending" :label="t('Waiting for the Jurnal Owner')" />
+        <ErpStatusBadge v-if="sourceRun" status="pending" :label="t('Waiting for the Owner')" />
         <ErpStatusBadge v-else status="completed" :label="t('Confirmed')" />
       </div>
       <div class="pset-card__body">
@@ -201,8 +201,8 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
             <template v-else>{{ t('None') }}</template>
           </span>
         </div>
-        <p v-if="sourceRun && !can('source.confirm')" class="pset-hint">{{ t('No draft builds until the Jurnal Owner confirms this source.') }}</p>
-        <div v-if="sourceRun && can('source.confirm')" class="pset-bar">
+        <p v-if="sourceRun && !can('connection')" class="pset-hint">{{ t('No draft builds until the Owner confirms this source.') }}</p>
+        <div v-if="sourceRun && can('connection')" class="pset-bar">
           <span class="pset-hint">{{ t('No draft builds until you confirm these are the books of this company.') }}</span>
           <MpButton is-rounded @click="onConfirmSource">{{ t('Confirm source') }}</MpButton>
         </div>
@@ -219,7 +219,7 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
         </div>
         <div class="pset-card__actions">
           <span class="pset-muted">{{ c.otherEntitiesAnswer === null ? t('Not answered') : c.otherEntitiesAnswer ? t('Yes') : t('No') }}</span>
-          <template v-if="can('otherEntity.answer')">
+          <template v-if="can('connection')">
             <MpButton v-if="c.otherEntitiesAnswer !== true" size="sm" variant="secondary" is-rounded @click="answer(true)">{{ t('Yes') }}</MpButton>
             <MpButton v-if="c.otherEntitiesAnswer !== false" size="sm" variant="secondary" is-rounded @click="answer(false)">{{ t('No') }}</MpButton>
           </template>
@@ -242,7 +242,7 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
               <td class="pset-td">{{ t(g.field === 'organization_name' ? 'Organization' : 'Branch') }}</td>
               <td class="pset-td pset-td--num">{{ g.staff }}</td>
               <td class="pset-td">
-                <MpCheckbox v-if="can('otherEntity.mark')" :id="`pset-oe-${g.field}-${g.value.replace(/\s+/g, '-')}`" :is-checked="isOther(g.field, g.value)" @change="toggleOther(g.field, g.value)" />
+                <MpCheckbox v-if="can('connection')" :id="`pset-oe-${g.field}-${g.value.replace(/\s+/g, '-')}`" :is-checked="isOther(g.field, g.value)" @change="toggleOther(g.field, g.value)" />
                 <span v-else>{{ isOther(g.field, g.value) ? t('Yes') : t('No') }}</span>
               </td>
             </tr>

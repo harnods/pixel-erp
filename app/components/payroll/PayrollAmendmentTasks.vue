@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * PPh 21 amendment tasks (OD-16, TN-22): one task per tax period, opened when any of the five
- * tax totals moved for any employee between versions. Tax Staff closes it as Amended (pembetulan
+ * tax totals moved for any employee between versions. A role with the tax action closes it as Amended (pembetulan
  * number and new PPh 21 total, compared with the expected figure), Not filed yet, or Dismissed.
  */
 import { MpBadge } from '@mekari/pixel3'
@@ -27,6 +27,7 @@ const FIELD_LABEL: Record<(typeof FIELDS)[number], string> = {
   'PPh 21 Benefit': 'PPh 21 Benefit', 'PPH 21 Payment': 'PPH 21 Payment', 'Total PPh 21 DTP Received': 'PPh 21 DTP',
   'PPh 21 Resign Benefit': 'PPh 21 severance', 'PPh 26 Benefit': 'PPh 26',
 }
+const fieldTotal = (x: Task, f: (typeof FIELDS)[number]) => x.employees.reduce((s, e) => s + (e.changes[f] ?? 0), 0)
 const outcome = (x: Task) => {
   if (x.status === 'Amended') return `Pembetulan ${x.pembetulanNo} · new PPh 21 total ${rupiah(x.newTotal ?? 0)}`
   if (x.status === 'Not filed yet') return 'Not filed yet: filed with new figures'
@@ -58,22 +59,23 @@ const outcome = (x: Task) => {
           <div v-if="x.status !== 'Open'" class="pat__tasksub">{{ t(outcome(x)) }}<template v-if="x.closedBy"> · {{ x.closedBy }}</template></div>
         </div>
         <div class="pat__actions">
-          <span class="cell-link" @click="expanded[x.id] = !expanded[x.id]">{{ expanded[x.id] ? t('Hide staff') : t(`Show ${x.employees.length} staff`) }}</span>
-          <button v-if="x.status === 'Open' && can('task.close')" class="btn-enterprise btn-enterprise--secondary" type="button" :data-testid="`pat-close-${x.id}`" @click="closing = x">{{ t('Close task') }}</button>
+          <span class="cell-link" @click="expanded[x.id] = !expanded[x.id]">{{ expanded[x.id] ? t('Hide totals') : t('Show totals') }}</span>
+          <button v-if="x.status === 'Open' && can('tax')" class="btn-enterprise btn-enterprise--secondary" type="button" :data-testid="`pat-close-${x.id}`" @click="closing = x">{{ t('Close task') }}</button>
         </div>
       </div>
       <div v-if="expanded[x.id]" class="pat__scroll">
         <table class="pat__table">
           <thead>
             <tr>
-              <th class="pat__th">{{ t('Employee ID') }}</th>
+              <th class="pat__th">{{ t('Staff changed') }}</th>
               <th v-for="f in FIELDS" :key="f" class="pat__th pat__num">{{ t(FIELD_LABEL[f]) }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="e in x.employees" :key="e.employee_id">
-              <td class="pat__td">{{ e.employee_id }}</td>
-              <td v-for="f in FIELDS" :key="f" class="pat__td pat__num">{{ e.changes[f] ? signed(e.changes[f]!) : '' }}</td>
+            <!-- Totals only: the per-person figures are in Talenta. -->
+            <tr>
+              <td class="pat__td">{{ x.employees.length }}</td>
+              <td v-for="f in FIELDS" :key="f" class="pat__td pat__num">{{ fieldTotal(x, f) ? signed(fieldTotal(x, f)) : '' }}</td>
             </tr>
           </tbody>
         </table>

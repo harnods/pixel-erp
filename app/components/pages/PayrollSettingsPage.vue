@@ -30,8 +30,8 @@ const ALL_TABS = [
 ] as const
 type TabKey = typeof ALL_TABS[number]['key']
 
-// FG-1.6: Tax Staff cannot open the connection panel.
-const tabs = computed(() => ALL_TABS.filter((x) => x.key !== 'connection' || can('connection.view', payroll.viewAs)))
+// Every role that reaches Payroll reads the connection panel; only Owner and Ultimate + LM change it.
+const tabs = computed(() => ALL_TABS.filter((x) => x.key !== 'connection' || can('view', payroll.viewAs)))
 const activeKey = computed<TabKey>(() => {
   const q = route.query.section as string | undefined
   return (tabs.value.find((x) => x.key === q)?.key ?? tabs.value[0]!.key) as TabKey

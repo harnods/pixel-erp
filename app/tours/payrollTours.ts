@@ -199,7 +199,7 @@ const steps: PayrollStep[] = [
     route: runRoute,
     target: 'payroll-amendments',
     find: () => live('payroll-amendments') ?? onTab('payroll-amendments', 'Draft', 'Journals')(),
-    role: 'Tax Staff',
+    role: 'Accountant',
     title: 'Tax Staff get a PPh 21 amendment task for September.',
     body: 'A version that changes any employee\'s tax figures opens one amendment task for the tax month. Bank reconciliation has matched the PPh 21 deposit for September, on the v2 figures.',
     watch: 'Amend e-Bupot 21/26 for Sep 2026: 4 staff changed, period total change Rp197.041. PPh 21 paid Rp18.520.123: Deposit matches.',

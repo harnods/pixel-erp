@@ -82,7 +82,7 @@ function create(reused = false) {
           <div class="pset-card__sub">{{ t('Each payable carries one party. Two statutory parties never share a payable.') }}</div>
         </div>
         <div class="pset-card__actions">
-          <MpButton v-if="can('settings.edit')" is-rounded left-icon="add" @click="openCreate">{{ t('New account') }}</MpButton>
+          <MpButton v-if="can('setup')" is-rounded left-icon="add" @click="openCreate">{{ t('New account') }}</MpButton>
         </div>
       </div>
       <table class="pset-table">
@@ -104,7 +104,7 @@ function create(reused = false) {
             <td class="pset-td">{{ t(TYPE_LABEL[a.type]) }}</td>
             <td class="pset-td">
               <template v-if="a.type === 'liability'">
-                <ErpFilterSelect v-if="can('settings.edit')" :id="`pset-party-${a.code}`" :model-value="a.party ?? 'none'" :placeholder="t('Party')" :options="partyOptions" width="220px" :is-clearable="false" @update:model-value="(v: string) => onParty(a.code, v)" />
+                <ErpFilterSelect v-if="can('setup')" :id="`pset-party-${a.code}`" :model-value="a.party ?? 'none'" :placeholder="t('Party')" :options="partyOptions" width="220px" :is-clearable="false" @update:model-value="(v: string) => onParty(a.code, v)" />
                 <span v-else>{{ a.party ?? t('No party') }}</span>
                 <span v-if="partyErrors[a.code]" class="pset-line pset-danger">{{ partyErrors[a.code] }}</span>
               </template>
@@ -130,7 +130,7 @@ function create(reused = false) {
         <div class="pset-row">
           <div v-for="p in PRESETS" :key="p.key" class="pset-field">
             <span class="pset-label">{{ t(p.label) }}</span>
-            <ErpFilterSelect v-if="can('presets.edit')" :id="`pset-preset-${p.key}`" :model-value="s.taxPresets[p.key]" :placeholder="t('Account')" :options="presetOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onPreset(p.key, v)" />
+            <ErpFilterSelect v-if="can('setup')" :id="`pset-preset-${p.key}`" :model-value="s.taxPresets[p.key]" :placeholder="t('Account')" :options="presetOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onPreset(p.key, v)" />
             <span v-else>{{ accountLabel(s.taxPresets[p.key]) }}</span>
           </div>
         </div>

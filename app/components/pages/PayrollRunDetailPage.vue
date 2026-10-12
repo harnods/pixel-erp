@@ -11,6 +11,7 @@ import { computed, ref, watch } from 'vue'
 import { MpButton, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import PayrollHoldsPanel from '~/components/payroll/PayrollHoldsPanel.vue'
 import PayrollDraftReview from '~/components/payroll/PayrollDraftReview.vue'
 import PayrollRunBuiltWith from '~/components/payroll/PayrollRunBuiltWith.vue'
@@ -21,6 +22,7 @@ import PayrollCorrectionNotice from '~/components/payroll/PayrollCorrectionNotic
 import PayrollRevisionPanel from '~/components/payroll/PayrollRevisionPanel.vue'
 import {
   can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf, postRun,
+  pendingApproval, canApprove, approvePayroll, rejectPayroll, listLabel,
   rebuildDraft, isDraftStale, postConfirmText, runWarnings, correctionOf, rupiah, wib, periodLabel, monthLabel,
   accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
@@ -73,6 +75,11 @@ function askPost() {
 function doPost() {
   if (!run.value) return
   const r = postRun(run.value.id, { versionNo: v.value?.no })
+  if (r.ok && r.awaitingApproval) {
+    staleChanges.value = []
+    successToast(t('Sent for approval'))
+    return
+  }
   if (r.ok) {
     staleChanges.value = []
     successToast(t(`Posted as ${r.number as string}`))
@@ -91,6 +98,26 @@ function rebuild() {
   successToast(t(staleChanges.value.length ? `Draft rebuilt. ${staleChanges.value.length} lines moved` : 'Draft rebuilt. No line moved'))
 }
 function notInPrototype() { infoToast(t('Not in this prototype')) }
+
+// ── Approval (Settings > Approval workflows, Payroll journal) ──────────────
+const approval = computed(() => (run.value ? pendingApproval(run.value) : null))
+const isApprover = computed(() => !!run.value && !!approval.value && canApprove(run.value.id))
+const rejectOpen = ref(false)
+function approve() {
+  if (!run.value) return
+  const r = approvePayroll(run.value.id)
+  if (!r.ok) { postError.value = r.message ?? ''; errorToast(t('Not approved')); return }
+  const nos = (r.journals as string[] | undefined) ?? (r.number ? [r.number as string] : [])
+  successToast(t(`Approved and posted as ${nos.join(', ')}`))
+  tab.value = 'journals'
+}
+function reject(reason: string) {
+  if (!run.value) return
+  const r = rejectPayroll(run.value.id, reason)
+  rejectOpen.value = false
+  if (!r.ok) { errorToast(t(r.message ?? 'Not rejected')); return }
+  successToast(t('Rejected. The run is back in draft'))
+}
 function back() { router.push('/payroll-inbox') }
 const lineLabel = (account: string, tags: Tags) => `${accountLabel(account)}${tagsLabel(tags) ? ` | ${tagsLabel(tags)}` : ''}`
 
@@ -130,7 +157,11 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-        <MpButton v-if="can('post') && canPostNow" is-rounded @click="askPost">{{ t('Post') }}</MpButton>
+        <template v-if="approval && isApprover">
+          <MpButton variant="secondary" is-rounded data-testid="prr-reject" @click="rejectOpen = true">{{ t('Reject') }}</MpButton>
+          <MpButton is-rounded data-testid="prr-approve" @click="approve">{{ t('Approve') }}</MpButton>
+        </template>
+        <MpButton v-else-if="can('post') && canPostNow" is-rounded @click="askPost">{{ t('Post') }}</MpButton>
       </div>
     </header>
 
@@ -159,6 +190,16 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
           <div class="stat-amount">{{ rupiah(liveTotal) }}</div>
           <a v-if="live.length" class="stat-link" @click="tab = 'journals'">{{ live.map((j) => j.number).join(', ') }}</a>
         </div>
+      </div>
+
+      <!-- Approval: Post matched a Payroll journal rule in Settings > Approval workflows. -->
+      <div v-if="approval" class="prr__notice" data-testid="prr-approval">
+        <div class="prr__noticetitle">{{ t('Awaiting approval') }} · {{ approval.ruleName }}</div>
+        <div>{{ t(approval.kind === 'post' ? 'Payroll journal' : 'Payroll correction') }} v{{ approval.versionNo }} {{ rupiah(approval.amount) }} · {{ t('sent by') }} {{ approval.requestedBy }} {{ wib(approval.requestedAt) }} · {{ t('approver') }} {{ listLabel(approval.approvers) }}</div>
+      </div>
+      <div v-else-if="run.rejection && !live.length" class="prr__notice" data-testid="prr-rejected">
+        <div class="prr__noticetitle">{{ t('Rejected by') }} {{ run.rejection.by }} · {{ wib(run.rejection.at) }}</div>
+        <div>{{ run.rejection.reason }}</div>
       </div>
 
       <!-- Post feedback: blocks only (warnings never block). -->
@@ -255,6 +296,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       :is-danger="false"
       @confirm="doPost"
     />
+    <RejectTransactionModal :is-open="rejectOpen" doc-type="Payroll journal" @close="rejectOpen = false" @reject="reject" />
   </div>
   <div v-else class="prr">
     <div class="prr__body">

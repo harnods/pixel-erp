@@ -3,8 +3,8 @@
  * Draft review (OD-12, TS-05): the four sections the Accountant checks before
  * Post. (1) pay item totals by section (Talenta sends no totals), (2) change from the
  * last posted period by account and tag with notes on flagged rows, (3) headcount
- * by group: this run's employee_ids against the previous posted run, with who is
- * new, not in this run or moved, each group's change markable Expected (HR settles
+ * by group: counts of staff who joined, left or moved against the previous posted run
+ * (who they are is read in Talenta), each group's change markable Expected (HR settles
  * the people; Posting is never blocked by it), (4) the exact lines Post writes, each with
  * "Why this line". Tax lines sit under the one PPh 21 rule (LR-10).
  */
@@ -15,7 +15,7 @@ import {
   markHeadcountExpected, clearHeadcountExpected, payroll, type Tags,
 } from '~/data/payrollStore'
 import { taxRuleRows } from '~/data/payrollUiIntake'
-import { successToast } from '~/utils/toasts'
+import { successToast, infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
@@ -58,6 +58,10 @@ const hc = computed(() => review.value?.headcount ?? null)
 const hcNotes = reactive<Record<string, string>>({})
 const hcErr = reactive<Record<string, string>>({})
 const signedCount = (n: number) => (n > 0 ? `+${n}` : String(n))
+/** "1 joined, 1 left, 1 moved": counts only; the people are in Talenta. */
+const hcCounts = (h: { joined: number; left: number; movedIn: number; movedOut: number }) =>
+  [h.joined ? `${h.joined} ${t('joined')}` : '', h.left ? `${h.left} ${t('left')}` : '', h.movedIn + h.movedOut ? `${h.movedIn + h.movedOut} ${t('moved')}` : ''].filter(Boolean).join(', ')
+function seeInTalenta() { infoToast(t('Opens Talenta')) }
 function markExpected(key: string) {
   const r = markHeadcountExpected(props.runId, key, hcNotes[key] ?? '')
   if (!r.ok) { hcErr[key] = r.message ?? ''; return }
@@ -147,7 +151,7 @@ function unmarkExpected(key: string) {
             <td class="pdr__td pdr__num">{{ rupiah(Math.abs(c.new)) }}</td>
             <td class="pdr__td pdr__num">{{ signed(Math.abs(c.new) - Math.abs(c.old)) }} <span class="pdr__muted">({{ pct(c.pct == null ? null : (Math.abs(c.new) - Math.abs(c.old)) / Math.abs(c.old) * 100) }})</span></td>
             <td class="pdr__td pdr__notecell">
-              <template v-if="c.flag && can('draft.note')">
+              <template v-if="c.flag && can('post')">
                 <div class="pdr__noteform">
                   <MpInput :id="`pdr-note-${safeId(c.key)}`" :model-value="notes[c.key] ?? c.note ?? ''" :is-invalid="!!noteErr[c.key]" @update:model-value="(v: string | number) => notes[c.key] = String(v)" />
                   <MpButton variant="secondary" is-rounded @click="saveNote(c.key)">{{ t('Save') }}</MpButton>
@@ -170,7 +174,7 @@ function unmarkExpected(key: string) {
       </div>
     </section>
 
-    <!-- 3. Headcount by group: employee_ids against the previous posted run -->
+    <!-- 3. Headcount by group: counts against the previous posted run; the people are in Talenta -->
     <section v-if="hc" class="pdr__card" data-section="headcount" data-tour="payroll-draft-headcount">
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Headcount by group') }}</div>
@@ -198,11 +202,9 @@ function unmarkExpected(key: string) {
               {{ h.label }}
               <span v-if="h.flagged && h.expected" class="pdr__flag pdr__flag--ok">{{ t('Expected') }}</span>
               <span v-else-if="h.flagged" class="pdr__flag">{{ t('Check') }}</span>
-              <ul v-if="h.flagged" class="pdr__hclist">
-                <li v-if="h.left.length">{{ t('Not in this run') }}: {{ h.left.join(', ') }}</li>
-                <li v-if="h.joined.length">{{ t('New in this run') }}: {{ h.joined.join(', ') }}</li>
-                <li v-for="m in [...h.movedOut, ...h.movedIn]" :key="m.employee_id">{{ t('Moved') }}: {{ m.employee_id }} {{ m.from }} {{ t('to') }} {{ m.to }}</li>
-              </ul>
+              <div v-if="h.flagged" class="pdr__hclist">
+                {{ hcCounts(h) }} · <span class="pdr__link" data-testid="pdr-see-who" @click="seeInTalenta">{{ t('See who in Talenta') }}</span>
+              </div>
             </td>
             <td class="pdr__td pdr__num">{{ hc.previous ? h.last : '' }}</td>
             <td class="pdr__td pdr__num pdr__strong">{{ h.current }}</td>
@@ -211,9 +213,9 @@ function unmarkExpected(key: string) {
               <template v-if="h.flagged && h.expected">
                 <div>{{ h.expected.note || t('No note') }}</div>
                 <div class="pdr__muted">{{ h.expected.by }}</div>
-                <span v-if="can('draft.note')" class="pdr__link" @click="unmarkExpected(h.key)">{{ t('Undo') }}</span>
+                <span v-if="can('post')" class="pdr__link" @click="unmarkExpected(h.key)">{{ t('Undo') }}</span>
               </template>
-              <template v-else-if="h.flagged && can('draft.note')">
+              <template v-else-if="h.flagged && can('post')">
                 <div class="pdr__noteform">
                   <MpInput :id="`pdr-hc-${safeId(h.key)}`" :placeholder="t('Note (optional)')" :model-value="hcNotes[h.key] ?? ''" :is-invalid="!!hcErr[h.key]" @update:model-value="(v: string | number) => hcNotes[h.key] = String(v)" />
                   <MpButton variant="secondary" is-rounded @click="markExpected(h.key)">{{ t('Expected') }}</MpButton>
@@ -297,7 +299,6 @@ function unmarkExpected(key: string) {
                   <tbody>
                     <tr v-for="(s, si) in why.sources" :key="si">
                       <td class="pdr__td">{{ s.item }} <span class="pdr__muted">· {{ t(s.section) }}</span>
-                        <div v-if="s.employeeIds.length" class="pdr__muted pdr__ids">{{ s.employeeIds.join(', ') }}</div>
                       </td>
                       <td class="pdr__td">{{ s.role ? t(s.role) : '' }}</td>
                       <td class="pdr__td pdr__num">{{ s.employees || '' }}</td>
@@ -356,7 +357,6 @@ function unmarkExpected(key: string) {
 }
 .pdr__flag--ok { background: var(--mp-colors-background-success); color: var(--mp-colors-text-success); }
 .pdr__hclist { margin: var(--mp-spacing-1) 0 0; padding: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pdr__hclist li { overflow-wrap: anywhere; }
 .pdr__notecell { min-width: 280px; }
 .pdr__noteform { display: flex; gap: var(--mp-spacing-2); align-items: center; }
 .pdr__whycell { text-align: right; white-space: nowrap; }
@@ -364,6 +364,5 @@ function unmarkExpected(key: string) {
 .pdr__link:hover { text-decoration: underline; }
 .pdr__why { background: var(--mp-background-neutral-subtle); }
 .pdr__whylist { margin: 0; padding-left: var(--mp-spacing-5); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.pdr__ids { overflow-wrap: anywhere; margin-top: var(--mp-spacing-1); }
 .pdr__total .pdr__td { border-bottom: 0; }
 </style>

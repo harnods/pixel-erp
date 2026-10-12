@@ -2,8 +2,8 @@
 /**
  * Version compare (OD-15): any two versions of a run, by pay item or by account and tag, with
  * unchanged rows hidden. The old side reads the posted lines when it is the version in the
- * ledger; lines moved only by a settings change sit apart (TN-06). Headcount lists added and
- * removed employee_id values by group, and the PPh 21 change panel lists per-employee tax moves
+ * ledger; lines moved only by a settings change sit apart (TN-06). Headcount counts added and
+ * removed staff by group, and the PPh 21 change panel totals the tax moves, no employee data
  * (TN-22), with PPh 26 and DTP apart from PPh 21.
  */
 import { MpSegmentedControl } from '@mekari/pixel3'
@@ -76,11 +76,11 @@ const accountTotals = computed(() => {
 const headcount = computed(() => {
   const h = data.value?.headcount
   if (!h) return []
-  const groups = new Map<string, { added: string[]; removed: string[] }>()
+  const groups = new Map<string, { added: number; removed: number }>()
   for (const [list, kind] of [[h.added, 'added'], [h.removed, 'removed']] as const) {
     for (const e of list) {
-      const g = groups.get(e.group) ?? { added: [], removed: [] }
-      g[kind].push(e.id)
+      const g = groups.get(e.group) ?? { added: 0, removed: 0 }
+      g[kind] += e.count
       groups.set(e.group, g)
     }
   }
@@ -88,7 +88,6 @@ const headcount = computed(() => {
 })
 
 const taxRows = computed(() => (data.value?.taxChanges ?? []).map((e) => ({
-  id: e.employee_id,
   benefit: e.changes['PPh 21 Benefit'] ?? 0,
   payment: e.changes['PPH 21 Payment'] ?? 0,
   dtp: e.changes['Total PPh 21 DTP Received'] ?? 0,
@@ -96,6 +95,8 @@ const taxRows = computed(() => (data.value?.taxChanges ?? []).map((e) => ({
   pph26: e.changes['PPh 26 Benefit'] ?? 0,
 })).map((r) => ({ ...r, pph21: r.benefit + r.payment - r.dtp })))
 const taxTotal = computed(() => ({
+  benefit: taxRows.value.reduce((s, r) => s + r.benefit, 0),
+  payment: taxRows.value.reduce((s, r) => s + r.payment, 0),
   pph21: taxRows.value.reduce((s, r) => s + r.pph21, 0),
   dtp: taxRows.value.reduce((s, r) => s + r.dtp, 0),
   severance: taxRows.value.reduce((s, r) => s + r.severance, 0),
@@ -233,8 +234,8 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
               <tbody>
                 <tr v-for="g in headcount" :key="g.group">
                   <td class="pcv__td">{{ g.group }}</td>
-                  <td class="pcv__td">{{ g.added.join(', ') || '-' }}</td>
-                  <td class="pcv__td">{{ g.removed.join(', ') || '-' }}</td>
+                  <td class="pcv__td pcv__num">{{ g.added || '-' }}</td>
+                  <td class="pcv__td pcv__num">{{ g.removed || '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -258,7 +259,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
             <table class="pcv__table">
               <thead>
                 <tr>
-                  <th class="pcv__th">{{ t('Employee ID') }}</th>
+                  <th class="pcv__th">{{ t('Staff changed') }}</th>
                   <th class="pcv__th pcv__num">{{ t('PPh 21 Benefit') }}</th>
                   <th class="pcv__th pcv__num">{{ t('PPh 21 Payment') }}</th>
                   <th class="pcv__th pcv__num">{{ t('PPh 21 DTP') }}</th>
@@ -268,14 +269,15 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="r in taxRows" :key="r.id">
-                  <td class="pcv__td">{{ r.id }}</td>
-                  <td class="pcv__td pcv__num">{{ r.benefit ? signed(r.benefit) : '' }}</td>
-                  <td class="pcv__td pcv__num">{{ r.payment ? signed(r.payment) : '' }}</td>
-                  <td class="pcv__td pcv__num">{{ r.dtp ? signed(r.dtp) : '' }}</td>
-                  <td class="pcv__td pcv__num pcv__strong">{{ signed(r.pph21) }}</td>
-                  <td class="pcv__td pcv__num">{{ r.severance ? signed(r.severance) : '' }}</td>
-                  <td class="pcv__td pcv__num">{{ r.pph26 ? signed(r.pph26) : '' }}</td>
+                <!-- Totals only: the per-person figures are in Talenta. -->
+                <tr>
+                  <td class="pcv__td">{{ taxRows.length }}</td>
+                  <td class="pcv__td pcv__num">{{ taxTotal.benefit ? signed(taxTotal.benefit) : '' }}</td>
+                  <td class="pcv__td pcv__num">{{ taxTotal.payment ? signed(taxTotal.payment) : '' }}</td>
+                  <td class="pcv__td pcv__num">{{ taxTotal.dtp ? signed(taxTotal.dtp) : '' }}</td>
+                  <td class="pcv__td pcv__num pcv__strong">{{ signed(taxTotal.pph21) }}</td>
+                  <td class="pcv__td pcv__num">{{ taxTotal.severance ? signed(taxTotal.severance) : '' }}</td>
+                  <td class="pcv__td pcv__num">{{ taxTotal.pph26 ? signed(taxTotal.pph26) : '' }}</td>
                 </tr>
               </tbody>
             </table>

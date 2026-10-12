@@ -164,13 +164,13 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
         <MpButton v-if="filtered" variant="ghost" is-rounded @click="sectionFilter = 'all'; stateFilter = 'all'">{{ t('Clear filters') }}</MpButton>
       </div>
       <div class="pset-bar__right">
-        <template v-if="can('settings.edit')">
+        <template v-if="can('setup')">
           <MpButton variant="secondary" is-rounded @click="onConfirmAll">{{ t('Confirm all suggestions') }}</MpButton>
           <MpButton variant="secondary" is-rounded @click="replOpen = true; repl.from = ''; repl.to = ''; replError = ''">{{ t('Replace account') }}</MpButton>
           <MpButton variant="secondary" is-rounded @click="notInPrototype">{{ t('Submit for approval') }}</MpButton>
         </template>
         <MpButton variant="secondary" is-rounded @click="notInPrototype">{{ t('Export overrides') }}</MpButton>
-        <MpButton v-if="can('settings.edit')" is-rounded left-icon="add" @click="addOpen = true; add.name = ''; addError = ''">{{ t('New pay item') }}</MpButton>
+        <MpButton v-if="can('setup')" is-rounded left-icon="add" @click="addOpen = true; add.name = ''; addError = ''">{{ t('New pay item') }}</MpButton>
       </div>
     </div>
 
@@ -199,7 +199,7 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
               <span class="pset-line">{{ t(SECTION_LABEL[m.section]) }}<template v-if="m.addedBy === 'Jurnal'"> · {{ t('Added in Jurnal') }}</template><template v-if="m.party"> · {{ m.party }}</template></span>
               <div v-if="suggestionFor(m)" class="pset-chips pset-sugg">
                 <ErpStatusBadge status="recommended" :label="t(`Suggested: ${suggestionFor(m)!.role}, Dr ${suggestionFor(m)!.debit}, Cr ${suggestionFor(m)!.credit}`)" type="information" />
-                <span v-if="can('settings.edit')" class="pset-link pset-muted" @click="accept(m)">{{ t('Accept') }}</span>
+                <span v-if="can('setup')" class="pset-link pset-muted" @click="accept(m)">{{ t('Accept') }}</span>
                 <span v-if="BULK_SKIP.includes(suggestionFor(m)!.role!)" class="pset-muted">{{ t('Confirm all skips this role') }}</span>
               </div>
               <span v-else-if="stateOf(m) === 'Needs a role' || stateOf(m) === 'No account'" class="pset-line">{{ t('No suggestion') }}</span>
@@ -216,7 +216,7 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
               <ErpStatusBadge :status="stateOf(m)" :label="t(stateOf(m))" :type="STATE_TYPE[stateOf(m)]" />
             </td>
             <td class="pset-td pset-td--act">
-              <MpButton size="sm" variant="secondary" is-rounded @click="openEdit(m)">{{ t(can('settings.edit') ? 'Edit' : 'View') }}</MpButton>
+              <MpButton size="sm" variant="secondary" is-rounded @click="openEdit(m)">{{ t(can('setup') ? 'Edit' : 'View') }}</MpButton>
             </td>
           </tr>
         </tbody>
@@ -226,31 +226,31 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
     <!-- Edit one pay item -->
     <PayrollSettingsDrawer :is-open="!!editRow" :title="editRow?.name ?? ''" :sub="editRow ? t(SECTION_LABEL[editRow.section]) : ''" wide @close="editKey = null">
       <template v-if="editRow">
-        <div v-if="suggestMapping(editRow.name, editRow.section) && can('settings.edit')" class="pset-note">
+        <div v-if="suggestMapping(editRow.name, editRow.section) && can('setup')" class="pset-note">
           <span>{{ t(`Suggestion: ${suggestMapping(editRow.name, editRow.section)!.role}, Dr ${accountLabel(suggestMapping(editRow.name, editRow.section)!.debit)}, Cr ${accountLabel(suggestMapping(editRow.name, editRow.section)!.credit)}`) }}</span>
           <MpButton size="sm" variant="secondary" is-rounded @click="useSuggestion">{{ t('Use suggestion') }}</MpButton>
         </div>
         <div class="pset-row">
           <div class="pset-field">
             <span class="pset-label">{{ t('Role') }}</span>
-            <ErpFilterSelect v-if="can('settings.edit')" id="pset-ed-role" v-model="ed.role" :placeholder="t('Pick a role')" :options="roleOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
+            <ErpFilterSelect v-if="can('setup')" id="pset-ed-role" v-model="ed.role" :placeholder="t('Pick a role')" :options="roleOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
             <span v-else>{{ editRow.role ?? '' }}</span>
           </div>
           <div class="pset-field">
             <span class="pset-label">{{ t('Owed to') }}</span>
-            <ErpFilterSelect v-if="can('settings.edit')" id="pset-ed-party" v-model="ed.party" :placeholder="t('Party')" :options="partyOptions" width="100%" :is-clearable="false" />
+            <ErpFilterSelect v-if="can('setup')" id="pset-ed-party" v-model="ed.party" :placeholder="t('Party')" :options="partyOptions" width="100%" :is-clearable="false" />
             <span v-else>{{ editRow.party ?? t('No party') }}</span>
           </div>
         </div>
         <div class="pset-row">
           <div class="pset-field">
             <span class="pset-label">{{ t('Debit') }}</span>
-            <ErpFilterSelect v-if="can('settings.edit')" id="pset-ed-debit" v-model="ed.debit" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
+            <ErpFilterSelect v-if="can('setup')" id="pset-ed-debit" v-model="ed.debit" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
             <span v-else>{{ accountLabel(editRow.debit) }}</span>
           </div>
           <div class="pset-field">
             <span class="pset-label">{{ t('Credit') }}</span>
-            <ErpFilterSelect v-if="can('settings.edit')" id="pset-ed-credit" v-model="ed.credit" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
+            <ErpFilterSelect v-if="can('setup')" id="pset-ed-credit" v-model="ed.credit" :placeholder="t('Account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="edError = ''" />
             <span v-else>{{ accountLabel(editRow.credit) }}</span>
           </div>
         </div>
@@ -259,7 +259,7 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
         <div v-for="b in check.blocks" :key="b" class="pset-note pset-note--danger">{{ t(b) }}</div>
         <template v-if="!check.blocks.length && check.overridable.length">
           <div v-for="o in check.overridable" :key="o" class="pset-note pset-note--warn">{{ t(o) }}</div>
-          <div v-if="can('settings.override')" class="pset-field">
+          <div v-if="can('setup')" class="pset-field">
             <label class="pset-label" for="pset-ed-reason">{{ t('Override reason') }}</label>
             <MpTextarea id="pset-ed-reason" v-model="ed.reason" is-full-width />
             <span class="pset-muted">{{ ed.reason.trim().length }} / 500 · {{ t('at least 20 characters') }}</span>
@@ -282,7 +282,7 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
         </div>
         <p v-if="edError" class="pset-error">{{ edError }}</p>
       </template>
-      <template v-if="can('settings.edit')" #footer>
+      <template v-if="can('setup')" #footer>
         <MpButton variant="ghost" is-rounded @click="editKey = null">{{ t('Cancel') }}</MpButton>
         <MpButton is-rounded @click="save">{{ t(check.overridable.length && !check.blocks.length ? 'Save with override' : 'Save') }}</MpButton>
       </template>

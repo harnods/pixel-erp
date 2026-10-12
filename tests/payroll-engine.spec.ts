@@ -7,10 +7,17 @@ import {
   clearHeadcountExpected, draftReview, runWarnings, acknowledgeWarning, postConfirmText, payablesTracker, simulateBankPayment,
   simulateManualJournal, manualJournalWarnings, setEbupotFiled, pph21Month, sendFigures, staffRows, receiveSalaryDetail,
   claimsSummary, noticesFor, SEND_KINDS, BANK_PAYMENT_KINDS, type Run, type JournalLine,
+  approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf,
 } from '../app/data/payrollStore'
 import { ACC, buildSalaryDetail, FALLBACK_TAG } from '../app/data/payrollMaster'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { approvalWorkflows, setApprovalWorkflowActive } from '../app/data/approvalWorkflows'
+import { awaitingApprovalTasks } from '../app/data/tasks'
+
+/** The seeded Payroll journal approval rule (above Rp500.000.000). Off for the posting rules below; the approval tests switch it on. */
+const PAYROLL_RULE = 'awf-007'
+beforeEach(() => setApprovalWorkflowActive(PAYROLL_RULE, false))
 
 const JUL = '1212 / monthly / 2026-06-21 / 2026-07-20'
 const AUG = '1212 / monthly / 2026-07-21 / 2026-08-20'
@@ -28,15 +35,15 @@ function netByKey(lines: JournalLine[]) {
 }
 /** Map the new September pay item so the seeded hold clears. */
 function mapInsentif() {
-  return as('Accountant', () => setPayItemMapping(payItemKey('Insentif Penjualan', 'allowance'), { role: 'Earning', debit: ACC.salesSalaries, credit: ACC.hutangGaji }))
+  return as('Accountant + LM', () => setPayItemMapping(payItemKey('Insentif Penjualan', 'allowance'), { role: 'Earning', debit: ACC.salesSalaries, credit: ACC.hutangGaji }))
 }
 function postSep() {
   mapInsentif()
-  return as('Accountant', () => postRun(run(SEP).id))
+  return as('Accountant + LM', () => postRun(run(SEP).id))
 }
 
 describe('payload: the final salary detail shape, no totals', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('items carry user_id, employee_id, branch, cost_center, sbu and three component lists; no totals, no run type', () => {
     const p = buildSalaryDetail(payroll.roster, '2026-08-21', '2026-09-20', { sentAt: '2026-09-21T03:00:00Z' })
@@ -75,7 +82,7 @@ describe('payload: the final salary detail shape, no totals', () => {
 })
 
 describe('seed: rebuilt on the final payload through the engine', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('Jul and Aug posted and paid by bank matches; Sep held on Insentif Penjualan only', () => {
     expect(runStatus(run(JUL))).toBe('Posted')
@@ -100,14 +107,14 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, filedDiff: 0, flagged: false })
   })
 
-  it('persists under payroll:state-v5', () => {
+  it('persists under payroll:state-v6', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v5'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v6'")
   })
 })
 
 describe('intake: Jurnal builds the draft; holds only for no mapping or a partial send', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('LR-3: run key is company / period / start / end; versions follow send time; the latest version wins', () => {
     const sep = run(SEP)
@@ -149,7 +156,7 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
     const sep = run(SEP)
     expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-group'])
-    as('Accountant', () => { mapGroup('Organization', 'Legal', 'Finance', { fromHold: true }) })
+    as('Accountant + LM', () => { mapGroup('Organization', 'Legal', 'Finance', { fromHold: true }) })
     expect(runHolds(sep)).toHaveLength(0)
   })
 
@@ -176,7 +183,7 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
 })
 
 describe('warnings ride on the draft and never block Post', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('missing components: one line per name and section that had a non-zero amount last time', () => {
     mapInsentif()
@@ -215,9 +222,9 @@ describe('warnings ride on the draft and never block Post', () => {
     const c = postConfirmText(sep.id)
     expect(c.title).toBe('Post payroll 21 Aug-20 Sep 2026?')
     expect(c.body).toMatch(/^One payroll journal of Rp554\.203\.941 on 26 lines, dated 20 Sep 2026\. 5 warnings are not acknowledged: /)
-    expect(as('Auditor', () => acknowledgeWarning(sep.id, all[0]!.key)).status).toBe(403)
+    expect(as('View only', () => acknowledgeWarning(sep.id, all[0]!.key)).status).toBe(403)
     expect(acknowledgeWarning(sep.id, all[0]!.key, 'Sales incentive started this month').ok).toBe(true)
-    expect(runWarnings(sep.id)[0]!.acknowledged).toMatchObject({ note: 'Sales incentive started this month', by: 'Dewi Anggraini' })
+    expect(runWarnings(sep.id)[0]!.acknowledged).toMatchObject({ note: 'Sales incentive started this month', by: 'Bayu Ferdian' })
     expect(postConfirmText(sep.id).warnings).toHaveLength(4)
     const r = postRun(sep.id)
     expect(r.ok).toBe(true)
@@ -237,7 +244,7 @@ describe('warnings ride on the draft and never block Post', () => {
 })
 
 describe('post (TS-05)', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('balanced, Hutang Gaji = take-home pay, one payable line per party, dated on the end date', () => {
     const aug = run(AUG)
@@ -281,7 +288,7 @@ describe('post (TS-05)', () => {
 })
 
 describe('revisions: the latest version wins and Jurnal builds the correction', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('a different send for a posted run becomes current; the correction (difference only) waits and the Accountant is notified', () => {
     postSep()
@@ -295,7 +302,7 @@ describe('revisions: the latest version wins and Jurnal builds the correction', 
       fromVersion: 1, toVersion: 2,
       takeHome: { before: 446_901_849, after: 448_634_808, change: 1_732_959 },
       pph21: { change: 197_041 }, pph26: { change: 0 }, bpjs: { change: 244_800 },
-      joined: [], left: [], amountChanged: ['EMP-0029', 'EMP-0030', 'EMP-0031', 'EMP-0032'],
+      joined: 0, left: 0, amountChanged: 4,
     })
     expect(c.summary.moved.filter((m) => m.change > 0).every((m) => m.label.includes('Human Capital'))).toBe(true)
     expect(journalTotals({ lines: c.lines }).debit).toBe(2_199_800)
@@ -326,7 +333,7 @@ describe('revisions: the latest version wins and Jurnal builds the correction', 
     expect(thr.kind).toBe('THR')
     expect(runStatus(thr)).toBe('Ready to post')
     expect(runStatus(sep)).toBe('Posted')
-    resetPayroll(); postSep()
+    resetPayroll(); setPayrollViewAs('Accountant + LM'); postSep()
     simulateSend('separate-run', { runId: run(SEP).id })
     expect(chooseRevision(run(SEP).id, 2).ok).toBe(true)
     expect(runStatus(run(SEP))).toBe('Correction ready')
@@ -344,7 +351,7 @@ describe('revisions: the latest version wins and Jurnal builds the correction', 
 
   it('OD-17: a correction of a locked month posts in the first open period and keeps its tax month', () => {
     const aug = run(AUG)
-    expect(as('Finance Manager', () => lockPeriod('2026-08')).ok).toBe(true)
+    expect(as('Owner', () => lockPeriod('2026-08')).ok).toBe(true)
     simulateSend('revision', { runId: aug.id })
     const d = postCorrection(aug.id)
     expect(d.ok).toBe(true)
@@ -378,7 +385,7 @@ describe('revisions: the latest version wins and Jurnal builds the correction', 
 })
 
 describe('payables: a tracker; payments arrive as bank reconciliation matches', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant'); postSep() })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM'); postSep() })
   const salary = () => payablesTracker('2026-09').find((r) => r.party === 'Staff')!
 
   it('every kind creates a matched bank line and a BNK journal that pays the payable', () => {
@@ -417,13 +424,13 @@ describe('payables: a tracker; payments arrive as bank reconciliation matches', 
     expect(salary()).toMatchObject({ owed: 448_634_808, balance: 1_732_959, pendingOwed: null })
   })
 
-  it('e-Bupot: Tax Staff type the PPh 21 filed total; the PPh 21 row flags a difference above Rp1.000', () => {
+  it('e-Bupot: a role with the tax action types the PPh 21 filed total; the PPh 21 row flags a difference above Rp1.000', () => {
     const pph = () => payablesTracker('2026-09').find((r) => r.account === ACC.pph21)!
-    expect(setEbupotFiled('2026-09', 18_323_082).status).toBe(403)
-    expect(as('Tax Staff', () => setEbupotFiled('2026-09', 18_324_082)).ok).toBe(true)
+    expect(as('View only', () => setEbupotFiled('2026-09', 18_323_082)).status).toBe(403)
+    expect(as('Accountant', () => setEbupotFiled('2026-09', 18_324_082)).ok).toBe(true)
     expect(pph().flags).toEqual([])
-    expect(pph().ebupot).toMatchObject({ filed: 18_324_082, books: 18_323_082, difference: 1_000, by: 'Putri Maharani' })
-    const r = as('Tax Staff', () => setEbupotFiled('2026-09', 18_324_083))
+    expect(pph().ebupot).toMatchObject({ filed: 18_324_082, books: 18_323_082, difference: 1_000, by: 'Andi Pratama' })
+    const r = as('Accountant', () => setEbupotFiled('2026-09', 18_324_083))
     expect(r.message).toBe('e-Bupot PPh 21 filed Rp18.324.083 is Rp1.001 above the books Rp18.323.082.')
     expect(pph().flags.map((f) => f.code)).toEqual(['ebupot-differs'])
     expect(pph21Month('2026-09')).toMatchObject({ rule: 18_323_082, books: 18_323_082, flagged: true })
@@ -431,7 +438,7 @@ describe('payables: a tracker; payments arrive as bank reconciliation matches', 
 })
 
 describe('manual journals on payroll accounts', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('simulateManualJournal posts a JV on Hutang Gaji; the run and Payables warn', () => {
     mapInsentif()
@@ -455,8 +462,8 @@ describe('manual journals on payroll accounts', () => {
   })
 })
 
-describe('headcount from runs: keyed by user_id, shown by employee_id', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+describe('headcount from runs: keyed by user_id, counts only', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
   const grp = (h: ReturnType<typeof headcountChanges>, label: string) => h.groups.find((g) => g.label === label)!
   function resendWith(change: (roster: typeof payroll.roster) => void) {
     mapInsentif()
@@ -474,20 +481,20 @@ describe('headcount from runs: keyed by user_id, shown by employee_id', () => {
     const h = headcountChanges(run(SEP).id)
     expect(h.previous).toMatchObject({ label: '21 Jul-20 Aug 2026', month: '2026-08', version: 1 })
     expect([h.last, h.current]).toEqual([40, 40])
-    expect(h.left).toEqual(['EMP-0038'])
-    expect(h.joined).toEqual(['EMP-0041'])
-    expect(h.moved).toEqual([{ employee_id: 'EMP-0035', user_id: 51_035, from: 'Sales, Jakarta HQ', to: 'Sales, Surabaya' }])
-    expect(grp(h, 'Sales, Bandung')).toMatchObject({ last: 2, current: 3, change: 1, joined: ['EMP-0041'], flagged: true })
-    expect(grp(h, 'Sales, Surabaya')).toMatchObject({ last: 2, current: 2, change: 0, left: ['EMP-0038'], flagged: true })
+    expect(h.left).toBe(1)
+    expect(h.joined).toBe(1)
+    expect(h.moved).toEqual([{ from: 'Sales, Jakarta HQ', to: 'Sales, Surabaya' }])
+    expect(grp(h, 'Sales, Bandung')).toMatchObject({ last: 2, current: 3, change: 1, joined: 1, left: 0, flagged: true })
+    expect(grp(h, 'Sales, Surabaya')).toMatchObject({ last: 2, current: 2, change: 0, left: 1, movedIn: 1, flagged: true })
     expect(grp(h, 'Finance, Jakarta HQ')).toMatchObject({ last: 5, current: 5, flagged: false })
     expect([h.flagged, h.unexpected]).toEqual([3, 3])
   })
 
   it('a renumbered employee_id with the same user_id is not a leaver and a joiner', () => {
     const h = resendWith((r) => { r.find((e) => e.employee_id === 'EMP-0027')!.employee_id = 'EMP-1027' })
-    expect(h.joined).toEqual(['EMP-0041'])
-    expect(h.left).toEqual(['EMP-0038'])
-    expect(h.renumbered).toEqual([{ user_id: 51_027, from: 'EMP-0027', to: 'EMP-1027' }])
+    expect(h.joined).toBe(1)
+    expect(h.left).toBe(1)
+    expect(JSON.stringify(h)).not.toMatch(/EMP-|510\d\d|user_id|employee_id/)
   })
 
   it('joiner and leaver', () => {
@@ -495,17 +502,17 @@ describe('headcount from runs: keyed by user_id, shown by employee_id', () => {
       r.push({ ...r.find((e) => e.employee_id === 'EMP-0041')!, user_id: 51_042, employee_id: 'EMP-0042', basic: 8_000_000 })
       r.find((e) => e.employee_id === 'EMP-0026')!.left = '2026-08-20'
     })
-    expect(h.joined).toEqual(['EMP-0041', 'EMP-0042'])
-    expect(h.left).toEqual(['EMP-0026', 'EMP-0038'])
+    expect(h.joined).toBe(2)
+    expect(h.left).toBe(2)
   })
 
   it('Expected marks: optional note, never block Post, lapse when the people change', () => {
     mapInsentif()
     const sep = run(SEP)
-    expect(as('Auditor', () => markHeadcountExpected(sep.id, 'Sales|Bandung')).status).toBe(403)
+    expect(as('View only', () => markHeadcountExpected(sep.id, 'Sales|Bandung')).status).toBe(403)
     expect(markHeadcountExpected(sep.id, 'Finance|Jakarta HQ').ok).toBe(false)
     expect(markHeadcountExpected(sep.id, 'Sales|Bandung').ok).toBe(true)
-    expect(markHeadcountExpected(sep.id, 'Sales|Surabaya', 'EMP-0035 covers EMP-0038').ok).toBe(true)
+    expect(markHeadcountExpected(sep.id, 'Sales|Surabaya', 'Transfer covers the leaver').ok).toBe(true)
     expect(draftReview(sep.id).unexpectedHeadcount).toBe(1)
     expect(clearHeadcountExpected(sep.id, 'Sales|Bandung').ok).toBe(true)
     expect(draftReview(sep.id).unexpectedHeadcount).toBe(2)
@@ -513,14 +520,14 @@ describe('headcount from runs: keyed by user_id, shown by employee_id', () => {
     markHeadcountExpected(sep.id, 'Sales|Bandung')
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
     expect(grp(headcountChanges(sep.id), 'Sales, Bandung').expected).toBeNull()
-    expect(grp(headcountChanges(sep.id), 'Sales, Surabaya').expected!.note).toBe('EMP-0035 covers EMP-0038')
+    expect(grp(headcountChanges(sep.id), 'Sales, Surabaya').expected!.note).toBe('Transfer covers the leaver')
     // Sales, Jakarta HQ was never marked; Sales, Bandung lapsed.
     expect(postRun(sep.id).warnings).toContain('2 headcount changes are not marked Expected.')
   })
 })
 
 describe('claims, access, copy', () => {
-  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant') })
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM') })
 
   it('claimsSummary lists the Reimbursement lines of a run', () => {
     const c = claimsSummary(run(AUG).id)
@@ -530,14 +537,21 @@ describe('claims, access, copy', () => {
   })
 
   it('access: hidden actions per role', () => {
-    expect(can('post', 'Accountant')).toBe(true)
-    expect(can('post', 'Tax Staff')).toBe(false)
-    expect(can('ebupot.enter', 'Tax Staff')).toBe(true)
-    expect(can('warning.ack', 'Finance Manager')).toBe(false)
-    expect(can('simulate.bank', 'Auditor')).toBe(false)
-    expect(can('connection.manage', 'Accountant')).toBe(false)
-    expect(as('Auditor', () => postRun(run(SEP).id)).status).toBe(403)
-    expect(as('Auditor', () => simulateBankPayment('salary')).status).toBe(403)
+    const roles = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM', 'View only'] as const
+    const grid = (a: Parameters<typeof can>[0]) => roles.filter((r) => can(a, r))
+    expect(grid('view')).toEqual([...roles])
+    expect(grid('post')).toEqual(['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM'])
+    expect(grid('tax')).toEqual(['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM'])
+    expect(grid('setup')).toEqual(['Owner', 'Ultimate + LM', 'Accountant + LM'])
+    expect(grid('correct')).toEqual(['Owner', 'Ultimate + LM', 'Accountant + LM'])
+    expect(grid('connection')).toEqual(['Owner', 'Ultimate + LM'])
+    expect(grid('simulate')).toEqual(['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM'])
+    // Accountant without LM: posts, cannot edit settings or post corrections.
+    expect(as('Accountant', () => setPayday(26)).status).toBe(403)
+    expect(as('Accountant', () => postCorrection(run(SEP).id)).status).toBe(403)
+    expect(as('Ultimate', () => lockPeriod('2026-08')).status).toBe(403)
+    expect(as('View only', () => postRun(run(SEP).id)).status).toBe(403)
+    expect(as('View only', () => simulateBankPayment('salary')).status).toBe(403)
   })
 
   it('group-map and rule messages say dimension, never tag', () => {
@@ -550,5 +564,118 @@ describe('claims, access, copy', () => {
 
   it('old sync for a month already in Jurnal is blocked', () => {
     expect(simulateSend('old-sync')).toMatchObject({ ok: false, status: 'Blocked', message: 'Payroll for Aug 2026 is already in Jurnal. The old sync was blocked.' })
+  })
+})
+
+describe('approval through Settings > Approval workflows (transaction type Payroll journal)', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant'); setApprovalWorkflowActive(PAYROLL_RULE, true) })
+  const payrollTasks = () => awaitingApprovalTasks.filter((x) => x.docType === 'Payroll Journal')
+
+  it('the seeded rule is the Payroll journal type, active, above Rp500.000.000, approved by an Owner', () => {
+    const r = approvalWorkflows.find((x) => x.id === PAYROLL_RULE)!
+    expect(r).toMatchObject({ name: 'Payroll journal above Rp500.000.000', appliesTo: 'transaction', transactionType: 'payroll-journal', minAmount: 500_000_000, isActive: true })
+    expect(r.levels[0]!.approverIds).toHaveLength(1)
+  })
+
+  it('Post of September (Rp554.203.941) goes to Awaiting approval and the Inbox; the Owner approves and PAY posts', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    const r = postRun(sep.id)
+    expect(r).toMatchObject({ ok: true, awaitingApproval: true })
+    expect(liveJournals(sep.id)).toHaveLength(0)
+    expect(runStatus(sep)).toBe('Awaiting approval')
+    const task = payrollTasks()
+    expect(task).toHaveLength(1)
+    expect(task[0]).toMatchObject({ docType: 'Payroll Journal', total: 554_203_941, link: `/payroll-runs/${sep.id}`, requestedBy: 'Andi Pratama', status: 'awaiting approval' })
+    expect(task[0]!.approvers!.map((a) => a.name)).toEqual(['Rizal Candra'])
+    // Posting again or approving as the requester does nothing.
+    expect(postRun(sep.id).ok).toBe(false)
+    expect(approvePayroll(sep.id).status).toBe(403)
+    expect(as('Owner', () => canApprove(sep.id))).toBe(true)
+    const a = as('Owner', () => approvePayroll(sep.id))
+    expect(a).toMatchObject({ ok: true, number: 'PAY-0003' })
+    expect(runStatus(sep)).toBe('Posted')
+    expect(liveJournals(sep.id)[0]!.postedBy).toBe('Rizal Candra')
+    expect(payrollTasks()).toHaveLength(0)
+  })
+
+  it('Reject returns the run to its draft with the reason; Post sends it again', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    postRun(sep.id)
+    expect(as('Owner', () => rejectPayroll(sep.id, '')).ok).toBe(false)
+    expect(as('Owner', () => rejectPayroll(sep.id, 'Check the Sales incentive with HR')).ok).toBe(true)
+    expect(runStatus(sep)).toBe('Ready to post')
+    expect(sep.rejection).toMatchObject({ reason: 'Check the Sales incentive with HR', by: 'Rizal Candra' })
+    expect(payrollTasks()).toHaveLength(0)
+    expect(postRun(sep.id)).toMatchObject({ ok: true, awaitingApproval: true })
+    expect(payrollTasks()).toHaveLength(1)
+  })
+
+  it('without a matching rule Post posts directly: below the threshold, rule off, or created-by out of scope', () => {
+    const rule = approvalWorkflows.find((x) => x.id === PAYROLL_RULE)!
+    mapInsentif()
+    rule.minAmount = 600_000_000
+    expect(postRun(run(SEP).id)).toMatchObject({ ok: true, number: 'PAY-0003' })
+    resetPayroll(); setPayrollViewAs('Accountant'); mapInsentif()
+    rule.minAmount = 500_000_000; rule.createdByScope = 'some'; rule.createdByUserIds = ['user-999']
+    expect(postRun(run(SEP).id)).toMatchObject({ ok: true, number: 'PAY-0003' })
+    rule.createdByScope = 'all'; rule.createdByUserIds = []
+    resetPayroll(); setPayrollViewAs('Accountant'); mapInsentif()
+    setApprovalWorkflowActive(PAYROLL_RULE, false)
+    expect(postRun(run(SEP).id)).toMatchObject({ ok: true, number: 'PAY-0003' })
+  })
+
+  it('a correction routes the same way when its difference is above the threshold, and not when below', () => {
+    setApprovalWorkflowActive(PAYROLL_RULE, false)
+    setPayrollViewAs('Accountant + LM')
+    postSep()
+    simulateSend('revision', { runId: run(SEP).id })
+    setApprovalWorkflowActive(PAYROLL_RULE, true)
+    // Rp2.199.800 difference: below the threshold, posts at once.
+    expect(postCorrection(run(SEP).id)).toMatchObject({ ok: true })
+    expect(payrollTasks()).toHaveLength(0)
+    const rule = approvalWorkflows.find((x) => x.id === PAYROLL_RULE)!
+    rule.minAmount = 0
+    resetPayroll(); setPayrollViewAs('Accountant + LM'); setApprovalWorkflowActive(PAYROLL_RULE, false); postSep()
+    simulateSend('revision', { runId: run(SEP).id })
+    setApprovalWorkflowActive(PAYROLL_RULE, true)
+    expect(postCorrection(run(SEP).id)).toMatchObject({ ok: true, awaitingApproval: true })
+    expect(runStatus(run(SEP))).toBe('Awaiting approval')
+    expect(as('Owner', () => approvePayroll(run(SEP).id))).toMatchObject({ ok: true })
+    expect(run(SEP).ledgerVersion).toBe(2)
+    rule.minAmount = 500_000_000
+  })
+})
+
+describe('privacy: no employee data in anything Jurnal renders or exports', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM'); setApprovalWorkflowActive(PAYROLL_RULE, false) })
+  const LEAK = /EMP-\d|\b510\d\d\b|employee_id|user_id|employeeIds/
+
+  it('headcount, draft review, warnings, why-this-line, correction summary, tax changes, notices and log carry counts only', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    const review = draftReview(sep.id)
+    const why = review.lines.map((_, i) => whyLine(sep.id, i))
+    simulateSend('duplicate')
+    const out: unknown[] = [headcountChanges(sep.id), review, runWarnings(sep.id), why, postConfirmText(sep.id)]
+    postRun(sep.id)
+    simulateSend('revision', { runId: sep.id })
+    const c = correctionOf(sep.id)!
+    expect(c.summary).toMatchObject({ joined: 0, left: 0, amountChanged: 4 })
+    out.push(c.summary, compareVersions(sep.id), syncLog.value, payroll.notices, payablesTracker('2026-09'), claimsSummary(sep.id))
+    postCorrection(sep.id)
+    out.push(amendmentTasks.value, journalsOf(sep.id))
+    // Journal line sources keep the user_id set internally (to count staff once across lines); no screen reads it.
+    const shown = JSON.stringify(out, (k, v) => (k === 'staff' && Array.isArray(v) ? v.length : v))
+    expect(shown).not.toMatch(LEAK)
+  })
+
+  it('a duplicate employee in a send is a count, never an id', () => {
+    mapInsentif()
+    simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS, duplicateEmployee: 'EMP-0030' })
+    const w = runWarnings(run(SEP).id).find((x) => x.code === 'duplicate-employee')!
+    expect(w.message).toBe('1 employee appears more than once in this send. See who in Talenta.')
+    expect(JSON.stringify(w)).not.toMatch(LEAK)
   })
 })

@@ -2,7 +2,7 @@
 /**
  * Correction notice (TS-07, OD-15): Talenta re-sent a posted period, the latest version wins and
  * Jurnal built the correction (difference only). The summary says what moved: take-home pay,
- * PPh 21, PPh 26, BPJS, the staff who joined, left or changed amount (employee_id), and the
+ * PPh 21, PPh 26, BPJS, counts of staff who joined, left or changed amount (no employee data), and the
  * accounts and dimensions the correction posts to. "Post correction" is the primary action;
  * "Reverse and repost" sits under More.
  */
@@ -10,9 +10,10 @@ import { computed, ref } from 'vue'
 import { MpButton, MpIcon, MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import PayrollCorrectionDrawer from '~/components/payroll/PayrollCorrectionDrawer.vue'
 import {
-  can, runById, correctionOf, currentVersionOf, liveJournals, isLocked, firstOpenAfter, pph21Month,
+  can, runById, correctionOf, currentVersionOf, pendingApproval, liveJournals, isLocked, firstOpenAfter, pph21Month,
   monthLabel, dateLabel, rupiah, wib, accountLabel, tagsLabel, listLabel,
 } from '~/data/payrollStore'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
@@ -25,6 +26,7 @@ const s = computed(() => corr.value?.summary ?? null)
 const locked = computed(() => !!run.value && isLocked(run.value.month))
 const filed = computed(() => !!run.value && pph21Month(run.value.month).filed != null)
 const partial = computed(() => !!run.value?.versions.some((v) => v.state === 'partial'))
+const awaiting = computed(() => !!run.value && !!pendingApproval(run.value))
 const superseded = computed(() => (run.value?.versions ?? []).filter((v) => v.state === 'superseded').map((v) => `v${v.no}`))
 const total = computed(() => (corr.value?.lines ?? []).reduce((x, l) => x + l.debit, 0))
 const sign = (n: number) => (n > 0 ? `+${rupiah(n)}` : n < 0 ? `-${rupiah(-n)}` : rupiah(0))
@@ -36,11 +38,12 @@ const figures = computed(() => (s.value ? [
   { key: 'bpjs', label: 'BPJS', x: s.value.bpjs },
 ] : []))
 const people = computed(() => (s.value ? [
-  { key: 'joined', label: 'Joined', ids: s.value.joined },
-  { key: 'left', label: 'Left', ids: s.value.left },
-  { key: 'amount', label: 'Amount changed', ids: s.value.amountChanged },
+  { key: 'joined', label: 'Joined', count: s.value.joined },
+  { key: 'left', label: 'Left', count: s.value.left },
+  { key: 'amount', label: 'Amount changed', count: s.value.amountChanged },
 ] : []))
-const staffCount = computed(() => people.value.reduce((n, p) => n + p.ids.length, 0))
+const staffCount = computed(() => people.value.reduce((n, p) => n + p.count, 0))
+function seeInTalenta() { infoToast(t('Opens Talenta')) }
 
 const drawer = ref<'correction' | 'repost' | null>(null)
 function showCompare() { document.getElementById('prp-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
@@ -62,7 +65,7 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
       </div>
       <div class="pcn__actions">
         <MpButton v-if="run.versions.length > 1" variant="secondary" is-rounded @click="showCompare">{{ t('Compare versions') }}</MpButton>
-        <MpPopover v-if="can('fix') && !partial" id="pcn-more" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+        <MpPopover v-if="can('correct') && !partial && !awaiting" id="pcn-more" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('More') }}</MpButton>
           </MpPopoverTrigger>
@@ -72,7 +75,7 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-        <MpButton v-if="can('fix') && !partial" is-rounded data-testid="pcn-post" @click="drawer = 'correction'">{{ t('Post correction') }}</MpButton>
+        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-post" @click="drawer = 'correction'">{{ t('Post correction') }}</MpButton>
       </div>
     </div>
 
@@ -88,10 +91,11 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
       <div class="pcn__blocktitle">{{ t('Staff') }} · {{ staffCount }} {{ t('changed') }}</div>
       <ul class="pcn__list">
         <li v-for="p in people" :key="p.key" :data-people="p.key">
-          <span class="pcn__lead">{{ t(p.label) }} ({{ p.ids.length }})</span>
-          <span class="pcn__ids">{{ p.ids.length ? p.ids.join(', ') : t('None') }}</span>
+          <span class="pcn__lead">{{ t(p.label) }}</span>
+          <span class="pcn__ids">{{ p.count }} {{ t('staff') }}</span>
         </li>
       </ul>
+      <span v-if="staffCount" class="cell-link pcn__seewho" data-testid="pcn-see-who" @click="seeInTalenta">{{ t('See who in Talenta') }}</span>
     </div>
 
     <div class="pcn__block">
@@ -108,7 +112,7 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
     <div v-if="s.settingsChanged || locked || filed || superseded.length || partial" class="pcn__notes">
       <div v-if="s.settingsChanged">{{ t('Settings changed since the posted journal was built; part of this correction is the settings change.') }}</div>
       <div v-if="locked">{{ monthLabel(run.month) }} {{ t('is locked. The correction posts on') }} {{ dateLabel(`${firstOpenAfter(run.month)}-01`) }} {{ t('with a correction memo; the tax month stays') }} {{ monthLabel(run.month) }}.</div>
-      <div v-if="filed">{{ t('PPh 21 for') }} {{ monthLabel(run.month) }} {{ t('is filed. A PPh 21 change opens an amendment task for Tax Staff.') }}</div>
+      <div v-if="filed">{{ t('PPh 21 for') }} {{ monthLabel(run.month) }} {{ t('is filed. A PPh 21 change opens an amendment task.') }}</div>
       <div v-if="superseded.length">{{ superseded.join(', ') }}: {{ t('superseded, not posted.') }}</div>
       <div v-if="partial">{{ t('A later send looks partial. Replace the full run or reject it before posting the correction.') }}</div>
     </div>
@@ -140,6 +144,7 @@ function showCompare() { document.getElementById('prp-compare')?.scrollIntoView(
 .pcn__list li { display: flex; gap: var(--mp-spacing-3); justify-content: space-between; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pcn__lead { flex: none; width: 168px; color: var(--mp-text-secondary); }
 .pcn__ids { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pcn__seewho { align-self: flex-start; }
 .pcn__amount { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pcn__muted { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pcn__notes {

@@ -13,7 +13,7 @@ import { users } from './users'
 
 export type ApprovalTransactionType =
   | 'sales-invoice' | 'sales-order' | 'purchase-order' | 'purchase-invoice'
-  | 'bill' | 'stock-adjustment' | 'warehouse-transfer'
+  | 'bill' | 'stock-adjustment' | 'warehouse-transfer' | 'payroll-journal'
 
 export const TRANSACTION_TYPE_OPTIONS: { value: ApprovalTransactionType; label: string }[] = [
   { value: 'sales-invoice',     label: 'Sales invoice' },
@@ -23,6 +23,7 @@ export const TRANSACTION_TYPE_OPTIONS: { value: ApprovalTransactionType; label: 
   { value: 'bill',              label: 'Bill' },
   { value: 'stock-adjustment',  label: 'Stock adjustment' },
   { value: 'warehouse-transfer', label: 'Warehouse transfer' },
+  { value: 'payroll-journal',   label: 'Payroll journal' },
 ]
 
 export function transactionTypeLabel(type: string): string {
@@ -276,9 +277,31 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
     updatedAt: '2026-08-05T13:45:00',
     updatedBy: 'Rizal Candra',
   },
+  {
+    // Payroll journals from Talenta (PAY-xxxx): Post sends the draft here instead of posting
+    // when the journal total is above the threshold; the approval posts it.
+    id: 'awf-007',
+    name: 'Payroll journal above Rp500.000.000',
+    description: 'The Owner approves payroll journals above Rp500.000.000 before they post',
+    appliesTo: 'transaction',
+    transactionType: 'payroll-journal',
+    projectAction: '',
+    projectScope: 'all',
+    projectIds: [],
+    minAmount: 500_000_000,
+    createdByScope: 'all',
+    createdByUserIds: [],
+    levels: [
+      { id: 'lvl-1', matchType: 'any', approverIds: [idOf('Rizal Candra')].filter(Boolean) },
+    ],
+    applyToDraft: true,
+    isActive: true,
+    updatedAt: '2026-09-01T09:00:00',
+    updatedBy: 'Rizal Candra',
+  },
 ]
 
-const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v3'
+const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v4'
 const snapshot = loadSnapshot<ApprovalWorkflowRule>(APPROVAL_WORKFLOWS_KEY)
 export const approvalWorkflows = reactive<ApprovalWorkflowRule[]>(snapshot ?? [...SEED_APPROVAL_WORKFLOWS])
 
@@ -430,6 +453,32 @@ export function check_approval_required(
   return {
     approval_required: true,
     rule_id: rule.id,
+    approval_levels: rule.levels.map((l, i) => ({ level: i + 1, requires: l.matchType, approver_ids: l.approverIds })),
+    status: 'pending',
+  }
+}
+
+/**
+ * Transaction-type rules (the Transaction path of the form): the first active rule for `type`
+ * whose amount condition holds (`amount` strictly above the threshold; 0 = any amount) and
+ * whose created-by scope covers `createdByUserId`. Payroll journals call this from Post.
+ */
+export function checkTransactionApprovalRequired(
+  type: ApprovalTransactionType,
+  amount: number,
+  createdByUserId: string | null,
+): CheckApprovalRequiredResult & { rule_name: string | null } {
+  const rule = approvalWorkflows.find((r) => {
+    if (!r.isActive || r.appliesTo !== 'transaction' || r.transactionType !== type) return false
+    if (r.minAmount != null && r.minAmount > 0 && !(amount > r.minAmount)) return false
+    if (r.createdByScope === 'some' && !(createdByUserId && r.createdByUserIds.includes(createdByUserId))) return false
+    return true
+  })
+  if (!rule) return { approval_required: false, rule_id: null, rule_name: null, approval_levels: [], status: 'no_rule' }
+  return {
+    approval_required: true,
+    rule_id: rule.id,
+    rule_name: rule.name,
     approval_levels: rule.levels.map((l, i) => ({ level: i + 1, requires: l.matchType, approver_ids: l.approverIds })),
     status: 'pending',
   }

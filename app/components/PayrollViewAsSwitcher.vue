@@ -1,8 +1,8 @@
 <template>
   <!--
     "View as" for the payroll screens: there is no real sign-in, so this picks
-    who is acting (Jurnal Owner, Accountant, Finance Manager, Tax Staff,
-    Auditor). Same markup as BudgetViewAsSwitcher; its state lives in payrollStore.
+    who is acting (Owner, Ultimate, Ultimate + LM, Accountant, Accountant + LM,
+    View only). Same markup as BudgetViewAsSwitcher; its state lives in payrollStore.
   -->
   <MpPopover
     id="payroll-view-as-switcher"

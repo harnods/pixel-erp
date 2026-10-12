@@ -152,7 +152,7 @@ function onPolicy(field: GroupingField, v: string) {
           <div class="pset-card__sub">{{ t(`Each Talenta ${d.dim.toLowerCase()} maps to one value in the ${d.dim} dimension. Expense lines carry it; payable lines carry no group dimension.`) }}</div>
         </div>
         <div class="pset-card__actions">
-          <MpButton v-if="can('settings.edit') && missingCount(d.dim, d.field)" variant="secondary" is-rounded @click="createAllMissing(d.dim, d.field)">{{ t(`Create ${missingCount(d.dim, d.field)} missing dimension value${missingCount(d.dim, d.field) > 1 ? 's' : ''}`) }}</MpButton>
+          <MpButton v-if="can('setup') && missingCount(d.dim, d.field)" variant="secondary" is-rounded @click="createAllMissing(d.dim, d.field)">{{ t(`Create ${missingCount(d.dim, d.field)} missing dimension value${missingCount(d.dim, d.field) > 1 ? 's' : ''}`) }}</MpButton>
         </div>
       </div>
       <table class="pset-table">
@@ -171,7 +171,7 @@ function onPolicy(field: GroupingField, v: string) {
               <template v-if="g.fallback && !g.tag">
                 <ErpStatusBadge status="draft" :label="t(`Fallback: ${FALLBACK_TAG}`)" type="announcement" />
               </template>
-              <template v-else-if="can('settings.edit')">
+              <template v-else-if="can('setup')">
                 <div class="pset-chips">
                   <ErpFilterSelect :id="`pset-map-${d.dim}-${g.value.replace(/\s+/g, '-')}`" :model-value="g.tag ?? ''" :placeholder="t('No dimension')" :options="tagOptions(d.dim)" width="220px" :is-clearable="false" @update:model-value="(v: string) => onMap(d.dim, g.value, v)" />
                   <MpButton v-if="!g.tag && !g.tagExists" size="sm" variant="secondary" is-rounded @click="createAndMap(d.dim, g.value)">{{ t(`Create dimension value ${g.value}`) }}</MpButton>
@@ -193,8 +193,8 @@ function onPolicy(field: GroupingField, v: string) {
           <div class="pset-card__sub">{{ t('The first matching rule sets the account and dimensions for the roles it lists. Rules set dimensions on expense lines only.') }}<template v-if="lastRun">{{ ' ' + t(`Matches counted on the ${periodLabel(lastRun.start, lastRun.end)} send.`) }}</template></div>
         </div>
         <div class="pset-card__actions">
-          <MpButton v-if="can('settings.edit')" variant="secondary" is-rounded @click="notInPrototype">{{ t('Percentage split') }}</MpButton>
-          <MpButton v-if="can('settings.edit')" is-rounded left-icon="add" @click="openRule()">{{ t('New rule') }}</MpButton>
+          <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="notInPrototype">{{ t('Percentage split') }}</MpButton>
+          <MpButton v-if="can('setup')" is-rounded left-icon="add" @click="openRule()">{{ t('New rule') }}</MpButton>
         </div>
       </div>
       <table class="pset-table">
@@ -224,7 +224,7 @@ function onPolicy(field: GroupingField, v: string) {
               <span class="pset-line">{{ rupiah(previews[r.id]?.amount ?? 0) }}</span>
             </td>
             <td class="pset-td pset-td--act">
-              <div v-if="can('settings.edit')" class="pset-chips pset-ruleacts">
+              <div v-if="can('setup')" class="pset-chips pset-ruleacts">
                 <MpButton size="sm" variant="secondary" is-rounded :aria-label="t('Move up')" @click="i > 0 && onMove(r.id, -1)"><MpIcon name="arrows-up" size="sm" /></MpButton>
                 <MpButton size="sm" variant="secondary" is-rounded :aria-label="t('Move down')" @click="i < rules.length - 1 && onMove(r.id, 1)"><MpIcon name="arrows-down" size="sm" /></MpButton>
                 <MpButton size="sm" variant="secondary" is-rounded @click="onToggle(r)">{{ t(r.active ? 'Turn off' : 'Turn on') }}</MpButton>
@@ -266,7 +266,7 @@ function onPolicy(field: GroupingField, v: string) {
             <td class="pset-td">{{ c.name }}</td>
             <td class="pset-td pset-td--num">{{ c.staff }}</td>
             <td class="pset-td">
-              <ErpFilterSelect v-if="can('settings.edit')" :id="`pset-cc-${c.name.replace(/\s+/g, '-')}`" :model-value="c.cat ?? ''" :placeholder="t('No category')" :options="catOptions" width="180px" :is-clearable="false" @update:model-value="(v: string) => onCat(c.name, v)" />
+              <ErpFilterSelect v-if="can('setup')" :id="`pset-cc-${c.name.replace(/\s+/g, '-')}`" :model-value="c.cat ?? ''" :placeholder="t('No category')" :options="catOptions" width="180px" :is-clearable="false" @update:model-value="(v: string) => onCat(c.name, v)" />
               <span v-else>{{ c.cat ?? t('No category') }}</span>
             </td>
           </tr>
@@ -281,7 +281,7 @@ function onPolicy(field: GroupingField, v: string) {
           <div class="pset-card__title">{{ t('Values sent to the fallback dimension value') }}</div>
           <div class="pset-card__sub">{{ t(`Each value takes a one-time confirmation with a reason before it posts to ${FALLBACK_TAG}.`) }}</div>
         </div>
-        <MpButton v-if="can('settings.edit')" variant="secondary" is-rounded @click="fbOpen = true; fb.value = ''; fb.reason = ''; fbError = ''">{{ t('Send a value to fallback') }}</MpButton>
+        <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="fbOpen = true; fb.value = ''; fb.reason = ''; fbError = ''">{{ t('Send a value to fallback') }}</MpButton>
       </div>
       <table class="pset-table">
         <thead>
@@ -307,7 +307,7 @@ function onPolicy(field: GroupingField, v: string) {
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Employees with an empty grouping field') }}</div>
-          <div class="pset-card__sub">{{ t('Holding the run is the default. Skipping takes the Finance Manager.') }}</div>
+          <div class="pset-card__sub">{{ t('Holding the run is the default. Skipping takes a role that can edit and delete (LM).') }}</div>
         </div>
       </div>
       <table class="pset-table">
@@ -315,7 +315,7 @@ function onPolicy(field: GroupingField, v: string) {
           <tr v-for="p in POLICY_FIELDS" :key="p.field">
             <td class="pset-td">{{ t(p.label) }}</td>
             <td class="pset-td">
-              <ErpFilterSelect v-if="can('fieldPolicy.edit')" :id="`pset-policy-${p.field}`" :model-value="s.fieldPolicies[p.field]" :placeholder="t('Policy')" :options="policyOptions" width="280px" :is-clearable="false" @update:model-value="(v: string) => onPolicy(p.field, v)" />
+              <ErpFilterSelect v-if="can('setup')" :id="`pset-policy-${p.field}`" :model-value="s.fieldPolicies[p.field]" :placeholder="t('Policy')" :options="policyOptions" width="280px" :is-clearable="false" @update:model-value="(v: string) => onPolicy(p.field, v)" />
               <span v-else>{{ t(policyOptions.find((o) => o.value === s.fieldPolicies[p.field])!.label) }}</span>
             </td>
           </tr>
@@ -374,7 +374,7 @@ function onPolicy(field: GroupingField, v: string) {
         <span v-else>{{ t(`Matches ${edPreview.employees} employees, ${rupiah(edPreview.amount)}`) }}<template v-if="edPreview.runLabel"> · {{ edPreview.runLabel }}</template><template v-if="edPreview.wins < edPreview.employees"> · {{ t(`${edPreview.employees - edPreview.wins} already taken by an earlier rule`) }}</template></span>
       </div>
       <p v-if="edError" class="pset-error">{{ edError }}</p>
-      <template v-if="can('settings.edit')" #footer>
+      <template v-if="can('setup')" #footer>
         <MpButton variant="ghost" is-rounded @click="editOpen = false">{{ t('Cancel') }}</MpButton>
         <MpButton is-rounded @click="onSaveRule">{{ t('Save rule') }}</MpButton>
       </template>

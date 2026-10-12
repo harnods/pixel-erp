@@ -98,7 +98,7 @@ const sum = (rows: PayableRow[]) => rows.reduce((s, r) => s + r.balance, 0)
 const plural = (n: number, one: string, many: string) => `${n} ${t(n === 1 ? one : many)}`
 function drill(state: string) { clearFilters(); stateFilter.value = state; view.value = 'payables' }
 
-// ─── e-Bupot PPh 21 filed total (Tax Staff, Finance Manager) ─────────────────
+// ─── e-Bupot PPh 21 filed total (roles with the tax action) ─────────────────
 const ebupotDraft = reactive<Record<string, string>>({})
 const ebupotError = reactive<Record<string, string>>({})
 function saveEbupot(r: PayableRow) {
@@ -138,7 +138,7 @@ const asPay = (r: unknown) => r as PayHist
   <div ref="root" class="pp">
     <div class="pp-head">
       <MpSegmentedControl id="pp-view" v-model="view" name="pp-view" :data="viewOptions" />
-      <PayrollSimulateBankMenu v-if="can('simulate.bank')" />
+      <PayrollSimulateBankMenu v-if="can('simulate')" />
     </div>
 
     <!-- ── Payables ── -->
@@ -231,7 +231,7 @@ const asPay = (r: unknown) => r as PayHist
               </MpBadge>
             </template>
             <span v-else class="pp-sub">{{ t('Not entered') }}</span>
-            <div v-if="can('ebupot.enter')" class="pp-ebupot__form">
+            <div v-if="can('tax')" class="pp-ebupot__form">
               <MpInput
                 :id="`pp-ebupot-${asRow(row).month}`"
                 v-model="ebupotDraft[asRow(row).key]"
