@@ -2,7 +2,7 @@
  * Payroll to Ledger (Jurnal x Talenta): sample tenant master data.
  *
  * PT Central Perk Indonesia is linked to Talenta company_id 1212. Talenta sends
- * facts (pay items, groups, totals); Jurnal decides the accounting (PRD LR-1).
+ * facts (pay items and groups, no totals); Jurnal decides the accounting (PRD LR-1).
  * This file holds only facts and the account/tag lists. Every figure a screen
  * shows is computed by payrollStore.ts from the payloads built here.
  *
@@ -59,7 +59,6 @@ export const PAYROLL_ACCOUNTS: PayrollAccount[] = [
   { code: '6-60101', name: 'Salaries', type: 'expense', party: null, reused: true },
   { code: '6-60004', name: 'Sales Salaries', type: 'expense', party: null, reused: false },
   { code: '6-60106', name: 'Medical Expense', type: 'expense', party: null, reused: false },
-  { code: '6-60199', name: 'Payroll Rounding', type: 'expense', party: null, reused: false },
   { code: '2-20201', name: 'Salaries Payable', type: 'liability', party: 'Staff', reused: true },
   { code: '2-20501', name: 'Tax Payable - PPh 21', type: 'liability', party: 'DJP PPh 21', reused: true },
   { code: '2-20506', name: 'Tax Payable - PPh 26', type: 'liability', party: 'DJP PPh 26', reused: false },
@@ -67,7 +66,6 @@ export const PAYROLL_ACCOUNTS: PayrollAccount[] = [
   { code: '2-20508', name: 'BPJS Kesehatan Payable', type: 'liability', party: 'BPJS Kesehatan', reused: false },
   { code: '2-20509', name: 'BPJS Ketenagakerjaan Payable', type: 'liability', party: 'BPJS Ketenagakerjaan', reused: false },
   { code: '2-20510', name: 'PPh 21 DTP', type: 'liability', party: null, reused: false },
-  { code: '2-20511', name: 'Payroll Suspense', type: 'liability', party: 'Other', reused: false },
   { code: '2-20512', name: 'DPLK Payable', type: 'liability', party: 'Other', reused: false },
   { code: '1-10404', name: 'THR Advance', type: 'asset', party: null, reused: false },
   { code: '1-10301', name: 'Employee Receivables', type: 'asset', party: null, reused: true },
@@ -81,7 +79,6 @@ export const ACC = {
   salaries: '6-60101',
   salesSalaries: '6-60004',
   medical: '6-60106',
-  rounding: '6-60199',
   hutangGaji: '2-20201',
   pph21: '2-20501',
   pph26: '2-20506',
@@ -89,7 +86,6 @@ export const ACC = {
   bpjsKes: '2-20508',
   bpjsTk: '2-20509',
   dtp: '2-20510',
-  suspense: '2-20511',
   dplk: '2-20512',
   thrAdvance: '1-10404',
   loanReceivable: '1-10301',
@@ -127,61 +123,69 @@ export const PAYROLL_TAGS: PayrollTag[] = [
   { dimension: 'Branch', name: FALLBACK_TAG },
 ]
 
-/** Talenta fields the allocation rules can test (OD-08). cost_center_category is set in Jurnal. */
+/**
+ * Fields the allocation rules can test (OD-08), named as the salarydetail payload names them.
+ * cost_center_category is set in Jurnal; `sbu:<key>` reads one key of the employee's sbu list.
+ */
 export type TalentaField =
-  | 'organization_name' | 'branch_name' | 'cost_center_name' | 'cost_center_category'
-  | 'job_position' | 'job_level' | 'grade' | 'employment_status' | 'custom:BusinessUnit'
+  | 'organization_name' | 'branch' | 'cost_center' | 'cost_center_category'
+  | 'job_position' | 'job_level' | 'employment_status' | `sbu:${string}`
+export const SBU_KEY = 'Business Unit'
 export const TALENTA_FIELDS: { field: TalentaField; label: string }[] = [
   { field: 'organization_name', label: 'Organization' },
-  { field: 'branch_name', label: 'Branch' },
-  { field: 'cost_center_name', label: 'Cost center' },
+  { field: 'branch', label: 'Branch' },
+  { field: 'cost_center', label: 'Cost center' },
   { field: 'cost_center_category', label: 'Cost center category' },
   { field: 'job_position', label: 'Job position' },
   { field: 'job_level', label: 'Job level' },
-  { field: 'grade', label: 'Grade' },
   { field: 'employment_status', label: 'Employment status' },
-  { field: 'custom:BusinessUnit', label: 'Business unit' },
+  { field: `sbu:${SBU_KEY}`, label: 'Business unit' },
 ]
 /** Grouping fields whose empty value follows a field policy (hold or skip). */
-export type GroupingField = 'organization_name' | 'branch_name' | 'cost_center_name'
-export const GROUPING_FIELDS: GroupingField[] = ['organization_name', 'branch_name', 'cost_center_name']
+export type GroupingField = 'organization_name' | 'branch' | 'cost_center'
+export const GROUPING_FIELDS: GroupingField[] = ['organization_name', 'branch', 'cost_center']
 
-// ── Talenta payload shape (talenta.salarydetail) ─────────────────────────────
+// ── Talenta payload shape (webhook "Salary Detail", final, 19 Nov 2025) ──────
+// No totals: take-home pay is computed by Jurnal (allowances - deductions).
+// Amounts are whole rupiah >= 0; Rp0 items are included. Tax figures arrive as
+// components (benefits: PPh 21 Benefit, PPh 21 Resign Benefit, PPh 26 Benefit,
+// Total PPh 21 DTP Received; deductions: PPH 21 Paid, PPH 21 Payment).
+// No run-type field. employee_name is sent; Jurnal drops it at intake.
 
 export type PaySection = 'allowance' | 'deduction' | 'benefit'
 export interface TalentaPayItem { name: string; amount: number }
-export interface TalentaEmployee {
+export interface TalentaSbu { key: string; value: string }
+export interface TalentaEmployeeInfo {
+  user_id: number
   employee_id: string
-  organization_name: string
-  branch_name: string
-  cost_center_name: string
+  employee_name: string
   job_position: string
   job_level: string
-  grade: string
   employment_status: string
-  custom_fields: { BusinessUnit: string }
-  allowances: TalentaPayItem[]
-  deductions: TalentaPayItem[]
-  benefits: TalentaPayItem[]
-  total_allowances: number
-  total_deductions: number
-  total_benefits: number
-  take_home_pay: number
-  'PPh 21 Benefit': number
-  'PPh 21 Payment': number
-  'PPh 21 Resign Benefit': number
-  'PPh 26 Benefit': number
-  'Total PPh 21 DTP Received': number
+  organization_name: string
+  branch: string
+  cost_center: string | null
+  sbu: TalentaSbu[]
 }
+export interface TalentaComponents { allowances: TalentaPayItem[]; deductions: TalentaPayItem[]; benefits: TalentaPayItem[] }
+export interface TalentaItem { employee: TalentaEmployeeInfo; components: TalentaComponents }
 export interface TalentaPayload {
-  event: 'talenta.salarydetail'
   company_id: number
-  period: { type: 'monthly'; start_date: string; end_date: string }
   sent_at: string
-  employees: TalentaEmployee[]
+  period: { start_date: string; end_date: string }
+  items: TalentaItem[]
 }
-export type TaxField = 'PPh 21 Benefit' | 'PPh 21 Payment' | 'PPh 21 Resign Benefit' | 'PPh 26 Benefit' | 'Total PPh 21 DTP Received'
-export const TAX_FIELDS: TaxField[] = ['PPh 21 Benefit', 'PPh 21 Payment', 'PPh 21 Resign Benefit', 'PPh 26 Benefit', 'Total PPh 21 DTP Received']
+/** The tax components the PPh 21 rule and the amendment task read, with the section they arrive in. */
+export type TaxField = 'PPh 21 Benefit' | 'PPh 21 Resign Benefit' | 'PPh 26 Benefit' | 'Total PPh 21 DTP Received' | 'PPH 21 Paid' | 'PPH 21 Payment'
+export const TAX_COMPONENTS: { name: TaxField; section: PaySection }[] = [
+  { name: 'PPh 21 Benefit', section: 'benefit' },
+  { name: 'PPh 21 Resign Benefit', section: 'benefit' },
+  { name: 'PPh 26 Benefit', section: 'benefit' },
+  { name: 'Total PPh 21 DTP Received', section: 'benefit' },
+  { name: 'PPH 21 Paid', section: 'deduction' },
+  { name: 'PPH 21 Payment', section: 'deduction' },
+]
+export const TAX_FIELDS: TaxField[] = TAX_COMPONENTS.map((x) => x.name)
 
 // ── Roster (Talenta employee records the sends are built from) ───────────────
 // Jurnal never reads this list. It stands in for Talenta's side so a simulated
@@ -190,6 +194,8 @@ export const TAX_FIELDS: TaxField[] = ['PPh 21 Benefit', 'PPh 21 Payment', 'PPh 
 
 export interface GroupFields { organization_name: string; branch_name: string; cost_center_name: string }
 export interface RosterEmployee extends GroupFields {
+  /** Talenta's unique id; employee_id is editable in Talenta and only shown. */
+  user_id: number
   employee_id: string
   job_position: string
   job_level: string
@@ -210,7 +216,7 @@ function emp(n: number, g: GroupFields, job_position: string, job_level: string,
     : g.organization_name === 'Sales' ? 'B2B Beans' : 'Corporate'
   const grade = job_level === 'Staff' ? 'G2' : job_level === 'Supervisor' ? 'G3' : job_level === 'Manager' ? 'G5' : 'G7'
   return {
-    employee_id: `EMP-${String(n).padStart(4, '0')}`, ...g, job_position, job_level, grade,
+    user_id: 51_000 + n, employee_id: `EMP-${String(n).padStart(4, '0')}`, ...g, job_position, job_level, grade,
     employment_status: n % 9 === 0 ? 'Contract' : n % 17 === 0 ? 'Probation' : 'Permanent',
     business_unit: bu, basic, expat: false, joined: '2024-01-02', left: null, moves: [], ...extra,
   }
@@ -262,7 +268,6 @@ export function groupsAsOf(e: RosterEmployee, date: string): GroupFields {
 
 // ── Payroll arithmetic (Talenta's side, for the simulated sends) ─────────────
 
-const r2 = (x: number) => Math.round(x * 100) / 100
 const KES_CAP = 12_000_000
 const JP_CAP = 11_086_300
 
@@ -290,7 +295,7 @@ function monthIndex(date: string): number { return Number(date.slice(0, 4)) * 12
 
 export interface PayloadOptions {
   sentAt: string
-  /** A new allowance Talenta starts sending (OD-03 hold). */
+  /** A new allowance Talenta starts sending (unmapped pay item hold). */
   newAllowance?: { name: string; organization?: string; amount: number }
   /** Basic Salary raise for one organization (a revision). */
   raise?: { organization: string; amount: number }
@@ -298,24 +303,29 @@ export interface PayloadOptions {
   onlyBranch?: string
   /** A THR-only run (separate run). */
   thr?: boolean
-  /** Talenta totals that do not match the pay item lines (OD-04), per employee and section. */
-  gaps?: { employeeId: string; section: PaySection; amount: number }[]
-  /** PPh 21 Benefit sent lower than the tax deducted (LR-10 hold). */
+  /** Components HR left unticked in Talenta's send checklist (by name, any section). */
+  omit?: string[]
+  /** PPh 21 Benefit sent lower than the tax deducted (tax rule warning). */
   taxOff?: { employeeId: string; amount: number }[]
-  /** Repeat one employee row exactly (duplicate employee hold). */
+  /** Repeat one employee row exactly (duplicate employee warning). */
   duplicateEmployee?: string
-  /** Shift PPh 21 between employees with the same total (tax change, no ledger change). */
+  /** Shift PPh 21 between employees with the same total (tax change, no ledger change on PPh 21). */
   taxShift?: { from: string; to: string; amount: number }
 }
 
+/** Generic placeholder: Talenta sends employee_name, Jurnal drops it at intake and never shows it. */
+export const sampleEmployeeName = (employeeId: string) => `Karyawan ${employeeId.slice(4)}`
+
 /**
- * Build one talenta.salarydetail body for a period from the roster. Pure:
- * the same roster, period and options always give the same body.
+ * Build one salary detail body for a period from the roster, in the final payload
+ * shape (no totals, whole rupiah, Rp0 items included). Pure: the same roster,
+ * period and options always give the same body.
  */
 export function buildSalaryDetail(roster: RosterEmployee[], start: string, end: string, o: PayloadOptions): TalentaPayload {
   const mi = monthIndex(end)
   const days = workingDays(start, end)
-  const employees: TalentaEmployee[] = []
+  const items: TalentaItem[] = []
+  const R = Math.round
   for (const e of roster) {
     if (e.joined > end || (e.left !== null && e.left < start)) continue
     const g = groupsAsOf(e, end)
@@ -327,9 +337,9 @@ export function buildSalaryDetail(roster: RosterEmployee[], start: string, end: 
     const allowances: TalentaPayItem[] = []
     const deductions: TalentaPayItem[] = []
     const benefits: TalentaPayItem[] = []
-    const kesCo = r2(Math.min(base, KES_CAP) * 0.04)
-    const jkk = r2(base * 0.0024)
-    const jkm = r2(base * 0.003)
+    const kesCo = R(Math.min(base, KES_CAP) * 0.04)
+    const jkk = R(base * 0.0024)
+    const jkm = R(base * 0.003)
     let taxable: number
     if (o.thr) {
       allowances.push({ name: 'THR Keagamaan', amount: base })
@@ -345,63 +355,60 @@ export function buildSalaryDetail(roster: RosterEmployee[], start: string, end: 
     const tax = Math.floor(taxable * (e.expat ? 0.2 : terRate(taxable)))
     // PPh 21 DTP: store staff with gross up to Rp10.000.000 (labour-intensive sector).
     const dtp = !o.thr && !e.expat && g.cost_center_name.startsWith('Store') && taxable <= 10_000_000 ? tax : 0
-    if (dtp > 0) allowances.push({ name: 'PPh 21 Ditanggung Pemerintah', amount: dtp })
+    allowances.push({ name: 'PPh 21 Ditanggung Pemerintah', amount: dtp })
     if (!o.thr) {
-      deductions.push({ name: 'JHT Employee', amount: r2(base * 0.02) })
-      deductions.push({ name: 'JP Employee', amount: r2(Math.min(base, JP_CAP) * 0.01) })
-      deductions.push({ name: 'BPJSK Employee', amount: r2(Math.min(base, KES_CAP) * 0.01) })
+      deductions.push({ name: 'JHT Employee', amount: R(base * 0.02) })
+      deductions.push({ name: 'JP Employee', amount: R(Math.min(base, JP_CAP) * 0.01) })
+      deductions.push({ name: 'BPJSK Employee', amount: R(Math.min(base, KES_CAP) * 0.01) })
     }
-    if (tax > 0) deductions.push({ name: 'PPH 21 Paid', amount: tax })
+    deductions.push({ name: 'PPH 21 Paid', amount: tax })
+    deductions.push({ name: 'PPH 21 Payment', amount: 0 })
     if (!o.thr) {
       if (num === 3 || num === 21) deductions.push({ name: 'Loan Instalment', amount: num === 3 ? 500_000 : 750_000 })
       if (num === 10 || num === 27) deductions.push({ name: 'THR Paid', amount: 400_000 })
-      deductions.push({ name: 'BPJS K paid by company', amount: kesCo })
-      deductions.push({ name: 'JKK paid by company', amount: jkk })
-      deductions.push({ name: 'JKM paid by company', amount: jkm })
-      deductions.push({ name: 'JHT paid by company', amount: r2(base * 0.037) })
-      deductions.push({ name: 'JP paid by company', amount: r2(Math.min(base, JP_CAP) * 0.02) })
-      if (e.job_level === 'Manager' || e.job_level === 'Director') benefits.push({ name: 'DPLK paid by company', amount: Math.round(basic * 0.05) })
+      // Employer-paid contributions arrive as benefits: they are not in take-home pay.
+      benefits.push({ name: 'BPJS K paid by company', amount: kesCo })
+      benefits.push({ name: 'JKK paid by company', amount: jkk })
+      benefits.push({ name: 'JKM paid by company', amount: jkm })
+      benefits.push({ name: 'JHT paid by company', amount: R(base * 0.037) })
+      benefits.push({ name: 'JP paid by company', amount: R(Math.min(base, JP_CAP) * 0.02) })
+      if (e.job_level === 'Manager' || e.job_level === 'Director') benefits.push({ name: 'DPLK paid by company', amount: R(basic * 0.05) })
     }
-    const sum = (l: TalentaPayItem[]) => r2(l.reduce((s, i) => s + i.amount, 0))
-    const companyPaid = deductions.filter((d) => /paid by company/i.test(d.name))
-    const total_allowances = sum(allowances)
-    const total_deductions = sum(deductions)
-    const employeeDeductions = r2(total_deductions - sum(companyPaid))
-    const row: TalentaEmployee = {
-      employee_id: e.employee_id, ...g, job_position: e.job_position, job_level: e.job_level, grade: e.grade,
-      employment_status: e.employment_status, custom_fields: { BusinessUnit: e.business_unit },
-      allowances, deductions, benefits,
-      total_allowances, total_deductions, total_benefits: sum(benefits),
-      take_home_pay: r2(total_allowances - employeeDeductions),
-      'PPh 21 Benefit': e.expat ? 0 : tax, 'PPh 21 Payment': 0, 'PPh 21 Resign Benefit': 0,
-      'PPh 26 Benefit': e.expat ? tax : 0, 'Total PPh 21 DTP Received': dtp,
-    }
-    for (const gp of o.gaps ?? []) {
-      if (gp.employeeId !== e.employee_id) continue
-      if (gp.section === 'allowance') { row.total_allowances = r2(row.total_allowances + gp.amount); row.take_home_pay = r2(row.take_home_pay + gp.amount) }
-      if (gp.section === 'deduction') { row.total_deductions = r2(row.total_deductions + gp.amount); row.take_home_pay = r2(row.take_home_pay - gp.amount) }
-      if (gp.section === 'benefit') row.total_benefits = r2(row.total_benefits + gp.amount)
-    }
-    for (const t of o.taxOff ?? []) if (t.employeeId === e.employee_id) row['PPh 21 Benefit'] -= t.amount
-    employees.push(row)
+    const off = (o.taxOff ?? []).filter((t) => t.employeeId === e.employee_id).reduce((s, t) => s + t.amount, 0)
+    benefits.push({ name: 'PPh 21 Benefit', amount: e.expat ? 0 : Math.max(0, tax - off) })
+    benefits.push({ name: 'PPh 21 Resign Benefit', amount: 0 })
+    benefits.push({ name: 'PPh 26 Benefit', amount: e.expat ? tax : 0 })
+    benefits.push({ name: 'Total PPh 21 DTP Received', amount: dtp })
+    items.push({
+      employee: {
+        user_id: e.user_id, employee_id: e.employee_id, employee_name: sampleEmployeeName(e.employee_id),
+        job_position: e.job_position, job_level: e.job_level, employment_status: e.employment_status,
+        organization_name: g.organization_name, branch: g.branch_name, cost_center: g.cost_center_name || null,
+        sbu: [{ key: SBU_KEY, value: e.business_unit }],
+      },
+      components: { allowances, deductions, benefits },
+    })
   }
   if (o.taxShift) {
-    const a = employees.find((x) => x.employee_id === o.taxShift!.from)
-    const b = employees.find((x) => x.employee_id === o.taxShift!.to)
+    const a = items.find((x) => x.employee.employee_id === o.taxShift!.from)
+    const b = items.find((x) => x.employee.employee_id === o.taxShift!.to)
     if (a && b) {
-      const shift = (row: TalentaEmployee, d: number) => {
-        row['PPh 21 Benefit'] += d
-        const it = row.deductions.find((x) => x.name === 'PPH 21 Paid')
-        if (it) it.amount += d; else row.deductions.push({ name: 'PPH 21 Paid', amount: d })
-        row.total_deductions = r2(row.total_deductions + d)
-        row.take_home_pay = r2(row.take_home_pay - d)
+      const shift = (row: TalentaItem, d: number) => {
+        for (const [list, name] of [[row.components.benefits, 'PPh 21 Benefit'], [row.components.deductions, 'PPH 21 Paid']] as const) {
+          const it = list.find((x) => x.name === name)
+          if (it) it.amount = Math.max(0, it.amount + d)
+        }
       }
       shift(a, -o.taxShift.amount); shift(b, o.taxShift.amount)
     }
   }
-  if (o.duplicateEmployee) {
-    const d = employees.find((x) => x.employee_id === o.duplicateEmployee)
-    if (d) employees.push(JSON.parse(JSON.stringify(d)))
+  if (o.omit?.length) {
+    const drop = new Set(o.omit.map((n) => n.trim().toLowerCase()))
+    for (const it of items) for (const k of ['allowances', 'deductions', 'benefits'] as const) it.components[k] = it.components[k].filter((x) => !drop.has(x.name.trim().toLowerCase()))
   }
-  return { event: 'talenta.salarydetail', company_id: PAYROLL_COMPANY_ID, period: { type: 'monthly', start_date: start, end_date: end }, sent_at: o.sentAt, employees }
+  if (o.duplicateEmployee) {
+    const d = items.find((x) => x.employee.employee_id === o.duplicateEmployee)
+    if (d) items.push(JSON.parse(JSON.stringify(d)))
+  }
+  return { company_id: PAYROLL_COMPANY_ID, sent_at: o.sentAt, period: { start_date: start, end_date: end }, items }
 }

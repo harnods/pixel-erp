@@ -22,7 +22,7 @@ const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
 const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const canRepost = computed(() => !!run.value && !!cur.value && cur.value.state === 'active' && cur.value.no !== run.value.ledgerVersion)
 const earliest = computed(() => live.value.map((j) => j.date).sort().pop() ?? '')
-const salaryPays = computed(() => payroll.payments.filter((p) => !p.voidedBy && p.runId === props.runId))
+const salaryPays = computed(() => payroll.payments.filter((p) => p.runId === props.runId))
 const otherPays = computed(() => paymentsFor(props.runId).filter((p) => p.runId !== props.runId))
 
 const toDisplay = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : '')

@@ -2,8 +2,8 @@
 /**
  * Payroll run record /payroll-runs/<id> (FG-2, FG-3). Header with run key, type
  * and versions; holds with their fixes in check order; the draft review (OD-12);
- * Post with the stale-draft and newer-version blocks and the Finance Manager
- * confirm (TN-24); the versions, posted PAY journals and the "Built with"
+ * Post with the stale-draft and newer-version blocks (warnings never block;
+ * the unacknowledged ones are listed in the Post confirm); the versions, posted PAY journals and the "Built with"
  * snapshot. Agent C's revision panel mounts in the marked slot.
  */
 import { computed, ref, watch } from 'vue'
@@ -17,11 +17,11 @@ import PayrollRunJournals from '~/components/payroll/PayrollRunJournals.vue'
 // ── Slot for agent C (FG-4 revisions and corrections). Do not edit the panel here. ──
 import PayrollRevisionPanel from '~/components/payroll/PayrollRevisionPanel.vue'
 import {
-  payroll, can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf, postRun,
-  confirmPostAsFinanceManager, rebuildDraft, isDraftStale, draftReview, rupiah, wib, periodLabel, monthLabel, dateLabel,
-  accountLabel, tagsLabel, isLocked, firstOpenAfter, type Tags,
+  can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf, postRun,
+  rebuildDraft, isDraftStale, postConfirmText, rupiah, wib, periodLabel, monthLabel,
+  accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
-import { statusType, versionFigures, needsFinanceConfirm } from '~/data/payrollUiIntake'
+import { statusType, versionFigures } from '~/data/payrollUiIntake'
 import { successToast, infoToast, errorToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId?: string }>()
@@ -49,33 +49,15 @@ const tabs = computed(() => [
   { key: 'journals' as Tab, label: `Journals (${allJournals.value.length})` },
   { key: 'built' as Tab, label: 'Built with' },
 ])
-watch(() => props.orderId, () => { tab.value = 'review'; staleChanges.value = []; fmNeeded.value = false })
+watch(() => props.orderId, () => { tab.value = 'review'; staleChanges.value = [] })
 
 // ── Post ───────────────────────────────────────────────────────────────────
 const canPostNow = computed(() => status.value === 'Ready to post' && !!draft.value && !draft.value.nothingToPost && !live.value.length)
-const fmRequired = computed(() => !!run.value && canPostNow.value && needsFinanceConfirm(run.value.id))
-const fmConfirmed = computed(() => !!draft.value?.fmConfirmedBy)
 const stale = computed(() => !!run.value && isDraftStale(run.value.id))
-const review = computed(() => (run.value && draft.value ? draftReview(run.value.id) : null))
-const unnoted = computed(() => review.value?.unnotedLargeChanges ?? 0)
-const unexpectedHc = computed(() => review.value?.unexpectedHeadcount ?? 0)
 const postOpen = ref(false)
-const fmNeeded = ref(false)
 const staleChanges = ref<{ key: string; account: string; tags: Tags; old: number; new: number; diff: number }[]>([])
 const postError = ref('')
-const postDescription = computed(() => {
-  if (!run.value || !draft.value) return ''
-  const locked = isLocked(run.value.month)
-  const date = locked ? `${firstOpenAfter(run.value.month)}-01` : draft.value.date
-  const parts = [
-    `${t('Posts one PAY journal of')} ${rupiah(draftTotal.value)} ${t('dated')} ${dateLabel(date)}.`,
-    locked ? `${monthLabel(run.value.month)} ${t('is locked, so it posts in the first open period with a run reference.')}` : '',
-    unnoted.value ? `${unnoted.value} ${t(unnoted.value === 1 ? 'large change has no note.' : 'large changes have no note.')}` : '',
-    unexpectedHc.value ? `${unexpectedHc.value} ${t(unexpectedHc.value === 1 ? 'headcount change is not marked Expected.' : 'headcount changes are not marked Expected.')}` : '',
-    t('A posted journal cannot be edited or deleted; the way back is reversal.'),
-  ]
-  return parts.filter(Boolean).join(' ')
-})
+const postDescription = computed(() => (run.value && draft.value ? `${postConfirmText(run.value.id).body} ${t('A posted journal cannot be edited or deleted; the way back is reversal.')}` : ''))
 function askPost() {
   postError.value = ''
   if (stale.value) { doPost(); return }
@@ -85,22 +67,15 @@ function doPost() {
   if (!run.value) return
   const r = postRun(run.value.id, { versionNo: v.value?.no })
   if (r.ok) {
-    staleChanges.value = []; fmNeeded.value = false
+    staleChanges.value = []
     successToast(t(`Posted as ${r.number as string}`))
     for (const w of (r.warnings as string[] | undefined) ?? []) infoToast(t(w))
     tab.value = 'review'
     return
   }
   if (r.stale) { staleChanges.value = (r.changed as typeof staleChanges.value) ?? []; infoToast(t('Draft rebuilt on the current settings. Review and post again')); return }
-  if (r.needsConfirm) { fmNeeded.value = true; postError.value = r.message ?? ''; return }
   postError.value = r.message ?? ''
   errorToast(t('Not posted'))
-}
-function fmConfirm() {
-  if (!run.value) return
-  const r = confirmPostAsFinanceManager(run.value.id)
-  if (r.ok) { fmNeeded.value = false; postError.value = ''; successToast(t('Confirmed for posting')) }
-  else infoToast(t(r.message ?? ''))
 }
 function rebuild() {
   if (!run.value) return
@@ -135,7 +110,6 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         </p>
       </div>
       <div class="prr__baractions">
-        <MpButton v-if="can('post.confirm') && fmRequired && !fmConfirmed" variant="secondary" is-rounded @click="fmConfirm">{{ t('Confirm for posting') }}</MpButton>
         <MpPopover id="prr-more" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
@@ -180,12 +154,11 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         </div>
       </div>
 
-      <!-- Post feedback: blocks and the Finance Manager confirm (TN-24). -->
-      <div v-if="postError || (fmRequired && !fmConfirmed && can('post'))" class="prr__notice">
-        <div class="prr__noticetitle">{{ fmRequired && !fmConfirmed ? t('Finance Manager confirm needed') : t('Not posted') }}</div>
-        <div>{{ postError || t('This draft has a guardrail override or settings changed since the last posted run. A Finance Manager confirms before posting.') }}</div>
+      <!-- Post feedback: blocks only (warnings never block). -->
+      <div v-if="postError" class="prr__notice">
+        <div class="prr__noticetitle">{{ t('Not posted') }}</div>
+        <div>{{ postError }}</div>
       </div>
-      <div v-if="fmRequired && fmConfirmed" class="prr__ok" data-tour="payroll-run-confirm">{{ t('Confirmed for posting by') }} {{ draft?.fmConfirmedBy }}</div>
       <div v-if="staleChanges.length" class="prr__card prr__stale">
         <div class="prr__cardhead">
           <div class="prr__cardtitle">{{ t('Lines moved by the rebuild') }}</div>
@@ -248,8 +221,6 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
               <td class="prr__td"><ErpStatusBadge :status="versionLabel(run, x)" :label="t(versionLabel(run, x))" :type="statusType(versionLabel(run, x))" /></td>
               <td class="prr__td">
                 <template v-if="x.decision">{{ x.decision.kind }}<span class="prr__muted"> · {{ x.decision.by }}<template v-if="x.decision.reason"> · {{ x.decision.reason }}</template></span></template>
-                <template v-if="x.gapRelease"><div class="prr__muted">{{ t('Released with gap to') }} {{ accountLabel(x.gapRelease.target) }} · {{ x.gapRelease.by }} · {{ x.gapRelease.reason }}</div></template>
-                <template v-if="x.taxRelease"><div class="prr__muted">{{ t('Tax hold released') }} · {{ x.taxRelease.by }} · {{ x.taxRelease.reason }}</div></template>
               </td>
             </tr>
           </tbody>
@@ -301,10 +272,6 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
   background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-md);
 }
 .prr__noticetitle { font-weight: var(--mp-font-weights-semi-bold); margin-bottom: var(--mp-spacing-1); }
-.prr__ok {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); margin-bottom: var(--mp-spacing-5); border-radius: var(--mp-radii-md);
-  background: var(--mp-colors-background-success); color: var(--mp-colors-text-success); font-size: var(--mp-font-sizes-md);
-}
 .prr__stale { margin-bottom: var(--mp-spacing-5); }
 
 .prr__tabs { display: flex; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }

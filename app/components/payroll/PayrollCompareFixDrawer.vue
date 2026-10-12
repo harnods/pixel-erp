@@ -7,11 +7,11 @@
  * dates the fix in the first open period with a correction memo and reference; the tax period
  * stays the run's own.
  */
-import { MpRadio, MpCheckbox } from '@mekari/pixel3'
+import { MpRadio } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
-  runById, versionOf, currentVersionOf, liveJournals, compareVersions, postDifference, reverseAndRepost,
-  journalTotals, isLocked, firstOpenAfter, monthLabel, dateLabel, periodLabel, rupiah, accountLabel, tagsLabel, draftOf, currentSnapshotId,
+  runById, versionOf, currentVersionOf, liveJournals, correctionOf, postCorrection, reverseAndRepost,
+  journalTotals, isLocked, firstOpenAfter, monthLabel, dateLabel, periodLabel, rupiah, accountLabel, tagsLabel, draftOf,
 } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
 
@@ -21,37 +21,16 @@ const { t } = useLocale()
 
 type Fix = 'difference' | 'repost'
 const fix = ref<Fix>('difference')
-const includeMoves = ref(false)
 const error = ref('')
-watch(() => props.isOpen, (o) => { if (o) { fix.value = 'difference'; includeMoves.value = false; error.value = '' } })
+watch(() => props.isOpen, (o) => { if (o) { fix.value = 'difference'; error.value = '' } })
 
 const run = computed(() => runById(props.runId))
 const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const ledgerV = computed(() => (run.value ? versionOf(run.value, run.value.ledgerVersion) : undefined))
 const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
-/** compareVersions draws ids from the store sequence, so it runs from a watch, never a computed. */
-const data = shallowRef<ReturnType<typeof compareVersions> | null>(null)
-const fingerprint = computed(() => JSON.stringify([props.isOpen, props.runId, ledgerV.value?.no, cur.value?.no, cur.value?.state, live.value.map((j) => j.id), currentSnapshotId()]))
-watch(fingerprint, () => {
-  data.value = null
-  if (!props.isOpen || !run.value || !cur.value || !ledgerV.value || cur.value.no === ledgerV.value.no) return
-  try { data.value = compareVersions(props.runId, ledgerV.value.no, cur.value.no) } catch { data.value = null }
-}, { immediate: true })
-
-/** Difference lines: the change less what settings alone moved, unless the moves are included. */
-const diffLines = computed(() => {
-  const d = data.value
-  if (!d) return []
-  const moved = new Map(d.settingsMoved.map((r) => [r.key, r.diff]))
-  const keys = new Set([...d.byAccountTag.map((r) => r.key), ...moved.keys()])
-  const byKey = new Map([...d.byAccountTag, ...d.settingsMoved].map((r) => [r.key, r]))
-  return [...keys].map((k) => {
-    const r = byKey.get(k)!
-    const full = d.byAccountTag.find((x) => x.key === k)?.diff ?? 0
-    const amt = includeMoves.value ? full : full - (moved.get(k) ?? 0)
-    return { key: k, account: accountLabel(r.account), tags: tagsLabel(r.tags), debit: amt > 0 ? amt : 0, credit: amt < 0 ? -amt : 0 }
-  }).filter((l) => l.debit || l.credit)
-})
+/** The correction the engine built (difference only): new build minus the live journals. */
+const data = computed(() => correctionOf(props.runId))
+const diffLines = computed(() => (data.value?.lines ?? []).map((l, i) => ({ key: String(i), account: accountLabel(l.account), tags: tagsLabel(l.tags), debit: l.debit, credit: l.credit })))
 const diffTotals = computed(() => ({ debit: diffLines.value.reduce((s, l) => s + l.debit, 0), credit: diffLines.value.reduce((s, l) => s + l.credit, 0) }))
 const newTotal = computed(() => { const d = run.value ? draftOf(run.value) : null; return d ? journalTotals(d).debit : 0 })
 
@@ -68,8 +47,8 @@ const memo = computed(() => {
 function confirm() {
   error.value = ''
   const r = fix.value === 'difference'
-    ? postDifference(props.runId, cur.value?.no, { includeSettingsMoves: includeMoves.value })
-    : reverseAndRepost(props.runId, cur.value?.no)
+    ? postCorrection(props.runId)
+    : reverseAndRepost(props.runId)
   if (!r.ok) { error.value = t(r.message ?? 'The fix did not post. Nothing changed.'); return }
   const nos = (r.journals as string[] | undefined) ?? []
   successToast(nos.length ? t(`${nos.join(', ')} posted`) : t('No ledger change'))
@@ -112,10 +91,7 @@ function confirm() {
       </div>
 
       <template v-if="fix === 'difference'">
-        <label v-if="data && data.settingsMoved.length" class="pcf__check">
-          <MpCheckbox id="pcf-moves" :is-checked="includeMoves" @change="includeMoves = !includeMoves" />
-          <span>{{ t(`Include ${data.settingsMoved.length} lines moved by settings change`) }}</span>
-        </label>
+        <div v-if="data?.summary.settingsChanged" class="pcf__note">{{ t('Settings changed since the posted journal was built; part of this correction is the settings change.') }}</div>
         <div v-if="!diffLines.length" class="pcf__empty">{{ t('Rp0 by account and dimension. Nothing posts; the log shows No ledger change.') }}</div>
         <div v-else class="pcf__scroll">
           <table class="pcf__table">

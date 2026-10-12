@@ -6,7 +6,7 @@
  */
 import { MpInput, MpTextarea, MpFormControl, MpFormLabel, MpFormErrorMessage, MpRadio } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
-import { amendmentTasks, closeAmendmentTask, pph21Monthly, monthLabel, dateLabel, nextMonthOf, today, rupiah } from '~/data/payrollStore'
+import { amendmentTasks, closeAmendmentTask, pph21Month, monthLabel, dateLabel, nextMonthOf, today, rupiah } from '~/data/payrollStore'
 import { successToast } from '~/utils/toasts'
 
 type Task = (typeof amendmentTasks.value)[number]
@@ -27,7 +27,7 @@ const reason = ref('')
 const error = ref('')
 watch(() => props.task, () => { outcome.value = ''; pembetulan.value = ''; newTotal.value = ''; reason.value = ''; error.value = '' })
 
-const expected = computed(() => (props.task ? pph21Monthly(props.task.taxMonth).rows.find((r) => r.key === 'regular')?.expected ?? 0 : 0))
+const expected = computed(() => (props.task ? pph21Month(props.task.taxMonth).rule : 0))
 const filingDue = computed(() => (props.task ? `${nextMonthOf(props.task.taxMonth)}-20` : ''))
 const beforeDue = computed(() => !!filingDue.value && today() <= filingDue.value)
 const parsed = computed(() => { const n = Number(newTotal.value.replace(/[^\d-]/g, '')); return newTotal.value.trim() && Number.isFinite(n) ? n : null })

@@ -174,12 +174,8 @@ const varianceClass = (n: number) => (n ? 'pset-danger' : 'pset-ok')
       <div class="pset-card">
         <div class="pset-card__head">
           <div>
-            <div class="pset-card__title">{{ t("Totals against Talenta's run totals") }}</div>
-            <div class="pset-card__sub">
-              {{ report.basis.includesEmployer === null
-                ? t(`total_deductions ${rupiah(report.basis.talenta)} matches neither basis: ${rupiah(report.basis.withEmployer)} with employer contributions, ${rupiah(report.basis.withoutEmployer)} without.`)
-                : t(`total_deductions ${report.basis.includesEmployer ? 'includes' : 'leaves out'} employer contributions (${rupiah(report.basis.talenta)}). The total check uses the ${payroll.settings.deductionsBasis === 'with-employer' ? 'with' : 'without'}-employer basis.`) }}
-            </div>
+            <div class="pset-card__title">{{ t('Totals from the pay items') }}</div>
+            <div class="pset-card__sub">{{ t('Talenta sends pay items only. Each total is summed from them and compared with the journal lines.') }}</div>
           </div>
         </div>
         <table class="pset-table">

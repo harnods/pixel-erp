@@ -98,7 +98,7 @@ const isBudgetScreen = computed(
   () => BUDGET_SCREENS.has(currentPageKey.value) || /^\/(budget-|purchase-requests|purchase-orders|purchase-invoices)/.test(route.path),
 );
 const PAYROLL_SCREENS = new Set([
-  'Payroll inbox', 'Payroll payables', 'Payroll reconciliation', 'Payroll claims', 'Payroll settings',
+  'Payroll inbox', 'Payroll payables', 'Payroll settings',
 ]);
 const isPayrollScreen = computed(
   () => PAYROLL_SCREENS.has(currentPageKey.value) || /^\/payroll-/.test(route.path),

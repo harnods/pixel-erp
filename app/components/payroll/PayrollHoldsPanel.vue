@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Holds on a run, in the check order the engine runs them (LR-5), each with its
- * fix inline (OD-03, OD-04, TN-01, TN-02, TN-08, LR-10). Saved mappings and tags
+ * Holds on a run, each with its fix inline. A send stops only for a missing mapping,
+ * a partial send or a separate-run look-alike (OD-03, TN-01, TN-02). Saved mappings and tags
  * re-check every held run at once, so a fix usually clears the hold by itself;
  * "Release run" re-checks the whole run on demand.
  */
@@ -12,11 +12,10 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   payroll, can, runById, runHolds, rupiah, accountLabel, payrollAccount, mappingFor, suggestMapping, setPayItemMapping,
   mapGroup, createPayrollTag, acceptFieldValue, setCostCenterCategory, setFieldPolicy, confirmSource, sourceSummary,
-  chooseRevision, chooseSeparateRun, decidePartial, releaseRun, releaseWithGap, releaseTaxHold, totalGaps, versionOf,
-  tagsLabel, PAY_ROLES, type Hold, type PayRole, type Tags,
+  chooseRevision, chooseSeparateRun, decidePartial, releaseRun, versionOf,
+  PAY_ROLES, type Hold, type PayRole,
 } from '~/data/payrollStore'
 import { FALLBACK_TAG, type PaySection, type TagDimension, type PayableParty } from '~/data/payrollMaster'
-import { hrMessage } from '~/data/payrollUiIntake'
 import { successToast, infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ runId: string }>()
@@ -25,24 +24,18 @@ const router = useRouter()
 
 const run = computed(() => runById(props.runId))
 const holds = computed(() => (run.value ? runHolds(run.value) : []))
-const periodText = computed(() => (run.value ? `${run.value.start} to ${run.value.end}` : ''))
 
 const TITLES: Record<string, string> = {
   'confirm-source': 'Confirm the source', choice: 'Revision or separate run', partial: 'Looks partial',
-  'duplicate-employee': 'Duplicate employee rows', 'unmapped-item': 'Pay items with no account', 'unmapped-group': 'Groups with no dimension',
-  'new-field-value': 'New values in rule fields', 'empty-field': 'Empty grouping fields', 'total-gap': "Lines differ from Talenta's totals",
-  'hutang-gaji': 'Salaries payable differs from take-home pay', 'two-parties': 'Two parties on one payable', rounding: 'Rounding over the limit',
-  'tax-rule': 'PPh 21 differs from the tax rule', 'negative-payable': 'Payable below Rp0', 'archived-account': 'Archived account',
+  'unmapped-item': 'Pay items with no account', 'unmapped-group': 'Groups with no dimension',
+  'new-field-value': 'New values in rule fields', 'empty-field': 'Empty grouping fields',
+  'two-parties': 'Two parties on one payable', 'archived-account': 'Archived account',
 }
-const SETTINGS_FIX = ['hutang-gaji', 'two-parties', 'negative-payable', 'archived-account', 'rounding']
+const SETTINGS_FIX = ['two-parties', 'archived-account']
 
 // ── Shared ────────────────────────────────────────────────────────────────
 const accountOptions = computed(() => payroll.accounts.filter((a) => !a.archived).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })))
 const roleOptions = PAY_ROLES.map((r) => ({ value: r, label: r }))
-function copyHr(ids: string[]) {
-  navigator.clipboard?.writeText(hrMessage(ids, periodText.value)).catch(() => {})
-  successToast(t('Message for HR copied'))
-}
 const released = ref('')
 function release() {
   const r = releaseRun(props.runId)
@@ -80,7 +73,7 @@ function saveItem(it: { key: string; name: string; section: PaySection }) {
 // ── Groups ────────────────────────────────────────────────────────────────
 const groupPick = reactive<Record<string, string>>({})
 const groupError = reactive<Record<string, string>>({})
-const dimOf = (field: string): TagDimension => (field === 'branch_name' ? 'Branch' : 'Organization')
+const dimOf = (field: string): TagDimension => (field === 'branch' ? 'Branch' : 'Organization')
 function tagOptions(field: string, value: string) {
   const dim = dimOf(field)
   const opts = payroll.tags.filter((tg) => tg.dimension === dim && tg.name !== FALLBACK_TAG).map((tg) => ({ value: tg.name, label: tg.name }))
@@ -105,14 +98,14 @@ function saveGroup(g: { field: string; value: string }) {
 // ── New field values ──────────────────────────────────────────────────────
 const ccPick = reactive<Record<string, string>>({})
 function acceptValue(v: { field: string; value: string }) {
-  const r = v.field === 'cost_center_name'
+  const r = v.field === 'cost_center'
     ? setCostCenterCategory(v.value, (ccPick[v.value] || 'In-direct') as 'Direct' | 'In-direct')
     : acceptFieldValue(v.field, v.value)
   if (r.ok) successToast(t(`${v.value} accepted`))
   else infoToast(t(r.message ?? ''))
 }
 function skipEmpty(field: string) {
-  const r = setFieldPolicy(field as 'organization_name' | 'branch_name' | 'cost_center_name', 'skip')
+  const r = setFieldPolicy(field as 'organization_name' | 'branch' | 'cost_center', 'skip')
   if (r.ok) successToast(t('Empty values are skipped from now on'))
 }
 
@@ -151,43 +144,8 @@ function decide(decision: 'replace' | 'reject') {
   successToast(t(decision === 'replace' ? `v${v.no} replaces the full run` : `v${v.no} rejected`))
 }
 
-// ── Total gap ─────────────────────────────────────────────────────────────
-const gaps = computed(() => (run.value ? totalGaps(props.runId) : null))
-const gapByGroup = computed(() => {
-  const m = new Map<string, { group: string; section: string; amount: number; staff: number; known: boolean }>()
-  for (const r of gaps.value?.rows ?? []) {
-    const k = `${r.group}|${r.section}|${r.known}`
-    const x = m.get(k) ?? { group: r.group, section: r.section, amount: 0, staff: 0, known: r.known }
-    x.amount += Math.abs(r.cents) / 100; x.staff++; m.set(k, x)
-  }
-  return [...m.values()].map((x) => ({ ...x, amount: Math.round(x.amount) }))
-})
-const gapForm = reactive({ target: 'suspense', reason: '', attachment: '', error: '' })
-const gapTargets = computed(() => [
-  { value: 'suspense', label: `${t('Payroll suspense')} (${accountLabel(payroll.settings.suspenseAccount)})` },
-  ...payroll.accounts.filter((a) => a.type === 'liability' && a.party && a.party !== 'Staff' && a.code !== payroll.settings.suspenseAccount && !a.archived)
-    .map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })),
-])
-const canGap = computed(() => can('gap.release') || payroll.viewAs === 'Jurnal Owner')
-function releaseGap() {
-  const r = releaseWithGap(props.runId, { target: gapForm.target, reason: gapForm.reason, attachment: gapForm.attachment })
-  if (!r.ok) { gapForm.error = r.message ?? ''; return }
-  gapForm.error = ''
-  successToast(t('Released with gap'))
-}
-
-// ── Tax rule ──────────────────────────────────────────────────────────────
-const tax = reactive({ reason: '', error: '' })
-function releaseTax() {
-  const r = releaseTaxHold(props.runId, tax.reason)
-  if (!r.ok) { tax.error = r.message ?? ''; return }
-  tax.error = ''
-  successToast(t('Tax hold released'))
-}
-
 const safeId = (k: string) => k.replace(/[^a-zA-Z0-9-]/g, '-')
 const d = (h: Hold) => h.details as Record<string, any>
-const tagsOf = (x: unknown) => tagsLabel(x as Tags)
 const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.ledgerVersion) : undefined))
 </script>
 
@@ -272,12 +230,6 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <p v-else class="ph__hint">{{ t('Waiting for the Accountant to decide.') }}</p>
       </div>
 
-      <!-- Duplicate employee rows (TN-26) -->
-      <div v-else-if="h.code === 'duplicate-employee'" class="ph__fix">
-        <p class="ph__hint">{{ t('HR re-sends the run without the repeated rows.') }}</p>
-        <MpButton variant="secondary" is-rounded @click="copyHr(d(h).ids)">{{ t('Copy message for HR') }}</MpButton>
-      </div>
-
       <!-- Unmapped pay items (OD-03) -->
       <div v-else-if="h.code === 'unmapped-item'" class="ph__fix">
         <table class="ph__table">
@@ -347,8 +299,8 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             <span class="ph__strong">{{ v.value }}</span>
             <span class="ph__muted"> · {{ v.field }} · {{ v.staff }} {{ t('employees') }}</span>
           </div>
-          <template v-if="v.field === 'cost_center_name' ? can('settings.edit') : can('run.release')">
-            <ErpFilterSelect v-if="v.field === 'cost_center_name'" :id="`ph-cc-${safeId(v.value)}`" v-model="ccPick[v.value]" :placeholder="t('Category')" :options="['Direct', 'In-direct']" width="160px" />
+          <template v-if="v.field === 'cost_center' ? can('settings.edit') : can('run.release')">
+            <ErpFilterSelect v-if="v.field === 'cost_center'" :id="`ph-cc-${safeId(v.value)}`" v-model="ccPick[v.value]" :placeholder="t('Category')" :options="['Direct', 'In-direct']" width="160px" />
             <MpButton variant="secondary" is-rounded @click="acceptValue(v)">{{ t('Accept value') }}</MpButton>
           </template>
         </div>
@@ -363,88 +315,8 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <p class="ph__hint">{{ t('HR fills the field in Talenta and re-sends, or the Finance Manager sets empty values to skip.') }}</p>
       </div>
 
-      <!-- Total check (OD-04, TN-08) -->
-      <div v-else-if="h.code === 'total-gap' && gaps" class="ph__fix">
-        <dl class="ph__facts">
-          <div v-for="(amt, sec) in d(h).bySection" :key="sec"><dt>{{ t(`${sec}s`) }}</dt><dd>{{ rupiah(Number(amt)) }}</dd></div>
-          <div v-if="gaps.knownTotal"><dt>{{ t('Matches known gap') }}</dt><dd>{{ rupiah(gaps.knownTotal / 100) }}</dd></div>
-          <div v-if="gaps.knownTotal"><dt>{{ t('New gap') }}</dt><dd>{{ rupiah(gaps.newTotal / 100) }}</dd></div>
-        </dl>
-        <table class="ph__table">
-          <thead>
-            <tr>
-              <th class="ph__th">{{ t('Group') }}</th>
-              <th class="ph__th">{{ t('Section') }}</th>
-              <th class="ph__th ph__th--num">{{ t('Staff') }}</th>
-              <th class="ph__th ph__th--num">{{ t('Gap') }}</th>
-              <th class="ph__th">{{ t('Kind') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="g in gapByGroup" :key="`${g.group}${g.section}${g.known}`">
-              <td class="ph__td">{{ g.group }}</td>
-              <td class="ph__td">{{ t(g.section) }}</td>
-              <td class="ph__td ph__td--num">{{ g.staff }}</td>
-              <td class="ph__td ph__td--num">{{ rupiah(g.amount) }}</td>
-              <td class="ph__td">{{ g.known ? t('Matches known gap') : t('New gap') }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-if="can('payByEmployee.view')" class="ph__hint">
-          {{ t('By employee') }}: {{ gaps.rows.map((r) => `${r.employee_id} ${rupiah(r.cents / 100)}`).join(', ') }}
-        </p>
-        <div class="ph__row">
-          <MpButton variant="secondary" is-rounded @click="copyHr([...new Set(gaps.rows.filter((r) => !r.known).map((r) => r.employee_id))])">{{ t('Copy message for HR') }}</MpButton>
-        </div>
-        <div v-if="canGap" class="ph__form">
-          <div class="ph__formtitle">{{ t('Release with gap') }}</div>
-          <div class="ph__field">
-            <label class="ph__label" for="ph-gap-target">{{ t('Post the gap to') }}</label>
-            <ErpFilterSelect id="ph-gap-target" v-model="gapForm.target" :placeholder="t('Account')" :options="gapTargets" :is-clearable="false" width="100%" />
-          </div>
-          <div class="ph__field">
-            <label class="ph__label" for="ph-gap-reason">{{ t('Reason') }}</label>
-            <MpInput id="ph-gap-reason" v-model="gapForm.reason" />
-          </div>
-          <div class="ph__field">
-            <label class="ph__label" for="ph-gap-att">{{ t("HR's confirmation (file or email reference)") }}</label>
-            <MpInput id="ph-gap-att" v-model="gapForm.attachment" :is-invalid="!!gapForm.error" />
-            <p v-if="gapForm.error" class="ph__error">{{ t(gapForm.error) }}</p>
-          </div>
-          <div class="ph__row"><MpButton is-rounded @click="releaseGap">{{ t('Release with gap') }}</MpButton></div>
-        </div>
-        <p v-else class="ph__hint">{{ t('Ask HR to correct the totals, or the Finance Manager releases with gap.') }}</p>
-      </div>
-
-      <!-- One PPh 21 rule (LR-10) -->
-      <div v-else-if="h.code === 'tax-rule'" class="ph__fix">
-        <dl class="ph__facts">
-          <div><dt>{{ t('PPh 21 lines') }}</dt><dd>{{ rupiah(d(h).ledger) }}</dd></div>
-          <div><dt>{{ t('PPh 21 rule') }}</dt><dd>{{ rupiah(d(h).expected) }}</dd></div>
-          <div><dt>{{ t('Difference') }}</dt><dd>{{ rupiah(Math.abs(d(h).ledger - d(h).expected)) }}</dd></div>
-        </dl>
-        <template v-if="can('tax.release')">
-          <div class="ph__field">
-            <label class="ph__label" for="ph-tax-reason">{{ t('Reason') }}</label>
-            <MpInput id="ph-tax-reason" v-model="tax.reason" :is-invalid="!!tax.error" />
-            <p v-if="tax.error" class="ph__error">{{ t(tax.error) }}</p>
-          </div>
-          <div class="ph__row"><MpButton is-rounded @click="releaseTax">{{ t('Release tax hold') }}</MpButton></div>
-        </template>
-        <p v-else class="ph__hint">{{ t('Tax Staff or the Finance Manager releases this hold with a reason.') }}</p>
-      </div>
-
       <!-- Build checks fixed in settings -->
       <div v-else-if="SETTINGS_FIX.includes(h.code)" class="ph__fix">
-        <table v-if="h.code === 'rounding' && d(h).top" class="ph__table">
-          <thead><tr><th class="ph__th">{{ t('Largest lines') }}</th><th class="ph__th ph__th--num">{{ t('Amount') }}</th></tr></thead>
-          <tbody>
-            <tr v-for="(l, li) in d(h).top" :key="li">
-              <td class="ph__td">{{ accountLabel(l.account) }}<span v-if="tagsOf(l.tags)" class="ph__muted"> | {{ tagsOf(l.tags) }}</span></td>
-              <td class="ph__td ph__td--num">{{ rupiah(l.amount) }}</td>
-            </tr>
-          </tbody>
-        </table>
         <p v-if="h.code === 'archived-account' && payrollAccount(d(h).account)" class="ph__hint">{{ accountLabel(d(h).account) }}</p>
         <MpButton variant="secondary" is-rounded @click="router.push('/payroll-settings')">{{ t('Open payroll settings') }}</MpButton>
       </div>

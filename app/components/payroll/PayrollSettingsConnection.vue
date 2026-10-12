@@ -24,7 +24,7 @@ const statusType = computed(() => ({ Connected: 'completed', 'Waiting for first 
 /** The newest version Talenta sent, for the "last send" line. */
 const lastSend = computed(() => {
   let best: { at: string; period: string; staff: number } | null = null
-  for (const r of payroll.runs) for (const v of r.versions) if (!best || v.receivedAt > best.at) best = { at: v.receivedAt, period: periodLabel(r.start, r.end), staff: new Set(v.payload.employees.map((e) => e.employee_id)).size }
+  for (const r of payroll.runs) for (const v of r.versions) if (!best || v.receivedAt > best.at) best = { at: v.receivedAt, period: periodLabel(r.start, r.end), staff: new Set(v.payload.items.map((e) => e.employee.user_id)).size }
   return best
 })
 const lastRejected = computed(() => c.value.rejected[c.value.rejected.length - 1] ?? null)
@@ -83,11 +83,11 @@ function answer(yes: boolean) {
   oeError.value = ''
 }
 const orgs = computed(() => valuesSeen('organization_name'))
-const branches = computed(() => valuesSeen('branch_name'))
+const branches = computed(() => valuesSeen('branch'))
 const orgStaff = computed(() => staffByValue('organization_name'))
-const branchStaff = computed(() => staffByValue('branch_name'))
-function isOther(field: 'organization_name' | 'branch_name', value: string) { return payroll.settings.otherEntity.some((x) => x.field === field && x.value === value) }
-function toggleOther(field: 'organization_name' | 'branch_name', value: string) {
+const branchStaff = computed(() => staffByValue('branch'))
+function isOther(field: 'organization_name' | 'branch', value: string) { return payroll.settings.otherEntity.some((x) => x.field === field && x.value === value) }
+function toggleOther(field: 'organization_name' | 'branch', value: string) {
   const r = markOtherEntity(field, value, !isOther(field, value))
   if (!r.ok) { oeError.value = t(r.message ?? ''); return }
   oeError.value = ''
@@ -237,7 +237,7 @@ const connectionLog = computed(() => syncLog.value.filter((l) => l.type === 'Con
             </tr>
           </thead>
           <tbody>
-            <tr v-for="g in [...orgs.map((v) => ({ field: 'organization_name' as const, value: v, staff: orgStaff[v] ?? 0 })), ...branches.map((v) => ({ field: 'branch_name' as const, value: v, staff: branchStaff[v] ?? 0 }))]" :key="`${g.field}-${g.value}`">
+            <tr v-for="g in [...orgs.map((v) => ({ field: 'organization_name' as const, value: v, staff: orgStaff[v] ?? 0 })), ...branches.map((v) => ({ field: 'branch' as const, value: v, staff: branchStaff[v] ?? 0 }))]" :key="`${g.field}-${g.value}`">
               <td class="pset-td">{{ g.value }}</td>
               <td class="pset-td">{{ t(g.field === 'organization_name' ? 'Organization' : 'Branch') }}</td>
               <td class="pset-td pset-td--num">{{ g.staff }}</td>

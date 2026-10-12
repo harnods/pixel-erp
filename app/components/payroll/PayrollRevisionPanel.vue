@@ -12,10 +12,9 @@ import PayrollReverseDrawer from '~/components/payroll/PayrollReverseDrawer.vue'
 import PayrollAmendmentTasks from '~/components/payroll/PayrollAmendmentTasks.vue'
 import {
   runById, journalsOf, liveJournals, journalById, journalTotals, versionOf, currentVersionOf, versionLabel, runStatus, postRun, draftOf,
-  can, isLocked, firstOpenAfter, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, pph21Monthly, amendmentTasks,
+  can, isLocked, firstOpenAfter, monthLabel, dateLabel, periodLabel, rupiah, wib, today, addDays, pph21Month, amendmentTasks, correctionOf, sendFigures,
   type Journal,
 } from '~/data/payrollStore'
-import type { TalentaPayload } from '~/data/payrollMaster'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ runId: string }>()
@@ -30,18 +29,17 @@ const locked = computed(() => !!run.value && isLocked(run.value.month))
 const sign = (n: number) => (n >= 0 ? `+${rupiah(n)}` : rupiah(n))
 
 // ── Revised notice (OD-14) ──────────────────────────────────────────────────
-const thp = (p: TalentaPayload) => p.employees.reduce((s, e) => s + e.take_home_pay, 0)
-const pph = (p: TalentaPayload) => p.employees.reduce((s, e) => s + e['PPh 21 Benefit'] + e['PPh 21 Payment'] - e['Total PPh 21 DTP Received'], 0)
 const partial = computed(() => run.value?.versions.find((v) => v.state === 'partial'))
 const waiting = computed(() => run.value?.versions.find((v) => v.state === 'waiting-choice'))
 const revised = computed(() => {
   const r = run.value, a = ledgerV.value, b = cur.value
   if (!r || !r.revised || !a || !b || a.no === b.no) return null
+  const c = correctionOf(r.id)
   return {
     from: a.no, to: b.no, sentAt: wib(b.sentAt),
-    thp: Math.round(thp(b.payload) - thp(a.payload)),
-    pph: Math.round(pph(b.payload) - pph(a.payload)),
-    filed: pph21Monthly(r.month).ebupotFiled != null,
+    thp: c?.summary.takeHome.change ?? 0,
+    pph: c?.summary.pph21.change ?? 0,
+    filed: pph21Month(r.month).filed != null,
     superseded: r.versions.filter((v) => v.state === 'superseded').map((v) => `v${v.no}`),
   }
 })
@@ -77,7 +75,7 @@ function repost() {
 }
 
 // ── Journals ────────────────────────────────────────────────────────────────
-const journals = computed(() => (run.value ? journalsOf(run.value.id).filter((j) => ['Payroll', 'Difference', 'Reversal'].includes(j.type)) : []))
+const journals = computed(() => (run.value ? journalsOf(run.value.id).filter((j) => ['Payroll', 'Correction', 'Reversal'].includes(j.type)) : []))
 function journalState(j: Journal): string {
   if (j.reversesId) return `Reverses ${journalById(j.reversesId)?.number ?? ''}`
   if (j.reversedById) return `Reversed by ${journalById(j.reversedById)?.number ?? ''}`
@@ -100,7 +98,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       <MpIcon name="warning-circular" size="md" />
       <div class="prp__noticebody">
         <div class="prp__noticetitle">
-          {{ t('Revised') }}
+          {{ t('Correction ready') }}
           <MpBadge variant="subtle" variant-color="orange">{{ t(`v${revised.to} sent ${revised.sentAt}`) }}</MpBadge>
         </div>
         <div>{{ t(`Take-home pay ${sign(revised.thp)}. PPh 21 ${sign(revised.pph)}.`) }} {{ t(`v${revised.from} is still posted as ${live.map((j) => j.number).join(' and ')}; v${revised.to} can't post as a second full journal.`) }}</div>
@@ -111,7 +109,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       </div>
       <div class="prp__noticeactions">
         <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="showCompare">{{ t('Compare') }}</button>
-        <button v-if="can('fix') && !partial" class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prp-fix" @click="fixOpen = true">{{ t('Compare and fix') }}</button>
+        <button v-if="can('fix') && !partial" class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prp-fix" @click="fixOpen = true">{{ t('Post correction') }}</button>
       </div>
     </section>
 
@@ -136,7 +134,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
       <MpIcon name="error" size="md" />
       <div class="prp__noticebody">
         <div class="prp__noticetitle">{{ t(`Reversed, not reposted: ${rupiah(reversedNotReposted.amount)}`) }}</div>
-        <div>{{ t(`Reversed ${reversedNotReposted.at}. ${monthLabel(run.month)} sign-off and PPh 21 reconciliation stay blocked until the run posts again.`) }}</div>
+        <div>{{ t(`Reversed ${reversedNotReposted.at}. Payables for ${monthLabel(run.month)} show nothing owed until the run posts again.`) }}</div>
         <div v-if="reversedNotReposted.days >= 2" class="prp__noticesub">{{ t(`${reversedNotReposted.days} working days without a repost. The run shows in the inbox.`) }}</div>
         <div v-if="repostError" class="prp__noticeerror" role="alert">{{ repostError }}</div>
       </div>
@@ -214,7 +212,7 @@ const visible = computed(() => !!run.value && (run.value.versions.length > 1 || 
             <tr v-for="v in run.versions" :key="v.no">
               <td class="prp__td">{{ `v${v.no}` }}</td>
               <td class="prp__td prp__nowrap">{{ wib(v.sentAt) }}</td>
-              <td class="prp__td">{{ v.payload.employees.length }}</td>
+              <td class="prp__td">{{ sendFigures(v).staff }}</td>
               <td class="prp__td">{{ t(versionLabel(run, v)) }}</td>
               <td class="prp__td">{{ v.decision ? `${t(v.decision.kind)} · ${v.decision.by}` : '-' }}</td>
             </tr>

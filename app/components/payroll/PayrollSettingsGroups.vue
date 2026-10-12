@@ -28,12 +28,12 @@ const notInPrototype = () => infoToast(t('Not in this prototype'))
 const lastRun = computed(() => latestRegularRun())
 
 // ── Group to dimension maps (TS-04) ──
-const DIMS: { dim: TagDimension; field: 'organization_name' | 'branch_name'; label: string }[] = [
+const DIMS: { dim: TagDimension; field: 'organization_name' | 'branch'; label: string }[] = [
   { dim: 'Organization', field: 'organization_name', label: 'Organizations' },
-  { dim: 'Branch', field: 'branch_name', label: 'Branches' },
+  { dim: 'Branch', field: 'branch', label: 'Branches' },
 ]
-const staff = computed(() => ({ organization_name: staffByValue('organization_name'), branch_name: staffByValue('branch_name'), cost_center_name: staffByValue('cost_center_name') }))
-function groupRows(dim: TagDimension, field: 'organization_name' | 'branch_name') {
+const staff = computed(() => ({ organization_name: staffByValue('organization_name'), branch: staffByValue('branch'), cost_center: staffByValue('cost_center') }))
+function groupRows(dim: TagDimension, field: 'organization_name' | 'branch') {
   const values = new Set([...valuesSeen(field), ...Object.keys(s.value.groupMaps[dim])])
   return [...values].sort().map((value) => ({
     value, staff: staff.value[field][value] ?? 0, tag: s.value.groupMaps[dim][value] ?? null,
@@ -53,13 +53,13 @@ function createAndMap(dim: TagDimension, value: string) {
   if (!r.ok) { mapErrors[`${dim}|${value}`] = t(r.message ?? ''); return }
   onMap(dim, value, value)
 }
-const missingCount = (dim: TagDimension, field: 'organization_name' | 'branch_name') => groupRows(dim, field).filter((g) => !g.tag && !g.fallback).length
-function createAllMissing(dim: TagDimension, field: 'organization_name' | 'branch_name') {
+const missingCount = (dim: TagDimension, field: 'organization_name' | 'branch') => groupRows(dim, field).filter((g) => !g.tag && !g.fallback).length
+function createAllMissing(dim: TagDimension, field: 'organization_name' | 'branch') {
   for (const g of groupRows(dim, field).filter((x) => !x.tag && !x.fallback)) createAndMap(dim, g.value)
 }
 
 // ── Cost center categories (OD08-US05) ──
-const costCenters = computed(() => valuesSeen('cost_center_name').map((name) => ({ name, staff: staff.value.cost_center_name[name] ?? 0, cat: s.value.costCenterCategory[name] ?? null })))
+const costCenters = computed(() => valuesSeen('cost_center').map((name) => ({ name, staff: staff.value.cost_center[name] ?? 0, cat: s.value.costCenterCategory[name] ?? null })))
 const noCategory = computed(() => costCenters.value.filter((c) => !c.cat).length)
 const catOptions = [{ value: 'Direct', label: 'Direct' }, { value: 'In-direct', label: 'In-direct' }]
 function onCat(name: string, cat: string) {
@@ -122,7 +122,7 @@ function onSaveRule() {
 const fbOpen = ref(false)
 const fb = reactive({ field: 'organization_name', value: '', reason: '' })
 const fbError = ref('')
-const fbFieldOptions = [{ value: 'organization_name', label: 'Organization' }, { value: 'branch_name', label: 'Branch' }]
+const fbFieldOptions = [{ value: 'organization_name', label: 'Organization' }, { value: 'branch', label: 'Branch' }]
 const fbValueOptions = computed(() => {
   const dim: TagDimension = fb.field === 'organization_name' ? 'Organization' : 'Branch'
   return valuesSeen(fb.field).filter((v) => !s.value.groupMaps[dim][v] && !s.value.fallback.some((f) => f.field === fb.field && f.value === v)).map((v) => ({ value: v, label: v }))

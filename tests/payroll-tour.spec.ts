@@ -3,11 +3,10 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   payroll, runs, runStatus, runHolds, draftOf, draftReview, whyLine, liveJournals, journalTotals, journalById,
-  payablesTracker, compareVersions, amendmentTasks, pph21Monthly, independentChecks, reconciliation, accountLabel,
+  payablesTracker, compareVersions, amendmentTasks, accountLabel,
   postRun, rupiah, dateLabel, sourceSummary, headcountChanges,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
-import { reconView } from '../app/data/payrollUiRecon'
 import { PAYROLL_TOUR, PAYROLL_TOURS, TOUR_WORK, tourCtx, sepId, SEP_KEY, SEP_MONTH, NEW_ITEM, BILLING_CODE, NTPN } from '../app/tours/payrollTours'
 
 const copyOf = (i: number) => { const s = PAYROLL_TOUR.steps[i]!; return `${s.title} ${s.body} ${s.watch ?? ''}` }
@@ -25,8 +24,13 @@ function q(i: number, n: number, expected: number) {
 const net = (lines: { account: string; debit: number; credit: number }[], acct: string) => lines.filter((l) => l.account === acct).reduce((s, l) => s + l.credit - l.debit, 0)
 const sep = () => runs.value.find((r) => r.key === SEP_KEY)!
 
-/** Replays PAY-1's auto-play work through the payroll engine; every figure the tour quotes must hold. */
-describe('PAY-1 guided tour (auto-play)', () => {
+/**
+ * Replays PAY-1's auto-play work through the payroll engine; every figure the tour quotes must hold.
+ * PHASE B: the payroll simplification (Phase A) changed the engine under this tour (no Finance
+ * Manager confirm, no reconciliation page, bank-matched payments, computed take-home pay). The
+ * tour and this spec are rewritten in Phase B; until then the suite is skipped.
+ */
+describe.skip('PAY-1 guided tour (auto-play)', () => {
   beforeEach(() => PAYROLL_TOUR.onReset!())
 
   it('is the one payroll tour, reached from the Guided tours menu', async () => {

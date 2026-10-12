@@ -81,8 +81,6 @@ const PRESETS: { key: 'pph21' | 'dtp' | 'pph26' | 'resign' | 'trueUp'; label: st
         <table class="pbw__table">
           <tbody>
             <tr v-for="p in PRESETS" :key="p.key"><td class="pbw__td">{{ t(p.label) }}</td><td class="pbw__td">{{ accountLabel(s.taxPresets[p.key]) }}</td></tr>
-            <tr><td class="pbw__td">{{ t('Payroll rounding') }}</td><td class="pbw__td">{{ accountLabel(s.roundingAccount) }}</td></tr>
-            <tr><td class="pbw__td">{{ t('Payroll suspense') }}</td><td class="pbw__td">{{ accountLabel(s.suspenseAccount) }}</td></tr>
             <tr v-for="(pol, f) in s.fieldPolicies" :key="f"><td class="pbw__td">{{ t('Empty') }} {{ f }}</td><td class="pbw__td">{{ t(pol === 'hold' ? 'Hold the run' : 'Skip') }}</td></tr>
             <tr v-for="fb in s.fallback" :key="`${fb.field}${fb.value}`"><td class="pbw__td">{{ t('Fallback') }}: {{ fb.value }}</td><td class="pbw__td pbw__muted">{{ fb.reason }}</td></tr>
           </tbody>

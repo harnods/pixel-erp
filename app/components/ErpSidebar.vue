@@ -446,8 +446,6 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Payroll', children: [
             { label: 'Payroll inbox' },
             { label: 'Payroll payables' },
-            { label: 'Payroll reconciliation' },
-            { label: 'Payroll claims' },
             { label: 'Payroll settings' },
           ] },
           { label: 'Bank rules' },

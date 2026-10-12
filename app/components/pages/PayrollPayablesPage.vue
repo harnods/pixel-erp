@@ -1,35 +1,28 @@
 <script setup lang="ts">
 /**
- * Payroll payables (FG-5: TS-08, OD-18, OD-20, OD-21; OD-19 is Next).
- * One row per payable per period: owed, paid, balance, due date, overdue or paid late.
- * Salary pays from Hutang Gaji (Accountant); PPh 21, PPh 26 and BPJS pay from their own
- * payables (Tax Staff or Accountant). Selecting several open periods of one party pays them
- * in one deposit. Every figure comes from posted journals and payments in payrollStore.
+ * Payroll payables (FG-5): a tracker. One row per payable per period: owed, paid, balance,
+ * due date, status. Payments arrive as bank reconciliation matches (payrollStore
+ * simulateBankPayment); this screen records none itself. Every figure comes from posted
+ * journals and bank-matched payments in payrollStore.
  */
 import {
   MpButton, MpIcon, MpBadge, MpSegmentedControl, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import PayrollPaySalaryForm from '~/components/payroll/PayrollPaySalaryForm.vue'
-import PayrollPayStatutoryForm from '~/components/payroll/PayrollPayStatutoryForm.vue'
 import PayrollPayableDetail from '~/components/payroll/PayrollPayableDetail.vue'
-import PayrollBpjsInvoice from '~/components/payroll/PayrollBpjsInvoice.vue'
-import { payablesTracker, can, rupiah, monthLabel, dateLabel, today, voidPayment, accountLabel, type PayableRow } from '~/data/payrollStore'
-import { paymentHistory, payableNote, isPosted } from '~/data/payrollUiPayables'
-import { successToast, infoToast } from '~/utils/toasts'
+import { payablesTracker, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
+import { paymentHistory } from '~/data/payrollUiPayables'
 
 const { t } = useLocale()
 const route = useRoute()
 
 // ─── View ───────────────────────────────────────────────────────────────────
-type View = 'payables' | 'payments' | 'bpjs'
-const view = ref<View>((['payables', 'payments', 'bpjs'].includes(String(route.query.tab)) ? route.query.tab : 'payables') as View)
+type View = 'payables' | 'payments'
+const view = ref<View>((['payables', 'payments'].includes(String(route.query.tab)) ? route.query.tab : 'payables') as View)
 const viewOptions = computed(() => [
   { id: 'pp-v-payables', label: t('Payables'), value: 'payables' },
   { id: 'pp-v-payments', label: t('Payments'), value: 'payments' },
-  { id: 'pp-v-bpjs', label: t('BPJS invoice'), value: 'bpjs' },
 ])
 
 // ─── Rows ───────────────────────────────────────────────────────────────────
@@ -78,64 +71,35 @@ const openRows = computed(() => all.value.filter((r) => r.balance > 0))
 const overdueRows = computed(() => all.value.filter((r) => r.overdueDays > 0))
 const thisMonth = computed(() => today().slice(0, 7))
 const dueSoon = computed(() => openRows.value.filter((r) => r.due && !r.overdueDays && r.due <= addDaysIso(today(), 15)))
-const paidThisMonth = computed(() => paymentHistory.value.filter((p) => !p.voided && p.date.startsWith(thisMonth.value)))
+const paidThisMonth = computed(() => paymentHistory.value.filter((p) => p.date.startsWith(thisMonth.value)))
 const sum = (rows: PayableRow[]) => rows.reduce((s, r) => s + r.balance, 0)
 function drill(state: string) { clearFilters(); stateFilter.value = state; view.value = 'payables' }
 
 // ─── Actions ────────────────────────────────────────────────────────────────
-const salaryOpen = ref(false)
-const statutoryOpen = ref(false)
 const detailOpen = ref(false)
 const active = ref<PayableRow | null>(null)
-const statutoryRows = ref<PayableRow[]>([])
-
-const canPayRow = (r: PayableRow) => r.balance > 0 && (r.party === 'Staff' ? can('payment.salary') && isPosted(r.runId) : can('payment.statutory'))
-function pay(r: PayableRow) {
-  active.value = r
-  if (r.party === 'Staff') salaryOpen.value = true
-  else { statutoryRows.value = [r]; statutoryOpen.value = true }
-}
 function openDetail(r: PayableRow) { active.value = r; detailOpen.value = true }
-function payLabel(r: PayableRow) { return r.party === 'Staff' ? t('Record salary payment') : t('Pay') }
-
-function paySelected(sel: Set<number>) {
-  const rows = [...sel].map((i) => paginated.value[i]).filter((r): r is PayableRow => !!r)
-  if (rows.some((r) => r.party === 'Staff')) { infoToast(t('Salary rows pay one run at a time.')); return }
-  if (new Set(rows.map((r) => `${r.party}|${r.account}`)).size > 1) { infoToast(t('One party per payment. Select periods of one payable.')); return }
-  const open = rows.filter((r) => r.balance > 0)
-  if (!open.length) { infoToast(t('The selected periods have nothing open.')); return }
-  statutoryRows.value = open
-  statutoryOpen.value = true
-}
 
 // ─── Payments ───────────────────────────────────────────────────────────────
-const voidOpen = ref(false)
-const voidId = ref('')
-function askVoid(id: string) { voidId.value = id; voidOpen.value = true }
-function confirmVoid() { const r = voidPayment(voidId.value); if (r.ok) successToast(`${t('Payment voided by')} ${r.number as string}`) }
 const paymentColumns: TableColumn[] = [
   { key: 'number', label: t('Number'), kind: 'number' },
   { key: 'dateLabel', label: t('Date'), kind: 'date' },
   { key: 'payable', label: t('Payable'), kind: 'name' },
   { key: 'bank', label: t('Paid from'), kind: 'name' },
-  { key: 'billing', label: t('Billing code / NTPN'), kind: 'default' },
+  { key: 'statement', label: t('Bank statement line'), kind: 'default' },
   { key: 'amount', label: t('Amount'), kind: 'amount', align: 'right' },
-  { key: 'status', label: t('Status'), kind: 'status' },
 ]
 const payPage = ref(1)
 const payPerPage = ref(25)
 const paymentRows = computed(() => paymentHistory.value.slice((payPage.value - 1) * payPerPage.value, payPage.value * payPerPage.value) as unknown as Record<string, unknown>[])
 type PayHist = (typeof paymentHistory.value)[number]
 const asPay = (r: unknown) => r as PayHist
-
-const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7))
 </script>
 
 <template>
   <div class="pp">
     <div class="pp-head">
       <MpSegmentedControl id="pp-view" v-model="view" name="pp-view" :data="viewOptions" />
-      <ErpFilterSelect v-if="view === 'bpjs'" id="pp-bpjs-month" v-model="bpjsMonth" :placeholder="t('Month')" :options="monthOptions" :is-clearable="false" />
     </div>
 
     <!-- ── Payables ── -->
@@ -147,7 +111,7 @@ const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7
       :total="filtered.length"
       :current-page="currentPage"
       :per-page="perPage"
-      :has-checkbox="can('payment.statutory')"
+      :has-checkbox="false"
       :has-active-filter="hasActiveFilter"
       :search="search"
       filter-empty-label="payable"
@@ -156,19 +120,6 @@ const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7
       @per-page-change="(n: number) => (perPage = n)"
       @clear-filters="clearFilters"
     >
-      <template #bulk-actions="{ selectedRows }">
-        <MpPopover id="pp-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
-          <MpPopoverTrigger>
-            <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent class="erp-dropdown-menu">
-            <MpPopoverList>
-              <MpPopoverListItem @click="paySelected(selectedRows as Set<number>)">{{ t('Pay in one deposit') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </template>
-
       <template #stats>
         <div class="stats-section">
           <div class="stat-card stat-card--bordered">
@@ -216,7 +167,7 @@ const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7
         <div class="pp-cell">
           <span class="pp-name" @click="openDetail(asRow(row))">{{ asRow(row).label }}</span>
           <span class="pp-sub">{{ accountLabel(asRow(row).account) }}</span>
-          <span v-if="payableNote(asRow(row))" class="pp-sub">{{ t('Note') }}: {{ payableNote(asRow(row))!.note }}</span>
+          <span v-for="f in asRow(row).flags" :key="f.code + f.message" class="pp-warn">{{ f.message }}</span>
         </div>
       </template>
       <template #cell-owed="{ row }"><span class="pp-fig" @click="openDetail(asRow(row))">{{ rupiah(asRow(row).owed) }}</span></template>
@@ -224,11 +175,11 @@ const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7
       <template #cell-balance="{ row }">
         <div class="pp-cell">
           <span :class="{ 'pp-danger': asRow(row).overdueDays }">{{ rupiah(asRow(row).balance) }}</span>
-          <span v-if="asRow(row).latestTalenta != null" class="pp-sub">{{ t('Latest Talenta') }} {{ rupiah(asRow(row).latestTalenta! - asRow(row).paid) }}</span>
+          <span v-if="asRow(row).pendingOwed != null" class="pp-sub">{{ t('After correction') }} {{ rupiah(asRow(row).pendingOwed! - asRow(row).paid) }}</span>
         </div>
       </template>
       <template #cell-status="{ row }">
-        <MpBadge for="tableStatus" :type="badgeType(asRow(row))">{{ t(asRow(row).status) }}</MpBadge>
+        <MpBadge for="tableStatus" :type="badgeType(asRow(row))">{{ t(asRow(row).statusLabel) }}</MpBadge>
       </template>
 
       <template #actions="{ row }">
@@ -238,10 +189,8 @@ const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem v-if="canPayRow(asRow(row))" @click="pay(asRow(row))">{{ payLabel(asRow(row)) }}</MpPopoverListItem>
-              <MpPopoverListItem @click="openDetail(asRow(row))">{{ can('recon.note') ? t('View lines and add note') : t('View lines') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="openDetail(asRow(row))">{{ t('View lines') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="asRow(row).runId" @click="navigateTo(`/payroll-runs/${asRow(row).runId}`)">{{ t('Open run') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="asRow(row).party === 'Staff' && can('payment.salary')" @click="infoToast(t('Not in this prototype'))">{{ t('Mark transfer failed') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
@@ -267,53 +216,14 @@ const bpjsMonth = ref(monthFilter.value || months.value[0] || today().slice(0, 7
       @page-change="(p: number) => (payPage = p)"
       @per-page-change="(n: number) => (payPerPage = n)"
     >
-      <template #cell-number="{ row }">
-        <div class="pp-cell">
-          <span>{{ asPay(row).number }}</span>
-          <span v-if="asPay(row).voided" class="pp-sub">{{ asPay(row).voided }}</span>
-        </div>
-      </template>
-      <template #cell-payable="{ row }">
-        <div class="pp-cell">
-          <span>{{ asPay(row).payable }}</span>
-          <span v-for="w in asPay(row).warnings" :key="w" class="pp-warn">{{ w }}</span>
-        </div>
-      </template>
-      <template #cell-billing="{ row }">{{ asPay(row).billing || '-' }}</template>
+      <template #cell-statement="{ row }">{{ asPay(row).statement || '-' }}</template>
       <template #cell-amount="{ row }">{{ rupiah(asPay(row).amount) }}</template>
-      <template #cell-status="{ row }">
-        <MpBadge for="tableStatus" :type="asPay(row).voided ? 'announcement' : 'completed'">{{ t(asPay(row).status) }}</MpBadge>
-      </template>
-      <template #actions="{ row }">
-        <MpPopover v-if="!asPay(row).voided && can('payment.void')" :id="`pp-pay-${asPay(row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('Row actions')" is-rounded />
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="askVoid(asPay(row).id)">{{ t('Void') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-      </template>
       <template #empty>
         <div class="pp-empty"><p class="pp-empty-title">{{ t('No payments yet') }}</p></div>
       </template>
     </ErpTablePage>
 
-    <!-- ── BPJS invoice ── -->
-    <PayrollBpjsInvoice v-else :month="bpjsMonth" />
-
-    <PayrollPaySalaryForm v-model:is-open="salaryOpen" :row="active" />
-    <PayrollPayStatutoryForm v-model:is-open="statutoryOpen" :rows="statutoryRows" />
     <PayrollPayableDetail v-model:is-open="detailOpen" :row="active" />
-    <ConfirmModal
-      v-model:is-open="voidOpen"
-      :title="t('Void payment')"
-      :description="t('Jurnal posts a linked reversal in the first open period. The payment journal stays in the ledger.')"
-      :confirm-label="t('Void')"
-      @confirm="confirmVoid"
-    />
   </div>
 </template>
 

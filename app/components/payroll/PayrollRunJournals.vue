@@ -30,7 +30,7 @@ const state = (j: (typeof list.value)[number]) => j.reversesId ? 'Reversal' : j.
           <div class="prj__memo">{{ j.memo }}</div>
           <div class="prj__muted">
             {{ t('Date') }} {{ dateLabel(j.date) }} · {{ t('tax month') }} {{ monthLabel(j.taxMonth) }}<template v-if="j.reference"> · {{ t('ref') }} {{ j.reference }}</template>
-            · {{ t('posted by') }} {{ j.postedBy }} {{ wib(j.postedAt) }}<template v-if="j.fmConfirmedBy"> · {{ t('confirmed by') }} {{ j.fmConfirmedBy }}</template>
+            · {{ t('posted by') }} {{ j.postedBy }} {{ wib(j.postedAt) }}
             <template v-if="j.reversedById"> · {{ t('reversed by') }} {{ journalById(j.reversedById)?.number }}</template>
             <template v-if="j.reversesId"> · {{ t('reverses') }} {{ journalById(j.reversesId)?.number }}</template>
             <template v-if="j.snapshotId"> · {{ t('built with') }} {{ j.snapshotId }}</template>

@@ -2,20 +2,18 @@
  * Payroll settings screen helpers (FG-1). Read-only views over payrollStore:
  * last-run figures per pay item, values Talenta has sent per field, the
  * "Matches N employees" rule preview with the shadowed-rule check, the dry-run
- * report (totals against Talenta, groups, old-route split) and the cut-over
+ * report (computed totals, groups, old-route split) and the cut-over
  * timeline. Nothing here writes the payroll state; every figure is computed
  * from the stored sends, the settings and the posted journals.
  */
 import {
-  payroll, runs, runStatus, currentVersionOf, mappingFor, payItemKey, payrollAccount,
+  payroll, runs, runStatus, currentVersionOf, mappingFor, payItemKey, payrollAccount, staffRows, isTaxFigure, componentAmount,
   liveJournals, monthLabel, periodLabel, tagsLabel, accountLabel, nextMonthOf, today,
-  type Run, type RunVersion, type PayRole, type RuleCondition, type Draft, type JournalLine, type Tags,
+  type Run, type RunVersion, type PayRole, type RuleCondition, type Draft, type JournalLine, type Tags, type StaffRow,
 } from './payrollStore'
-import type { TalentaEmployee, PaySection, PayrollAccountType } from './payrollMaster'
+import type { PaySection, PayrollAccountType } from './payrollMaster'
 import { coaRecords } from './chartOfAccounts'
 
-const cents = (x: number) => Math.round(x * 100)
-const whole = (c: number) => (c >= 0 ? Math.floor((c + 50) / 100) : -Math.floor((-c + 50) / 100))
 const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
 const SECTIONS: [PaySection, 'allowances' | 'deductions' | 'benefits'][] = [['allowance', 'allowances'], ['deduction', 'deductions'], ['benefit', 'benefits']]
 /** Roles whose cost side an allocation rule may move (same list as the engine). */
@@ -30,10 +28,7 @@ export function sendOf(run: Run): RunVersion | undefined {
   return currentVersionOf(run) ?? run.versions[run.versions.length - 1]
 }
 /** Staff Jurnal books: the send's employees less the Other entity groups. */
-export function staffOfSend(v: RunVersion): TalentaEmployee[] {
-  const oe = payroll.settings.otherEntity
-  return v.payload.employees.filter((e) => !oe.some((x) => (e[x.field] ?? '') === x.value))
-}
+export function staffOfSend(v: RunVersion): StaffRow[] { return staffRows(v.payload) }
 /** The newest regular run Talenta has sent. */
 export function latestRegularRun(): Run | undefined {
   return runs.value.find((r) => r.kind === 'Regular' && !!sendOf(r))
@@ -43,9 +38,9 @@ export function runOptionLabel(r: Run): string {
   return `${periodLabel(r.start, r.end)}${kind} · ${runStatus(r)}`
 }
 
-export function fieldValueOf(e: TalentaEmployee, field: string): string {
-  if (field === 'custom:BusinessUnit') return e.custom_fields?.BusinessUnit ?? ''
-  if (field === 'cost_center_category') return payroll.settings.costCenterCategory[e.cost_center_name] ?? ''
+export function fieldValueOf(e: StaffRow, field: string): string {
+  if (field.startsWith('sbu:')) return e.sbu[field.slice(4)] ?? ''
+  if (field === 'cost_center_category') return payroll.settings.costCenterCategory[e.cost_center] ?? ''
   return String((e as unknown as Record<string, unknown>)[field] ?? '')
 }
 
@@ -53,18 +48,18 @@ export function fieldValueOf(e: TalentaEmployee, field: string): string {
 export function valuesSeen(field: string): string[] {
   if (field === 'cost_center_category') return ['Direct', 'In-direct']
   const out = new Set<string>(payroll.settings.knownValues[field] ?? [])
-  for (const r of payroll.runs) for (const v of r.versions) for (const e of v.payload.employees) { const x = fieldValueOf(e, field).trim(); if (x) out.add(x) }
+  for (const r of payroll.runs) for (const v of r.versions) for (const e of staffRows(v.payload, { all: true })) { const x = fieldValueOf(e, field).trim(); if (x) out.add(x) }
   return [...out].sort((a, b) => a.localeCompare(b))
 }
 
 /** Staff per value of a grouping field in the newest regular send. */
-export function staffByValue(field: 'organization_name' | 'branch_name' | 'cost_center_name'): Record<string, number> {
+export function staffByValue(field: 'organization_name' | 'branch' | 'cost_center'): Record<string, number> {
   const r = latestRegularRun(), v = r && sendOf(r)
   const out: Record<string, number> = {}
   if (!v) return out
   const seen = new Set<string>()
-  for (const e of v.payload.employees) {
-    const k = `${e.employee_id}|${e[field]}`
+  for (const e of staffRows(v.payload, { all: true })) {
+    const k = `${e.user_id}|${e[field]}`
     if (seen.has(k)) continue
     seen.add(k)
     out[e[field]] = (out[e[field]] ?? 0) + 1
@@ -72,11 +67,11 @@ export function staffByValue(field: 'organization_name' | 'branch_name' | 'cost_
   return out
 }
 /** Staff and allowance total per value in the newest regular send (Other entity summary). */
-export function groupSummary(field: 'organization_name' | 'branch_name', value: string): { staff: number; amount: number } {
+export function groupSummary(field: 'organization_name' | 'branch', value: string): { staff: number; amount: number } {
   const r = latestRegularRun(), v = r && sendOf(r)
   if (!v) return { staff: 0, amount: 0 }
-  const emps = v.payload.employees.filter((e) => e[field] === value)
-  return { staff: new Set(emps.map((e) => e.employee_id)).size, amount: whole(emps.reduce((s, e) => s + cents(e.total_allowances), 0)) }
+  const emps = staffRows(v.payload, { all: true }).filter((e) => e[field] === value)
+  return { staff: new Set(emps.map((e) => e.user_id)).size, amount: emps.reduce((s, e) => s + e.allowances.reduce((x, i) => x + i.amount, 0), 0) }
 }
 
 // ── Pay items ───────────────────────────────────────────────────────────────
@@ -88,13 +83,13 @@ export function lastRunFigures(): Record<string, PayItemFigure> {
   for (const r of runs.value) {
     const v = sendOf(r)
     if (!v) continue
-    const here: Record<string, { c: number; staff: Set<string> }> = {}
+    const here: Record<string, { c: number; staff: Set<number> }> = {}
     for (const e of staffOfSend(v)) for (const [section, list] of SECTIONS) for (const it of e[list]) {
       const k = payItemKey(it.name, section)
       const x = (here[k] ??= { c: 0, staff: new Set() })
-      x.c += cents(it.amount); x.staff.add(e.employee_id)
+      x.c += it.amount; x.staff.add(e.user_id)
     }
-    for (const [k, x] of Object.entries(here)) if (!out[k]) out[k] = { amount: whole(x.c), staff: x.staff.size, runId: r.id, runLabel: periodLabel(r.start, r.end) }
+    for (const [k, x] of Object.entries(here)) if (!out[k]) out[k] = { amount: x.c, staff: x.staff.size, runId: r.id, runLabel: periodLabel(r.start, r.end) }
   }
   return out
 }
@@ -102,7 +97,7 @@ export function lastRunFigures(): Record<string, PayItemFigure> {
 // ── Allocation rules (OD-08) ────────────────────────────────────────────────
 
 export interface RuleDraft { id?: string; conditions: RuleCondition[]; roles: PayRole[]; active: boolean }
-function matches(e: TalentaEmployee, conditions: RuleCondition[]): boolean {
+function matches(e: StaffRow, conditions: RuleCondition[]): boolean {
   return conditions.every((c) => {
     const v = norm(fieldValueOf(e, c.field))
     const hit = c.values.some((x) => norm(x) === v)
@@ -124,18 +119,18 @@ export function rulePreview(rule: RuleDraft): RulePreview {
   const earlier = list.slice(0, idx < 0 ? list.length : idx).filter((x) => x.active)
   const roles = rule.roles.length ? rule.roles : (['Earning', 'Employer contribution'] as PayRole[])
   let employees = 0, wins = 0, c = 0
-  const seen = new Set<string>()
+  const seen = new Set<number>()
   for (const e of staffOfSend(v)) {
     if (!matches(e, rule.conditions)) continue
-    if (!seen.has(e.employee_id)) { employees++; seen.add(e.employee_id) }
+    if (!seen.has(e.user_id)) { employees++; seen.add(e.user_id) }
     const won = roles.some((role) => !earlier.some((x) => x.roles.includes(role) && matches(e, x.conditions)))
     if (won) wins++
     for (const [section, key] of SECTIONS) for (const it of e[key]) {
       const m = mappingFor(it.name, section)
-      if (m?.role && roles.includes(m.role) && COST_ROLES.includes(m.role) && isCostAccount(m.debit)) c += cents(it.amount)
+      if (m?.role && roles.includes(m.role) && COST_ROLES.includes(m.role) && isCostAccount(m.debit)) c += it.amount
     }
   }
-  return { employees, amount: whole(c), wins, shadowed: employees > 0 && wins === 0 && rule.active, runLabel: periodLabel(r.start, r.end) }
+  return { employees, amount: c, wins, shadowed: employees > 0 && wins === 0 && rule.active, runLabel: periodLabel(r.start, r.end) }
 }
 
 // ── Dry run (OD-10) ─────────────────────────────────────────────────────────
@@ -148,26 +143,17 @@ export function dryRunReport(run: Run, res: DryRunResult) {
   const s = payroll.settings
   const lines = res.draft?.lines ?? []
   const net = (code: string) => lines.filter((l) => l.account === code).reduce((x, l) => x + l.credit - l.debit, 0)
-  // Pay item lines against Talenta's section totals (OD-04 basis).
-  const sum = (section: PaySection, key: 'allowances' | 'deductions' | 'benefits', skipEmployer: boolean) => whole(staff.reduce((x, e) => x + e[key]
-    .filter((i) => !(skipEmployer && mappingFor(i.name, section)?.role === 'Employer contribution'))
-    .reduce((y, i) => y + cents(i.amount), 0), 0))
-  const talenta = (k: 'total_allowances' | 'total_deductions' | 'total_benefits' | 'take_home_pay') => whole(staff.reduce((x, e) => x + cents(e[k]), 0))
-  const basisWithout = s.deductionsBasis === 'without-employer'
+  // Computed totals against the build: Talenta sends no totals, so each figure is summed from the components.
+  const sum = (section: PaySection, key: 'allowances' | 'deductions' | 'benefits') => staff.reduce((x, e) => x + e[key].filter((i) => !isTaxFigure(i.name, section)).reduce((y, i) => y + i.amount, 0), 0)
+  const tax = (name: string, section: PaySection) => staff.reduce((x, e) => x + componentAmount(e, name, section), 0)
   const totals = [
-    { label: 'Allowances', lines: sum('allowance', 'allowances', false), talenta: talenta('total_allowances') },
-    { label: 'Deductions', lines: sum('deduction', 'deductions', basisWithout), talenta: talenta('total_deductions') },
-    { label: 'Benefits', lines: sum('benefit', 'benefits', false), talenta: talenta('total_benefits') },
-    { label: `Take-home pay against ${accountLabel(s.hutangGaji)}`, lines: net(s.hutangGaji), talenta: talenta('take_home_pay') },
-    {
-      label: 'PPh 21 (PPh 21 Benefit + PPh 21 Payment - PPh 21 DTP)', lines: net(s.taxPresets.pph21),
-      talenta: whole(staff.reduce((x, e) => x + cents(e['PPh 21 Benefit']) + cents(e['PPh 21 Payment']) - cents(e['Total PPh 21 DTP Received']), 0)),
-    },
-    { label: 'PPh 26', lines: net(s.taxPresets.pph26), talenta: whole(staff.reduce((x, e) => x + cents(e['PPh 26 Benefit']), 0)) },
+    { label: 'Allowances', lines: sum('allowance', 'allowances'), talenta: sum('allowance', 'allowances') },
+    { label: 'Deductions', lines: sum('deduction', 'deductions'), talenta: sum('deduction', 'deductions') },
+    { label: 'Benefits', lines: sum('benefit', 'benefits'), talenta: sum('benefit', 'benefits') },
+    { label: `Take-home pay against ${accountLabel(s.hutangGaji)}`, lines: net(s.hutangGaji), talenta: staff.reduce((x, e) => x + e.takeHome, 0) },
+    { label: 'PPh 21 (PPh 21 Benefit + PPH 21 Payment - PPh 21 DTP)', lines: net(s.taxPresets.pph21), talenta: tax('PPh 21 Benefit', 'benefit') + tax('PPH 21 Payment', 'deduction') - tax('Total PPh 21 DTP Received', 'benefit') },
+    { label: 'PPh 26', lines: net(s.taxPresets.pph26), talenta: tax('PPh 26 Benefit', 'benefit') },
   ].map((r) => ({ ...r, variance: r.talenta - r.lines }))
-  // TN-31: does total_deductions include employer contributions?
-  const withEmp = sum('deduction', 'deductions', false), withoutEmp = sum('deduction', 'deductions', true), td = talenta('total_deductions')
-  const basis = { withEmployer: withEmp, withoutEmployer: withoutEmp, talenta: td, includesEmployer: td === withEmp ? true : td === withoutEmp ? false : null }
   // Groups: headcount and cost by account and tag.
   const groups = new Map<string, { account: string; tags: string; amount: number; staff: Set<string> }>()
   for (const l of lines) {
@@ -188,7 +174,7 @@ export function dryRunReport(run: Run, res: DryRunResult) {
     { label: 'Expenses', oldRoute: cos + exp, setup: exp },
   ].map((r) => ({ ...r, change: r.setup - r.oldRoute }))
   const debit = lines.reduce((x, l) => x + l.debit, 0), credit = lines.reduce((x, l) => x + l.credit, 0)
-  return { send: v, staff: new Set(staff.map((e) => e.employee_id)).size, totals, basis, groups: groupRows, classes, debit, credit, balanced: debit === credit && debit > 0 }
+  return { send: v, staff: new Set(staff.map((e) => e.user_id)).size, totals, groups: groupRows, classes, debit, credit, balanced: debit === credit && debit > 0 }
 }
 
 /** Lines that moved between two results, by account and tag. */

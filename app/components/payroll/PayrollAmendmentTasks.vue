@@ -22,9 +22,9 @@ const expanded = ref<Record<string, boolean>>({})
 
 const STATUS_COLOR: Record<string, 'orange' | 'green' | 'gray' | 'blue'> = { Open: 'orange', Amended: 'green', 'Not filed yet': 'blue', Dismissed: 'gray' }
 const signed = (n: number) => (n > 0 ? `+${rupiah(n)}` : rupiah(n))
-const FIELDS = ['PPh 21 Benefit', 'PPh 21 Payment', 'Total PPh 21 DTP Received', 'PPh 21 Resign Benefit', 'PPh 26 Benefit'] as const
+const FIELDS = ['PPh 21 Benefit', 'PPH 21 Payment', 'Total PPh 21 DTP Received', 'PPh 21 Resign Benefit', 'PPh 26 Benefit'] as const
 const FIELD_LABEL: Record<(typeof FIELDS)[number], string> = {
-  'PPh 21 Benefit': 'PPh 21 Benefit', 'PPh 21 Payment': 'PPh 21 Payment', 'Total PPh 21 DTP Received': 'PPh 21 DTP',
+  'PPh 21 Benefit': 'PPh 21 Benefit', 'PPH 21 Payment': 'PPH 21 Payment', 'Total PPh 21 DTP Received': 'PPh 21 DTP',
   'PPh 21 Resign Benefit': 'PPh 21 severance', 'PPh 26 Benefit': 'PPh 26',
 }
 const outcome = (x: Task) => {

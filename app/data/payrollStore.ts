@@ -1,111 +1,141 @@
 /**
  * Payroll to Ledger (Jurnal x Talenta): ONE reactive state and every rule.
  *
- * Talenta sends facts; Jurnal decides the accounting (LR-1). Every figure is
- * computed on read from the stored sends, the settings and the posted journals.
- * Jurnal reads one Talenta webhook, talenta.salarydetail: HR settles the people,
- * the Accountant consumes the run. Who joined, left or moved group comes from
- * comparing a run's employee_ids with the previous posted run (headcountChanges).
- * Nothing seeds a total. Persists under `erp-db:payroll:state-v4`;
- * resetPayroll() returns to the sample. No employee names anywhere (LR-7).
+ * HR settles in Talenta, the Accountant consumes in Jurnal. Jurnal reads one webhook,
+ * "Send Salary Detail via Webhook" (final payload, 19 Nov 2025): company_id, sent_at,
+ * period { start_date, end_date }, items[] { employee { user_id, employee_id, employee_name,
+ * job_position, job_level, employment_status, organization_name, branch, cost_center, sbu[] },
+ * components { allowances[], deductions[], benefits[] } }. No totals, no run type. Amounts are
+ * whole rupiah >= 0. Jurnal drops employee_name at intake (stored blank, never shown).
+ * Take-home pay = sum(allowances) - sum(deductions); benefits are employer-paid and not in it;
+ * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
+ * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
+ * PPH 21 Payment). Staff are keyed by user_id and shown by employee_id.
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v5`; resetPayroll()
+ * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
  * State and roles
- *   payroll                         reactive state (runs, journals, settings, log, ...). Read it, never write it.
+ *   payroll                         reactive state (runs, journals, payments, bankLines, ebupot, settings, log, ...). Read it, never write it.
  *   can(action)                     true when the View as role may take the action (hide the control when false).
+ *                                   Actions: connection.view|manage, source.confirm, otherEntity.answer|mark, settings.edit|override,
+ *                                   fieldPolicy.edit, presets.edit, limits.edit, dryrun.pass|signoff, cutover.propose|confirm,
+ *                                   run.choose, run.partial, run.release, draft.note, warning.ack, post, reverse, fix, period.lock,
+ *                                   task.close, ebupot.enter, simulate.bank, simulate.journal, payByEmployee.view, log.export, report.export.
  *   setPayrollViewAs(role)          switch the acting role. actingPerson() returns the name for records.
- *   resetPayroll()                  rebuild the sample through the engine (simulated sends, posts, payments).
+ *   resetPayroll()                  rebuild the sample through the engine (simulated sends, posts, bank matches).
  *   today()                         the sample clock's date ("2026-10-05" at seed). nowWib() for display.
- *   rupiah(n), wib(iso), dateLabel(d), monthLabel('2026-09'), periodLabel(start, end)   formatters for copy.
- *   accountName(code), accountLabel(code), payrollAccount(code)   account lookups (PAYROLL_ACCOUNTS + state).
+ *   rupiah(n), wib(iso), dateLabel(d), monthLabel('2026-09'), periodLabel(start, end), listLabel(xs), tagsLabel(tags)   formatters.
+ *   accountName(code), accountLabel(code), payrollAccount(code), isPayrollAccount(code)   account lookups.
  *
  * Connection (TS-01)
  *   connection                      computed: status, companyId, last accepted send, rejected sends, other-entity groups.
  *   startConnection(companyId) / endConnection(reason) / restartConnection(companyId)   Jurnal Owner only.
  *   confirmSource()                 Jurnal Owner confirms the first send's source; holds clear, drafts build.
- *   sourceSummary(runId)            organizations, branches, headcount, take-home total of a run's current send.
- *   answerOtherEntities(yes)        Jurnal Owner answers "Does this Talenta company hold staff of other legal entities?"
- *   markOtherEntity(field, value, on)   Accountant marks an organization/branch as Other entity (left out of journals).
+ *   sourceSummary(runId)            organizations, branches, headcount (user_id), take-home total of a run's latest send.
+ *   answerOtherEntities(yes) / markOtherEntity('organization_name'|'branch', value, on)
  *
- * Settings, versioned (LR-9, TS-02..04, OD-05, OD-06, OD-08, OD-11, OD-24)
+ * Settings, versioned (LR-9)
  *   settings                        computed: the current settings. snapshotById(id), currentSnapshotId().
- *   payItemKey(name, section)       match key: trimmed, case ignored, plus section.
- *   mappingFor(name, section)       the mapping row or undefined.
- *   suggestRole(name, section)      role suggestion from name and section (null = "No suggestion").
- *   suggestMapping(name, section)   role, debit, credit, party, programme for a standard item, or null.
- *   validateMapping(row)            { blocks: string[], overridable: string[] } guardrails.
- *   setPayItemMapping(key, patch, overrideReason?)   save one row; blocks return ok:false; overridable breaches need a 20-500 char reason.
- *   addPayItem(name, section)       add a row before Talenta sends the item.
- *   confirmAllSuggestions()         accept suggestions; skips Loan, Reimbursement, THR, Severance, Advance offset, Tax.
- *   replaceAccount(from, to)        replace an account across every mapping row.
- *   setPayableParty(code, party)    one party label per payable; blocked when it would put two statutory parties on one payable.
- *   mapGroup(dimension, value, tag, { fromHold })   organization/branch to tag (fallback tag refused from the hold screen).
- *   createPayrollTag(dimension, name)
- *   saveRule(rule) / deleteRule(id) / moveRule(id, -1|1)   allocation rules: up to 5 AND conditions, roles, account and/or tags.
- *   sendToFallback(field, value, reason)   one-time logged confirmation per value.
- *   setFieldPolicy(field, 'hold'|'skip')   Finance Manager.
+ *   payItemKey(name, section), mappingFor(name, section), suggestRole(name, section), suggestMapping(name, section)
+ *   validateMapping(row)            { blocks, overridable } guardrails.
+ *   setPayItemMapping(key, patch, overrideReason?)   save one row; every save re-checks held runs (holds clear on their own).
+ *   addPayItem(name, section), confirmAllSuggestions(), replaceAccount(from, to), setPayableParty(code, party)
+ *   mapGroup(dimension, value, tag, { fromHold }), createPayrollTag(dimension, name)
+ *   saveRule(rule) / deleteRule(id) / moveRule(id, -1|1)   rule fields: organization_name, branch, cost_center,
+ *                                   cost_center_category, job_position, job_level, employment_status, 'sbu:<key>'.
+ *   sendToFallback(field, value, reason), setFieldPolicy('organization_name'|'branch'|'cost_center', 'hold'|'skip')
  *   setCostCenterCategory(name, 'Direct'|'In-direct'), acceptFieldValue(field, value)
- *   setTaxPreset(key, code)         PPh 26 may not share an account with PPh 21 or PPh 21 DTP.
- *   addPayrollAccount({ code, name, type, party, reused? })   add an account to the payroll set (TS-03).
- *   previewDryRun(runId, no?)       OD-10: holds and would-be draft on current settings; stores and posts nothing.
- *   proposeCutover(month) (Accountant) / confirmCutover() (Finance Manager) / setCutoverMode('Block'|'Flag') (Finance Manager)
- *   setLimits(patch), setPayday(day), setSuspenseAccount(code)
+ *   setTaxPreset(key, code), addPayrollAccount({ code, name, type, party, reused? })
+ *   previewDryRun(runId, no?)       { holds, warnings, draft }: stores and posts nothing. Call from a handler.
+ *   proposeCutover(month) / confirmCutover() / setCutoverMode('Block'|'Flag'), setLimits(patch), setPayday(day)
+ *   Limits: partialStaffPct 10, partialWholeGroup, partialThpPct 20, taxTolerance 1000, largeChangePct 10, largeChangeAmount 1000000.
  *
- * Intake (OD-01, LR-3)
- *   simulateSend(kind, opts?)       kinds: 'regular' | 'new-pay-item' | 'revision' | 'partial' | 'separate-run' | 'duplicate'
- *                                   | 'old-sync'. Returns { ok, status, message, runId? }.
- *   receiveSalaryDetail(payload)    the talenta.salarydetail webhook entry point simulateSend uses (the only Talenta webhook read).
- *   oldSyncExpense({ date, amount, pattern })   old-sync Expense call checked against the cut-over (LR-14).
- *   runs (computed, newest period first), runById(id), runStatus(run), runHolds(run), currentVersionOf(run), versionLabel(run, v)
- *   chooseRevision(runId, no) / chooseSeparateRun(runId, no, { type, name, reason })
+ * Intake (OD-01, LR-3): Talenta sends, Jurnal builds the draft right away.
+ *   simulateSend(kind, opts?)       kinds (SEND_KINDS): 'regular' | 'new-pay-item' | 'revision' | 'missing-component'
+ *                                   | 'partial' | 'separate-run' | 'duplicate' | 'old-sync'. Returns { ok, status, message, runId?, versionNo? }.
+ *                                   opts: runId, start, end, sentAt, newAllowance, raise, onlyBranch, thr, omit[], taxOff, duplicateEmployee, taxShift.
+ *   receiveSalaryDetail(payload)    the webhook entry point simulateSend uses. Byte-identical duplicate: Failed "Duplicate of vN".
+ *                                   Same figures, new sent_at: "No change". Older than the last version: Failed.
+ *   runs (computed, newest first), runById(id), versionOf(run, no), currentVersionOf(run), draftOf(run), versionLabel(run, v)
+ *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Correction ready'
+ *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'.
+ *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'unmapped-group',
+ *                                   'new-field-value', 'empty-field' (grouping field a rule needs), 'two-parties', 'archived-account'
+ *                                   (no usable mapping), 'partial' (fewer staff than the last version), 'choice' (separate-run look-alike),
+ *                                   'confirm-source' (first send).
  *   decidePartial(runId, no, 'replace'|'reject', reason?)
- *   releaseRun(runId)               re-check the whole run after fixes.
- *   releaseWithGap(runId, { reason, attachment, target })   Finance Manager; target 'suspense' or a payable code.
- *   releaseTaxHold(runId, reason)   Tax Staff or Finance Manager.
+ *   chooseRevision(runId, no) / chooseSeparateRun(runId, no, { type, name, reason })   only when the send looks like a separate run
+ *                                   (under half its staff carry Earning items, e.g. THR only). Every other send on a posted run is a revision.
+ *   releaseRun(runId)               manual re-check of the run.
  *   markDryRunPassed(runId) / signOffDryRun(runId)
+ *   staffRows(payload, { all? })    StaffRow[] { user_id, employee_id, organization_name, branch, cost_center, job_*, employment_status,
+ *                                   sbu{}, allowances, deductions, benefits, takeHome }. Other-entity groups left out unless all.
+ *   sendFigures(version)            { staff, takeHome, gross } of one version's send.
+ *   componentAmount(row, name, section), isTaxFigure(name, section)   tax benefit components are read, never booked as pay items.
  *
- * Checks (LR-5): source confirm, revision choice, partial, duplicate employee, unmapped items/groups/fields,
- *   total check (sum of absolute per-employee gaps per section), then at build: Hutang Gaji = take-home pay,
- *   two parties on one payable, rounding residue, tax rule (LR-10). totalGaps(runId, no?) exposes the check.
- *
- * Draft (TS-05, OD-12)
- *   draftOf(run), isDraftStale(runId), rebuildDraft(runId) -> { changed }
- *   draftReview(runId)              { payItems, talentaTotals, changes, headcount, lines, otherEntity, unnotedLargeChanges, unexpectedHeadcount }
- *   whyLine(runId, lineIndex)       reasons and sources behind one draft line.
- *   addChangeNote(runId, key, note) note on a large-change row (<= 500 chars).
- *   headcountChanges(runId)         pure: the run's employee_ids against the previous posted regular run of the same
- *                                   period type, per group (organization + branch, as dimension labels): last, current,
- *                                   change, joined, left, movedIn/movedOut (from, to), flagged, expected. Ids, never names.
+ * Draft, warnings (OD-12): warnings never block Post.
+ *   draftReview(runId)              { previous, payItems[{ name, section, amount, staff, role, taxFigure }], totals[{ section, amount }],
+ *                                   changes[{ key, label, account, tags, old, new, diff, pct, flag, note }], headcount, lines, otherEntity,
+ *                                   takeHome, tax, warnings, unacknowledged, unnotedLargeChanges, unexpectedHeadcount }
+ *   runWarnings(runId)              RunWarning[] { key, code, message, details, acknowledged }. Codes: 'missing-component' ("PPH 21 Paid not
+ *                                   in this send", one per name+section non-zero last time), 'tax-rule' (PPh 21 lines vs the rule beyond
+ *                                   Rp1.000), 'duplicate-employee', 'hutang-gaji', 'negative-payable', 'large-change' (no note),
+ *                                   'headcount' (not marked Expected), 'manual-journal' (non-PAY journal on a payroll account this month).
+ *   acknowledgeWarning(runId, key, note?) / clearAcknowledgement(runId, key)   Accountant.
+ *   postConfirmText(runId)          { title, body, warnings[] } for the Post / Post correction confirm (lists unacknowledged warnings).
+ *   taxFigures(runId)               { benefit, payment, dtp, resign, pph26, paidDeduction, rule, ledger, pph26Ledger, dtpLedger, resignLedger, hasLines }.
+ *   isDraftStale(runId), rebuildDraft(runId) -> { changed }, whyLine(runId, lineIndex), addChangeNote(runId, key, note)
+ *   headcountChanges(runId)         pure, keyed by user_id, shown by employee_id: { previous, groups[{ key, label, last, current, change,
+ *                                   joined[], left[], movedIn[], movedOut[], flagged, expected }], last, current, joined, left,
+ *                                   moved[{ employee_id, user_id, from, to }], renumbered[{ user_id, from, to }], flagged, unexpected }.
  *   markHeadcountExpected(runId, groupKey, note?) / clearHeadcountExpected(runId, groupKey)
- *                                   Accountant marks a group's change Expected (note optional, <= 500 chars). Posting is never
- *                                   blocked by headcount; unmarked changes show in the Post confirm.
- *   claimsSummary(runId)            Reimbursement lines by item and tag (OD-26).
+ *   claimsSummary(runId)            { rows[{ item, account, tags, amount, employees, version, journal }], total }: the claims section on the run page.
  *
- * Post, reverse, revise (TS-05, TS-07, OD-14..17, LR-4, LR-8)
- *   confirmPostAsFinanceManager(runId)   the MLP stopgap confirm when overrides or changed settings exist.
- *   postRun(runId, { versionNo? })  all-or-nothing post; stale, newer-version, revised and dry-run blocks; locked month redirect.
- *   reverseRun(runId, { date?, confirmPayments? })   reverses every live journal of the run together.
- *   reverseJournal(journalId, opts) same, starting from one journal.
- *   compareVersions(runId, a?, b?)  { byPayItem, byAccountTag, settingsMoved, headcount, oldLabel, newLabel }
- *   reverseAndRepost(runId, no?) / postDifference(runId, no?, { includeSettingsMoves })
- *   liveJournals(runId), journalsOf(runId), journalById(id), journalTotals(j)
+ * Post, revisions, reverse (TS-05, TS-07, LR-4, LR-8)
+ *   postRun(runId, { versionNo? })  first post, one PAY journal; returns { ok, number, redirected, warnings[] (unacknowledged) }.
+ *                                   Refuses: stale draft (rebuilt), newer version, holds, already posted. No Finance Manager confirm.
+ *   correctionOf(runId)             Correction | null: { lines (difference only), summary, builtAt, snapshotId }. Built automatically when a
+ *                                   newer version becomes current on a posted run; the Accountant is notified with correctionNotice(run, summary).
+ *                                   summary: { fromVersion, toVersion, takeHome, pph21, pph26, bpjs ({ before, after, change }), joined[],
+ *                                   left[], amountChanged[] (employee_id), moved[{ account, tags, label, change }], settingsChanged }.
+ *                                   A version that moves nothing in the ledger becomes the ledger version at once (amendment task if tax moved).
+ *   postCorrection(runId)           "Post correction": one Correction journal (PAY-number). Locked month: first open period, tax month kept.
+ *   reverseAndRepost(runId)         under "More": reverses every live journal and posts the current version in full.
+ *   compareVersions(runId, a?, b?)  { byPayItem[{ name, section, old, new, diff, missing }], byAccountTag, settingsMoved, headcount { added, removed },
+ *                                   taxChanges, noLedgerChange, oldLabel, newLabel }. Never call inside a computed (draws ids).
+ *   reverseRun(runId, { date?, confirmPayments? }) / reverseJournal(journalId, opts)
+ *   liveJournals(runId) (Payroll + Correction, not reversed), journalsOf(runId), journalById(id), journalTotals(j)
+ *   Journal { number PAY-/BNK-/JV-, type 'Payroll'|'Correction'|'Reversal'|'Salary payment'|'Statutory payment'|'Manual',
+ *           source 'Talenta payroll'|'Bank reconciliation'|'Manual journal', taxMonth, date, lines, ... }
  *   lockPeriod(month, { confirm }) / unlockPeriod(month) / isLocked(month) / firstOpenAfter(month)
- *   amendmentTasks (computed), closeAmendmentTask(id, outcome, { pembetulanNo, newTotal, reason })
  *
- * Payables (FG-5)
- *   payablesTracker(month?)         rows per payable per period: owed, paid, balance, due, overdue / paid late.
- *   recordSalaryPayment(runId, { bank, date, amount?, splits? })   Dr Hutang Gaji, Cr bank; bank-differs flag.
- *   payStatutory({ party, bank, date, periods: [{ month, amount?, billingCode?, ntpn? }], differenceAccount? })
- *   voidPayment(paymentId), paymentsFor(runId)
- *   bpjsProgrammeOf(item), setBpjsProgramme(key, programme), bpjsPayroll(month, body),
- *   saveBpjsInvoice(month, body, lines), bpjsComparison(month, body), markBpjsReviewed(month, body, notes)
+ * PPh 21 (OD-16)
+ *   amendmentTasks (computed)       { ...task, title, summary, depositGap }. closeAmendmentTask(id, outcome, { pembetulanNo, newTotal, reason })
+ *                                   (Tax Staff). 'Amended' also records newTotal as the e-Bupot filed total.
+ *   pph21Month(month)               { rule, books, paid, balance, filed, filedDiff, flagged, flagMessage }.
+ *   setEbupotFiled(month, amount)   Tax Staff / Finance Manager type the e-Bupot PPh 21 filed total; flagged beyond Rp1.000.
  *
- * Reconciliation (FG-6)
- *   reconciliation(month)           rows by account+tag and by pay item, payables, reconciling items, status.
- *   independentChecks(month)        the five checks from raw totals and bank.
- *   setVarianceNote(month, rowKey, { reason, note }), setCheckNote(month, checkId, note)
- *   markReadyForSignOff(month) (Accountant) / signOffMonth(month, { hrConfirmed }) (Finance Manager)
- *   pph21Monthly(month), pph21Annual(year), setEbupotTotal(month, amount), markPph21Reconciled(month, note?)
+ * Payables (FG-5): a tracker; payments arrive as bank reconciliation matches.
+ *   payablesTracker(month?)         PayableRow[] { key, account, party, month, runId, label, owed, paid, balance, due, dueLabel, overdueDays,
+ *                                   paidLateDays, status 'Open'|'Partly paid'|'Paid'|'Paid late'|'Overdue'|'Overpaid', statusLabel,
+ *                                   payments[{ id, number, date, bank, amount, statement }], pendingOwed (salary row with a correction waiting),
+ *                                   ebupot { filed, books, difference, by, at } (PPh 21 rows), flags[{ code 'bank-differs'|'ebupot-differs'
+ *                                   |'manual-journal', message }] }.
+ *   simulateBankPayment(kind, opts?)   BANK_PAYMENT_KINDS: 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk'
+ *                                   | 'partial' | 'overpaid'. opts: { runId, month, of, amount, date, bank }. Creates a matched bank line
+ *                                   (payroll.bankLines) and a BNK journal (Dr payable, Cr bank), type 'Salary payment' / 'Statutory payment',
+ *                                   source 'Bank reconciliation'. partial = half the open balance, overpaid = open + Rp250.000.
+ *   paymentsFor(runId)              bank-matched payments of the run (salary) and its month (statutory).
+ *
+ * Manual journals on payroll accounts
+ *   simulateManualJournal({ debit?, credit?, amount?, date?, memo? })   default Dr Salaries, Cr Hutang Gaji Rp1.500.000 on the
+ *                                   latest regular run's end date; JV- number, source 'Manual journal'.
+ *   manualJournalWarnings(runId | month)   [{ journalId, number, date, month, accounts[], amount, message }]; also on runWarnings and
+ *                                   as 'manual-journal' flags on the payables rows of the accounts it hits.
+ *
+ * Old sync (OD-11, LR-14)
+ *   oldSyncExpense({ date, amount, pattern })   checked against the cut-over.
  *
  * Log and notices (TS-06)
  *   syncLog (computed, newest first), noticesFor(role)
@@ -114,9 +144,9 @@
 import { reactive, watch, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import {
-  PAYROLL_COMPANY_ID, PAYROLL_TODAY, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, ACC, FALLBACK_TAG, PAYROLL_TAGS,
-  STATUTORY_PARTIES, COST_CENTERS, TAX_FIELDS, sampleRoster, buildSalaryDetail, payrollPerson,
-  type PayrollRole, type PayrollAccount, type PayableParty, type PaySection, type TalentaPayload, type TalentaEmployee,
+  PAYROLL_COMPANY_ID, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, ACC, FALLBACK_TAG, PAYROLL_TAGS,
+  STATUTORY_PARTIES, COST_CENTERS, TAX_COMPONENTS, TAX_FIELDS, SBU_KEY, sampleRoster, buildSalaryDetail, sampleEmployeeName, payrollPerson,
+  type PayrollRole, type PayrollAccount, type PayableParty, type PaySection, type TalentaPayload, type TalentaPayItem,
   type TalentaField, type GroupingField, type TagDimension, type PayrollTag, type RosterEmployee,
   type PayloadOptions, type TaxField,
 } from './payrollMaster'
@@ -130,7 +160,6 @@ export const PAY_ROLES: PayRole[] = ['Earning', 'Employee deduction', 'Employer 
 /** Roles whose debit is the cost side an allocation rule may move. */
 const COST_ROLES: PayRole[] = ['Earning', 'Employer contribution', 'Reimbursement', 'THR', 'Severance']
 export type BpjsProgramme = 'Kesehatan' | 'JHT' | 'JKK' | 'JKM' | 'JP'
-export type BpjsBody = 'BPJS Kesehatan' | 'BPJS Ketenagakerjaan'
 
 export interface Override { reason: string; by: string; at: string; breaches: string[] }
 export interface PayItemMapping {
@@ -162,7 +191,9 @@ export interface FallbackConfirm { field: string; value: string; reason: string;
 export interface TaxPresets { pph21: string; dtp: string; pph26: string; resign: string; trueUp: string }
 export interface Limits {
   partialStaffPct: number; partialWholeGroup: boolean; partialThpPct: number
-  gapTolerance: number; roundingTolerance: number; largeChangePct: number; largeChangeAmount: number
+  /** Tax rule and e-Bupot checks: a difference above this many rupiah is flagged. */
+  taxTolerance: number
+  largeChangePct: number; largeChangeAmount: number
 }
 export interface PayrollSettings {
   mapping: PayItemMapping[]
@@ -175,22 +206,25 @@ export interface PayrollSettings {
   taxPresets: TaxPresets
   cutover: { firstLive: string | null; proposedBy: string | null; confirmedBy: string | null; mode: 'Block' | 'Flag' }
   limits: Limits
-  deductionsBasis: 'with-employer' | 'without-employer'
-  roundingAccount: string
-  suspenseAccount: string | null
   hutangGaji: string
   payday: number
-  otherEntity: { field: 'organization_name' | 'branch_name'; value: string }[]
+  otherEntity: { field: 'organization_name' | 'branch'; value: string }[]
 }
 export interface SettingsSnapshot { id: string; at: string; by: string; note: string; settings: PayrollSettings }
 
+/** The only reasons a send stops: no mapping (item, group, field value, or an account the journal cannot use), a partial send, a revision-or-separate-run choice, the first send's source. */
 export type HoldCode =
-  | 'confirm-source' | 'choice' | 'partial' | 'duplicate-employee' | 'unmapped-item' | 'unmapped-group'
-  | 'new-field-value' | 'empty-field' | 'total-gap' | 'hutang-gaji' | 'two-parties' | 'rounding'
-  | 'tax-rule' | 'negative-payable' | 'archived-account'
+  | 'confirm-source' | 'choice' | 'partial' | 'unmapped-item' | 'unmapped-group'
+  | 'new-field-value' | 'empty-field' | 'two-parties' | 'archived-account'
 export interface Hold { code: HoldCode; message: string; details: Record<string, unknown> }
 
-export interface LineSource { item: string; section: PaySection | 'preset' | 'gap' | 'rounding'; role: PayRole | null; side: 'D' | 'C'; cents: number; staff: string[] }
+/** Everything else is a warning on the draft: the Accountant reads it and decides whether to post. */
+export type WarningCode = 'missing-component' | 'tax-rule' | 'duplicate-employee' | 'hutang-gaji' | 'negative-payable' | 'large-change' | 'headcount' | 'manual-journal'
+export interface Ack { note: string; by: string; at: string }
+export interface StoredWarning { key: string; code: WarningCode; message: string; details: Record<string, unknown> }
+export interface RunWarning extends StoredWarning { acknowledged: Ack | null }
+
+export interface LineSource { item: string; section: PaySection | 'preset'; role: PayRole | null; side: 'D' | 'C'; amount: number; staff: string[] }
 export interface JournalLine {
   account: string
   tags: Tags
@@ -209,12 +243,10 @@ export interface Draft {
   date: string
   memo: string
   lines: JournalLine[]
-  fmConfirmedBy: string | null
   nothingToPost: boolean
   otherEntity: { staff: number; amount: number }
 }
 export type VersionState = 'active' | 'replaced' | 'superseded' | 'waiting-choice' | 'partial' | 'rejected' | 'moved'
-export interface GapRelease { target: string; reason: string; attachment: string; by: string; at: string; gaps: { employee_id: string; section: PaySection; cents: number }[] }
 export interface RunVersion {
   no: number
   sentAt: string
@@ -225,9 +257,13 @@ export interface RunVersion {
   state: VersionState
   replacedBy: number | null
   holds: Hold[]
+  /** Warnings found when the send was checked (missing components, tax rule, duplicate rows, payable below Rp0). */
+  warnings: StoredWarning[]
+  /** Warnings the Accountant acknowledged, by warning key. */
+  acks: Record<string, Ack>
   draft: Draft | null
-  gapRelease: GapRelease | null
-  taxRelease: { reason: string; by: string; at: string } | null
+  /** On a posted run: the correction (difference only) this version would post, with its summary. */
+  correction: Correction | null
   decision: { kind: string; reason: string | null; by: string; at: string } | null
   changeNotes: Record<string, string>
   /** Headcount changes marked Expected, by group key (organization|branch). */
@@ -252,14 +288,17 @@ export interface Run {
   ledgerVersion: number | null
   mode: 'Live' | 'Dry run' | 'Before go-live'
   dryRun: { passedBy: string | null; passedAt: string | null; signedOffBy: string | null; signedOffAt: string | null } | null
+  /** A newer version is current and its correction (difference only) waits for Post correction. */
   revised: boolean
   reversedAt: string | null
 }
-export type JournalType = 'Payroll' | 'Reversal' | 'Difference' | 'Salary payment' | 'Statutory payment' | 'Payment void'
+export type JournalType = 'Payroll' | 'Reversal' | 'Correction' | 'Salary payment' | 'Statutory payment' | 'Manual'
+export type JournalSource = 'Talenta payroll' | 'Bank reconciliation' | 'Manual journal'
 export interface Journal {
   id: string
   number: string
   type: JournalType
+  source: JournalSource
   runId: string | null
   versionNo: number | null
   date: string
@@ -273,25 +312,21 @@ export interface Journal {
   postedAt: string
   reversesId: string | null
   reversedById: string | null
-  fmConfirmedBy: string | null
   paymentId: string | null
 }
-export interface PaymentPeriodLine { month: string; amount: number; billingCode: string | null; ntpn: string | null }
+export interface BankStatementLine { id: string; bank: string; date: string; description: string; amount: number; paymentId: string }
 export interface Payment {
   id: string
   kind: 'Salary' | 'Statutory'
   party: PayableParty
   account: string
   runId: string | null
+  month: string
   bank: string
   date: string
-  periods: PaymentPeriodLine[]
-  splits: { branch: string; bank: string; amount: number }[]
   amount: number
   journalId: string
-  bankDiffers: number
-  warnings: string[]
-  voidedBy: string | null
+  statementLineId: string
 }
 export interface AmendmentTask {
   id: string
@@ -309,22 +344,12 @@ export interface AmendmentTask {
   openedAt: string
   closedBy: string | null
 }
-export interface BpjsInvoice { month: string; body: BpjsBody; lines: { programme: BpjsProgramme; amount: number; headcount: number }[]; reviewed: { by: string; at: string } | null; notes: Partial<Record<BpjsProgramme, string>>; reviewedFingerprint: string | null }
-export interface MonthRecon {
-  month: string
-  notes: Record<string, { reason: string; note: string; by: string; at: string }>
-  checkNotes: Record<string, { note: string; by: string; at: string }>
-  readyBy: string | null
-  signOff: { by: string; at: string; hrConfirmedBy: string; fingerprint: string; snapshot: unknown } | null
-  ebupotFiled: number | null
-  pph21Note: string | null
-  pph21Reconciled: { by: string; at: string } | null
-}
+export interface EbupotFiled { month: string; filed: number; by: string; at: string }
 export type LogStatus = 'Received' | 'Waiting for your choice' | 'Held' | 'Posted' | 'Failed' | 'Reversed' | 'Blocked' | 'No change' | 'Recorded'
 export interface SyncLogEntry {
   id: number
   at: string
-  type: 'Send' | 'Hold' | 'Post' | 'Reversal' | 'Old sync' | 'Decision' | 'Payment' | 'Settings' | 'Connection'
+  type: 'Send' | 'Hold' | 'Post' | 'Reversal' | 'Old sync' | 'Decision' | 'Payment' | 'Settings' | 'Connection' | 'Manual journal'
   runId: string | null
   runKey: string | null
   version: number | null
@@ -362,11 +387,10 @@ export interface PayrollState {
   runs: Run[]
   journals: Journal[]
   payments: Payment[]
+  bankLines: BankStatementLine[]
   tasks: AmendmentTask[]
-  bpjsInvoices: BpjsInvoice[]
-  recon: MonthRecon[]
+  ebupot: EbupotFiled[]
   lockedMonths: string[]
-  knownGaps: { id: string; employee_id: string; section: PaySection; cents: number; target: string; releasedOn: string; runsSeen: number; releases: number }[]
   log: SyncLogEntry[]
   notices: PayrollNotice[]
   oldSync: OldSyncCall[]
@@ -374,6 +398,7 @@ export interface PayrollState {
   simOptions: Record<string, Partial<PayloadOptions>>
   payNo: number
   bnkNo: number
+  jvNo: number
 }
 
 // ── Small helpers ───────────────────────────────────────────────────────────
@@ -406,9 +431,6 @@ export function rupiah(n: number): string {
   const v = Math.round(n)
   return `${v < 0 ? '-' : ''}Rp${Math.abs(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`
 }
-const cents = (x: number) => Math.round(x * 100)
-/** Whole rupiah from cents, half up. */
-function roundCents(c: number): number { return c >= 0 ? Math.floor((c + 50) / 100) : -Math.floor((-c + 50) / 100) }
 const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase()
 function hash(s: string): string { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(16) }
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T
@@ -419,7 +441,7 @@ export function tagsLabel(t: Tags): string { return [t.Organization, t.Branch].f
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v4'
+const SNAPSHOT_KEY = 'payroll:state-v5'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -427,15 +449,12 @@ function defaultSettings(): PayrollSettings {
     groupMaps: { Organization: {}, Branch: {} },
     rules: [],
     fallback: [],
-    fieldPolicies: { organization_name: 'hold', branch_name: 'hold', cost_center_name: 'hold' },
+    fieldPolicies: { organization_name: 'hold', branch: 'hold', cost_center: 'hold' },
     knownValues: {},
     costCenterCategory: {},
     taxPresets: { pph21: ACC.pph21, dtp: ACC.dtp, pph26: ACC.pph26, resign: ACC.pph21Final, trueUp: ACC.pph21 },
     cutover: { firstLive: null, proposedBy: null, confirmedBy: null, mode: 'Block' },
-    limits: { partialStaffPct: 10, partialWholeGroup: true, partialThpPct: 20, gapTolerance: 1_000, roundingTolerance: 1_000, largeChangePct: 10, largeChangeAmount: 1_000_000 },
-    deductionsBasis: 'with-employer',
-    roundingAccount: ACC.rounding,
-    suspenseAccount: ACC.suspense,
+    limits: { partialStaffPct: 10, partialWholeGroup: true, partialThpPct: 20, taxTolerance: 1_000, largeChangePct: 10, largeChangeAmount: 1_000_000 },
     hutangGaji: ACC.hutangGaji,
     payday: 25,
     otherEntity: [],
@@ -447,9 +466,9 @@ function emptyState(): PayrollState {
     seq: 1, clock: '2026-10-05T02:00:00.000Z', viewAs: 'Accountant',
     connection: { status: 'Not connected', companyId: null, startedBy: null, startedAt: null, endedReason: null, sourceConfirmedBy: null, sourceConfirmedAt: null, otherEntitiesAnswer: null, lastAcceptedAt: null, rejected: [] },
     accounts: clone(PAYROLL_ACCOUNTS), tags: clone(PAYROLL_TAGS),
-    settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [],
-    tasks: [], bpjsInvoices: [], recon: [], lockedMonths: [], knownGaps: [],
-    log: [], notices: [], oldSync: [], simOptions: {}, payNo: 0, bnkNo: 0,
+    settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [], bankLines: [],
+    tasks: [], ebupot: [], lockedMonths: [],
+    log: [], notices: [], oldSync: [], simOptions: {}, payNo: 0, bnkNo: 0, jvNo: 0,
   }
 }
 
@@ -467,23 +486,22 @@ export function nowWib(): string { return wib(payroll.clock) }
 
 export type PayrollAction =
   | 'connection.view' | 'connection.manage' | 'source.confirm' | 'otherEntity.answer' | 'otherEntity.mark'
-  | 'settings.edit' | 'settings.override' | 'fieldPolicy.edit' | 'presets.edit' | 'limits.edit' | 'claims.edit'
+  | 'settings.edit' | 'settings.override' | 'fieldPolicy.edit' | 'presets.edit' | 'limits.edit'
   | 'dryrun.pass' | 'dryrun.signoff' | 'cutover.propose' | 'cutover.confirm'
-  | 'run.choose' | 'run.partial' | 'run.release' | 'gap.release' | 'tax.release' | 'draft.note'
-  | 'post' | 'post.confirm' | 'reverse' | 'fix' | 'period.lock' | 'task.close'
-  | 'payment.salary' | 'payment.statutory' | 'payment.void' | 'bpjs.programme' | 'bpjs.invoice' | 'bpjs.review'
-  | 'recon.note' | 'recon.ready' | 'recon.signoff' | 'ebupot.enter' | 'pph21.reconcile'
+  | 'run.choose' | 'run.partial' | 'run.release' | 'draft.note' | 'warning.ack'
+  | 'post' | 'reverse' | 'fix' | 'period.lock' | 'task.close' | 'ebupot.enter'
+  | 'simulate.bank' | 'simulate.journal'
   | 'payByEmployee.view' | 'log.export' | 'report.export'
 
 const O: PayrollRole = 'Jurnal Owner', A: PayrollRole = 'Accountant', F: PayrollRole = 'Finance Manager', T: PayrollRole = 'Tax Staff', U: PayrollRole = 'Auditor'
 const ACCESS: Record<PayrollAction, PayrollRole[]> = {
   'connection.view': [O, A, F, U], 'connection.manage': [O], 'source.confirm': [O], 'otherEntity.answer': [O], 'otherEntity.mark': [A],
-  'settings.edit': [A], 'settings.override': [A], 'fieldPolicy.edit': [F], 'presets.edit': [A, F], 'limits.edit': [A], 'claims.edit': [A, F],
+  'settings.edit': [A], 'settings.override': [A], 'fieldPolicy.edit': [F], 'presets.edit': [A, F], 'limits.edit': [A],
   'dryrun.pass': [A], 'dryrun.signoff': [F], 'cutover.propose': [A], 'cutover.confirm': [F],
-  'run.choose': [A], 'run.partial': [A], 'run.release': [A, F], 'gap.release': [F, O], 'tax.release': [T, F], 'draft.note': [A],
-  'post': [A], 'post.confirm': [F], 'reverse': [A, F], 'fix': [A, F], 'period.lock': [F], 'task.close': [T],
-  'payment.salary': [A], 'payment.statutory': [A, T], 'payment.void': [A], 'bpjs.programme': [A], 'bpjs.invoice': [A, T], 'bpjs.review': [A],
-  'recon.note': [A], 'recon.ready': [A], 'recon.signoff': [F], 'ebupot.enter': [T, F], 'pph21.reconcile': [T, F],
+  'run.choose': [A], 'run.partial': [A], 'run.release': [A, F], 'draft.note': [A], 'warning.ack': [A],
+  'post': [A], 'reverse': [A, F], 'fix': [A, F], 'period.lock': [F], 'task.close': [T], 'ebupot.enter': [T, F],
+  // Prototype stand-ins for bank reconciliation and the general journal: any role may trigger them.
+  'simulate.bank': [O, A, F, T], 'simulate.journal': [O, A, F, T],
   'payByEmployee.view': [A], 'log.export': [A, U], 'report.export': [O, A, F, T, U],
 }
 export function can(action: PayrollAction, role: PayrollRole = payroll.viewAs): boolean { return ACCESS[action].includes(role) }
@@ -754,7 +772,7 @@ export function setFieldPolicy(field: GroupingField, policy: 'hold' | 'skip'): R
 export function setCostCenterCategory(name: string, cat: 'Direct' | 'In-direct'): Result {
   if (!can('settings.edit')) return denied()
   payroll.settings.costCenterCategory[name] = cat
-  acceptValue('cost_center_name', name)
+  acceptValue('cost_center', name)
   changed(`Cost center ${name} set to ${cat}`)
   return { ok: true }
 }
@@ -814,12 +832,6 @@ export function setPayday(day: number): Result {
   changed(`Payday set to ${day}`)
   return { ok: true }
 }
-export function setSuspenseAccount(code: string | null): Result {
-  if (!can('settings.edit')) return denied()
-  payroll.settings.suspenseAccount = code
-  changed(`Payroll suspense account set to ${accountLabel(code)}`)
-  return { ok: true }
-}
 
 // ── Connection (TS-01) ──────────────────────────────────────────────────────
 
@@ -864,12 +876,12 @@ export function sourceSummary(runId: string) {
   const run = runById(runId)
   const v = run ? latestVersion(run) : undefined
   if (!v) return null
-  const emps = v.payload.employees
+  const rows = staffRows(v.payload, { all: true })
   return {
-    organizations: [...new Set(emps.map((e) => e.organization_name))].sort(),
-    branches: [...new Set(emps.map((e) => e.branch_name))].sort(),
-    headcount: new Set(emps.map((e) => e.employee_id)).size,
-    takeHome: roundCents(emps.reduce((s, e) => s + cents(e.take_home_pay), 0)),
+    organizations: [...new Set(rows.map((e) => e.organization_name))].sort(),
+    branches: [...new Set(rows.map((e) => e.branch))].sort(),
+    headcount: new Set(rows.map((e) => e.user_id)).size,
+    takeHome: rows.reduce((x, e) => x + e.takeHome, 0),
   }
 }
 export function answerOtherEntities(yes: boolean): Result {
@@ -877,7 +889,7 @@ export function answerOtherEntities(yes: boolean): Result {
   payroll.connection.otherEntitiesAnswer = yes
   return { ok: true }
 }
-export function markOtherEntity(field: 'organization_name' | 'branch_name', value: string, on: boolean): Result {
+export function markOtherEntity(field: 'organization_name' | 'branch', value: string, on: boolean): Result {
   if (!can('otherEntity.mark')) return denied()
   if (payroll.connection.otherEntitiesAnswer !== true) return { ok: false, message: 'The Jurnal Owner first confirms that this Talenta company holds other legal entities.' }
   const list = payroll.settings.otherEntity
@@ -897,6 +909,79 @@ export const syncLog = computed(() => [...payroll.log].sort((a, b) => b.id - a.i
 function notify(roles: PayrollRole[], text: string, link: string) { payroll.notices.push({ id: payroll.seq++, roles, text, link, at: payroll.clock, read: false }) }
 export function noticesFor(role: PayrollRole = payroll.viewAs): PayrollNotice[] { return payroll.notices.filter((n) => n.roles.includes(role)).slice().reverse() }
 
+// ── Reading a send ──────────────────────────────────────────────────────────
+
+/** One employee of a send as Jurnal reads it: no name, take-home pay computed (allowances - deductions). */
+export interface StaffRow {
+  user_id: number
+  employee_id: string
+  organization_name: string
+  branch: string
+  cost_center: string
+  job_position: string
+  job_level: string
+  employment_status: string
+  sbu: Record<string, string>
+  allowances: TalentaPayItem[]
+  deductions: TalentaPayItem[]
+  benefits: TalentaPayItem[]
+  takeHome: number
+}
+const SECTIONS: [PaySection, 'allowances' | 'deductions' | 'benefits'][] = [['allowance', 'allowances'], ['deduction', 'deductions'], ['benefit', 'benefits']]
+const sumItems = (l: TalentaPayItem[]) => l.reduce((s, i) => s + i.amount, 0)
+/** Tax figures Talenta sends as benefit components: read by the PPh 21 rule and the tax presets, never booked as pay items. */
+const TAX_INFO = new Set(TAX_COMPONENTS.filter((x) => x.section === 'benefit').map((x) => payItemKeyRaw(x.name, x.section)))
+function payItemKeyRaw(name: string, section: PaySection) { return `${section}|${norm(name)}` }
+export function isTaxFigure(name: string, section: PaySection): boolean { return TAX_INFO.has(payItemKeyRaw(name, section)) }
+/** Amount of one component (by name and section) for one employee. */
+export function componentAmount(e: Pick<StaffRow, 'allowances' | 'deductions' | 'benefits'>, name: string, section: PaySection): number {
+  const list = section === 'allowance' ? e.allowances : section === 'deduction' ? e.deductions : e.benefits
+  const k = norm(name)
+  return list.filter((i) => norm(i.name) === k).reduce((s, i) => s + i.amount, 0)
+}
+function taxAmount(e: StaffRow, f: TaxField): number { return componentAmount(e, f, TAX_COMPONENTS.find((x) => x.name === f)!.section) }
+/** PPh 21 rule (LR-10): PPh 21 Benefit + PPH 21 Payment - Total PPh 21 DTP Received. */
+function pph21Rule(e: StaffRow): number { return taxAmount(e, 'PPh 21 Benefit') + taxAmount(e, 'PPH 21 Payment') - taxAmount(e, 'Total PPh 21 DTP Received') }
+/** Rows Jurnal books: the send's employees less the Other entity groups (all: true keeps them). */
+export function staffRows(p: TalentaPayload, o: { all?: boolean } = {}): StaffRow[] {
+  const oe = payroll.settings.otherEntity
+  return p.items.map((it) => {
+    const e = it.employee, c = it.components
+    return {
+      user_id: e.user_id, employee_id: e.employee_id, organization_name: e.organization_name ?? '', branch: e.branch ?? '', cost_center: e.cost_center ?? '',
+      job_position: e.job_position, job_level: e.job_level, employment_status: e.employment_status,
+      sbu: Object.fromEntries((e.sbu ?? []).map((x) => [x.key, x.value])),
+      allowances: c.allowances, deductions: c.deductions, benefits: c.benefits,
+      takeHome: sumItems(c.allowances) - sumItems(c.deductions),
+    }
+  }).filter((e) => o.all || !oe.some((x) => e[x.field] === x.value))
+}
+/** Staff, take-home pay and gross allowances of one version's send. */
+export function sendFigures(v: RunVersion | undefined) {
+  if (!v) return { staff: 0, takeHome: 0, gross: 0 }
+  const rows = staffRows(v.payload)
+  return { staff: new Set(rows.map((e) => e.user_id)).size, takeHome: rows.reduce((s, e) => s + e.takeHome, 0), gross: rows.reduce((s, e) => s + sumItems(e.allowances), 0) }
+}
+/** Talenta's tax figures for a run's current version, against the draft's (or the ledger's) PPh 21 lines. */
+export function taxFigures(runId: string) {
+  const run = runById(runId)
+  const v = run ? currentVersionOf(run) : undefined
+  if (!run || !v) return null
+  const rows = staffRows(v.payload)
+  const sum = (f: TaxField) => rows.reduce((s, e) => s + taxAmount(e, f), 0)
+  const p = payroll.settings.taxPresets
+  const lines = v.draft?.lines ?? liveJournals(runId).flatMap((j) => j.lines)
+  const net = (code: string) => lines.filter((l) => l.account === code).reduce((s, l) => s + l.credit - l.debit, 0)
+  const benefit = sum('PPh 21 Benefit'), payment = sum('PPH 21 Payment'), dtp = sum('Total PPh 21 DTP Received')
+  return {
+    benefit, payment, dtp, resign: sum('PPh 21 Resign Benefit'), pph26: sum('PPh 26 Benefit'), paidDeduction: sum('PPH 21 Paid'),
+    rule: benefit + payment - dtp, ledger: net(p.pph21), pph26Ledger: net(p.pph26),
+    dtpLedger: lines.filter((l) => l.account === p.dtp).reduce((s, l) => s + l.debit - l.credit, 0),
+    resignLedger: p.resign === p.pph21 ? null : net(p.resign),
+    hasLines: lines.length > 0,
+  }
+}
+
 // ── Runs: lookup and status ─────────────────────────────────────────────────
 
 export const runs = computed(() => [...payroll.runs].sort((a, b) => b.end.localeCompare(a.end) || b.id.localeCompare(a.id)))
@@ -910,14 +995,15 @@ function runMode(month: string): Run['mode'] {
   if (!c.firstLive || !c.confirmedBy) return 'Dry run'
   return month < c.firstLive ? 'Before go-live' : 'Live'
 }
+const BOOKING: JournalType[] = ['Payroll', 'Correction']
 export function liveJournals(runId: string): Journal[] {
-  return payroll.journals.filter((j) => j.runId === runId && (j.type === 'Payroll' || j.type === 'Difference') && !j.reversedById)
+  return payroll.journals.filter((j) => j.runId === runId && BOOKING.includes(j.type) && !j.reversedById)
 }
 export function journalsOf(runId: string): Journal[] { return payroll.journals.filter((j) => j.runId === runId) }
 export function journalById(id: string | null): Journal | undefined { return id ? payroll.journals.find((j) => j.id === id) : undefined }
 export function journalTotals(j: Pick<Journal, 'lines'>) { return { debit: j.lines.reduce((s, l) => s + l.debit, 0), credit: j.lines.reduce((s, l) => s + l.credit, 0) } }
 
-export type RunStatus = 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revised' | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'
+export type RunStatus = 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Correction ready' | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'
 export function runHolds(run: Run): Hold[] {
   const pending = run.versions.filter((v) => v.state === 'waiting-choice' || v.state === 'partial').flatMap((v) => v.holds)
   return [...pending, ...(currentVersionOf(run)?.holds ?? [])]
@@ -928,9 +1014,9 @@ export function runStatus(run: Run): RunStatus {
   if (run.versions.some((v) => v.state === 'waiting-choice')) return 'Waiting for your choice'
   const live = liveJournals(run.id).length > 0
   if (run.reversedAt && !live) return holds.length ? 'Held' : 'Reversed'
-  if (run.revised) return 'Revised'
-  if (run.ledgerVersion != null && live) return holds.length ? 'Held' : 'Posted'
   if (holds.length) return 'Held'
+  if (run.revised && live) return 'Correction ready'
+  if (run.ledgerVersion != null && live) return 'Posted'
   if (run.mode !== 'Live') return run.mode
   const d = draftOf(run)
   if (!d) return 'Received'
@@ -951,12 +1037,16 @@ export function versionLabel(run: Run, v: RunVersion): string {
 
 export interface SendResult extends Result { status: LogStatus; runId?: string; versionNo?: number }
 
-function runKeyOf(p: TalentaPayload) { return `${p.company_id} / ${p.period.type} / ${p.period.start_date} / ${p.period.end_date}` }
+function runKeyOf(p: TalentaPayload) { return `${p.company_id} / monthly / ${p.period.start_date} / ${p.period.end_date}` }
 function bodyHash(p: TalentaPayload) { return hash(JSON.stringify(p)) }
-function figuresHash(p: TalentaPayload) { return hash(JSON.stringify({ ...p, sent_at: '' })) }
-function staffOf(p: TalentaPayload): TalentaEmployee[] {
-  const oe = payroll.settings.otherEntity
-  return p.employees.filter((e) => !oe.some((x) => (e[x.field] ?? '') === x.value))
+/** The figures of a send: everything but the send time and the names Jurnal drops. */
+function figuresHash(p: TalentaPayload) { return hash(JSON.stringify({ ...withoutNames(p), sent_at: '' })) }
+/** Talenta sends employee_name; Jurnal never stores or shows it. */
+function withoutNames(p: TalentaPayload): TalentaPayload {
+  return { ...p, items: p.items.map((it) => ({ ...it, employee: { ...it.employee, employee_name: '' } })) }
+}
+function badAmounts(p: TalentaPayload): boolean {
+  return p.items.some((it) => SECTIONS.some(([, k]) => (it.components?.[k] ?? []).some((x) => !Number.isInteger(x.amount) || x.amount < 0)))
 }
 
 export function receiveSalaryDetail(p: TalentaPayload): SendResult {
@@ -969,8 +1059,9 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
   const c = payroll.connection
   if (c.status === 'Not connected' || c.status === 'Ended' || p.company_id !== c.companyId) return fail('This Talenta company is not linked to this Jurnal company.', 404)
   if (!p.period?.start_date || !p.period?.end_date || !p.sent_at) return fail('The send has no period or send time.')
-  if (!p.employees?.length) return fail('The send has no employees.')
+  if (!p.items?.length) return fail('The send has no employees.')
   if (p.period.end_date < p.period.start_date) return fail('The period ends before it starts.')
+  if (badAmounts(p)) return fail('Every amount must be whole rupiah, Rp0 or more.')
   const baseKey = runKeyOf(p)
   const h = bodyHash(p)
   for (const r of payroll.runs.filter((x) => x.baseKey === baseKey)) {
@@ -986,7 +1077,7 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
       month, kind: 'Regular', label: 'Regular', versions: [], currentVersion: 1, ledgerVersion: null, mode: runMode(month),
       dryRun: null, revised: false, reversedAt: null,
     }
-    run.versions.push(newVersion(1, p, 'active'))
+    run.versions.push(newVersion(1, p, h, 'active'))
     if (run.mode !== 'Live') run.dryRun = { passedBy: null, passedAt: null, signedOffBy: null, signedOffAt: null }
     payroll.runs.push(run)
     checkVersion(run, run.versions[0]!)
@@ -996,27 +1087,33 @@ export function receiveSalaryDetail(p: TalentaPayload): SendResult {
   const last = accepted[accepted.length - 1]
   if (last && Date.parse(p.sent_at) < Date.parse(last.sentAt)) return fail(`Older than v${last.no}. Jurnal keeps v${last.no}.`, 409)
   if (last && figuresHash(p) === last.figuresHash) {
-    addLog({ type: 'Send', status: 'No change', reason: `No change from v${last.no}`, nextStep: 'Nothing to do.', runId: regular.id, runKey: regular.key, version: last.no, employees: p.employees.length })
+    addLog({ type: 'Send', status: 'No change', reason: `No change from v${last.no}`, nextStep: 'Nothing to do.', runId: regular.id, runKey: regular.key, version: last.no, employees: p.items.length })
     return { ok: true, status: 'No change', message: `No change from v${last.no}`, runId: regular.id }
   }
   const no = regular.versions.length + 1
-  if (liveJournals(regular.id).length) {
-    const v = newVersion(no, p, 'waiting-choice')
-    regular.versions.push(v)
+  const v = newVersion(no, p, h, 'active')
+  regular.versions.push(v)
+  const posted = liveJournals(regular.id).length > 0
+  if (posted && looksSeparateRun(regular, v)) {
+    v.state = 'waiting-choice'
     checkVersion(regular, v)
     return logReceipt(regular, v)
   }
-  const v = newVersion(no, p, 'active')
-  regular.versions.push(v)
   const partial = partialCheck(regular, v)
   if (partial) { v.state = 'partial'; v.holds = [partial] } else activate(regular, v)
   return logReceipt(regular, v)
 }
 
-function newVersion(no: number, p: TalentaPayload, state: VersionState): RunVersion {
-  return { no, sentAt: p.sent_at, receivedAt: payroll.clock, hash: bodyHash(p), figuresHash: figuresHash(p), payload: clone(p), state, replacedBy: null, holds: [], draft: null, gapRelease: null, taxRelease: null, decision: null, changeNotes: {}, headcountExpected: {} }
+function newVersion(no: number, p: TalentaPayload, h: string, state: VersionState): RunVersion {
+  return {
+    no, sentAt: p.sent_at, receivedAt: payroll.clock, hash: h, figuresHash: figuresHash(p), payload: clone(withoutNames(p)), state, replacedBy: null,
+    holds: [], warnings: [], acks: {}, draft: null, correction: null, decision: null, changeNotes: {}, headcountExpected: {},
+  }
 }
-/** Make v the current version; older open versions become "Replaced by vN" (or "Superseded" on a posted run). */
+/**
+ * Make v the current version. Older open versions become "Replaced by vN" (or "Superseded"
+ * on a posted run). On a posted run the latest version wins: Jurnal builds the correction.
+ */
 function activate(run: Run, v: RunVersion) {
   for (const o of run.versions) {
     if (o === v || o.state !== 'active' || o.no === run.ledgerVersion) continue
@@ -1029,37 +1126,41 @@ function activate(run: Run, v: RunVersion) {
 }
 function logReceipt(run: Run, v: RunVersion): SendResult {
   const status: LogStatus = v.state === 'waiting-choice' ? 'Waiting for your choice' : v.holds.length ? 'Held' : 'Received'
-  const reason = v.holds[0]?.message ?? (run.mode !== 'Live' ? `${run.mode}: nothing posts from this send.` : 'Draft built.')
-  addLog({ type: 'Send', status, reason, nextStep: nextStepFor(v), runId: run.id, runKey: run.key, version: v.no, employees: v.payload.employees.length })
+  const reason = v.holds[0]?.message
+    ?? (run.mode !== 'Live' ? `${run.mode}: nothing posts from this send.`
+      : v.correction ? `Correction ready: ${v.correction.lines.length} lines.`
+        : run.ledgerVersion != null && run.ledgerVersion === v.no ? 'No ledger change.'
+          : `Draft built.${v.warnings.length ? ` ${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''}.` : ''}`)
+  addLog({ type: 'Send', status, reason, nextStep: nextStepFor(run, v), runId: run.id, runKey: run.key, version: v.no, employees: v.payload.items.length })
   if (v.holds.length && v.state !== 'waiting-choice') notify(['Accountant'], `Payroll ${periodLabel(run.start, run.end)} v${v.no} is held: ${v.holds[0]!.message}`, `/payroll-runs/${run.id}`)
+  if (v.state === 'waiting-choice') notify(['Accountant'], `Payroll ${periodLabel(run.start, run.end)} v${v.no} looks like a separate run. Pick Revision or Separate run.`, `/payroll-runs/${run.id}`)
   return { ok: true, status, message: reason, runId: run.id, versionNo: v.no }
 }
-function nextStepFor(v: RunVersion): string {
+function nextStepFor(run: Run, v: RunVersion): string {
   const h = v.holds[0]
-  if (!h) return v.draft ? 'Review the draft and post.' : 'Nothing to do.'
+  if (!h) return v.correction ? 'Review the correction and post it.' : v.draft && run.ledgerVersion !== v.no ? 'Review the draft and post.' : 'Nothing to do.'
   const steps: Partial<Record<HoldCode, string>> = {
     'confirm-source': 'The Jurnal Owner confirms the source.', choice: 'Pick Revision of the posted run or Separate run.',
-    partial: 'Pick Replace the full run or Reject.', 'unmapped-item': 'Map the pay item, then release the run.',
-    'unmapped-group': 'Map the group to a dimension value, then release the run.', 'total-gap': 'Ask HR, or the Finance Manager releases with gap.',
-    'tax-rule': 'Tax Staff or the Finance Manager releases with a reason.',
+    partial: 'Pick Replace the full run or Reject.', 'unmapped-item': 'Map the pay item; the run re-checks on save.',
+    'unmapped-group': 'Map the group to a dimension value; the run re-checks on save.',
   }
-  return steps[h.code] ?? 'Fix the issue, then release the run.'
+  return steps[h.code] ?? 'Fix the setting; the run re-checks on save.'
 }
 
-/** TN-01: drops 10% or more of staff, a whole organization or branch, or 20% of take-home pay. */
+/** TN-01: drops 10% or more of staff, a whole organization or branch, or 20% of take-home pay. Staff counted by user_id. */
 function partialCheck(run: Run, v: RunVersion): Hold | null {
   const ref = versionOf(run, run.currentVersion) ?? versionOf(run, run.ledgerVersion)
   if (!ref || ref === v) return null
   const L = payroll.settings.limits
-  const a = ref.payload.employees, b = v.payload.employees
-  const ids = (l: TalentaEmployee[]) => new Set(l.map((e) => e.employee_id))
+  const a = staffRows(ref.payload, { all: true }), b = staffRows(v.payload, { all: true })
+  const ids = (l: StaffRow[]) => new Set(l.map((e) => e.user_id))
   const before = ids(a).size, after = ids(b).size
-  const thpA = a.reduce((s, e) => s + e.take_home_pay, 0), thpB = b.reduce((s, e) => s + e.take_home_pay, 0)
+  const thpA = a.reduce((s, e) => s + e.takeHome, 0), thpB = b.reduce((s, e) => s + e.takeHome, 0)
   const missing: string[] = []
   if (L.partialWholeGroup) {
-    for (const f of ['organization_name', 'branch_name'] as const) {
-      const now = new Set(b.map((e) => e[f]))
-      for (const g of new Set(a.map((e) => e[f]))) if (!now.has(g)) missing.push(g)
+    for (const f of ['organization_name', 'branch'] as const) {
+      const here = new Set(b.map((e) => e[f]))
+      for (const g of new Set(a.map((e) => e[f]))) if (!here.has(g)) missing.push(g)
     }
   }
   const staffDrop = before > 0 && (before - after) / before >= L.partialStaffPct / 100
@@ -1068,7 +1169,7 @@ function partialCheck(run: Run, v: RunVersion): Hold | null {
   return {
     code: 'partial',
     message: `Looks partial: ${after} of ${before} staff.${missing.length ? ` ${listLabel(missing)} missing.` : ''}`,
-    details: { before, after, missing, thpBefore: Math.round(thpA), thpAfter: Math.round(thpB), versionNo: v.no },
+    details: { before, after, missing, thpBefore: thpA, thpAfter: thpB, versionNo: v.no },
   }
 }
 
@@ -1086,20 +1187,30 @@ export function decidePartial(runId: string, no: number, decision: 'replace' | '
   if (!reason || reason.trim().length < 10) return { ok: false, message: 'Say why this send replaces the full run (10 characters or more).' }
   v.decision = { kind: 'Replaced the full run', reason: reason.trim(), by: actingPerson(), at: payroll.clock }
   v.holds = []
-  if (run.ledgerVersion != null && liveJournals(run.id).length) { v.state = 'active'; run.currentVersion = v.no; markRevisedOrNoChange(run, v) }
-  else activate(run, v)
-  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} replaces the full run`, nextStep: nextStepFor(v), runId, runKey: run.key, version: no })
+  activate(run, v)
+  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} replaces the full run`, nextStep: nextStepFor(run, v), runId, runKey: run.key, version: no })
   return { ok: true }
 }
 
-/** Share of the posted run's staff in this send, and of those how many carry Earning items (TN-02). */
+/** Share of the posted run's staff (by user_id) in this send, and of those how many carry Earning items. */
 function overlap(run: Run, v: RunVersion) {
   const posted = versionOf(run, run.ledgerVersion)
   if (!posted) return { pct: 0, earningShare: 0 }
-  const ids = new Set(posted.payload.employees.map((e) => e.employee_id))
-  const match = v.payload.employees.filter((e) => ids.has(e.employee_id))
-  const earning = match.filter((e) => e.allowances.some((a) => mappingFor(a.name, 'allowance')?.role === 'Earning'))
+  const ids = new Set(staffRows(posted.payload).map((e) => e.user_id))
+  const match = staffRows(v.payload).filter((e) => ids.has(e.user_id))
+  const earning = match.filter((e) => e.allowances.some((a) => a.amount > 0 && mappingFor(a.name, 'allowance')?.role === 'Earning'))
   return { pct: ids.size ? match.length / ids.size : 0, earningShare: match.length ? earning.length / match.length : 0 }
+}
+/**
+ * A different send for a posted period is a revision, unless it looks like a separate run:
+ * fewer than half of its staff carry the regular (Earning) items. A THR or bonus send has
+ * only THR or bonus items, so the regular items are absent.
+ */
+function looksSeparateRun(run: Run, v: RunVersion): boolean {
+  const rows = staffRows(v.payload)
+  if (!rows.length) return false
+  const earning = rows.filter((e) => e.allowances.some((a) => a.amount > 0 && mappingFor(a.name, 'allowance')?.role === 'Earning'))
+  return earning.length / rows.length < 0.5
 }
 export function chooseRevision(runId: string, no: number): Result {
   if (!can('run.choose')) return denied()
@@ -1108,32 +1219,12 @@ export function chooseRevision(runId: string, no: number): Result {
   now()
   v.decision = { kind: 'Revision of the posted run', reason: null, by: actingPerson(), at: payroll.clock }
   v.holds = []
-  const partial = partialCheck(run, v)
-  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} is a revision of the posted run`, nextStep: 'Compare and fix.', runId, runKey: run.key, version: no })
-  if (partial) { v.state = 'partial'; v.holds = [partial]; return { ok: true, partial: true } }
-  for (const o of run.versions) if (o.state === 'active' && o.no !== run.ledgerVersion && o !== v) { o.state = 'superseded'; o.replacedBy = no }
+  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} is a revision of the posted run`, nextStep: 'Review the correction and post it.', runId, runKey: run.key, version: no })
   v.state = 'active'
-  run.currentVersion = no
-  markRevisedOrNoChange(run, v)
+  const partial = partialCheck(run, v)
+  if (partial) { v.state = 'partial'; v.holds = [partial]; return { ok: true, partial: true } }
+  activate(run, v)
   return { ok: true }
-}
-function markRevisedOrNoChange(run: Run, v: RunVersion) {
-  checkVersion(run, v)
-  const diff = differenceLines(run, v, false)
-  const oldV = versionOf(run, run.ledgerVersion)!
-  if (!diff.length) {
-    const taxMoved = taxChanges(oldV.payload, v.payload)
-    retireLedgerVersion(run, oldV, v)
-    addLog({ type: 'Send', status: 'No change', reason: taxMoved.length ? 'Tax change, no ledger change' : 'No ledger change', nextStep: taxMoved.length ? 'Tax Staff amends e-Bupot 21/26.' : 'Nothing to do.', runId: run.id, runKey: run.key, version: v.no })
-    if (taxMoved.length) openAmendmentTask(run, oldV, v, true)
-    return
-  }
-  run.revised = true
-  const thp = (p: TalentaPayload) => p.employees.reduce((s, e) => s + e.take_home_pay, 0)
-  const pph = (p: TalentaPayload) => p.employees.reduce((s, e) => s + e['PPh 21 Benefit'] + e['PPh 21 Payment'] - e['Total PPh 21 DTP Received'], 0)
-  const dT = Math.round(thp(v.payload) - thp(oldV.payload)), dP = Math.round(pph(v.payload) - pph(oldV.payload))
-  const sign = (n: number) => (n >= 0 ? '+' : '') + rupiah(n)
-  notify(['Accountant', 'Finance Manager'], `Payroll ${periodLabel(run.start, run.end)} revised. Take-home pay ${sign(dT)}. PPh 21 ${sign(dP)}.`, `/payroll-runs/${run.id}?tab=compare`)
 }
 export function chooseSeparateRun(runId: string, no: number, o: { type: Exclude<RunKind, 'Regular'>; name: string; reason?: string }): Result {
   if (!can('run.choose')) return denied()
@@ -1153,25 +1244,25 @@ export function chooseSeparateRun(runId: string, no: number, o: { type: Exclude<
     start: run.start, end: run.end, month: run.month, kind: o.type, label: name, versions: [], currentVersion: 1, ledgerVersion: null,
     mode: runMode(run.month), dryRun: null, revised: false, reversedAt: null,
   }
-  sep.versions.push({ ...clone(v), no: 1, state: 'active', holds: [], draft: null, decision: null })
+  sep.versions.push({ ...clone(v), no: 1, state: 'active', holds: [], warnings: [], acks: {}, draft: null, correction: null, decision: null })
   payroll.runs.push(sep)
   checkVersion(sep, sep.versions[0]!)
-  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} saved as separate run ${o.type} ${name}`, nextStep: nextStepFor(sep.versions[0]!), runId: sep.id, runKey: sep.key, version: 1 })
+  addLog({ type: 'Decision', status: 'Recorded', reason: `v${no} saved as separate run ${o.type} ${name}`, nextStep: nextStepFor(sep, sep.versions[0]!), runId: sep.id, runKey: sep.key, version: 1 })
   return { ok: true, runId: sep.id }
 }
 
-// ── Checks (LR-5) ───────────────────────────────────────────────────────────
+// ── Checks: holds stop the send, warnings ride on the draft ─────────────────
 
-function fieldValue(e: TalentaEmployee, field: string, s: PayrollSettings): string {
-  if (field === 'custom:BusinessUnit') return e.custom_fields?.BusinessUnit ?? ''
-  if (field === 'cost_center_category') return s.costCenterCategory[e.cost_center_name] ?? ''
+function fieldValue(e: StaffRow, field: string, s: PayrollSettings): string {
+  if (field.startsWith('sbu:')) return e.sbu[field.slice(4)] ?? ''
+  if (field === 'cost_center_category') return s.costCenterCategory[e.cost_center] ?? ''
   return String((e as unknown as Record<string, unknown>)[field] ?? '')
 }
 function hasFallback(s: PayrollSettings, field: string, value: string) { return s.fallback.some((f) => f.field === field && f.value === value) }
-function resolveTags(e: TalentaEmployee, s: PayrollSettings): { tags: Tags; issues: { field: GroupingField; value: string; kind: 'empty' | 'unmapped' }[] } {
+function resolveTags(e: StaffRow, s: PayrollSettings): { tags: Tags; issues: { field: GroupingField; value: string; kind: 'empty' | 'unmapped' }[] } {
   const tags: Tags = { Organization: null, Branch: null }
   const issues: { field: GroupingField; value: string; kind: 'empty' | 'unmapped' }[] = []
-  for (const [dim, field] of [['Organization', 'organization_name'], ['Branch', 'branch_name']] as const) {
+  for (const [dim, field] of [['Organization', 'organization_name'], ['Branch', 'branch']] as const) {
     const val = (e[field] ?? '').trim()
     if (!val) { if (s.fieldPolicies[field] === 'hold') issues.push({ field, value: '', kind: 'empty' }); continue }
     const tag = s.groupMaps[dim][val]
@@ -1179,11 +1270,11 @@ function resolveTags(e: TalentaEmployee, s: PayrollSettings): { tags: Tags; issu
     else if (hasFallback(s, field, val)) tags[dim] = FALLBACK_TAG
     else issues.push({ field, value: val, kind: 'unmapped' })
   }
-  if (!(e.cost_center_name ?? '').trim() && s.fieldPolicies.cost_center_name === 'hold' && s.rules.some((r) => r.conditions.some((c) => c.field === 'cost_center_category' || c.field === 'cost_center_name')))
-    issues.push({ field: 'cost_center_name', value: '', kind: 'empty' })
+  if (!e.cost_center.trim() && s.fieldPolicies.cost_center === 'hold' && s.rules.some((r) => r.conditions.some((c) => c.field === 'cost_center_category' || c.field === 'cost_center')))
+    issues.push({ field: 'cost_center', value: '', kind: 'empty' })
   return { tags, issues }
 }
-function matchRule(e: TalentaEmployee, role: PayRole | null, s: PayrollSettings): AllocationRule | undefined {
+function matchRule(e: StaffRow, role: PayRole | null, s: PayrollSettings): AllocationRule | undefined {
   if (!role) return undefined
   return s.rules.find((r) => r.active && r.roles.includes(role) && r.conditions.every((c) => {
     const v = norm(fieldValue(e, c.field, s))
@@ -1192,70 +1283,55 @@ function matchRule(e: TalentaEmployee, role: PayRole | null, s: PayrollSettings)
   }))
 }
 
-export interface GapRow { employee_id: string; section: PaySection; cents: number; group: string; known: boolean }
-/** OD-04: per section, the sum of each employee's absolute gap between lines and Talenta's total. */
-export function totalGaps(runId: string, no?: number): { bySection: Record<PaySection, number>; rows: GapRow[]; knownTotal: number; newTotal: number } {
-  const run = runById(runId)!
-  return gapsOf(versionOf(run, no ?? run.currentVersion) ?? latestVersion(run)!, payroll.settings, run)
+/** The send a version is compared with for missing components: the version before it, else the previous regular run's latest send. */
+function previousSend(run: Run, v: RunVersion): { v: RunVersion; label: string } | null {
+  const earlier = run.versions.filter((o) => o.no < v.no && !['rejected', 'moved', 'partial', 'waiting-choice'].includes(o.state)).pop()
+  if (earlier) return { v: earlier, label: `v${earlier.no}` }
+  const prev = payroll.runs.filter((r) => r.id !== run.id && r.kind === 'Regular' && r.end < run.end && r.currentVersion != null).sort((a, b) => b.end.localeCompare(a.end))[0]
+  const pv = prev && (currentVersionOf(prev) ?? versionOf(prev, prev.ledgerVersion))
+  return prev && pv ? { v: pv, label: `${periodLabel(prev.start, prev.end)} v${pv.no}` } : null
 }
-function gapsOf(v: RunVersion, s: PayrollSettings, run: Run) {
-  const rows: GapRow[] = []
-  const bySection: Record<PaySection, number> = { allowance: 0, deduction: 0, benefit: 0 }
-  for (const e of staffOf(v.payload)) {
-    const sec: [PaySection, typeof e.allowances, number][] = [['allowance', e.allowances, e.total_allowances], ['deduction', e.deductions, e.total_deductions], ['benefit', e.benefits, e.total_benefits]]
-    for (const [section, items, total] of sec) {
-      const lines = items.filter((i) => !(section === 'deduction' && s.deductionsBasis === 'without-employer' && mappingFor(i.name, section, s)?.role === 'Employer contribution'))
-        .reduce((x, i) => x + cents(i.amount), 0)
-      const g = cents(total) - lines
-      if (!g) continue
-      const known = payroll.knownGaps.some((k) => k.employee_id === e.employee_id && k.section === section && k.cents === g && k.releasedOn !== run.id && k.runsSeen < 3)
-      rows.push({ employee_id: e.employee_id, section, cents: g, group: `${e.organization_name} / ${e.branch_name}`, known })
-      if (!known) bySection[section] += Math.abs(g)
-    }
+/** Component name and section totals of a send. */
+function componentTotals(p: TalentaPayload): Map<string, { name: string; section: PaySection; amount: number }> {
+  const m = new Map<string, { name: string; section: PaySection; amount: number }>()
+  for (const e of staffRows(p)) for (const [section, k] of SECTIONS) for (const it of e[k]) {
+    const key = payItemKeyRaw(it.name, section)
+    const x = m.get(key) ?? { name: it.name.trim(), section, amount: 0 }
+    x.amount += it.amount; m.set(key, x)
   }
-  const knownTotal = rows.filter((r) => r.known).reduce((x, r) => x + Math.abs(r.cents), 0)
-  const newTotal = rows.filter((r) => !r.known).reduce((x, r) => x + Math.abs(r.cents), 0)
-  return { bySection, rows, knownTotal, newTotal }
+  return m
 }
 
-/** Runs every check in LR-5 order and builds the draft when nothing holds. */
+/** Runs every check and builds the draft when nothing holds. Holds stop the send; warnings ride on the draft. */
 function checkVersion(run: Run, v: RunVersion): void {
   const s = payroll.settings
   const holds: Hold[] = []
   v.draft = null
+  v.warnings = []
   if (!payroll.connection.sourceConfirmedBy) {
-    const sum = { headcount: new Set(v.payload.employees.map((e) => e.employee_id)).size, takeHome: roundCents(v.payload.employees.reduce((x, e) => x + cents(e.take_home_pay), 0)) }
-    v.holds = [{ code: 'confirm-source', message: 'Confirm source: the first send waits for the Jurnal Owner.', details: sum }]
+    const rows = staffRows(v.payload, { all: true })
+    v.holds = [{ code: 'confirm-source', message: 'Confirm source: the first send waits for the Jurnal Owner.', details: { headcount: new Set(rows.map((e) => e.user_id)).size, takeHome: rows.reduce((x, e) => x + e.takeHome, 0) } }]
     return
   }
   if (v.state === 'waiting-choice') {
     const ov = overlap(run, v)
-    v.holds = [{ code: 'choice', message: `A different send arrived for posted payroll ${periodLabel(run.start, run.end)}. Is it a revision or a separate run?`, details: { overlapPct: Math.round(ov.pct * 100) } }]
+    v.holds = [{ code: 'choice', message: `A different send arrived for posted payroll ${periodLabel(run.start, run.end)}. Its items look like a separate run. Is it a revision or a separate run?`, details: { overlapPct: Math.round(ov.pct * 100), earningPct: Math.round(ov.earningShare * 100) } }]
     return
   }
   if (v.state === 'partial') return
   if (v.state !== 'active') { v.holds = []; return }
-  const staff = staffOf(v.payload)
-  // Duplicate employee rows (TN-26).
-  const seen = new Map<string, string>()
-  const dups: string[] = []
-  for (const e of staff) {
-    const g = `${e.organization_name}|${e.branch_name}|${e.cost_center_name}`
-    if (seen.get(e.employee_id) === g) dups.push(e.employee_id)
-    seen.set(e.employee_id, g)
-  }
-  if (dups.length) holds.push({ code: 'duplicate-employee', message: `${dups.length} employee appears twice: ${dups.join(', ')}`, details: { ids: dups } })
-  // Unmapped pay items (OD-03).
-  const unmapped = new Map<string, { name: string; section: PaySection; cents: number; staff: Set<string>; reason: string }>()
-  for (const e of staff) for (const [section, items] of [['allowance', e.allowances], ['deduction', e.deductions], ['benefit', e.benefits]] as const) {
-    for (const it of items) {
-      if (!cents(it.amount)) continue
+  const staff = staffRows(v.payload)
+  // Unmapped pay items (OD-03). Rp0 items and Talenta's tax figures never hold.
+  const unmapped = new Map<string, { name: string; section: PaySection; amount: number; staff: Set<number>; reason: string }>()
+  for (const e of staff) for (const [section, k] of SECTIONS) {
+    for (const it of e[k]) {
+      if (!it.amount || isTaxFigure(it.name, section)) continue
       const m = mappingFor(it.name, section, s)
       const reason = !m ? 'no account' : !m.roleConfirmed || !m.role ? 'no confirmed role' : !m.debit || !m.credit ? 'no account' : ''
       if (!reason) continue
-      const k = payItemKey(it.name, section)
-      const u = unmapped.get(k) ?? { name: it.name.trim(), section, cents: 0, staff: new Set<string>(), reason }
-      u.cents += cents(it.amount); u.staff.add(e.employee_id); unmapped.set(k, u)
+      const key = payItemKey(it.name, section)
+      const u = unmapped.get(key) ?? { name: it.name.trim(), section, amount: 0, staff: new Set<number>(), reason }
+      u.amount += it.amount; u.staff.add(e.user_id); unmapped.set(key, u)
       if (!m) payroll.settings.mapping.push(newMappingRow(it.name, section, 'Talenta'))
     }
   }
@@ -1264,15 +1340,15 @@ function checkVersion(run: Run, v: RunVersion): void {
     const first = list[0]!
     holds.push({
       code: 'unmapped-item',
-      message: `${list.length} pay item${list.length > 1 ? 's have' : ' has'} ${first.reason}: ${list.map((u) => `${u.name} (${u.section}), ${rupiah(roundCents(u.cents))}, ${u.staff.size} employees`).join('; ')}`,
-      details: { items: list.map((u) => ({ key: payItemKey(u.name, u.section), name: u.name, section: u.section, amount: roundCents(u.cents), employees: u.staff.size, reason: u.reason })) },
+      message: `${list.length} pay item${list.length > 1 ? 's have' : ' has'} ${first.reason}: ${list.map((u) => `${u.name} (${u.section}), ${rupiah(u.amount)}, ${u.staff.size} employees`).join('; ')}`,
+      details: { items: list.map((u) => ({ key: payItemKey(u.name, u.section), name: u.name, section: u.section, amount: u.amount, employees: u.staff.size, reason: u.reason })) },
     })
   }
-  // Groups and empty fields.
+  // Groups and fields with no mapping, including an empty grouping field a rule needs.
   const groups = new Map<string, { field: string; value: string; staff: number }>()
   const empty = new Map<string, number>()
-  const ruleFields = new Set(s.rules.flatMap((r) => r.conditions.map((c) => c.field)).filter((f) => f !== 'organization_name' && f !== 'branch_name' && f !== 'cost_center_category'))
-  if (s.rules.some((r) => r.conditions.some((c) => c.field === 'cost_center_category'))) ruleFields.add('cost_center_name')
+  const ruleFields = new Set(s.rules.flatMap((r) => r.conditions.map((c) => c.field as string)).filter((f) => f !== 'organization_name' && f !== 'branch' && f !== 'cost_center_category'))
+  if (s.rules.some((r) => r.conditions.some((c) => c.field === 'cost_center_category'))) ruleFields.add('cost_center')
   const newValues = new Map<string, { field: string; value: string; staff: number }>()
   for (const e of staff) {
     for (const i of resolveTags(e, s).issues) {
@@ -1282,29 +1358,41 @@ function checkVersion(run: Run, v: RunVersion): void {
     for (const f of ruleFields) {
       const val = fieldValue(e, f, s)
       if (!val) continue
-      const known = (s.knownValues[f] ?? []).includes(val) && (f !== 'cost_center_name' || !!s.costCenterCategory[val])
+      const known = (s.knownValues[f] ?? []).includes(val) && (f !== 'cost_center' || !!s.costCenterCategory[val])
       if (!known) { const k = `${f}|${val}`; const n = newValues.get(k) ?? { field: f, value: val, staff: 0 }; n.staff++; newValues.set(k, n) }
     }
   }
   if (groups.size) holds.push({ code: 'unmapped-group', message: `${groups.size} group${groups.size > 1 ? 's have' : ' has'} no dimension: ${[...groups.values()].map((g) => `${g.value} (${g.staff} employees)`).join(', ')}`, details: { groups: [...groups.values()] } })
   if (newValues.size) holds.push({ code: 'new-field-value', message: `New values in fields the allocation rules read: ${[...newValues.values()].map((n) => `${n.value} (${n.staff} employees)`).join(', ')}`, details: { values: [...newValues.values()] } })
-  if (empty.size) holds.push({ code: 'empty-field', message: `Employees with an empty grouping field: ${[...empty.entries()].map(([f, n]) => `${f.replace('_name', '')} ${n}`).join(', ')}`, details: { fields: Object.fromEntries(empty) } })
-  // Total check (OD-04), only once items are mapped (the deductions basis depends on roles).
-  if (!unmapped.size) {
-    const g = gapsOf(v, s, run)
-    const over = (Object.entries(g.bySection) as [PaySection, number][]).filter(([, c]) => roundCents(c) > s.limits.gapTolerance)
-    if (over.length && !v.gapRelease) {
-      holds.push({
-        code: 'total-gap',
-        message: `Lines differ from Talenta's totals: ${over.map(([sec, c]) => `${sec}s ${rupiah(roundCents(c))}`).join(', ')}.${g.knownTotal ? ` Matches known gap ${rupiah(roundCents(g.knownTotal))}. New gap ${rupiah(roundCents(g.newTotal))}.` : ''}`,
-        details: { bySection: Object.fromEntries(Object.entries(g.bySection).map(([k, c]) => [k, roundCents(c)])), rows: g.rows.map((r) => ({ ...r, amount: roundCents(r.cents) })) },
-      })
-    }
-  }
+  if (empty.size) holds.push({ code: 'empty-field', message: `Employees with an empty grouping field: ${[...empty.entries()].map(([f, n]) => `${f.replace('_name', '').replace('_', ' ')} ${n}`).join(', ')}`, details: { fields: Object.fromEntries(empty) } })
+  // Warnings found on the send itself.
+  v.warnings = sendWarnings(run, v, staff)
   if (holds.length) { v.holds = holds; return }
   const b = buildJournal(run, v, s)
   v.draft = b.draft
   v.holds = b.holds
+  v.warnings.push(...b.warnings)
+  refreshCorrection(run, v)
+}
+
+/** Missing components against the last send of a regular run, and duplicate user_id rows. */
+function sendWarnings(run: Run, v: RunVersion, staff: StaffRow[]): StoredWarning[] {
+  const out: StoredWarning[] = []
+  if (run.kind === 'Regular') {
+    const prev = previousSend(run, v)
+    if (prev) {
+      const before = componentTotals(prev.v.payload), here = componentTotals(v.payload)
+      for (const [k, x] of before) {
+        if (!x.amount || here.has(k)) continue
+        out.push({ key: `missing:${k}`, code: 'missing-component', message: `${x.name} not in this send`, details: { name: x.name, section: x.section, lastAmount: x.amount, last: prev.label } })
+      }
+    }
+  }
+  const seen = new Map<number, number>()
+  for (const e of staff) seen.set(e.user_id, (seen.get(e.user_id) ?? 0) + 1)
+  const dups = staff.filter((e, i) => (seen.get(e.user_id) ?? 0) > 1 && staff.findIndex((x) => x.user_id === e.user_id) === i).map((e) => e.employee_id)
+  if (dups.length) out.push({ key: `duplicate:${dups.join(',')}`, code: 'duplicate-employee', message: `${dups.length} employee${dups.length > 1 ? 's appear' : ' appears'} more than once: ${dups.join(', ')}`, details: { ids: dups } })
+  return out
 }
 
 function recheckHeld(): void {
@@ -1317,44 +1405,14 @@ function recheckHeld(): void {
     }
   }
 }
+/** Re-check the whole run after fixes (holds clear on their own when a mapping is saved; this is the manual re-check). */
 export function releaseRun(runId: string): Result {
   if (!can('run.release')) return denied()
   const run = runById(runId), v = run && currentVersionOf(run)
   if (!run || !v) return { ok: false }
   checkVersion(run, v)
-  addLog({ type: 'Hold', status: v.holds.length ? 'Held' : 'Received', reason: v.holds[0]?.message ?? 'Run released', nextStep: nextStepFor(v), runId, runKey: run.key, version: v.no })
+  addLog({ type: 'Hold', status: v.holds.length ? 'Held' : 'Received', reason: v.holds[0]?.message ?? 'Run re-checked', nextStep: nextStepFor(run, v), runId, runKey: run.key, version: v.no })
   return { ok: !v.holds.length, holds: v.holds, message: v.holds[0]?.message }
-}
-export function releaseWithGap(runId: string, o: { reason: string; attachment: string; target: 'suspense' | string }): Result {
-  const run = runById(runId), v = run && currentVersionOf(run)
-  if (!run || !v) return { ok: false }
-  const g = gapsOf(v, payroll.settings, run)
-  const third = g.rows.some((r) => (payroll.knownGaps.find((k) => k.employee_id === r.employee_id && k.section === r.section && k.cents === r.cents)?.releases ?? 0) >= 2)
-  if (third ? payroll.viewAs !== 'Jurnal Owner' : !can('gap.release') || payroll.viewAs === 'Jurnal Owner') return { ok: false, message: third ? 'The third release of this gap needs the Jurnal Owner.' : 'Your role cannot do this.', status: 403 }
-  if (o.reason.trim().length < 10) return { ok: false, message: 'Give a reason (10 characters or more).' }
-  if (!o.attachment.trim()) return { ok: false, message: "Attach HR's confirmation." }
-  const target = o.target === 'suspense' ? payroll.settings.suspenseAccount : o.target
-  if (!target) return { ok: false, message: 'Set a Payroll suspense account first.' }
-  if (o.target !== 'suspense' && !partyOf(target)) return { ok: false, message: 'Pick Payroll suspense or a party payable.' }
-  v.gapRelease = { target, reason: o.reason.trim(), attachment: o.attachment.trim(), by: actingPerson(), at: now(), gaps: g.rows.filter((r) => !r.known).map((r) => ({ employee_id: r.employee_id, section: r.section, cents: r.cents })) }
-  for (const r of v.gapRelease.gaps) {
-    const k = payroll.knownGaps.find((x) => x.employee_id === r.employee_id && x.section === r.section && x.cents === r.cents)
-    if (k) { k.releases++; k.runsSeen = 0; k.releasedOn = run.id; k.target = target }
-    else payroll.knownGaps.push({ id: nextId('gap'), employee_id: r.employee_id, section: r.section, cents: r.cents, target, releasedOn: run.id, runsSeen: 0, releases: 1 })
-  }
-  checkVersion(run, v)
-  addLog({ type: 'Hold', status: v.holds.length ? 'Held' : 'Received', reason: `Released with gap to ${accountLabel(target)}`, nextStep: nextStepFor(v), runId, runKey: run.key, version: v.no })
-  return { ok: true }
-}
-export function releaseTaxHold(runId: string, reason: string): Result {
-  if (!can('tax.release')) return denied()
-  const run = runById(runId), v = run && currentVersionOf(run)
-  if (!run || !v || !v.holds.some((h) => h.code === 'tax-rule')) return { ok: false, message: 'No tax hold on this run.' }
-  if (reason.trim().length < 10) return { ok: false, message: 'Give a reason (10 characters or more).' }
-  v.taxRelease = { reason: reason.trim(), by: actingPerson(), at: now() }
-  checkVersion(run, v)
-  addLog({ type: 'Hold', status: v.holds.length ? 'Held' : 'Received', reason: 'Tax rule hold released', nextStep: nextStepFor(v), runId, runKey: run.key, version: v.no })
-  return { ok: true }
 }
 export function markDryRunPassed(runId: string): Result {
   if (!can('dryrun.pass')) return denied()
@@ -1374,65 +1432,60 @@ export function signOffDryRun(runId: string): Result {
 }
 /**
  * OD-10: run every check and build the journal a stored send would post on the
- * current settings. Stores nothing and posts nothing: the run, its versions and
- * the settings are left exactly as they were. Call from a handler, not a computed.
+ * current settings. Stores nothing and posts nothing. Call from a handler, not a computed.
  */
-export function previewDryRun(runId: string, no?: number): { ok: boolean; holds: Hold[]; draft: Draft | null; snapshotId: string; at: string; versionNo: number | null } {
+export function previewDryRun(runId: string, no?: number): { ok: boolean; holds: Hold[]; warnings: StoredWarning[]; draft: Draft | null; snapshotId: string; at: string; versionNo: number | null } {
   const run = runById(runId)
   const v = run && (versionOf(run, no ?? run.currentVersion) ?? latestVersion(run))
-  if (!run || !v) return { ok: false, holds: [], draft: null, snapshotId: currentSnapshotId(), at: payroll.clock, versionNo: null }
+  if (!run || !v) return { ok: false, holds: [], warnings: [], draft: null, snapshotId: currentSnapshotId(), at: payroll.clock, versionNo: null }
   const seq = payroll.seq
   const mappingLen = payroll.settings.mapping.length
-  const copy: RunVersion = { ...clone(v), state: 'active', gapRelease: null, taxRelease: null }
-  checkVersion(run, copy)
+  const copy: RunVersion = { ...clone(v), state: 'active' }
+  const ledger = run.ledgerVersion
+  run.ledgerVersion = null
+  try { checkVersion(run, copy) } finally { run.ledgerVersion = ledger }
   payroll.settings.mapping.splice(mappingLen)
   payroll.seq = seq
-  return { ok: true, holds: copy.holds, draft: copy.draft, snapshotId: currentSnapshotId(), at: payroll.clock, versionNo: v.no }
+  return { ok: true, holds: copy.holds, warnings: copy.warnings, draft: copy.draft, snapshotId: currentSnapshotId(), at: payroll.clock, versionNo: v.no }
 }
 
 // ── Draft build (TS-05) ─────────────────────────────────────────────────────
 
-interface Bucket { account: string; tags: Tags; cents: number; why: Set<string>; sources: Map<string, LineSource> }
-interface BuildResult { draft: Draft; holds: Hold[] }
+interface Bucket { account: string; tags: Tags; amount: number; why: Set<string>; sources: Map<string, LineSource> }
+interface BuildResult { draft: Draft; holds: Hold[]; warnings: StoredWarning[] }
 
 function memoFor(run: Run, v: RunVersion): string {
   const kind = run.kind === 'Regular' ? 'monthly' : `${run.kind} ${run.label}`
   return `Talenta payroll, ${kind} ${run.start} to ${run.end}, version ${v.no}, sent ${wib(v.sentAt)}`
 }
 
-/** Pure build of one version with the given settings: lines by account and tag, one payable line per party. */
+/** Pure build of one version with the given settings: lines by account and dimension, one payable line per party. */
 function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult {
   const buckets = new Map<string, Bucket>()
-  const add = (account: string, tags: Tags, c: number, why: string, src: Omit<LineSource, 'side' | 'cents' | 'staff'>, staffId: string | null) => {
-    if (!c) return
+  const add = (account: string, tags: Tags, amt: number, why: string, src: Omit<LineSource, 'side' | 'amount' | 'staff'>, staffId: string | null) => {
+    if (!amt) return
     const t = isCost(account) ? tags : NO_TAGS
-    const key = `${account}#${tagsKey(t)}${grossBoth(account) ? (c > 0 ? '#D' : '#C') : ''}`
-    const b = buckets.get(key) ?? { account, tags: { ...t }, cents: 0, why: new Set<string>(), sources: new Map() }
-    b.cents += c; b.why.add(why)
-    const sk = `${src.item}|${src.section}|${c > 0 ? 'D' : 'C'}`
-    const ls = b.sources.get(sk) ?? { ...src, side: c > 0 ? 'D' : 'C', cents: 0, staff: [] }
-    ls.cents += c
+    const key = `${account}#${tagsKey(t)}${grossBoth(account) ? (amt > 0 ? '#D' : '#C') : ''}`
+    const b = buckets.get(key) ?? { account, tags: { ...t }, amount: 0, why: new Set<string>(), sources: new Map() }
+    b.amount += amt; b.why.add(why)
+    const sk = `${src.item}|${src.section}|${amt > 0 ? 'D' : 'C'}`
+    const ls = b.sources.get(sk) ?? { ...src, side: amt > 0 ? 'D' : 'C', amount: 0, staff: [] }
+    ls.amount += amt
     if (staffId && !ls.staff.includes(staffId)) ls.staff.push(staffId)
     b.sources.set(sk, ls)
     buckets.set(key, b)
   }
   const hg = s.hutangGaji
-  const staff = staffOf(v.payload)
-  const others = v.payload.employees.filter((e) => !staff.includes(e))
-  const gaps = gapsOf(v, s, run)
-  const gapTarget = (section: PaySection, row: GapRow): string | null => {
-    if (row.known) return payroll.knownGaps.find((k) => k.employee_id === row.employee_id && k.section === section && k.cents === row.cents)?.target ?? s.suspenseAccount
-    if (roundCents(gaps.bySection[section]) <= s.limits.gapTolerance) return s.roundingAccount
-    return v.gapRelease?.target ?? null
-  }
+  const staff = staffRows(v.payload)
+  const all = staffRows(v.payload, { all: true })
+  const others = all.filter((e) => !staff.some((x) => x.user_id === e.user_id))
   const itemsToHG: string[] = []
   for (const e of staff) {
     const { tags } = resolveTags(e, s)
-    for (const [section, items] of [['allowance', e.allowances], ['deduction', e.deductions], ['benefit', e.benefits]] as const) {
-      for (const it of items) {
-        const c = cents(it.amount)
+    for (const [section, k] of SECTIONS) {
+      for (const it of e[k]) {
         const m = mappingFor(it.name, section, s)
-        if (!c || !m || !m.debit || !m.credit) continue
+        if (!it.amount || !m || !m.debit || !m.credit || isTaxFigure(it.name, section)) continue
         let debit = m.debit
         const why = `${m.name} (${section}), role ${m.role}: Dr ${accountLabel(m.debit)}, Cr ${accountLabel(m.credit)}`
         const rule = matchRule(e, m.role, s)
@@ -1444,61 +1497,37 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
         }
         const tagWhy = isCost(debit) && (lineTags.Organization || lineTags.Branch) ? `Dimensions ${tagsLabel(lineTags)} from ${rule?.tags ? `rule "${rule.name}"` : 'organization and branch maps'}` : ''
         const src = { item: m.name, section, role: m.role }
-        add(debit, lineTags, c, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, e.employee_id)
-        add(m.credit, lineTags, -c, why, src, e.employee_id)
+        add(debit, lineTags, it.amount, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, e.employee_id)
+        add(m.credit, lineTags, -it.amount, why, src, e.employee_id)
         if (m.debit === hg && m.credit === hg && !itemsToHG.includes(m.name)) itemsToHG.push(m.name)
       }
     }
     // Tax presets (OD-24): DTP, PPh 26 and severance PPh 21 leave Hutang PPh 21 for their own accounts.
     const p = s.taxPresets
     for (const [field, acct] of [['Total PPh 21 DTP Received', p.dtp], ['PPh 26 Benefit', p.pph26], ['PPh 21 Resign Benefit', p.resign]] as const) {
-      const c = cents(e[field])
-      if (!c || acct === p.pph21) continue
+      const amt = taxAmount(e, field)
+      if (!amt || acct === p.pph21) continue
       const why = `Tax preset: ${field} to ${accountLabel(acct)}`
-      add(p.pph21, NO_TAGS, c, why, { item: field, section: 'preset', role: 'Tax' }, e.employee_id)
-      add(acct, NO_TAGS, -c, why, { item: field, section: 'preset', role: 'Tax' }, e.employee_id)
+      add(p.pph21, NO_TAGS, amt, why, { item: field, section: 'preset', role: 'Tax' }, e.employee_id)
+      add(acct, NO_TAGS, -amt, why, { item: field, section: 'preset', role: 'Tax' }, e.employee_id)
     }
   }
-  // Total gaps: small ones to Payroll rounding, released ones to the chosen account. Hutang Gaji = take-home pay.
-  for (const row of gaps.rows) {
-    const target = gapTarget(row.section, row)
-    if (!target || row.section === 'benefit') continue
-    const why = row.known ? `Matches known gap for ${row.employee_id}` : target === s.roundingAccount ? 'Gap against Talenta totals within the Rp1.000 limit' : `Gap released with gap to ${accountLabel(target)}`
-    const src = { item: `${row.section} gap`, section: 'gap' as const, role: null }
-    if (row.section === 'deduction') { add(hg, NO_TAGS, row.cents, why, src, row.employee_id); add(target, NO_TAGS, -row.cents, why, src, row.employee_id) }
-    else { add(target, NO_TAGS, row.cents, why, src, row.employee_id); add(hg, NO_TAGS, -row.cents, why, src, row.employee_id) }
-  }
-  // Lines, whole rupiah, half up.
-  let lines: JournalLine[] = []
+  const lines: JournalLine[] = []
   for (const b of buckets.values()) {
-    const r = roundCents(b.cents)
-    if (!r) continue
-    const line: JournalLine = { account: b.account, tags: b.tags, debit: r > 0 ? r : 0, credit: r < 0 ? -r : 0, why: [...b.why], sources: [...b.sources.values()] }
-    if (isCost(b.account) && r < 0) line.review = true
+    if (!b.amount) continue
+    const line: JournalLine = { account: b.account, tags: b.tags, debit: b.amount > 0 ? b.amount : 0, credit: b.amount < 0 ? -b.amount : 0, why: [...b.why], sources: [...b.sources.values()] }
+    if (isCost(b.account) && b.amount < 0) line.review = true
     lines.push(line)
   }
   const holds: Hold[] = []
-  const deb = lines.reduce((x, l) => x + l.debit, 0), cre = lines.reduce((x, l) => x + l.credit, 0)
-  const residue = deb - cre
-  if (residue) {
-    if (Math.abs(residue) <= s.limits.roundingTolerance) {
-      const ex = lines.find((l) => l.account === s.roundingAccount)
-      const net = (ex ? ex.debit - ex.credit : 0) - residue
-      if (ex) { ex.debit = net > 0 ? net : 0; ex.credit = net < 0 ? -net : 0; ex.why.push('Rounding residue of the whole-rupiah lines') }
-      else lines.push({ account: s.roundingAccount, tags: NO_TAGS, debit: residue < 0 ? -residue : 0, credit: residue > 0 ? residue : 0, why: ['Rounding residue of the whole-rupiah lines'], sources: [{ item: 'Rounding', section: 'rounding', role: null, side: residue < 0 ? 'D' : 'C', cents: -residue * 100, staff: [] }] })
-      lines = lines.filter((l) => l.debit || l.credit)
-    } else {
-      const top = [...lines].sort((a, b) => (b.debit + b.credit) - (a.debit + a.credit)).slice(0, 5).map((l) => ({ account: l.account, tags: l.tags, amount: l.debit || -l.credit }))
-      holds.push({ code: 'rounding', message: `The rounded lines differ by ${rupiah(Math.abs(residue))}, over the ${rupiah(s.limits.roundingTolerance)} limit.`, details: { residue, top } })
-    }
-  }
-  // Hutang Gaji equals take-home pay (TN-08, no override).
-  const thp = roundCents(staff.reduce((x, e) => x + cents(e.take_home_pay), 0))
+  const warnings: StoredWarning[] = []
+  // Hutang Gaji is computed: it equals take-home pay (allowances - deductions). A mapping that breaks it is a warning.
+  const thp = staff.reduce((x, e) => x + e.takeHome, 0)
   const hgLine = lines.filter((l) => l.account === hg).reduce((x, l) => x + l.credit - l.debit, 0)
   if (hgLine !== thp) {
-    holds.push({ code: 'hutang-gaji', message: itemsToHG.length ? `${itemsToHG.join(' and ')} post to ${accountName(hg)} on both sides. ${accountName(hg)} must equal take-home pay ${rupiah(thp)}.` : `${accountName(hg)} ${rupiah(hgLine)} differs from take-home pay ${rupiah(thp)}.`, details: { hutangGaji: hgLine, takeHome: thp, items: itemsToHG } })
+    warnings.push({ key: `hutang-gaji:${hgLine}:${thp}`, code: 'hutang-gaji', message: itemsToHG.length ? `${itemsToHG.join(' and ')} post to ${accountName(hg)} on both sides. ${accountName(hg)} ${rupiah(hgLine)} differs from take-home pay ${rupiah(thp)}.` : `${accountName(hg)} ${rupiah(hgLine)} differs from take-home pay ${rupiah(thp)}.`, details: { hutangGaji: hgLine, takeHome: thp, items: itemsToHG } })
   }
-  // Two statutory parties on one payable (TN-10).
+  // Two statutory parties on one payable (TN-10): the mapping is unusable, so the run holds.
   const credPar = new Map<string, Set<PayableParty>>()
   for (const m of s.mapping) {
     if (!m.credit || !m.party || !STATUTORY_PARTIES.includes(m.party)) continue
@@ -1510,33 +1539,32 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
     credPar.set(m.credit, set)
   }
   for (const [acct, set] of credPar) if (set.size > 1) { const parties = STATUTORY_PARTIES.filter((x) => set.has(x)); holds.push({ code: 'two-parties', message: `${accountName(acct)} holds ${listLabel(parties)}. Each party needs its own payable.`, details: { account: acct, parties } }) }
+  for (const l of lines) if (payrollAccount(l.account)?.archived) holds.push({ code: 'archived-account', message: `${accountLabel(l.account)} is archived.`, details: { account: l.account } })
   // Payables below Rp0 (December PPh 21 true-up excepted).
   for (const l of lines) {
     if (partyOf(l.account) && l.debit > 0 && !(l.account === s.taxPresets.pph21 && run.end.slice(5, 7) === '12'))
-      holds.push({ code: 'negative-payable', message: `${accountName(l.account)} is below Rp0 (${rupiah(-l.debit)}).`, details: { account: l.account } })
+      warnings.push({ key: `negative:${l.account}`, code: 'negative-payable', message: `${accountName(l.account)} is below Rp0 (${rupiah(-l.debit)}).`, details: { account: l.account, amount: -l.debit } })
   }
-  for (const l of lines) if (payrollAccount(l.account)?.archived) holds.push({ code: 'archived-account', message: `${accountLabel(l.account)} is archived.`, details: { account: l.account } })
-  // One PPh 21 rule (LR-10).
-  const expected = roundCents(staff.reduce((x, e) => x + cents(e['PPh 21 Benefit']) + cents(e['PPh 21 Payment']) - cents(e['Total PPh 21 DTP Received']), 0))
+  // One PPh 21 rule (LR-10): a difference above the limit is a warning.
+  const expected = staff.reduce((x, e) => x + pph21Rule(e), 0)
   const ledger = lines.filter((l) => l.account === s.taxPresets.pph21).reduce((x, l) => x + l.credit - l.debit, 0)
-  if (Math.abs(ledger - expected) > 1_000 && !v.taxRelease)
-    holds.push({ code: 'tax-rule', message: `PPh 21 lines ${rupiah(ledger)} differ from the PPh 21 rule ${rupiah(expected)} by ${rupiah(Math.abs(ledger - expected))}.`, details: { ledger, expected } })
+  if (Math.abs(ledger - expected) > s.limits.taxTolerance)
+    warnings.push({ key: `tax-rule:${ledger}:${expected}`, code: 'tax-rule', message: `PPh 21 lines ${rupiah(ledger)} differ from the PPh 21 rule ${rupiah(expected)} by ${rupiah(Math.abs(ledger - expected))}.`, details: { ledger, expected } })
   const sortKey = (l: JournalLine) => `${l.debit ? 0 : 1}|${l.account}|${tagsKey(l.tags)}`
   lines.sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
-  const date = run.end
   const draft: Draft = {
-    id: nextId('draft'), versionNo: v.no, snapshotId: currentSnapshotId(), builtAt: payroll.clock, date,
-    memo: memoFor(run, v), lines, fmConfirmedBy: null, nothingToPost: !lines.length,
-    otherEntity: { staff: new Set(others.map((e) => e.employee_id)).size, amount: roundCents(others.reduce((x, e) => x + cents(e.total_allowances), 0)) },
+    id: nextId('draft'), versionNo: v.no, snapshotId: currentSnapshotId(), builtAt: payroll.clock, date: run.end,
+    memo: memoFor(run, v), lines, nothingToPost: !lines.length,
+    otherEntity: { staff: new Set(others.map((e) => e.user_id)).size, amount: others.reduce((x, e) => x + sumItems(e.allowances), 0) },
   }
-  return { draft, holds }
+  return { draft, holds, warnings }
 }
 
 export function isDraftStale(runId: string): boolean {
   const d = draftOf(runById(runId)!)
   return !!d && d.snapshotId !== currentSnapshotId()
 }
-/** Rebuild the current draft on current settings; returns the lines that moved. */
+/** Rebuild the current draft (and correction) on current settings; returns the lines that moved. */
 export function rebuildDraft(runId: string): Result {
   const run = runById(runId), v = run && currentVersionOf(run)
   if (!run || !v) return { ok: false }
@@ -1565,48 +1593,106 @@ export function whyLine(runId: string, index: number) {
   const d = draftOf(runById(runId)!)
   const l = d?.lines[index]
   if (!l) return null
-  return { account: accountLabel(l.account), tags: tagsLabel(l.tags), why: l.why, sources: l.sources.map((s) => ({ item: s.item, section: s.section, role: s.role, amount: roundCents(Math.abs(s.cents)), employees: s.staff.length, employeeIds: can('payByEmployee.view') ? s.staff : [] })) }
+  return { account: accountLabel(l.account), tags: tagsLabel(l.tags), why: l.why, sources: l.sources.map((s) => ({ item: s.item, section: s.section, role: s.role, amount: Math.abs(s.amount), employees: s.staff.length, employeeIds: can('payByEmployee.view') ? s.staff : [] })) }
 }
 
-/** OD-12 review: pay item totals, change from last period, headcount by group, the lines. */
+// ── Draft review and warnings (OD-12) ───────────────────────────────────────
+
+/** OD-12 review: pay item totals, change from last period, headcount by group, the lines, every warning. */
 export function draftReview(runId: string) {
   const run = runById(runId)!
   const v = currentVersionOf(run)!
   const d = v.draft
-  const staff = staffOf(v.payload)
+  const staff = staffRows(v.payload)
   const s = payroll.settings
-  const items = new Map<string, { name: string; section: PaySection; amount: number; staff: number; role: PayRole | null }>()
-  for (const e of staff) for (const [section, list] of [['allowance', e.allowances], ['deduction', e.deductions], ['benefit', e.benefits]] as const) for (const it of list) {
-    const k = payItemKey(it.name, section)
-    const x = items.get(k) ?? { name: it.name, section, amount: 0, staff: 0, role: mappingFor(it.name, section)?.role ?? null }
-    x.amount += cents(it.amount); x.staff++; items.set(k, x)
+  const items = new Map<string, { name: string; section: PaySection; amount: number; staff: number; role: PayRole | null; taxFigure: boolean }>()
+  for (const e of staff) for (const [section, k] of SECTIONS) for (const it of e[k]) {
+    const key = payItemKey(it.name, section)
+    const x = items.get(key) ?? { name: it.name, section, amount: 0, staff: 0, role: mappingFor(it.name, section)?.role ?? null, taxFigure: isTaxFigure(it.name, section) }
+    x.amount += it.amount; x.staff++; items.set(key, x)
   }
-  const payItems = [...items.values()].map((x) => ({ ...x, amount: roundCents(x.amount) }))
-  const sec = (k: 'total_allowances' | 'total_deductions' | 'total_benefits') => roundCents(staff.reduce((x, e) => x + cents(e[k]), 0))
-  const sumItems = (section: PaySection) => payItems.filter((p) => p.section === section && !(section === 'deduction' && s.deductionsBasis === 'without-employer' && p.role === 'Employer contribution')).reduce((x, p) => x + p.amount, 0)
-  const talentaTotals = (['allowance', 'deduction', 'benefit'] as PaySection[]).map((section) => {
-    const talenta = sec(section === 'allowance' ? 'total_allowances' : section === 'deduction' ? 'total_deductions' : 'total_benefits')
-    return { section, lines: sumItems(section), talenta, gap: talenta - sumItems(section) }
-  })
-  // Change from last period by account and tag.
-  const prev = previousRun(run)
-  const prevLines = prev ? liveJournals(prev.id).flatMap((j) => j.lines) : []
-  const L = s.limits
-  const changes = d ? diffLineSets(prevLines, d.lines).concat([]).map((r) => {
-    const pct = r.old ? (r.diff / Math.abs(r.old)) * 100 : null
-    const flag = Math.abs(r.diff) > L.largeChangeAmount && (pct == null || Math.abs(pct) > L.largeChangePct)
-    return { ...r, pct, flag, note: v.changeNotes[r.key] ?? null }
-  }).filter((r) => isCost(r.account) || partyOf(r.account)) : []
-  // Headcount by group: this run's employee_ids against the previous posted regular run.
+  const payItems = [...items.values()]
+  const totals = (['allowance', 'deduction', 'benefit'] as PaySection[]).map((section) => ({ section, amount: payItems.filter((p) => p.section === section && !p.taxFigure).reduce((x, p) => x + p.amount, 0) }))
+  const changes = largeChanges(run, v)
   const headcount = headcountChanges(runId)
+  const warnings = runWarnings(runId)
   return {
-    previous: prev ? { runId: prev.id, label: periodLabel(prev.start, prev.end) } : null,
-    payItems, talentaTotals, changes, headcount, lines: d?.lines ?? [], otherEntity: d?.otherEntity ?? null,
-    takeHome: roundCents(staff.reduce((x, e) => x + cents(e.take_home_pay), 0)),
+    previous: previousRun(run) ? { runId: previousRun(run)!.id, label: periodLabel(previousRun(run)!.start, previousRun(run)!.end) } : null,
+    payItems, totals, changes, headcount, lines: d?.lines ?? [], otherEntity: d?.otherEntity ?? null,
+    takeHome: staff.reduce((x, e) => x + e.takeHome, 0),
+    tax: taxFigures(runId),
+    warnings,
+    unacknowledged: warnings.filter((w) => !w.acknowledged).length,
     unnotedLargeChanges: changes.filter((c) => c.flag && !c.note).length,
     unexpectedHeadcount: headcount.unexpected,
   }
 }
+/** Change from the previous posted run by account and dimension; rows over the limits are flagged for a note. */
+function largeChanges(run: Run, v: RunVersion) {
+  const prev = previousRun(run)
+  const prevLines = prev ? liveJournals(prev.id).flatMap((j) => j.lines) : []
+  const L = payroll.settings.limits
+  const d = v.draft
+  return d && prev ? diffLineSets(prevLines, d.lines).map((r) => {
+    const pct = r.old ? (r.diff / Math.abs(r.old)) * 100 : null
+    const flag = Math.abs(r.diff) > L.largeChangeAmount && (pct == null || Math.abs(pct) > L.largeChangePct)
+    return { ...r, label: `${accountLabel(r.account)}${tagsLabel(r.tags) ? ` | ${tagsLabel(r.tags)}` : ''}`, pct, flag, note: v.changeNotes[r.key] ?? null }
+  }).filter((r) => isCost(r.account) || partyOf(r.account)) : []
+}
+/**
+ * Every warning on a run's current version, with its acknowledgement. Stored ones come from
+ * the send (missing components, tax rule, duplicate rows, payable below Rp0); computed ones
+ * are large changes with no note, headcount changes not marked Expected, and manual journals
+ * on payroll accounts in the run's month. Posting is never blocked by a warning.
+ */
+export function runWarnings(runId: string): RunWarning[] {
+  const run = runById(runId)
+  const v = run ? currentVersionOf(run) : undefined
+  if (!run || !v) return []
+  const out: StoredWarning[] = [...v.warnings]
+  const prev = previousRun(run)
+  for (const c of largeChanges(run, v).filter((x) => x.flag && !x.note)) {
+    const up = isCost(c.account) ? c.diff > 0 : c.diff < 0
+    out.push({ key: `large:${c.key}`, code: 'large-change', message: `${c.label} ${up ? 'up' : 'down'} ${rupiah(Math.abs(c.diff))} from ${prev ? periodLabel(prev.start, prev.end) : 'last period'}, no note.`, details: { rowKey: c.key, diff: c.diff, pct: c.pct } })
+  }
+  const hc = headcountChanges(runId)
+  if (hc.unexpected) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `${hc.unexpected} headcount change${hc.unexpected > 1 ? 's are' : ' is'} not marked Expected.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
+  for (const m of manualJournalWarnings(run.month)) out.push({ key: `manual:${m.journalId}`, code: 'manual-journal', message: m.message, details: { ...m } })
+  return out.map((w) => ({ ...w, acknowledged: v.acks[w.key] ?? null }))
+}
+/** The Accountant acknowledges one warning (note optional, up to 500 characters). Acknowledged warnings leave the Post confirm text. */
+export function acknowledgeWarning(runId: string, key: string, note = ''): Result {
+  if (!can('warning.ack')) return denied()
+  const run = runById(runId)
+  const v = run ? currentVersionOf(run) : undefined
+  if (!run || !v) return { ok: false }
+  if (!runWarnings(runId).some((w) => w.key === key)) return { ok: false, message: 'No such warning on this run.' }
+  if (note.length > 500) return { ok: false, message: 'Keep the note to 500 characters.' }
+  v.acks[key] = { note: note.trim(), by: actingPerson(), at: now() }
+  return { ok: true }
+}
+export function clearAcknowledgement(runId: string, key: string): Result {
+  if (!can('warning.ack')) return denied()
+  const v = currentVersionOf(runById(runId)!)
+  if (!v) return { ok: false }
+  delete v.acks[key]
+  return { ok: true }
+}
+/** The text of the Post (or Post correction) confirm: what posts, then every unacknowledged warning. */
+export function postConfirmText(runId: string): { title: string; body: string; warnings: string[] } {
+  const run = runById(runId)!
+  const v = currentVersionOf(run)
+  const corr = v?.correction
+  const lines = corr ? corr.lines : (v?.draft?.lines ?? [])
+  const total = lines.reduce((s, l) => s + l.debit, 0)
+  const warnings = runWarnings(runId).filter((w) => !w.acknowledged).map((w) => w.message)
+  const pd = postingDate(run.end)
+  const title = corr ? `Post the correction for ${periodLabel(run.start, run.end)}?` : `Post payroll ${periodLabel(run.start, run.end)}?`
+  const body = `${corr ? `One correction journal, v${run.ledgerVersion} to v${v?.no}` : 'One payroll journal'} of ${rupiah(total)} on ${lines.length} lines, dated ${dateLabel(pd.date)}${pd.redirected ? ` in the first open period, tax month ${monthLabel(run.month)}` : ''}.`
+    + (warnings.length ? ` ${warnings.length} warning${warnings.length > 1 ? 's are' : ' is'} not acknowledged: ${warnings.join(' ')}` : '')
+  return { title, body, warnings }
+}
+
 function previousRun(run: Run): Run | undefined {
   return payroll.runs.filter((r) => r.id !== run.id && r.kind === run.kind && (run.kind === 'Regular' || norm(r.label) === norm(run.label)) && r.end < run.end && liveJournals(r.id).length)
     .sort((a, b) => b.end.localeCompare(a.end))[0]
@@ -1616,20 +1702,24 @@ function previousRegularRun(run: Run): Run | undefined {
   return payroll.runs.filter((r) => r.id !== run.id && r.kind === 'Regular' && r.periodType === run.periodType && r.end < run.end && liveJournals(r.id).length)
     .sort((a, b) => b.end.localeCompare(a.end))[0]
 }
-const groupKeyOf = (e: { organization_name: string; branch_name: string }) => `${e.organization_name}|${e.branch_name}`
+
+// ── Headcount from runs (by user_id, shown by employee_id) ─────────────────
+
+const groupKeyOf = (e: { organization_name: string; branch: string }) => `${e.organization_name}|${e.branch}`
 /** Organization and branch as their Jurnal dimension values ("Sales, Bandung"); the Talenta value where none is mapped. */
 function groupLabelOf(key: string): string {
   const [org = '', branch = ''] = key.split('|')
   const m = payroll.settings.groupMaps
   return [m.Organization[org] ?? org, m.Branch[branch] ?? branch].filter(Boolean).join(', ')
 }
-export interface HeadcountMove { employee_id: string; from: string; to: string }
+export interface HeadcountMove { employee_id: string; user_id: number; from: string; to: string }
 export interface HeadcountGroup {
   key: string
   label: string
   last: number
   current: number
   change: number
+  /** employee_id values (display); the compare itself is keyed by user_id. */
   joined: string[]
   left: string[]
   movedIn: HeadcountMove[]
@@ -1638,40 +1728,45 @@ export interface HeadcountGroup {
   expected: HeadcountExpected | null
 }
 /**
- * Who joined, left or moved group between the previous posted regular run and this
- * run, by employee_id (never by counts alone, never by name). Pure: reads the two
- * sends and the dimension mapping, changes nothing.
+ * Who joined, left or moved group between the previous posted regular run and this run.
+ * Keyed by Talenta's user_id (employee_id is editable in Talenta), shown by employee_id,
+ * never by name. `renumbered` lists staff whose employee_id changed with the same user_id.
+ * Pure: reads the two sends and the dimension mapping, changes nothing.
  */
 export function headcountChanges(runId: string) {
   const run = runById(runId)
   const v = run ? currentVersionOf(run) : undefined
   const prev = run ? previousRegularRun(run) : undefined
   const pv = prev ? versionOf(prev, prev.ledgerVersion) : undefined
-  const byId = (p: TalentaPayload | undefined) => {
-    const m = new Map<string, string>()
-    for (const e of p ? staffOf(p) : []) if (!m.has(e.employee_id)) m.set(e.employee_id, groupKeyOf(e))
+  const byUser = (p: TalentaPayload | undefined) => {
+    const m = new Map<number, { group: string; id: string }>()
+    for (const e of p ? staffRows(p) : []) if (!m.has(e.user_id)) m.set(e.user_id, { group: groupKeyOf(e), id: e.employee_id })
     return m
   }
-  const now = byId(v?.payload), before = byId(pv?.payload)
+  const here = byUser(v?.payload), before = byUser(pv?.payload)
   const groups = new Map<string, HeadcountGroup>()
   const g = (key: string) => {
     let x = groups.get(key)
     if (!x) groups.set(key, x = { key, label: groupLabelOf(key), last: 0, current: 0, change: 0, joined: [], left: [], movedIn: [], movedOut: [], flagged: false, expected: null })
     return x
   }
-  for (const k of now.values()) g(k).current++
-  if (pv) for (const k of before.values()) g(k).last++
+  for (const x of here.values()) g(x.group).current++
+  if (pv) for (const x of before.values()) g(x.group).last++
   const moved: HeadcountMove[] = []
+  const renumbered: { user_id: number; from: string; to: string }[] = []
   if (pv) {
-    for (const [id, k] of now) {
-      const was = before.get(id)
-      if (was == null) g(k).joined.push(id)
-      else if (was !== k) {
-        const m = { employee_id: id, from: groupLabelOf(was), to: groupLabelOf(k) }
-        moved.push(m); g(k).movedIn.push(m); g(was).movedOut.push(m)
+    for (const [uid, x] of here) {
+      const was = before.get(uid)
+      if (was == null) g(x.group).joined.push(x.id)
+      else {
+        if (was.id !== x.id) renumbered.push({ user_id: uid, from: was.id, to: x.id })
+        if (was.group !== x.group) {
+          const m = { employee_id: x.id, user_id: uid, from: groupLabelOf(was.group), to: groupLabelOf(x.group) }
+          moved.push(m); g(x.group).movedIn.push(m); g(was.group).movedOut.push(m)
+        }
       }
     }
-    for (const [id, k] of before) if (!now.has(id)) g(k).left.push(id)
+    for (const [uid, x] of before) if (!here.has(uid)) g(x.group).left.push(x.id)
   }
   const list = [...groups.values()].sort((a, b) => a.label.localeCompare(b.label))
   for (const x of list) {
@@ -1688,17 +1783,18 @@ export function headcountChanges(runId: string) {
     previous: prev && pv ? { runId: prev.id, label: periodLabel(prev.start, prev.end), month: prev.month, version: pv.no } : null,
     groups: list,
     last: pv ? before.size : null,
-    current: now.size,
+    current: here.size,
     joined: list.flatMap((x) => x.joined).sort(),
     left: list.flatMap((x) => x.left).sort(),
     moved: moved.sort((a, b) => a.employee_id.localeCompare(b.employee_id)),
+    renumbered,
     flagged: flagged.length,
     unexpected: flagged.filter((x) => !x.expected).length,
   }
 }
-/** The ids a group's change covers: an Expected mark lapses when a later send changes them. */
+/** The people a group's change covers: an Expected mark lapses when a later send changes them. */
 function headcountFingerprint(x: Pick<HeadcountGroup, 'joined' | 'left' | 'movedIn' | 'movedOut'>): string {
-  return JSON.stringify([x.joined, x.left, x.movedIn.map((m) => `${m.employee_id}<${m.from}`).sort(), x.movedOut.map((m) => `${m.employee_id}>${m.to}`).sort()])
+  return JSON.stringify([x.joined, x.left, x.movedIn.map((m) => `${m.user_id}<${m.from}`).sort(), x.movedOut.map((m) => `${m.user_id}>${m.to}`).sort()])
 }
 /** The Accountant marks a group's headcount change Expected (HR settled it; the accountant consumes it). Note optional. */
 export function markHeadcountExpected(runId: string, key: string, note = ''): Result {
@@ -1728,12 +1824,13 @@ export function addChangeNote(runId: string, key: string, note: string): Result 
   v.changeNotes[key] = note.trim()
   return { ok: true }
 }
+/** Reimbursement lines of a run by item and dimension (OD-26), shown as a section on the run page. */
 export function claimsSummary(runId: string) {
   const run = runById(runId)!
   const jl = liveJournals(run.id)
   const lines = jl.length ? jl.flatMap((j) => j.lines.map((l) => ({ l, j }))) : (draftOf(run)?.lines ?? []).map((l) => ({ l, j: null as Journal | null }))
-  const rows: { item: string; account: string; tags: string; amount: number; version: number | null; journal: string | null }[] = []
-  for (const { l, j } of lines) for (const s of l.sources) if (s.role === 'Reimbursement' && s.side === 'D') rows.push({ item: s.item, account: accountLabel(l.account), tags: tagsLabel(l.tags), amount: roundCents(s.cents), version: j?.versionNo ?? run.currentVersion, journal: j?.number ?? null })
+  const rows: { item: string; account: string; tags: string; amount: number; employees: number; version: number | null; journal: string | null }[] = []
+  for (const { l, j } of lines) for (const s of l.sources) if (s.role === 'Reimbursement' && s.side === 'D') rows.push({ item: s.item, account: accountLabel(l.account), tags: tagsLabel(l.tags), amount: s.amount, employees: s.staff.length, version: j?.versionNo ?? run.currentVersion, journal: j?.number ?? null })
   return { rows, total: rows.reduce((x, r) => x + r.amount, 0) }
 }
 
@@ -1743,7 +1840,7 @@ export function isLocked(month: string): boolean { return payroll.lockedMonths.i
 export function firstOpenAfter(month: string): string { let m = month; while (isLocked(m)) m = nextMonthOf(m); return m }
 export function lockPeriod(month: string, o: { confirm?: boolean } = {}): Result {
   if (!can('period.lock')) return denied()
-  const open = payroll.runs.filter((r) => r.month === month && ['Received', 'Held', 'Waiting for your choice', 'Revised', 'Ready to post'].includes(runStatus(r)))
+  const open = payroll.runs.filter((r) => r.month === month && ['Received', 'Held', 'Waiting for your choice', 'Correction ready', 'Ready to post'].includes(runStatus(r)))
   if (open.length && !o.confirm) return { ok: false, needsConfirm: true, runs: open.map((r) => ({ id: r.id, label: periodLabel(r.start, r.end), status: runStatus(r) })), message: `${open.length} run${open.length > 1 ? 's are' : ' is'} still open in ${monthLabel(month)}.` }
   if (!isLocked(month)) payroll.lockedMonths.push(month)
   payroll.lockedMonths.sort()
@@ -1761,10 +1858,12 @@ function postingDate(date: string): { date: string; redirected: boolean } {
   return { date: `${firstOpenAfter(m)}-01`, redirected: true }
 }
 
+
 // ── Post (TS-05) ────────────────────────────────────────────────────────────
 
 function nextPayNo() { return `PAY-${String(++payroll.payNo).padStart(4, '0')}` }
 function nextBnkNo() { return `BNK-${String(++payroll.bnkNo).padStart(4, '0')}` }
+function nextJvNo() { return `JV-${String(++payroll.jvNo).padStart(4, '0')}` }
 function addJournal(j: Omit<Journal, 'id' | 'number' | 'postedBy' | 'postedAt' | 'reversedById'> & { number?: string }): Journal {
   const journal: Journal = { ...j, id: nextId('j'), number: j.number ?? nextPayNo(), postedBy: actingPerson(), postedAt: payroll.clock, reversedById: null }
   const t = journalTotals(journal)
@@ -1772,24 +1871,13 @@ function addJournal(j: Omit<Journal, 'id' | 'number' | 'postedBy' | 'postedAt' |
   payroll.journals.push(journal)
   return journal
 }
-function needsFmConfirm(run: Run, d: Draft): boolean {
-  const s = snapshotById(d.snapshotId)?.settings ?? payroll.settings
-  const override = s.mapping.some((m) => m.override && d.lines.some((l) => l.sources.some((x) => x.item === m.name)))
-  const lastPosted = [...payroll.journals].reverse().find((j) => j.type === 'Payroll' && j.snapshotId)
-  return override || (!!lastPosted && lastPosted.snapshotId !== d.snapshotId)
-}
-export function confirmPostAsFinanceManager(runId: string): Result {
-  if (!can('post.confirm')) return denied()
-  const d = draftOf(runById(runId)!)
-  if (!d) return { ok: false, message: 'No draft to confirm.' }
-  d.fmConfirmedBy = actingPerson()
-  return { ok: true }
-}
 function correctionMemo(run: Run, fromV: RunVersion, oldNo: string | null): string {
   return `Correction of payroll ${periodLabel(run.start, run.end)} v${run.ledgerVersion ?? fromV.no}${oldNo ? ` (${oldNo})` : ''}, from v${fromV.no} sent ${dateLabel(isoDateWib(fromV.sentAt))}`
 }
 function isoDateWib(iso: string): string { return new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10) }
+const unackedMessages = (runId: string) => runWarnings(runId).filter((w) => !w.acknowledged).map((w) => w.message)
 
+/** First post of a run: one PAY journal, all or nothing. Warnings never block; the unacknowledged ones come back in `warnings`. */
 export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
   if (!can('post')) return denied()
   const run = runById(runId)
@@ -1797,94 +1885,60 @@ export function postRun(runId: string, o: { versionNo?: number } = {}): Result {
   const v = currentVersionOf(run)
   if (o.versionNo != null && o.versionNo !== run.currentVersion) return { ok: false, status: 409, message: `A newer version (v${run.currentVersion}) arrived. Review v${run.currentVersion} before posting.` }
   if (run.mode !== 'Live') return { ok: false, status: 409, message: `${run.mode} runs do not post.` }
-  if (!v || !v.draft) return { ok: false, message: runHolds(run)[0]?.message ?? 'Nothing to post.' }
   if (run.ledgerVersion != null && liveJournals(run.id).length) {
     const posted = liveJournals(run.id)[0]!
-    return { ok: false, status: 409, message: `v${run.ledgerVersion} is still posted as ${posted.number}. Use Reverse and repost, or Post the difference.` }
+    return { ok: false, status: 409, message: run.revised ? `v${run.ledgerVersion} is posted as ${posted.number}. Post the correction for v${run.currentVersion}.` : `v${run.ledgerVersion} is already posted as ${posted.number}.` }
   }
+  if (!v || !v.draft) return { ok: false, message: runHolds(run)[0]?.message ?? 'Nothing to post.' }
   if (isDraftStale(runId)) {
     const r = rebuildDraft(runId)
     return { ok: false, stale: true, changed: r.changed, message: 'Settings changed since this draft was built. The draft was rebuilt. Review the changed lines and post again.' }
   }
   if (v.holds.length) return { ok: false, message: v.holds[0]!.message }
   if (v.draft.nothingToPost) return { ok: false, message: 'Nothing to post.' }
-  if (needsFmConfirm(run, v.draft) && !v.draft.fmConfirmedBy) return { ok: false, needsConfirm: true, message: 'This draft has a guardrail override or settings changed since the last posted run. A Finance Manager confirms before posting.' }
-  const review = draftReview(runId)
+  const warnings = unackedMessages(runId)
   now()
   const pd = postingDate(v.draft.date)
   const j = addJournal({
-    type: 'Payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
+    type: 'Payroll', source: 'Talenta payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
     memo: pd.redirected ? `Payroll ${periodLabel(run.start, run.end)} v${v.no}, posted in the first open period. ${v.draft.memo}` : v.draft.memo,
     reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines: clone(v.draft.lines), snapshotId: v.draft.snapshotId, reversesId: null, fmConfirmedBy: v.draft.fmConfirmedBy, paymentId: null,
+    lines: clone(v.draft.lines), snapshotId: v.draft.snapshotId, reversesId: null, paymentId: null,
   })
   run.ledgerVersion = v.no; run.revised = false; run.reversedAt = null
-  for (const k of payroll.knownGaps) if (k.releasedOn !== run.id) k.runsSeen++
-  addLog({ type: 'Post', status: 'Posted', reason: `Posted as ${j.number}`, nextStep: 'Record the salary payment on payday.', runId, runKey: run.key, version: v.no, employees: v.payload.employees.length, journalNo: j.number })
-  markReconOutOfDate(run.month)
-  const warnings: string[] = []
-  if (review.unnotedLargeChanges) warnings.push(`${review.unnotedLargeChanges} large change${review.unnotedLargeChanges > 1 ? 's have' : ' has'} no note.`)
-  if (review.unexpectedHeadcount) warnings.push(`${review.unexpectedHeadcount} headcount change${review.unexpectedHeadcount > 1 ? 's are' : ' is'} not marked Expected.`)
+  addLog({ type: 'Post', status: 'Posted', reason: `Posted as ${j.number}`, nextStep: 'The salary payable clears when the bank line is matched.', runId, runKey: run.key, version: v.no, employees: v.payload.items.length, journalNo: j.number })
   return { ok: true, journalId: j.id, number: j.number, redirected: pd.redirected, warnings }
 }
 
-// ── Reverse, compare, fix (TS-07, OD-14, OD-15, OD-17, LR-4) ────────────────
+// ── Revisions: the latest version wins, Jurnal builds the correction ────────
 
-function reversalOf(j: Journal, date: string, extra: Partial<Journal> = {}): Journal {
-  const pd = postingDate(date < j.date ? j.date : date)
-  const r = addJournal({
-    type: 'Reversal', runId: j.runId, versionNo: j.versionNo, date: pd.date, taxMonth: j.taxMonth,
-    memo: `Reversal of ${j.number}`, reference: pd.redirected ? monthLabel(j.taxMonth) : j.reference, correction: pd.redirected || j.correction,
-    lines: j.lines.map((l) => ({ ...clone(l), debit: l.credit, credit: l.debit, sources: l.sources.map((s) => ({ ...s, cents: -s.cents, side: s.side === 'D' ? 'C' : 'D' })) })),
-    snapshotId: j.snapshotId, reversesId: j.id, fmConfirmedBy: null, paymentId: j.paymentId, ...extra,
-  })
-  j.reversedById = r.id
-  return r
+export interface CorrectionSummary {
+  fromVersion: number
+  toVersion: number
+  takeHome: { before: number; after: number; change: number }
+  pph21: { before: number; after: number; change: number }
+  pph26: { before: number; after: number; change: number }
+  bpjs: { before: number; after: number; change: number }
+  /** employee_id values (compare keyed by user_id). */
+  joined: string[]
+  left: string[]
+  amountChanged: string[]
+  /** Accounts and dimensions the correction moves. */
+  moved: { account: string; tags: Tags; label: string; change: number }[]
+  /** Settings changed since the posted journal was built: part of the movement is the settings, not Talenta. */
+  settingsChanged: boolean
 }
-export function paymentsFor(runId: string): Payment[] { return payroll.payments.filter((p) => !p.voidedBy && (p.runId === runId || (p.kind === 'Statutory' && p.periods.some((x) => x.month === runById(runId)?.month)))) }
-/** Reverse every live journal of a run together (TN-21). */
-export function reverseRun(runId: string, o: { date?: string; confirmPayments?: boolean } = {}): Result {
-  if (!can('reverse')) return denied()
-  const run = runById(runId)
-  const live = run ? liveJournals(run.id) : []
-  if (!run || !live.length) return { ok: false, message: 'Nothing posted to reverse.' }
-  const pays = payroll.payments.filter((p) => !p.voidedBy && p.runId === runId)
-  if (pays.length && !o.confirmPayments) return { ok: false, needsConfirm: true, payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number, amount: p.amount })), message: 'Payments are matched to this run. Confirm again to reverse; no payment changes.' }
-  now()
-  const date = o.date ?? live.map((j) => j.date).sort().pop()!
-  const done = live.map((j) => reversalOf(j, date))
-  run.reversedAt = payroll.clock
-  for (const d of done) addLog({ type: 'Reversal', status: 'Reversed', reason: d.memo, nextStep: 'Repost the latest version.', runId, runKey: run.key, version: d.versionNo, journalNo: d.number })
-  // Draft of the ledger version is ready to post again.
-  const v = currentVersionOf(run)
-  if (v) checkVersion(run, v)
-  run.ledgerVersion = null; run.revised = false
-  markReconOutOfDate(run.month)
-  return { ok: true, journals: done.map((d) => d.number) }
-}
-export function reverseJournal(journalId: string, o: { date?: string; confirmPayments?: boolean } = {}): Result {
-  if (!can('reverse')) return denied()
-  const j = journalById(journalId)
-  if (!j) return { ok: false, status: 404 }
-  if (j.reversesId) return { ok: false, message: 'A reversal cannot be reversed.' }
-  if (j.reversedById) return { ok: false, message: 'This journal is already reversed.' }
-  if (j.runId && (j.type === 'Payroll' || j.type === 'Difference')) return reverseRun(j.runId, o)
-  return { ok: false, message: 'Payments are voided, not reversed.' }
-}
-/** Lines a fix must post: new build minus the live journals (decreases on the opposite side). */
-function differenceLines(run: Run, v: RunVersion, includeSettingsMoves: boolean): JournalLine[] {
-  const newB = buildJournal(run, v, payroll.settings).draft.lines
+export interface Correction { lines: JournalLine[]; summary: CorrectionSummary; builtAt: string; snapshotId: string }
+
+/** Lines a correction posts: the new build minus the live journals (decreases on the opposite side). */
+function differenceLines(run: Run, newLines: JournalLine[]): JournalLine[] {
   const liveLines = liveJournals(run.id).flatMap((j) => j.lines)
-  const ledgerV = versionOf(run, run.ledgerVersion)
-  // Lines moved only by a settings change post only when ticked (TN-06): compare against the ledger version rebuilt on current settings.
-  const base = includeSettingsMoves || !ledgerV ? liveLines : buildJournal(run, ledgerV, payroll.settings).draft.lines
-  return diffLineSets(base, newB).map((r) => {
-    const amt = r.diff
-    return { account: r.account, tags: r.tags, debit: amt > 0 ? amt : 0, credit: amt < 0 ? -amt : 0, why: [`v${run.ledgerVersion} to v${v.no}`], sources: sourceDiff(base, newB, r.key) }
-  }).filter((l) => l.debit || l.credit)
+  return diffLineSets(liveLines, newLines).map((r) => ({
+    account: r.account, tags: r.tags, debit: r.diff > 0 ? r.diff : 0, credit: r.diff < 0 ? -r.diff : 0,
+    why: [`v${run.ledgerVersion} to v${run.currentVersion}`], sources: sourceDiff(liveLines, newLines, r.key),
+  })).filter((l) => l.debit || l.credit)
 }
-/** Pay item sources of a difference line: new build minus base, per item, section and side, so
- *  reconciliation by pay item still ties after a difference journal posts. */
+/** Pay item sources of a correction line: new build minus the ledger, per item, section and side. */
 function sourceDiff(base: JournalLine[], next: JournalLine[], key: string): LineSource[] {
   const acc = new Map<string, LineSource>()
   const add = (lines: JournalLine[], sign: 1 | -1) => {
@@ -1892,67 +1946,121 @@ function sourceDiff(base: JournalLine[], next: JournalLine[], key: string): Line
       if (`${l.account}#${tagsKey(l.tags)}` !== key) continue
       for (const s of l.sources) {
         const k = `${s.item}|${s.section}|${s.side}`
-        const x = acc.get(k) ?? { ...s, cents: 0, staff: [] as string[] }
-        x.cents += sign * s.cents
+        const x = acc.get(k) ?? { ...s, amount: 0, staff: [] as string[] }
+        x.amount += sign * s.amount
         if (sign === 1) x.staff = [...new Set([...x.staff, ...s.staff])]
         acc.set(k, x)
       }
     }
   }
   add(base, -1); add(next, 1)
-  return [...acc.values()].filter((s) => s.cents !== 0)
+  return [...acc.values()].filter((s) => s.amount !== 0)
 }
-export function compareVersions(runId: string, a?: number, b?: number) {
-  const run = runById(runId)!
-  const oldNo = a ?? run.ledgerVersion ?? run.versions[0]!.no
-  const newNo = b ?? latestVersion(run)!.no
-  const va = versionOf(run, oldNo)!, vb = versionOf(run, newNo)!
-  const oldLines = oldNo === run.ledgerVersion && liveJournals(run.id).length ? liveJournals(run.id).flatMap((j) => j.lines) : buildJournal(run, va, payroll.settings).draft.lines
-  const newLines = buildJournal(run, vb, payroll.settings).draft.lines
-  const byAccountTag = diffLineSets(oldLines, newLines).map((r) => ({ ...r, label: `${accountLabel(r.account)}${tagsLabel(r.tags) ? ` | ${tagsLabel(r.tags)}` : ''}` }))
-  const settingsMoved = oldNo === run.ledgerVersion && liveJournals(run.id).length ? diffLineSets(oldLines, buildJournal(run, va, payroll.settings).draft.lines) : []
-  const items = (p: TalentaPayload) => {
-    const m = new Map<string, number>()
-    for (const e of staffOf(p)) for (const [section, list] of [['allowance', e.allowances], ['deduction', e.deductions], ['benefit', e.benefits]] as const) for (const it of list) m.set(`${it.name}|${section}`, (m.get(`${it.name}|${section}`) ?? 0) + cents(it.amount))
-    return m
+function sendTotals(p: TalentaPayload) {
+  const rows = staffRows(p)
+  const bpjsItems = (e: StaffRow) => SECTIONS.reduce((s, [section, k]) => s + e[k].filter((i) => { const m = mappingFor(i.name, section); return !!m && (partyOf(m.credit) === 'BPJS Kesehatan' || partyOf(m.credit) === 'BPJS Ketenagakerjaan') }).reduce((x, i) => x + i.amount, 0), 0)
+  return {
+    takeHome: rows.reduce((s, e) => s + e.takeHome, 0),
+    pph21: rows.reduce((s, e) => s + pph21Rule(e), 0),
+    pph26: rows.reduce((s, e) => s + taxAmount(e, 'PPh 26 Benefit'), 0),
+    bpjs: rows.reduce((s, e) => s + bpjsItems(e), 0),
   }
-  const ia = items(va.payload), ib = items(vb.payload)
-  const byPayItem = [...new Set([...ia.keys(), ...ib.keys()])].map((k) => {
-    const [name, section] = k.split('|') as [string, PaySection]
-    const o = roundCents(ia.get(k) ?? 0), n = roundCents(ib.get(k) ?? 0)
-    return { name, section, old: o, new: n, diff: n - o }
-  }).filter((r) => r.diff !== 0)
-  const ids = (p: TalentaPayload) => new Map(staffOf(p).map((e) => [e.employee_id, `${e.organization_name} / ${e.branch_name}`]))
-  const xa = ids(va.payload), xb = ids(vb.payload)
-  const added = [...xb].filter(([id]) => !xa.has(id)).map(([id, group]) => ({ id, group }))
-  const removed = [...xa].filter(([id]) => !xb.has(id)).map(([id, group]) => ({ id, group }))
-  const tax = taxChanges(va.payload, vb.payload)
-  return { oldNo, newNo, oldLabel: `v${oldNo}${oldNo === run.ledgerVersion ? ' (in the ledger)' : ''}`, newLabel: `v${newNo}`, byPayItem, byAccountTag, settingsMoved, headcount: { added, removed }, taxChanges: tax, noLedgerChange: !byAccountTag.length }
 }
-function fixGuard(run: Run | undefined, no?: number): { ok: true; run: Run; v: RunVersion } | (Result & { ok: false }) {
+function correctionSummary(run: Run, oldV: RunVersion, v: RunVersion, lines: JournalLine[]): CorrectionSummary {
+  const a = sendTotals(oldV.payload), b = sendTotals(v.payload)
+  const fig = (k: keyof typeof a) => ({ before: a[k], after: b[k], change: b[k] - a[k] })
+  const ra = new Map(staffRows(oldV.payload).map((e) => [e.user_id, e])), rb = new Map(staffRows(v.payload).map((e) => [e.user_id, e]))
+  const amounts = (e: StaffRow) => JSON.stringify(SECTIONS.map(([, k]) => e[k].map((i) => [norm(i.name), i.amount]).sort()))
+  const posted = liveJournals(run.id)
+  return {
+    fromVersion: oldV.no, toVersion: v.no,
+    takeHome: fig('takeHome'), pph21: fig('pph21'), pph26: fig('pph26'), bpjs: fig('bpjs'),
+    joined: [...rb].filter(([u]) => !ra.has(u)).map(([, e]) => e.employee_id).sort(),
+    left: [...ra].filter(([u]) => !rb.has(u)).map(([, e]) => e.employee_id).sort(),
+    amountChanged: [...rb].filter(([u, e]) => ra.has(u) && amounts(ra.get(u)!) !== amounts(e)).map(([, e]) => e.employee_id).sort(),
+    moved: lines.map((l) => ({ account: l.account, tags: l.tags, label: `${accountLabel(l.account)}${tagsLabel(l.tags) ? ` | ${tagsLabel(l.tags)}` : ''}`, change: l.debit - l.credit })),
+    settingsChanged: posted.some((j) => j.snapshotId && j.snapshotId !== currentSnapshotId()),
+  }
+}
+/** One-line notice text for a correction summary. */
+export function correctionNotice(run: Run, s: CorrectionSummary): string {
+  const sign = (n: number) => (n > 0 ? '+' : '') + rupiah(n)
+  const staff = s.joined.length + s.left.length + s.amountChanged.length
+  return `Payroll ${periodLabel(run.start, run.end)} v${s.toVersion} replaces v${s.fromVersion}. Take-home pay ${sign(s.takeHome.change)}, PPh 21 ${sign(s.pph21.change)}, PPh 26 ${sign(s.pph26.change)}, BPJS ${sign(s.bpjs.change)}. ${staff} staff changed. Correction ready to post.`
+}
+/**
+ * After a version on a posted run is checked: build its correction (difference only) and
+ * notify the Accountant, or, when nothing in the ledger moves, make it the ledger version.
+ */
+function refreshCorrection(run: Run, v: RunVersion): void {
+  if (run.ledgerVersion == null || v.no === run.ledgerVersion || v.state !== 'active' || run.currentVersion !== v.no || !liveJournals(run.id).length) { v.correction = null; return }
+  if (!v.draft || v.holds.length) { v.correction = null; return }
+  const oldV = versionOf(run, run.ledgerVersion)!
+  const lines = differenceLines(run, v.draft.lines)
+  if (!lines.length) {
+    v.correction = null
+    const taxMoved = taxChanges(oldV.payload, v.payload)
+    retireLedgerVersion(run, oldV, v)
+    addLog({ type: 'Send', status: 'No change', reason: taxMoved.length ? 'Tax change, no ledger change' : 'No ledger change', nextStep: taxMoved.length ? 'Tax Staff amends e-Bupot 21/26.' : 'Nothing to do.', runId: run.id, runKey: run.key, version: v.no })
+    if (taxMoved.length) openAmendmentTask(run, oldV, v, true)
+    return
+  }
+  const first = !v.correction
+  v.correction = { lines, summary: correctionSummary(run, oldV, v, lines), builtAt: payroll.clock, snapshotId: currentSnapshotId() }
+  run.revised = true
+  if (first) notify(['Accountant', 'Finance Manager'], correctionNotice(run, v.correction.summary), `/payroll-runs/${run.id}`)
+}
+/** The correction waiting on a run (current version against the ledger), or null. */
+export function correctionOf(runId: string): Correction | null {
+  const run = runById(runId)
+  return run?.revised ? (currentVersionOf(run)?.correction ?? null) : null
+}
+function fixGuard(run: Run | undefined): { ok: true; run: Run; v: RunVersion } | (Result & { ok: false }) {
   if (!can('fix')) return denied()
   if (!run) return { ok: false, status: 404 }
-  const v = versionOf(run, no ?? run.currentVersion)
+  const v = currentVersionOf(run)
   if (!v || v.state !== 'active') return { ok: false, message: 'Pick the current version.' }
   if (run.ledgerVersion == null || !liveJournals(run.id).length) return { ok: false, message: 'Nothing posted for this run. Post the draft.' }
   if (v.no === run.ledgerVersion) return { ok: false, status: 409, message: 'This version is already in the ledger.' }
   if (run.versions.some((x) => x.state === 'partial')) return { ok: false, message: `v${run.versions.find((x) => x.state === 'partial')!.no} looks partial. Replace the full run or reject it first.` }
-  if (isDraftStale(run.id)) { rebuildDraft(run.id); return { ok: false, stale: true, message: 'Settings changed. The draft was rebuilt; review and try again.' } }
+  if (isDraftStale(run.id)) { rebuildDraft(run.id); return { ok: false, stale: true, message: 'Settings changed. The correction was rebuilt; review it and post again.' } }
   if (v.holds.length) return { ok: false, message: v.holds[0]!.message }
   return { ok: true, run, v }
 }
 function retireLedgerVersion(run: Run, oldV: RunVersion, v: RunVersion) {
   if (oldV !== v) { oldV.state = 'replaced'; oldV.replacedBy = v.no }
   run.ledgerVersion = v.no; run.revised = false
+  v.correction = null
 }
 function afterFix(run: Run, oldV: RunVersion, v: RunVersion, journals: Journal[]) {
   retireLedgerVersion(run, oldV, v)
-  for (const j of journals) addLog({ type: j.type === 'Reversal' ? 'Reversal' : 'Post', status: j.type === 'Reversal' ? 'Reversed' : 'Posted', reason: `${j.memo} (${j.number})`, nextStep: 'Check payables for the change.', runId: run.id, runKey: run.key, version: v.no, journalNo: j.number })
+  for (const j of journals) addLog({ type: j.type === 'Reversal' ? 'Reversal' : 'Post', status: j.type === 'Reversal' ? 'Reversed' : 'Posted', reason: `${j.memo} (${j.number})`, nextStep: 'Payables show the change.', runId: run.id, runKey: run.key, version: v.no, journalNo: j.number })
   if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, false)
-  markReconOutOfDate(run.month)
 }
-export function reverseAndRepost(runId: string, no?: number): Result {
-  const g = fixGuard(runById(runId), no)
+/** Post correction: one Correction journal with the difference only. Locked month: posts in the first open period, tax month kept. */
+export function postCorrection(runId: string): Result {
+  const g = fixGuard(runById(runId))
+  if (!g.ok) return g
+  const { run, v } = g
+  const corr = v.correction
+  if (!corr) return { ok: false, message: 'No correction to post.' }
+  const oldV = versionOf(run, run.ledgerVersion)!
+  const warnings = unackedMessages(runId)
+  const live = liveJournals(run.id)
+  const pd = postingDate(run.end)
+  now()
+  const j = addJournal({
+    type: 'Correction', source: 'Talenta payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
+    memo: pd.redirected ? correctionMemo(run, v, live[0]?.number ?? null) : `Correction v${run.ledgerVersion} to v${v.no}. ${memoFor(run, v)}`,
+    reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
+    lines: clone(corr.lines), snapshotId: currentSnapshotId(), reversesId: null, paymentId: null,
+  })
+  afterFix(run, oldV, v, [j])
+  return { ok: true, journals: [j.number], journalId: j.id, number: j.number, redirected: pd.redirected, warnings }
+}
+/** "More" menu: reverse every live journal of the run and post the current version in full. */
+export function reverseAndRepost(runId: string): Result {
+  const g = fixGuard(runById(runId))
   if (!g.ok) return g
   const { run, v } = g
   const oldV = versionOf(run, run.ledgerVersion)!
@@ -1962,64 +2070,143 @@ export function reverseAndRepost(runId: string, no?: number): Result {
   const reversals = live.map((j) => reversalOf(j, pd.date))
   const b = buildJournal(run, v, payroll.settings)
   const j = addJournal({
-    type: 'Payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
+    type: 'Payroll', source: 'Talenta payroll', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
     memo: pd.redirected ? correctionMemo(run, v, live[0]?.number ?? null) : b.draft.memo, reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines: b.draft.lines, snapshotId: currentSnapshotId(), reversesId: null, fmConfirmedBy: v.draft?.fmConfirmedBy ?? null, paymentId: null,
+    lines: b.draft.lines, snapshotId: currentSnapshotId(), reversesId: null, paymentId: null,
   })
   afterFix(run, oldV, v, [...reversals, j])
   return { ok: true, journals: [...reversals, j].map((x) => x.number), redirected: pd.redirected }
 }
-export function postDifference(runId: string, no?: number, o: { includeSettingsMoves?: boolean } = {}): Result {
-  const g = fixGuard(runById(runId), no)
-  if (!g.ok) return g
-  const { run, v } = g
-  const oldV = versionOf(run, run.ledgerVersion)!
-  const lines = differenceLines(run, v, !!o.includeSettingsMoves)
-  now()
-  if (!lines.length) {
-    retireLedgerVersion(run, oldV, v)
-    addLog({ type: 'Post', status: 'No change', reason: 'No ledger change', nextStep: 'Nothing to post.', runId, runKey: run.key, version: v.no })
-    if (taxChanges(oldV.payload, v.payload).length) openAmendmentTask(run, oldV, v, true)
-    return { ok: true, journals: [], message: 'No ledger change' }
-  }
-  const live = liveJournals(run.id)
-  const pd = postingDate(run.end)
-  const j = addJournal({
-    type: 'Difference', runId, versionNo: v.no, date: pd.date, taxMonth: run.month,
-    memo: pd.redirected ? correctionMemo(run, v, live[0]?.number ?? null) : `Difference v${run.ledgerVersion} to v${v.no}. ${memoFor(run, v)}`,
-    reference: pd.redirected ? monthLabel(run.month) : null, correction: pd.redirected,
-    lines, snapshotId: currentSnapshotId(), reversesId: null, fmConfirmedBy: null, paymentId: null,
-  })
-  afterFix(run, oldV, v, [j])
-  return { ok: true, journals: [j.number], journalId: j.id, redirected: pd.redirected }
+/** Compare two versions of a run: pay items, account and dimension lines, staff by user_id (shown by employee_id), tax figures. */
+export function compareVersions(runId: string, a?: number, b?: number) {
+  const run = runById(runId)!
+  const oldNo = a ?? run.ledgerVersion ?? run.versions[0]!.no
+  const newNo = b ?? run.currentVersion ?? latestVersion(run)!.no
+  const va = versionOf(run, oldNo)!, vb = versionOf(run, newNo)!
+  const oldLines = oldNo === run.ledgerVersion && liveJournals(run.id).length ? liveJournals(run.id).flatMap((j) => j.lines) : buildJournal(run, va, payroll.settings).draft.lines
+  const newLines = buildJournal(run, vb, payroll.settings).draft.lines
+  const byAccountTag = diffLineSets(oldLines, newLines).map((r) => ({ ...r, label: `${accountLabel(r.account)}${tagsLabel(r.tags) ? ` | ${tagsLabel(r.tags)}` : ''}` }))
+  /** Lines moved only because settings changed since the posted journal was built (shown apart; the correction still posts them). */
+  const settingsMoved = oldNo === run.ledgerVersion && liveJournals(run.id).length ? diffLineSets(oldLines, buildJournal(run, va, payroll.settings).draft.lines) : []
+  const ia = componentTotals(va.payload), ib = componentTotals(vb.payload)
+  const byPayItem = [...new Set([...ia.keys(), ...ib.keys()])].map((k) => {
+    const x = (ib.get(k) ?? ia.get(k))!
+    const o = ia.get(k)?.amount ?? 0, n = ib.get(k)?.amount ?? 0
+    return { name: x.name, section: x.section, old: o, new: n, diff: n - o, missing: ia.has(k) && !ib.has(k) }
+  }).filter((r) => r.diff !== 0 || r.missing)
+  const ids = (p: TalentaPayload) => new Map(staffRows(p).map((e) => [e.user_id, { id: e.employee_id, group: `${e.organization_name} / ${e.branch}` }]))
+  const xa = ids(va.payload), xb = ids(vb.payload)
+  const added = [...xb].filter(([u]) => !xa.has(u)).map(([, x]) => x)
+  const removed = [...xa].filter(([u]) => !xb.has(u)).map(([, x]) => x)
+  const tax = taxChanges(va.payload, vb.payload)
+  return { oldNo, newNo, oldLabel: `v${oldNo}${oldNo === run.ledgerVersion ? ' (in the ledger)' : ''}`, newLabel: `v${newNo}`, byPayItem, byAccountTag, settingsMoved, headcount: { added, removed }, taxChanges: tax, noLedgerChange: !byAccountTag.length }
 }
 
-// ── PPh 21 amendment tasks (OD-16) ──────────────────────────────────────────
+// ── Reverse (TS-07, LR-4) ───────────────────────────────────────────────────
+
+function reversalOf(j: Journal, date: string, extra: Partial<Journal> = {}): Journal {
+  const pd = postingDate(date < j.date ? j.date : date)
+  const r = addJournal({
+    type: 'Reversal', source: j.source, runId: j.runId, versionNo: j.versionNo, date: pd.date, taxMonth: j.taxMonth,
+    memo: `Reversal of ${j.number}`, reference: pd.redirected ? monthLabel(j.taxMonth) : j.reference, correction: pd.redirected || j.correction,
+    lines: j.lines.map((l) => ({ ...clone(l), debit: l.credit, credit: l.debit, sources: l.sources.map((s) => ({ ...s, amount: -s.amount, side: s.side === 'D' ? 'C' : 'D' })) })),
+    snapshotId: j.snapshotId, reversesId: j.id, paymentId: j.paymentId, ...extra,
+  })
+  j.reversedById = r.id
+  return r
+}
+/** Bank-matched payments that cleared this run's payables (salary by run; statutory by the run's month). */
+export function paymentsFor(runId: string): Payment[] {
+  const run = runById(runId)
+  return payroll.payments.filter((p) => p.runId === runId || (p.kind === 'Statutory' && p.month === run?.month))
+}
+/** Reverse every live journal of a run together (TN-21). */
+export function reverseRun(runId: string, o: { date?: string; confirmPayments?: boolean } = {}): Result {
+  if (!can('reverse')) return denied()
+  const run = runById(runId)
+  const live = run ? liveJournals(run.id) : []
+  if (!run || !live.length) return { ok: false, message: 'Nothing posted to reverse.' }
+  const pays = payroll.payments.filter((p) => p.runId === runId)
+  if (pays.length && !o.confirmPayments) return { ok: false, needsConfirm: true, payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number, amount: p.amount })), message: 'Bank payments are matched to this run. Confirm again to reverse; no payment changes.' }
+  now()
+  const date = o.date ?? live.map((j) => j.date).sort().pop()!
+  const done = live.map((j) => reversalOf(j, date))
+  run.reversedAt = payroll.clock
+  for (const d of done) addLog({ type: 'Reversal', status: 'Reversed', reason: d.memo, nextStep: 'Repost the latest version.', runId, runKey: run.key, version: d.versionNo, journalNo: d.number })
+  run.ledgerVersion = null; run.revised = false
+  const v = currentVersionOf(run)
+  if (v) checkVersion(run, v)
+  return { ok: true, journals: done.map((d) => d.number) }
+}
+export function reverseJournal(journalId: string, o: { date?: string; confirmPayments?: boolean } = {}): Result {
+  if (!can('reverse')) return denied()
+  const j = journalById(journalId)
+  if (!j) return { ok: false, status: 404 }
+  if (j.reversesId) return { ok: false, message: 'A reversal cannot be reversed.' }
+  if (j.reversedById) return { ok: false, message: 'This journal is already reversed.' }
+  if (j.runId && BOOKING.includes(j.type)) return reverseRun(j.runId, o)
+  return { ok: false, message: 'Bank payments are unmatched in bank reconciliation, not reversed here.' }
+}
+
+// ── PPh 21 amendment tasks (OD-16) and the PPh 21 figures behind them ───────
 
 function taxChanges(a: TalentaPayload, b: TalentaPayload) {
-  const map = (p: TalentaPayload) => new Map(p.employees.map((e) => [e.employee_id, e]))
+  const map = (p: TalentaPayload) => new Map(staffRows(p).map((e) => [e.user_id, e]))
   const ma = map(a), mb = map(b)
   const out: { employee_id: string; changes: Partial<Record<TaxField, number>> }[] = []
-  for (const id of new Set([...ma.keys(), ...mb.keys()])) {
+  for (const uid of new Set([...ma.keys(), ...mb.keys()])) {
     const ch: Partial<Record<TaxField, number>> = {}
-    for (const f of TAX_FIELDS) { const d = Math.round((mb.get(id)?.[f] ?? 0) - (ma.get(id)?.[f] ?? 0)); if (d) ch[f] = d }
-    if (Object.keys(ch).length) out.push({ employee_id: id, changes: ch })
+    const ea = ma.get(uid), eb = mb.get(uid)
+    for (const f of TAX_FIELDS) { const d = (eb ? taxAmount(eb, f) : 0) - (ea ? taxAmount(ea, f) : 0); if (d) ch[f] = d }
+    if (Object.keys(ch).length) out.push({ employee_id: (eb ?? ea)!.employee_id, changes: ch })
   }
-  return out
+  return out.sort((x, y) => x.employee_id.localeCompare(y.employee_id))
 }
 function openAmendmentTask(run: Run, a: RunVersion, b: RunVersion, noLedgerChange: boolean) {
   const employees = taxChanges(a.payload, b.payload)
-  const periodChange = employees.reduce((x, e) => x + (e.changes['PPh 21 Benefit'] ?? 0) + (e.changes['PPh 21 Payment'] ?? 0) - (e.changes['Total PPh 21 DTP Received'] ?? 0), 0)
+  const periodChange = employees.reduce((x, e) => x + (e.changes['PPh 21 Benefit'] ?? 0) + (e.changes['PPH 21 Payment'] ?? 0) - (e.changes['Total PPh 21 DTP Received'] ?? 0), 0)
   const open = payroll.tasks.find((t) => t.taxMonth === run.month && t.status === 'Open')
   if (open) { Object.assign(open, { toVersion: b.no, employees, periodChange, noLedgerChange }); return }
   payroll.tasks.push({ id: nextId('task'), taxMonth: run.month, runId: run.id, fromVersion: a.no, toVersion: b.no, employees, periodChange, noLedgerChange, status: 'Open', pembetulanNo: null, newTotal: null, reason: null, openedAt: payroll.clock, closedBy: null })
-  notify(['Tax Staff'], `Amend e-Bupot 21/26 for ${monthLabel(run.month)}: ${employees.length} staff changed, period total change ${rupiah(periodChange)}`, '/payroll-reconciliation?tab=pph21')
+  notify(['Tax Staff'], `Amend e-Bupot 21/26 for ${monthLabel(run.month)}: ${employees.length} staff changed, period total change ${rupiah(periodChange)}`, `/payroll-runs/${run.id}`)
+}
+function latestAccepted(run: Run): RunVersion | undefined { return [...run.versions].reverse().find((v) => v.state !== 'rejected' && v.state !== 'moved' && v.state !== 'partial' && v.state !== 'waiting-choice') }
+const BOOKED: JournalType[] = ['Payroll', 'Correction', 'Reversal']
+function bookedLines(month: string, account: string, runId?: string): number {
+  return payroll.journals.filter((j) => j.taxMonth === month && j.source === 'Talenta payroll' && BOOKED.includes(j.type) && (!runId || j.runId === runId))
+    .flatMap((j) => j.lines).filter((l) => l.account === account).reduce((x, l) => x + l.credit - l.debit, 0)
+}
+/**
+ * PPh 21 for a tax month: Talenta's rule (PPh 21 Benefit + PPH 21 Payment - DTP) over the
+ * month's live runs, the books (Hutang PPh 21 credits net), what the bank paid, and the
+ * e-Bupot filed total Tax Staff typed, flagged when it differs from the books by more than Rp1.000.
+ */
+export function pph21Month(month: string) {
+  const p = payroll.settings.taxPresets
+  const runsM = payroll.runs.filter((r) => r.month === month && r.mode === 'Live')
+  const rule = runsM.reduce((s, r) => { const v = versionOf(r, r.ledgerVersion) ?? latestAccepted(r); return s + (v ? staffRows(v.payload).reduce((x, e) => x + pph21Rule(e), 0) : 0) }, 0)
+  const books = bookedLines(month, p.pph21)
+  const paid = paidFor(p.pph21, month)
+  const filed = payroll.ebupot.find((x) => x.month === month) ?? null
+  const filedDiff = filed ? filed.filed - books : null
+  const flag = filedDiff != null && Math.abs(filedDiff) > payroll.settings.limits.taxTolerance
+  return {
+    month, rule, books, paid, balance: books - paid, filed, filedDiff, flagged: flag,
+    flagMessage: flag ? `e-Bupot PPh 21 filed ${rupiah(filed!.filed)} is ${rupiah(Math.abs(filedDiff!))} ${filedDiff! > 0 ? 'above' : 'below'} the books ${rupiah(books)}.` : null,
+  }
+}
+/** Tax Staff (or the Finance Manager) type the PPh 21 total filed in e-Bupot for a month; the PPh 21 payables row flags a difference above Rp1.000. */
+export function setEbupotFiled(month: string, amount: number): Result {
+  if (!can('ebupot.enter')) return denied()
+  if (!Number.isFinite(amount) || amount < 0) return { ok: false, message: 'Enter the filed total in rupiah.' }
+  const x = payroll.ebupot.find((e) => e.month === month)
+  const row = { month, filed: Math.round(amount), by: actingPerson(), at: now() }
+  if (x) Object.assign(x, row); else payroll.ebupot.push(row)
+  return { ok: true, message: pph21Month(month).flagMessage ?? undefined }
 }
 export const amendmentTasks = computed(() => payroll.tasks.map((t) => {
-  const pph = pph21Monthly(t.taxMonth)
-  const regular = pph.rows.find((r) => r.key === 'regular')!
-  const paid = paidFor(payroll.settings.taxPresets.pph21, t.taxMonth)
-  const gap = regular.expected - paid
+  const m = pph21Month(t.taxMonth)
+  const gap = m.books - m.paid
   return { ...t, title: `Amend e-Bupot 21/26 for ${monthLabel(t.taxMonth)}`, summary: `${t.employees.length} staff changed, period total change ${rupiah(t.periodChange)}`, depositGap: gap > 0 ? `Deposit ${rupiah(gap)} more` : gap < 0 ? `Overpaid ${rupiah(-gap)}` : 'Deposit matches' }
 }))
 export function closeAmendmentTask(id: string, outcome: 'Amended' | 'Not filed yet' | 'Dismissed', o: { pembetulanNo?: string; newTotal?: number; reason?: string } = {}): Result {
@@ -2029,6 +2216,11 @@ export function closeAmendmentTask(id: string, outcome: 'Amended' | 'Not filed y
   if (outcome === 'Amended' && (!o.pembetulanNo?.trim() || o.newTotal == null)) return { ok: false, message: `Enter the pembetulan number and the new ${monthLabel(t.taxMonth)} PPh 21 total.` }
   if (outcome === 'Dismissed' && (o.reason ?? '').trim().length < 10) return { ok: false, message: 'Give a reason of 10 characters or more.' }
   Object.assign(t, { status: outcome, pembetulanNo: o.pembetulanNo ?? null, newTotal: o.newTotal ?? null, reason: o.reason ?? null, closedBy: actingPerson() })
+  if (outcome === 'Amended' && o.newTotal != null) {
+    const x = payroll.ebupot.find((e) => e.month === t.taxMonth)
+    const row = { month: t.taxMonth, filed: Math.round(o.newTotal), by: actingPerson(), at: payroll.clock }
+    if (x) Object.assign(x, row); else payroll.ebupot.push(row)
+  }
   return { ok: true }
 }
 
@@ -2050,13 +2242,15 @@ export function oldSyncExpense(o: { date: string; amount: number; pattern: 'Payr
   return { ok: outcome !== 'Blocked', status: outcome === 'Blocked' ? 'Blocked' : 'Recorded', message }
 }
 
+
 // ── Simulated Talenta sends ─────────────────────────────────────────────────
 
-export type SendKind = 'regular' | 'new-pay-item' | 'revision' | 'partial' | 'separate-run' | 'duplicate' | 'old-sync'
+export type SendKind = 'regular' | 'new-pay-item' | 'revision' | 'missing-component' | 'partial' | 'separate-run' | 'duplicate' | 'old-sync'
 export const SEND_KINDS: { kind: SendKind; label: string }[] = [
   { kind: 'regular', label: 'Regular run, next period' },
   { kind: 'new-pay-item', label: 'Run with a new pay item' },
   { kind: 'revision', label: 'Revision of the last posted run' },
+  { kind: 'missing-component', label: 'Re-send without PPH 21 Paid' },
   { kind: 'partial', label: 'Partial re-send' },
   { kind: 'separate-run', label: 'THR run for a posted period' },
   { kind: 'duplicate', label: 'Byte-identical duplicate' },
@@ -2079,7 +2273,7 @@ function nextPeriod(): { start: string; end: string } {
 }
 function sentNow(): string { return new Date(Date.parse(payroll.clock) + 60_000).toISOString() }
 export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
-  const SIM_KEYS: (keyof PayloadOptions)[] = ['newAllowance', 'raise', 'onlyBranch', 'thr', 'gaps', 'taxOff', 'duplicateEmployee', 'taxShift']
+  const SIM_KEYS: (keyof PayloadOptions)[] = ['newAllowance', 'raise', 'onlyBranch', 'thr', 'omit', 'taxOff', 'duplicateEmployee', 'taxShift']
   const send = (start: string, end: string, extra: Partial<PayloadOptions> = {}) => {
     const opts: Partial<PayloadOptions> = {}
     for (const k of SIM_KEYS) if (o[k] !== undefined) (opts as Record<string, unknown>)[k] = o[k]
@@ -2095,7 +2289,7 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
     case 'new-pay-item': {
       if (o.start && o.end) return send(o.start, o.end, { newAllowance: o.newAllowance ?? { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_000 } })
       const open = o.runId ? runById(o.runId) : regularRuns().filter((r) => r.mode === 'Live' && r.ledgerVersion == null).pop()
-      if (open) return send(open.start, open.end, { newAllowance: o.newAllowance ?? { name: 'Tunjangan Transport', amount: 600_000 } })
+      if (open) return send(open.start, open.end, { ...saved(open), newAllowance: o.newAllowance ?? { name: 'Tunjangan Transport', amount: 600_000 } })
       const p = nextPeriod()
       return send(p.start, p.end, { newAllowance: o.newAllowance ?? { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_000 } })
     }
@@ -2103,6 +2297,11 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
       const r = lastPosted()
       if (!r) return { ok: false, status: 'Failed', message: 'No posted run to revise.' }
       return send(r.start, r.end, { ...saved(r), raise: o.raise ?? { organization: 'Human Capital', amount: 500_000 } })
+    }
+    case 'missing-component': {
+      const r = o.runId ? runById(o.runId) : regularRuns().pop()
+      if (!r) return { ok: false, status: 'Failed', message: 'No run to re-send.' }
+      return send(r.start, r.end, { ...saved(r), omit: o.omit ?? ['PPH 21 Paid'] })
     }
     case 'partial': {
       const r = o.runId ? runById(o.runId) : regularRuns().pop()
@@ -2118,7 +2317,10 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
       const all = payroll.runs.flatMap((r) => r.versions.map((v) => v))
       const last = all.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt)).pop()
       if (!last) return { ok: false, status: 'Failed', message: 'Nothing sent yet.' }
-      return receiveSalaryDetail(clone(last.payload))
+      // Talenta re-sends the same bytes, names included (Jurnal stored them blank).
+      const p = clone(last.payload)
+      for (const it of p.items) it.employee.employee_name = sampleEmployeeName(it.employee.employee_id)
+      return receiveSalaryDetail(p)
     }
     case 'old-sync': {
       const r = regularRuns().filter((x) => liveJournals(x.id).length).pop()
@@ -2127,7 +2329,7 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
   }
 }
 
-// ── Payables (FG-5) ─────────────────────────────────────────────────────────
+// ── Payables tracker (FG-5): owed from payroll journals, paid by bank matches ──
 
 const PARTY_DUE: Record<PayableParty, (month: string) => string | null> = {
   Staff: () => null,
@@ -2139,363 +2341,201 @@ function salaryDue(run: Run): string {
   const d = `${run.month}-${String(payroll.settings.payday).padStart(2, '0')}`
   return d > last ? last : d
 }
-function owedFor(account: string, month: string, runId?: string): number {
-  return payroll.journals.filter((j) => j.taxMonth === month && (!runId || j.runId === runId) && ['Payroll', 'Difference', 'Reversal'].includes(j.type))
-    .flatMap((j) => j.lines).filter((l) => l.account === account).reduce((x, l) => x + l.credit - l.debit, 0)
-}
+function owedFor(account: string, month: string, runId?: string): number { return bookedLines(month, account, runId) }
 function paidFor(account: string, month: string, runId?: string): number {
-  return payroll.payments.filter((p) => !p.voidedBy && p.account === account && (!runId || p.runId === runId))
-    .flatMap((p) => p.periods).filter((x) => x.month === month).reduce((s, x) => s + x.amount, 0)
+  return payroll.payments.filter((p) => p.account === account && p.month === month && (!runId || p.runId === runId)).reduce((s, p) => s + p.amount, 0)
 }
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / DAY)
-export interface PayableRow { key: string; account: string; party: PayableParty; month: string; runId: string | null; label: string; owed: number; paid: number; balance: number; due: string | null; dueLabel: string; overdueDays: number; paidLateDays: number; status: string; latestTalenta: number | null }
+export interface PayableFlag { code: 'bank-differs' | 'ebupot-differs' | 'manual-journal'; message: string }
+export interface PayableRow {
+  key: string; account: string; party: PayableParty; month: string; runId: string | null; label: string
+  owed: number; paid: number; balance: number; due: string | null; dueLabel: string; overdueDays: number; paidLateDays: number
+  status: 'Open' | 'Partly paid' | 'Paid' | 'Paid late' | 'Overdue' | 'Overpaid'
+  statusLabel: string
+  /** Payments (bank matches) behind "paid", oldest first. */
+  payments: { id: string; number: string; date: string; bank: string; amount: number; statement: string }[]
+  /** Correction waiting on the run (salary rows): the take-home pay the correction would make owed. */
+  pendingOwed: number | null
+  /** PPh 21 rows: the e-Bupot check. */
+  ebupot: { filed: number; books: number; difference: number; by: string; at: string } | null
+  flags: PayableFlag[]
+}
+/**
+ * One row per payable per tax month (salary rows per run): owed, paid, balance, due date, status,
+ * plus the flags that moved here from reconciliation: bank paid differs from the posted run
+ * (salary rows), e-Bupot PPh 21 filed total differs from the books by more than Rp1.000 (PPh 21
+ * rows), and any manual journal on the account in the month.
+ */
 export function payablesTracker(month?: string): PayableRow[] {
   const rows: PayableRow[] = []
   const t = today()
-  const months = [...new Set(payroll.journals.filter((j) => ['Payroll', 'Difference', 'Reversal'].includes(j.type)).map((j) => j.taxMonth))].filter((m) => !month || m === month).sort().reverse()
+  const months = [...new Set(payroll.journals.filter((j) => j.source === 'Talenta payroll' && BOOKED.includes(j.type)).map((j) => j.taxMonth))].filter((m) => !month || m === month).sort().reverse()
   const mk = (account: string, party: PayableParty, m: string, run: Run | null, label: string): PayableRow => {
     const owed = owedFor(account, m, run?.id), paid = paidFor(account, m, run?.id)
     const due = run ? salaryDue(run) : PARTY_DUE[party](m)
     const balance = owed - paid
-    const lastPay = payroll.payments.filter((p) => !p.voidedBy && p.account === account && p.periods.some((x) => x.month === m) && (!run || p.runId === run.id)).map((p) => p.date).sort().pop()
+    const pays = payroll.payments.filter((p) => p.account === account && p.month === m && (!run || p.runId === run.id)).sort((a, b) => a.date.localeCompare(b.date))
+    const lastPay = pays.map((p) => p.date).pop()
     const overdueDays = due && balance > 0 && t > due ? daysBetween(due, t) : 0
-    const paidLateDays = due && balance <= 0 && lastPay && lastPay > due ? daysBetween(due, lastPay) : 0
-    const status = balance < 0 ? `Overpaid ${rupiah(-balance)}` : overdueDays ? `Overdue ${overdueDays} day${overdueDays > 1 ? 's' : ''}` : balance === 0 && paidLateDays ? `Paid late, ${paidLateDays} day${paidLateDays > 1 ? 's' : ''}` : balance === 0 ? 'Paid' : 'Open'
-    let latestTalenta: number | null = null
-    if (run && run.revised) { const v = currentVersionOf(run); latestTalenta = v?.draft ? v.draft.lines.filter((l) => l.account === account).reduce((x, l) => x + l.credit - l.debit, 0) : null }
-    return { key: `${account}|${m}|${run?.id ?? ''}`, account, party, month: m, runId: run?.id ?? null, label, owed, paid, balance, due, dueLabel: due ? dateLabel(due) : 'Not set', overdueDays, paidLateDays, status, latestTalenta }
+    const paidLateDays = due && balance === 0 && lastPay && lastPay > due ? daysBetween(due, lastPay) : 0
+    const status: PayableRow['status'] = balance < 0 ? 'Overpaid' : balance === 0 ? (paidLateDays ? 'Paid late' : 'Paid') : overdueDays ? 'Overdue' : paid > 0 ? 'Partly paid' : 'Open'
+    const statusLabel = status === 'Overpaid' ? `Overpaid ${rupiah(-balance)}` : status === 'Overdue' ? `Overdue ${overdueDays} day${overdueDays > 1 ? 's' : ''}` : status === 'Paid late' ? `Paid late, ${paidLateDays} day${paidLateDays > 1 ? 's' : ''}` : status
+    const flags: PayableFlag[] = []
+    if (run && paid > 0 && paid !== owed) flags.push({ code: 'bank-differs', message: `Bank paid ${rupiah(paid)} against the posted run ${rupiah(owed)}: ${paid > owed ? 'over' : 'under'} by ${rupiah(Math.abs(paid - owed))}.` })
+    let ebupot: PayableRow['ebupot'] = null
+    if (account === payroll.settings.taxPresets.pph21 && !run) {
+      const x = pph21Month(m)
+      if (x.filed) ebupot = { filed: x.filed.filed, books: x.books, difference: x.filedDiff!, by: x.filed.by, at: x.filed.at }
+      if (x.flagMessage) flags.push({ code: 'ebupot-differs', message: x.flagMessage })
+    }
+    for (const w of manualJournalWarnings(m).filter((w) => w.accounts.includes(account))) flags.push({ code: 'manual-journal', message: w.message })
+    const corr = run ? correctionOf(run.id) : null
+    return {
+      key: `${account}|${m}|${run?.id ?? ''}`, account, party, month: m, runId: run?.id ?? null, label, owed, paid, balance, due, dueLabel: due ? dateLabel(due) : 'Not set',
+      overdueDays, paidLateDays, status, statusLabel,
+      payments: pays.map((p) => ({ id: p.id, number: journalById(p.journalId)?.number ?? '', date: p.date, bank: accountLabel(p.bank), amount: p.amount, statement: payroll.bankLines.find((b) => b.id === p.statementLineId)?.description ?? '' })),
+      pendingOwed: corr ? owed + corr.lines.filter((l) => l.account === account).reduce((s, l) => s + l.credit - l.debit, 0) : null,
+      ebupot, flags,
+    }
   }
   for (const m of months) {
-    for (const run of payroll.runs.filter((r) => r.month === m && journalsOf(r.id).length)) rows.push(mk(payroll.settings.hutangGaji, 'Staff', m, run, `Salary ${run.kind === 'Regular' ? '' : run.label + ' '}${periodLabel(run.start, run.end)}`))
-    const payables = payroll.accounts.filter((a) => a.party && a.party !== 'Staff' && a.code !== payroll.settings.suspenseAccount)
-    for (const a of payables) {
-      const owed = owedFor(a.code, m), paid = paidFor(a.code, m)
-      if (!owed && !paid) continue
+    for (const run of payroll.runs.filter((r) => r.month === m && journalsOf(r.id).some((j) => BOOKED.includes(j.type)))) rows.push(mk(payroll.settings.hutangGaji, 'Staff', m, run, `Salary ${run.kind === 'Regular' ? '' : run.label + ' '}${periodLabel(run.start, run.end)}`))
+    for (const a of payroll.accounts.filter((x) => x.party && x.party !== 'Staff')) {
+      if (!owedFor(a.code, m) && !paidFor(a.code, m)) continue
       rows.push(mk(a.code, a.party!, m, null, `${a.name} ${monthLabel(m)}`))
     }
   }
   return rows
 }
-function journalForPayment(p: Omit<Payment, 'id' | 'journalId'>, memo: string): Journal {
-  const lines: JournalLine[] = []
-  if (p.kind === 'Salary' && p.splits.length) {
-    for (const s of p.splits) {
-      lines.push({ account: p.account, tags: { Organization: null, Branch: payroll.settings.groupMaps.Branch[s.branch] ?? null }, debit: s.amount, credit: 0, why: [`Salary for ${s.branch}`], sources: [] })
-      lines.push({ account: s.bank, tags: NO_TAGS, debit: 0, credit: s.amount, why: [`Bank for ${s.branch}`], sources: [] })
-    }
+
+// ── Bank payments (simulated bank reconciliation matches) ───────────────────
+
+export type BankPaymentKind = 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk' | 'partial' | 'overpaid'
+export const BANK_PAYMENT_KINDS: { kind: BankPaymentKind; label: string }[] = [
+  { kind: 'salary', label: 'Salary transfer for the latest posted run' },
+  { kind: 'pph21', label: 'PPh 21 deposit' },
+  { kind: 'pph26', label: 'PPh 26 deposit' },
+  { kind: 'bpjs-kesehatan', label: 'BPJS Kesehatan payment' },
+  { kind: 'bpjs-ketenagakerjaan', label: 'BPJS Ketenagakerjaan payment' },
+  { kind: 'dplk', label: 'DPLK payment' },
+  { kind: 'partial', label: 'Salary transfer short of the run' },
+  { kind: 'overpaid', label: 'Salary transfer over the run' },
+]
+export interface BankPaymentOptions {
+  /** Salary kinds: the run (default: the latest posted run with a salary balance, else the latest posted run). */
+  runId?: string
+  /** Statutory kinds: the tax month (default: the oldest month with an open balance). */
+  month?: string
+  /** partial / overpaid: which payable (default 'salary'). */
+  of?: Exclude<BankPaymentKind, 'partial' | 'overpaid'>
+  /** Amount on the bank line (default: the open balance; partial pays half, overpaid adds Rp250.000). */
+  amount?: number
+  date?: string
+  bank?: string
+}
+const KIND_ACCOUNT: Record<Exclude<BankPaymentKind, 'salary' | 'partial' | 'overpaid'>, () => string> = {
+  pph21: () => payroll.settings.taxPresets.pph21, pph26: () => payroll.settings.taxPresets.pph26,
+  'bpjs-kesehatan': () => ACC.bpjsKes, 'bpjs-ketenagakerjaan': () => ACC.bpjsTk, dplk: () => ACC.dplk,
+}
+const STATEMENT_TEXT: Record<Exclude<BankPaymentKind, 'partial' | 'overpaid'>, string> = {
+  salary: 'TRF PAYROLL', pph21: 'MPN G2 PPH21', pph26: 'MPN G2 PPH26', 'bpjs-kesehatan': 'BPJS KESEHATAN', 'bpjs-ketenagakerjaan': 'BPJS TK', dplk: 'DPLK',
+}
+/**
+ * Prototype stand-in for Jurnal's bank reconciliation: a bank statement line arrives and is
+ * matched to a payroll payable. The match posts the payment (Dr the payable, Cr the bank) as a
+ * 'Salary payment' or 'Statutory payment' journal with source 'Bank reconciliation'.
+ * Kinds: salary / pph21 / pph26 / bpjs-kesehatan / bpjs-ketenagakerjaan / dplk, plus partial
+ * (half the open balance) and overpaid (open balance + Rp250.000) of `opts.of` (default salary).
+ */
+export function simulateBankPayment(kind: BankPaymentKind, o: BankPaymentOptions = {}): Result {
+  if (!can('simulate.bank')) return denied()
+  const base = kind === 'partial' || kind === 'overpaid' ? (o.of ?? 'salary') : kind
+  const bank = o.bank ?? ACC.bca
+  let account: string, month: string, run: Run | undefined, party: PayableParty, label: string
+  if (base === 'salary') {
+    const posted = regularRuns().concat(payroll.runs.filter((r) => r.kind !== 'Regular')).filter((r) => liveJournals(r.id).length)
+    run = o.runId ? runById(o.runId) : (posted.filter((r) => owedFor(payroll.settings.hutangGaji, r.month, r.id) - paidFor(payroll.settings.hutangGaji, r.month, r.id) > 0).sort((a, b) => a.end.localeCompare(b.end))[0] ?? posted.sort((a, b) => a.end.localeCompare(b.end)).pop())
+    if (!run || !liveJournals(run.id).length) return { ok: false, message: 'No posted run to pay.' }
+    account = payroll.settings.hutangGaji; month = run.month; party = 'Staff'; label = `Salary ${periodLabel(run.start, run.end)}`
   } else {
-    for (const x of p.periods) lines.push({ account: p.account, tags: NO_TAGS, debit: x.amount, credit: 0, why: [`${p.party} ${monthLabel(x.month)}${x.billingCode ? `, billing code ${x.billingCode}` : ''}${x.ntpn ? `, NTPN ${x.ntpn}` : ''}`], sources: [] })
-    lines.push({ account: p.bank, tags: NO_TAGS, debit: 0, credit: p.amount, why: ['Bank'], sources: [] })
+    account = KIND_ACCOUNT[base]()
+    party = payrollAccount(account)?.party ?? 'Other'
+    const open = [...new Set(payroll.journals.filter((j) => j.source === 'Talenta payroll' && BOOKED.includes(j.type)).map((j) => j.taxMonth))].sort().filter((m) => owedFor(account, m) - paidFor(account, m) > 0)
+    month = o.month ?? open[0] ?? ''
+    if (!month) return { ok: false, message: `Nothing open on ${accountName(account)}.` }
+    label = `${accountName(account)} ${monthLabel(month)}`
   }
-  return addJournal({ number: nextBnkNo(), type: p.kind === 'Salary' ? 'Salary payment' : 'Statutory payment', runId: p.runId, versionNo: null, date: p.date, taxMonth: p.periods[0]!.month, memo, reference: memo, correction: false, lines, snapshotId: null, reversesId: null, fmConfirmedBy: null, paymentId: null })
-}
-export function recordSalaryPayment(runId: string, o: { bank: string; date: string; amount?: number; splits?: { branch: string; bank: string }[] }): Result {
-  if (!can('payment.salary')) return denied()
-  const run = runById(runId)
-  if (!run || !liveJournals(run.id).length) return { ok: false, message: 'Salary payments work on posted runs only.' }
-  if (o.date < run.start) return { ok: false, message: 'The payment date is before the period start.' }
-  if (isLocked(monthOf(o.date))) return { ok: false, message: `${monthLabel(monthOf(o.date))} is locked.` }
-  const hg = payroll.settings.hutangGaji
-  const open = owedFor(hg, run.month, run.id) - paidFor(hg, run.month, run.id)
-  const v = versionOf(run, run.ledgerVersion)!
-  const staff = staffOf(v.payload)
-  let splits: Payment['splits'] = []
-  let amount = o.amount ?? open
-  if (o.splits?.length) {
-    const byBranch = new Map<string, number>()
-    for (const e of staff) byBranch.set(e.branch_name || 'No branch', (byBranch.get(e.branch_name || 'No branch') ?? 0) + cents(e.take_home_pay))
-    for (const [branch, c] of byBranch) {
-      const bank = o.splits.find((s) => s.branch === branch)?.bank
-      if (!bank) return { ok: false, message: `Pick a bank for ${branch}.` }
-      splits.push({ branch, bank, amount: roundCents(c) })
-    }
-    const total = splits.reduce((x, s) => x + s.amount, 0)
-    if (total !== open) splits[splits.length - 1]!.amount += open - total
-    amount = open
-  }
-  if (amount <= 0) return { ok: false, message: 'Nothing left to pay on this run.' }
-  const thp = roundCents(staff.reduce((x, e) => x + cents(e.take_home_pay), 0))
-  const differs = amount - thp
+  const open = owedFor(account, month, run?.id) - paidFor(account, month, run?.id)
+  const amount = o.amount ?? (kind === 'partial' ? Math.round(open / 2) : kind === 'overpaid' ? open + 250_000 : open)
+  if (amount <= 0) return { ok: false, message: `${label} has nothing open to pay.` }
+  const date = o.date ?? today()
+  if (isLocked(monthOf(date))) return { ok: false, message: `${monthLabel(monthOf(date))} is locked.` }
   now()
-  const memo = `Payroll ${periodLabel(run.start, run.end)} v${run.ledgerVersion}`
-  const base = { kind: 'Salary' as const, party: 'Staff' as const, account: hg, runId, bank: o.bank, date: o.date, periods: [{ month: run.month, amount, billingCode: null, ntpn: null }], splits, amount, bankDiffers: Math.abs(differs) > 0 && amount >= open ? differs : 0, warnings: [] as string[], voidedBy: null }
-  if (base.bankDiffers) base.warnings.push(`Bank paid differs from the posted run by ${rupiah(Math.abs(differs))}. Ask HR whether payroll changed.`)
-  const j = journalForPayment(base, memo)
-  const p: Payment = { ...base, id: nextId('pay'), journalId: j.id }
-  j.paymentId = p.id
-  payroll.payments.push(p)
-  addLog({ type: 'Payment', status: 'Recorded', reason: `${memo} paid ${rupiah(amount)} (${j.number})`, nextStep: 'Match it in bank reconciliation.', runId, runKey: run.key, journalNo: j.number })
-  markReconOutOfDate(run.month)
-  return { ok: true, paymentId: p.id, number: j.number, warnings: p.warnings }
-}
-export function payStatutory(o: { party: Exclude<PayableParty, 'Staff'>; bank: string; date: string; periods: { month: string; amount?: number; billingCode?: string; ntpn?: string }[]; differenceAccount?: string; account?: string }): Result {
-  if (!can('payment.statutory')) return denied()
-  if (!o.periods.length) return { ok: false, message: 'Pick a period.' }
-  const account = o.account ?? payroll.accounts.find((a) => a.party === o.party && a.code !== payroll.settings.suspenseAccount && a.code !== payroll.settings.taxPresets.resign)?.code
-  if (!account) return { ok: false, message: 'No payable for this party.' }
-  if (isLocked(monthOf(o.date))) return { ok: false, message: `${monthLabel(monthOf(o.date))} is locked.` }
-  if (o.periods.length > 1 && o.periods.some((x) => x.amount == null)) return { ok: false, message: 'Type an amount and a billing code for each period.' }
-  const warnings: string[] = []
-  const periods: PaymentPeriodLine[] = []
-  for (const x of o.periods) {
-    if (o.date < `${x.month}-01`) return { ok: false, message: 'The payment date is before the period start.' }
-    const open = owedFor(account, x.month) - paidFor(account, x.month)
-    const amount = x.amount ?? open
-    if (amount > open && !o.differenceAccount) return { ok: false, message: `${rupiah(amount - open)} is more than the open balance. Pick a difference account.` }
-    if (x.billingCode && !/^\d{15}$/.test(x.billingCode)) warnings.push('A billing code has 15 digits.')
-    if (x.ntpn && x.ntpn.length !== 16) warnings.push('An NTPN has 16 characters.')
-    periods.push({ month: x.month, amount: Math.min(amount, open), billingCode: x.billingCode ?? null, ntpn: x.ntpn ?? null })
-    if (amount > open) periods.push({ month: x.month, amount: 0, billingCode: null, ntpn: null })
-  }
-  const total = o.periods.reduce((s, x, i) => s + (x.amount ?? periods[i]!.amount), 0)
-  now()
-  const ref = `${o.party === 'Other' ? accountName(account) : o.party.replace('DJP ', '')} ${o.periods.map((x) => monthLabel(x.month)).join(', ')}`
-  const base = { kind: 'Statutory' as const, party: o.party, account, runId: null, bank: o.bank, date: o.date, periods: periods.filter((x) => x.amount), splits: [], amount: total, bankDiffers: 0, warnings, voidedBy: null }
-  const j = journalForPayment({ ...base, amount: periods.reduce((s, x) => s + x.amount, 0) }, ref)
-  const over = total - periods.reduce((s, x) => s + x.amount, 0)
-  if (over > 0 && o.differenceAccount) { j.lines.splice(j.lines.length - 1, 0, { account: o.differenceAccount, tags: NO_TAGS, debit: over, credit: 0, why: ['Over-payment'], sources: [] }); j.lines[j.lines.length - 1]!.credit += over }
-  const p: Payment = { ...base, id: nextId('pay'), journalId: j.id }
-  j.paymentId = p.id
-  payroll.payments.push(p)
-  addLog({ type: 'Payment', status: 'Recorded', reason: `${ref} paid ${rupiah(total)} (${j.number})`, nextStep: 'Nothing to do.', journalNo: j.number })
-  for (const x of o.periods) markReconOutOfDate(x.month)
-  return { ok: true, paymentId: p.id, number: j.number, warnings }
-}
-export function voidPayment(paymentId: string): Result {
-  if (!can('payment.void')) return denied()
-  const p = payroll.payments.find((x) => x.id === paymentId)
-  if (!p || p.voidedBy) return { ok: false }
-  now()
-  const j = journalById(p.journalId)!
-  const r = reversalOf(j, today(), { type: 'Payment void', number: nextBnkNo(), memo: `Void of ${j.number}` })
-  p.voidedBy = r.id
-  return { ok: true, number: r.number }
-}
-
-// ── BPJS invoice match (OD-21) ──────────────────────────────────────────────
-
-export const BPJS_PROGRAMMES: Record<BpjsBody, BpjsProgramme[]> = { 'BPJS Kesehatan': ['Kesehatan'], 'BPJS Ketenagakerjaan': ['JHT', 'JKK', 'JKM', 'JP'] }
-export function bpjsProgrammeOf(m: PayItemMapping): BpjsProgramme | null { return m.programme ?? programmeFromName(m.name) }
-export function setBpjsProgramme(key: string, programme: BpjsProgramme | null): Result {
-  if (!can('bpjs.programme')) return denied()
-  const m = payroll.settings.mapping.find((x) => x.key === key)
-  if (!m) return { ok: false }
-  m.programme = programme
-  return { ok: true }
-}
-/** Payroll side of the BPJS match: the posted lines by programme for a month. */
-export function bpjsPayroll(month: string, body: BpjsBody) {
-  const acct = body === 'BPJS Kesehatan' ? ACC.bpjsKes : ACC.bpjsTk
-  const out = new Map<string, number>()
-  for (const j of payroll.journals.filter((x) => x.taxMonth === month && ['Payroll', 'Difference', 'Reversal'].includes(x.type))) {
-    for (const l of j.lines.filter((x) => x.account === acct)) for (const s of l.sources) {
-      const m = mappingFor(s.item, s.section as PaySection)
-      const prog = m ? bpjsProgrammeOf(m) ?? 'Unassigned' : 'Unassigned'
-      out.set(prog, (out.get(prog) ?? 0) - s.cents)
-    }
-  }
-  return [...BPJS_PROGRAMMES[body], ...(out.has('Unassigned') ? ['Unassigned'] : [])].map((p) => ({ programme: p, amount: roundCents(out.get(p) ?? 0) }))
-}
-export function saveBpjsInvoice(month: string, body: BpjsBody, lines: { programme: BpjsProgramme; amount: number; headcount: number }[]): Result {
-  if (!can('bpjs.invoice')) return denied()
-  const ex = payroll.bpjsInvoices.find((x) => x.month === month && x.body === body)
-  if (ex) Object.assign(ex, { lines, reviewed: null })
-  else payroll.bpjsInvoices.push({ month, body, lines, reviewed: null, notes: {}, reviewedFingerprint: null })
-  return { ok: true }
-}
-export function bpjsComparison(month: string, body: BpjsBody) {
-  const inv = payroll.bpjsInvoices.find((x) => x.month === month && x.body === body)
-  const rows = bpjsPayroll(month, body).map((r) => {
-    const i = inv?.lines.find((l) => l.programme === r.programme)
-    return { programme: r.programme, payroll: r.amount, invoice: i?.amount ?? null, headcount: i?.headcount ?? null, difference: i ? i.amount - r.amount : null, note: inv?.notes[r.programme as BpjsProgramme] ?? null }
+  const line: BankStatementLine = { id: nextId('bsl'), bank, date, description: `${STATEMENT_TEXT[base]} ${monthLabel(month).toUpperCase()}`, amount, paymentId: '' }
+  const memo = `${label}, matched in bank reconciliation`
+  const j = addJournal({
+    number: nextBnkNo(), type: base === 'salary' ? 'Salary payment' : 'Statutory payment', source: 'Bank reconciliation', runId: run?.id ?? null, versionNo: null,
+    date, taxMonth: month, memo, reference: line.description, correction: false,
+    lines: [
+      { account, tags: NO_TAGS, debit: amount, credit: 0, why: [memo], sources: [] },
+      { account: bank, tags: NO_TAGS, debit: 0, credit: amount, why: [`Bank statement line ${line.description}`], sources: [] },
+    ],
+    snapshotId: null, reversesId: null, paymentId: null,
   })
-  const fp = hash(JSON.stringify(rows.map((r) => r.payroll)))
-  return { invoice: inv ?? null, rows, status: !inv ? 'No invoice' : inv.reviewed ? (inv.reviewedFingerprint === fp ? 'Reviewed' : 'Changed since review') : 'Not reviewed' }
-}
-export function markBpjsReviewed(month: string, body: BpjsBody, notes: Partial<Record<BpjsProgramme, string>> = {}): Result {
-  if (!can('bpjs.review')) return denied()
-  const inv = payroll.bpjsInvoices.find((x) => x.month === month && x.body === body)
-  if (!inv) return { ok: false, message: 'Enter the invoice first.' }
-  Object.assign(inv.notes, notes)
-  const cmp = bpjsComparison(month, body)
-  const missing = cmp.rows.find((r) => r.difference && !inv.notes[r.programme as BpjsProgramme]?.trim())
-  if (missing) return { ok: false, message: `${missing.programme} difference ${rupiah(missing.difference!)} needs a note.`, programme: missing.programme }
-  inv.reviewed = { by: actingPerson(), at: now() }
-  inv.reviewedFingerprint = hash(JSON.stringify(cmp.rows.map((r) => r.payroll)))
-  return { ok: true }
+  const p: Payment = { id: nextId('pay'), kind: base === 'salary' ? 'Salary' : 'Statutory', party, account, runId: run?.id ?? null, month, bank, date, amount, journalId: j.id, statementLineId: line.id }
+  line.paymentId = p.id; j.paymentId = p.id
+  payroll.bankLines.push(line)
+  payroll.payments.push(p)
+  addLog({ type: 'Payment', status: 'Recorded', reason: `${label} paid ${rupiah(amount)} (${j.number}), matched in bank reconciliation`, nextStep: 'Nothing to do.', runId: run?.id ?? null, runKey: run?.key ?? null, journalNo: j.number })
+  return { ok: true, paymentId: p.id, number: j.number, amount, account, month }
 }
 
-// ── Reconciliation (FG-6) ───────────────────────────────────────────────────
+// ── Manual journals on payroll accounts ─────────────────────────────────────
 
-function reconOf(month: string): MonthRecon {
-  let r = payroll.recon.find((x) => x.month === month)
-  if (!r) { r = { month, notes: {}, checkNotes: {}, readyBy: null, signOff: null, ebupotFiled: null, pph21Note: null, pph21Reconciled: null }; payroll.recon.push(r) }
-  return r
+/** Payroll accounts a manual journal should not touch: Hutang Gaji, every payable with a party, PPh 21 DTP, the payroll cost accounts. */
+export function isPayrollAccount(code: string): boolean {
+  const a = payrollAccount(code)
+  if (!a) return false
+  return code === payroll.settings.hutangGaji || !!a.party || code === payroll.settings.taxPresets.dtp || a.type === 'expense' || a.type === 'cogs'
 }
-function latestAccepted(run: Run): RunVersion | undefined { return [...run.versions].reverse().find((v) => v.state !== 'rejected' && v.state !== 'moved' && v.state !== 'partial') }
-function monthRuns(month: string) { return payroll.runs.filter((r) => r.month === month && r.mode === 'Live') }
-function payrollJournalsOf(month: string) { return payroll.journals.filter((j) => j.taxMonth === month && ['Payroll', 'Difference', 'Reversal'].includes(j.type)) }
-function fingerprint(month: string) {
-  return hash(JSON.stringify({ v: monthRuns(month).map((r) => [r.id, latestAccepted(r)?.no]), j: payrollJournalsOf(month).map((j) => j.number), p: payroll.payments.filter((p) => p.periods.some((x) => x.month === month)).map((p) => [p.id, p.voidedBy]) }))
-}
-/** Sign-off status is computed from a fingerprint of versions, journals and payments, so a later change reads "Out of date" on its own. */
-function markReconOutOfDate(month: string) {
-  const r = payroll.recon.find((x) => x.month === month)
-  if (r?.signOff && r.signOff.fingerprint !== fingerprint(month) && !seeding) notify(['Accountant', 'Finance Manager'], `Payroll reconciliation ${monthLabel(month)} is out of date.`, `/payroll-reconciliation?month=${month}`)
-}
-export function reconciliation(month: string) {
-  const runsM = monthRuns(month)
-  const talenta: JournalLine[] = []
-  const reconciling: { label: string; amount: number }[] = []
-  for (const r of runsM) {
-    const v = latestAccepted(r)
-    if (!v) continue
-    talenta.push(...buildJournal(r, v, payroll.settings).draft.lines)
-    const st = runStatus(r)
-    if (st !== 'Posted') reconciling.push({ label: `${r.kind === 'Regular' ? 'Payroll' : r.label} ${periodLabel(r.start, r.end)} v${v.no}: ${st}`, amount: roundCents(staffOf(v.payload).reduce((x, e) => x + cents(e.take_home_pay), 0)) })
-  }
-  const jl = payrollJournalsOf(month)
-  for (const j of payroll.journals.filter((x) => x.correction && x.taxMonth === month && monthOf(x.date) !== month)) reconciling.push({ label: `Posted in ${monthLabel(monthOf(j.date))}: ${j.number}`, amount: journalTotals(j).debit })
-  const ledger = jl.flatMap((j) => j.lines)
-  const rec = reconOf(month)
-  const rows: ReturnType<typeof diffLineSets> = []
-  const tm = netMap(talenta), lm = netMap(ledger)
-  for (const k of new Set([...tm.keys(), ...lm.keys()])) {
-    const x = (tm.get(k) ?? lm.get(k))!
-    rows.push({ key: k, account: x.account, tags: x.tags, old: tm.get(k)?.amount ?? 0, new: lm.get(k)?.amount ?? 0, diff: (lm.get(k)?.amount ?? 0) - (tm.get(k)?.amount ?? 0) })
-  }
-  const shape = (r: (typeof rows)[number]) => ({ key: r.key, account: r.account, label: `${accountLabel(r.account)}${tagsLabel(r.tags) ? ` | ${tagsLabel(r.tags)}` : ''}`, talenta: Math.abs(r.old), ledger: Math.abs(r.new), variance: Math.abs(r.new) - Math.abs(r.old), rounding: r.account === payroll.settings.roundingAccount, note: rec.notes[r.key] ?? null })
-  const accountRows = rows.filter((r) => isCost(r.account)).map(shape).sort((a, b) => a.label.localeCompare(b.label))
-  const payableRows = rows.filter((r) => !isCost(r.account)).map(shape).sort((a, b) => a.label.localeCompare(b.label))
-  // By pay item: Talenta raw amounts vs ledger sources.
-  const raw = new Map<string, number>(), led = new Map<string, number>()
-  for (const r of runsM) { const v = latestAccepted(r); if (v) for (const e of staffOf(v.payload)) for (const [section, list] of [['allowance', e.allowances], ['deduction', e.deductions], ['benefit', e.benefits]] as const) for (const it of list) raw.set(`${it.name}|${section}`, (raw.get(`${it.name}|${section}`) ?? 0) + cents(it.amount)) }
-  for (const l of ledger) for (const s of l.sources) if (s.side === 'D' || (s.side === 'C' && s.cents > 0)) if (s.section !== 'preset' && s.section !== 'gap' && s.section !== 'rounding') led.set(`${s.item}|${s.section}`, (led.get(`${s.item}|${s.section}`) ?? 0) + (s.side === 'D' ? s.cents : -s.cents))
-  const payItemRows = [...new Set([...raw.keys(), ...led.keys()])].map((k) => { const [name, section] = k.split('|'); const t = roundCents(raw.get(k) ?? 0), l = roundCents(led.get(k) ?? 0); return { key: `item:${k}`, name: name!, section: section!, talenta: t, ledger: l, variance: l - t, note: rec.notes[`item:${k}`] ?? null } })
-  const unexplained = [...accountRows, ...payableRows, ...payItemRows].filter((r) => r.variance !== 0 && !('rounding' in r && r.rounding) && !r.note)
-  const fp = fingerprint(month)
-  const status = rec.signOff ? (rec.signOff.fingerprint === fp ? 'Signed off' : 'Out of date') : rec.readyBy && !unexplained.length ? 'Ready for sign-off' : 'Open'
-  const warning = !runsM.length && !jl.length ? `No payroll runs for ${monthLabel(month)}. Check the payroll inbox or ask HR to send the run.` : null
-  return { month, accountRows, payableRows, payItemRows, reconciling, unexplained: unexplained.length, status, signOff: rec.signOff, readyBy: rec.readyBy, warning, checks: independentChecks(month) }
-}
-/** TN-04: five checks that skip the mapping, so a wrong account shows even when the main report reads Rp0. */
-export function independentChecks(month: string) {
-  const runsM = monthRuns(month)
-  const rec = reconOf(month)
-  const staffAll = runsM.flatMap((r) => { const v = versionOf(r, r.ledgerVersion) ?? latestAccepted(r); return v ? staffOf(v.payload) : [] })
-  const jl = payrollJournalsOf(month)
-  const net = (pred: (l: JournalLine) => boolean, sign = 1) => jl.flatMap((j) => j.lines).filter(pred).reduce((x, l) => x + sign * (l.credit - l.debit), 0)
-  const sumC = (f: (e: TalentaEmployee) => number) => roundCents(staffAll.reduce((x, e) => x + cents(f(e)), 0))
-  const thp = sumC((e) => e.take_home_pay)
-  const p = payroll.settings.taxPresets
-  const inv = payroll.bpjsInvoices.filter((x) => x.month === month)
-  const bpjsLedger = net((l) => l.account === ACC.bpjsKes || l.account === ACC.bpjsTk)
-  const salaryPaid = payroll.payments.filter((x) => !x.voidedBy && x.kind === 'Salary' && x.periods.some((y) => y.month === month)).reduce((s, x) => s + x.amount, 0)
-  const employer = sumC((e) => e.deductions.filter((d) => /paid by company/i.test(d.name)).reduce((s, d) => s + d.amount, 0))
-  const raw = sumC((e) => e.total_allowances - e['Total PPh 21 DTP Received'] + e.total_benefits) + employer
-  const expense = -net((l) => isCost(l.account) && l.account !== payroll.settings.roundingAccount)
-  const mk = (id: string, label: string, a: number | null, b: number | null, aLabel: string, bLabel: string) => {
-    const diff = a == null || b == null ? null : b - a
-    const note = rec.checkNotes[id] ?? null
-    return { id, label, source: a, ledger: b, sourceLabel: aLabel, ledgerLabel: bLabel, difference: diff, status: diff == null ? 'No data' : Math.abs(diff) <= 1_000 ? 'Matches' : note ? 'Explained' : 'Off', note }
-  }
-  return [
-    mk('thp', 'Take-home pay vs Hutang Gaji credit', runsM.length ? thp : null, jl.length ? net((l) => l.account === payroll.settings.hutangGaji) : null, 'Talenta take-home pay', 'Hutang Gaji credit'),
-    mk('pph21', 'PPh 21 in the sends vs PPh 21 payable', runsM.length ? sumC((e) => e['PPh 21 Benefit'] + e['PPh 21 Payment'] - e['Total PPh 21 DTP Received']) : null, jl.length ? net((l) => l.account === p.pph21) : null, 'PPh 21 Benefit + Payment - DTP', 'Hutang PPh 21'),
-    mk('bpjs', 'BPJS invoice vs BPJS payables', inv.length ? inv.flatMap((x) => x.lines).reduce((s, l) => s + l.amount, 0) : null, jl.length ? bpjsLedger : null, 'BPJS invoices', 'BPJS payables'),
-    mk('bank', 'Bank salary paid vs take-home pay', runsM.length ? thp : null, salaryPaid || null, 'Talenta take-home pay', 'Salary paid from bank'),
-    mk('expense', 'Payroll expense vs allowances, benefits and employer contributions', runsM.length ? raw : null, jl.length ? expense : null, 'Allowances + benefits + employer contributions', 'Payroll expense debits'),
-  ]
-}
-export function setVarianceNote(month: string, rowKey: string, o: { reason: string; note: string }): Result {
-  if (!can('recon.note')) return denied()
-  if (o.note.trim().length < 5 || o.note.trim().length > 500) return { ok: false, message: 'Write a note of 5 to 500 characters.' }
-  reconOf(month).notes[rowKey] = { reason: o.reason, note: o.note.trim(), by: actingPerson(), at: now() }
-  return { ok: true }
-}
-export function setCheckNote(month: string, checkId: string, note: string): Result {
-  if (!can('recon.note') && !can('recon.signoff')) return denied()
-  if (note.trim().length < 5) return { ok: false, message: 'Write a note of 5 characters or more.' }
-  reconOf(month).checkNotes[checkId] = { note: note.trim(), by: actingPerson(), at: now() }
-  return { ok: true }
-}
-export function markReadyForSignOff(month: string): Result {
-  if (!can('recon.ready')) return denied()
-  const r = reconciliation(month)
-  if (r.unexplained) return { ok: false, message: `${r.unexplained} row${r.unexplained > 1 ? 's need' : ' needs'} a reason and a note.` }
-  reconOf(month).readyBy = actingPerson()
-  return { ok: true }
-}
-export function signOffMonth(month: string, o: { hrConfirmed: boolean }): Result {
-  if (!can('recon.signoff')) return denied()
-  if (!o.hrConfirmed) return { ok: false, message: 'Tick "HR confirmed no payroll changes after the last send".' }
-  const r = reconciliation(month)
-  if (r.status !== 'Ready for sign-off' && r.status !== 'Out of date') return { ok: false, message: 'The Accountant sets the month Ready for sign-off first.' }
-  const off = r.checks.find((c) => c.status === 'Off')
-  if (off) return { ok: false, message: `${off.label} is off by ${rupiah(Math.abs(off.difference ?? 0))} with no confirmed note.` }
-  const reversed = monthRuns(month).find((x) => runStatus(x) === 'Reversed')
-  if (reversed) return { ok: false, message: `Reversed, not reposted: ${periodLabel(reversed.start, reversed.end)}.` }
-  const open = monthRuns(month).filter((x) => ['Received', 'Held', 'Ready to post', 'Waiting for your choice', 'Revised'].includes(runStatus(x)))
-  reconOf(month).signOff = { by: actingPerson(), at: now(), hrConfirmedBy: actingPerson(), fingerprint: fingerprint(month), snapshot: clone({ accountRows: r.accountRows, payableRows: r.payableRows, versions: monthRuns(month).map((x) => ({ run: x.key, version: x.ledgerVersion })), journals: payrollJournalsOf(month).map((j) => j.number) }) }
-  return { ok: true, warnings: open.map((x) => `${periodLabel(x.start, x.end)}: ${runStatus(x)}`) }
-}
-/** LR-10 rows for a tax month: regular, severance, DTP, PPh 26. */
-export function pph21Monthly(month: string) {
-  const p = payroll.settings.taxPresets
-  const staff = monthRuns(month).flatMap((r) => { const v = latestAccepted(r); return v ? staffOf(v.payload) : [] })
-  const sumC = (f: (e: TalentaEmployee) => number) => roundCents(staff.reduce((x, e) => x + cents(f(e)), 0))
-  const jl = payroll.journals.filter((j) => j.taxMonth === month && ['Payroll', 'Difference', 'Reversal'].includes(j.type))
-  const net = (acct: string) => jl.flatMap((j) => j.lines).filter((l) => l.account === acct).reduce((x, l) => x + l.credit - l.debit, 0)
-  /** DTP posts a debit and a credit on its own account; the row reads the credit side, net of reversals. */
-  const credits = (acct: string) => jl.reduce((x, j) => x + j.lines.filter((l) => l.account === acct).reduce((y, l) => y + (j.type === 'Reversal' ? -l.debit : l.credit), 0), 0)
-  const later = payroll.journals.filter((j) => j.taxMonth === month && j.correction && monthOf(j.date) !== month)
-  const rows = [
-    { key: 'regular', label: 'PPh 21 regular', account: p.pph21, expected: sumC((e) => e['PPh 21 Benefit'] + e['PPh 21 Payment'] - e['Total PPh 21 DTP Received']), ledger: net(p.pph21) },
-    { key: 'severance', label: 'PPh 21 severance', account: p.resign, expected: sumC((e) => e['PPh 21 Resign Benefit']), ledger: p.resign === p.pph21 ? 0 : net(p.resign) },
-    { key: 'dtp', label: 'PPh 21 DTP', account: p.dtp, expected: sumC((e) => e['Total PPh 21 DTP Received']), ledger: credits(p.dtp), balance: net(p.dtp) },
-    { key: 'pph26', label: 'PPh 26', account: p.pph26, expected: sumC((e) => e['PPh 26 Benefit']), ledger: net(p.pph26) },
-  ].map((r) => ({ ...r, variance: r.ledger - r.expected }))
-  const rec = reconOf(month)
-  const regular = rows[0]!
-  const filedDiff = rec.ebupotFiled == null ? null : rec.ebupotFiled - regular.ledger
-  const filedMessage = filedDiff == null || Math.abs(filedDiff) <= 1_000 ? null : `Filed ${rupiah(Math.abs(filedDiff))} ${filedDiff > 0 ? 'above' : 'below'} ledger. Ask HR to re-send ${monthLabel(month)}.`
-  const opening = payroll.journals.filter((j) => j.taxMonth < month).flatMap((j) => j.lines).filter((l) => l.account === p.pph21).reduce((x, l) => x + l.credit - l.debit, 0)
-  const paid = payroll.payments.filter((x) => !x.voidedBy && x.account === p.pph21 && x.periods.some((y) => y.month === month)).reduce((s, x) => s + x.periods.filter((y) => y.month === month).reduce((a, y) => a + y.amount, 0), 0)
-  const due = `${nextMonthOf(month)}-15`
-  return {
-    month, rows, ebupotFiled: rec.ebupotFiled, filedMessage, reconciled: rec.pph21Reconciled, note: rec.pph21Note,
-    postedLater: later.map((j) => ({ number: j.number, postedIn: monthOf(j.date), amount: j.lines.filter((l) => l.account === p.pph21).reduce((x, l) => x + l.credit - l.debit, 0) })),
-    payable: { opening: opening - payroll.payments.filter((x) => !x.voidedBy && x.account === p.pph21 && x.periods.some((y) => y.month < month)).reduce((s, x) => s + x.periods.filter((y) => y.month < month).reduce((a, y) => a + y.amount, 0), 0), credits: regular.ledger, paid, due: dateLabel(due) },
-  }
-}
-export function pph21Annual(year: number) {
-  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`)
-  const live = payroll.settings.cutover.firstLive
-  const rows = months.map((m) => {
-    const r = pph21Monthly(m).rows[0]!
-    return { month: m, label: monthLabel(m), expected: r.expected, ledger: r.ledger, variance: r.variance, beforeCutover: !!live && m < live }
+/**
+ * Prototype stand-in for a general journal someone posts by hand (not from Talenta). Default:
+ * Dr Salaries, Cr Hutang Gaji, Rp1.500.000, dated on the latest regular run's end date.
+ */
+export function simulateManualJournal(o: { debit?: string; credit?: string; amount?: number; date?: string; memo?: string } = {}): Result {
+  if (!can('simulate.journal')) return denied()
+  const last = regularRuns().filter((r) => r.currentVersion != null).pop()
+  const date = o.date ?? last?.end ?? today()
+  if (isLocked(monthOf(date))) return { ok: false, message: `${monthLabel(monthOf(date))} is locked.` }
+  const debit = o.debit ?? ACC.salaries, credit = o.credit ?? payroll.settings.hutangGaji
+  const amount = Math.round(o.amount ?? 1_500_000)
+  if (amount <= 0) return { ok: false, message: 'Enter an amount above Rp0.' }
+  now()
+  const memo = o.memo ?? 'Salary adjustment'
+  const j = addJournal({
+    number: nextJvNo(), type: 'Manual', source: 'Manual journal', runId: null, versionNo: null, date, taxMonth: monthOf(date), memo, reference: null, correction: false,
+    lines: [
+      { account: debit, tags: NO_TAGS, debit: amount, credit: 0, why: [memo], sources: [] },
+      { account: credit, tags: NO_TAGS, debit: 0, credit: amount, why: [memo], sources: [] },
+    ],
+    snapshotId: null, reversesId: null, paymentId: null,
   })
-  const counted = rows.filter((r) => !r.beforeCutover)
-  return { year, rows, total: { expected: counted.reduce((s, r) => s + r.expected, 0), ledger: counted.reduce((s, r) => s + r.ledger, 0), variance: counted.reduce((s, r) => s + r.variance, 0) } }
+  addLog({ type: 'Manual journal', status: 'Recorded', reason: `${j.number} posts ${rupiah(amount)} to ${listLabel([debit, credit].filter(isPayrollAccount).map(accountName))}`, nextStep: 'The run and Payroll payables show a warning.', journalNo: j.number })
+  return { ok: true, journalId: j.id, number: j.number }
 }
-export function setEbupotTotal(month: string, amount: number): Result {
-  if (!can('ebupot.enter')) return denied()
-  reconOf(month).ebupotFiled = Math.round(amount)
-  return { ok: true, message: pph21Monthly(month).filedMessage ?? undefined }
-}
-export function markPph21Reconciled(month: string, note?: string): Result {
-  if (!can('pph21.reconcile')) return denied()
-  const rec = reconOf(month)
-  if (note) rec.pph21Note = note.trim()
-  const m = pph21Monthly(month)
-  if (rec.ebupotFiled == null) return { ok: false, message: 'Enter the PPh 21 filed in e-Bupot first.' }
-  if (m.filedMessage && !rec.pph21Note) return { ok: false, message: m.filedMessage }
-  const dtp = m.rows.find((r) => r.key === 'dtp')!
-  if ((dtp.balance ?? 0) !== 0 && !rec.pph21Note) return { ok: false, message: 'The PPh 21 DTP balance is not Rp0. Add a note.' }
-  const reversed = monthRuns(month).find((x) => runStatus(x) === 'Reversed')
-  if (reversed) return { ok: false, message: `Reversed, not reposted: ${periodLabel(reversed.start, reversed.end)}.` }
-  rec.pph21Reconciled = { by: actingPerson(), at: now() }
-  return { ok: true }
+export interface ManualJournalWarning { journalId: string; number: string; date: string; month: string; accounts: string[]; amount: number; message: string }
+/**
+ * Every non-PAY journal (posted by hand, not from Talenta or a bank match) that hits a payroll
+ * account in a month. Pass a run id (its month) or a month ('2026-09').
+ */
+export function manualJournalWarnings(runIdOrMonth: string): ManualJournalWarning[] {
+  const month = runById(runIdOrMonth)?.month ?? runIdOrMonth
+  return payroll.journals.filter((j) => j.source === 'Manual journal' && !j.reversedById && !j.reversesId && monthOf(j.date) === month).flatMap((j) => {
+    const accounts = [...new Set(j.lines.map((l) => l.account).filter(isPayrollAccount))]
+    if (!accounts.length) return []
+    const amount = journalTotals(j).debit
+    return [{ journalId: j.id, number: j.number, date: j.date, month, accounts, amount, message: `Manual journal ${j.number} (${dateLabel(j.date)}) posts ${rupiah(amount)} to ${listLabel(accounts.map(accountName))}, outside Talenta payroll.` }]
+  })
 }
 
 // ── Sample data ─────────────────────────────────────────────────────────────
@@ -2519,13 +2559,14 @@ function seedSettings() {
   M('JP Employee', 'deduction', 'Employee deduction', HG, ACC.bpjsTk)
   M('BPJSK Employee', 'deduction', 'Employee deduction', HG, ACC.bpjsKes)
   M('PPH 21 Paid', 'deduction', 'Tax', HG, ACC.pph21)
+  M('PPH 21 Payment', 'deduction', 'Tax', HG, ACC.pph21)
   M('Loan Instalment', 'deduction', 'Loan', HG, ACC.loanReceivable, null)
   M('THR Paid', 'deduction', 'Advance offset', HG, ACC.thrAdvance, null)
-  M('BPJS K paid by company', 'deduction', 'Employer contribution', ACC.salaries, ACC.bpjsKes)
-  M('JKK paid by company', 'deduction', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
-  M('JKM paid by company', 'deduction', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
-  M('JHT paid by company', 'deduction', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
-  M('JP paid by company', 'deduction', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
+  M('BPJS K paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsKes)
+  M('JKK paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
+  M('JKM paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
+  M('JHT paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
+  M('JP paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
   M('DPLK paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.dplk)
   for (const t of payroll.tags) if (t.name !== FALLBACK_TAG) s.groupMaps[t.dimension][t.name] = t.name
   for (const c of COST_CENTERS) s.costCenterCategory[c.name] = c.category
@@ -2534,7 +2575,7 @@ function seedSettings() {
     { id: nextId('rule'), name: 'Sales team to sales salaries', conditions: [{ field: 'organization_name', op: 'is', values: ['Sales'] }], roles: ['Earning', 'Employer contribution'], account: ACC.salesSalaries, tags: null, active: true },
   )
   for (const e of payroll.roster) {
-    acceptValue('cost_center_name', e.cost_center_name); acceptValue('job_level', e.job_level); acceptValue('custom:BusinessUnit', e.business_unit)
+    acceptValue('cost_center', e.cost_center_name); acceptValue('job_level', e.job_level); acceptValue(`sbu:${SBU_KEY}`, e.business_unit)
   }
 }
 
@@ -2555,10 +2596,9 @@ function seed() {
   payroll.settings.cutover = { firstLive: '2026-07', proposedBy: payrollPerson('Accountant').person, confirmedBy: payrollPerson('Finance Manager').person, mode: 'Block' }
   for (const r of payroll.runs) r.mode = runMode(r.month)
   takeSnapshot('First live period Jul 2026 confirmed')
-  // July: posted, paid, reconciled, signed off, locked.
-  monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', statutory: { kes: '2026-08-07', tk: '2026-08-12', pph: '2026-08-13' } })
-  monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', statutory: { kes: '2026-09-08', tk: '2026-09-14', pph: '2026-09-14' } })
-  for (const m of ['2026-07', '2026-08']) closeMonth(m)
+  // July and August: posted, then paid through bank reconciliation matches; e-Bupot filed.
+  monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', kes: '2026-08-07', tk: '2026-08-12', tax: '2026-08-13' })
+  monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', kes: '2026-09-08', tk: '2026-09-14', tax: '2026-09-14' })
   setClock('2026-09-10T03:00:00Z')
   as('Finance Manager', () => must(lockPeriod('2026-07'), 'lock Jul'))
   // September: arrives with a new pay item and holds. HR settled three people changes in
@@ -2570,41 +2610,23 @@ function seed() {
   payroll.viewAs = 'Accountant'
   seeding = false
 }
-function monthCycle(start: string, end: string, sentAt: string, pay: { pay: string; statutory: { kes: string; tk: string; pph: string } }) {
+function monthCycle(start: string, end: string, sentAt: string, d: { pay: string; kes: string; tk: string; tax: string }) {
   setClock(sentAt)
   const r = simulateSend('regular', { start, end, sentAt })
   const run = runById(r.runId)!
   as('Accountant', () => {
-    if (draftOf(run) && needsFmConfirm(run, draftOf(run)!)) as('Finance Manager', () => confirmPostAsFinanceManager(run.id))
+    for (const w of runWarnings(run.id)) acknowledgeWarning(run.id, w.key, 'Checked with HR')
     must(postRun(run.id), `post ${start}`)
   })
   const month = run.month
-  setClock(`${pay.pay}T03:00:00Z`)
-  as('Accountant', () => must(recordSalaryPayment(run.id, { bank: ACC.bca, date: pay.pay }), 'salary'))
-  setClock(`${pay.statutory.kes}T03:00:00Z`)
-  as('Tax Staff', () => must(payStatutory({ party: 'BPJS Kesehatan', bank: ACC.bca, date: pay.statutory.kes, periods: [{ month }] }), 'bpjs kes'))
-  setClock(`${pay.statutory.tk}T03:00:00Z`)
-  as('Tax Staff', () => must(payStatutory({ party: 'BPJS Ketenagakerjaan', bank: ACC.bca, date: pay.statutory.tk, periods: [{ month }] }), 'bpjs tk'))
-  setClock(`${pay.statutory.pph}T03:00:00Z`)
-  as('Tax Staff', () => {
-    must(payStatutory({ party: 'DJP PPh 21', bank: ACC.bca, date: pay.statutory.pph, periods: [{ month, billingCode: '412011100' + month.replace('-', ''), ntpn: `0A1B2C3D4E5F${month.slice(5)}${month.slice(2, 4)}` }] }), 'pph21')
-    must(payStatutory({ party: 'DJP PPh 26', bank: ACC.bca, date: pay.statutory.pph, periods: [{ month }] }), 'pph26')
-    must(payStatutory({ party: 'Other', bank: ACC.bca, date: pay.statutory.pph, periods: [{ month }], account: ACC.dplk }), 'dplk')
-  })
-}
-function closeMonth(month: string) {
-  setClock(`${nextMonthOf(month)}-16T03:00:00Z`)
-  for (const body of ['BPJS Kesehatan', 'BPJS Ketenagakerjaan'] as BpjsBody[]) {
-    const lines = bpjsPayroll(month, body).filter((x) => x.programme !== 'Unassigned').map((x) => ({ programme: x.programme as BpjsProgramme, amount: x.amount, headcount: 40 }))
-    as('Accountant', () => { must(saveBpjsInvoice(month, body, lines), 'bpjs invoice'); must(markBpjsReviewed(month, body), 'bpjs review') })
-  }
-  as('Tax Staff', () => { must(setEbupotTotal(month, pph21Monthly(month).rows[0]!.ledger), 'ebupot'); must(markPph21Reconciled(month), 'pph21 reconciled') })
-  as('Accountant', () => {
-    const r = reconciliation(month)
-    for (const row of [...r.accountRows, ...r.payableRows].filter((x) => x.variance && !x.rounding)) setVarianceNote(month, row.key, { reason: 'Timing', note: 'Rounding residue on whole-rupiah lines' })
-    must(markReadyForSignOff(month), 'ready')
-  })
-  as('Finance Manager', () => must(signOffMonth(month, { hrConfirmed: true }), `sign off ${month}`))
+  const pay = (kind: BankPaymentKind, date: string, o: BankPaymentOptions = {}) => { setClock(`${date}T03:00:00Z`); as('Accountant', () => must(simulateBankPayment(kind, { date, ...o }), `${kind} ${month}`)) }
+  pay('salary', d.pay, { runId: run.id })
+  pay('bpjs-kesehatan', d.kes, { month })
+  pay('bpjs-ketenagakerjaan', d.tk, { month })
+  pay('pph21', d.tax, { month })
+  pay('pph26', d.tax, { month })
+  pay('dplk', d.tax, { month })
+  as('Tax Staff', () => must(setEbupotFiled(month, pph21Month(month).books), `e-Bupot ${month}`))
 }
 
 export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payroll]) }

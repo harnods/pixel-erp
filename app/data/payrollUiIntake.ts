@@ -4,29 +4,19 @@
  *
  *   runRow(run)                     one inbox row: period, version, staff, take-home pay, status, reason, next step.
  *   versionFigures(v)               staff, take-home pay and gross of one version's send.
- *   needsFinanceConfirm(runId)      the MLP stopgap (TN-24): override in the draft, or settings changed since the last posted run.
  *   taxRuleRows(runId)              the one PPh 21 rule (LR-10) against the draft's tax lines.
  *   headcountMonths() / latestHeadcountMonth()   months with a regular run plus the current month.
  *   monthHeadcount(month)           the month's run against the previous posted run by group: new, not in this run, moved ids.
  *   hrMessage(ids, period)          the "Copy message for HR" text: employee_id values only.
  */
 import {
-  payroll, runs, runById, currentVersionOf, runStatus, runHolds, draftOf, liveJournals, journalsOf, headcountChanges,
-  snapshotById, today, wib, periodLabel, monthLabel, addDays, lastDayOf, nextMonthOf, monthOf,
-  type Run, type RunVersion, type RunStatus, type JournalLine,
+  payroll, runs, currentVersionOf, runStatus, runHolds, liveJournals, journalsOf, headcountChanges, sendFigures, taxFigures,
+  today, wib, periodLabel, monthLabel, addDays, lastDayOf, nextMonthOf, monthOf,
+  type Run, type RunVersion, type RunStatus,
 } from './payrollStore'
 
-const round = (x: number) => Math.round(x)
-
-export function versionFigures(v: RunVersion | undefined) {
-  if (!v) return { staff: 0, takeHome: 0, gross: 0 }
-  const emps = v.payload.employees
-  return {
-    staff: new Set(emps.map((e) => e.employee_id)).size,
-    takeHome: round(emps.reduce((s, e) => s + e.take_home_pay, 0)),
-    gross: round(emps.reduce((s, e) => s + e.total_allowances, 0)),
-  }
-}
+/** Staff, take-home pay (allowances - deductions) and gross allowances of one version's send. */
+export function versionFigures(v: RunVersion | undefined) { return sendFigures(v) }
 
 /** Badge colour per run or log status. */
 export function statusType(s: string): 'completed' | 'announcement' | 'information' | 'warning' | 'critical' {
@@ -34,7 +24,7 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
     case 'Posted': return 'completed'
     case 'Held': case 'Failed': case 'Blocked': case 'Missing send': return 'critical'
     case 'Changed': case 'Check': return 'warning'
-    case 'Waiting for your choice': case 'Confirm source': case 'Revised': case 'Looks partial': return 'warning'
+    case 'Waiting for your choice': case 'Confirm source': case 'Correction ready': case 'Looks partial': return 'warning'
     case 'Ready to post': case 'Received': case 'Current': return 'information'
     case 'No change': case 'Expected': return 'completed'
     default: return 'announcement'
@@ -45,7 +35,7 @@ const NEXT_STEP: Partial<Record<RunStatus, string>> = {
   'Confirm source': 'The Jurnal Owner confirms the source.',
   'Waiting for your choice': 'Pick Revision of the posted run or Separate run.',
   'Ready to post': 'Review the draft and post.',
-  Revised: 'Compare the versions and fix the posted journal.',
+  'Correction ready': 'Review the correction and post it.',
   Reversed: 'Repost the current version.',
   'Dry run': 'Nothing posts from a dry run.',
   'Before go-live': 'Nothing posts before the first live period.',
@@ -74,7 +64,7 @@ export function runRow(run: Run) {
     takeHome: f.takeHome,
     status,
     reason: holds[0]?.message ?? (live.length ? `Posted as ${live.map((j) => j.number).join(', ')}` : ''),
-    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? 'Record the salary payment on payday.' : '')),
+    nextStep: holds.length ? '' : (NEXT_STEP[status] ?? (status === 'Posted' ? 'The salary payable clears when the bank line is matched.' : '')),
     received: latest ? wib(latest.receivedAt) : '',
     receivedAt: latest?.receivedAt ?? '',
   }
@@ -82,39 +72,19 @@ export function runRow(run: Run) {
 
 export const inboxRows = () => runs.value.map(runRow)
 
-/** TN-24 stopgap: Post needs a Finance Manager confirm when the draft uses an override or settings moved since the last posted run. */
-export function needsFinanceConfirm(runId: string): boolean {
-  const run = runById(runId)
-  const d = run ? draftOf(run) : null
-  if (!d) return false
-  const s = snapshotById(d.snapshotId)?.settings ?? payroll.settings
-  const override = s.mapping.some((m) => m.override && d.lines.some((l) => l.sources.some((x) => x.item === m.name)))
-  const lastPosted = [...payroll.journals].reverse().find((j) => j.type === 'Payroll' && j.snapshotId)
-  return override || (!!lastPosted && lastPosted.snapshotId !== d.snapshotId)
-}
-
-/** LR-10: one PPh 21 rule. Rows for the review's tax panel, from the send and the draft lines. */
+/** LR-10: one PPh 21 rule. Rows for the review's tax panel, from the send's tax components and the draft lines. */
 export function taxRuleRows(runId: string) {
-  const run = runById(runId)
-  const v = run ? currentVersionOf(run) : undefined
-  if (!run || !v) return null
-  const oe = payroll.settings.otherEntity
-  const staff = v.payload.employees.filter((e) => !oe.some((x) => (e[x.field] ?? '') === x.value))
-  const sum = (k: 'PPh 21 Benefit' | 'PPh 21 Payment' | 'PPh 21 Resign Benefit' | 'PPh 26 Benefit' | 'Total PPh 21 DTP Received') => round(staff.reduce((s, e) => s + e[k], 0))
+  const f = taxFigures(runId)
+  if (!f) return null
   const p = payroll.settings.taxPresets
-  const lines: JournalLine[] = v.draft?.lines ?? (liveJournals(runId)[0]?.lines ?? [])
-  const net = (code: string) => lines.filter((l) => l.account === code).reduce((s, l) => s + l.credit - l.debit, 0)
-  const dtpLedger = lines.filter((l) => l.account === p.dtp).reduce((s, l) => s + l.debit - l.credit, 0)
-  const benefit = sum('PPh 21 Benefit'), payment = sum('PPh 21 Payment'), dtp = sum('Total PPh 21 DTP Received')
-  const expected = benefit + payment - dtp
   return {
-    hasLines: lines.length > 0,
-    benefit, payment, dtp, expected,
+    hasLines: f.hasLines,
+    benefit: f.benefit, payment: f.payment, dtp: f.dtp, expected: f.rule,
     rows: [
-      { label: 'Regular PPh 21', account: p.pph21, rule: expected, ledger: net(p.pph21) },
-      { label: 'PPh 21 on severance', account: p.resign, rule: sum('PPh 21 Resign Benefit'), ledger: p.resign === p.pph21 ? null : net(p.resign) },
-      { label: 'PPh 26', account: p.pph26, rule: sum('PPh 26 Benefit'), ledger: net(p.pph26) },
-      { label: 'PPh 21 DTP', account: p.dtp, rule: dtp, ledger: dtpLedger },
+      { label: 'Regular PPh 21', account: p.pph21, rule: f.rule, ledger: f.ledger },
+      { label: 'PPh 21 on severance', account: p.resign, rule: f.resign, ledger: f.resignLedger },
+      { label: 'PPh 26', account: p.pph26, rule: f.pph26, ledger: f.pph26Ledger },
+      { label: 'PPh 21 DTP', account: p.dtp, rule: f.dtp, ledger: f.dtpLedger },
     ],
   }
 }
@@ -175,7 +145,7 @@ export function runJournals(runId: string) {
     ...j,
     debit: j.lines.reduce((s, l) => s + l.debit, 0),
     credit: j.lines.reduce((s, l) => s + l.credit, 0),
-    live: !j.reversedById && !j.reversesId && (j.type === 'Payroll' || j.type === 'Difference'),
+    live: !j.reversedById && !j.reversesId && (j.type === 'Payroll' || j.type === 'Correction'),
   }))
 }
 

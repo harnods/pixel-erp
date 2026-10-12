@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Draft review (OD-12, TS-05): the four sections the Accountant checks before
- * Post. (1) pay item totals against Talenta's section totals, (2) change from the
+ * Post. (1) pay item totals by section (Talenta sends no totals), (2) change from the
  * last posted period by account and tag with notes on flagged rows, (3) headcount
  * by group: this run's employee_ids against the previous posted run, with who is
  * new, not in this run or moved, each group's change markable Expected (HR settles
@@ -34,7 +34,7 @@ const totals = computed(() => {
 })
 const sections = computed(() => {
   const by = (s: string) => (review.value?.payItems ?? []).filter((p) => p.section === s).sort((a, b) => b.amount - a.amount)
-  return (['allowance', 'deduction', 'benefit'] as const).map((s) => ({ section: s, items: by(s), total: review.value?.talentaTotals.find((x) => x.section === s) }))
+  return (['allowance', 'deduction', 'benefit'] as const).map((s) => ({ section: s, items: by(s), total: review.value?.totals.find((x) => x.section === s) }))
 })
 const flagged = computed(() => (review.value?.changes ?? []).filter((c) => c.flag))
 const otherChanges = computed(() => (review.value?.changes ?? []).filter((c) => !c.flag))
@@ -79,24 +79,20 @@ function unmarkExpected(key: string) {
     <!-- 1. Pay item totals against Talenta -->
     <section class="pdr__card" data-section="pay-items">
       <header class="pdr__cardhead">
-        <div class="pdr__cardtitle">{{ t('Pay item totals against Talenta') }}</div>
-        <div class="pdr__cardsub">{{ t('Each section adds up the pay item lines and compares them with the totals Talenta sent.') }}</div>
+        <div class="pdr__cardtitle">{{ t('Pay item totals') }}</div>
+        <div class="pdr__cardsub">{{ t('Talenta sends pay items only. Take-home pay is allowances less deductions.') }} {{ rupiah(review.takeHome) }}</div>
       </header>
       <table class="pdr__table">
         <thead>
           <tr>
             <th class="pdr__th">{{ t('Section') }}</th>
             <th class="pdr__th pdr__num">{{ t('Pay item lines') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Talenta total') }}</th>
-            <th class="pdr__th pdr__num">{{ t('Difference') }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="s in review.talentaTotals" :key="s.section">
+          <tr v-for="s in review.totals" :key="s.section">
             <td class="pdr__td pdr__strong">{{ t(`${s.section[0]!.toUpperCase()}${s.section.slice(1)}s`) }}</td>
-            <td class="pdr__td pdr__num">{{ rupiah(s.lines) }}</td>
-            <td class="pdr__td pdr__num">{{ rupiah(s.talenta) }}</td>
-            <td class="pdr__td pdr__num" :class="{ 'pdr__danger': s.gap }">{{ rupiah(s.gap) }}</td>
+            <td class="pdr__td pdr__num">{{ rupiah(s.amount) }}</td>
           </tr>
         </tbody>
       </table>

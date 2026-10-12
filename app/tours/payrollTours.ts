@@ -11,13 +11,18 @@
  * shows the result and points at it. The reader only presses Next.
  * tests/payroll-tour.spec.ts runs every step's work after resetPayroll() and
  * checks the figures quoted here.
+ *
+ * PHASE A NOTE (payroll simplification): the engine moved under this tour; the step copy and
+ * figures are the old flow and are rewritten in Phase B. Steps that no longer land as written:
+ * 4 (Finance Manager confirm: removed, target payroll-run-confirm gone), 7 (a re-send is now a
+ * correction, no Revision/Separate choice; payroll-holds absent, falls back to journals),
+ * 9 (billing code / NTPN entry removed; PPh 21 is paid by a bank match), 10 (route
+ * /payroll-reconciliation removed), and every quoted take-home figure (now computed from
+ * allowances - deductions). tests/payroll-tour.spec.ts is skipped until Phase B.
  */
 import {
   payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, suggestMapping, setPayItemMapping,
-  confirmPostAsFinanceManager, postRun, recordSalaryPayment, simulateSend, chooseRevision, postDifference,
-  payStatutory, setEbupotTotal, markPph21Reconciled, pph21Monthly, headcountChanges, markHeadcountExpected,
-  bpjsPayroll, saveBpjsInvoice, markBpjsReviewed, markReadyForSignOff, signOffMonth,
-  type BpjsBody, type BpjsProgramme,
+  postRun, simulateBankPayment, simulateSend, postCorrection, setEbupotFiled, pph21Month, headcountChanges, markHeadcountExpected,
 } from '~/data/payrollStore'
 import { ACC, type PayrollRole } from '~/data/payrollMaster'
 import type { AssetTour, TourStep } from './assetTours'
@@ -88,32 +93,24 @@ function mapNewItem() {
 function headcountExpected() {
   for (const g of headcountChanges(sepId()).groups.filter((x) => x.flagged)) markHeadcountExpected(sepId(), g.key, 'Settled by HR in Talenta')
 }
-function financeConfirms() { confirmPostAsFinanceManager(sepId()) }
+/** Phase A: the Finance Manager confirm is gone; this step does nothing until the Phase B rewrite. */
+function financeConfirms() { /* removed */ }
 function post() { postRun(sepId()) }
-function paySalary() { recordSalaryPayment(sepId(), { bank: ACC.bca, date: '2026-09-25' }) }
+function paySalary() { simulateBankPayment('salary', { runId: sepId(), date: '2026-09-25', bank: ACC.bca }) }
 function resend() { simulateSend('revision', { runId: sepId() }) }
 function reviseAndPostDifference() {
-  chooseRevision(sepId(), 2)
-  postDifference(sepId())
+  as('Accountant', () => postCorrection(sepId()))
 }
 function taxStaffFiles() {
-  payStatutory({ party: 'DJP PPh 21', bank: ACC.bca, date: '2026-10-05', periods: [{ month: SEP_MONTH, billingCode: BILLING_CODE, ntpn: NTPN }] })
-  setEbupotTotal(SEP_MONTH, pph21Monthly(SEP_MONTH).rows[0]!.ledger)
-  markPph21Reconciled(SEP_MONTH)
+  simulateBankPayment('pph21', { month: SEP_MONTH, date: '2026-10-05', bank: ACC.bca })
+  setEbupotFiled(SEP_MONTH, pph21Month(SEP_MONTH).books)
 }
 function closeMonth() {
   as('Accountant', () => {
     // v2 raised take-home pay after payday: the rest goes out from the bank.
-    recordSalaryPayment(sepId(), { bank: ACC.bca, date: '2026-10-05' })
-    for (const body of ['BPJS Kesehatan', 'BPJS Ketenagakerjaan'] as BpjsBody[]) {
-      const lines = bpjsPayroll(SEP_MONTH, body).filter((x) => x.programme !== 'Unassigned')
-        .map((x) => ({ programme: x.programme as BpjsProgramme, amount: x.amount, headcount: 40 }))
-      saveBpjsInvoice(SEP_MONTH, body, lines)
-      markBpjsReviewed(SEP_MONTH, body)
-    }
-    markReadyForSignOff(SEP_MONTH)
+    simulateBankPayment('salary', { runId: sepId(), date: '2026-10-05', bank: ACC.bca })
+    for (const k of ['bpjs-kesehatan', 'bpjs-ketenagakerjaan', 'pph26', 'dplk'] as const) simulateBankPayment(k, { month: SEP_MONTH, date: '2026-10-05', bank: ACC.bca })
   })
-  signOffMonth(SEP_MONTH, { hrConfirmed: true })
 }
 function oldSyncTries() { simulateSend('old-sync') }
 

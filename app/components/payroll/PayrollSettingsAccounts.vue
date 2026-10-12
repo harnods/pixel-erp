@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Accounts (TS-03): the payroll account set with one party label per payable,
- * the accounts payroll itself needs (Hutang Gaji, Payroll rounding, suspense,
+ * the accounts payroll itself needs (Hutang Gaji,
  * tax presets), and Create account with the code clash proposal and
  * "Use existing" for a same-name chart account.
  */
@@ -12,7 +12,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollSettingsDrawer from '~/components/payroll/PayrollSettingsDrawer.vue'
 import { successToast } from '~/utils/toasts'
 import {
-  payroll, can, setPayableParty, setSuspenseAccount, setTaxPreset, addPayrollAccount, accountLabel,
+  payroll, can, setPayableParty, setTaxPreset, addPayrollAccount, accountLabel,
   type TaxPresets,
 } from '~/data/payrollStore'
 import { PAYABLE_PARTIES, type PayableParty, type PayrollAccountType } from '~/data/payrollMaster'
@@ -26,8 +26,6 @@ const accounts = computed(() => [...payroll.accounts].sort((a, b) => TYPE_ORDER.
 const s = computed(() => payroll.settings)
 const role = (code: string) => {
   if (code === s.value.hutangGaji) return 'Hutang Gaji'
-  if (code === s.value.roundingAccount) return 'Payroll rounding'
-  if (code === s.value.suspenseAccount) return 'Payroll suspense'
   return null
 }
 
@@ -39,7 +37,7 @@ function onParty(code: string, v: string) {
   if (r.ok) successToast(t('Party label saved'))
 }
 
-// Tax presets (OD-24) and the suspense account.
+// Tax presets (OD-24).
 const PRESETS: { key: keyof TaxPresets; label: string }[] = [
   { key: 'pph21', label: 'PPh 21 payable' },
   { key: 'dtp', label: 'PPh 21 DTP' },
@@ -48,16 +46,11 @@ const PRESETS: { key: keyof TaxPresets; label: string }[] = [
   { key: 'trueUp', label: 'December PPh 21 true-up' },
 ]
 const presetOptions = computed(() => payroll.accounts.filter((a) => (a.type === 'liability' || a.type === 'asset') && !a.archived).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` })))
-const liabilityOptions = computed(() => [{ value: 'none', label: 'None' }, ...payroll.accounts.filter((a) => a.type === 'liability' && !a.archived).map((a) => ({ value: a.code, label: `${a.code} ${a.name}` }))])
 const presetError = ref('')
 function onPreset(key: keyof TaxPresets, code: string) {
   const r = setTaxPreset(key, code)
   presetError.value = r.ok ? '' : t(r.message ?? '')
   if (r.ok) successToast(t('Tax preset saved'))
-}
-function onSuspense(code: string) {
-  const r = setSuspenseAccount(code === 'none' ? null : code)
-  if (r.ok) successToast(t('Payroll suspense account saved'))
 }
 
 // ── Create account ──
@@ -107,7 +100,7 @@ function create(reused = false) {
           <tr v-for="a in accounts" :key="a.code">
             <td class="pset-td">
               <span class="pset-td--strong">{{ a.code }} {{ a.name }}</span>
-              <span v-if="role(a.code)" class="pset-line">{{ t(role(a.code)!) }}<template v-if="a.code === s.roundingAccount"> · {{ t('Required') }}</template></span>
+              <span v-if="role(a.code)" class="pset-line">{{ t(role(a.code)!) }}</span>
             </td>
             <td class="pset-td">{{ t(TYPE_LABEL[a.type]) }}</td>
             <td class="pset-td">
@@ -130,7 +123,7 @@ function create(reused = false) {
     <div class="pset-card">
       <div class="pset-card__head">
         <div>
-          <div class="pset-card__title">{{ t('Tax presets and payroll suspense') }}</div>
+          <div class="pset-card__title">{{ t('Tax presets') }}</div>
           <div class="pset-card__sub">{{ t('PPh 21 DTP, PPh 26 and PPh 21 on severance leave PPh 21 payable for their own accounts.') }}</div>
         </div>
       </div>
@@ -140,11 +133,6 @@ function create(reused = false) {
             <span class="pset-label">{{ t(p.label) }}</span>
             <ErpFilterSelect v-if="can('presets.edit')" :id="`pset-preset-${p.key}`" :model-value="s.taxPresets[p.key]" :placeholder="t('Account')" :options="presetOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onPreset(p.key, v)" />
             <span v-else>{{ accountLabel(s.taxPresets[p.key]) }}</span>
-          </div>
-          <div class="pset-field">
-            <span class="pset-label">{{ t('Payroll suspense') }}</span>
-            <ErpFilterSelect v-if="can('settings.edit')" id="pset-suspense" :model-value="s.suspenseAccount ?? 'none'" :placeholder="t('Account')" :options="liabilityOptions" width="100%" :is-clearable="false" @update:model-value="onSuspense" />
-            <span v-else>{{ s.suspenseAccount ? accountLabel(s.suspenseAccount) : t('None') }}</span>
           </div>
         </div>
         <p v-if="presetError" class="pset-error">{{ presetError }}</p>

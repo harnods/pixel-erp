@@ -90,7 +90,7 @@ const headcount = computed(() => {
 const taxRows = computed(() => (data.value?.taxChanges ?? []).map((e) => ({
   id: e.employee_id,
   benefit: e.changes['PPh 21 Benefit'] ?? 0,
-  payment: e.changes['PPh 21 Payment'] ?? 0,
+  payment: e.changes['PPH 21 Payment'] ?? 0,
   dtp: e.changes['Total PPh 21 DTP Received'] ?? 0,
   severance: e.changes['PPh 21 Resign Benefit'] ?? 0,
   pph26: e.changes['PPh 26 Benefit'] ?? 0,
