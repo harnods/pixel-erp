@@ -1,7 +1,7 @@
 <template>
   <!--
     "View as" for the payroll screens (prototype-only demo control): there is no real
-    sign-in, so this picks the access type: Owner or LM (can post) or Other user (saves
+    sign-in, so this picks the access type: Owner or LM (can post) or Accountant/Ultimate (saves
     drafts only). Same markup as BudgetViewAsSwitcher; its state lives in payrollStore.
   -->
   <MpPopover

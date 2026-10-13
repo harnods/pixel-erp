@@ -13,7 +13,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateMenu.vue'
-import { payroll, sendLog, sendLogCsv, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
+import { can, payroll, sendLog, sendLogCsv, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
 import { runRow, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
 import { statusLabel, statusType, nextStepLabel } from '~/data/payrollUiRunCopy'
 
@@ -22,17 +22,19 @@ const router = useRouter()
 const route = useRoute()
 
 type View = 'runs' | 'log' | 'month'
-// Everyone who reaches Payroll sees all three views (no headcount gate since 2026-10-13).
-const VIEWS: View[] = ['runs', 'log', 'month']
-const fromQuery = (q: unknown): View => (VIEWS.includes(q as View) ? (q as View) : 'runs')
+// Month headcount is for the Owner or LM only; Accountant/Ultimate falls back to Runs, even from a ?view=month link.
+const canHeadcount = computed(() => can('headcount'))
+const VIEWS = computed<View[]>(() => (canHeadcount.value ? ['runs', 'log', 'month'] : ['runs', 'log']))
+const fromQuery = (q: unknown): View => (VIEWS.value.includes(q as View) ? (q as View) : 'runs')
 const view = ref<View>(fromQuery(route.query.view))
 watch(view, (v) => { if ((route.query.view ?? 'runs') !== v) router.replace({ query: { ...route.query, view: v === 'runs' ? undefined : v } }) }, { immediate: true })
 watch(() => route.query.view, (q) => { const next = fromQuery(q); if (next !== view.value) view.value = next })
 const viewOptions = computed(() => [
   { id: 'pi-view-runs', value: 'runs', label: t('Runs') },
   { id: 'pi-view-log', value: 'log', label: t('Sync log') },
-  { id: 'pi-view-month', value: 'month', label: t('Month headcount') },
+  ...(canHeadcount.value ? [{ id: 'pi-view-month', value: 'month', label: t('Month headcount') }] : []),
 ])
+watch(canHeadcount, (ok) => { if (!ok && view.value === 'month') view.value = 'runs' })
 
 // ── Stats ──────────────────────────────────────────────────────────────────
 const rows = computed(() => runs.value.map(runRow))
@@ -169,13 +171,13 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
             <div class="stat-amount">{{ rupiah(ready.reduce((s, r) => s + r.takeHome, 0)) }}</div>
             <a v-if="ready.length" class="stat-link" @click="drill('Ready to post')">{{ ready.length }} {{ t(ready.length === 1 ? 'draft journal' : 'draft journals') }}</a>
           </div>
-          <div class="stat-card stat-card--bordered">
+          <div class="stat-card" :class="{ 'stat-card--bordered': canHeadcount }">
             <div class="stat-title">{{ t('Posted this month') }}</div>
             <div class="stat-period">{{ t('Payroll journals posted in') }} {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ postedThisMonth.length }}</div>
             <a v-if="postedThisMonth.length" class="stat-link" @click="drill('Posted')">{{ postedThisMonth.map((j) => j.number).join(', ') }}</a>
           </div>
-          <div class="stat-card">
+          <div v-if="canHeadcount" class="stat-card">
             <div class="stat-title">{{ t('Headcount change') }}</div>
             <div class="stat-period">{{ trackedMonth.previous ? `${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : trackedMonth.label }}</div>
             <div class="stat-amount">{{ trackedMonth.changed }}</div>
@@ -262,7 +264,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
     </ErpTablePage>
 
     <!-- ── Month headcount ── -->
-    <div v-else-if="view === 'month'" class="pi__month" data-tour="payroll-month-headcount">
+    <div v-else-if="view === 'month' && canHeadcount" class="pi__month" data-tour="payroll-month-headcount">
       <div class="stats-section pi__stats">
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Talenta send') }}</div>

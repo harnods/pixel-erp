@@ -153,7 +153,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <dl v-if="summary" class="ph__facts">
           <div><dt>{{ t('Organizations') }}</dt><dd>{{ summary.organizations.join(', ') }}</dd></div>
           <div><dt>{{ t('Branches') }}</dt><dd>{{ summary.branches.join(', ') }}</dd></div>
-          <div><dt>{{ t('Headcount') }}</dt><dd>{{ summary.headcount }}</dd></div>
+          <div v-if="can('headcount')"><dt>{{ t('Headcount') }}</dt><dd>{{ summary.headcount }}</dd></div>
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(summary.takeHome) }}</dd></div>
         </dl>
         <MpButton v-if="can('connection')" is-rounded @click="doConfirmSource">{{ t('Confirm company') }}</MpButton>

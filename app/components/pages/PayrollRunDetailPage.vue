@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Payroll run page /payroll-runs/<id>. Header with the one primary action: Post journal for the
- * Owner or a user with LM, Save draft for Other user (who can't post); "To fix before posting";
+ * Owner or a user with LM, Save draft for Accountant/Ultimate (who can't post); "To fix before posting";
  * "Talenta sent this period again" with Use vN and repost; warnings; then tabs: Draft review
  * (the exact journal Post writes; months before the start month are labelled "not posted"),
  * Versions (with the compare), Journals, Mapping used; claims below.
@@ -80,8 +80,8 @@ function rebuild() {
   staleChanges.value = (r.changed as typeof staleChanges.value) ?? []
   successToast(t(staleChanges.value.length ? `Draft rebuilt. ${staleChanges.value.length} ${staleChanges.value.length === 1 ? 'line' : 'lines'} changed` : 'Draft rebuilt. No line changed'))
 }
-// ── Save draft (Other user: everything but posting) ────────────────────────
-/** Other user keeps a postable draft (first post or a version sent again) for someone who can post. */
+// ── Save draft (Accountant/Ultimate: everything but posting) ────────────────────────
+/** Accountant/Ultimate keeps a postable draft (first post or a version sent again) for someone who can post. */
 const canSaveDraft = computed(() => !can('post') && (canPostNow.value || status.value === 'Revision ready'))
 const savedNote = computed(() => (run.value ? draftSavedNote(run.value) : null))
 function doSaveDraft() {

@@ -5,7 +5,7 @@
  * This is a demo layer for walkthroughs, not a product requirement; engineers
  * building the product should ignore it. The only coupling to product screens
  * is the data-tour="..." attributes they carry. It reuses the asset tour
- * runner, with its own reset and View as (two access types: Owner or LM posts, Other user
+ * runner, with its own reset and View as (two access types: Owner or LM posts, Accountant/Ultimate
  * does everything else and saves the draft).
  *
  * Every step does its own work on Next (run), then opens the screen that
@@ -211,7 +211,7 @@ function setUpNewGroup() {
   saveGroup(key)
 }
 function markChecked() { markAllChecked(sepId()) }
-/** Other user can't post: Save draft keeps September ready for someone who can. */
+/** Accountant/Ultimate can't post: Save draft keeps September ready for someone who can. */
 function otherUserSavesDraft() { saveDraft(sepId()) }
 function ownerOrLmPosts() { as('Owner or LM', () => postRun(sepId())) }
 function bankPaysSalary() { simulateBankPayment('salary', { runId: sepId(), date: '2026-09-25' }) }
@@ -338,20 +338,20 @@ const setupSteps: PayrollStep[] = [
   {
     route: SETTINGS('groups'),
     target: 'payroll-viewas',
-    role: 'Other user',
-    title: 'Payroll has two access types: Owner or LM, and Other user.',
-    body: 'The Owner and users with LM post. Anyone else with Payroll is Other user and does everything except posting: map pay items, set up groups, mark warnings as checked and pay payables.',
-    watch: 'As Other user, Groups can still be changed.',
+    role: 'Accountant/Ultimate',
+    title: 'Payroll has two access types: Owner or LM, and Accountant/Ultimate.',
+    body: 'The Owner and users with LM post. Anyone else with Payroll is Accountant/Ultimate and does everything except posting: map pay items, set up groups, mark warnings as checked and pay payables.',
+    watch: 'As Accountant/Ultimate, Groups can still be changed.',
     placement: 'bottom',
   },
   {
     run: otherUserSavesDraft,
     route: runRoute(),
     target: 'payroll-saved-draft',
-    role: 'Other user',
-    title: 'Other user saves the draft for someone who can post.',
+    role: 'Accountant/Ultimate',
+    title: 'Accountant/Ultimate saves the draft for someone who can post.',
     body: 'Save draft takes the place of Post journal. The draft stays Ready to post and the run says who saved it; the Owner and users with LM are told it waits for them.',
-    watch: 'Saved by Other user on 5 Oct 2026. Waiting for someone who can post. The draft is Rp554.203.941.',
+    watch: 'Saved by Accountant/Ultimate on 5 Oct 2026. Waiting for someone who can post. The draft is Rp554.203.941.',
     placement: 'bottom',
   },
   {
@@ -359,7 +359,7 @@ const setupSteps: PayrollStep[] = [
     target: 'payroll-post',
     role: 'Owner or LM',
     title: 'The Owner or a user with LM posts with Post journal.',
-    body: 'There is no approval step: Post journal posts at once on the journal date picked. Other user sees "Only the Owner or a user with LM can post." where the button would be.',
+    body: 'There is no approval step: Post journal posts at once on the journal date picked. Accountant/Ultimate sees "Only the Owner or a user with LM can post." where the button would be.',
     placement: 'bottom',
   },
 ]
@@ -397,7 +397,7 @@ const runSteps: PayrollStep[] = [
     route: runRoute(),
     target: 'payroll-draft-lines',
     find: onTab('payroll-draft-lines', 'Draft'),
-    title: 'Other user maps it and the draft journal builds.',
+    title: 'Accountant/Ultimate maps it and the draft journal builds.',
     body: 'The fix starts on Group\'s expense account, so one save maps the item in Pay items and checks the run again. The hold clears on its own.',
     watch: 'Ready to post: Rp554.203.941 on 25 lines.',
     placement: 'top',
@@ -417,7 +417,7 @@ const runSteps: PayrollStep[] = [
     route: SETTINGS('groups'),
     target: 'payroll-groups-table',
     find: rowIn('payroll-groups-table', NEW_GROUP),
-    title: 'Other user sets up Operations, Medan.',
+    title: 'Accountant/Ultimate sets up Operations, Medan.',
     body: 'The group posts to Direct Labour like the other stores. Medan becomes a Branch value, so the group\'s Branch fills in by name, and Set up group saves it. Saving rebuilds the draft and clears the warning.',
     watch: 'Operations, Medan: 2 staff, 5-50101 Direct Labour, Branch Medan. September v2 is ready to post.',
     placement: 'top',
@@ -437,15 +437,16 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-warnings',
     find: onTab('payroll-warnings', 'Draft'),
     title: 'Warnings point at what changed since August.',
-    body: 'Lines that move more than 10% and Rp1.000.000 are warned. Staff joining, leaving or moving groups warn too. Warnings never stop Post; Other user checks each one and uses Mark as checked.',
-    watch: '9 warnings, all marked as checked: 8 lines that moved and a headcount change.',
+    body: 'Lines that move more than 10% and Rp1.000.000 are warned. Staff joining, leaving or moving groups warn only the Owner and users with LM. Warnings never stop Post; Accountant/Ultimate checks each one and uses Mark as checked.',
+    watch: '8 warnings, all marked as checked: 8 lines that moved.',
     placement: 'top',
   },
   {
     route: '/payroll-inbox?view=month',
     target: 'payroll-month-headcount',
+    role: 'Owner or LM',
     title: 'Month headcount shows who joined, left or moved.',
-    body: 'Month headcount compares this month\'s staff with the last posted month, by group, in counts only. Everyone with Payroll sees it.',
+    body: 'Month headcount compares this month\'s staff with the last posted month, by group, in counts only. Only the Owner and users with LM see headcount; Accountant/Ultimate does not.',
     watch: '40 staff in September: 1 joined, 1 left and 3 moved between groups.',
     placement: 'bottom',
   },
@@ -453,9 +454,10 @@ const runSteps: PayrollStep[] = [
     run: otherUserSavesDraft,
     route: runRoute(),
     target: 'payroll-saved-draft',
-    title: 'Other user saves the draft instead of posting.',
+    role: 'Accountant/Ultimate',
+    title: 'Accountant/Ultimate saves the draft instead of posting.',
     body: 'Only the Owner or a user with LM can post. Save draft keeps the journal Ready to post, notes who saved it and tells the Owner and users with LM it waits for them.',
-    watch: 'Saved by Other user on 5 Oct 2026. Waiting for someone who can post.',
+    watch: 'Saved by Accountant/Ultimate on 5 Oct 2026. Waiting for someone who can post.',
     placement: 'bottom',
   },
   {
@@ -500,7 +502,7 @@ const runSteps: PayrollStep[] = [
   {
     route: runRoute(),
     target: 'payroll-claims',
-    role: 'Other user',
+    role: 'Accountant/Ultimate',
     title: 'Claims paid through payroll show apart.',
     body: 'Reimbursements Talenta pays with the salary are listed by account and dimension, so claims are not mistaken for salary cost.',
     watch: 'Reimbursement Medical: Rp3.000.000 for 6 staff on 6-60106 Medical Expense.',
@@ -626,10 +628,10 @@ const resendSteps: PayrollStep[] = [
     run: otherUserSavesDraft,
     route: runRoute(),
     target: 'payroll-saved-draft',
-    role: 'Other user',
-    title: 'Other user saves v2 for someone who can post.',
-    body: 'Reposting is posting, so Other user sees Save draft in place of Use v2 and repost. PAY-0003 stays in the ledger until the Owner or a user with LM reposts.',
-    watch: 'Saved by Other user on 5 Oct 2026. Waiting for someone who can post.',
+    role: 'Accountant/Ultimate',
+    title: 'Accountant/Ultimate saves v2 for someone who can post.',
+    body: 'Reposting is posting, so Accountant/Ultimate sees Save draft in place of Use v2 and repost. PAY-0003 stays in the ledger until the Owner or a user with LM reposts.',
+    watch: 'Saved by Accountant/Ultimate on 5 Oct 2026. Waiting for someone who can post.',
     placement: 'bottom',
   },
   {
@@ -696,10 +698,10 @@ export const PAYROLL_SETUP_TOUR: AssetTour = {
   id: 'payroll-setup',
   code: 'PAY-1',
   name: 'Set up payroll',
-  persona: 'Owner or LM, Other user',
+  persona: 'Owner or LM, Accountant/Ultimate',
   role: 'Owner or LM' as unknown as ViewAsRole,
-  blurb: 'The Owner checks the Talenta connection, the payable account of each party, the pay items and the groups that decide where cost lands. Then the two access types: Owner or LM posts, Other user does the rest and saves the draft.',
-  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item followed the group\'s expense account, staff were grouped by Organization and Branch with Organization and Branch added as dimensions, and two groups got their own account and dimension value. Other user changed settings and saved the draft; only the Owner or a user with LM posts. To try it yourself, use Reset sample data under View as.',
+  blurb: 'The Owner checks the Talenta connection, the payable account of each party, the pay items and the groups that decide where cost lands. Then the two access types: Owner or LM posts, Accountant/Ultimate does the rest and saves the draft.',
+  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item followed the group\'s expense account, staff were grouped by Organization and Branch with Organization and Branch added as dimensions, and two groups got their own account and dimension value. Accountant/Ultimate changed settings and saved the draft; only the Owner or a user with LM posts. To try it yourself, use Reset sample data under View as.',
   steps: setupSteps as unknown as TourStep[],
   onReset: reset(),
   applyRole,
@@ -709,10 +711,10 @@ export const PAYROLL_RUN_TOUR: AssetTour = {
   id: 'payroll-run',
   code: 'PAY-2',
   name: 'Monthly payroll run',
-  persona: 'Other user, Owner or LM',
-  role: 'Other user' as unknown as ViewAsRole,
-  blurb: 'September arrives from Talenta with a pay item no one has mapped, then again with a new group. Other user fixes both, checks the warnings and saves the draft; the Owner posts it on one journal date. Bank reconciliation pays the salary, and Pay settles the overdue August BPJS Kesehatan from Cash management. Staff are grouped by Organization and Branch, as in Set up payroll.',
-  closing: 'The new pay item held the run until it was mapped, the new group warned until it was set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, Other user saved the draft and the Owner posted it with its journal date, Mapping used and claims explained the journal, Payroll payables showed the bank match and an overpayment, Pay settled the overdue August BPJS Kesehatan through New spend money, Payments named each payment\'s source, and a manual journal was warned. To try it yourself, use Reset sample data under View as.',
+  persona: 'Accountant/Ultimate, Owner or LM',
+  role: 'Accountant/Ultimate' as unknown as ViewAsRole,
+  blurb: 'September arrives from Talenta with a pay item no one has mapped, then again with a new group. Accountant/Ultimate fixes both, checks the warnings and saves the draft; the Owner posts it on one journal date. Bank reconciliation pays the salary, and Pay settles the overdue August BPJS Kesehatan from Cash management. Staff are grouped by Organization and Branch, as in Set up payroll.',
+  closing: 'The new pay item held the run until it was mapped, the new group warned until it was set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, Accountant/Ultimate saved the draft and the Owner posted it with its journal date, Mapping used and claims explained the journal, Payroll payables showed the bank match and an overpayment, Pay settled the overdue August BPJS Kesehatan through New spend money, Payments named each payment\'s source, and a manual journal was warned. To try it yourself, use Reset sample data under View as.',
   steps: runSteps as unknown as TourStep[],
   onReset: reset(groupedByOrganizationAndBranch),
   applyRole,
@@ -722,10 +724,10 @@ export const PAYROLL_RESEND_TOUR: AssetTour = {
   id: 'payroll-resend',
   code: 'PAY-3',
   name: 'When Talenta sends again',
-  persona: 'Owner or LM, Other user',
+  persona: 'Owner or LM, Accountant/Ultimate',
   role: 'Owner or LM' as unknown as ViewAsRole,
-  blurb: 'September is posted and paid when Talenta sends it again. Other user sees what changed and saves v2; the Owner uses v2 to repost on one journal date. Then a send with a missing pay item, and the old Expense sync trying to book the same month.',
-  closing: 'The second send showed what it changes before anything posted, Other user saved v2, Use v2 and repost reversed the old journal in full and posted the new one on one date, payables followed the new amount, a missing pay item booked what arrived and warned, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
+  blurb: 'September is posted and paid when Talenta sends it again. Accountant/Ultimate sees what changed and saves v2; the Owner uses v2 to repost on one journal date. Then a send with a missing pay item, and the old Expense sync trying to book the same month.',
+  closing: 'The second send showed what it changes before anything posted, Accountant/Ultimate saved v2, Use v2 and repost reversed the old journal in full and posted the new one on one date, payables followed the new amount, a missing pay item booked what arrived and warned, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
   steps: resendSteps as unknown as TourStep[],
   onReset: reset(groupedByOrganizationAndBranch),
   applyRole,
@@ -754,8 +756,8 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Group by Talenta fields', tour: 'PAY-1', step: 7 },
   { feature: 'Add dimension to groups, values prefilled by name', tour: 'PAY-1', step: 8 },
   { feature: 'Group expense account and dimension value', tour: 'PAY-1', step: 9 },
-  { feature: 'View as: Owner or LM and Other user', tour: 'PAY-1', step: 10 },
-  { feature: 'Save draft: Other user keeps the draft for someone who can post', tour: 'PAY-1', step: 11 },
+  { feature: 'View as: Owner or LM and Accountant/Ultimate', tour: 'PAY-1', step: 10 },
+  { feature: 'Save draft: Accountant/Ultimate keeps the draft for someone who can post', tour: 'PAY-1', step: 11 },
   { feature: 'Post journal: Owner or LM only, no approval', tour: 'PAY-1', step: 12 },
   { feature: 'Inbox runs', tour: 'PAY-2', step: 1 },
   { feature: 'Sync log', tour: 'PAY-2', step: 2 },

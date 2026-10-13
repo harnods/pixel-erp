@@ -88,7 +88,7 @@ describe('payroll guided tours: shape', () => {
   })
 
   it('every role a step names is a View as role', () => {
-    const roles = ['Owner or LM', 'Other user']
+    const roles = ['Owner or LM', 'Accountant/Ultimate']
     for (const t of PAYROLL_TOURS) for (const r of [t.role, ...t.steps.map((s) => s.role).filter(Boolean)]) expect(roles, t.code).toContain(r)
   })
 
@@ -125,7 +125,7 @@ describe('payroll guided tours: shape', () => {
       // Menu paths read like the screens: Cash management > New spend money, not 'Cash management, New'.
       expect(copy, t.code).not.toMatch(/\b(Inbox|Settings|Cash management), (Awaiting|Approval|New)\b/)
       // No payroll approval and no Jurnal role names other than the two access types (2026-10-13).
-      expect(copy, t.code).not.toMatch(/Approve and post|Send for approval|Awaiting approval|Approval workflows|\bUltimate\b|\bAccountant\b|View only|\bBayu\b|\bRizal\b/)
+      expect(copy.replace(/Accountant\/Ultimate/g, ''), t.code).not.toMatch(/Approve and post|Send for approval|Awaiting approval|Approval workflows|\bUltimate\b|\bAccountant\b|View only|\bBayu\b|\bRizal\b/)
       // No employee identifier, ever.
       expect(copy, t.code).not.toMatch(/EMP-\d|\b510\d\d\b|user_id|employee_id/)
       for (const s of t.steps) expect(s.title.length, `${t.code}: ${s.title}`).toBeLessThanOrEqual(80)
@@ -134,7 +134,7 @@ describe('payroll guided tours: shape', () => {
 
   it('quotes glossary labels exactly as the screens name them', () => {
     const all = PAYROLL_TOURS.map(allCopyOf).join(' ')
-    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Save draft', 'Only the Owner or a user with LM can post.', 'Owner or LM', 'Other user', 'Use v2 and repost', 'Journal date', 'Everyone else', 'Use group account', 'Use default account', 'Cash management > New spend money', 'Set up group', 'Talenta sent this period again', 'Groups', 'New spend money', 'Pay from', 'Spend money', 'Bank reconciliation', 'Source', 'Payments', 'Overdue', 'Paid late'])
+    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Save draft', 'Only the Owner or a user with LM can post.', 'Owner or LM', 'Accountant/Ultimate', 'Use v2 and repost', 'Journal date', 'Everyone else', 'Use group account', 'Use default account', 'Cash management > New spend money', 'Set up group', 'Talenta sent this period again', 'Groups', 'New spend money', 'Pay from', 'Spend money', 'Bank reconciliation', 'Source', 'Payments', 'Overdue', 'Paid late'])
       expect(all).toContain(label)
   })
 })
@@ -155,7 +155,7 @@ describe('feature coverage', () => {
       'Connection status and Talenta company', 'How to send from Talenta', 'Payable accounts per party',
       'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', "Use group account / Use default account toggle",
       'Settings > Groups tab', 'Group by Talenta fields', 'Add dimension to groups, values prefilled by name', 'Group expense account and dimension value',
-      'View as: Owner or LM and Other user', 'Save draft: Other user keeps the draft for someone who can post', 'Post journal: Owner or LM only, no approval',
+      'View as: Owner or LM and Accountant/Ultimate', 'Save draft: Accountant/Ultimate keeps the draft for someone who can post', 'Post journal: Owner or LM only, no approval',
       'Inbox runs', 'Sync log', 'To fix before posting: unmapped pay item', 'Map from the hold; the hold clears',
       'No group warning: new group posts to Everyone else', 'Set up group clears the No group warning', 'Draft review lines by account and dimension',
       'Warnings and Mark as checked', 'Month headcount', 'Saved by note on the run', 'Journal date: default and locked period',
@@ -185,7 +185,7 @@ describe('feature coverage', () => {
       'Pay item type from Talenta, with the header tip': 'payroll-type-tip', "Use group account / Use default account toggle": 'payroll-groups-can-change',
       'Group by Talenta fields': 'payroll-groupby', 'Add dimension to groups, values prefilled by name': 'payroll-group-dims',
       'Sync log': 'payroll-synclog', 'Month headcount': 'payroll-month-headcount', 'Journal date: default and locked period': 'payroll-journal-date',
-      'View as: Owner or LM and Other user': 'payroll-viewas', 'Save draft: Other user keeps the draft for someone who can post': 'payroll-saved-draft',
+      'View as: Owner or LM and Accountant/Ultimate': 'payroll-viewas', 'Save draft: Accountant/Ultimate keeps the draft for someone who can post': 'payroll-saved-draft',
       'Post journal: Owner or LM only, no approval': 'payroll-post', 'Saved by note on the run': 'payroll-saved-draft', 'Save draft of a new version': 'payroll-saved-draft',
       'Post journal posts at once': 'payroll-run-journals', 'Mapping used tab': 'payroll-mapping-used', 'Claims': 'payroll-claims',
       'Payables: bank payment menu': 'payroll-payables-simulate', 'Payables: bank differs flag': 'payroll-payables-flags',
@@ -288,9 +288,9 @@ describe('PAY-1 Set up payroll (replay)', () => {
     expect(hc.staff).toBe(1)
     expect(hc.dimensions.find((x) => x.dimension === 'Branch')).toMatchObject({ value: 'Jakarta HQ', explicit: true })
     p.says(8, 'Human Capital, Surabaya carries Branch Jakarta HQ')
-    // 10. Two access types; Other user can still change settings.
+    // 10. Two access types; Accountant/Ultimate can still change settings.
     p.at(9)
-    expect(payroll.viewAs).toBe('Other user')
+    expect(payroll.viewAs).toBe('Accountant/Ultimate')
     expect([can('view'), can('setup'), can('review'), can('simulate'), can('post'), can('connection')]).toEqual([true, true, true, true, false, false])
     expect(setGroupAccount(groupRows().find((g) => g.label === 'Operations, Jakarta HQ')!.key, ACC.directLabour).ok).toBe(true)
     p.says(9, 'Groups can still be changed')
@@ -302,10 +302,10 @@ describe('PAY-1 Set up payroll (replay)', () => {
     expect(runStatus(sep())).toBe('Ready to post')
     expect(liveJournals(sep().id)).toEqual([])
     const note = draftSavedNote(sep())!
-    expect(note).toBe('Saved by Other user on 5 Oct 2026. Waiting for someone who can post.')
+    expect(note).toBe('Saved by Accountant/Ultimate on 5 Oct 2026. Waiting for someone who can post.')
     p.says(10, note)
     p.q(10, journalTotals(draftOf(sep())!).debit, 554_203_941)
-    expect(noticesFor('Owner or LM')[0]!.text).toContain('draft saved by Other user')
+    expect(noticesFor('Owner or LM')[0]!.text).toContain('draft saved by Accountant/Ultimate')
     expect(postRun(sep().id)).toMatchObject({ ok: false, status: 403, message: 'Only the Owner or a user with LM can post.' })
     p.says(11, 'Only the Owner or a user with LM can post.')
     // 12. Owner or LM: Post journal is there and posts directly.
@@ -323,7 +323,7 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
   it('starts grouped by Organization and Branch, as Set up payroll leaves it', () => {
     expect(settings.value.groupBy).toEqual(['organization_name', 'branch'])
     t.applyRole!(t.role as string)
-    expect(payroll.viewAs).toBe('Other user')
+    expect(payroll.viewAs).toBe('Accountant/Ultimate')
   })
 
   it('replays with the quoted figures', () => {
@@ -386,24 +386,25 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     expect(d.lines).toHaveLength(26)
     const medan = d.lines.find((l) => l.account === ACC.directLabour && l.tags.Organization === 'Operations' && l.tags.Branch === 'Medan')!
     p.q(6, medan.debit, 36_204_342)
-    // 8. Warnings, all marked as checked: every access type gets the headcount warning now.
+    // 8. Warnings, all marked as checked: Accountant/Ultimate never gets the headcount warning.
     p.at(7)
     const w = runWarnings(run.id)
-    expect(w.map((x) => x.code)).toEqual([...Array(8).fill('large-change'), 'headcount'])
-    p.says(7, '9 warnings')
-    p.says(7, '8 lines that moved and a headcount change')
+    expect(w.map((x) => x.code)).toEqual(Array(8).fill('large-change'))
+    p.says(7, '8 warnings')
+    p.says(7, '8 lines that moved')
     expect(w.every((x) => !!x.acknowledged)).toBe(true)
     expect(payroll.settings.limits.largeChangePct).toBe(10)
     p.says(7, 'more than 10%')
     p.q(7, payroll.settings.limits.largeChangeAmount, 1_000_000)
-    // 9. Month headcount: everyone who reaches Payroll sees it.
+    // 9. Month headcount: the Owner or LM only.
     p.at(8)
-    expect(payroll.viewAs).toBe('Other user')
+    expect(payroll.viewAs).toBe('Owner or LM')
+    expect(can('headcount', 'Accountant/Ultimate')).toBe(false)
     const mh = monthHeadcount(SEP_MONTH)
     expect([mh.current, mh.joined, mh.left, mh.moved.length]).toEqual([40, 1, 1, 3])
     p.says(8, '40 staff in September: 1 joined, 1 left and 3 moved')
     expect(JSON.stringify(headcountChanges(run.id))).not.toMatch(/EMP-\d|\b510\d\d\b/)
-    // 10. Other user saves the draft: nothing posts.
+    // 10. Accountant/Ultimate saves the draft: nothing posts.
     p.at(9)
     expect(runStatus(run)).toBe('Ready to post')
     expect(liveJournals(run.id)).toEqual([])
@@ -549,9 +550,9 @@ describe('PAY-3 When Talenta sends again (replay)', () => {
     const moved = (label: string) => s.moved.find((x) => x.label === label)!.change
     p.q(3, moved('6-60101 Salaries | Human Capital, Jakarta HQ'), 1_648_600, true)
     p.q(3, moved('6-60101 Salaries | Human Capital, Surabaya'), 551_200, true)
-    // 5. Other user saves v2: reposting is posting, so it waits.
+    // 5. Accountant/Ultimate saves v2: reposting is posting, so it waits.
     p.at(4)
-    expect(payroll.viewAs).toBe('Other user')
+    expect(payroll.viewAs).toBe('Accountant/Ultimate')
     expect(reverseAndRepost(run.id)).toMatchObject({ ok: false, status: 403, message: 'Only the Owner or a user with LM can post.' })
     expect(runStatus(run)).toBe('Revision ready')
     p.says(4, draftSavedNote(run)!)

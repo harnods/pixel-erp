@@ -11,7 +11,7 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v16` (v16: Pay items toggle back, items keep their own account; v14: one place for cost accounts: Everyone else account, pinned cost items, no
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v17` (v17: Accountant/Ultimate access type, headcount for Owner or LM only; v16: Pay items toggle back, items keep their own account; v14: one place for cost accounts: Everyone else account, pinned cost items, no
  * group toggle); resetPayroll()
  * returns to the sample.
  *
@@ -19,14 +19,14 @@
  * State and roles
  *   payroll                         reactive state (runs, journals, payments, bankLines, settings, log, ...). Read it, never write it.
  *   can(action)                     true when the View as role may take the action (hide the control when false).
- *                                   Two access types (View as): 'Owner or LM' (every action) and 'Other user' (everything except
+ *                                   Two access types (View as): 'Owner or LM' (every action) and 'Accountant/Ultimate' (everything except
  *                                   posting and the connection). Actions: post (Post journal, Use vN and repost, Reverse journal) and
  *                                   connection are Owner or LM only; view, review (Mark as checked, notes, Expected, Check again,
  *                                   version choices), setup and simulate (demo stand-ins, Pay) are open to both.
  *                                   Refusal: "Only the Owner or a user with LM can post."
  *   setPayrollViewAs(role)          switch the acting role. actingPerson() returns the name for records.
- *   saveDraft(runId)                Other user's primary action on a Ready to post (or New version) run: keeps the draft and records
- *                                   who saved it; draftSavedNote(run) gives "Saved by Other user on 5 Oct 2026. Waiting for someone
+ *   saveDraft(runId)                Accountant/Ultimate's primary action on a Ready to post (or New version) run: keeps the draft and records
+ *                                   who saved it; draftSavedNote(run) gives "Saved by Accountant/Ultimate on 5 Oct 2026. Waiting for someone
  *                                   who can post." while that version is still unposted. Notifies Owner or LM.
  *
  * Copy: every string the engine returns (hold, warning, why-this-line, Result.message, sync log, notices, post confirm) follows the payroll glossary (scratch jt-proto/COPY.md): staff, journal date, "Talenta sent this period again", Mark as
@@ -532,7 +532,7 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v16'
+const SNAPSHOT_KEY = 'payroll:state-v17'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -575,14 +575,16 @@ export function nowWib(): string { return wib(payroll.clock) }
 /**
  * Two access types (PM decision 2026-10-13): the Owner and users with LM post; everyone else who
  * reaches Payroll does everything else and saves the draft for them. No payroll approval.
- *   view        runs, journals, payables, warnings, settings, Month headcount, exports.
- *   review      Mark as checked, change notes, headcount Expected, Check again, version and partial choices, Save draft.
+ *   view        runs, journals, payables, warnings, settings, exports.
+ *   headcount   Month headcount, headcount Expected, the Headcount change card, the run's Headcount by group and its warning,
+ *               staff counts in Compare versions (Owner or LM only; Accountant/Ultimate never sees headcount).
+ *   review      Mark as checked, change notes, Check again, version and partial choices, Save draft.
  *   setup       pay items, payable accounts, groups, dimensions, limits, period lock.
  *   simulate    demo stand-ins (Talenta sends, bank matches, manual journal) and Pay from Payroll payables.
  *   post        Post journal, Use vN and repost, Reverse journal (Owner or LM).
  *   connection  connect or end Talenta, confirm the company, other-entity answers (Owner or LM).
  */
-export type PayrollAction = 'view' | 'review' | 'setup' | 'simulate' | 'post' | 'connection'
+export type PayrollAction = 'view' | 'review' | 'setup' | 'simulate' | 'post' | 'connection' | 'headcount'
 
 const ROLES: PayrollRole[] = [...PAYROLL_ROLES]
 const POSTERS: PayrollRole[] = ['Owner or LM']
@@ -590,6 +592,7 @@ const ACCESS: Record<PayrollAction, PayrollRole[]> = {
   view: ROLES, review: ROLES, setup: ROLES, simulate: ROLES,
   post: POSTERS,
   connection: POSTERS,
+  headcount: POSTERS,
 }
 export function can(action: PayrollAction, role: PayrollRole = payroll.viewAs): boolean { return ACCESS[action].includes(role) }
 export function setPayrollViewAs(role: PayrollRole): void { payroll.viewAs = role }
@@ -597,8 +600,9 @@ export function actingPerson(): string { return payrollPerson(payroll.viewAs).pe
 export { PAYROLL_PEOPLE }
 
 export interface Result { ok: boolean; message?: string; [k: string]: unknown }
-/** The one refusal: only posting and the connection are closed to Other user. */
+/** The one refusal: only posting and the connection are closed to Accountant/Ultimate. */
 export const POST_REFUSAL = 'Only the Owner or a user with LM can post.'
+export const HEADCOUNT_REFUSAL = 'Only the Owner or a user with LM can see headcount.'
 const denied = (action: 'post' | 'connection'): Result & { ok: false } => ({ ok: false, status: 403, message: action === 'post' ? POST_REFUSAL : 'Only the Owner or a user with LM can change the connection.' })
 
 // ── Accounts and tags ───────────────────────────────────────────────────────
@@ -1994,7 +1998,8 @@ export function runWarnings(runId: string): RunWarning[] {
     out.push({ key: `large:${c.key}`, code: 'large-change', message: `${c.label} ${up ? 'up' : 'down'} ${rupiah(Math.abs(c.diff))} from ${prev ? periodLabel(prev.start, prev.end) : 'last period'}. Add a note or mark it as checked.`, details: { rowKey: c.key, diff: c.diff, pct: c.pct } })
   }
   const hc = headcountChanges(runId)
-  if (hc.unexpected) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `Headcount changed in ${hc.unexpected} group${hc.unexpected > 1 ? 's' : ''}, not marked as expected yet.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
+  // Headcount is for the Owner or LM only, so the warning goes only to them.
+  if (hc.unexpected && can('headcount')) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `Headcount changed in ${hc.unexpected} group${hc.unexpected > 1 ? 's' : ''}, not marked as expected yet.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
   for (const m of manualJournalWarnings(run.month)) out.push({ key: `manual:${m.journalId}`, code: 'manual-journal', message: m.message, details: { ...m } })
   return out.map((w) => ({ ...w, acknowledged: v.acks[w.key] ?? null }))
 }
@@ -2152,6 +2157,7 @@ export function markHeadcountExpected(runId: string, key: string, note = ''): Re
   const run = runById(runId)
   const v = run ? currentVersionOf(run) : undefined
   if (!run || !v) return { ok: false }
+  if (!can('headcount')) return { ok: false, message: HEADCOUNT_REFUSAL }
   const grp = headcountChanges(runId).groups.find((x) => x.key === key)
   if (!grp?.flagged) return { ok: false, message: 'Headcount in this group did not change, so there is nothing to mark.' }
   if (note.length > 500) return { ok: false, message: 'Shorten the note to 500 characters or fewer.' }
@@ -2162,6 +2168,7 @@ export function clearHeadcountExpected(runId: string, key: string): Result {
   const run = runById(runId)
   const v = run ? currentVersionOf(run) : undefined
   if (!run || !v) return { ok: false }
+  if (!can('headcount')) return { ok: false, message: HEADCOUNT_REFUSAL }
   for (const o of run.versions) delete o.headcountExpected?.[key]
   return { ok: true }
 }
@@ -2269,7 +2276,7 @@ export function postRun(runId: string, o: { versionNo?: number; date?: string } 
   return { ok: true, journalId: j.id, number: j.number, date, warnings }
 }
 
-// ── Save draft (Other user: everything but posting) ─────────────────────────
+// ── Save draft (Accountant/Ultimate: everything but posting) ─────────────────────────
 
 /** The saved-draft record while it still applies: same version, still waiting to post. */
 function savedDraftOf(run: Run): NonNullable<Run['savedDraft']> | null {
@@ -2278,7 +2285,7 @@ function savedDraftOf(run: Run): NonNullable<Run['savedDraft']> | null {
   const st = runStatus(run)
   return st === 'Ready to post' || st === 'Revision ready' ? sd : null
 }
-/** "Saved by Other user on 5 Oct 2026. Waiting for someone who can post." or null. */
+/** "Saved by Accountant/Ultimate on 5 Oct 2026. Waiting for someone who can post." or null. */
 export function draftSavedNote(run: Run): string | null {
   const sd = savedDraftOf(run)
   return sd ? `Saved by ${sd.by} on ${dateLabel(isoDateWib(sd.at))}. Waiting for someone who can post.` : null

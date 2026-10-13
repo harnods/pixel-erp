@@ -113,9 +113,9 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v16 (v14: one place for cost accounts, Everyone else, pinned cost items)', () => {
+  it('persists under payroll:state-v17 (v14: one place for cost accounts, Everyone else, pinned cost items)', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v16'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v17'")
     expect(payroll.settings).not.toHaveProperty('dimensionLinks')
     expect(payroll.settings).not.toHaveProperty('groupMaps')
     // The seed: Organization and Branch added to groups; Group by Organization, Branch and Cost center; no explicit picks.
@@ -244,15 +244,16 @@ describe('warnings ride on the draft and never block Post', () => {
     mapInsentif()
     const sep = run(SEP)
     const all = runWarnings(sep.id)
-    // Everyone who reaches Payroll gets the headcount warning (no headcount gate since 2026-10-13).
+    // Headcount is for the Owner or LM only: Accountant/Ultimate never gets the headcount warning.
     expect(all.map((w) => w.code)).toEqual(['large-change', 'large-change', 'large-change', 'large-change', 'headcount'])
-    expect(as('Other user', () => runWarnings(sep.id)).find((w) => w.code === 'headcount')!.message).toBe('Headcount changed in 3 groups, not marked as expected yet.')
+    expect(all.find((w) => w.code === 'headcount')!.message).toBe('Headcount changed in 3 groups, not marked as expected yet.')
+    expect(as('Accountant/Ultimate', () => runWarnings(sep.id)).some((w) => w.code === 'headcount')).toBe(false)
     expect(all.find((w) => w.code === 'large-change')!.message).toMatch(/ from 21 Jul-20 Aug 2026\. Add a note or mark it as checked\.$/)
     const c = postConfirmText(sep.id)
     expect(c.title).toBe('Post journal for Payroll 21 Aug-20 Sep 2026?')
     expect(c.body).toMatch(/^Posts one payroll journal of Rp554\.203\.941 on 26 lines\. Journal date 20 Sep 2026\. 5 warnings not checked yet: /)
-    // Other user marks warnings as checked too; only posting is closed to them.
-    expect(as('Other user', () => acknowledgeWarning(sep.id, all[0]!.key, 'Sales incentive started this month')).ok).toBe(true)
+    // Accountant/Ultimate marks warnings as checked too; only posting is closed to them.
+    expect(as('Accountant/Ultimate', () => acknowledgeWarning(sep.id, all[0]!.key, 'Sales incentive started this month')).ok).toBe(true)
     expect(runWarnings(sep.id)[0]!.acknowledged).toMatchObject({ note: 'Sales incentive started this month', by: 'Andi Pratama' })
     expect(postConfirmText(sep.id).warnings).toHaveLength(4)
     const r = postRun(sep.id)
@@ -334,7 +335,7 @@ describe('revisions: the latest version wins; reverse and repost replaces the po
       joined: 0, left: 0, amountChanged: 4,
     })
     expect(c.summary.moved.filter((m) => m.change > 0 && isCostCode(m.account)).every((m) => m.label.includes('Human Capital'))).toBe(true)
-    expect(noticesFor('Other user')[0]!.text).toBe('Talenta sent Payroll 21 Aug-20 Sep 2026 again (v2). Take-home pay +Rp1.732.959, 4 staff changed. Review it, then use v2 and repost.')
+    expect(noticesFor('Accountant/Ultimate')[0]!.text).toBe('Talenta sent Payroll 21 Aug-20 Sep 2026 again (v2). Take-home pay +Rp1.732.959, 4 staff changed. Review it, then use v2 and repost.')
     expect(revisionNotice(sep, c.summary)).toBe(noticesFor('Owner or LM')[0]!.text)
     expect(postRun(sep.id).message).toBe('v1 is posted as PAY-0003. Use v2 and repost.')
     expect(postConfirmText(sep.id).title).toBe('Use v2 and repost Payroll 21 Aug-20 Sep 2026?')
@@ -608,7 +609,8 @@ describe('headcount from runs: keyed by user_id, counts only', () => {
   it('Expected marks: optional note, never block Post, lapse when the people change', () => {
     mapInsentif()
     const sep = run(SEP)
-    expect(as('Other user', () => markHeadcountExpected(sep.id, 'Sales|Bandung', 'HR moved them')).ok).toBe(true)
+    expect(as('Accountant/Ultimate', () => markHeadcountExpected(sep.id, 'Sales|Bandung', 'HR moved them')).message).toBe('Only the Owner or a user with LM can see headcount.')
+    expect(markHeadcountExpected(sep.id, 'Sales|Bandung', 'HR moved them').ok).toBe(true)
     expect(clearHeadcountExpected(sep.id, 'Sales|Bandung').ok).toBe(true)
     expect(markHeadcountExpected(sep.id, 'Finance|Jakarta HQ').ok).toBe(false)
     expect(markHeadcountExpected(sep.id, 'Sales|Bandung').ok).toBe(true)
@@ -622,7 +624,8 @@ describe('headcount from runs: keyed by user_id, counts only', () => {
     expect(grp(headcountChanges(sep.id), 'Sales, Bandung').expected).toBeNull()
     expect(grp(headcountChanges(sep.id), 'Sales, Surabaya').expected!.note).toBe('Transfer covers the leaver')
     // Sales, Jakarta HQ was never marked; Sales, Bandung lapsed.
-    expect(as('Other user', () => runWarnings(sep.id)).map((w) => w.message)).toContain('Headcount changed in 2 groups, not marked as expected yet.')
+    expect(runWarnings(sep.id).map((w) => w.message)).toContain('Headcount changed in 2 groups, not marked as expected yet.')
+    expect(as('Accountant/Ultimate', () => runWarnings(sep.id)).some((w) => w.code === 'headcount')).toBe(false)
   })
 })
 
@@ -636,42 +639,42 @@ describe('claims, access, copy', () => {
     expect(c.total).toBe(c.rows.reduce((s, r) => s + r.amount, 0))
   })
 
-  it('access: two types; Other user does everything except posting and the connection', () => {
-    const roles = ['Owner or LM', 'Other user'] as const
+  it('access: two types; Accountant/Ultimate does everything except posting and the connection', () => {
+    const roles = ['Owner or LM', 'Accountant/Ultimate'] as const
     const grid = (a: Parameters<typeof can>[0]) => roles.filter((r) => can(a, r))
     for (const a of ['view', 'review', 'setup', 'simulate'] as const) expect(grid(a), a).toEqual([...roles])
     expect(grid('post')).toEqual(['Owner or LM'])
     expect(grid('connection')).toEqual(['Owner or LM'])
     const sep = run(SEP)
-    // Other user: maps pay items, sets up, locks, simulates and pays; never posts, reposts or reverses.
-    expect(as('Other user', () => setPayday(26)).ok).toBe(true)
-    expect(as('Other user', () => mapInsentif()).ok).toBe(true)
-    expect(as('Other user', () => postRun(sep.id))).toMatchObject({ ok: false, status: 403, message: POST_REFUSAL })
+    // Accountant/Ultimate: maps pay items, sets up, locks, simulates and pays; never posts, reposts or reverses.
+    expect(as('Accountant/Ultimate', () => setPayday(26)).ok).toBe(true)
+    expect(as('Accountant/Ultimate', () => mapInsentif()).ok).toBe(true)
+    expect(as('Accountant/Ultimate', () => postRun(sep.id))).toMatchObject({ ok: false, status: 403, message: POST_REFUSAL })
     expect(POST_REFUSAL).toBe('Only the Owner or a user with LM can post.')
-    expect(as('Other user', () => reverseRun(run(AUG).id, { confirmPayments: true }))).toMatchObject({ ok: false, status: 403, message: POST_REFUSAL })
-    expect(as('Other user', () => simulateBankPayment('bpjs-kesehatan', { month: '2026-08' })).ok).toBe(true)
-    expect(as('Other user', () => endConnection('Moving to another HR system')).status).toBe(403)
+    expect(as('Accountant/Ultimate', () => reverseRun(run(AUG).id, { confirmPayments: true }))).toMatchObject({ ok: false, status: 403, message: POST_REFUSAL })
+    expect(as('Accountant/Ultimate', () => simulateBankPayment('bpjs-kesehatan', { month: '2026-08' })).ok).toBe(true)
+    expect(as('Accountant/Ultimate', () => endConnection('Moving to another HR system')).status).toBe(403)
     expect(liveJournals(sep.id)).toHaveLength(0)
   })
 
-  it('Save draft: Other user keeps the draft Ready to post, the run notes who saved it, and Owner or LM is told', () => {
+  it('Save draft: Accountant/Ultimate keeps the draft Ready to post, the run notes who saved it, and Owner or LM is told', () => {
     const sep = run(SEP)
-    expect(as('Other user', () => saveDraft(sep.id)).ok).toBe(false)
+    expect(as('Accountant/Ultimate', () => saveDraft(sep.id)).ok).toBe(false)
     mapInsentif()
-    const r = as('Other user', () => saveDraft(sep.id))
+    const r = as('Accountant/Ultimate', () => saveDraft(sep.id))
     expect(r).toMatchObject({ ok: true, message: 'Draft saved. Waiting for someone who can post.' })
     expect(runStatus(sep)).toBe('Ready to post')
-    expect(draftSavedNote(sep)).toBe('Saved by Other user on 5 Oct 2026. Waiting for someone who can post.')
-    expect(noticesFor('Owner or LM')[0]!.text).toBe('Payroll 21 Aug-20 Sep 2026 v1 draft saved by Other user. Review it and post.')
-    expect(noticesFor('Other user').some((n) => n.text.includes('draft saved'))).toBe(false)
+    expect(draftSavedNote(sep)).toBe('Saved by Accountant/Ultimate on 5 Oct 2026. Waiting for someone who can post.')
+    expect(noticesFor('Owner or LM')[0]!.text).toBe('Payroll 21 Aug-20 Sep 2026 v1 draft saved by Accountant/Ultimate. Review it and post.')
+    expect(noticesFor('Accountant/Ultimate').some((n) => n.text.includes('draft saved'))).toBe(false)
     // Posting clears the note.
     expect(postRun(sep.id)).toMatchObject({ ok: true, number: 'PAY-0003' })
     expect(draftSavedNote(sep)).toBeNull()
     // A version sent again can be saved too; the note lapses when a newer version arrives.
     simulateSend('revision', { runId: sep.id })
-    expect(as('Other user', () => saveDraft(sep.id)).ok).toBe(true)
-    expect(draftSavedNote(sep)).toContain('Saved by Other user')
-    expect(as('Other user', () => reverseAndRepost(sep.id)).message).toBe(POST_REFUSAL)
+    expect(as('Accountant/Ultimate', () => saveDraft(sep.id)).ok).toBe(true)
+    expect(draftSavedNote(sep)).toContain('Saved by Accountant/Ultimate')
+    expect(as('Accountant/Ultimate', () => reverseAndRepost(sep.id)).message).toBe(POST_REFUSAL)
     simulateSend('revision', { runId: sep.id, raise: 1_000 })
     expect(draftSavedNote(sep)).toBeNull()
   })
@@ -751,8 +754,10 @@ describe('privacy: no employee data in anything Jurnal renders or exports', () =
 describe('sync log and month headcount access (round 3)', () => {
   beforeEach(() => { resetPayroll(); setPayrollViewAs('Owner or LM') })
 
-  it('Month headcount has no gate: both access types read it', () => {
-    expect((['Owner or LM', 'Other user'] as const).every((r) => can('view', r))).toBe(true)
+  it('Month headcount is for the Owner or LM only', () => {
+    expect((['Owner or LM', 'Accountant/Ultimate'] as const).every((r) => can('view', r))).toBe(true)
+    expect(can('headcount', 'Owner or LM')).toBe(true)
+    expect(can('headcount', 'Accountant/Ultimate')).toBe(false)
   })
 
   it('sync log lists only what Talenta sent, with the agreed columns and results', () => {
@@ -810,7 +815,7 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(payItemAccount(bpjs)).toBe(ACC.bpjsKes)
     expect(payItemParty(bpjs)).toBe('BPJS Kesehatan')
     expect(payItemType(mappingFor('PPH 21 Paid', 'deduction')!)).toBe('tax')
-    expect(as('Other user', () => setPayItemAccount(key, ACC.salaries)).ok).toBe(true)
+    expect(as('Accountant/Ultimate', () => setPayItemAccount(key, ACC.salaries)).ok).toBe(true)
   })
 
   it("cost items follow the group's expense account unless pinned; null = follow groups, cost items only", () => {
@@ -1013,7 +1018,7 @@ describe('settings: Connection, Pay items, Dimensions', () => {
   })
 
   it('connection: only Owner or LM; messages say how to fix', () => {
-    expect(as('Other user', () => endConnection('Moving to another HR system')).message).toBe('Only the Owner or a user with LM can change the connection.')
+    expect(as('Accountant/Ultimate', () => endConnection('Moving to another HR system')).message).toBe('Only the Owner or a user with LM can change the connection.')
     expect(as('Owner or LM', () => startConnection(1212)).message).toBe('Talenta is already connected. Disconnect it first to connect another company.')
     expect(as('Owner or LM', () => endConnection('short')).message).toBe('Enter a reason of 10 to 200 characters.')
     expect(as('Owner or LM', () => confirmSource()).message).toBe('The company is already confirmed.')
@@ -1214,7 +1219,7 @@ describe('copy: every string the engine returns follows the glossary', () => {
     const out: unknown[] = []
     const sep = run(SEP)
     out.push(runHolds(sep), postRun(sep.id), simulateSend('duplicate'), simulateSend('partial', { runId: sep.id }))
-    out.push(as('Other user', () => postRun(sep.id)), as('Other user', () => saveDraft(sep.id)), as('Other user', () => reverseRun(sep.id)), as('Other user', () => endConnection('Moving to another HR system')))
+    out.push(as('Accountant/Ultimate', () => postRun(sep.id)), as('Accountant/Ultimate', () => saveDraft(sep.id)), as('Accountant/Ultimate', () => reverseRun(sep.id)), as('Accountant/Ultimate', () => endConnection('Moving to another HR system')))
     out.push(decidePartial(sep.id, 2, 'reject'))
     mapInsentif()
     const review = draftReview(sep.id)
@@ -1225,7 +1230,7 @@ describe('copy: every string the engine returns follows the glossary', () => {
     out.push(postRun(sep.id))
     simulateSend('revision', { runId: sep.id })
     out.push(postConfirmText(sep.id), postRun(sep.id), reverseAndRepost(sep.id, { date: '2026-09-01' }))
-    out.push(as('Other user', () => saveDraft(sep.id)), draftSavedNote(sep), reverseAndRepost(sep.id))
+    out.push(as('Accountant/Ultimate', () => saveDraft(sep.id)), draftSavedNote(sep), reverseAndRepost(sep.id))
     simulateSend('separate-run', { runId: sep.id })
     out.push(runHolds(sep), chooseSeparateRun(sep.id, 99, { type: 'THR', name: '' }))
     out.push(simulateBankPayment('partial'), payablesTracker('2026-09'), simulateSend('old-sync'), oldSyncExpense({ date: '2026-06-20', amount: 1, pattern: 'Payroll' }))
@@ -1291,7 +1296,7 @@ describe('privacy: no employee identifier in any returned payload', () => {
     const out: unknown[] = [runHolds(sep), groupRows(), store.sourceSummary(sep.id)]
     saveGroup(groupRows().find((r) => r.isNew)!.key)
     out.push(draftReview(sep.id), runWarnings(sep.id), postConfirmText(sep.id), claimsSummary(sep.id), store.taxFigures(sep.id))
-    out.push(as('Other user', () => saveDraft(sep.id)), draftSavedNote(sep), postRun(sep.id))
+    out.push(as('Accountant/Ultimate', () => saveDraft(sep.id)), draftSavedNote(sep), postRun(sep.id))
     simulateSend('revision', { runId: sep.id })
     out.push(revisionOf(sep.id), store.compareVersions(sep.id), reverseAndRepost(sep.id))
     out.push(simulateBankPayment('salary'), payablesTracker(), runs.value.map(runRow), monthHeadcount('2026-09'), sendLog.value, syncLog.value, payroll.notices, journalsOf(sep.id))
@@ -1387,7 +1392,7 @@ describe('numbers agree across screens', () => {
   /**
    * The monthly run flow (as the PAY-2 tour plays it, through the engine API only): group by
    * Organization + Branch, map the new pay item from the hold, Talenta sends a New group, set it up,
-   * mark warnings checked, Other user saves the draft, the Owner posts, the bank pays salary and a
+   * mark warnings checked, Accountant/Ultimate saves the draft, the Owner posts, the bank pays salary and a
    * second transfer over it, a manual journal on Salaries Payable.
    */
   function monthlyRun() {
@@ -1398,13 +1403,13 @@ describe('numbers agree across screens', () => {
     const key = groupRows().find((g) => g.label === 'Operations, Medan')!.key
     setGroupAccount(key, ACC.directLabour); createPayrollTag('Branch', 'Medan'); saveGroup(key)
     for (const w of runWarnings(sep.id)) acknowledgeWarning(sep.id, w.key, 'Checked')
-    expect(as('Other user', () => saveDraft(sep.id)).ok).toBe(true)
+    expect(as('Accountant/Ultimate', () => saveDraft(sep.id)).ok).toBe(true)
     expect(postRun(sep.id).ok).toBe(true)
     simulateBankPayment('salary', { runId: sep.id, date: '2026-09-25' })
     simulateBankPayment('overpaid', { runId: sep.id, date: '2026-09-26' })
     simulateManualJournal()
   }
-  /** The re-send flow (PAY-3): September posted and paid, Talenta sends it again, Other user saves v2, Use v2 and repost, October without Uang Makan. */
+  /** The re-send flow (PAY-3): September posted and paid, Talenta sends it again, Accountant/Ultimate saves v2, Use v2 and repost, October without Uang Makan. */
   function resend() {
     const sep = run(SEP)
     as('Owner or LM', () => setGroupBy(['organization_name', 'branch']))
@@ -1413,7 +1418,7 @@ describe('numbers agree across screens', () => {
     expect(postRun(sep.id).ok).toBe(true)
     simulateBankPayment('salary', { runId: sep.id, date: '2026-09-25' })
     simulateSend('revision', { runId: sep.id })
-    expect(as('Other user', () => saveDraft(sep.id)).ok).toBe(true)
+    expect(as('Accountant/Ultimate', () => saveDraft(sep.id)).ok).toBe(true)
     expect(reverseAndRepost(sep.id).ok).toBe(true)
     simulateSend('regular', { omit: ['Uang Makan'], newAllowance: INS })
   }
@@ -1598,18 +1603,18 @@ describe('Reverse follows the locked-period rule of Post', () => {
 describe('PM decisions 2026-10-12/13 (OQ19, headcount warning)', () => {
   beforeEach(() => { resetPayroll() })
   it('OQ19: the DTP and severance tax accounts are set on Pay items (both access types)', () => {
-    setPayrollViewAs('Other user')
+    setPayrollViewAs('Accountant/Ultimate')
     expect(setTaxAccount('dtp', ACC.bpjsKes).message).toContain('is already the payable for')
     expect(setTaxAccount('resign', ACC.pph21).ok).toBe(true)
     expect(payroll.settings.taxPresets.resign).toBe(ACC.pph21)
   })
-  it('Headcount warning: the OQ21 gate is gone, both access types get it (2026-10-13)', () => {
+  it('Headcount warning: only the Owner or LM get it (2026-10-13)', () => {
     const codes = (role: Parameters<typeof setPayrollViewAs>[0]) => {
       setPayrollViewAs(role)
       return payroll.runs.flatMap((r) => runWarnings(r.id)).filter((w) => w.code === 'headcount').length
     }
     const owner = codes('Owner or LM')
     expect(owner).toBeGreaterThan(0)
-    expect(codes('Other user')).toBe(owner)
+    expect(codes('Accountant/Ultimate')).toBe(0)
   })
 })

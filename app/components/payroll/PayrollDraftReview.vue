@@ -176,7 +176,7 @@ function unmarkExpected(key: string) {
     </section>
 
     <!-- 3. Headcount by group: counts against the previous posted run; the people are in Talenta -->
-    <section v-if="hc" class="pdr__card" data-section="headcount" data-tour="payroll-draft-headcount">
+    <section v-if="hc && can('headcount')" class="pdr__card" data-section="headcount" data-tour="payroll-draft-headcount">
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Headcount by group') }}</div>
         <div class="pdr__cardsub">

@@ -18,15 +18,15 @@ export const PAYROLL_TODAY = '2026-10-05'
 // ── Roles and people (View as; no real sign-in) ──────────────────────────────
 
 /**
- * Two access types (PM decision 2026-10-13). "Owner or LM" posts; "Other user" (anyone else who
- * reaches Payroll) does everything except posting and saves the draft for them.
+ * Two access types (PM decision 2026-10-13). "Owner or LM" posts and sees headcount. "Accountant/Ultimate" (the only other
+ * roles that reach Payroll) does everything except posting, never sees headcount, and saves the draft for them.
  */
-export type PayrollRole = 'Owner or LM' | 'Other user'
-export const PAYROLL_ROLES: PayrollRole[] = ['Owner or LM', 'Other user']
+export type PayrollRole = 'Owner or LM' | 'Accountant/Ultimate'
+export const PAYROLL_ROLES: PayrollRole[] = ['Owner or LM', 'Accountant/Ultimate']
 export interface PayrollPerson { role: PayrollRole; person: string; title: string }
 export const PAYROLL_PEOPLE: PayrollPerson[] = [
   { role: 'Owner or LM', person: 'Rizal Candra', title: 'Can post' },
-  { role: 'Other user', person: 'Andi Pratama', title: 'Saves drafts only' },
+  { role: 'Accountant/Ultimate', person: 'Andi Pratama', title: 'Saves drafts only' },
 ]
 export function payrollPerson(role: PayrollRole): PayrollPerson {
   return PAYROLL_PEOPLE.find((p) => p.role === role)!

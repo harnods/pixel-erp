@@ -9,7 +9,7 @@ import { MpSegmentedControl } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { statusLabel, sectionLabel } from '~/data/payrollUiRunCopy'
 import {
-  runById, compareVersions, versionLabel, rupiah, monthLabel, wib, accountLabel, tagsLabel, liveJournals, currentSnapshotId, type Tags,
+  can, runById, compareVersions, versionLabel, rupiah, monthLabel, wib, accountLabel, tagsLabel, liveJournals, currentSnapshotId, type Tags,
 } from '~/data/payrollStore'
 
 const props = defineProps<{ runId: string }>()
@@ -219,8 +219,8 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
           </div>
         </div>
 
-        <!-- Headcount -->
-        <div class="pcv__block">
+        <!-- Headcount (Owner or LM only) -->
+        <div v-if="can('headcount')" class="pcv__block">
           <div class="pcv__blocktitle">{{ t('Headcount') }}</div>
           <div v-if="!headcount.length" class="pcv__blocksub">{{ t('Same staff in both versions.') }}</div>
           <div v-else class="pcv__scroll">
