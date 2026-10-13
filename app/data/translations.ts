@@ -3758,6 +3758,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Appears once this product is stocked in a warehouse': 'Muncul setelah produk ini ada stoknya di gudang',
   '{warehouse}: {n} {unit}': '{warehouse}: {n} {unit}',
   'View replenishment': 'Lihat pengisian ulang',
+  'View replenishment list': 'Lihat daftar pengisian ulang',
   'View replenishment settings': 'Lihat pengaturan pengisian ulang',
   'View warehouses': 'Lihat gudang',
   'View products to order': 'Lihat produk perlu dipesan',

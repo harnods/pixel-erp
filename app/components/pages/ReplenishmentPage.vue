@@ -232,6 +232,9 @@ const appliedFilters = ref<Omit<ReplenishmentFiltersValue, 'warehouseId'>>(empty
 const fsnFilter = computed(() => appliedFilters.value.fsn)
 const signalFilter = computed(() => appliedFilters.value.signal)
 function setQuickFilter(key: 'fsn' | 'signal', v: string) { appliedFilters.value = { ...appliedFilters.value, [key]: v } }
+/** Stat-card shortcut: filter the worklist to one signal (the "View replenishment
+ *  list" links on the Covered-by-in-transit / Stocks-out cards). */
+function viewBySignal(id: string) { setQuickFilter('signal', id) }
 const drawerValue = computed<ReplenishmentFiltersValue>(() => ({ ...appliedFilters.value, warehouseId: warehouseId.value }))
 function applyDrawer(v: ReplenishmentFiltersValue) {
   const { warehouseId: wh, ...rest } = v
@@ -724,12 +727,18 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             <div class="stat-period">{{ t('In-transit stock covers the shortfall') }}</div>
             <div class="stat-amount">{{ cardStats.covered }}</div>
             <span class="stat-asof">{{ t('Not counted in To order') }}</span>
+            <div class="stat-links">
+              <a class="stat-link" data-devchange="replenishment-stat-view-list" @click="viewBySignal('covered')">{{ t('View replenishment list') }}</a>
+            </div>
           </div>
           <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Stocks out before resupply') }}</div>
             <div class="stat-period">{{ t('Cover below lead time + safety days') }}</div>
             <div class="stat-amount stat-amount--danger">{{ cardStats.stocksOut }}</div>
             <span class="stat-asof">{{ t('on the worklist') }}</span>
+            <div class="stat-links">
+              <a class="stat-link" data-devchange="replenishment-stat-view-list" @click="viewBySignal('below-lead')">{{ t('View replenishment list') }}</a>
+            </div>
           </div>
           <div class="stat-card">
             <div class="stat-title">{{ t('No vendor') }}</div>
@@ -1188,6 +1197,14 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .stat-amount--warning { color: var(--mp-colors-text-warning); }
 .stat-amount--danger { color: var(--mp-text-danger); }
 .stat-asof { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+
+/* "View replenishment list" shortcut — matches the Products stat-card links. */
+.stat-links { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; margin-top: var(--mp-spacing-1); }
+.stat-link {
+  display: inline-flex; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
+  text-decoration: none; cursor: pointer;
+}
 
 .rp-freshness {
   display: flex; align-items: center; gap: var(--mp-spacing-2);

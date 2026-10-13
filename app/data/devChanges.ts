@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-stat-view-list',
+    title: 'To order: "View replenishment list" shortcuts on the stat cards',
+    description:
+      'The "Covered by in transit" and "Stocks out before resupply" stat cards each carry a "View replenishment list" link that applies the matching Signals quick filter in one click — "Covered by in transit" and "Stocks out before resupply" respectively — so the worklist narrows to exactly the rows the card counts. Mirrors the Products page\'s "View replenishment" stat-card pattern.',
+    date: '2026-10-13',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
     id: 'replenishment-real-lead-time-docs',
     title: 'Richer demo: full lead-time × demand matrix + genuine exportable purchases',
     description:
