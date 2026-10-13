@@ -155,7 +155,7 @@ describe('feature coverage', () => {
       'Settings > Groups tab', 'Group by Talenta fields', 'Talenta field to dimension links', 'Group expense account and dimension value',
       'Approval workflows rule Payroll journal', 'View as: View only has no actions', 'View as: Accountant needs LM for settings',
       'Inbox runs', 'Sync log', 'To fix before posting: unmapped pay item', 'Map from the hold; the hold clears',
-      'To fix before posting: New group', 'Set up group clears the New group hold', 'Draft review lines by account and dimension',
+      'No group warning: new group posts to default accounts', 'Set up group clears the No group warning', 'Draft review lines by account and dimension',
       'Warnings and Mark as checked', 'Month headcount (Owner)', 'Journal date: default and locked period',
       'Send for approval to Inbox > Awaiting approval', 'Approve and post', 'Journals tab', 'Mapping used tab', 'Claims',
       'Payables: bank match pays salary', 'Payables: bank payment menu', 'Payables: bank differs flag',
@@ -340,15 +340,15 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     p.q(3, journalTotals(draftOf(run)!).debit, 554_203_941)
     expect(draftOf(run)!.lines).toHaveLength(25)
     p.says(3, 'on 25 lines')
-    // 5. Talenta sends again with a New group: v2 holds.
+    // 5. Talenta sends again with a New group: v2 builds and warns, nothing holds.
     p.at(4)
     expect(run.currentVersion).toBe(2)
-    expect(runStatus(run)).toBe('Held')
-    const ng = runHolds(run)
-    expect(ng.map((h) => h.code)).toEqual(['new-group'])
+    expect(runHolds(run).map((h) => h.code)).not.toContain('new-group')
+    const ng = runWarnings(run.id).filter((w) => w.code === 'no-group')
+    expect(ng).toHaveLength(1)
     expect((ng[0]!.details as { groups: { label: string; staff: number }[] }).groups).toEqual([{ key: 'organization_name=operations|branch=medan', label: NEW_GROUP, staff: 2 }])
-    p.says(4, `${NEW_GROUP} with 2 staff is a New group`)
-    // 6. Set up group: the hold clears.
+    p.says(4, `${NEW_GROUP} with 2 staff`)
+    // 6. Set up group: the warning clears.
     p.at(5)
     const g = groupRows().find((x) => x.label === NEW_GROUP)!
     expect([g.isNew, g.staff, g.account]).toEqual([false, 2, ACC.directLabour])
