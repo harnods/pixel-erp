@@ -16,7 +16,6 @@ import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateM
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { payroll, sendLog, sendLogCsv, can, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
 import { runRow, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
-import { infoToast } from '~/utils/toasts'
 import { statusLabel, statusType, nextStepLabel } from '~/data/payrollUiRunCopy'
 
 const { t } = useLocale()
@@ -116,22 +115,14 @@ const groupColumns = computed<TableColumn[]>(() => [
   { key: 'last', label: t('Last period'), kind: 'unit', align: 'right' },
   { key: 'current', label: t('This month'), kind: 'unit', align: 'right' },
   { key: 'change', label: t('Change'), kind: 'unit', align: 'right' },
-  { key: 'people', label: t('Staff changes'), kind: 'address' },
   { key: 'state', label: t('Status'), kind: 'status' },
 ])
 const groupRows = computed(() => tracker.value.groups.map((g) => ({
   key: g.key, label: g.label, last: tracker.value.previous ? g.last : '', current: g.current,
   change: tracker.value.previous ? (g.change > 0 ? `+${g.change}` : String(g.change)) : '',
-  // Counts only: who joined, left or moved is read in Talenta.
-  people: [
-    g.joined ? `${g.joined} ${t('joined')}` : '',
-    g.left ? `${g.left} ${t('left')}` : '',
-    g.movedIn + g.movedOut ? `${g.movedIn + g.movedOut} ${t('moved')}` : '',
-  ].filter(Boolean).join(', '),
   flagged: g.flagged,
   state: !g.flagged ? 'No change' : g.expected ? 'Expected' : 'Check',
 })))
-function seeInTalenta() { infoToast(t('Opens Talenta')) }
 
 // The run record links back here with ?view=…; keep the month picker in step with resets.
 watch(() => payroll.runs, () => { if (!headcountMonths().includes(month.value)) month.value = trackedMonth.value.month })
@@ -314,11 +305,6 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
             <span class="pi__muted">{{ tracker.runStatus ? `${t('Regular run')} ${tracker.version} · ${t(statusLabel(tracker.runStatus))}` : t(statusLabel(tracker.status)) }}</span>
           </div>
         </template>
-        <template #cell-people="{ row }">
-          <div class="pi__wrap">
-            <template v-if="(row as { flagged: boolean }).flagged">
-              {{ (row as { people: string }).people }} · <span class="cell-link" @click.stop="seeInTalenta">{{ t('See who in Talenta') }}</span>
-            </template>
           </div>
         </template>
         <template #cell-state="{ value }">
