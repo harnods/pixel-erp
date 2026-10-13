@@ -193,6 +193,9 @@
  *   spendMoneyPayment(cashTxId) / checkSpendMoneyPayment(cashTxId, next) / syncSpendMoneyPayment(cashTxId, next)
  *                                   OQ20: editing or deleting that Spend money (next = { amount, date, bank } | null) updates or
  *                                   removes the payment and its journal; a locked month refuses before the cash transaction changes.
+ *   payNowParties(runId) / payNowBanks() / postRunAndPay(runId, { versionNo, date, payNow: { [party]: cashAccountId } })
+ *                                   Post drawer pay now: posts, then per party picked adds a Spend money on the journal date for
+ *                                   the journal's full amount (one per payable account) via recordPayablePayment. message names both.
  *   POSTED_NEXT_STEP                what a posted run says next (inbox row and sync log).
  *   simulateBankPayment(kind, opts?)   BANK_PAYMENT_KINDS: 'salary' | 'pph21' | 'pph26' | 'bpjs-kesehatan' | 'bpjs-ketenagakerjaan' | 'dplk'
  *                                   | 'partial' | 'overpaid'. opts: { runId, month, of, amount, date, bank }. Creates a matched bank line
@@ -2973,6 +2976,81 @@ export function syncSpendMoneyPayment(cashTxId: string, next: SpendMoneyChange):
   }
   addLog({ type: 'Payment', status: 'Recorded', reason: `${label}: ${number} changed in Cash management, ${was === next.amount ? `${rupiah(next.amount)} paid on ${dateLabel(next.date)}` : `paid ${rupiah(was)} before, ${rupiah(next.amount)} now`}`, nextStep: 'Nothing to do.', runId: p.runId, runKey: runById(p.runId)?.key ?? null, journalNo: number })
   return { ok: true, changed: true, removed: false, label, amount: next.amount }
+}
+
+// Pay now at posting. Imported here (hoisted) so the change stays inside this section.
+// bankTransactions never imports payroll, so there is no cycle.
+import { addCashTx, deleteCashTx } from './bankTransactions'
+import { cashAccounts } from './cashAccounts'
+
+/** One party the post drawer can pay now: what this journal owes it, per payable account. */
+export interface PayNowParty { party: PayableParty; payee: string; amount: number; accounts: { account: string; amount: number }[] }
+/** Parties the run's current draft owes (net credit on their payable accounts), in Payable accounts order. Reads the draft only, safe in a computed. */
+export function payNowParties(runId: string): PayNowParty[] {
+  const run = runById(runId)
+  const lines = run ? currentVersionOf(run)?.draft?.lines ?? [] : []
+  const out: PayNowParty[] = []
+  for (const party of PAYABLE_PARTIES) {
+    const accounts: { account: string; amount: number }[] = []
+    for (const code of [...new Set(lines.map((l) => l.account))]) {
+      if (partyOf(code) !== party) continue
+      const amount = lines.filter((l) => l.account === code).reduce((s, l) => s + l.credit - l.debit, 0)
+      if (amount > 0) accounts.push({ account: code, amount })
+    }
+    if (accounts.length) out.push({ party, payee: partyName(party), amount: accounts.reduce((s, a) => s + a.amount, 0), accounts })
+  }
+  return out
+}
+/** Cash and bank accounts a post can pay from: open, in rupiah, asset side, no sub-accounts. */
+export function payNowBanks(): { id: string; code: string; name: string }[] {
+  return cashAccounts
+    .filter((a) => !a.isArchived && a.currency === 'IDR' && a.code.startsWith('1-') && !cashAccounts.some((c) => c.parentId === a.id))
+    .map((a) => ({ id: a.id, code: a.code, name: a.name }))
+}
+/**
+ * Post journal, then pay now the parties picked (party -> cash account id): per payable account a
+ * Spend money on the journal date for this journal's full amount, recorded on the payable the
+ * same way as Payables > Pay (recordPayablePayment, cashTxId link, so edits and deletes follow
+ * OQ20). Parties left out stay owed. The choices are checked before anything posts.
+ */
+export function postRunAndPay(runId: string, o: { versionNo?: number; date?: string; payNow?: Partial<Record<PayableParty, string>> } = {}): Result {
+  const picks = Object.entries(o.payNow ?? {}).filter(([, bank]) => !!bank) as [PayableParty, string][]
+  const parties = payNowParties(runId)
+  const banks = payNowBanks()
+  for (const [party, bankId] of picks) {
+    if (!can('simulate')) return denied('simulate')
+    if (!parties.some((p) => p.party === party)) return { ok: false, message: `This journal owes nothing to ${partyName(party)}. Record it as payable.` }
+    if (!banks.some((b) => b.id === bankId)) return { ok: false, message: `Pick a bank account to pay ${partyName(party)} from.` }
+  }
+  const r = postRun(runId, { versionNo: o.versionNo, date: o.date })
+  if (!r.ok || r.awaitingApproval || !picks.length) return { ...r, paid: [], message: r.message ?? (r.ok ? `${r.number} posted.` : undefined) }
+  const run = runById(runId)!
+  const date = r.date as string
+  const paid: { party: PayableParty; payee: string; amount: number; bank: string; spendMoney: string[] }[] = []
+  const failed: string[] = []
+  for (const [party, bankId] of picks) {
+    const p = parties.find((x) => x.party === party)!
+    const cash = cashAccounts.find((a) => a.id === bankId)!
+    if (!payrollAccount(cash.code)) useChartAccount({ code: cash.code, name: cash.name, type: 'cash' })
+    const done: string[] = []
+    let total = 0
+    for (const a of p.accounts) {
+      const key = `${a.account}|${run.month}|${party === 'Staff' ? run.id : ''}`
+      const row = payablesTracker(run.month).find((x) => x.key === key)
+      const amount = Math.min(a.amount, row?.balance ?? 0)
+      if (!row || amount <= 0) continue
+      const tx = addCashTx('withdrawal', {
+        cashAccountId: cash.id, contact: p.payee, transactionDate: date, tags: [], priceIncludesTax: false,
+        lines: [{ accountCode: a.account, description: row.label, taxId: '', amount }], memo: `${row.label}, paid when posting ${r.number}`,
+      })
+      const res = recordPayablePayment(key, { cashTxId: tx.id, number: `Spend money #${tx.number}`, bank: cash.code, date, amount })
+      if (!res.ok) { deleteCashTx(tx.id); failed.push(`${p.payee}: ${res.message}`); continue }
+      done.push(`Spend money #${tx.number}`); total += amount
+    }
+    if (done.length) paid.push({ party, payee: p.payee, amount: total, bank: cash.name, spendMoney: done })
+  }
+  const message = `${r.number} posted.${paid.length ? ` Paid now: ${paid.map((x) => `${x.payee} ${rupiah(x.amount)} from ${x.bank}`).join(', ')}.` : ''}`
+  return { ...r, paid, failed, message }
 }
 
 // ── Manual journals on payroll accounts ─────────────────────────────────────
