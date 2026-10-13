@@ -7,6 +7,7 @@ import {
   payItemType, payItemAccount, groupRows, can, defaultEntryDate, checkEntryDate, draftSavedNote, noticesFor,
   claimsSummary, snapshotById, rupiah, dateLabel, wib, staffRows, currentVersionOf, manualJournalWarnings,
   payablePrefill, journalById, today, setGroupAccount, reverseAndRepost, postRun, type Run,
+  payNowParties,
 } from '../app/data/payrollStore'
 import { ACC } from '../app/data/payrollMaster'
 import { awaitingApprovalTasks } from '../app/data/tasks'
@@ -407,71 +408,75 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     p.says(10, 'Journal date 20 Sep 2026')
     expect(checkEntryDate('2026-07-31')).toMatch(/locked/)
     p.says(10, 'July is locked')
-    // 12. Post journal posts at once: PAY-0003, no approval, no Inbox task.
+    // 12. Pay now or record as payable, per party (all stay payable here).
     p.at(11)
+    p.says(11, 'Record as payable')
+    expect(payNowParties(run.id).map((x) => x.party)).toContain('Staff')
+    // 13. Post journal posts at once: PAY-0003, no approval, no Inbox task.
+    p.at(12)
     expect(runStatus(run)).toBe('Posted')
     const j = liveJournals(run.id)[0]!
     expect([j.number, dateLabel(j.date), j.postedBy]).toEqual(['PAY-0003', '20 Sep 2026', 'Rizal Candra'])
-    p.says(11, 'PAY-0003, 20 Sep 2026')
-    p.q(11, journalTotals(j).debit, 554_203_941)
+    p.says(12, 'PAY-0003, 20 Sep 2026')
+    p.q(12, journalTotals(j).debit, 554_203_941)
     expect(draftSavedNote(run)).toBeNull()
     expect(awaitingApprovalTasks.some((x) => x.link === `/payroll-runs/${run.id}`)).toBe(false)
     // 13. Mapping used: the settings the journal was built from.
-    p.at(12)
+    p.at(13)
     const snap = snapshotById(j.snapshotId)!
     const used = snap.settings.mapping.find((x) => x.key === payItemKey(NEW_ITEM, 'allowance'))!
     expect(accountLabel(used.debit)).toBe('6-60004 Sales Salaries')
-    p.says(12, 'Insentif Penjualan went to 6-60004 Sales Salaries')
+    p.says(13, 'Insentif Penjualan went to 6-60004 Sales Salaries')
     // 14. Claims.
-    p.at(13)
+    p.at(14)
     const cl = claimsSummary(run.id)
-    p.q(13, cl.total, 3_000_000)
+    p.q(14, cl.total, 3_000_000)
     expect(cl.rows.reduce((s, r) => s + r.employees, 0)).toBe(6)
     expect([...new Set(cl.rows.map((r) => [r.item, r.account].join(' | ')))]).toEqual(['Reimbursement Medical | 6-60106 Medical Expense'])
-    p.says(13, 'Reimbursement Medical: Rp3.000.000 for 6 staff on 6-60106 Medical Expense')
+    p.says(14, 'Reimbursement Medical: Rp3.000.000 for 6 staff on 6-60106 Medical Expense')
     // 15. Bank match pays the salary.
-    p.at(14)
+    p.at(15)
     const sal = () => payablesTracker(SEP_MONTH).find((r) => r.runId === run.id)!
     const s16 = sal()
-    p.q(14, s16.owed, 446_901_849); p.q(14, s16.balance, 0)
+    p.q(15, s16.owed, 446_901_849); p.q(15, s16.balance, 0)
     expect(s16.payments.map((x) => [x.number, dateLabel(x.date)])).toEqual([['BNK-0012', '25 Sep 2026']])
-    p.says(14, 'paid by BNK-0012 on 25 Sep 2026')
+    p.says(15, 'paid by BNK-0012 on 25 Sep 2026')
     expect(net(j.lines, ACC.hutangGaji)).toBe(446_901_849)
     // 16. A second bank line over the run.
-    p.at(15)
+    p.at(16)
     const s17 = sal()
     expect(s17.payments.map((x) => x.number)).toEqual(['BNK-0012', 'BNK-0013'])
-    p.q(15, s17.payments[1]!.amount, 250_000)
+    p.q(16, s17.payments[1]!.amount, 250_000)
     expect(dateLabel(s17.payments[1]!.date)).toBe('26 Sep 2026')
-    p.says(15, 'BNK-0013 pays Rp250.000 more on 26 Sep 2026')
+    p.says(16, 'BNK-0013 pays Rp250.000 more on 26 Sep 2026')
     // 17. Bank differs flag on the row.
-    p.at(16)
+    p.at(17)
     const s18 = sal()
     expect(s18.flags.map((f) => f.code)).toEqual(['bank-differs'])
-    p.q(16, s18.paid, 447_151_849); p.q(16, s18.owed, 446_901_849); p.q(16, s18.paid - s18.owed, 250_000)
+    p.q(17, s18.paid, 447_151_849); p.q(17, s18.owed, 446_901_849); p.q(17, s18.paid - s18.owed, 250_000)
     // 18. August BPJS Kesehatan: still owed, past its due date (the sample data leaves it unpaid).
-    p.at(17)
+    p.at(18)
     const kes = () => payablesTracker(AUG_MONTH).find((r) => r.party === 'BPJS Kesehatan')!
     const k19 = kes()
     expect([k19.label, k19.account, k19.paid, k19.status, k19.dueLabel]).toEqual([AUG_BPJS_KES, ACC.bpjsKes, 0, 'Overdue', '10 Sep 2026'])
-    p.q(17, k19.balance, 16_102_029)
-    p.says(17, `${AUG_BPJS_KES}: Rp16.102.029 still owed, due ${k19.dueLabel}, ${k19.statusLabel}.`)
+    p.q(18, k19.balance, 16_102_029)
+    p.says(18, `${AUG_BPJS_KES}: Rp16.102.029 still owed, due ${k19.dueLabel}, ${k19.statusLabel}.`)
     expect(k19.statusLabel).toBe('Overdue 25 days')
     expect(payablesTracker().filter((r) => r.overdueDays > 0).map((r) => r.key)).toEqual([k19.key])
     // 19. Pay: New spend money prefilled with the payee, the payable account and the open amount.
-    p.at(18)
+    p.at(19)
     const pre = payablePrefill(augBpjsKey())!
     expect([pre.payee, pre.account, pre.label]).toEqual(['BPJS Kesehatan', ACC.bpjsKes, AUG_BPJS_KES])
-    p.q(18, pre.amount, 16_102_029)
+    p.q(19, pre.amount, 16_102_029)
     expect(cashAccounts.some((a) => a.name === PAY_FROM && !a.isArchived)).toBe(true)
-    p.says(18, `Pay from ${PAY_FROM} to ${pre.payee}: one line on ${accountLabel(pre.account)}`)
+    p.says(19, `Pay from ${PAY_FROM} to ${pre.payee}: one line on ${accountLabel(pre.account)}`)
     // 20. Saving the spend money pays the payable: paid in full, after the due date.
     const before = cashTransactions.length
-    p.at(19)
+    p.at(20)
     const k21 = kes()
-    p.q(19, k21.paid, 16_102_029); p.q(19, k21.balance, 0)
+    p.q(20, k21.paid, 16_102_029); p.q(20, k21.balance, 0)
     expect([k21.status, k21.statusLabel]).toEqual(['Paid late', 'Paid late, 25 days'])
-    p.says(19, `paid Rp16.102.029, balance Rp0, ${k21.statusLabel}.`)
+    p.says(20, `paid Rp16.102.029, balance Rp0, ${k21.statusLabel}.`)
     const tx = cashTransactions.find((x) => x.kind === 'withdrawal' && x.memo === pre.memo)!
     expect(cashTransactions.length - before).toBeLessThanOrEqual(1)
     expect([tx.contact, tx.lines.map((l) => [l.accountCode, l.amount])]).toEqual(['BPJS Kesehatan', [[ACC.bpjsKes, 16_102_029]]])
@@ -479,19 +484,19 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     expect([pj.source, pj.type, pj.number, pj.date]).toEqual(['Spend money', 'Statutory payment', `Spend money #${tx.number}`, today()])
     expect(pj.lines.map((l) => [l.account, l.debit, l.credit])).toEqual([[ACC.bpjsKes, 16_102_029, 0], [cashAccounts.find((a) => a.name === PAY_FROM)!.code, 0, 16_102_029]])
     // 21. Payments: Source says where each came from.
-    p.at(20)
+    p.at(21)
     const ph = paymentHistory.value
     expect(ph[0]).toMatchObject({ payable: AUG_BPJS_KES, statement: 'Spend money', amount: 16_102_029 })
-    p.q(20, ph[0]!.amount, 16_102_029)
+    p.q(21, ph[0]!.amount, 16_102_029)
     for (const n of ['BNK-0012', 'BNK-0013']) expect(ph.find((x) => x.number === n)!.statement, n).toBe('Bank reconciliation')
-    p.says(20, 'BNK-0012 and BNK-0013 came from Bank reconciliation')
+    p.says(21, 'BNK-0012 and BNK-0013 came from Bank reconciliation')
     // 22. Manual journal on Salaries Payable: the run and the row warn.
-    p.at(21)
+    p.at(22)
     const mj = manualJournalWarnings(SEP_MONTH)
     expect(mj.map((x) => [x.number, dateLabel(x.date)])).toEqual([['JV-0001', '20 Sep 2026']])
-    p.q(21, mj[0]!.amount, 1_500_000)
+    p.q(22, mj[0]!.amount, 1_500_000)
     expect(mj[0]!.accounts).toEqual([ACC.salaries, ACC.hutangGaji])
-    p.says(21, 'JV-0001 posts Rp1.500.000 to Salaries and Salaries Payable on 20 Sep 2026')
+    p.says(22, 'JV-0001 posts Rp1.500.000 to Salaries and Salaries Payable on 20 Sep 2026')
     expect(runWarnings(run.id).some((x) => x.code === 'manual-journal' && !x.acknowledged)).toBe(true)
     expect(sal().flags.map((f) => f.code)).toEqual(['bank-differs', 'manual-journal'])
     p.done()
