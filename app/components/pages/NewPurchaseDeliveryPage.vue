@@ -27,6 +27,9 @@ import { addPurchaseDelivery } from '~/data/purchaseDeliveries'
 import { setPurchaseOrderStatus } from '~/data/purchaseOrders'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import { productBySku } from '~/data/inventory'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { recordSubconDocument, recordSubconComponentReceipt, workOrderForDocument, subconPlannedComponentQty } from '~/data/workOrders'
 import { subconLineTaxLabel } from '~/data/subconPricing'
 import { SUBCON_VENDORS } from '~/data/subcon'
@@ -148,6 +151,40 @@ const isComponentDelivery = computed(() => {
   const order = (wo.subcon?.raisedDocuments ?? []).find(d => d.id === poId && d.kind === 'purchaseOrder')
   return !!order?.fromKind && COMPONENT_REQUEST_KINDS.includes(order.fromKind)
 })
+
+// ── R15 — Dropship batches are recorded on the component delivery ──────────
+// The third party's goods never pass through our warehouse, so there is no
+// reservation to carry: their batches are entered here, as they reach the vendor,
+// in the Manage batch drawer's stock-in mode — the goods are stock arriving at the
+// vendor's site. Not its receiving mode: that one enforces our own WMS scan
+// threshold, which does not apply to a third party delivering to a subcontractor.
+// Only on a component delivery; every other delivery is unchanged.
+const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
+const vendorWarehouseId = computed(() => subconWorkOrder.value?.subcon?.subconWarehouseId ?? '')
+function isBatchTrackedLine(sku: string): boolean {
+  if (!isComponentDelivery.value || !sku) return false
+  const si = getWarehouseDetail(vendorWarehouseId.value)?.stock.find(s => s.sku === sku)
+  if (si) return (si.batches?.length ?? 0) > 0
+  const p = productBySku(sku)
+  return p ? BATCH_CATS.has(p.category) : false
+}
+const batchLinesByKey = ref<Record<number, CommittedBatch[]>>({})
+const batchDrawerKey = ref<number | null>(null)
+const batchDrawerItem = computed(() => items.value.find(it => it._key === batchDrawerKey.value))
+const batchDrawerOpen = computed({
+  get: () => batchDrawerKey.value !== null,
+  set: (v: boolean) => { if (!v) batchDrawerKey.value = null },
+})
+function batchTotalFor(key: number): number {
+  return (batchLinesByKey.value[key] ?? []).reduce((s, b) => s + (b.counted ?? 0), 0)
+}
+function saveDeliveryBatches(batches: CommittedBatch[]) {
+  if (batchDrawerKey.value === null) return
+  batchLinesByKey.value = { ...batchLinesByKey.value, [batchDrawerKey.value]: batches }
+  batchError.value = ''
+}
+/** Set when a batch-tracked line's batches do not add up to its quantity. */
+const batchError = ref('')
 
 /**
  * Set when a delivery is attempted against the vendor's WORK. R17: a purchase
@@ -336,6 +373,16 @@ function validate(): boolean {
   } else {
     subconOverDeliverError.value = ''
   }
+
+  // R15 — each batch-tracked component must say which batches arrived, adding up
+  // to the quantity delivered. Refused inline, naming the line; Save stays on.
+  const unbatched = items.value.find(it => isBatchTrackedLine(it.sku) && batchTotalFor(it._key) !== Number(it.qty))
+  if (unbatched) {
+    batchError.value = `${unbatched.product}: ${t('enter the batches delivered — they must add up to')} ${Number(unbatched.qty)} ${unbatched.unit}.`
+    ok = false
+  } else {
+    batchError.value = ''
+  }
   return ok
 }
 
@@ -387,7 +434,15 @@ function onSave() {
     // vendor" on a dropship order, where no warehouse transfer ever happens.
     recordSubconComponentReceipt(wo.id, items.value
       .filter(it => it.sku && Number(it.qty) > 0)
-      .map(it => ({ sku: it.sku, qty: Number(it.qty) })))
+      .map(it => ({
+        sku: it.sku,
+        qty: Number(it.qty),
+        ...(isBatchTrackedLine(it.sku) ? {
+          batches: (batchLinesByKey.value[it._key] ?? [])
+            .filter(b => (b.counted ?? 0) > 0)
+            .map(b => ({ batchNo: b.batchNo, qty: b.counted ?? 0, expiryDate: b.expiryDate })),
+        } : {}),
+      })))
   }
   // The goods are in, so the order it was raised against is now waiting on the
   // vendor's bill — which is what makes "Create purchase invoice" the next step.
@@ -527,6 +582,11 @@ function onSave() {
         </div>
 
         <!-- Produced against a subcon work order: say how much is still outstanding. -->
+        <MpBanner v-if="batchError" variant="danger" align-items="center" class="si-items-error-banner">
+          <MpBannerIcon />
+          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>{{ batchError }}</MpBannerDescription>
+        </MpBanner>
         <MpBanner v-if="subconOverDeliverError" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon />
           <MpBannerTitle>{{ t('Delivery exceeds what is still needed') }}</MpBannerTitle>
@@ -625,6 +685,11 @@ function onSave() {
                   </MpTooltip>
                   <MpInput v-else type="number" :model-value="item.qty" is-full-width
                     @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                  <!-- R15 — a batch-tracked component names the batches that arrived. -->
+                  <span v-if="isBatchTrackedLine(item.sku)" class="pd-batch-stack">
+                    <span class="pd-batch-val">{{ batchTotalFor(item._key) > 0 ? `${batchTotalFor(item._key).toLocaleString('id-ID')} ${t('in batches')}` : t('No batches yet') }}</span>
+                    <button class="pd-manage-btn" type="button" @click="batchDrawerKey = item._key">{{ t('Manage batch') }}</button>
+                  </span>
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
@@ -839,6 +904,16 @@ function onSave() {
       :next-number="nextTxNo"
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
+    />
+    <ManageBatchDrawer
+      v-if="batchDrawerItem"
+      :open="batchDrawerOpen"
+      :sku="batchDrawerItem.sku"
+      :warehouse-id="vendorWarehouseId"
+      kind="in-out"
+      :model-value="batchLinesByKey[batchDrawerItem._key] ?? []"
+      @update:open="batchDrawerOpen = $event"
+      @save="saveDeliveryBatches"
     />
   </div>
 </template>
@@ -1160,5 +1235,14 @@ function onSave() {
 .si-form-footer .btn-enterprise--primary :deep(svg) {
   --mp-icon-color: var(--mp-text-inverse, #fff);
   color: var(--mp-text-inverse, #fff);
+}
+
+/* R15 — batch summary + Manage batch, stacked under the qty on a batch-tracked
+   component line; same two-line pattern as the transfer form's batch cell. */
+.pd-batch-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: var(--mp-spacing-1) var(--mp-spacing-3); }
+.pd-batch-val { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pd-manage-btn {
+  border: none; background: transparent; padding: 0; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
 }
 </style>

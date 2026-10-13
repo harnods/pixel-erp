@@ -3845,4 +3845,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "cannot be lower than the": "tidak boleh lebih rendah dari",
   "already charged.": "yang sudah ditagihkan.",
   "This adjustment could not be saved. Check the quantities and amounts, then try again.": "Penyesuaian ini tidak dapat disimpan. Periksa jumlah dan nominalnya, lalu coba lagi.",
+  "enter the batches delivered — they must add up to": "masukkan batch yang dikirim — jumlahnya harus sama dengan",
+  "in batches": "dalam batch",
+  "No batches yet": "Belum ada batch",
 }

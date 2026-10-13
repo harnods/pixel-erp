@@ -154,6 +154,12 @@ export interface WorkOrderSubconSetup {
    */
   componentReceipts?: Record<string, number>
   /**
+   * Dropship: the batches the third party shipped, as entered on each component
+   * delivery (R15). The goods are not ours to pick from a warehouse, so their
+   * batches are recorded the moment they reach the vendor.
+   */
+  componentReceiptBatches?: Record<string, { batchNo: string; qty: number; expiryDate?: string }[]>
+  /**
    * Whether the vendor holds every component the run needs. Derived from the
    * transfers (resupply) or the component delivery (dropship) and written here
    * so the figure is read once and agreed on everywhere.
@@ -831,7 +837,7 @@ export function recordSubconCost(workOrderId: string, amounts: Record<string, nu
 /** Record components confirmed delivered to the vendor (dropship). */
 export function recordSubconComponentReceipt(
   workOrderId: string,
-  lines: { sku: string; qty: number }[],
+  lines: { sku: string; qty: number; batches?: { batchNo: string; qty: number; expiryDate?: string }[] }[],
 ): void {
   const wo = workOrders.find(w => w.id === workOrderId)
   if (!wo?.subcon) return
@@ -839,6 +845,11 @@ export function recordSubconComponentReceipt(
   for (const line of lines) {
     if (line.qty <= 0) continue
     received[line.sku] = (received[line.sku] ?? 0) + line.qty
+    if (line.batches?.length) {
+      const kept = { ...(wo.subcon.componentReceiptBatches ?? {}) }
+      kept[line.sku] = [...(kept[line.sku] ?? []), ...line.batches]
+      wo.subcon.componentReceiptBatches = kept
+    }
   }
   wo.subcon.componentReceipts = received
   // The receipt is what makes a dropship order's materials complete, so the
