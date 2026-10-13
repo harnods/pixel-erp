@@ -3,6 +3,7 @@ import type { PurchaseOrder, PurchaseOrderStatus } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 import { loadCreated, saveCreated } from './persist'
+import { CURATED_LEAD_TIME_DOCS } from './replenishmentLeadTimeDemo'
 
 const CREATED_KEY = 'purchase-orders-created-v1'
 
@@ -67,13 +68,32 @@ function buildPurchaseOrders(): PurchaseOrder[] {
   return out.reverse() // newest first
 }
 
+// Curated closed POs behind the hero cells' real lead time (replenishmentLeadTimeDemo.ts).
+// They exist here so the lead-time trust drawer's "Export purchases (CSV)" cites POs a
+// user can actually open in Purchases.
+function buildCuratedLeadTimeOrders(): PurchaseOrder[] {
+  return CURATED_LEAD_TIME_DOCS.map((d) => ({
+    id: d.poId,
+    number: d.poNumber,
+    vendor: { id: d.vendorId, name: d.vendorName },
+    date: d.orderDate,
+    dueDate: d.receiptDate,
+    total: d.qty * d.unitCost,
+    balance: 0,
+    status: 'closed' as PurchaseOrderStatus,
+    itemCount: 1,
+    hasAttachment: false,
+    tags: ['Restock'],
+  }))
+}
+
 // User-created orders are persisted and merged ON TOP of the freshly generated
 // seed — `loadCreated`, not `loadSnapshot`, because this feature only ever appends
 // (the 60 seed orders are never mutated), which is exactly the case persist.ts
 // documents for the append-only helpers.
 const createdOrders = loadCreated<PurchaseOrder>(CREATED_KEY)
 
-export const purchaseOrders: PurchaseOrder[] = reactive([...createdOrders, ...buildPurchaseOrders()])
+export const purchaseOrders: PurchaseOrder[] = reactive([...createdOrders, ...buildCuratedLeadTimeOrders(), ...buildPurchaseOrders()])
 
 /** Persist just the user-created orders (newest first). */
 export function persistCreatedPurchaseOrders(): void {

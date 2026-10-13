@@ -2,6 +2,7 @@ import { reactive } from "vue";
 import { warehouses } from "./warehouses";
 import { loadSnapshot, saveSnapshot } from "./persist";
 import { TODAY, VENDORS } from './master'
+import { CURATED_LEAD_TIME_DOCS } from './replenishmentLeadTimeDemo'
 
 /** Pending = no receiving task yet · Open = task(s) created, none started ·
  *  In progress = at least one task started, OR every line is fully received
@@ -277,12 +278,35 @@ function generateCanceled(count = 7): Receipt[] {
   return out;
 }
 
+// Curated COMPLETED goods receipts behind the hero cells' real lead time
+// (replenishmentLeadTimeDemo.ts). Historical (received months ago) and completed, so
+// they are never counted as in-transit — they exist so the lead-time trust drawer's
+// "Export purchases (CSV)" cites receipts a user can open in WMS.
+function generateCuratedLeadTimeReceipts(): Receipt[] {
+  return CURATED_LEAD_TIME_DOCS.map((d) => ({
+    id: d.receiptId,
+    number: d.receiptNumber,
+    purchaseNo: d.poNumber,
+    warehouseId: d.warehouseId,
+    warehouseName: d.warehouseName,
+    skuQty: 1,
+    purchaseQty: d.qty,
+    receivedQty: d.qty,
+    status: 'completed' as const,
+    receivedDate: d.receiptDate,
+    estimatedArrival: d.receiptDate,
+    trackingNos: [],
+    vendor: d.vendorName,
+    lineItems: [{ productId: d.productId, qty: d.qty }],
+  }))
+}
+
 // The inbound graph (receipts + receiving tasks + put-aways) is persisted as a
 // full snapshot so seed records mutated by the flow (status derivation, received
 // qty) survive a refresh. A present snapshot wins over the freshly-built seed;
-// "Reset demo data" clears it.
-const receiptSnapshot = loadSnapshot<Receipt>("receipts-v4");
-const initialReceipts = receiptSnapshot ?? [...generateDemoInbound(), ...generateReceipts(), ...generateCanceled()];
+// "Reset demo data" clears it. Bumped to v5 — adds the curated lead-time receipts.
+const receiptSnapshot = loadSnapshot<Receipt>("receipts-v5");
+const initialReceipts = receiptSnapshot ?? [...generateDemoInbound(), ...generateReceipts(), ...generateCanceled(), ...generateCuratedLeadTimeReceipts()];
 // Keep the demo inbound PO pinned at the very top of the list, regardless of
 // where a persisted snapshot from an earlier session happened to leave it.
 const demoIdx = initialReceipts.findIndex((r) => r.id === "rcv-demo-001");
@@ -294,7 +318,7 @@ export const receipts = reactive<Receipt[]>(initialReceipts);
 
 /** Persist the receipts snapshot (call after any mutation). */
 export function persistReceipts(): void {
-  saveSnapshot("receipts-v4", receipts);
+  saveSnapshot("receipts-v5", receipts);
 }
 
 let receiptAddSeq = receipts.filter((r) => r.id.startsWith("rcv-new-")).length;

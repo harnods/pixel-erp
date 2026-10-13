@@ -109,10 +109,11 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
     Accessory: 60,
   },
   // Tier 2 — added-category lead-time defaults (US-001 AC-04, D22). Deliberately
-  // NOT every category: the ones left out (e.g. Green Beans, Grinder) fall to the
-  // "Other categories" floor, so the floor is a live rung out of the box and a
-  // product with no measured history there follows it. A buyer adds a category
-  // here (via the settings picker) to give it its own estimate instead.
+  // NOT every category: the ones left out (e.g. Green Beans, Grinder) have no
+  // estimate, and because the "Other categories" floor is "Not set" out of the box
+  // (fallbackLeadTimeDays: null), a product there with no measured history gets a
+  // BLANK lead time and waits in Needs setup. A buyer adds a category here (via the
+  // settings picker), or sets the floor, to give it an estimate instead.
   leadTimeByCategory: {
     'Roasted Beans': 10,
     'Espresso Machine': 30,
@@ -134,7 +135,11 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
   fsnFastPct: 60,
   fsnSlowPct: 10,
   volatileCvThreshold: 1.2,
-  fallbackLeadTimeDays: 14,
+  // "Not set" out of the box (D22): a product with no measured lead time AND no
+  // category default waits in Needs setup with a reason, rather than getting a
+  // fabricated estimate. A buyer can set a numeric floor here to turn it into an
+  // estimate instead.
+  fallbackLeadTimeDays: null,
   dailyReminder: true,
 }
 

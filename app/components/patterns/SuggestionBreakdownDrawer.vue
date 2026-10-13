@@ -316,7 +316,7 @@ function exportPurchase() {
                 <MpButton v-if="salesDocs.length" variant="secondary" is-rounded @click="exportSales">
                   {{ t('Export sales (CSV)') }}
                 </MpButton>
-                <MpButton v-if="purchaseDocs.length" variant="secondary" is-rounded @click="exportPurchase">
+                <MpButton v-if="purchaseDocs.length" variant="secondary" is-rounded data-devchange="replenishment-real-lead-time-docs" @click="exportPurchase">
                   {{ t('Export purchases (CSV)') }}
                 </MpButton>
               </MpButtonGroup>

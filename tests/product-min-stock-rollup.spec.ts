@@ -135,10 +135,18 @@ describe('the rollup is never a trigger (US-025, no pooling)', () => {
     for (const w of roll.perWarehouse) {
       const row = buildRow(sku, w.warehouseId, cfg)
       if (row.reorderPointSource === 'none') continue
+      // Only ORDERABLE rows can be "due". A row routed to Needs setup (no lead time /
+      // no demand) or muted is deliberately never due, even if its position sits below
+      // the safety-only reorder point — the invariant here is about per-warehouse due
+      // logic, not about setup gaps.
+      if (row.bucket === 'needs-setup' || row.bucket === 'not-tracked') continue
       // Whether this pair is due is decided against ITS OWN reorder point.
       const position = row.atp.available + row.atp.onOrder
       const dueByOwn = position <= row.reorderPoint
-      expect(row.flags.dueForReorder || !dueByOwn || !row.velocity.avgDailySales).toBeTruthy()
+      // A covered-by-inbound row is deliberately NOT due (an open PO already fills it
+      // to target), even when position sits exactly at the reorder point — which the
+      // provisional case (coverage 0 → target == reorder point) can produce.
+      expect(row.flags.dueForReorder || !dueByOwn || !row.velocity.avgDailySales || row.bucket === 'covered-inbound').toBeTruthy()
       // And never against the company-wide sum.
       expect(row.reorderPoint).not.toBe(roll.total === row.reorderPoint ? -1 : roll.total)
     }

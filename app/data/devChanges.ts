@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-real-lead-time-docs',
+    title: 'Richer demo: full lead-time × demand matrix + genuine exportable purchases',
+    description:
+      'The demo data now exercises every lead-time × demand combination. Lead time: real (computed from documents), estimated (category default), and none → Needs setup — the last now works out of the box because the "Other categories" lead-time floor defaults to "Not set". Demand: none → Needs setup, provisional, and mature. Three hero cells (1008 @ Jakarta Pusat, 1102 @ Makassar Selatan, 1106 @ Palembang) resolve their real lead time from GENUINE seeded purchase orders + goods receipts, so "View the suggested qty calculation" → "Export purchases (CSV)" cites PO/receipt numbers you can open in Purchases and WMS, not "(modelled)".',
+    date: '2026-10-13',
+    files: ['replenishmentLeadTimeDemo.ts', 'leadTimeHistory.ts', 'purchaseOrders.ts', 'receipts.ts', 'replenishmentConfig.ts', 'SuggestionBreakdownDrawer.vue'],
+  },
+  {
     id: 'replenishment-import-removed',
     title: 'Replenishment: removed the Import (bulk per-warehouse settings) button',
     description:

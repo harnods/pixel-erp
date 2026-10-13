@@ -131,13 +131,15 @@ describe('the resolution ladder (VR-04)', () => {
     }
   })
 
-  it('a SKU with no vendor still walks the category/global rungs, not straight to none', () => {
-    // Tiers 1 and 2 are vendor-specific; tiers 3 and 4 are not. A vendorless SKU
-    // must still get a number, or every such row would strand in Needs setup —
-    // which US-022 AC-06 explicitly rejects.
-    const d = deriveLeadTime(null, PRODUCTS[0]!.sku, cfg)
-    expect(d.tier).not.toBe('computed')
-    expect(['category', 'global']).toContain(d.tier)
+  it('a vendorless SKU still walks the category rung, not straight to none', () => {
+    // Tier 1 is vendor-specific; the category rung is not. A vendorless SKU in a
+    // category that HAS a default must still get that number (walk the ladder) rather
+    // than short-circuiting to none — stranding every such row in Needs setup, which
+    // US-022 AC-06 rejects. (A category with NO default and the floor "Not set" does
+    // resolve to none — that is the separate case in the next test.)
+    const p = PRODUCTS.find((x) => (cfg.leadTimeByCategory as Record<string, number>)[x.category] != null)!
+    const d = deriveLeadTime(null, p.sku, cfg)
+    expect(d.tier).toBe('category')
     expect(d.days).not.toBeNull()
   })
 

@@ -47,6 +47,9 @@
 import { receipts } from './receipts'
 import type { Receipt } from './receipts'
 import { purchaseOrders } from './purchaseOrders'
+import {
+  CURATED_LEAD_TIME_DOCS, CURATED_LEAD_TIME_RECEIPT_IDS, CURATED_LEAD_TIME_CELLS,
+} from './replenishmentLeadTimeDemo'
 import { lineItemsForReceipt } from './receiptLineItems'
 import { vendors } from './vendors'
 import { vendorItems } from './vendorItems'
@@ -184,6 +187,10 @@ function documentSamples(cfg: ReplenishmentConfig): LeadTimeSample[] {
     (a.receivedDate ?? '').localeCompare(b.receivedDate ?? '') || a.id.localeCompare(b.id))
 
   for (const r of chronological) {
+    // Curated hero receipts are represented once by the curated sample layer (see
+    // replenishmentLeadTimeDemo.ts), so the generic random matcher skips them —
+    // otherwise they would also seed a stray sample under an unrelated vendor.
+    if (CURATED_LEAD_TIME_RECEIPT_IDS.has(r.id)) continue
     const receiptDate = r.receivedDate
     if (!receiptDate) continue
     if (r.status !== 'completed' && r.status !== 'partial reception') continue
@@ -244,6 +251,9 @@ function documentSamples(cfg: ReplenishmentConfig): LeadTimeSample[] {
  */
 function modelledSamples(vendorId: string, sku: string, warehouseId: string, cfg: ReplenishmentConfig): LeadTimeSample[] {
   if (DIRECT_ONLY_SKUS.includes(sku)) return []
+  // A hero cell is backed by real curated documents only (no modelled density), so
+  // its computed average — and its "Export purchases (CSV)" — cites genuine POs.
+  if (CURATED_LEAD_TIME_CELLS.has(`${vendorId}::${sku}::${warehouseId}`)) return []
 
   const vi = vendorItems.find((v) => v.vendorId === vendorId && v.sku === sku && v.active)
   if (!vi) return []
@@ -309,6 +319,16 @@ function sampleIndex(): Map<string, LeadTimeSample[]> {
   }
 
   for (const s of documentSamples(cfg)) add(s)
+  // Layer C — curated GENUINE documents for the hero cells (replenishmentLeadTimeDemo.ts).
+  // Real PO/receipt numbers that exist in Purchases and WMS, so a computed row's
+  // "Export purchases (CSV)" cites openable documents rather than "(modelled)".
+  for (const d of CURATED_LEAD_TIME_DOCS) {
+    add({
+      vendorId: d.vendorId, sku: d.sku, warehouseId: d.warehouseId,
+      poNumber: d.poNumber, orderDate: d.orderDate,
+      receiptNumber: d.receiptNumber, receiptDate: d.receiptDate, leadDays: d.leadDays,
+    })
+  }
   const whs = leadTimeWarehouses()
   for (const vi of vendorItems) {
     if (!vi.active) continue
