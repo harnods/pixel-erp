@@ -134,6 +134,12 @@ export const TALENTA_FIELDS: { field: TalentaField; label: string }[] = [
   { field: 'employment_status', label: 'Employment status' },
   { field: `sbu:${SBU_KEY}`, label: 'Business unit' },
 ]
+/**
+ * The Talenta fields staff can be grouped by (Payroll settings > Groups), in TALENTA_FIELDS order.
+ * Job position and Job level are left out: they describe a person, not a part of the company, so a
+ * group can be one person and the ledger would show that person's pay. They can still feed a dimension.
+ */
+export const GROUP_FIELDS: TalentaField[] = TALENTA_FIELDS.map((f) => f.field).filter((f) => f !== 'job_position' && f !== 'job_level')
 
 // ── Talenta payload shape (webhook "Salary Detail", final, 19 Nov 2025) ──────
 // No totals: take-home pay is computed by Jurnal (allowances - deductions).

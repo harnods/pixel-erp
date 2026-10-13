@@ -12,7 +12,7 @@ import {
   approvePayroll, rejectPayroll, canApprove, whyLine, journalsOf, defaultEntryDate, checkEntryDate, payrollAccount, rebuildDraft,
   revisionNotice, PARTY_NAME, startConnection, endConnection, confirmSource, setLimits,
   payablePrefill, recordPayablePayment, spendMoneyPayment, checkSpendMoneyPayment, syncSpendMoneyPayment, payablesSummary, reverseRun, versionOf, today, monthLabel, monthOf, payGroupKey, fieldValue,
-  setTaxAccount,
+  setTaxAccount, GROUP_FIELDS,
 } from '../app/data/payrollStore'
 import { paymentHistory } from '../app/data/payrollUiPayables'
 import { runRow, hrMessage, monthHeadcount } from '../app/data/payrollUiIntake'
@@ -116,9 +116,9 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v10 (v9: Run.dryRun removed)', () => {
+  it('persists under payroll:state-v11 (v11: Group by limited to GROUP_FIELDS, New groups warn instead of holding)', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v10'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v11'")
     expect(payroll.runs.every((r) => !('dryRun' in r))).toBe(true)
   })
 })
@@ -160,12 +160,15 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
     expect(draftOf(sep)).not.toBeNull()
   })
 
-  it('a new group holds; saving it with an unmatched dimension value still holds until a value is picked', () => {
+  it('a new group warns and the draft builds; saving it with an unmatched dimension value holds until a value is picked', () => {
     mapInsentif()
     payroll.roster.find((e) => e.employee_id === 'EMP-0026')!.moves.push({ effective: '2026-09-01', to: { organization_name: 'Legal', branch_name: 'Jakarta HQ', cost_center_name: 'HQ Finance' } })
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
     const sep = run(SEP)
-    expect(runHolds(sep).map((h) => h.code)).toEqual(['new-group'])
+    // Legal has no Organization value, but a New group's staff take no dimension from the Group by fields, so nothing holds.
+    expect(runHolds(sep)).toHaveLength(0)
+    expect(draftOf(sep)).not.toBeNull()
+    expect(runWarnings(sep.id).filter((w) => w.code === 'no-group').map((w) => w.message)).toEqual(['1 staff matched no group (Legal, HQ Finance). Their pay posts to each pay item\'s default account with no group dimension. Set up the group in Payroll settings > Groups.'])
     const key = groupRows().find((g) => g.isNew)!.key
     expect(saveGroup(key).ok).toBe(true)
     expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-group'])
@@ -870,22 +873,21 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(d.lines.filter((l) => !isCostCode(l.account)).every((l) => !l.tags.Organization && !l.tags.Branch)).toBe(true)
   })
 
-  it('a send with a new group holds, and setting it up clears the hold', () => {
+  it('a send with a new group never holds; it warns until the group is set up', () => {
     mapInsentif()
     expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
     const sep = run(SEP)
     expect(runHolds(sep)).toHaveLength(0)
     simulateSend('new-group', { runId: sep.id })
-    const h = runHolds(sep)
-    expect(h.map((x) => x.code)).toEqual(['new-group'])
-    expect(h[0]!.message).toBe('New group: Operations, Medan (2 staff). Set it up in Payroll settings > Groups.')
-    const row = groupRows().find((r) => r.isNew)!
-    expect(row).toMatchObject({ label: 'Operations, Medan', staff: 2 })
-    expect(createPayrollTag('Branch', 'Medan').ok).toBe(true)
-    expect(runHolds(sep).map((x) => x.code)).toEqual(['new-group'])
-    expect(saveGroup(row.key).ok).toBe(true)
     expect(runHolds(sep)).toHaveLength(0)
     expect(draftOf(sep)).not.toBeNull()
+    expect(runWarnings(sep.id).filter((w) => w.code === 'no-group')).toHaveLength(1)
+    const row = groupRows().find((r) => r.isNew)!
+    expect(row).toMatchObject({ label: 'Operations, Medan', staff: 2, fewStaff: 2 })
+    expect(createPayrollTag('Branch', 'Medan').ok).toBe(true)
+    expect(saveGroup(row.key).ok).toBe(true)
+    expect(runHolds(sep)).toHaveLength(0)
+    expect(runWarnings(sep.id).some((w) => w.code === 'no-group')).toBe(false)
   })
 
   it('payable accounts per party move every row that credits the old payable', () => {
@@ -932,7 +934,7 @@ describe('settings: Connection, Pay items, Dimensions', () => {
   })
 })
 
-describe('groups: any Talenta fields, New groups hold until set up, only Use group account items move', () => {
+describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use group account items move', () => {
   beforeEach(() => { resetPayroll(); setPayrollViewAs('Accountant + LM'); mapInsentif() })
   const sepLines = () => { rebuildDraft(run(SEP).id); return draftOf(run(SEP))!.lines }
   const itemOn = (lines: JournalLine[], acct: string, item: string) => lines.filter((l) => l.account === acct).flatMap((l) => l.sources).filter((x) => x.item === item && x.side === 'D').reduce((s, x) => s + x.amount, 0)
@@ -941,7 +943,7 @@ describe('groups: any Talenta fields, New groups hold until set up, only Use gro
     expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
     const fin = groupRows().find((r) => r.label === 'Finance, Jakarta HQ')!
     expect(setGroupAccount(fin.key, ACC.directLabour).ok).toBe(true)
-    expect(setGroupBy(['organization_name', 'branch', 'job_level']).ok).toBe(true)
+    expect(setGroupBy(['organization_name', 'branch', 'employment_status']).ok).toBe(true)
     const rows = groupRows()
     expect(rows.every((r) => r.values.length === 3)).toBe(true)
     expect(rows.reduce((s, r) => s + r.staff, 0)).toBe(40)
@@ -968,29 +970,103 @@ describe('groups: any Talenta fields, New groups hold until set up, only Use gro
     expect(setGroupDimension(row.key, 'Branch', 'Atlantis').message).toBe('Pick a value from this dimension or create it first.')
   })
 
-  it('New group: the run holds; Set up group (account, dimension value or Save) clears it on its own', () => {
+  it('Group by: only the 5 GROUP_FIELDS; Job position and Job level are refused (a group can be one person)', () => {
+    expect(GROUP_FIELDS).toEqual(['organization_name', 'branch', 'cost_center', 'employment_status', 'sbu:Business Unit'])
+    const msg = "Job position and Job level can't group staff, because a group can be one person. Pick Organization, Branch, Cost center, Business unit or Employment status."
+    const before = [...payroll.settings.groupBy]
+    expect(setGroupBy(['organization_name', 'job_position']).message).toBe(msg)
+    expect(setGroupBy(['job_level']).message).toBe(msg)
+    expect(payroll.settings.groupBy).toEqual(before)
+    for (const f of GROUP_FIELDS) expect(setGroupBy([f]).ok, f).toBe(true)
+    expect(setGroupBy([...GROUP_FIELDS]).ok).toBe(true)
+    // They can still feed a dimension of their own.
+    expect(linkDimension('job_level', 'Job level').ok).toBe(true)
+  })
+
+  it('fewStaff: a row covering 1 or 2 staff says so (0 otherwise); it warns, never blocks', () => {
+    expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
+    const rows = groupRows()
+    for (const r of rows) expect(r.fewStaff, r.label).toBe(r.staff === 1 || r.staff === 2 ? r.staff : 0)
+    expect(rows.find((r) => r.label === 'Human Capital, Surabaya')).toMatchObject({ staff: 1, fewStaff: 1 })
+    expect(rows.find((r) => r.label === 'Operations, Jakarta HQ')).toMatchObject({ staff: 10, fewStaff: 0 })
+    expect(rows.some((r) => r.fewStaff === 2)).toBe(true)
+    // A small group can still be set up and posts as any other.
+    const hc = rows.find((r) => r.label === 'Human Capital, Surabaya')!
+    expect(setGroupAccount(hc.key, ACC.directLabour).ok).toBe(true)
+    expect(runHolds(run(SEP))).toHaveLength(0)
+    expect(itemOn(sepLines().filter((l) => l.tags.Organization === 'Human Capital'), ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
+  })
+
+  it('New group: no hold; a no-group warning; the draft books its staff to each pay item\'s default account with no group dimension', () => {
     expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
     const sep = run(SEP)
     simulateSend('new-group', { runId: sep.id })
-    expect(runHolds(sep).map((h) => h.code)).toEqual(['new-group'])
-    expect(runStatus(sep)).toBe('Held')
-    expect(postRun(sep.id).message).toBe('New group: Operations, Medan (2 staff). Set it up in Payroll settings > Groups.')
-    expect(syncLog.value.find((l) => l.type === 'Send' && l.runId === sep.id && l.status === 'Held')!.nextStep).toBe('Set up the group in Payroll settings > Groups. The run is checked again when you save.')
-    expect(sendLog.value[0]!).toMatchObject({ result: 'Held', reason: 'New group' })
+    expect(runHolds(sep)).toHaveLength(0)
+    expect(runStatus(sep)).toBe('Ready to post')
+    expect(sendLog.value[0]!).toMatchObject({ result: 'Accepted', reason: '' })
+    const w = runWarnings(sep.id).filter((x) => x.code === 'no-group')
+    expect(w).toHaveLength(1)
+    const row = groupRows().find((r) => r.isNew)!
+    expect(row).toMatchObject({ label: 'Operations, Medan', staff: 2 })
+    expect(w[0]!.message).toBe("2 staff matched no group (Operations, Medan). Their pay posts to each pay item's default account with no group dimension. Set up the group in Payroll settings > Groups.")
+    expect(w[0]!.details).toEqual({ groups: [{ key: row.key, label: 'Operations, Medan', staff: 2 }] })
+    expect(w[0]!.acknowledged).toBeNull()
+    // The draft builds: the 2 Medan staff's salary sits on Salaries (the pay item account) with no Organization or Branch.
+    const d = draftOf(sep)!
+    expect(journalTotals(d).debit).toBe(journalTotals(d).credit)
+    expect(d.lines.some((l) => l.tags.Branch === 'Medan')).toBe(false)
+    const bare = d.lines.filter((l) => l.account === ACC.salaries && !l.tags.Organization && !l.tags.Branch && l.debit > 0)
+    expect(bare).toHaveLength(1)
+    const basic = bare[0]!.sources.find((x) => x.item === 'Basic Salary' && x.side === 'D')!
+    expect(basic.staff).toHaveLength(2)
+    expect(bare[0]!.why.join(' ')).toContain("Group Operations, Medan is not set up, so it posts to the pay item's default account with no group dimension")
+    expect(d.lines.filter((l) => l.account === ACC.directLabour).flatMap((l) => l.sources).every((x) => x.staff.length === 0 || !basic.staff.some((u) => x.staff.includes(u)))).toBe(true)
+    // Warnings never block: it posts once marked as checked (or not).
+    expect(postConfirmText(sep.id).warnings.some((m) => m.startsWith('2 staff matched no group'))).toBe(true)
+  })
+
+  it('setting the New group up clears the warning and rebuilds the draft with the group account and dimension values', () => {
+    expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
+    const sep = run(SEP)
+    simulateSend('new-group', { runId: sep.id })
+    const total = journalTotals(draftOf(sep)!).debit
     const row = groupRows().find((r) => r.isNew)!
     expect(as('Accountant', () => setGroupAccount(row.key, ACC.directLabour)).message).toBe('Only Owner, Ultimate + LM or Accountant + LM can change this.')
     expect(setGroupAccount(row.key, ACC.bpjsTk).message).toBe('Pick an expense or cost of goods sold account.')
     expect(setGroupAccount(row.key, ACC.directLabour).ok).toBe(true)
     expect(groupRows().find((r) => r.key === row.key)!.isNew).toBe(false)
-    // Set up, but Medan has no Branch value in Jurnal yet: that is the one thing left to fix.
+    expect(runWarnings(sep.id).some((w) => w.code === 'no-group')).toBe(false)
+    // Set up, but Medan has no Branch value in Jurnal yet: that now holds until the value exists.
     expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-group'])
     expect(runHolds(sep)[0]!.message).toBe('1 Talenta value has no dimension value: Medan (2 staff). Pick a value or create it.')
     expect(createPayrollTag('Branch', 'Medan').ok).toBe(true)
     expect(setGroupDimension(row.key, 'Branch', 'Medan').ok).toBe(true)
+    expect(saveGroup(row.key).ok).toBe(true)
     expect(runHolds(sep)).toHaveLength(0)
-    expect(groupRows().find((r) => r.key === row.key)!.isNew).toBe(false)
-    expect(itemOn(draftOf(sep)!.lines.filter((l) => l.tags.Branch === 'Medan'), ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
+    expect(isDraftStale(sep.id)).toBe(false)
+    const d = draftOf(sep)!
+    expect(journalTotals(d).debit).toBe(total)
+    expect(itemOn(d.lines.filter((l) => l.tags.Organization === 'Operations' && l.tags.Branch === 'Medan'), ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
+    expect(d.lines.some((l) => l.account === ACC.salaries && !l.tags.Organization && !l.tags.Branch && l.debit > 0)).toBe(false)
     expect(runStatus(sep)).toBe('Ready to post')
+  })
+
+  it('saveGroup alone (values matched by name) clears the warning and moves the cost onto the group dimensions', () => {
+    expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
+    expect(createPayrollTag('Branch', 'Medan').ok).toBe(true)
+    const sep = run(SEP)
+    simulateSend('new-group', { runId: sep.id })
+    expect(runWarnings(sep.id).some((w) => w.code === 'no-group')).toBe(true)
+    const medanOn = () => itemOn(draftOf(sep)!.lines.filter((l) => l.tags.Branch === 'Medan'), ACC.salaries, 'Basic Salary')
+    const bareOn = () => itemOn(draftOf(sep)!.lines.filter((l) => !l.tags.Organization && !l.tags.Branch), ACC.salaries, 'Basic Salary')
+    const moved = bareOn()
+    expect(moved).toBeGreaterThan(0)
+    expect(medanOn()).toBe(0)
+    expect(saveGroup(groupRows().find((r) => r.isNew)!.key).ok).toBe(true)
+    expect(runWarnings(sep.id).some((w) => w.code === 'no-group')).toBe(false)
+    expect(runHolds(sep)).toHaveLength(0)
+    expect(bareOn()).toBe(0)
+    expect(medanOn()).toBe(moved)
   })
 
   it('Use group account: only items set so take the group expense account; Use default account items and deductions never move', () => {
@@ -1113,6 +1189,20 @@ describe('copy: every string the engine returns follows the glossary', () => {
     expect(bad).toEqual([])
     // Errors say how to fix: every failed result's message ends in an instruction or a reason, never a bare "No".
     expect(all.some((x) => /Your role|Nothing to decide|not found\.?$/.test(x))).toBe(false)
+  })
+
+  it('groups: the Group by refusal, a New group\'s warning and its why-this-line', () => {
+    mapInsentif()
+    const sep = run(SEP)
+    const out: unknown[] = [setGroupBy(['job_position']), setGroupBy(['organization_name', 'branch'])]
+    simulateSend('new-group', { runId: sep.id })
+    out.push(runHolds(sep), runWarnings(sep.id), draftOf(sep)!.lines.map((_, i) => whyLine(sep.id, i)), postConfirmText(sep.id), groupRows(), sendLog.value)
+    const all = texts(out).filter(Boolean)
+    expect(all.some((x) => x.includes('matched no group'))).toBe(true)
+    expect(all.some((x) => x.includes('is not set up, so it posts'))).toBe(true)
+    const names = [...payroll.settings.mapping.map((m) => m.name), ...payroll.accounts.map((a) => a.name)].sort((a, b) => b.length - a.length)
+    const strip = (x: string) => names.reduce((s, n) => s.split(n).join(''), x)
+    expect(all.filter((x) => BANNED.test(strip(x)))).toEqual([])
   })
 
   it('party names in engine text follow the glossary', () => {

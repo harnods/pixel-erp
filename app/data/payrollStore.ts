@@ -11,7 +11,7 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v10`; resetPayroll()
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v11` (v11: Group by limited to GROUP_FIELDS, no New group hold); resetPayroll()
  * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
@@ -59,14 +59,24 @@
  *   setPayItemGroupsCanChange(key, on)   cost items only: on = the staff's group expense account replaces the row account
  *                                   ('Use group account'); off = 'Use default account'.
  *   payGroupKey(fields, values), groupFor(staffRow), groupLabel(values)
- *   Groups: settings.groupBy (any Talenta fields) and settings.groups[{ key, values, account, dims }].
+ *   Groups: settings.groupBy (GROUP_FIELDS only) and settings.groups[{ key, values, account, dims }].
+ *   GROUP_FIELDS                    (payrollMaster, re-exported) the 5 fields staff can be grouped by, in TALENTA_FIELDS order:
+ *                                   Organization, Branch, Cost center, Employment status, Business unit. Never Job position or Job level
+ *                                   (a group can be one person, so the ledger would show their pay); those can still feed a dimension.
  *   groupRows()                     every combination seen in Talenta sends plus saved ones: { key, values, label, staff (count in the
  *                                   latest regular run's latest send, the one the next journal books),
- *                                   account, dims, isNew, dimensions[{ dimension, field, value, explicit }] }.
- *   setGroupBy(fields)              re-forms rows; rows that still exist keep their settings; combinations whose staff were all in
+ *                                   account, dims, isNew, fewStaff (0 = fine; 1 or 2 = the staff count when a row covers only 1 or 2
+ *                                   staff, so their pay can be read from the ledger: warn, never block),
+ *                                   dimensions[{ dimension, field, value, explicit }] }.
+ *   setGroupBy(fields)              GROUP_FIELDS only (Job position or Job level: "Job position and Job level can't group staff, ...").
+ *                                   Re-forms rows; rows that still exist keep their settings; combinations whose staff were all in
  *                                   set-up groups are set up with defaults; the rest stay New.
- *   setGroupAccount(key, code|null), setGroupDimension(key, dimension, value|null), saveGroup(key)   each saves the row (no longer New).
- *   A send with a staff member in a New group holds: 'new-group' "New group: Operations, Medan (2 staff). Set it up in Payroll settings > Groups."
+ *   setGroupAccount(key, code|null), setGroupDimension(key, dimension, value|null), saveGroup(key)   each saves the row (no longer New)
+ *                                   and rebuilds the drafts that carry a 'no-group' warning.
+ *   A New group never holds the run. Its staff's cost posts to each pay item's default account with no dimension from the Group by
+ *   fields, and the draft carries the warning 'no-group' "2 staff matched no group (Operations, Medan). Their pay posts to each pay
+ *   item's default account with no group dimension. Set up the group in Payroll settings > Groups." details { groups[{ key, label,
+ *   staff }] }. Setting the group up rebuilds the draft with the group's account and dimension values.
  *   setPayableAccount(party, code)  Payable accounts: the payable each party is owed on (settings.payables).
  *   validateMapping(row), setPayItemMapping(key, patch, overrideReason?)   the full-row save with guardrails.
  *   Every save re-checks held runs (holds clear on their own).
@@ -93,7 +103,7 @@
  *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready'
  *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received' | 'Awaiting approval'.
  *                                   Internal values; screens show statusLabel() from payrollUiRunCopy.ts ('Revision ready' = "New version").
- *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'new-group', 'unmapped-group',
+ *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'unmapped-group',
  *                                   'empty-field' (linked field empty, set to hold), 'two-parties', 'archived-account'
  *                                   (no usable mapping), 'partial' (fewer staff than the last version), 'choice' (separate-run look-alike),
  *                                   'confirm-source' (first send).
@@ -113,7 +123,8 @@
  *   runWarnings(runId)              RunWarning[] { key, code, message, details, acknowledged }. Codes: 'missing-component' ("PPH 21 Paid not
  *                                   in this send", one per name+section non-zero last time), 'tax-rule' (PPh 21 lines vs the rule beyond
  *                                   Rp1.000), 'duplicate-employee', 'hutang-gaji', 'negative-payable', 'large-change' (no note),
- *                                   'headcount' (not marked Expected), 'manual-journal' (non-PAY journal on a payroll account this month).
+ *                                   'headcount' (not marked Expected), 'manual-journal' (non-PAY journal on a payroll account this month),
+ *                                   'no-group' (staff in a Group by combination no one has set up; see Groups).
  *   acknowledgeWarning(runId, key, note?) / clearAcknowledgement(runId, key)   "Mark as checked" (post permission).
  *   postConfirmText(runId, date?)   { title, body, warnings[] } for the Post journal / Use vN and repost confirm (lists warnings not checked).
  *   taxFigures(runId)               { benefit, payment, dtp, resign, pph26, paidDeduction, rule, ledger, pph26Ledger, dtpLedger, resignLedger, hasLines }.
@@ -183,13 +194,14 @@
 import { reactive, watch, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import {
-  PAYROLL_COMPANY_ID, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, ACC, PAYROLL_TAGS, TALENTA_FIELDS,
+  PAYROLL_COMPANY_ID, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, ACC, PAYROLL_TAGS, TALENTA_FIELDS, GROUP_FIELDS,
   STATUTORY_PARTIES, PAYABLE_PARTIES, TAX_COMPONENTS, TAX_FIELDS, sampleRoster, buildSalaryDetail, sampleEmployeeName, payrollPerson,
   type PayrollRole, type PayrollAccount, type PayableParty, type PaySection, type TalentaPayload, type TalentaPayItem,
   type TalentaField, type TagDimension, type PayrollTag, type RosterEmployee,
   type PayloadOptions, type TaxField,
 } from './payrollMaster'
 import { checkApprovalRequired } from './payrollApproval'
+export { GROUP_FIELDS } from './payrollMaster'
 import { upsertPayrollApprovalTask, removePayrollApprovalTask, syncPayrollApprovalTasks, type Task as InboxTask } from './tasks'
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -256,14 +268,17 @@ export interface PayrollSettings {
 }
 export interface SettingsSnapshot { id: string; at: string; by: string; note: string; settings: PayrollSettings }
 
-/** The only reasons a send stops: no mapping (item, dimension value, or an account the journal cannot use), a partial send, a revision-or-separate-run choice, the first send's source. */
+/**
+ * The only reasons a send stops: no mapping (item, dimension value, or an account the journal cannot use), a partial send, a
+ * revision-or-separate-run choice, the first send's source. A New group is not one: its staff post to default accounts ('no-group').
+ */
 export type HoldCode =
-  | 'confirm-source' | 'choice' | 'partial' | 'unmapped-item' | 'new-group' | 'unmapped-group'
+  | 'confirm-source' | 'choice' | 'partial' | 'unmapped-item' | 'unmapped-group'
   | 'empty-field' | 'two-parties' | 'archived-account'
 export interface Hold { code: HoldCode; message: string; details: Record<string, unknown> }
 
 /** Everything else is a warning on the draft: the Accountant reads it and decides whether to post. */
-export type WarningCode = 'missing-component' | 'tax-rule' | 'duplicate-employee' | 'hutang-gaji' | 'negative-payable' | 'large-change' | 'headcount' | 'manual-journal'
+export type WarningCode = 'missing-component' | 'tax-rule' | 'duplicate-employee' | 'hutang-gaji' | 'negative-payable' | 'large-change' | 'headcount' | 'manual-journal' | 'no-group'
 export interface Ack { note: string; by: string; at: string }
 export interface StoredWarning { key: string; code: WarningCode; message: string; details: Record<string, unknown> }
 export interface RunWarning extends StoredWarning { acknowledged: Ack | null }
@@ -487,7 +502,7 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v10'
+const SNAPSHOT_KEY = 'payroll:state-v11'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -798,7 +813,7 @@ export function setFieldPolicy(field: string, policy: 'hold' | 'skip'): Result {
 /** Stable key of a combination: field=value pairs in Group by order (values compared by name). */
 export function payGroupKey(fields: string[], values: string[]): string { return fields.map((f, i) => `${f}=${norm(values[i] ?? '')}`).join('|') }
 export function groupValuesOf(e: StaffRow, s: PayrollSettings = payroll.settings): string[] { return s.groupBy.map((f) => fieldValue(e, f).trim()) }
-/** The set-up group of an employee, or undefined (no Group by fields, or a New combination). */
+/** The set-up group of a staff member, or undefined (no Group by fields, or a New combination). */
 export function groupFor(e: StaffRow, s: PayrollSettings = payroll.settings): PayGroup | undefined {
   if (!s.groupBy.length) return undefined
   const k = payGroupKey(s.groupBy, groupValuesOf(e, s))
@@ -831,7 +846,8 @@ function seenCombinations(fields: string[]): Map<string, { values: string[]; sta
   return out
 }
 export interface GroupDimension { dimension: string; field: TalentaField; value: string | null; explicit: boolean }
-export interface GroupRow extends PayGroup { label: string; staff: number; isNew: boolean; dimensions: GroupDimension[] }
+/** fewStaff: 1 or 2 when the row covers only that many staff (their pay can be read from the ledger), else 0. A warning, never a block. */
+export interface GroupRow extends PayGroup { label: string; staff: number; isNew: boolean; fewStaff: 0 | 1 | 2; dimensions: GroupDimension[] }
 /** The dimensions a group row picks values for: links whose Talenta field is a Group by field. */
 export function groupDimensionLinks(s: PayrollSettings = payroll.settings): DimensionLink[] { return s.dimensionLinks.filter((l) => s.groupBy.includes(l.field)) }
 /** Rows of the Groups table: set-up groups and every combination seen in sends, New first. */
@@ -849,18 +865,21 @@ export function groupRows(): GroupRow[] {
       const explicit = !!dims[l.dimension]
       return { dimension: l.dimension, field: l.field, value: dims[l.dimension] ?? (raw ? dimensionValue(l.dimension, raw, s) : null), explicit }
     })
-    return { key, values, account: g?.account ?? null, dims, label: groupLabel(values), staff: seen.get(key)?.staff ?? 0, isNew: !g, dimensions }
+    const staff = seen.get(key)?.staff ?? 0
+    const fewStaff: 0 | 1 | 2 = staff === 1 || staff === 2 ? staff : 0
+    return { key, values, account: g?.account ?? null, dims, label: groupLabel(values), staff, isNew: !g, fewStaff, dimensions }
   }).sort((a, b) => Number(b.isNew) - Number(a.isNew) || a.label.localeCompare(b.label))
 }
 /**
- * Group staff by these Talenta fields. Rows that still exist keep their settings. A new row whose
- * staff all sat in set-up groups is set up, keeping the expense account and dimension values those
- * groups agreed on (else the defaults); a row holding staff of a New group stays New.
+ * Group staff by these Talenta fields (GROUP_FIELDS only). Rows that still exist keep their settings.
+ * A new row whose staff all sat in set-up groups is set up, keeping the expense account and dimension
+ * values those groups agreed on (else the defaults); a row holding staff of a New group stays New.
  */
 export function setGroupBy(fields: TalentaField[]): Result {
   if (!can('setup')) return denied('setup')
   const list = [...new Set(fields)]
   if (list.some((f) => !TALENTA_FIELDS.some((x) => x.field === f))) return { ok: false, message: 'Pick fields from the Talenta list.' }
+  if (list.some((f) => !GROUP_FIELDS.includes(f))) return { ok: false, message: "Job position and Job level can't group staff, because a group can be one person. Pick Organization, Branch, Cost center, Business unit or Employment status." }
   const s = payroll.settings
   if (list.join('|') === s.groupBy.join('|')) return { ok: true }
   const next = new Map<string, { values: string[]; fromNew: boolean; from: Set<PayGroup | null> }>()
@@ -925,7 +944,7 @@ export function setGroupDimension(key: string, dimension: string, value: string 
   changed(`Group ${groupLabel(g.values)}: ${dimension} ${value ?? 'matched by name'}`)
   return { ok: true }
 }
-/** Save a New group as it is: pay item accounts and dimension values matched by name. */
+/** Save a New group as it is: pay item accounts and dimension values matched by name. Drafts with a 'no-group' warning rebuild (changed()). */
 export function saveGroup(key: string): Result {
   if (!can('setup')) return denied('setup')
   const had = payroll.settings.groups.some((x) => x.key === key)
@@ -1426,7 +1445,6 @@ function nextStepFor(run: Run, v: RunVersion): string {
   const steps: Partial<Record<HoldCode, string>> = {
     'confirm-source': 'The Owner or Ultimate + LM confirms this is your company.', choice: 'Choose: use it as a new version, or make a separate run.',
     partial: 'Choose: use it as the full run, or reject it.', 'unmapped-item': 'Pick an account for each pay item. The run is checked again when you save.',
-    'new-group': 'Set up the group in Payroll settings > Groups. The run is checked again when you save.',
     'unmapped-group': 'Pick a dimension value for each. The run is checked again when you save.',
   }
   return steps[h.code] ?? 'Fix it in Payroll settings. The run is checked again when you save.'
@@ -1542,12 +1560,18 @@ export function fieldValue(e: StaffRow, field: string): string {
   if (field.startsWith('sbu:')) return e.sbu[field.slice(4)] ?? ''
   return String((e as unknown as Record<string, unknown>)[field] ?? '')
 }
-/** An employee's dimension values from the linked fields; an unmatched value or a held empty field is an issue. */
+/**
+ * A staff member's dimension values from the linked fields; an unmatched value or a held empty field is an issue.
+ * Staff in a New group (no set-up group for their Group by values) get no dimension from the Group by fields:
+ * those values come with setting the group up.
+ */
 function resolveTags(e: StaffRow, s: PayrollSettings): { tags: Tags; issues: { field: string; dimension: string; value: string; kind: 'empty' | 'unmapped' }[] } {
   const tags: Tags = { Organization: null, Branch: null }
   const issues: { field: string; dimension: string; value: string; kind: 'empty' | 'unmapped' }[] = []
   const g = groupFor(e, s)
+  const noGroup = !!s.groupBy.length && !g
   for (const l of s.dimensionLinks) {
+    if (noGroup && s.groupBy.includes(l.field)) continue
     const val = fieldValue(e, l.field).trim()
     if (!val) { if (l.empty === 'hold') issues.push({ field: l.field, dimension: l.dimension, value: '', kind: 'empty' }); continue }
     const tag = g?.dims[l.dimension] ?? dimensionValue(l.dimension, val, s)
@@ -1617,7 +1641,7 @@ function checkVersion(run: Run, v: RunVersion): void {
       details: { items: list.map((u) => ({ key: payItemKey(u.name, u.section), name: u.name, section: u.section, amount: u.amount, employees: u.staff.size, reason: u.reason })) },
     })
   }
-  // Combinations of the Group by fields no one has set up yet (New groups). Their dimension values are part of setting them up.
+  // Combinations of the Group by fields no one has set up yet (New groups) do not hold: a 'no-group' warning (sendWarnings).
   const fresh = new Map<string, { key: string; label: string; staff: Set<number> }>()
   for (const e of staff) {
     if (!s.groupBy.length || groupFor(e, s)) continue
@@ -1626,29 +1650,29 @@ function checkVersion(run: Run, v: RunVersion): void {
     const x = fresh.get(k) ?? { key: k, label: groupLabel(values), staff: new Set<number>() }
     x.staff.add(e.user_id); fresh.set(k, x)
   }
-  if (fresh.size) {
-    const list = [...fresh.values()]
-    holds.push({
-      code: 'new-group',
-      message: `New group${list.length > 1 ? 's' : ''}: ${list.map((g) => `${g.label} (${g.staff.size} staff)`).join('; ')}. Set ${list.length > 1 ? 'them' : 'it'} up in Payroll settings > Groups.`,
-      details: { groups: list.map((g) => ({ key: g.key, label: g.label, staff: g.staff.size })) },
-    })
-  }
-  // Dimension values with no match, and empty linked fields set to hold.
+  // Dimension values with no match, and empty linked fields set to hold (New group staff skip the Group by fields: resolveTags).
   const groups = new Map<string, { field: string; dimension: string; value: string; staff: number }>()
   const empty = new Map<string, number>()
   for (const e of staff) {
-    const isFresh = !!s.groupBy.length && !groupFor(e, s)
     for (const i of resolveTags(e, s).issues) {
-      if (isFresh && i.kind === 'unmapped' && s.groupBy.includes(i.field as TalentaField)) continue
       if (i.kind === 'empty') empty.set(i.field, (empty.get(i.field) ?? 0) + 1)
       else { const k = `${i.field}|${i.value}`; const g = groups.get(k) ?? { field: i.field, dimension: i.dimension, value: i.value, staff: 0 }; g.staff++; groups.set(k, g) }
     }
   }
   if (groups.size) holds.push({ code: 'unmapped-group', message: `${groups.size} Talenta value${groups.size > 1 ? 's have' : ' has'} no dimension value: ${[...groups.values()].map((g) => `${g.value} (${g.staff} staff)`).join(', ')}. Pick a value or create it.`, details: { groups: [...groups.values()] } })
   if (empty.size) holds.push({ code: 'empty-field', message: `Staff with an empty field linked to a dimension: ${[...empty.entries()].map(([f, n]) => `${TALENTA_FIELDS.find((x) => x.field === f)?.label ?? f}, ${n} staff`).join('; ')}. Ask HR to fill it in Talenta, or leave the dimension blank.`, details: { fields: Object.fromEntries(empty) } })
-  // Warnings found on the send itself.
+  // Warnings found on the send itself, and staff in a New group.
   v.warnings = sendWarnings(run, v, staff)
+  if (fresh.size) {
+    const list = [...fresh.values()].sort((a, b) => a.label.localeCompare(b.label))
+    const n = list.reduce((x, g) => x + g.staff.size, 0)
+    v.warnings.push({
+      key: `no-group:${hash(list.map((g) => g.key).join(','))}`,
+      code: 'no-group',
+      message: `${n} staff matched no group (${list.map((g) => g.label).join('; ')}). Their pay posts to each pay item's default account with no group dimension. Set up the group in Payroll settings > Groups.`,
+      details: { groups: list.map((g) => ({ key: g.key, label: g.label, staff: g.staff.size })) },
+    })
+  }
   if (holds.length) { v.holds = holds; return }
   const b = buildJournal(run, v, s)
   v.draft = b.draft
@@ -1684,7 +1708,8 @@ function recheckHeld(): void {
       if (v.state === 'waiting-choice' && v.holds.some((h) => h.code === 'confirm-source')) checkVersion(run, v)
       if (v.state !== 'active' || v.no !== run.currentVersion) continue
       if (run.ledgerVersion === v.no && !run.revised) continue
-      if (v.holds.length) checkVersion(run, v)
+      // Holds clear on their own; a draft with staff in a New group rebuilds once the group is set up.
+      if (v.holds.length || v.warnings.some((w) => w.code === 'no-group')) checkVersion(run, v)
     }
   }
 }
@@ -1761,6 +1786,7 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
         const lineTags = tags
         let ruleWhy = ''
         if (grp?.account) { debit = grp.account; ruleWhy = `Group ${groupLabel(grp.values)} books it to ${accountLabel(grp.account)} (Use group account)` }
+        else if (costSide && s.groupBy.length && !groupFor(e, s)) ruleWhy = `Group ${groupLabel(groupValuesOf(e, s))} is not set up, so it posts to the pay item's default account with no group dimension`
         const tagWhy = isCost(debit) && tagsLabel(lineTags) ? `Dimensions ${tagsLabel(lineTags)} from the staff member's Talenta fields` : ''
         const src = { item: m.name, section, role: m.role }
         add(debit, lineTags, it.amount, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, String(e.user_id))
