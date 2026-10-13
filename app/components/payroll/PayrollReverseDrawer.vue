@@ -5,7 +5,9 @@
  * not before the original, and a date in a locked month is refused (same rule as Post). Matched payments
  * are listed and need a second confirm; no payment, bank line or reconciliation changes.
  */
-import { MpDatePicker, MpCheckbox } from '@mekari/pixel3'
+import {
+  MpBanner, MpBannerDescription, MpButton, MpCheckbox, MpDatePicker, MpFormControl, MpFormLabel,
+} from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
   runById, liveJournals, reverseRun, journalTotals, paymentsFor, journalById,
@@ -87,15 +89,13 @@ function reverseAll() {
         </table>
       </div>
 
-      <div class="prv__row">
-        <label class="prv__label" for="prv-date-input">{{ t('Journal date') }}</label>
-        <div class="prv__field">
-          <MpDatePicker id="prv-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :disabled-date="disabledDate" />
-        </div>
-      </div>
-      <div v-if="locked" class="prv__note" data-testid="prv-locked">
-        {{ t(`${monthLabel(iso.slice(0, 7))} is locked. Pick a journal date in an open month. Tax month stays ${monthLabel(run.month)}.`) }}
-      </div>
+      <MpFormControl id="prv-date-input" class="prv__field">
+        <MpFormLabel>{{ t('Journal date') }}</MpFormLabel>
+        <MpDatePicker id="prv-date-input" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :disabled-date="disabledDate" />
+      </MpFormControl>
+      <MpBanner v-if="locked" id="prv-locked" variant="warning" data-testid="prv-locked">
+        <MpBannerDescription>{{ t(`${monthLabel(iso.slice(0, 7))} is locked. Pick a journal date in an open month. Tax month stays ${monthLabel(run.month)}.`) }}</MpBannerDescription>
+      </MpBanner>
 
       <div v-if="salaryPays.length" class="prv__pays" data-testid="prv-payments">
         <div class="prv__paystitle">{{ t('Payments on this run') }}</div>
@@ -104,52 +104,45 @@ function reverseAll() {
           <li v-for="p in otherPays" :key="p.id">{{ journalById(p.journalId)?.number }} · {{ t(PARTY_LABEL[p.party]) }} · {{ accountLabel(p.account) }} · {{ rupiah(p.amount) }}</li>
         </ul>
         <div class="prv__paysnote">{{ t('The payments stay. Salaries payable goes below Rp0 until you post again.') }}</div>
-        <label class="prv__check">
-          <MpCheckbox id="prv-confirm-pays" :is-checked="confirmPays" @change="confirmPays = !confirmPays; error = ''" />
-          <span>{{ t('Reverse anyway and keep the payments') }}</span>
-        </label>
+        <MpCheckbox id="prv-confirm-pays" :is-checked="confirmPays" @change="confirmPays = !confirmPays; error = ''">{{ t('Reverse anyway and keep the payments') }}</MpCheckbox>
       </div>
 
-      <div v-if="error" class="prv__error" role="alert" data-testid="prv-error">{{ error }}</div>
+      <MpBanner v-if="error" id="prv-error" variant="danger" role="alert" data-testid="prv-error">
+        <MpBannerDescription>{{ error }}</MpBannerDescription>
+      </MpBanner>
     </template>
 
     <template #footer>
-      <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
-      <button class="btn-enterprise btn-enterprise--primary" type="button" data-testid="prv-confirm" @click="reverseAll">
+      <MpButton variant="ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded data-testid="prv-confirm" @click="reverseAll">
         {{ live.length > 1 ? t(`Reverse ${live.length} journals`) : t('Reverse journal') }}
-      </button>
+      </MpButton>
     </template>
   </PayrollCompareDrawerShell>
 </template>
 
 <style scoped>
 .prv__identity { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.prv__scroll { overflow-x: auto; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
+/* A bordered mini-table in a drawer takes the bold outer edge (rule/table-outer-border-bold). */
+.prv__scroll { overflow-x: auto; border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md); }
 .prv__table { width: 100%; border-collapse: collapse; }
 .prv__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase; letter-spacing: 0.04em; color: var(--mp-text-secondary);
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  text-transform: uppercase; color: var(--mp-text-secondary);
+  background: var(--mp-background-neutral-subtle); height: var(--mp-sizes-7); padding: var(--mp-spacing-1) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .prv__td {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .prv__table tbody tr:last-child .prv__td { border-bottom: 0; }
 .prv__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.prv__row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--mp-spacing-4); align-items: start; }
-.prv__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: 38px; }
 .prv__field { max-width: 360px; }
 .prv__nowrap { white-space: nowrap; }
-.prv__note {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-warning);
-  border-radius: var(--mp-radii-md); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-md);
-}
 .prv__pays { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .prv__paystitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.prv__list { margin: 0; padding-left: var(--mp-spacing-5, 20px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.prv__list { margin: 0; padding-left: var(--mp-spacing-5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .prv__paysnote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.prv__check { display: flex; align-items: center; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
-.prv__error { padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-danger); border-radius: var(--mp-radii-md); color: var(--mp-text-danger); font-size: var(--mp-font-sizes-md); }
+
 </style>

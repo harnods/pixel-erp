@@ -5,7 +5,7 @@
  * moved only by a settings change sit apart. Headcount counts added and removed staff by group,
  * and the PPh 21 change totals the tax moves, with PPh 26 and DTP apart. No employee data.
  */
-import { MpSegmentedControl } from '@mekari/pixel3'
+import { MpBadge, MpSegmentedControl } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { statusLabel, sectionLabel } from '~/data/payrollUiRunCopy'
 import {
@@ -128,7 +128,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
       <template v-else>
         <div class="pcv__toolbar">
           <MpSegmentedControl id="pcv-view" v-model="view" name="pcv-view" :data="viewOptions" />
-          <span v-if="data.noLedgerChange" class="pcv__chip">{{ t('No change to the books') }}</span>
+          <MpBadge v-if="data.noLedgerChange" for="additionalInformation" type="completed">{{ t('No change to the books') }}</MpBadge>
         </div>
 
         <!-- By account and dimension -->
@@ -276,7 +276,7 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
                   <td class="pcv__td pcv__num">{{ taxTotal.benefit ? signed(taxTotal.benefit) : '' }}</td>
                   <td class="pcv__td pcv__num">{{ taxTotal.payment ? signed(taxTotal.payment) : '' }}</td>
                   <td class="pcv__td pcv__num">{{ taxTotal.dtp ? signed(taxTotal.dtp) : '' }}</td>
-                  <td class="pcv__td pcv__num pcv__strong">{{ signed(taxTotal.pph21) }}</td>
+                  <td class="pcv__td pcv__num">{{ signed(taxTotal.pph21) }}</td>
                   <td class="pcv__td pcv__num">{{ taxTotal.severance ? signed(taxTotal.severance) : '' }}</td>
                   <td class="pcv__td pcv__num">{{ taxTotal.pph26 ? signed(taxTotal.pph26) : '' }}</td>
                 </tr>
@@ -301,10 +301,6 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
 .pcv__against { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pcv__toolbar { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
 .pcv__toolbar :deep(.mp-segmented-control__item), .pcv__toolbar :deep([role='radio']) { min-width: max-content; }
-.pcv__chip {
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-success);
-  background: var(--mp-colors-background-success); border-radius: var(--mp-radii-md); padding: var(--mp-spacing-1) var(--mp-spacing-2);
-}
 .pcv__empty { padding: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pcv__block { border-top: 1px solid var(--mp-border-default); }
 .pcv__blocktitle { padding: var(--mp-spacing-4) var(--mp-spacing-4) 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -313,18 +309,17 @@ const sentOf = (no: number | undefined) => { const v = run.value?.versions.find(
 .pcv__table { width: 100%; border-collapse: collapse; }
 .pcv__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  text-transform: uppercase; letter-spacing: 0.04em; color: var(--mp-text-secondary);
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  text-transform: uppercase; color: var(--mp-text-secondary);
+  background: var(--mp-background-neutral-subtle); height: var(--mp-sizes-7); padding: var(--mp-spacing-1) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default); border-top: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .pcv__td {
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); vertical-align: top;
 }
 .pcv__table tbody tr:last-child .pcv__td { border-bottom: 0; }
 .pcv__th.pcv__num, .pcv__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pcv__neg { color: var(--mp-text-danger); }
-.pcv__strong { font-weight: var(--mp-font-weights-semi-bold); }
 .pcv__rownote { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 .pcv__total .pcv__td { font-weight: var(--mp-font-weights-semi-bold); background: var(--mp-background-neutral-subtle); }
 </style>

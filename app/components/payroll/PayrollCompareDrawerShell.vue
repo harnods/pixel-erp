@@ -4,10 +4,11 @@
  * Same markup and motion as BillsFiltersDrawer (rule/drawer-custom-shell): close by × or
  * the footer only; the overlay is a backdrop.
  */
-import { MpButton, MpIcon } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpTooltip } from '@mekari/pixel3'
 
 withDefaults(defineProps<{ isOpen: boolean; title: string; wide?: boolean }>(), { wide: false })
 const emit = defineEmits<{ close: [] }>()
+const { t } = useLocale()
 </script>
 
 <template>
@@ -17,14 +18,16 @@ const emit = defineEmits<{ close: [] }>()
         <div class="prd-panel" :class="{ 'prd-panel--wide': wide }" role="dialog" :aria-label="title">
           <header class="prd-header">
             <span class="prd-title">{{ title }}</span>
-            <MpButton class="prd-close" aria-label="Close" @click="emit('close')">
-              <MpIcon name="close" size="md" />
-            </MpButton>
+            <MpTooltip id="prd-close-tip" :label="t('Close')" placement="bottom" use-portal>
+              <MpButton class="prd-close" variant="ghost" is-rounded :aria-label="t('Close')" @click="emit('close')">
+                <MpIcon name="close" size="md" />
+              </MpButton>
+            </MpTooltip>
           </header>
           <div class="prd-body">
             <slot />
           </div>
-          <footer v-if="$slots.footer" class="prd-footer">
+          <footer v-if="$slots.footer" class="prd-footer erp-action-footer">
             <slot name="footer" />
           </footer>
         </div>
@@ -39,7 +42,7 @@ const emit = defineEmits<{ close: [] }>()
 .prd-enter-active .prd-panel { transition: transform 350ms ease-out; }
 .prd-leave-active .prd-panel { transition: transform 250ms ease-in; }
 .prd-enter-from .prd-panel,
-.prd-leave-to .prd-panel { transform: translateX(calc(100% + 12px)); }
+.prd-leave-to .prd-panel { transform: translateX(calc(100% + var(--mp-spacing-3))); }
 
 .prd-overlay {
   position: fixed; inset: 0; z-index: 1300;
@@ -48,14 +51,14 @@ const emit = defineEmits<{ close: [] }>()
 }
 .prd-panel {
   margin: var(--mp-spacing-3);
-  width: min(520px, calc(100% - 24px));
-  height: calc(100% - 24px);
+  width: min(520px, calc(100% - 2 * var(--mp-spacing-3)));
+  height: calc(100% - 2 * var(--mp-spacing-3));
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);
-  border-radius: 12px;
+  border-radius: var(--mp-radii-xl);
   overflow: hidden;
 }
-.prd-panel--wide { width: min(860px, calc(100% - 24px)); }
+.prd-panel--wide { width: min(860px, calc(100% - 2 * var(--mp-spacing-3))); }
 .prd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
@@ -66,10 +69,10 @@ const emit = defineEmits<{ close: [] }>()
 .prd-close {
   display: inline-flex !important; align-items: center; justify-content: center;
   width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
-  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
+  border: none !important; background: none !important;
   cursor: pointer; color: var(--mp-colors-icon-default);
 }
-.prd-close:hover { background: var(--mp-background-neutral-hovered); }
+.prd-close:hover { background: var(--mp-background-neutral-hovered) !important; }
 .prd-body {
   flex: 1; overflow-y: auto;
   display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px);
