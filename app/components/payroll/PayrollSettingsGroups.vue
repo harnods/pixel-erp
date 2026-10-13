@@ -245,10 +245,6 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
         <div v-if="canEdit && addOptions.length" class="pgr-add">
           <ErpFilterSelect id="pgr-add-field" :model-value="addPick" :placeholder="t('Add field')" :options="addOptions" width="220px" :is-clearable="false" @update:model-value="addField" />
         </div>
-        <p class="pset-hint pgr-note">
-          <MpIcon name="info" size="sm" />
-          <span>{{ t('Job position and Job level are left out: a group of one would show that person\'s pay.') }}</span>
-        </p>
       </div>
     </div>
 
@@ -392,8 +388,6 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-fields :deep(.efs), .pgr-rows :deep(.efs) { display: block; width: 100%; min-width: 0; }
 .pgr-fields :deep(.efs-trigger), .pgr-rows :deep(.efs-trigger) { width: 100%; }
 .pgr-add { display: flex; }
-.pgr-note { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.pgr-note :deep(svg) { flex: none; }
 
 /* Filters and bulk bar */
 .pgr-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); flex-wrap: wrap; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
