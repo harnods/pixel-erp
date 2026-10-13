@@ -3850,4 +3850,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "No batches yet": "Belum ada batch",
   "These orders cannot share an invoice": "Pesanan ini tidak dapat digabung dalam satu faktur",
   "One invoice can only cover purchase orders from the same work order. Create a separate invoice for each work order.": "Satu faktur hanya dapat mencakup pesanan pembelian dari perintah kerja yang sama. Buat faktur terpisah untuk setiap perintah kerja.",
+  "Category": "Kategori",
+  "Standard": "Standar",
+  "Order": "Pesanan",
 }

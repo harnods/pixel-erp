@@ -115,9 +115,6 @@ const pageRegistry: Record<string, Component> = {
   'Canceled':          defineAsyncComponent(() => import('~/components/pages/CanceledReceiptIndexPage.vue')),
   'Work orders':        defineAsyncComponent(() => import('~/components/pages/WorkOrdersIndexPage.vue')),
   'Bill of materials':  defineAsyncComponent(() => import('~/components/pages/BillOfMaterialsIndexPage.vue')),
-  'Subcon orders':      defineAsyncComponent(() => import('~/components/pages/SubconOrdersIndexPage.vue')),
-  // Reports → Subcon → Custody & WIP dashboard.
-  'Subcon custody':     defineAsyncComponent(() => import('~/components/pages/SubconCustodyDashboardPage.vue')),
   'Warehouse transfers': defineAsyncComponent(() => import('~/components/pages/WarehouseTransfersPage.vue')),
   'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
@@ -273,8 +270,6 @@ const AdjustSubconWorkOrderPage = asyncPage(() => import('~/components/pages/Adj
 const PartialProductionCompletionPage = asyncPage(() => import('~/components/pages/PartialProductionCompletionPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
-const SubconOrderDetailsPage = asyncPage(() => import('~/components/pages/SubconOrderDetailsPage.vue'))
-const CreateSubconOrderPage = asyncPage(() => import('~/components/pages/CreateSubconOrderPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
@@ -692,12 +687,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
     return { component: WorkOrderDetailsPage, id: segs[1] }
-  }
-  // /subcon-orders/new → configure a new subcon order (full page); /:id → the
-  // order's document chain. The bare index falls through to the registry.
-  if (segs.length >= 2 && segs[0] === 'subcon-orders') {
-    if (segs[1] === 'new') return { component: CreateSubconOrderPage, id: 'new' }
-    return { component: SubconOrderDetailsPage, id: segs[1]! }
   }
   // /bill-of-materials/new → create form; /:id → BOM detail.
   // The bare index falls through to the registry.

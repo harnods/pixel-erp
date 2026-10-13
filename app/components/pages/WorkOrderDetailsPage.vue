@@ -1923,7 +1923,6 @@ function suppressFabClick(e: MouseEvent) {
             <ContentList :label="t('Receive output into')" :value="subcon.receivingWarehouseName" />
           </div>
           <div class="content-list-col">
-            <ContentList :label="t('Subcon order')" :value="subcon.subconOrderNumber ?? '—'" />
           </div>
         </div>
 

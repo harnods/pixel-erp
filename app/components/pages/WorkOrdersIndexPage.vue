@@ -18,6 +18,8 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components/patterns/WorkOrderFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { buildSubconExportRows, downloadSubconExport } from '~/data/subconExport'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -60,6 +62,15 @@ const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
   { label: t('Completed'),            value: 'completed'            },
   { label: t('Canceled'),             value: 'canceled'             },
 ]
+// Category — Standard / Order / Subcontracting. Filtering to Subcontracting is
+// also what turns Export into the subcon report (R19).
+const CATEGORY_OPTIONS = [
+  { label: t('Standard'),       value: 'Standard'       },
+  { label: t('Order'),          value: 'Order'          },
+  { label: t('Subcontracting'), value: 'Subcontracting' },
+]
+const categoryFilter = ref('')
+
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
 
@@ -100,7 +111,7 @@ const previewMode = ref<'data' | 'empty'>('data')
 const rows = computed<WorkOrder[]>(() => (previewMode.value === 'empty' ? [] : workOrders))
 
 const {
-  search, currentPage, paginated, total, perPage,
+  filtered, search, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort,
 } = useTableState<WorkOrder>(rows, {
   perPage: 25,
@@ -110,6 +121,7 @@ const {
       || row.bomName.toLowerCase().includes(s)
       || (row.parentNumber?.toLowerCase().includes(s) ?? false)
     const matchesType = !typeFilter.value || row.type === typeFilter.value
+    const matchesCategory = !categoryFilter.value || row.category === categoryFilter.value
     const matchesStatus = !statusFilter.value || row.status === statusFilter.value
     const startFilterDate = parseDMY(startDateFilter.value)
     const matchesStart = !startFilterDate
@@ -117,19 +129,31 @@ const {
     const endFilterDate = parseDMY(endDateFilter.value)
     const matchesEnd = !endFilterDate
       || (!!row.endDate && dayStart(new Date(row.endDate)).getTime() === dayStart(endFilterDate).getTime())
-    return matchesSearch && matchesType && matchesStatus && matchesStart && matchesEnd
+    return matchesSearch && matchesType && matchesCategory && matchesStatus && matchesStart && matchesEnd
   },
 })
 
 // Reset to page 1 when the extra (non-built-in) filters change
-watch([typeFilter, statusFilter, startDateFilter, endDateFilter], () => setPage(1))
+watch([typeFilter, categoryFilter, statusFilter, startDateFilter, endDateFilter], () => setPage(1))
 
 const hasActiveFilter = computed(() =>
-  !!search.value || !!typeFilter.value || !!statusFilter.value || !!startDateFilter.value || !!endDateFilter.value,
+  !!search.value || !!typeFilter.value || !!categoryFilter.value || !!statusFilter.value || !!startDateFilter.value || !!endDateFilter.value,
 )
+/**
+ * R19 — the subcon report is an Excel export of the list as filtered. It runs
+ * while the list is filtered to Subcontracting (decided with the product owner);
+ * with any other view the button does nothing, as before. OPEN (Product, UX): the
+ * export's final home — see app/data/subconExport.ts.
+ */
+function onExport() {
+  if (categoryFilter.value !== 'Subcontracting') return
+  void downloadSubconExport(buildSubconExportRows(filtered.value))
+}
+
 function clearFilters() {
   search.value = ''
   typeFilter.value = ''
+  categoryFilter.value = ''
   statusFilter.value = ''
   startDateFilter.value = ''
   endDateFilter.value = ''
@@ -210,6 +234,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
+        <ErpFilterSelect
+          id="wo-category-filter"
+          :model-value="categoryFilter"
+          :placeholder="t('Category')"
+          :options="CATEGORY_OPTIONS"
+          @update:model-value="(v: string) => (categoryFilter = v)"
+        />
+
         <MpPopover id="wo-status-filter" is-close-on-select>
           <MpPopoverTrigger>
             <MpSelect
@@ -247,7 +279,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <div class="filter-btn-group">
           <ColumnSettingsMenu id="wo-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip id="tt-wo-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" :aria-label="t('Export')">
+            <button class="filter-icon-btn" :aria-label="t('Export')" @click="onExport">
               <MpIcon name="download" size="md" />
             </button>
           </MpTooltip>

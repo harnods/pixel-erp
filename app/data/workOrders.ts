@@ -96,8 +96,6 @@ export interface WorkOrderSubconSetup {
   /** Warehouse the vendor's output is received back INTO. Always required. */
   receivingWarehouseId: string
   receivingWarehouseName: string
-  /** Subcon order this work order is tied to, once it has been raised. */
-  subconOrderNumber?: string
   /**
    * Documents actually raised from this work order, so its Documents table can
    * link straight to each one instead of only offering to create it again.
@@ -355,7 +353,6 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
       // purchase request is addressed to.
       subconWarehouseId: 'wh-sub-03', subconWarehouseName: 'WH Subcon · PT Java Roasting Works',
       receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
-      subconOrderNumber: 'SC-2026-0004',
     },
   },
 ]

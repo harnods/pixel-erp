@@ -99,6 +99,8 @@ export function useTableState<T>(
   const hasActiveFilter = computed(() => !!statusFilter.value)
 
   return {
+    /** Every row that passes the filters, sorted — what an export of the list should carry. */
+    filtered: sorted,
     search,
     statusFilter,
     hasActiveSearch,
