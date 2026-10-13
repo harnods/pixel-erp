@@ -359,6 +359,12 @@ const SEED: Seed[] = [
     { reservedPct: 1, consumedPct: 0, destAvailable: 3, requiredOffset: 2 },
     { reservedPct: 0, consumedPct: 0, destAvailable: 2, requiredOffset: 5, rawIndex: 0, tag: 'additional', staffIndex: 1, rejected: true },
   ] },
+  // Same raw material as WO-2026-0001's request above (both BOMs consume Green
+  // Beans Arabica Gayo Grade 1) — one row in the "By product" view aggregates the
+  // two work orders' demand together (Open WOs: 2), still outstanding here.
+  { woIndex: 5, dayOffset: -1, staffIndex: 6, lines: [
+    { reservedPct: 0, consumedPct: 0, destAvailable: 1, requiredOffset: 4 },
+  ] },
 ]
 
 function buildSeed(): StockRequest[] {
