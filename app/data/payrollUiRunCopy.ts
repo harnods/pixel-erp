@@ -72,11 +72,6 @@ export function statusBadge(s: string): { label: string; type: BadgeType } {
 export const statusLabel = (s: string) => statusBadge(s).label
 export const statusType = (s: string): BadgeType => statusBadge(s).type
 
-/**
- * There is no start month any more: every run can be posted (PM decision 2026-10-13), so no run mode
- * is "not posted". Kept returning '' until the run page drops its banner; then delete it.
- */
-export function notPostedLabel(_mode: string): string { return '' }
 
 /** Next step per status, in glossary words (the engine text may still use old terms). */
 const NEXT_STEP: Record<string, string> = {
