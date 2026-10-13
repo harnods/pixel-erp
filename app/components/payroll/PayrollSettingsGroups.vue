@@ -17,6 +17,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { MpButton, MpCheckbox, MpIcon, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { successToast, errorToast } from '~/utils/toasts'
 import {
@@ -94,10 +95,15 @@ const filters = computed(() => [
   { key: 'new' as const, label: t('New'), n: newCount.value },
   { key: 'few' as const, label: t('1 or 2 staff'), n: fewCount.value },
 ])
+// Column filters under each From Talenta header: pick one or more values; none picked = all.
+const colFilters = reactive<Record<string, string[]>>({})
+const colOptions = (i: number) => [...new Set(rows.value.map((r) => valueText(r.values[i] ?? '')))].sort((a, b) => a.localeCompare(b))
+const colActive = computed(() => groupBy.value.some((f) => (colFilters[f]?.length ?? 0) > 0))
+const matchesCols = (r: GroupRow) => groupBy.value.every((f, i) => !(colFilters[f]?.length) || colFilters[f]!.includes(valueText(r.values[i] ?? '')))
 const visibleRows = computed(() => rows.value.filter((r) =>
-  (filter.value === 'all' || (filter.value === 'new' ? r.isNew : !!fewStaff(r))) && groupMatches(r.values, search.value)))
-const filtered = computed(() => filter.value !== 'all' || !!search.value.trim())
-function clearFilters() { filter.value = 'all'; search.value = '' }
+  (filter.value === 'all' || (filter.value === 'new' ? r.isNew : !!fewStaff(r))) && groupMatches(r.values, search.value) && matchesCols(r)))
+const filtered = computed(() => filter.value !== 'all' || !!search.value.trim() || colActive.value)
+function clearFilters() { filter.value = 'all'; search.value = ''; for (const k of Object.keys(colFilters)) colFilters[k] = [] }
 const valueText = (v: string) => v || t('Not set')
 
 // ── Row edits ──
@@ -291,7 +297,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
               <col v-for="f in groupBy" :key="f" class="pgr-c-val">
               <col class="pgr-c-num">
               <col class="pgr-c-acct">
-              <col v-for="c in dimColumns" :key="c">
+              <col v-for="c in dimColumns" :key="c" class="pgr-c-dim">
             </colgroup>
             <thead>
               <tr class="pgr-bands">
@@ -306,6 +312,18 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                 <th class="pset-th pgr-num">{{ t('Staff') }}</th>
                 <th class="pset-th pgr-split pgr-acct">{{ t('Expense account') }}</th>
                 <th v-for="c in dimColumns" :key="c" class="pset-th pgr-dim">{{ c }}</th>
+              </tr>
+              <tr class="pgr-colfilters" data-testid="pgr-colfilters">
+                <th v-if="canEdit" class="pset-th pgr-check" />
+                <th v-for="(f, i) in groupBy" :key="f" class="pset-th pgr-val pgr-colfilter">
+                  <MultiSelectDropdown
+                    :id="`pgr-col-${safe(f)}`" :model-value="colFilters[f] ?? []" :options="colOptions(i)"
+                    :placeholder="t('All')" is-full-width @update:model-value="(v: string[]) => (colFilters[f] = v)"
+                  />
+                </th>
+                <th class="pset-th pgr-num" />
+                <th class="pset-th pgr-split" />
+                <th v-for="c in dimColumns" :key="c" class="pset-th" />
               </tr>
             </thead>
             <tbody>
@@ -391,11 +409,14 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 
 /* Groups table */
 .pgr-scroll { overflow-x: auto; }
-.pgr-rows { table-layout: fixed; min-width: 760px; }
+.pgr-rows { table-layout: fixed; width: max-content; min-width: 100%; }
 .pgr-c-check { width: 44px; }
-.pgr-c-num { width: 76px; }
-.pgr-c-acct { width: 25%; }
-.pgr-c-val { width: 13%; }
+.pgr-c-num { width: 72px; }
+.pgr-c-acct { width: 248px; }
+.pgr-c-val { width: 156px; }
+.pgr-c-dim { width: 200px; }
+.pgr-colfilters .pset-th { padding-top: 0; padding-bottom: var(--mp-spacing-2); text-transform: none; letter-spacing: 0; font-weight: var(--mp-font-weights-regular, 400); }
+.pgr-colfilter :deep(button) { min-height: 32px; }
 .pgr-rows .pset-th { white-space: normal; }
 .pgr-rows .pset-td { vertical-align: middle; }
 .pgr-rows .pset-td, .pgr-rows .pset-th { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); }
