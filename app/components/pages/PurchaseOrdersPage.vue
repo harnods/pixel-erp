@@ -62,7 +62,9 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
 // ─── Tab → status set mapping ─────────────────────────────────────────────────
 const TAB_STATUSES: Record<string, string[]> = {
-  all:      ['open', 'partially-processed', 'awaiting invoice', 'closed', 'voided'],
+  // `approved` belongs here: an approved order is live — delivered and invoiced
+  // against — and leaving it out made every approved order vanish from the list.
+  all:      ['open', 'approved', 'partially-processed', 'awaiting invoice', 'closed', 'voided'],
   awaiting: ['draft'],
   rejected: ['rejected'],
 }
@@ -103,6 +105,7 @@ const {
 // ─── Status filter (in the toolbar) — options for the "All" view ──────────────
 const statusOptions = [
   { label: 'Open',                value: 'open'                },
+  { label: 'Approved',            value: 'approved'            },
   { label: 'Partially processed', value: 'partially-processed' },
   { label: 'Awaiting invoice',    value: 'awaiting invoice'    },
   { label: 'Closed',              value: 'closed'              },

@@ -362,6 +362,14 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
     poFormRejectionBanner.value = null
   }
 }, { immediate: true })
+// `/purchase-orders/<id>` opens that order's detail. Documents link here by URL —
+// a subcon work order's Transactions tab among them — and without this the link
+// landed on the index instead of the order.
+watch(() => [currentPageKey.value, route.path] as const, ([key, path]) => {
+  if (key !== 'Purchase orders') return
+  const id = path.split('/').filter(Boolean)[1]
+  if (id && purchaseOrders.some(o => o.id === id)) poDetailOrderId.value = id
+}, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
