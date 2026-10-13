@@ -15,7 +15,7 @@
  * touched by at least one step (PAYROLL_FEATURES).
  */
 import {
-  payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, setPayItemAccount, setPayItemGroupsCanChange,
+  payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, setPayItemAccount,
   setGroupBy, setGroupAccount, setGroupDimension, saveGroup, addGroupDimension, groupDimensions, createPayrollTag, groupRows,
   runWarnings, acknowledgeWarning, postRun, saveDraft, reverseAndRepost, simulateSend,
   simulateBankPayment, simulateManualJournal, payablesTracker, payablePrefill, recordPayablePayment, payrollAccount,
@@ -106,12 +106,15 @@ function onTab(marker: string, ...tabs: string[]): () => HTMLElement | null {
     return null
   }
 }
-/** The Use group account toggle on the Insentif Penjualan row, else the first one on the page. */
-function insentifToggle(): HTMLElement | null {
+/**
+ * The Account cell of the Insentif Penjualan row (a cost item: "Group's expense account" or a pinned
+ * account), else the first cost item's Account cell on the page.
+ */
+function insentifCostAccount(): HTMLElement | null {
   const row = Array.from(document.querySelectorAll<HTMLElement>('[data-tour="payroll-payitems"] tr'))
     .find((r) => visible(r) && r.innerText.includes(NEW_ITEM))
-  const gcc = row?.querySelector<HTMLElement>('.pset-gcc')
-  return visible(gcc) ? gcc : live('payroll-groups-can-change')
+  const cell = row?.querySelector<HTMLElement>('[data-cost-account]')
+  return visible(cell) ? cell : live('payroll-groups-can-change')
 }
 /**
  * Payroll payables keeps its view (Payables or Payments) and its month filter while the tour only
@@ -182,10 +185,8 @@ function groupedByOrganizationAndBranch() {
 }
 
 // PAY-1
-function mapNewItem() {
-  setPayItemGroupsCanChange(insentif(), true)
-  setPayItemAccount(insentif(), ACC.salaries)
-}
+/** The new cost item keeps "Group's expense account" (null = follow groups): one save maps it. */
+function mapNewItem() { setPayItemAccount(insentif(), null) }
 function groupByOrganizationAndBranch() { setGroupBy(['organization_name', 'branch']) }
 /** Add dimension: Branch as a Groups column (the sample already has Organization and Branch, so a replay changes nothing). */
 function addBranch() { if (!groupDimensions().includes('Branch')) addGroupDimension('Branch') }
@@ -195,7 +196,8 @@ function setUpTwoGroups() {
 }
 
 // PAY-2
-function mapFromTheHold() { setPayItemAccount(insentif(), ACC.salesSalaries) }
+/** The hold's account pick preselects "Group's expense account" for a cost item, so one Save clears it. */
+function mapFromTheHold() { setPayItemAccount(insentif(), null) }
 function talentaSendsANewGroup() { simulateSend('new-group', { runId: sepId() }) }
 /**
  * Set up group on the Groups tab: the expense account, then the Branch value Medan, then Set up group.
@@ -291,17 +293,17 @@ const setupSteps: PayrollStep[] = [
     route: SETTINGS('pay-items'),
     target: 'payroll-payitems',
     find: rowIn('payroll-payitems', NEW_ITEM),
-    title: 'Insentif Penjualan gets an expense account.',
-    body: 'Any expense or cost of goods sold account can take a cost item. The other side follows the type: an allowance is owed to staff, so it credits Salaries Payable.',
-    watch: 'Insentif Penjualan debits 6-60101 Salaries and credits 2-20201 Salaries Payable. The September run is ready to post: Rp554.203.941 on 26 lines.',
+    title: 'Insentif Penjualan gets its account in one save.',
+    body: 'A cost item starts on Group\'s expense account, so saving it is enough. The other side follows the type: an allowance is owed to staff, so it credits Salaries Payable.',
+    watch: 'Insentif Penjualan reads Group\'s expense account and credits 2-20201 Salaries Payable. The September run is ready to post: Rp554.203.941 on 26 lines.',
     placement: 'top',
   },
   {
     route: SETTINGS('pay-items'),
     target: 'payroll-groups-can-change',
-    find: insentifToggle,
-    title: 'Use group account lets a group post the cost to its own account.',
-    body: 'On, it reads Use group account: staff in a group with its own expense account post to that account. Off, it reads Use default account: everyone posts to the account above. The info tip says the same.',
+    find: insentifCostAccount,
+    title: 'Cost pay items follow the group\'s expense account unless pinned.',
+    body: 'Groups own every cost account. A cost item reads Group\'s expense account: staff post to their group\'s account, and staff in no group or in a group with no account post to Everyone else, 6-60101 Salaries here. Pin to account sends one item to a fixed account for all staff, as Reimbursement Medical does with 6-60106 Medical Expense. Deductions and tax keep their payable.',
     watch: 'Insentif Penjualan is paid to 7 Sales staff, so it lands on 6-60004 Sales Salaries, the Sales groups\' account, not on Salaries.',
     placement: 'top',
   },
@@ -396,7 +398,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-draft-lines',
     find: onTab('payroll-draft-lines', 'Draft'),
     title: 'Other user maps it and the draft journal builds.',
-    body: 'Mapping the item from the hold saves it in Pay items and checks the run again. The hold clears on its own.',
+    body: 'The fix starts on Group\'s expense account, so one save maps the item in Pay items and checks the run again. The hold clears on its own.',
     watch: 'Ready to post: Rp554.203.941 on 25 lines.',
     placement: 'top',
   },
@@ -406,7 +408,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-warnings',
     find: onTab('payroll-warnings', 'Draft'),
     title: 'Talenta sends September again with a new group.',
-    body: 'HR moved 2 operations staff to a new Medan branch and sent the period again. v2 becomes the current version. Nothing stops: their pay posts to each pay item\'s default account until someone sets the group up, and the run warns.',
+    body: 'HR moved 2 operations staff to a new Medan branch and sent the period again. v2 becomes the current version. Nothing stops: their cost posts to the Everyone else account until someone sets the group up, and the run warns.',
     watch: 'No group: Operations, Medan with 2 staff.',
     placement: 'bottom',
   },
@@ -492,7 +494,7 @@ const runSteps: PayrollStep[] = [
     find: onTab('payroll-mapping-used', 'Mapping used'),
     title: 'Mapping used keeps the settings the journal was built from.',
     body: 'Later changes to pay items or groups never change a posted journal. This tab shows which account each pay item went to and which dimension values each group posted.',
-    watch: 'Insentif Penjualan went to 6-60004 Sales Salaries.',
+    watch: 'Insentif Penjualan reads Group\'s expense account; its 7 Sales staff went to 6-60004 Sales Salaries.',
     placement: 'top',
   },
   {
@@ -697,7 +699,7 @@ export const PAYROLL_SETUP_TOUR: AssetTour = {
   persona: 'Owner or LM, Other user',
   role: 'Owner or LM' as unknown as ViewAsRole,
   blurb: 'The Owner checks the Talenta connection, the payable account of each party, the pay items and the groups that decide where cost lands. Then the two access types: Owner or LM posts, Other user does the rest and saves the draft.',
-  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item got an account with Use group account on, staff were grouped by Organization and Branch with Organization and Branch added as dimensions, and two groups got their own account and dimension value. Other user changed settings and saved the draft; only the Owner or a user with LM posts. To try it yourself, use Reset sample data under View as.',
+  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item followed the group\'s expense account, staff were grouped by Organization and Branch with Organization and Branch added as dimensions, and two groups got their own account and dimension value. Other user changed settings and saved the draft; only the Owner or a user with LM posts. To try it yourself, use Reset sample data under View as.',
   steps: setupSteps as unknown as TourStep[],
   onReset: reset(),
   applyRole,
@@ -747,7 +749,7 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Payable accounts per party', tour: 'PAY-1', step: 3 },
   { feature: 'Pay item type from Talenta, with the header tip', tour: 'PAY-1', step: 4 },
   { feature: 'Map a pay item to any expense account', tour: 'PAY-1', step: 5 },
-  { feature: 'Use group account', tour: 'PAY-1', step: 6 },
+  { feature: "Cost pay items follow the group's expense account unless pinned", tour: 'PAY-1', step: 6 },
   { feature: 'Settings > Groups tab', tour: 'PAY-1', step: 7 },
   { feature: 'Group by Talenta fields', tour: 'PAY-1', step: 7 },
   { feature: 'Add dimension to groups, values prefilled by name', tour: 'PAY-1', step: 8 },
@@ -759,7 +761,7 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Sync log', tour: 'PAY-2', step: 2 },
   { feature: 'To fix before posting: unmapped pay item', tour: 'PAY-2', step: 3 },
   { feature: 'Map from the hold; the hold clears', tour: 'PAY-2', step: 4 },
-  { feature: 'No group warning: new group posts to default accounts', tour: 'PAY-2', step: 5 },
+  { feature: 'No group warning: new group posts to Everyone else', tour: 'PAY-2', step: 5 },
   { feature: 'Set up group clears the No group warning', tour: 'PAY-2', step: 6 },
   { feature: 'Draft review lines by account and dimension', tour: 'PAY-2', step: 7 },
   { feature: 'Warnings and Mark as checked', tour: 'PAY-2', step: 8 },

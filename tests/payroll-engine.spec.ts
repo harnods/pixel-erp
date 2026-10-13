@@ -4,7 +4,7 @@ import {
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, isDraftStale, setPayday,
   chooseRevision, chooseSeparateRun, revisionOf, repostVersions, reverseJournal, reverseAndRepost, lockPeriod, decidePartial,
   compareVersions, can, addPayrollAccount, syncLog, headcountChanges, markHeadcountExpected,
-  setPayItemAccount, setPayItemGroupsCanChange, setPayableAccount, setGroupBy, setGroupAccount, setGroupDimension, saveGroup, groupRows, createPayrollTag, groupDimensions, addGroupDimension, removeGroupDimension,
+  setPayItemAccount, costFollowsGroups, payItemPinned, everyoneElseAccount, setEveryoneElseAccount, setPayableAccount, setGroupBy, setGroupAccount, setGroupDimension, saveGroup, groupRows, createPayrollTag, groupDimensions, addGroupDimension, removeGroupDimension,
   jurnalDimensions, dimensionValues, groupDimensionTable, snapshotById,
   payItemType, payItemParty, payItemAccount, mappingFor, oldSyncExpense,
   clearHeadcountExpected, draftReview, runWarnings, acknowledgeWarning, postConfirmText, payablesTracker, simulateBankPayment,
@@ -113,9 +113,9 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v13 (v13: two access types, no payroll approval, Save draft)', () => {
+  it('persists under payroll:state-v14 (v14: one place for cost accounts, Everyone else, pinned cost items)', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v13'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v14'")
     expect(payroll.settings).not.toHaveProperty('dimensionLinks')
     expect(payroll.settings).not.toHaveProperty('groupMaps')
     // The seed: Organization and Branch added to groups; Group by Organization, Branch and Cost center; no explicit picks.
@@ -171,7 +171,7 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
     // Legal has no Organization value, but a New group's staff take no dimension from the Group by fields, so nothing holds.
     expect(runHolds(sep)).toHaveLength(0)
     expect(draftOf(sep)).not.toBeNull()
-    expect(runWarnings(sep.id).filter((w) => w.code === 'no-group').map((w) => w.message)).toEqual(['1 staff matched no group (Legal, Jakarta HQ, HQ Finance). Their pay posts to each pay item\'s default account with no group dimension. Set up the group in Payroll settings > Groups.'])
+    expect(runWarnings(sep.id).filter((w) => w.code === 'no-group').map((w) => w.message)).toEqual(['1 staff matched no group (Legal, Jakarta HQ, HQ Finance). Their cost posts to the Everyone else account with no group dimension. Set up the group in Payroll settings > Groups.'])
     const key = groupRows().find((g) => g.isNew)!.key
     expect(saveGroup(key).ok).toBe(true)
     // Legal matches no Organization value: no hold, the cost posts with Organization blank and the run warns.
@@ -799,10 +799,10 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(payItemType(row())).toBe('allowance')
     expect(setPayItemAccount(key, ACC.bpjsTk).message).toBe('Pick an expense or cost of goods sold account.')
     expect(setPayItemAccount(key, ACC.medical).ok).toBe(true)
-    expect(row()).toMatchObject({ role: 'Earning', debit: ACC.medical, credit: ACC.hutangGaji, roleConfirmed: true })
+    expect(row()).toMatchObject({ role: 'Earning', debit: ACC.medical, pinned: ACC.medical, credit: ACC.hutangGaji, roleConfirmed: true })
     expect(payItemParty(row())).toBe('Staff')
     expect(runHolds(run(SEP))).toHaveLength(0)
-    // A new item carries no group account yet: Sales staff book it to the row account too.
+    // Pinned: Sales staff book it to the pinned account too, not to their group's account.
     expect(sales(draftOf(run(SEP))!.lines, ACC.medical)).toBe(11_000_000)
     // Deductions and tax take their payable; the party label follows.
     const bpjs = mappingFor('BPJSK Employee', 'deduction')!
@@ -813,17 +813,62 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(as('Other user', () => setPayItemAccount(key, ACC.salaries)).ok).toBe(true)
   })
 
-  it('group account applies only to pay items set to Use group account', () => {
-    as('Owner or LM', () => setPayItemMapping(payItemKey('Insentif Penjualan', 'allowance'), { role: 'Earning', debit: ACC.medical, credit: ACC.hutangGaji }))
+  it("cost items follow the group's expense account unless pinned; null = follow groups, cost items only", () => {
     const key = payItemKey('Insentif Penjualan', 'allowance')
+    expect(setPayItemAccount(key, ACC.medical).ok).toBe(true)
     const lines = () => { rebuildDraft(run(SEP).id); return draftOf(run(SEP))!.lines }
-    const ins = (acct: string) => lines().filter((l) => l.account === acct).flatMap((l) => l.sources).filter((x) => x.item === 'Insentif Penjualan').reduce((s, x) => s + x.amount, 0)
+    const ins = (acct: string) => lines().filter((l) => l.account === acct).flatMap((l) => l.sources).filter((x) => x.item === 'Insentif Penjualan' && x.side === 'D').reduce((s, x) => s + x.amount, 0)
+    expect(payItemPinned(mappingFor('Insentif Penjualan', 'allowance')!)).toBe(ACC.medical)
     expect(ins(ACC.salesSalaries)).toBe(0)
-    expect(setPayItemGroupsCanChange(key, true).ok).toBe(true)
+    // Follow groups: the Sales groups' account takes it.
+    expect(setPayItemAccount(key, null).ok).toBe(true)
+    const m = mappingFor('Insentif Penjualan', 'allowance')!
+    expect([costFollowsGroups(m), payItemPinned(m), m.debit]).toEqual([true, null, everyoneElseAccount()])
     expect(ins(ACC.salesSalaries)).toBe(10_500_000)
+    expect(ins(ACC.medical)).toBe(0)
     expect(journalTotals(draftOf(run(SEP))!).debit).toBe(journalTotals(draftOf(run(SEP))!).credit)
     expect(lines().find((l) => l.account === ACC.hutangGaji)!.tags).toEqual({ Organization: null, Branch: null })
-    expect(setPayItemGroupsCanChange(payItemKey('BPJSK Employee', 'deduction'), true).ok).toBe(false)
+    // Deductions and tax keep their payable: null is refused, they never follow groups.
+    const bpjs = mappingFor('BPJSK Employee', 'deduction')!
+    expect(setPayItemAccount(bpjs.key, null).message).toBe('Pick an account for this pay item.')
+    expect([costFollowsGroups(bpjs), payItemPinned(bpjs)]).toEqual([false, null])
+  })
+
+  it('a new pay item maps in one save with Group\'s expense account (the hold\'s preselected pick)', () => {
+    const key = payItemKey('Insentif Penjualan', 'allowance')
+    expect(runHolds(run(SEP)).map((h) => h.code)).toEqual(['unmapped-item'])
+    expect(setPayItemAccount(key, null).ok).toBe(true)
+    expect(mappingFor('Insentif Penjualan', 'allowance')).toMatchObject({ role: 'Earning', roleConfirmed: true, pinned: null, debit: ACC.salaries, credit: ACC.hutangGaji, party: 'Staff' })
+    expect(runHolds(run(SEP))).toHaveLength(0)
+    expect(journalTotals(draftOf(run(SEP))!).debit).toBe(554_203_941)
+  })
+
+  it('Everyone else: staff in no group and groups with no account; expense or COGS only; following items mirror it', () => {
+    const itemOn = (lines: JournalLine[], acct: string, item: string) => lines.filter((l) => l.account === acct).flatMap((l) => l.sources).filter((x) => x.item === item && x.side === 'D').reduce((s, x) => s + x.amount, 0)
+    mapInsentif()
+    expect(everyoneElseAccount()).toBe(ACC.salaries)
+    expect(payroll.settings.everyoneElseAccount).toBe(ACC.salaries)
+    // Finance and Human Capital groups have no account of their own: their salary sits on Everyone else.
+    const hc = () => { rebuildDraft(run(SEP).id); return draftOf(run(SEP))!.lines.filter((l) => l.tags.Organization === 'Human Capital') }
+    expect(hc().some((l) => l.account === ACC.salaries && l.why.some((w) => w.includes('Everyone else account')))).toBe(true)
+    const total = journalTotals(draftOf(run(SEP))!).debit
+    expect(setEveryoneElseAccount(ACC.bpjsTk).message).toBe('Pick an expense or cost of goods sold account.')
+    expect(setEveryoneElseAccount(ACC.directLabour).ok).toBe(true)
+    expect(mappingFor('Basic Salary', 'allowance')!.debit).toBe(ACC.directLabour)
+    // Pinned items keep their account.
+    expect(mappingFor('Reimbursement Medical', 'allowance')!.debit).toBe(ACC.medical)
+    expect(hc().filter((l) => l.debit > 0 && l.account === ACC.salaries).map((l) => l.sources.map((x) => x.item))).toEqual([])
+    expect(itemOn(hc(), ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
+    expect(itemOn(draftOf(run(SEP))!.lines, ACC.medical, 'Reimbursement Medical')).toBeGreaterThan(0)
+    expect(journalTotals(draftOf(run(SEP))!).debit).toBe(total)
+  })
+
+  it('seed migration: old toggle on follows groups, off is pinned to its old debit; no groupsCanChange left', () => {
+    const pinned = Object.fromEntries(payroll.settings.mapping.filter((m) => m.roleConfirmed).map((m) => [m.name, payItemPinned(m)]))
+    expect(pinned).toMatchObject({ 'Basic Salary': null, 'Tunjangan Jabatan': null, 'Uang Makan': null, 'BPJS K paid by company': null, 'DPLK paid by company': null,
+      'Reimbursement Medical': ACC.medical, 'THR Keagamaan': ACC.salaries, 'PPh 21 Ditanggung Pemerintah': null, 'JHT Employee': null })
+    expect(payroll.settings.mapping.some((m) => 'groupsCanChange' in m)).toBe(false)
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).not.toMatch(/groupsCanChange|setPayItemGroupsCanChange|Use default account'|'Use group account/)
   })
 
   it('multi-field grouping: Organization + Branch rows; a group account moves only that group and its dimension values land on cost lines', () => {
@@ -1036,7 +1081,7 @@ describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use grou
     expect(itemOn(sepLines().filter((l) => l.tags.Organization === 'Human Capital'), ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
   })
 
-  it('New group: no hold; a no-group warning; the draft books its staff to each pay item\'s default account with no group dimension', () => {
+  it('New group: no hold; a no-group warning; the draft books its staff to the Everyone else account with no group dimension', () => {
     expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
     const sep = run(SEP)
     simulateSend('new-group', { runId: sep.id })
@@ -1047,10 +1092,10 @@ describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use grou
     expect(w).toHaveLength(1)
     const row = groupRows().find((r) => r.isNew)!
     expect(row).toMatchObject({ label: 'Operations, Medan', staff: 2 })
-    expect(w[0]!.message).toBe("2 staff matched no group (Operations, Medan). Their pay posts to each pay item's default account with no group dimension. Set up the group in Payroll settings > Groups.")
+    expect(w[0]!.message).toBe("2 staff matched no group (Operations, Medan). Their cost posts to the Everyone else account with no group dimension. Set up the group in Payroll settings > Groups.")
     expect(w[0]!.details).toEqual({ groups: [{ key: row.key, label: 'Operations, Medan', staff: 2 }] })
     expect(w[0]!.acknowledged).toBeNull()
-    // The draft builds: the 2 Medan staff's salary sits on Salaries (the pay item account) with no Organization or Branch.
+    // The draft builds: the 2 Medan staff's salary sits on Salaries (the Everyone else account) with no Organization or Branch.
     const d = draftOf(sep)!
     expect(journalTotals(d).debit).toBe(journalTotals(d).credit)
     expect(d.lines.some((l) => l.tags.Branch === 'Medan')).toBe(false)
@@ -1058,7 +1103,7 @@ describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use grou
     expect(bare).toHaveLength(1)
     const basic = bare[0]!.sources.find((x) => x.item === 'Basic Salary' && x.side === 'D')!
     expect(basic.staff).toHaveLength(2)
-    expect(bare[0]!.why.join(' ')).toContain("Group Operations, Medan is not set up, so it posts to the pay item's default account with no group dimension")
+    expect(bare[0]!.why.join(' ')).toContain("Group Operations, Medan is not set up, so it posts to the Everyone else account with no group dimension")
     expect(d.lines.filter((l) => l.account === ACC.directLabour).flatMap((l) => l.sources).every((x) => x.staff.length === 0 || !basic.staff.some((u) => x.staff.includes(u)))).toBe(true)
     // Warnings never block: it posts once marked as checked (or not).
     expect(postConfirmText(sep.id).warnings.some((m) => m.startsWith('2 staff matched no group'))).toBe(true)
@@ -1113,22 +1158,27 @@ describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use grou
     expect(medanOn()).toBe(moved)
   })
 
-  it('Use group account: only items set so take the group expense account; Use default account items and deductions never move', () => {
+  it("pinning moves an item off every group's account; following groups puts it back; deductions never move", () => {
     const lines = sepLines()
-    // Sales groups use Sales Salaries for salary (Use group account); the reimbursement stays on its own account.
+    // Sales groups use Sales Salaries for salary (follows groups); the reimbursement is pinned to its own account.
     expect(itemOn(lines, ACC.salesSalaries, 'Basic Salary')).toBeGreaterThan(0)
     expect(itemOn(lines, ACC.salesSalaries, 'Reimbursement Medical')).toBe(0)
     const basic = payItemKey('Basic Salary', 'allowance')
     const allBasic = [ACC.salaries, ACC.salesSalaries, ACC.directLabour].reduce((s, a) => s + itemOn(lines, a, 'Basic Salary'), 0)
     expect(itemOn(lines, ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
-    expect(setPayItemGroupsCanChange(basic, false).ok).toBe(true)
+    expect(setPayItemAccount(basic, ACC.salaries).ok).toBe(true)
     const after = sepLines()
-    // Use default account: every group's Basic Salary books to the pay item account; other items keep moving.
+    // Pinned: every group's Basic Salary books to the pinned account; other items keep moving.
     expect(itemOn(after, ACC.salesSalaries, 'Basic Salary') + itemOn(after, ACC.directLabour, 'Basic Salary')).toBe(0)
     expect(itemOn(after, ACC.salaries, 'Basic Salary')).toBe(allBasic)
+    expect(after.some((l) => l.why.some((w) => w.includes('Pinned to 6-60101 Salaries on Pay items')))).toBe(true)
     expect(itemOn(after, ACC.salesSalaries, 'Tunjangan Jabatan')).toBe(itemOn(lines, ACC.salesSalaries, 'Tunjangan Jabatan'))
     expect(journalTotals(draftOf(run(SEP))!).debit).toBe(journalTotals({ lines }).debit)
-    expect(setPayItemGroupsCanChange(payItemKey('PPH 21 Paid', 'deduction'), true).message).toBe('Only an allowance or a benefit can use the group\'s expense account.')
+    expect(setPayItemAccount(basic, null).ok).toBe(true)
+    const back = sepLines()
+    expect(itemOn(back, ACC.salesSalaries, 'Basic Salary')).toBe(itemOn(lines, ACC.salesSalaries, 'Basic Salary'))
+    expect(back.some((l) => l.why.some((w) => /^Basic Salary \(allowance\): Dr 6-60004 Sales Salaries.*Group Sales, .* posts it to 6-60004 Sales Salaries/.test(w)))).toBe(true)
+    expect(setPayItemAccount(payItemKey('PPH 21 Paid', 'deduction'), null).ok).toBe(false)
   })
 })
 
