@@ -20,7 +20,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
 import {
-  buildDocumentPlan, docMatchesStep, SUBCON_SCOPE_LABEL,
+  buildDocumentPlan, docMatchesStep, allocateReservedBatches, SUBCON_SCOPE_LABEL,
   encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL, SUBCON_VENDORS,
   isComponentSupply, componentSupplyStep, subconServiceProduct, SUBCON_DEFAULT_ACCOUNT_MAPPING,
   type SubconDocKind, type SubconPrefillLine,
@@ -1317,10 +1317,16 @@ function prefillLines(kind: SubconDocKind, originWarehouseId?: string): SubconPr
     // second time. Lines already fully sent drop out entirely.
     return components
       .map(r => {
-        const remaining = Math.max(0, plannedQtyFor(r) - (sentToVendorBySku.value[r.sku] ?? 0))
+        const sent = sentToVendorBySku.value[r.sku] ?? 0
+        const remaining = Math.max(0, plannedQtyFor(r) - sent)
+        // R15 — the batches reserved on the work order travel with the transfer,
+        // past whatever earlier transfers already sent.
+        const reserved = wo.value?.materialReservations?.[r.productId]?.batchSelection ?? []
+        const batches = allocateReservedBatches(reserved, sent, remaining)
         return {
           name: r.product, sku: r.sku, qty: remaining, unit: r.unit,
           unitCost: r.purchaseCost, maxQty: remaining,
+          ...(batches.length ? { batches } : {}),
         }
       })
       .filter(l => l.qty > 0)

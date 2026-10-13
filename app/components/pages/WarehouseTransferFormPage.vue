@@ -18,7 +18,7 @@ import { warehouses } from '~/data/warehouses'
 import { decodeSubconPrefill, capLinesToAvailable, SUBCON_VENDOR_WAREHOUSES } from '~/data/subcon'
 import { recordSubconDocument } from '~/data/workOrders'
 import { productBySku } from '~/data/inventory'
-import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { getWarehouseDetail, autoSelectBatches } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
 import { resolveMisplacedSerials } from '~/data/wmsStockAdjustments'
 import { stockLocationPaths } from '~/data/storageLocations'
@@ -392,6 +392,44 @@ const subconCappedLines = ref<string[]>([])
  */
 const isSubconTransfer = computed(() => !!subconSource.value)
 
+/**
+ * R15 — the batch lines a subcon transfer opens with, so a batch-tracked
+ * component can leave without being picked again.
+ *
+ * The work order's reserved batches come first, each capped at what the batch
+ * still has available here. If they do not cover the line — no reservation, or
+ * one made against another warehouse — the rest is picked by the warehouse's own
+ * batch rule (FEFO by default), the same way a reservation is picked. The drawer
+ * stays editable: the loading bay can still change which batches go.
+ */
+function subconBatchLines(
+  sku: string, qty: number, unit: string, carried?: { batchNo: string; qty: number }[],
+): CommittedBatch[] {
+  const stock = getWarehouseDetail(originId.value)?.stock.find(s => s.sku === sku)
+  const out: CommittedBatch[] = []
+  let left = qty
+  for (const c of carried ?? []) {
+    const b = stock?.batches?.find(x => x.batchNo === c.batchNo)
+    const take = Math.min(c.qty, b?.available ?? 0, left)
+    if (!b || take <= 0) continue
+    out.push({ key: b.batchNo, batchNo: b.batchNo, expiryDate: b.expiryDate, desc: '', onHand: b.available, counted: take, unit, location: b.location })
+    left -= take
+  }
+  if (left > 0) {
+    const chosen = new Set(out.map(b => b.batchNo))
+    for (const pick of autoSelectBatches(originId.value, sku, left + out.reduce((s, b) => s + (chosen.has(b.batchNo) ? (b.counted ?? 0) : 0), 0))) {
+      if (left <= 0) break
+      if (chosen.has(pick.batchNo)) continue
+      const b = stock?.batches?.find(x => x.batchNo === pick.batchNo)
+      const take = Math.min(pick.take, left)
+      if (take <= 0) continue
+      out.push({ key: pick.batchNo, batchNo: pick.batchNo, expiryDate: pick.expiryDate, desc: '', onHand: b?.available ?? pick.onHand, counted: take, unit, location: pick.location })
+      left -= take
+    }
+  }
+  return out
+}
+
 function prefillFromSubcon(): boolean {
   const p = decodeSubconPrefill(route.query.subcon)
   if (!p) return false
@@ -421,15 +459,18 @@ function prefillFromSubcon(): boolean {
   const { lines, shortfalls } = capLinesToAvailable(p.lines, availableFor)
   rows.value = lines.map(l => {
     const known = productBySku(l.sku)
+    const unit = known?.unit ?? l.unit
     return {
       id: rowSeq++,
       sku: l.sku,
       productName: known?.name ?? l.name,
       desc: known?.desc ?? '',
       img: known?.img ?? '',
-      unit: known?.unit ?? l.unit,
+      unit,
       qty: String(l.qty),
       qtyError: false,
+      // R15 — a batch-tracked component arrives with its batches already chosen.
+      ...(isBatchTrackedSku(l.sku) ? { batchLines: subconBatchLines(l.sku, l.qty, unit, p.lines.find(x => x.sku === l.sku)?.batches) } : {}),
     }
   })
   subconCappedLines.value = shortfalls.map((sf) => {

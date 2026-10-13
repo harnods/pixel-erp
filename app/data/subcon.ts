@@ -275,6 +275,11 @@ export interface SubconPrefillLine {
   /** The work order cost line this line charges (R11) — what the request covers. */
   lineId?: string
   /**
+   * The batches the work order reserved for this component, carried onto the
+   * document so a batch-tracked component is not picked twice (R15).
+   */
+  batches?: { batchNo: string; qty: number }[]
+  /**
    * Most that may still be moved for this line — the work order's outstanding
    * quantity (needed minus already sent). The form validates against it, so a
    * second transfer cannot over-send what the order actually requires.
@@ -1051,4 +1056,39 @@ export function evaluateSubconAdjustment(args: {
     issues.push({ kind: 'reason-missing' })
   }
   return { issues, changes }
+}
+
+
+// ── Batch carry-through (R15) ─────────────────────────────────────────────────
+
+/**
+ * The part of a work order's batch reservation one document should carry.
+ *
+ * The reservation is taken in its own order (the order it was picked in). What
+ * earlier documents already sent is skipped first, so a second transfer carries
+ * the batches still due rather than re-sending the first ones; then `take` units
+ * are allocated. A reservation smaller than the document's quantity simply runs
+ * out — the rest is left for the form to pick.
+ */
+export function allocateReservedBatches(
+  selection: { batchNo: string; qty: number }[],
+  alreadySent: number,
+  take: number,
+): { batchNo: string; qty: number }[] {
+  let skip = Math.max(0, alreadySent)
+  let left = Math.max(0, take)
+  const out: { batchNo: string; qty: number }[] = []
+  for (const b of selection) {
+    if (left <= 0) break
+    let avail = b.qty
+    const skipped = Math.min(skip, avail)
+    avail -= skipped
+    skip -= skipped
+    const qty = Math.min(avail, left)
+    if (qty > 0) {
+      out.push({ batchNo: b.batchNo, qty })
+      left -= qty
+    }
+  }
+  return out
 }
