@@ -3,9 +3,10 @@
  * has sent per field, the accounts a pay item row can pick from the chart, and the last send.
  * Nothing here writes the payroll state.
  */
+import * as store from './payrollStore'
 import {
-  payroll, runs, currentVersionOf, payrollAccount, staffRows, fieldValue,
-  type Run, type RunVersion,
+  payroll, runs, currentVersionOf, payrollAccount, staffRows, fieldValue, accountLabel, isCostItem,
+  type Run, type RunVersion, type PayItemMapping, type PayrollSettings, type Result,
 } from './payrollStore'
 import { SBU_KEY, TALENTA_FIELDS, type PayrollAccountType, type TalentaField } from './payrollMaster'
 import { coaRecords, isHeader } from './chartOfAccounts'
@@ -70,4 +71,71 @@ export function accountChoices(types: PayrollAccountType[]): AccountOption[] {
     out.set(c.code, { value: c.code, label: `${c.code} ${c.name}`, type, name: c.name })
   }
   return [...out.values()].sort((a, b) => a.value.localeCompare(b.value))
+}
+
+// ── Cost accounts: one place (Groups own them, Pay items may pin) ──────────────
+/*
+ * Adapter over the engine's cost-account API (everyoneElseAccount, setEveryoneElseAccount,
+ * costFollowsGroups, payItemPinned, setPayItemAccount(key, code | null)). When the engine has
+ * them, these call through; until then they fall back to the old groupsCanChange flag so the
+ * screens keep compiling and working on either engine.
+ */
+type Fn = (...a: any[]) => any
+const api = store as unknown as Record<string, Fn | undefined>
+/** The 'Everyone else' account when nothing is saved yet: 6-60101 Salaries. */
+export const EVERYONE_ELSE_SEED = '6-60101'
+/** Option value for "Group's expense account" in a cost item's account select. */
+export const FOLLOW_GROUPS = '__groups'
+/** Option value for 'Everyone else (…)' in a group's account select. */
+export const EVERYONE_ELSE = '__everyone'
+
+/** The account for staff in no group and for groups with no account of their own. */
+export function everyoneElseAccount(s?: PayrollSettings): string {
+  const own = (s ?? payroll.settings) as { everyoneElseAccount?: string | null }
+  if (!s && api.everyoneElseAccount) return api.everyoneElseAccount() ?? EVERYONE_ELSE_SEED
+  return own.everyoneElseAccount ?? EVERYONE_ELSE_SEED
+}
+export function setEveryoneElseAccount(code: string): Result {
+  if (api.setEveryoneElseAccount) return api.setEveryoneElseAccount(code)
+  ;(payroll.settings as { everyoneElseAccount?: string }).everyoneElseAccount = code
+  return { ok: true }
+}
+/** 'Everyone else (6-60101 Salaries)': the group account select's empty choice. */
+export function everyoneElseLabel(s?: PayrollSettings): string {
+  return `Everyone else (${accountLabel(everyoneElseAccount(s))})`
+}
+/** A cost item's pinned account, or null when it follows each group's expense account. */
+export function payItemPinned(m: PayItemMapping): string | null {
+  if (api.payItemPinned) return api.payItemPinned(m) ?? null
+  if (!isCostItem(m)) return null
+  const pinned = (m as { pinned?: string | null }).pinned
+  if (pinned !== undefined) return pinned
+  return (m as { groupsCanChange?: boolean }).groupsCanChange ? null : m.debit
+}
+/** True when a cost item posts to each group's expense account (nothing pinned). */
+export function costFollowsGroups(m: PayItemMapping): boolean {
+  if (api.costFollowsGroups) return !!api.costFollowsGroups(m)
+  return isCostItem(m) && !payItemPinned(m)
+}
+/**
+ * Pick a pay item's account. For a cost item: a code pins it, null (or FOLLOW_GROUPS) follows the
+ * groups. Deductions and tax items take their payable or receivable as before.
+ */
+export function setCostAccount(key: string, code: string | null): Result {
+  const value = code === FOLLOW_GROUPS ? null : code
+  const setAcc = api.setPayItemAccount as Fn
+  if (api.payItemPinned) return setAcc(key, value)
+  // Old engine: pin = flag off + account; follow = flag on (+ an account so the row is mapped).
+  // Flip the flag first: the account write rebuilds the drafts, which must see the new flag.
+  const row = payroll.settings.mapping.find((m) => m.key === key)
+  const flag = api.setPayItemGroupsCanChange as Fn
+  if (row && isCostItem(row)) { const f = flag(key, !value) as Result; if (!f.ok) return f }
+  if (value) return setAcc(key, value)
+  if (row && !row.debit) return setAcc(key, everyoneElseAccount())
+  return { ok: true }
+}
+/** A pay item still holds the run: no type yet, or no account (a cost item that follows groups needs none). */
+export function payItemNeedsAccount(m: PayItemMapping): boolean {
+  if (!m.roleConfirmed || !m.role || !m.credit) return true
+  return isCostItem(m) && costFollowsGroups(m) ? false : !m.debit
 }

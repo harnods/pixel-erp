@@ -1,8 +1,10 @@
 <script setup lang="ts">
 /**
  * Groups: staff who share the same Talenta values (Organization, Branch, ...) form a group, and
- * each group picks where its pay posts in Jurnal: an expense account (for pay items set to Use
- * group account) and a value for each dimension added to the table, on the cost lines.
+ * each group picks where its pay posts in Jurnal: an expense account (every cost pay item not
+ * pinned on Pay items) and a value for each dimension added to the table, on the cost lines.
+ * An 'Everyone else' row pinned on top holds the account for staff in no group and for groups
+ * with no account of their own (their select's first choice reads 'Everyone else (<account>)').
  *
  * - "Group staff by" card: one chip per chosen field, removable, plus Add field. Only the five
  *   fields in GROUP_FIELDS; Job position and Job level are left out, since a group can be one
@@ -12,8 +14,8 @@
  *   adds any Jurnal dimension, the x on a column header removes it. A value defaults to the dimension
  *   value named like one of the group's Talenta values; an empty value posts the dimension blank and
  *   the run warns ('no-dimension-value'), it never holds.
- *   A New row (nobody set it up) does not hold the run: its pay posts to each pay item's
- *   default account until it is set up. A row covering 1 or 2 staff carries a warning, no block.
+ *   A New row (nobody set it up) does not hold the run: its cost posts to the Everyone else
+ *   account, with no group dimension, until it is set up. A row covering 1 or 2 staff carries a warning, no block.
  * - Filters (All / New / 1 or 2 staff + search) and bulk edit over the selected rows, so nobody
  *   sets every combination one by one.
  */
@@ -30,6 +32,7 @@ import {
 import type { TalentaField } from '~/data/payrollMaster'
 import {
   accountChoices, fieldSent, GROUP_FIELDS, isGroupField, groupFieldLabel, fewStaff, fewStaffMessage, groupMatches,
+  EVERYONE_ELSE, everyoneElseAccount, everyoneElseLabel, setEveryoneElseAccount,
 } from '~/data/payrollUiSettings'
 import { statusLabel, statusType } from '~/data/payrollUiRunCopy'
 import {
@@ -114,11 +117,13 @@ const valueText = (v: string) => v || t('Not set')
 
 // ── Row edits ──
 const DEFAULT = '__default'
-const costOptions = computed(() => [{ value: DEFAULT, label: t('Use default account'), name: '', type: 'expense' as const }, ...accountChoices(['expense', 'cogs'])])
+const accountOptions = computed(() => accountChoices(['expense', 'cogs']))
+/** A group's choices: 'Everyone else (<account>)' first (no account of its own), then any expense or COGS account. */
+const costOptions = computed(() => [{ value: EVERYONE_ELSE, label: t(everyoneElseLabel()), name: '', type: 'expense' as const }, ...accountOptions.value])
 const rowErrors = reactive<Record<string, string>>({})
 function pickAccount(code: string): string | null {
-  if (code === DEFAULT || !code) return null
-  const o = costOptions.value.find((x) => x.value === code)
+  if (code === EVERYONE_ELSE || !code) return null
+  const o = accountOptions.value.find((x) => x.value === code)
   if (o && !payrollAccount(code)) useChartAccount({ code: o.value, name: o.name, type: o.type })
   return code
 }
@@ -126,7 +131,17 @@ function onAccount(key: string, code: string) {
   const acc = pickAccount(code)
   const r = setGroupAccount(key, acc)
   rowErrors[key] = r.ok ? '' : t(r.message ?? 'Not saved. Pick an expense or COGS account.')
-  if (r.ok) successToast(acc ? t(`Group now posts to ${accountLabel(acc)}`) : t('Group uses the default account'))
+  if (r.ok) successToast(acc ? t(`Group now posts to ${accountLabel(acc)}`) : t('Group now uses the Everyone else account'))
+}
+// ── Everyone else: staff in no group and groups with no account of their own ──
+const everyoneElse = computed(() => everyoneElseAccount())
+const everyoneError = ref('')
+function onEveryoneElse(code: string) {
+  if (!code || code === everyoneElse.value) return
+  pickAccount(code)
+  const r = setEveryoneElseAccount(code)
+  everyoneError.value = r.ok ? '' : t(r.message ?? 'Not saved. Pick an expense or COGS account.')
+  if (r.ok) successToast(t(`Everyone else now posts to ${accountLabel(code)}`))
 }
 /**
  * A value cell's choices: the dimension's values, "Create value" for each of the group's Talenta
@@ -194,7 +209,7 @@ function onBulkAccount(code: string) {
   bulkAccount.value = ''
   if (!code) return
   const acc = pickAccount(code)
-  runBulk((k) => setGroupAccount(k, acc), (n) => acc ? `${groupsWord(n)} now post to ${accountLabel(acc)}` : `${groupsWord(n)} now use the default account`)
+  runBulk((k) => setGroupAccount(k, acc), (n) => acc ? `${groupsWord(n)} now post to ${accountLabel(acc)}` : `${groupsWord(n)} now use the Everyone else account`)
 }
 function onBulkDim(dimension: string, v: string) {
   bulkDims[dimension] = ''
@@ -208,7 +223,8 @@ function onBulkSetUp() {
   runBulk((k) => saveGroup(k), (n) => `${groupsWord(n)} set up`)
 }
 
-const NEW_TIP = 'Posts to default accounts until set up.'
+const NEW_TIP = 'Posts to the Everyone else account until set up.'
+const EVERYONE_TIP = 'Staff in no group and groups with no account post here.'
 const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMessage(n)) : '' }
 </script>
 
@@ -246,7 +262,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Groups') }}</div>
-          <div class="pset-card__sub">{{ t('Pay items set to Use group account post to the group\'s expense account. Add the dimensions you report on, then pick a value for each group.') }}</div>
+          <div class="pset-card__sub">{{ t('Cost pay items post to the group\'s expense account unless pinned on Pay items. Add the dimensions you report on, then pick a value for each group.') }}</div>
         </div>
         <ErpStatusBadge v-if="newCount" status="new-group" :label="t(newCount === 1 ? '1 new group' : `${newCount} new groups`)" :type="statusType('new-group')" />
       </div>
@@ -269,7 +285,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
         <!-- Bulk edit -->
         <div v-if="canEdit && selected.length" class="pgr-bulk" data-testid="pgr-bulk">
           <span class="pgr-bulk__count">{{ t(`${selected.length} selected`) }}</span>
-          <ErpFilterSelect id="pgr-bulk-account" :model-value="bulkAccount" :placeholder="t('Set expense account')" :options="costOptions" width="220px" :is-clearable="false" @update:model-value="onBulkAccount" />
+          <ErpFilterSelect id="pgr-bulk-account" :model-value="bulkAccount" :placeholder="t('Set expense account')" :options="costOptions" width="288px" :is-clearable="false" @update:model-value="onBulkAccount" />
           <ErpFilterSelect
             v-for="c in dimColumns" :id="`pgr-bulk-dim-${safe(c)}`" :key="c" :model-value="bulkDims[c] ?? ''"
             :placeholder="t(`Set ${c}`)" :options="bulkValueOptions(c)" width="176px" :is-clearable="false"
@@ -338,6 +354,20 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
               </tr>
             </thead>
             <tbody>
+              <!-- Everyone else: always on top, not selectable, no dimensions. -->
+              <tr class="pgr-everyone" data-group="everyone-else" data-tour="payroll-everyone-else" :aria-label="t('Everyone else')">
+                <td v-if="canEdit" class="pset-td pgr-check" />
+                <td :colspan="groupBy.length + 1" class="pset-td pgr-everyone__name">
+                  <span class="pgr-everyone__title">{{ t('Everyone else') }}</span>
+                  <span class="pgr-everyone__sub">{{ t(EVERYONE_TIP) }}</span>
+                  <span v-if="everyoneError" class="pset-line pset-danger">{{ everyoneError }}</span>
+                </td>
+                <td class="pset-td pgr-split pgr-acct">
+                  <ErpFilterSelect v-if="canEdit" id="pgr-acc-everyone-else" :model-value="everyoneElse" :placeholder="t('Select account')" :options="accountOptions" width="100%" :is-clearable="false" @update:model-value="onEveryoneElse" />
+                  <span v-else>{{ accountLabel(everyoneElse) }}</span>
+                </td>
+                <td v-for="c in dimColumns" :key="c" class="pset-td pgr-dim" :data-dimension="c" />
+              </tr>
               <tr
                 v-for="r in visibleRows" :key="r.key" :data-group="r.key" :aria-label="r.label"
                 :data-status="r.isNew ? 'new' : 'set-up'" :class="{ 'is-selected': isSelected(r.key) }"
@@ -368,8 +398,8 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                   </span>
                 </td>
                 <td class="pset-td pgr-split pgr-acct">
-                  <ErpFilterSelect v-if="canEdit" :id="`pgr-acc-${safe(r.key)}`" :model-value="r.account ?? DEFAULT" :placeholder="t('Use default account')" :options="costOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(r.key, v)" />
-                  <span v-else>{{ r.account ? accountLabel(r.account) : t('Use default account') }}</span>
+                  <ErpFilterSelect v-if="canEdit" :id="`pgr-acc-${safe(r.key)}`" :model-value="r.account ?? EVERYONE_ELSE" :placeholder="t(everyoneElseLabel())" :options="costOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(r.key, v)" />
+                  <span v-else>{{ r.account ? accountLabel(r.account) : t(everyoneElseLabel()) }}</span>
                 </td>
                 <td v-for="d in cellsOf(r)" :key="d.dimension" class="pset-td pgr-dim" :data-dimension="d.dimension" :data-explicit="d.explicit ? 'true' : 'false'">
                   <ErpFilterSelect v-if="canEdit" :id="`pgr-val-${safe(r.key)}-${safe(d.dimension)}`" :model-value="d.value ?? ''" :placeholder="t('Select value')" :options="valueOptions(r, d.dimension, d.explicit)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onValue(r.key, d.dimension, v)" />
@@ -386,7 +416,15 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
           </table>
         </div>
       </template>
-      <p v-else class="pgr-empty">{{ t(groupBy.length ? 'No groups yet. They show here after Talenta sends payroll.' : 'Add a field to Group staff by to see groups here.') }}</p>
+      <template v-else>
+        <p class="pgr-empty">{{ t(groupBy.length ? 'No groups yet. They show here after Talenta sends payroll.' : 'Add a field to Group staff by to see groups here.') }}</p>
+        <div class="pgr-everyone-line" data-group="everyone-else">
+          <label class="pgr-everyone__title" for="pgr-acc-everyone-else-only">{{ t('Everyone else') }}</label>
+          <span class="pgr-everyone__sub">{{ t('Staff in no group post to') }}</span>
+          <ErpFilterSelect v-if="canEdit" id="pgr-acc-everyone-else-only" :model-value="everyoneElse" :placeholder="t('Select account')" :options="accountOptions" width="248px" :is-clearable="false" @update:model-value="onEveryoneElse" />
+          <span v-else>{{ accountLabel(everyoneElse) }}</span>
+        </div>
+      </template>
       <p v-if="filtered && rows.length" class="pgr-foot pset-hint">{{ t(`Showing ${visibleRows.length} of ${rows.length} groups`) }}</p>
     </div>
   </div>
@@ -432,7 +470,8 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-rows { table-layout: fixed; width: max-content; min-width: 100%; }
 .pgr-c-check { width: 44px; }
 .pgr-c-num { width: 72px; }
-.pgr-c-acct { width: 232px; }
+/* Fits 'Everyone else (6-60101 Salaries)' without cutting it. */
+.pgr-c-acct { width: 320px; }
 .pgr-c-dim { width: 184px; }
 /* A dimension column's remove x shows on header hover or keyboard focus. */
 .pgr-dimx { margin-left: var(--mp-spacing-1); opacity: 0; transition: opacity 0.12s; }
@@ -470,6 +509,12 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-staff { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .pgr-few { display: inline-flex; color: var(--mp-colors-text-warning, var(--mp-text-warning)); cursor: help; }
 .pgr-status { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); flex-wrap: wrap; }
+.pgr-everyone .pset-td { background: var(--mp-background-neutral-subtle); }
+.pgr-everyone__name { white-space: normal; }
+.pgr-everyone__title { display: block; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pgr-everyone__sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pgr-everyone-line { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: 0 var(--mp-spacing-4) var(--mp-spacing-4); }
+.pgr-everyone-line .pgr-everyone__title, .pgr-everyone-line .pgr-everyone__sub { display: inline; }
 .pgr-none { text-align: left; color: var(--mp-text-secondary); }
 .pgr-none > * { vertical-align: middle; margin-right: var(--mp-spacing-2); }
 .pgr-empty { margin: 0; padding: var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }

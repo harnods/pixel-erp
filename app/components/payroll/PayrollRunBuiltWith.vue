@@ -1,14 +1,16 @@
 <script setup lang="ts">
 /**
  * "Mapping used": the settings a draft or posted journal was built from, read-only. Shows only
- * the pay item to account list and, per group, the value of each dimension added to groups
- * (an explicit pick, else the value named like one of the group's Talenta values, else blank).
+ * the pay item to account list (a cost item reads "Group's expense account" or its pinned
+ * account) and, per group, its expense account (else 'Everyone else') and the value of each
+ * dimension added to groups (an explicit pick, else the name match, else blank).
  */
 import { computed } from 'vue'
-import { snapshotById, accountLabel, groupLabel } from '~/data/payrollStore'
+import { snapshotById, accountLabel, groupLabel, isCostItem, payItemAccount, payItemParty, type PayItemMapping } from '~/data/payrollStore'
+import { PARTY_LABEL } from '~/data/payrollUiPay'
 import { sectionLabel } from '~/data/payrollUiRunCopy'
 import { groupDimensionsOf, nameMatch } from '~/data/payrollUiGroupDims'
-import { groupFieldLabel } from '~/data/payrollUiSettings'
+import { groupFieldLabel, payItemPinned, everyoneElseAccount } from '~/data/payrollUiSettings'
 
 const props = defineProps<{ snapshotId: string | null }>()
 const { t } = useLocale()
@@ -24,6 +26,17 @@ const groups = computed(() => (s.value?.groups ?? [])
     values: dims.value.map((d) => g.dims[d] ?? nameMatch(d, g.values)),
   }))
   .sort((a, b) => a.label.localeCompare(b.label)))
+/** Cost items: the pinned account or "Group's expense account"; the rest: their one account, as on Pay items. */
+function itemAccount(m: PayItemMapping): string {
+  if (isCostItem(m)) { const p = payItemPinned(m); return p ? accountLabel(p) : t("Group's expense account") }
+  const code = payItemAccount(m)
+  return code ? accountLabel(code) : '-'
+}
+function partyLabel(m: PayItemMapping): string {
+  const p = payItemParty(m)
+  return p ? t(PARTY_LABEL[p]) : t('Company keeps it')
+}
+const everyoneElse = computed(() => (s.value ? accountLabel(everyoneElseAccount(s.value)) : ''))
 const groupedBy = computed(() => (s.value?.groupBy ?? []).map((f) => t(groupFieldLabel(f))).join(', '))
 </script>
 
@@ -36,14 +49,14 @@ const groupedBy = computed(() => (s.value?.groupBy ?? []).map((f) => t(groupFiel
       <table class="pbw__table">
         <thead><tr>
           <th class="pbw__th">{{ t('Pay item') }}</th>
-          <th class="pbw__th">{{ t('Debit account') }}</th>
-          <th class="pbw__th">{{ t('Credit account') }}</th>
+          <th class="pbw__th">{{ t('Account') }}</th>
+          <th class="pbw__th">{{ t('Owed to') }}</th>
         </tr></thead>
         <tbody>
           <tr v-for="m in s.mapping" :key="m.key">
             <td class="pbw__td">{{ m.name }} <span class="pbw__muted">· {{ t(sectionLabel(m.section)) }}</span></td>
-            <td class="pbw__td">{{ m.debit ? accountLabel(m.debit) : '-' }}</td>
-            <td class="pbw__td">{{ m.credit ? accountLabel(m.credit) : '-' }}</td>
+            <td class="pbw__td" :data-cost-account="isCostItem(m) ? (payItemPinned(m) ? 'pinned' : 'groups') : undefined">{{ itemAccount(m) }}</td>
+            <td class="pbw__td">{{ partyLabel(m) }}</td>
           </tr>
         </tbody>
       </table>
@@ -62,9 +75,14 @@ const groupedBy = computed(() => (s.value?.groupBy ?? []).map((f) => t(groupFiel
             <th v-for="d in dims" :key="d" class="pbw__th" :data-dimension="d">{{ d }}</th>
           </tr></thead>
           <tbody>
+            <tr data-group="everyone-else" class="pbw__everyone">
+              <td class="pbw__td">{{ t('Everyone else') }}</td>
+              <td class="pbw__td">{{ everyoneElse }}</td>
+              <td v-for="d in dims" :key="d" class="pbw__td pbw__none" />
+            </tr>
             <tr v-for="g in groups" :key="g.key" :data-group="g.key">
               <td class="pbw__td">{{ g.label }}</td>
-              <td class="pbw__td">{{ g.account ? accountLabel(g.account) : t('Use default account') }}</td>
+              <td class="pbw__td">{{ g.account ? accountLabel(g.account) : t('Everyone else') }}</td>
               <td v-for="(v, i) in g.values" :key="dims[i]" class="pbw__td" :class="{ 'pbw__none': !v }">{{ v ?? t('No value') }}</td>
             </tr>
           </tbody>
@@ -92,5 +110,6 @@ const groupedBy = computed(() => (s.value?.groupBy ?? []).map((f) => t(groupFiel
 .pbw__scroll { overflow-x: auto; }
 .pbw__none { color: var(--mp-text-secondary); }
 .pbw__table--groups .pbw__td { white-space: nowrap; }
+.pbw__everyone .pbw__td { background: var(--mp-background-neutral-subtle); }
 
 </style>

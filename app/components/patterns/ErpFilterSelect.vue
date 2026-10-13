@@ -12,7 +12,8 @@ import {
   MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 
-type Opt = { value: string; label: string }
+/** `group` (optional) prints a small header above the first option of each run of the same group. */
+type Opt = { value: string; label: string; group?: string }
 
 const props = withDefaults(defineProps<{
   id: string
@@ -39,6 +40,8 @@ const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 const normalized = computed<Opt[]>(() =>
   props.options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o)),
 )
+/** The group header to print before option i of the filtered list (when it starts a new group). */
+const groupHead = (i: number) => { const g = filtered.value[i]?.group; return g && filtered.value[i - 1]?.group !== g ? g : '' }
 const selectedLabel = computed(() => normalized.value.find((o) => o.value === props.modelValue)?.label ?? '')
 
 // Combobox state: the trigger input is typeable while open.
@@ -83,12 +86,14 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
       </MpPopoverTrigger>
       <MpPopoverContent :class="contentClass">
         <MpPopoverList>
-          <MpPopoverListItem
-            v-for="o in filtered" :key="o.value"
-            :is-active="o.value === modelValue"
-            @mousedown.prevent
-            @click="pick(o.value)"
-          >{{ o.label }}</MpPopoverListItem>
+          <template v-for="(o, i) in filtered" :key="o.value">
+            <div v-if="groupHead(i)" class="efs-group" role="presentation">{{ groupHead(i) }}</div>
+            <MpPopoverListItem
+              :is-active="o.value === modelValue"
+              @mousedown.prevent
+              @click="pick(o.value)"
+            >{{ o.label }}</MpPopoverListItem>
+          </template>
           <div v-if="!filtered.length" class="efs-empty">{{ emptyText }}</div>
         </MpPopoverList>
       </MpPopoverContent>
@@ -130,6 +135,8 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 .efs--filled:hover .efs-clear { display: inline-flex; }
 .efs-clear:hover { color: var(--mp-text-default); }
 
+.efs-group { align-self: stretch; width: 100%; box-sizing: border-box; text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); border-top: 1px solid var(--mp-colors-border-default, #e7edf5); }
+.efs-group:first-child { border-top: 0; }
 .efs-empty { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* ── `cell` variant — fills a table cell edge-to-edge ──────────────────────

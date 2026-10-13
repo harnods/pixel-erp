@@ -2,8 +2,8 @@
 /**
  * "To fix before posting": each item with its fix inline. A send stops only for a pay item with
  * no account, an account the journal can't use, a partial send, the same-run-or-separate choice,
- * or the first send's company check. Staff in a group nobody set up no longer stop the run: they
- * post to default accounts and show as a 'no-group' warning (PayrollRunWarnings). A group with no
+ * or the first send's company check. Staff in a group nobody set up no longer stop the run: their
+ * cost posts to the Everyone else account and shows as a 'no-group' warning (PayrollRunWarnings). A group with no
  * value for an added dimension doesn't stop it either: 'no-dimension-value' warning. Every save re-checks held runs, so a fix
  * usually clears the item by itself; "Check again" re-checks the run on demand.
  */
@@ -18,7 +18,7 @@ import {
   type Hold,
 } from '~/data/payrollStore'
 import type { PaySection } from '~/data/payrollMaster'
-import { accountChoices, type AccountOption } from '~/data/payrollUiSettings'
+import { accountChoices, type AccountOption, FOLLOW_GROUPS, setCostAccount } from '~/data/payrollUiSettings'
 import { successToast, infoToast } from '~/utils/toasts'
 import { sectionLabel } from '~/data/payrollUiRunCopy'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
@@ -46,36 +46,47 @@ function release() {
 }
 
 // ── Unmapped pay items ────────────────────────────────────────────────────
-// Same one-account pick as Settings > Pay items: the type comes from Talenta, a cost item debits
-// the account and credits its party's payable, a deduction or tax item credits it.
+// Same one-account pick as Settings > Pay items: the type comes from Talenta. A cost item starts on
+// "Group's expense account" (each staff's group account, else Everyone else), so one Save clears
+// the hold; it can be pinned to one account instead. A deduction or tax item credits its account.
 interface ItemForm { account: string; error: string }
 const itemForms = reactive<Record<string, ItemForm>>({})
 function itemForm(it: { key: string; name: string; section: PaySection }): ItemForm {
   if (!itemForms[it.key]) {
     const m = mappingFor(it.name, it.section)
     const s = suggestMapping(it.name, it.section)
-    const cost = it.section !== 'deduction' && s?.role !== 'Tax'
-    itemForms[it.key] = { account: (cost ? (m?.debit ?? s?.debit) : (m?.credit ?? s?.credit)) ?? '', error: '' }
+    const cost = isCost(it)
+    itemForms[it.key] = { account: cost ? FOLLOW_GROUPS : (m?.credit ?? s?.credit) ?? '', error: '' }
   }
   return itemForms[it.key]!
 }
-const costOptions = computed(() => accountChoices(['expense', 'cogs']))
+/** True for an allowance (not tax) or a benefit: its cost follows the groups unless pinned. */
+function isCost(it: { name: string; section: PaySection }): boolean {
+  const m = mappingFor(it.name, it.section)
+  if (m) return isCostItem(m)
+  return it.section !== 'deduction' && suggestMapping(it.name, it.section)?.role !== 'Tax'
+}
+const costOptions = computed(() => [
+  { value: FOLLOW_GROUPS, label: t("Group's expense account"), name: '', type: 'expense' as const },
+  ...accountChoices(['expense', 'cogs']).map((o) => ({ ...o, group: t('Pin to account') })),
+])
 const balanceOptions = computed(() => accountChoices(['liability', 'asset']))
 const liabilityOptions = computed(() => accountChoices(['liability']))
 function optionsFor(it: { name: string; section: PaySection }): AccountOption[] {
   const m = mappingFor(it.name, it.section)
-  if (m ? isCostItem(m) : it.section !== 'deduction') return costOptions.value
+  if (isCost(it)) return costOptions.value
   return m && payItemType(m) === 'tax' ? liabilityOptions.value : balanceOptions.value
 }
 function saveItem(it: { key: string; name: string; section: PaySection }) {
   const f = itemForm(it)
   if (!f.account) { f.error = 'Pick an account, then save.'; return }
+  const follow = f.account === FOLLOW_GROUPS
   const o = optionsFor(it).find((x) => x.value === f.account)
-  if (o && !payrollAccount(o.value)) useChartAccount({ code: o.value, name: o.name, type: o.type })
-  const r = setPayItemAccount(it.key, f.account)
+  if (o && !follow && !payrollAccount(o.value)) useChartAccount({ code: o.value, name: o.name, type: o.type })
+  const r = isCost(it) ? setCostAccount(it.key, follow ? null : f.account) : setPayItemAccount(it.key, f.account)
   if (!r.ok) { f.error = r.message ?? 'Not saved. Pick another account.'; return }
   f.error = ''
-  successToast(t(`${it.name} now posts to ${accountLabel(f.account)}`))
+  successToast(t(follow ? `${it.name} now posts to each group's expense account` : `${it.name} now posts to ${accountLabel(f.account)}`))
 }
 
 // ── Source, choice, partial ───────────────────────────────────────────────
