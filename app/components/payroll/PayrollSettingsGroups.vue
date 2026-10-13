@@ -2,19 +2,23 @@
 /**
  * Groups: staff who share the same Talenta values (Organization, Branch, ...) form a group, and
  * each group picks where its pay posts in Jurnal: an expense account (for pay items set to Use
- * group account) and dimension values for the cost lines.
+ * group account) and a value for each dimension added to the table, on the cost lines.
  *
- * - "Group staff by" card: one row per chosen field with the dimension it fills. Only the five
+ * - "Group staff by" card: one chip per chosen field, removable, plus Add field. Only the five
  *   fields in GROUP_FIELDS; Job position and Job level are left out, since a group can be one
- *   person and the ledger would show that person's pay.
+ *   person and the ledger would show that person's pay. A field no longer fills a dimension.
  * - Groups table: one row per combination Talenta sent, banded "From Talenta" | "Posts to in
- *   Jurnal". A New row (nobody set it up) does not hold the run: its pay posts to each pay item's
+ *   Jurnal". The Jurnal band holds Expense account plus one column per added dimension; "+ Dimension"
+ *   adds any Jurnal dimension, the x on a column header removes it. A value defaults to the dimension
+ *   value named like one of the group's Talenta values; an empty value posts the dimension blank and
+ *   the run warns ('no-dimension-value'), it never holds.
+ *   A New row (nobody set it up) does not hold the run: its pay posts to each pay item's
  *   default account until it is set up. A row covering 1 or 2 staff carries a warning, no block.
  * - Filters (All / New / 1 or 2 staff + search) and bulk edit over the selected rows, so nobody
  *   sets every combination one by one.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpCheckbox, MpIcon, MpTooltip } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollColumnFilter from '~/components/payroll/PayrollColumnFilter.vue'
@@ -22,13 +26,16 @@ import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { successToast, errorToast } from '~/utils/toasts'
 import {
   payroll, can, accountLabel, groupRows, setGroupBy, setGroupAccount, setGroupDimension, saveGroup,
-  linkDimension, payrollDimensions, createPayrollTag, useChartAccount, payrollAccount, type GroupRow,
+  createPayrollTag, useChartAccount, payrollAccount, type GroupRow,
 } from '~/data/payrollStore'
 import type { TalentaField } from '~/data/payrollMaster'
 import {
   accountChoices, fieldSent, GROUP_FIELDS, isGroupField, groupFieldLabel, fewStaff, fewStaffMessage, groupMatches,
 } from '~/data/payrollUiSettings'
 import { statusLabel, statusType } from '~/data/payrollUiRunCopy'
+import {
+  groupDimensions, dimensionsToAdd, addGroupDimension, removeGroupDimension, rowDimensions, creatableValues,
+} from '~/data/payrollUiGroupDims'
 
 const { t } = useLocale()
 const canEdit = computed(() => can('setup'))
@@ -38,11 +45,7 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
 
 // ── Group staff by ──
 const groupBy = computed(() => payroll.settings.groupBy)
-const fieldRows = computed(() => groupBy.value.map((f) => ({
-  field: f,
-  allowed: isGroupField(f),
-  link: payroll.settings.dimensionLinks.find((l) => l.field === f) ?? null,
-})))
+const fieldRows = computed(() => groupBy.value.map((f) => ({ field: f, allowed: isGroupField(f) })))
 /** Allowed fields not chosen yet; a field Talenta never sent is left out (it would make one empty group). */
 const addOptions = computed(() => GROUP_FIELDS
   .filter((f) => !groupBy.value.includes(f) && fieldSent(f))
@@ -65,25 +68,29 @@ function removeField(f: TalentaField) {
 function listOf(xs: string[]): string {
   return xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`
 }
-function dimOptions(label: string) {
-  const dims = payrollDimensions()
-  const opts = [{ value: '', label: t('No dimension') }, ...dims.map((d) => ({ value: d, label: d }))]
-  if (!dims.includes(label)) opts.push({ value: `new:${label}`, label: t(`Create dimension ${label}`) })
-  return opts
+
+// ── Dimension columns ("Posts to in Jurnal" band) ──
+/** The dimensions added to groups, one column each, in the order added. */
+const dimColumns = computed(() => groupDimensions())
+const addDimOptions = computed(() => dimensionsToAdd())
+const addDimOpen = ref(false)
+function onAddDimension(dim: string) {
+  addDimOpen.value = false
+  const r = addGroupDimension(dim)
+  if (r.ok) successToast(t(`${dim} added. Pick a value for each group.`))
+  else errorToast(t(r.message ?? 'Not added. Pick another dimension.'))
 }
-const dimError = ref('')
-function onLink(field: TalentaField, v: string) {
-  const dim = v.startsWith('new:') ? v.slice(4) : v
-  const r = linkDimension(field, dim || null)
-  dimError.value = r.ok ? '' : t(r.message ?? 'Not saved. Pick another dimension.')
-  if (r.ok) successToast(dim ? t(`${fieldLabel(field)} fills ${dim}`) : t(`${fieldLabel(field)} fills no dimension`))
+function onRemoveDimension(dim: string) {
+  const r = removeGroupDimension(dim)
+  if (r.ok) successToast(t(`${dim} removed. Cost lines post without it.`))
+  else errorToast(t(r.message ?? 'Not removed. Try again.'))
 }
 
 // ── Group rows ──
 const rows = computed(() => groupRows())
-/** The dimension columns of the "Posts to in Jurnal" band. */
-const dimColumns = computed(() => rows.value[0]?.dimensions.map((d) => d.dimension)
-  ?? fieldRows.value.filter((d) => d.link).map((d) => d.link!.dimension))
+/** One cell per dimension column for each row: explicit pick, else name match, else empty. */
+const cells = computed(() => new Map(rows.value.map((r) => [r.key, rowDimensions(r, dimColumns.value)])))
+const cellsOf = (r: GroupRow) => cells.value.get(r.key) ?? []
 const newCount = computed(() => rows.value.filter((r) => r.isNew).length)
 const fewCount = computed(() => rows.value.filter((r) => fewStaff(r)).length)
 
@@ -122,13 +129,16 @@ function onAccount(key: string, code: string) {
   rowErrors[key] = r.ok ? '' : t(r.message ?? 'Not saved. Pick an expense or COGS account.')
   if (r.ok) successToast(acc ? t(`Group now posts to ${accountLabel(acc)}`) : t('Group uses the default account'))
 }
-function valueOptions(dimension: string, wanted: string | null) {
+/**
+ * A value cell's choices: the dimension's values, "Create value" for each of the group's Talenta
+ * values the dimension lacks, and "Match by name" to drop an explicit pick.
+ */
+function valueOptions(r: GroupRow, dimension: string, explicit: boolean) {
   const opts = payroll.tags.filter((x) => x.dimension === dimension).map((x) => ({ value: x.name, label: x.name }))
-  if (wanted && !opts.some((o) => o.value.toLowerCase() === wanted.toLowerCase())) opts.push({ value: `new:${wanted}`, label: t(`Create value ${wanted}`) })
+  for (const v of creatableValues(dimension, r.values)) opts.push({ value: `new:${v}`, label: t(`Create value ${v}`) })
+  if (explicit) opts.unshift({ value: DEFAULT, label: t('Match by name') })
   return opts
 }
-/** The Talenta value a dimension column is matched from, offered as "Create value" when Jurnal has none. */
-function rawValue(r: GroupRow, field: string) { return r.values[groupBy.value.indexOf(field as TalentaField)] ?? null }
 function resolveValue(dimension: string, v: string): { ok: true; value: string } | { ok: false; message: string } {
   if (!v.startsWith('new:')) return { ok: true, value: v }
   const value = v.slice(4)
@@ -136,6 +146,7 @@ function resolveValue(dimension: string, v: string): { ok: true; value: string }
   return c.ok ? { ok: true, value } : { ok: false, message: c.message ?? 'Not created. Try another name.' }
 }
 function onValue(key: string, dimension: string, v: string) {
+  if (v === DEFAULT) { const r = setGroupDimension(key, dimension, null); rowErrors[key] = r.ok ? '' : t(r.message ?? 'Not saved. Try again.'); return }
   const res = resolveValue(dimension, v)
   if (!res.ok) { rowErrors[key] = t(res.message); return }
   const r = setGroupDimension(key, dimension, res.value || null)
@@ -159,12 +170,14 @@ const someVisibleOn = computed(() => !allVisibleOn.value && visibleKeys.value.so
 function toggleAll(on: boolean) { selected.value = on ? [...visibleKeys.value] : [] }
 // Act only on rows the reader can see: a filter or search change drops hidden rows from the selection.
 watch(visibleKeys, (keys) => { selected.value = selected.value.filter((k) => keys.includes(k)) })
+// A role without Set up access has no checkboxes, so it keeps no selection either.
+watch(canEdit, (on) => { if (!on) selected.value = [] })
 const selectedNew = computed(() => rows.value.filter((r) => r.isNew && isSelected(r.key)).length)
 const bulkAccount = ref('')
 const bulkDims = reactive<Record<string, string>>({})
 const groupsWord = (n: number) => `${n} ${plural(n, 'group', 'groups')}`
 function bulkValueOptions(dimension: string) {
-  return [{ value: DEFAULT, label: t('Same name as the Talenta value') }, ...payroll.tags.filter((x) => x.dimension === dimension).map((x) => ({ value: x.name, label: x.name }))]
+  return [{ value: DEFAULT, label: t('Match by name') }, ...payroll.tags.filter((x) => x.dimension === dimension).map((x) => ({ value: x.name, label: x.name }))]
 }
 function runBulk(apply: (key: string) => { ok: boolean; message?: string }, done: (n: number) => string) {
   const keys = [...selected.value]
@@ -204,7 +217,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
   <div class="pset-stack">
     <PayrollReadOnlyNote v-if="!canEdit" :text="t('Editing needs Set up access.')" />
 
-    <!-- Group staff by -->
+    <!-- Group staff by: one chip per field; a field only groups staff, it fills no dimension. -->
     <div class="pset-card" data-tour="payroll-groupby">
       <div class="pset-card__head">
         <div>
@@ -212,39 +225,21 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
           <div class="pset-card__sub">{{ t('Staff who share these Talenta values form a group. Each group picks where its pay posts.') }}</div>
         </div>
       </div>
-      <div class="pset-card__body">
-        <table v-if="fieldRows.length" class="pset-table pgr-fields" data-tour="payroll-group-dims">
-          <colgroup><col class="pgr-fields__field"><col><col v-if="canEdit" class="pgr-fields__act"></colgroup>
-          <thead>
-            <tr>
-              <th class="pset-th">{{ t('Talenta field') }}</th>
-              <th class="pset-th">{{ t('Fills dimension') }}</th>
-              <th v-if="canEdit" class="pset-th"><span class="pgr-sr">{{ t('Remove') }}</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="d in fieldRows" :key="d.field" :data-field="d.field">
-              <td class="pset-td pset-td--strong">
-                {{ fieldLabel(d.field) }}
-                <span v-if="!d.allowed" class="pset-line pset-warn">{{ t('Can\'t group staff. Remove it.') }}</span>
-              </td>
-              <td class="pset-td">
-                <ErpFilterSelect v-if="canEdit" :id="`pgr-dim-${safe(d.field)}`" :model-value="d.link?.dimension ?? ''" :placeholder="t('No dimension')" :options="dimOptions(fieldLabel(d.field))" width="100%" :is-clearable="false" @update:model-value="(v: string) => onLink(d.field, v)" />
-                <span v-else>{{ d.link?.dimension ?? t('No dimension') }}</span>
-              </td>
-              <td v-if="canEdit" class="pset-td pset-td--act">
-                <MpButton variant="ghost" size="sm" is-rounded :aria-label="t(`Remove ${groupFieldLabel(d.field)}`)" :data-testid="`pgr-remove-${safe(d.field)}`" @click="removeField(d.field)">
-                  <MpIcon name="minus-circular" size="sm" />
-                </MpButton>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="pset-hint">{{ t(canEdit ? 'Add a field to start grouping staff.' : 'Staff are not grouped yet.') }}</p>
-        <p v-if="dimError" class="pset-error">{{ dimError }}</p>
+      <div class="pset-card__body pgr-by">
+        <ul v-if="fieldRows.length" class="pgr-fieldchips" :aria-label="t('Group staff by')">
+          <li v-for="d in fieldRows" :key="d.field" class="pgr-fieldchip" :class="{ 'is-bad': !d.allowed }" :data-field="d.field">
+            <span>{{ fieldLabel(d.field) }}</span>
+            <button
+              v-if="canEdit" type="button" class="pgr-x" :aria-label="t(`Remove ${groupFieldLabel(d.field)}`)"
+              :data-testid="`pgr-remove-${safe(d.field)}`" @click="removeField(d.field)"
+            ><MpIcon name="close" size="sm" /></button>
+          </li>
+        </ul>
+        <span v-else class="pset-hint">{{ t(canEdit ? 'Add a field to start grouping staff.' : 'Staff are not grouped yet.') }}</span>
         <div v-if="canEdit && addOptions.length" class="pgr-add">
-          <ErpFilterSelect id="pgr-add-field" :model-value="addPick" :placeholder="t('Add field')" :options="addOptions" width="220px" :is-clearable="false" @update:model-value="addField" />
+          <ErpFilterSelect id="pgr-add-field" :model-value="addPick" :placeholder="t('Add field')" :options="addOptions" width="200px" :is-clearable="false" @update:model-value="addField" />
         </div>
+        <p v-if="fieldRows.some((d) => !d.allowed)" class="pset-line pset-warn pgr-by__warn">{{ t('Job position and Job level can\'t group staff. Remove them.') }}</p>
       </div>
     </div>
 
@@ -253,7 +248,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Groups') }}</div>
-          <div class="pset-card__sub">{{ t('Pay items set to Use group account post to the group\'s expense account. A New group posts to default accounts until you set it up.') }}</div>
+          <div class="pset-card__sub">{{ t('Pay items set to Use group account post to the group\'s expense account. Add the dimensions you report on, then pick a value for each group.') }}</div>
         </div>
         <ErpStatusBadge v-if="newCount" status="new-group" :label="t(newCount === 1 ? '1 new group' : `${newCount} new groups`)" :type="statusType('new-group')" />
       </div>
@@ -301,7 +296,31 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                   <MpCheckbox id="pgr-check-all" :aria-label="t('Select all groups shown')" :is-checked="allVisibleOn" :is-indeterminate="someVisibleOn" @change="(on: boolean) => toggleAll(on)" />
                 </th>
                 <th :colspan="groupBy.length + 1" class="pset-th pgr-band pgr-band--talenta" scope="colgroup">{{ t('From Talenta') }}</th>
-                <th :colspan="dimColumns.length + 1" class="pset-th pgr-band pgr-band--jurnal" scope="colgroup">{{ t('Posts to in Jurnal') }}</th>
+                <th :colspan="dimColumns.length + 1" class="pset-th pgr-band pgr-band--jurnal" scope="colgroup">
+                  <span class="pgr-bandhead">{{ t('Posts to in Jurnal') }}
+                  <MpPopover
+                    v-if="canEdit" id="pgr-add-dim" is-manual :is-open="addDimOpen" use-portal :is-keep-alive="false" placement="bottom-start"
+                    @open="addDimOpen = true" @close="addDimOpen = false"
+                  >
+                    <MpPopoverTrigger>
+                      <button type="button" class="pgr-adddim__btn" :aria-label="t('Add dimension')" data-tour="payroll-group-dims" data-testid="pgr-add-dim" :aria-expanded="addDimOpen" @click.stop="addDimOpen = !addDimOpen">
+                        <MpIcon name="add" size="sm" />{{ t('Dimension') }}
+                      </button>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent
+                      :class="css({ padding: '4px', minWidth: '220px', maxHeight: '300px', overflowY: 'auto', borderRadius: '12px' })"
+                      @blur="addDimOpen = false" @escape="addDimOpen = false"
+                    >
+                      <div class="pgr-menu__head">{{ t('Add a Jurnal dimension') }}</div>
+                      <ul v-if="addDimOptions.length" class="pgr-menu">
+                        <li v-for="o in addDimOptions" :key="o">
+                          <button type="button" class="pgr-menu__item" :data-dimension="o" @click="onAddDimension(o)">{{ o }}</button>
+                        </li>
+                      </ul>
+                      <p v-else class="pgr-menu__empty">{{ t('Every Jurnal dimension is added. Create one in Settings > Dimensions.') }}</p>
+                    </MpPopoverContent>
+                  </MpPopover></span>
+                </th>
               </tr>
               <tr>
                 <th v-for="(f, i) in groupBy" :key="f" class="pset-th pgr-val">
@@ -312,7 +331,12 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                 </th>
                 <th class="pset-th pgr-num">{{ t('Staff') }}</th>
                 <th class="pset-th pgr-split pgr-acct">{{ t('Expense account') }}</th>
-                <th v-for="c in dimColumns" :key="c" class="pset-th pgr-dim">{{ c }}</th>
+                <th v-for="c in dimColumns" :key="c" class="pset-th pgr-dim" :data-dimension="c">
+                  <span class="pgr-thf">{{ c }}<button
+                    v-if="canEdit" type="button" class="pgr-x pgr-dimx" :aria-label="t(`Remove ${c} column`)"
+                    :data-testid="`pgr-dim-remove-${safe(c)}`" @click="onRemoveDimension(c)"
+                  ><MpIcon name="close" size="sm" /></button></span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -349,9 +373,9 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                   <ErpFilterSelect v-if="canEdit" :id="`pgr-acc-${safe(r.key)}`" :model-value="r.account ?? DEFAULT" :placeholder="t('Use default account')" :options="costOptions" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(r.key, v)" />
                   <span v-else>{{ r.account ? accountLabel(r.account) : t('Use default account') }}</span>
                 </td>
-                <td v-for="d in r.dimensions" :key="d.dimension" class="pset-td pgr-dim">
-                  <ErpFilterSelect v-if="canEdit" :id="`pgr-val-${safe(r.key)}-${safe(d.dimension)}`" :model-value="d.value ?? ''" :placeholder="t('Select value')" :options="valueOptions(d.dimension, d.value ?? rawValue(r, d.field))" width="100%" :is-clearable="false" @update:model-value="(v: string) => onValue(r.key, d.dimension, v)" />
-                  <span v-else>{{ d.value ?? t('Not set') }}</span>
+                <td v-for="d in cellsOf(r)" :key="d.dimension" class="pset-td pgr-dim" :data-dimension="d.dimension" :data-explicit="d.explicit ? 'true' : 'false'">
+                  <ErpFilterSelect v-if="canEdit" :id="`pgr-val-${safe(r.key)}-${safe(d.dimension)}`" :model-value="d.value ?? ''" :placeholder="t('Select value')" :options="valueOptions(r, d.dimension, d.explicit)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onValue(r.key, d.dimension, v)" />
+                  <span v-else :class="{ 'pgr-novalue': !d.value }">{{ d.value ?? t('No value') }}</span>
                 </td>
               </tr>
               <tr v-if="!visibleRows.length">
@@ -373,13 +397,24 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 <style scoped>
 .pgr-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
-/* Group staff by */
-.pgr-fields { max-width: 640px; table-layout: fixed; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); border-collapse: separate; border-spacing: 0; overflow: hidden; }
-.pgr-fields__field { width: 200px; }
-.pgr-fields__act { width: 56px; }
-.pgr-fields .pset-td { vertical-align: middle; padding-top: var(--mp-spacing-2); padding-bottom: var(--mp-spacing-2); }
-.pgr-fields :deep(.efs), .pgr-rows :deep(.efs) { display: block; width: 100%; min-width: 0; }
-.pgr-fields :deep(.efs-trigger), .pgr-rows :deep(.efs-trigger) { width: 100%; }
+/* Group staff by: chips */
+.pset-card__body.pgr-by { display: flex; flex-direction: row; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.pgr-by__warn { flex-basis: 100%; margin: 0; }
+.pgr-fieldchips { display: contents; list-style: none; margin: 0; padding: 0; }
+.pgr-fieldchip {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: 32px; padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap;
+}
+.pgr-fieldchip.is-bad { border-color: var(--mp-border-warning, var(--mp-text-warning)); }
+.pgr-x {
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0;
+  border-radius: var(--mp-radii-full); background: transparent; color: var(--mp-text-secondary); cursor: pointer;
+}
+.pgr-x:hover { background: var(--mp-background-neutral-hovered, rgba(0, 0, 0, 0.06)); color: var(--mp-text-default); }
+.pgr-x:focus-visible { outline: 2px solid var(--mp-border-focus, var(--mp-text-selected)); outline-offset: 1px; }
+.pgr-rows :deep(.efs) { display: block; width: 100%; min-width: 0; }
+.pgr-rows :deep(.efs-trigger) { width: 100%; }
 .pgr-add { display: flex; }
 
 /* Filters and bulk bar */
@@ -399,9 +434,27 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-rows { table-layout: fixed; width: max-content; min-width: 100%; }
 .pgr-c-check { width: 44px; }
 .pgr-c-num { width: 72px; }
-.pgr-c-acct { width: 248px; }
-.pgr-c-val { width: 156px; }
-.pgr-c-dim { width: 200px; }
+.pgr-c-acct { width: 232px; }
+.pgr-c-dim { width: 184px; }
+/* A dimension column's remove x shows on header hover or keyboard focus. */
+.pgr-dimx { margin-left: var(--mp-spacing-1); opacity: 0; transition: opacity 0.12s; }
+.pgr-dim:hover .pgr-dimx, .pgr-dimx:focus-visible { opacity: 1; }
+.pgr-novalue { color: var(--mp-text-secondary); }
+.pgr-bandhead { display: inline-flex; align-items: center; gap: var(--mp-spacing-3); }
+.pgr-adddim__btn {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1) var(--mp-spacing-2); border: 1px dashed var(--mp-border-default);
+  border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); color: var(--mp-text-link); font: inherit; font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold); text-transform: none; letter-spacing: 0; cursor: pointer; white-space: nowrap;
+}
+.pgr-adddim__btn:hover { border-style: solid; border-color: var(--mp-text-link); }
+.pgr-menu__head { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pgr-menu { list-style: none; margin: 0; padding: 0; }
+.pgr-menu__item {
+  display: block; width: 100%; text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 0; border-radius: var(--mp-radii-md);
+  background: transparent; font: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer;
+}
+.pgr-menu__item:hover, .pgr-menu__item:focus-visible { background: var(--mp-background-neutral-hovered, rgba(0, 0, 0, 0.04)); outline: none; }
+.pgr-menu__empty { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 260px; }
 .pgr-thf { display: inline-flex; align-items: center; gap: 2px; }
 .pgr-rows thead .pgr-val { overflow-wrap: normal; word-break: normal; }
 .pgr-c-val { width: 172px; }

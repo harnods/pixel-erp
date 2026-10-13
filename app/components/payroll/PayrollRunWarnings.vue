@@ -5,6 +5,8 @@
  * journal on a payroll account from the ledger, large changes and headcount from the draft review
  * (a note or an Expected mark clears those). 'no-group' lists staff in a group nobody set up: their
  * pay posts to each pay item's default account, and setting the group up rebuilds the draft.
+ * 'no-dimension-value' lists the groups with no value for an added dimension: their cost posts with
+ * that dimension blank. Both link to Payroll settings > Groups for Set up roles.
  */
 import { computed } from 'vue'
 import { MpButton } from '@mekari/pixel3'
@@ -22,7 +24,7 @@ const v = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const warnings = computed(() => runWarnings(props.runId))
 const open = computed(() => warnings.value.filter((w) => !w.acknowledged).length)
 
-// Keyed by string: 'no-group' lands in the engine's WarningCode union on the engine branch.
+// Keyed by string: 'no-dimension-value' lands in the engine's WarningCode union on the engine branch.
 const CODE_LABEL: Record<string, string> = {
   'missing-component': 'Missing pay item',
   'tax-rule': 'PPh 21 check',
@@ -33,12 +35,14 @@ const CODE_LABEL: Record<string, string> = {
   'headcount': 'Headcount',
   'manual-journal': 'Manual journal',
   'no-group': 'No group',
+  'no-dimension-value': 'No dimension value',
 }
-const NO_GROUP = 'no-group'
+/** Warnings whose fix is on Payroll settings > Groups; details.groups lists the groups by label. */
+const GROUP_CODES = ['no-group', 'no-dimension-value']
 interface NoGroup { key: string; label: string; staff: number }
 function noGroups(w: RunWarning): NoGroup[] {
   const g = (w.details as Record<string, unknown>).groups
-  return w.code === (NO_GROUP as RunWarning['code']) && Array.isArray(g) ? (g as NoGroup[]) : []
+  return GROUP_CODES.includes(w.code as string) && Array.isArray(g) ? (g as NoGroup[]) : []
 }
 function detail(w: RunWarning): string {
   const d = w.details as Record<string, unknown>
