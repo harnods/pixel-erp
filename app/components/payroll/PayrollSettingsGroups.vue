@@ -317,9 +317,10 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                     @open="addDimOpen = true" @close="addDimOpen = false"
                   >
                     <MpPopoverTrigger>
-                      <button type="button" class="pgr-adddim__btn" :aria-label="t('Add dimension')" data-tour="payroll-group-dims" data-testid="pgr-add-dim" :aria-expanded="addDimOpen" @click.stop="addDimOpen = !addDimOpen">
-                        <MpIcon name="add" size="sm" />{{ t('Dimension') }}
-                      </button>
+                      <MpButton
+                        variant="ghost" is-rounded left-icon="add" class="pgr-adddim__btn" :aria-label="t('Add dimension')"
+                        data-tour="payroll-group-dims" data-testid="pgr-add-dim" :aria-expanded="addDimOpen" @click.stop="addDimOpen = !addDimOpen"
+                      >{{ t('Dimension') }}</MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent
                       :class="css({ padding: '4px', minWidth: '220px', maxHeight: '300px', overflowY: 'auto', borderRadius: '12px' })"
@@ -478,12 +479,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-dim:hover .pgr-dimx, .pgr-dimx:focus-visible { opacity: 1; }
 .pgr-novalue { color: var(--mp-text-secondary); }
 .pgr-bandhead { display: inline-flex; align-items: center; gap: var(--mp-spacing-3); }
-.pgr-adddim__btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); padding: var(--mp-spacing-1) var(--mp-spacing-2); border: 1px dashed var(--mp-border-default);
-  border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); color: var(--mp-text-link); font: inherit; font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold); text-transform: none; letter-spacing: 0; cursor: pointer; white-space: nowrap;
-}
-.pgr-adddim__btn:hover { border-style: solid; border-color: var(--mp-text-link); }
+.pgr-adddim__btn { text-transform: none; letter-spacing: 0; white-space: nowrap; margin-block: calc(-1 * var(--mp-spacing-2)); }
 .pgr-menu__head { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pgr-menu { list-style: none; margin: 0; padding: 0; }
 .pgr-menu__item {
