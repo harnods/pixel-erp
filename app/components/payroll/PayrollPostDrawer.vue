@@ -3,15 +3,21 @@
  * Post journal and Reverse and repost: one drawer for both. Post books the draft as one payroll
  * journal. Repost reverses every posted payroll journal of the run in full and posts the chosen
  * version in full (latest preselected). Both take one journal date, default the last day of the
- * pay period; a locked period is refused. Posting is direct (no approval).
+ * pay period; a locked period is refused. Post also asks, per party this journal owes, Record as
+ * payable (default) or Paid now from a bank account: paid now adds a Spend money on the journal
+ * date for that party's full amount, recorded on its payable (postRunAndPay). Repost records
+ * payables only.
  */
 import { computed, ref, shallowRef, watch } from 'vue'
 import { MpDatePicker, MpRadio } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  runById, currentVersionOf, liveJournals, journalTotals, postRun, reverseAndRepost, repostVersions, previewDryRun,
+  runById, currentVersionOf, liveJournals, journalTotals, postRunAndPay, reverseAndRepost, repostVersions, previewDryRun,
   defaultEntryDate, checkEntryDate, postConfirmText, dateLabel, periodLabel, rupiah, wib, sendFigures,
+  payNowParties, payNowBanks,
 } from '~/data/payrollStore'
+import type { PayableParty } from '~/data/payrollMaster'
 import { successToast, infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ isOpen: boolean; runId: string; mode: 'post' | 'repost' }>()
@@ -28,12 +34,26 @@ const toIso = (d: string) => (d ? `${d.slice(6, 10)}-${d.slice(3, 5)}-${d.slice(
 const date = ref('')
 const versionNo = ref<number | null>(null)
 const error = ref('')
+
+const PARTY_KEYS: PayableParty[] = ['Staff', 'DJP PPh 21', 'DJP PPh 26', 'BPJS Kesehatan', 'BPJS Ketenagakerjaan', 'Other']
+// Per party: Record as payable (default) or Paid now from a bank account. Post only.
+const parties = computed(() => (props.mode === 'post' && props.isOpen ? payNowParties(props.runId) : []))
+const bankOptions = computed(() => payNowBanks().map((b) => ({ value: b.id, label: b.name })))
+const defaultBank = () => payNowBanks().find((b) => b.name === 'Bank BCA')?.id ?? payNowBanks()[0]?.id ?? ''
+const payNow = ref<Partial<Record<PayableParty, boolean>>>({})
+const bankOf = ref<Partial<Record<PayableParty, string>>>({})
+
 watch(() => props.isOpen, (o) => {
   if (!o || !run.value) return
   date.value = toDisplay(defaultEntryDate(run.value))
   versionNo.value = props.mode === 'repost' ? (choices.value[0]?.no ?? null) : (cur.value?.no ?? null)
   error.value = ''
+  payNow.value = {}
+  bankOf.value = Object.fromEntries(PARTY_KEYS.map((k) => [k, defaultBank()]))
 }, { immediate: true })
+const slug = (p: PayableParty) => p.replace(/\s+/g, '-').toLowerCase()
+function setPayNow(p: PayableParty, on: boolean) { payNow.value = { ...payNow.value, [p]: on }; error.value = '' }
+function setBank(p: PayableParty, v: string) { bankOf.value = { ...bankOf.value, [p]: v }; error.value = '' }
 const iso = computed(() => toIso(date.value))
 
 // The journal the chosen version posts: built in a watch (a build draws ids; never in a computed).
@@ -57,9 +77,22 @@ function confirm() {
   error.value = ''
   if (!iso.value) { error.value = t('Pick a journal date.'); return }
   if (dateError.value) { error.value = t(dateError.value); return }
-  const r = props.mode === 'post'
-    ? postRun(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
-    : reverseAndRepost(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
+  const pick: Partial<Record<PayableParty, string>> = {}
+  for (const p of parties.value) {
+    if (!payNow.value[p.party]) continue
+    if (!bankOf.value[p.party]) { error.value = t(`Pick a bank account to pay ${p.payee} from.`); return }
+    pick[p.party] = bankOf.value[p.party]
+  }
+  if (props.mode === 'post') {
+    const r = postRunAndPay(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value, payNow: pick })
+    if (!r.ok) { error.value = t(r.message ?? 'Not posted. Check the date and try again.'); return }
+    successToast(t(r.message as string))
+    for (const f of (r.failed as string[] | undefined) ?? []) infoToast(t(`Not paid now. ${f}`))
+    for (const w of (r.warnings as string[] | undefined) ?? []) infoToast(t(w))
+    emit('close')
+    return
+  }
+  const r = reverseAndRepost(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
   if (!r.ok) { error.value = t(r.message ?? 'Not posted. Check the date and try again.'); return }
   const nos = (r.journals as string[] | undefined) ?? [r.number as string]
   successToast(t(`${nos.join(', ')} posted`))
@@ -119,6 +152,49 @@ function confirm() {
         </table>
       </div>
 
+      <section v-if="parties.length" class="ppd__pay" data-tour="payroll-pay-now" data-testid="ppd-pay-now">
+        <div class="ppd__sectiontitle">{{ t('What this journal owes') }}</div>
+        <div class="ppd__fieldhint">{{ t('Record each as payable, or pay it now from a bank account. Paying now adds a Spend money on the journal date.') }}</div>
+        <div class="ppd__scroll">
+          <table class="ppd__table ppd__paytable">
+            <colgroup><col><col class="ppd__c-amount"><col class="ppd__c-choice"><col class="ppd__c-bank"></colgroup>
+            <thead>
+              <tr>
+                <th class="ppd__th">{{ t('Owed to') }}</th>
+                <th class="ppd__th ppd__num">{{ t('Amount') }}</th>
+                <th class="ppd__th">{{ t('Payment') }}</th>
+                <th class="ppd__th">{{ t('Pay from') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in parties" :key="p.party" :data-testid="`ppd-party-${slug(p.party)}`">
+                <td class="ppd__td">{{ t(p.payee) }}</td>
+                <td class="ppd__td ppd__num">{{ rupiah(p.amount) }}</td>
+                <td class="ppd__td">
+                  <div class="ppd__radios">
+                    <label class="ppd__choice">
+                      <MpRadio :id="`ppd-${slug(p.party)}-payable`" :name="`ppd-pay-${slug(p.party)}`" :is-checked="!payNow[p.party]" @change="setPayNow(p.party, false)" />
+                      <span>{{ t('Record as payable') }}</span>
+                    </label>
+                    <label class="ppd__choice">
+                      <MpRadio :id="`ppd-${slug(p.party)}-paynow`" :name="`ppd-pay-${slug(p.party)}`" :is-checked="!!payNow[p.party]" @change="setPayNow(p.party, true)" />
+                      <span>{{ t('Paid now') }}</span>
+                    </label>
+                  </div>
+                </td>
+                <td class="ppd__td ppd__bankcell">
+                  <ErpFilterSelect
+                    :id="`ppd-bank-${slug(p.party)}`" :model-value="bankOf[p.party] ?? ''" :placeholder="t('Select bank account')"
+                    :options="bankOptions" width="168px" :is-clearable="false" :is-disabled="!payNow[p.party]"
+                    @update:model-value="(v: string) => setBank(p.party, v)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <div v-if="warnings.length" class="ppd__note" data-testid="ppd-warnings">
         <div class="ppd__notetitle">{{ warnings.length }} {{ t(warnings.length === 1 ? 'warning not checked yet' : 'warnings not checked yet') }}</div>
         <ul class="ppd__list"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
@@ -143,6 +219,18 @@ function confirm() {
 .ppd__choice { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
 .ppd__fielderror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .ppd__fieldhint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.ppd__pay { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.ppd__sectiontitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ppd__paytable { table-layout: fixed; }
+/* Fits the 860px drawer at 1280 with no sideways scroll: party takes what is left (about 200px). */
+.ppd__c-amount { width: 140px; }
+.ppd__c-choice { width: 292px; }
+.ppd__c-bank { width: 192px; }
+.ppd__paytable .ppd__th, .ppd__paytable .ppd__td { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); }
+.ppd__paytable .ppd__td { vertical-align: middle; padding-top: var(--mp-spacing-2); padding-bottom: var(--mp-spacing-2); }
+.ppd__paytable .ppd__th:first-child, .ppd__paytable .ppd__td:first-child { padding-left: var(--mp-spacing-4); }
+.ppd__radios { display: flex; gap: var(--mp-spacing-3); flex-wrap: nowrap; }
+.ppd__radios .ppd__choice { white-space: nowrap; }
 .ppd__info { padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ppd__scroll { overflow-x: auto; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .ppd__table { width: 100%; border-collapse: collapse; }
