@@ -672,13 +672,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <h2 class="bf-section-title">{{ t('Raw materials') }}</h2>
           <div class="bf-toolbar">
             <!-- Still a placeholder. Left clickable, but it now says so on
-                 hover instead of silently doing nothing. -->
+                 hover instead of silently doing nothing. On a Subcontracting
+                 BOM it is disabled outright (R20): multi-level is not supported
+                 there at all, and the tooltip — the same words the work order
+                 uses — says why. An unsupported feature, not an unmet
+                 precondition, so rule/btn-no-disabled-validation does not apply. -->
             <MpTooltip
               id="bf-subassembly-tip"
-              :label="t('Adding a sub-assembly product is not available yet.')"
+              :label="isSubconBom
+                ? t('Subcontracting does not support multi-level work orders yet.')
+                : t('Adding a sub-assembly product is not available yet.')"
               placement="top" use-portal
             >
-              <MpButton variant="secondary" is-rounded @click.prevent>
+              <MpButton variant="secondary" is-rounded :is-disabled="isSubconBom" @click.prevent>
                 <template #leftIcon><MpIcon name="add" size="sm" /></template>
                 {{ t('Sub-assembly product') }}
               </MpButton>
@@ -1103,7 +1109,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -1121,20 +1127,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
 }
 .detail-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-4) var(--mp-spacing-6);
-  background: var(--mp-background-stage); border-top: 1px solid transparent; transition: border-top-color 0.15s;
+  background: var(--mp-background-stage, #ffffff); border-top: 1px solid transparent; transition: border-top-color 0.15s;
 }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 /* ── Body / sections ─────────────────────────────────────────────────────── */
 .bf-body { display: flex; flex-direction: column; }
-.bf-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default); }
+.bf-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
 .bf-section:first-child { padding-top: 0; }
 .bf-section--last { border-bottom: none; }
 /* Subcon cost column widths — token scale, so the table reads like every other. */
@@ -1190,7 +1196,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-file-hidden { display: none; }
 .bf-attachment-row {
   display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-4); border: 1px dashed var(--mp-border-bold); border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-4); border: 1px dashed var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-md);
 }
 .bf-attach-or { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .bf-helper-text { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); }
@@ -1206,8 +1212,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* ── Line-item tables (shared borderless create-table pattern) ───────────── */
 .bf-table-scroll {
   overflow-x: auto;
-  border-top: 1px solid var(--mp-border-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .bf-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; min-width: max-content; }
 .bf-th {
@@ -1216,22 +1222,22 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .bf-th--right { text-align: right; }
 .bf-th--grip { padding: 0; }
 .bf-th.bf-th--del, .bf-td.bf-td--del {
   position: sticky; right: 0; z-index: 2; width: 44px; min-width: 44px; padding: 0; text-align: center;
-  box-shadow: inset 1px 0 var(--mp-border-default);
+  box-shadow: inset 1px 0 var(--mp-border-default, #e3e7e9);
 }
 .bf-td:nth-last-child(2) { border-right: none; }
-.bf-th--del { background: var(--mp-background-neutral-subtle); }
-.bf-td--del { background: var(--mp-background-neutral); }
+.bf-th--del { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.bf-td--del { background: var(--mp-background-neutral, #ffffff); }
 .bf-td {
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default); vertical-align: middle;
-  background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); border-right: 1px solid var(--mp-border-default, #e3e7e9); vertical-align: middle;
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .bf-td:last-child { border-right: none; }
 /* :last-child alone only strips the border within each <tbody> — Production
@@ -1255,7 +1261,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);
 }
-.bf-del-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical); }
+.bf-del-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); color: var(--mp-text-critical); }
 
 /* ── Subtotal + summary ──────────────────────────────────────────────────── */
 .bf-subtotal-row {
