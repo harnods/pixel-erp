@@ -57,7 +57,6 @@ function send(kind: SendKind) {
 </template>
 
 <style scoped>
-.psim-menu { min-width: 264px; }
 .psim-head {
   padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
