@@ -11,31 +11,31 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v12` (v12: dimensions are added to groups, no Talenta field to dimension links); resetPayroll()
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v13` (v13: two access types, no payroll approval, Save draft); resetPayroll()
  * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
  * State and roles
  *   payroll                         reactive state (runs, journals, payments, bankLines, settings, log, ...). Read it, never write it.
  *   can(action)                     true when the View as role may take the action (hide the control when false).
- *                                   Roles (View as): Owner, Ultimate, Ultimate + LM, Accountant, Accountant + LM, View only.
- *                                   Actions: view (all), post (all but View only), setup and correct (Owner, Ultimate + LM,
- *                                   Accountant + LM), connection (Owner, Ultimate + LM), simulate (demo stand-ins, all but View only).
+ *                                   Two access types (View as): 'Owner or LM' (every action) and 'Other user' (everything except
+ *                                   posting and the connection). Actions: post (Post journal, Use vN and repost, Reverse journal) and
+ *                                   connection are Owner or LM only; view, review (Mark as checked, notes, Expected, Check again,
+ *                                   version choices), setup and simulate (demo stand-ins, Pay) are open to both.
+ *                                   Refusal: "Only the Owner or a user with LM can post."
  *   setPayrollViewAs(role)          switch the acting role. actingPerson() returns the name for records.
+ *   saveDraft(runId)                Other user's primary action on a Ready to post (or New version) run: keeps the draft and records
+ *                                   who saved it; draftSavedNote(run) gives "Saved by Other user on 5 Oct 2026. Waiting for someone
+ *                                   who can post." while that version is still unposted. Notifies Owner or LM.
  *
- * Copy: every string the engine returns (hold, warning, why-this-line, Result.message, sync log, notices, approval task, post
- * confirm) follows the payroll glossary (scratch jt-proto/COPY.md): staff, journal date, "Talenta sent this period again", Mark as
+ * Copy: every string the engine returns (hold, warning, why-this-line, Result.message, sync log, notices, post confirm) follows the payroll glossary (scratch jt-proto/COPY.md): staff, journal date, "Talenta sent this period again", Mark as
  * checked; errors say how to fix; no run key, snapshot id, role code or employee identifier.
  *
  * Privacy: no employee data leaves the engine. Names are dropped at intake; employee_id and user_id
  * are read only to count. Headcount, revision summaries, warnings, why-this-line, tax changes and
  * the log carry counts per group, never ids. "See who in Talenta" is the way to the people.
  *
- * Approval (payrollApproval.ts, Settings > Approval workflows, transaction type 'payroll-journal')
- *   postRun / reverseAndRepost      when an active rule matches (journal total above the threshold, created-by scope) the run
- *                                   goes to 'Awaiting approval' and returns { ok: true, awaitingApproval: true, message }; an
- *                                   Inbox > Awaiting approval task links to /payroll-runs/<id>.
- *   pendingApproval(run), canApprove(runId), approvePayroll(runId) (posts), rejectPayroll(runId, reason) (back to draft).
+ * No payroll approval: Post journal posts at once (no Approval workflows type, no Inbox task).
  *   resetPayroll()                  rebuild the sample through the engine (simulated sends, posts, bank matches).
  *   today()                         the sample clock's date ("2026-10-05" at seed). nowWib() for display.
  *   rupiah(n), wib(iso), dateLabel(d), monthLabel('2026-09'), periodLabel(start, end), listLabel(xs), tagsLabel(tags)   formatters.
@@ -44,7 +44,7 @@
  * Connection (TS-01)
  *   connection                      computed: status, companyId, last accepted send, rejected sends, other-entity groups.
  *   startConnection(companyId) / endConnection(reason) / restartConnection(companyId)   can('connection').
- *   confirmSource()                 The Owner (or Ultimate + LM) confirms the first send's source; holds clear, drafts build.
+ *   confirmSource()                 The Owner or a user with LM confirms the first send's source; holds clear, drafts build.
  *   sourceSummary(runId)            organizations, branches, headcount (user_id), take-home total of a run's latest send.
  *   answerOtherEntities(yes) / markOtherEntity('organization_name'|'branch', value, on)
  *   Connecting blocks the old Talenta to Expense sync from the connect month; Jurnal books from the first send after it.
@@ -88,10 +88,10 @@
  *                                   then active ones from Settings > Dimensions. The "+ Dimension" list is this minus groupDimensions().
  *                                   payrollDimensions() is the same list (old name).
  *   groupDimensions()               the added dimensions, in column order (settings.groupDimensions; the seed adds Organization, Branch).
- *   addGroupDimension(dim)          Set up access. Only an existing Jurnal dimension (case-insensitive name), never a new one;
+ *   addGroupDimension(dim)          Only an existing Jurnal dimension (case-insensitive name), never a new one;
  *                                   refuses unknown ("Department 2 is not a dimension in Jurnal. Pick one from the list.") and
  *                                   duplicate ("Branch is already added to groups. Pick another dimension.").
- *   removeGroupDimension(dim)       Set up access. Drops the column; the groups keep their picks, so adding it back restores them.
+ *   removeGroupDimension(dim)       Drops the column; the groups keep their picks, so adding it back restores them.
  *   Name-match prefill: when no value is picked, a group gets the dimension value whose name equals one of its Talenta values
  *   (any Group by field, Group by order, case and space-insensitive), e.g. Branch "Bandung" for Sales, Bandung. Shown in
  *   GroupRow.dimensions with explicit false; never saved as a pick.
@@ -123,7 +123,7 @@
  *                                   Same figures, new sent_at: "No change". Older than the last version: Failed.
  *   runs (computed, newest first), runById(id), versionOf(run, no), currentVersionOf(run), draftOf(run), versionLabel(run, v)
  *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready'
- *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received' | 'Awaiting approval'.
+ *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'.
  *                                   Internal values; screens show statusLabel() from payrollUiRunCopy.ts ('Revision ready' = "New version").
  *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'two-parties', 'archived-account'
  *                                   (no usable mapping), 'partial' (fewer staff than the last version), 'choice' (separate-run look-alike),
@@ -159,17 +159,17 @@
  *
  * Post, revisions, reverse (TS-05, TS-07, LR-4, LR-8)
  *   Journal date: every post and repost takes one date, default defaultEntryDate(run) = the pay period's last day.
- *                                   checkEntryDate(date, notBefore?) refuses a locked period. Kept on an approval request and used when approved.
- *   postRun(runId, { versionNo?, date? })   first post, one PAY journal on the entry date; returns { ok, number, date, warnings[] (unacknowledged) }.
- *                                   Refuses: stale draft (rebuilt), newer version, holds, already posted, locked date. May go to approval (below).
+ *                                   checkEntryDate(date, notBefore?) refuses a locked period.
+ *   postRun(runId, { versionNo?, date? })   can('post'): first post, one PAY journal on the entry date; returns { ok, number, date, warnings[] (unacknowledged) }.
+ *                                   Refuses: stale draft (rebuilt), newer version, holds, already posted, locked date.
  *   revisionOf(runId)               Revision | null: { summary, builtAt, snapshotId }, built when a newer version becomes current on a posted run;
  *                                   the Accountant is notified with revisionNotice(run, summary). summary: { fromVersion, toVersion, takeHome,
  *                                   pph21, pph26, bpjs ({ before, after, change }), joined, left, amountChanged (counts), moved[{ account, tags,
  *                                   label, change }], settingsChanged }. A version that moves nothing in the ledger becomes the ledger version at
  *                                   once.
  *   repostVersions(runId)           versions the Accountant may repost, newest first (the first is preselected).
- *   reverseAndRepost(runId, { versionNo?, date? })   can('correct'): "Use vN and repost". Reverses every live PAY journal in full and posts
- *                                   the chosen version in full, both on the journal date. Approval applies as for a first post. Payables
+ *   reverseAndRepost(runId, { versionNo?, date? })   can('post'): "Use vN and repost". Reverses every live PAY journal in full and posts
+ *                                   the chosen version in full, both on the journal date. Payables
  *                                   follow. There is no difference-only correction journal and no dry run.
  *   compareVersions(runId, a?, b?)  { byPayItem[{ name, section, old, new, diff, missing }], byAccountTag, settingsMoved, headcount { added, removed },
  *                                   taxChanges, noLedgerChange, oldLabel, newLabel }. Never call inside a computed (draws ids).
@@ -216,16 +216,14 @@
 import { reactive, watch, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import {
-  PAYROLL_COMPANY_ID, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, ACC, PAYROLL_TAGS, TALENTA_FIELDS, GROUP_FIELDS,
+  PAYROLL_COMPANY_ID, PAYROLL_ACCOUNTS, PAYROLL_PEOPLE, PAYROLL_ROLES, ACC, PAYROLL_TAGS, TALENTA_FIELDS, GROUP_FIELDS,
   STATUTORY_PARTIES, PAYABLE_PARTIES, TAX_COMPONENTS, TAX_FIELDS, sampleRoster, buildSalaryDetail, sampleEmployeeName, payrollPerson,
   type PayrollRole, type PayrollAccount, type PayableParty, type PaySection, type TalentaPayload, type TalentaPayItem,
   type TalentaField, type TagDimension, type PayrollTag, type RosterEmployee,
   type PayloadOptions, type TaxField,
 } from './payrollMaster'
-import { checkApprovalRequired } from './payrollApproval'
 import { dimensions as jurnalDimensionList } from './dimensions'
 export { GROUP_FIELDS } from './payrollMaster'
-import { upsertPayrollApprovalTask, removePayrollApprovalTask, syncPayrollApprovalTasks, type Task as InboxTask } from './tasks'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -371,23 +369,8 @@ export interface Run {
   /** A newer version is current on a posted run and waits for reverse and repost. */
   revised: boolean
   reversedAt: string | null
-  /** Post or Reverse and repost matched a Payroll journal approval rule and waits in Inbox > Awaiting approval. */
-  approval?: PayrollApprovalRequest | null
-  /** The last rejection: the run went back to its draft with this reason. */
-  rejection?: { reason: string; by: string; at: string; kind: 'post' | 'repost' } | null
-}
-export interface PayrollApprovalRequest {
-  kind: 'post' | 'repost'
-  versionNo: number
-  amount: number
-  /** Entry date chosen at Post; the journals (and the reversal) are dated on it when approved. */
-  date: string
-  ruleId: string
-  ruleName: string
-  approvers: string[]
-  requestedBy: string
-  requestedAt: string
-  taskId: string
+  /** Save draft by someone who can't post: which version, which access type, when. */
+  savedDraft?: { versionNo: number; by: PayrollRole; at: string } | null
 }
 export type JournalType = 'Payroll' | 'Reversal' | 'Salary payment' | 'Statutory payment' | 'Manual'
 export type JournalSource = 'Talenta payroll' | 'Bank reconciliation' | 'Manual journal' | 'Spend money'
@@ -523,7 +506,7 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v12'
+const SNAPSHOT_KEY = 'payroll:state-v13'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -541,7 +524,7 @@ function defaultSettings(): PayrollSettings {
 
 function emptyState(): PayrollState {
   return {
-    seq: 1, clock: '2026-10-05T02:00:00.000Z', viewAs: 'Accountant',
+    seq: 1, clock: '2026-10-05T02:00:00.000Z', viewAs: 'Owner or LM',
     connection: { status: 'Not connected', companyId: null, startedBy: null, startedAt: null, endedReason: null, sourceConfirmedBy: null, sourceConfirmedAt: null, otherEntitiesAnswer: null, lastAcceptedAt: null, rejected: [] },
     accounts: clone(PAYROLL_ACCOUNTS), tags: clone(PAYROLL_TAGS),
     settings: defaultSettings(), snapshots: [], roster: [], runs: [], journals: [], payments: [], bankLines: [],
@@ -563,29 +546,23 @@ export function nowWib(): string { return wib(payroll.clock) }
 // ── Roles (View as) and access control ──────────────────────────────────────
 
 /**
- * Six payroll actions (Payroll Access and Privacy, 2026-10-12). Approval is not a role action:
- * it follows Settings > Approval workflows (transaction type Payroll journal).
- *   view        every role: runs, journals, payables, warnings, settings read-only, exports.
- *   post        post a draft, acknowledge warnings, mark headcount Expected, re-check a held run.
- *   setup       pay item mapping, payable accounts, dimensions, limits, period lock (LM).
- *   correct     post a correction, reverse, revision or separate run, partial re-sends (LM).
- *   connection  connect or end Talenta, confirm the source, other-entity answers (Owner, Ultimate + LM).
- *   simulate    demo stand-ins for bank reconciliation and the general journal.
- *   headcount.view  month headcount and the run's headcount by group (Owner, Ultimate + LM).
+ * Two access types (PM decision 2026-10-13): the Owner and users with LM post; everyone else who
+ * reaches Payroll does everything else and saves the draft for them. No payroll approval.
+ *   view        runs, journals, payables, warnings, settings, Month headcount, exports.
+ *   review      Mark as checked, change notes, headcount Expected, Check again, version and partial choices, Save draft.
+ *   setup       pay items, payable accounts, groups, dimensions, limits, period lock.
+ *   simulate    demo stand-ins (Talenta sends, bank matches, manual journal) and Pay from Payroll payables.
+ *   post        Post journal, Use vN and repost, Reverse journal (Owner or LM).
+ *   connection  connect or end Talenta, confirm the company, other-entity answers (Owner or LM).
  */
-export type PayrollAction = 'view' | 'post' | 'setup' | 'correct' | 'connection' | 'simulate'
-  | 'headcount.view'
+export type PayrollAction = 'view' | 'review' | 'setup' | 'simulate' | 'post' | 'connection'
 
-const ACTORS: PayrollRole[] = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM']
-const LM: PayrollRole[] = ['Owner', 'Ultimate + LM', 'Accountant + LM']
+const ROLES: PayrollRole[] = [...PAYROLL_ROLES]
+const POSTERS: PayrollRole[] = ['Owner or LM']
 const ACCESS: Record<PayrollAction, PayrollRole[]> = {
-  view: [...ACTORS, 'View only'],
-  post: ACTORS,
-  setup: LM,
-  correct: LM,
-  connection: ['Owner', 'Ultimate + LM'],
-  simulate: ACTORS,
-  'headcount.view': ['Owner', 'Ultimate + LM'],
+  view: ROLES, review: ROLES, setup: ROLES, simulate: ROLES,
+  post: POSTERS,
+  connection: POSTERS,
 }
 export function can(action: PayrollAction, role: PayrollRole = payroll.viewAs): boolean { return ACCESS[action].includes(role) }
 export function setPayrollViewAs(role: PayrollRole): void { payroll.viewAs = role }
@@ -593,17 +570,9 @@ export function actingPerson(): string { return payrollPerson(payroll.viewAs).pe
 export { PAYROLL_PEOPLE }
 
 export interface Result { ok: boolean; message?: string; [k: string]: unknown }
-/** Who may take each action, in the View as labels, so a refusal says who can. */
-const WHO_CAN: Record<PayrollAction, string> = {
-  view: 'Everyone with Payroll access can view this.',
-  post: 'View only access can\'t do this. Ask the Owner, an Ultimate or an Accountant.',
-  simulate: 'View only access can\'t do this. Ask the Owner, an Ultimate or an Accountant.',
-  setup: 'Only Owner, Ultimate + LM or Accountant + LM can change this.',
-  correct: 'Only Owner, Ultimate + LM or Accountant + LM can do this.',
-  connection: 'Only Owner or Ultimate + LM can do this.',
-  'headcount.view': 'Only Owner or Ultimate + LM can see headcount.',
-}
-const denied = (action: PayrollAction): Result & { ok: false } => ({ ok: false, message: WHO_CAN[action], status: 403 })
+/** The one refusal: only posting and the connection are closed to Other user. */
+export const POST_REFUSAL = 'Only the Owner or a user with LM can post.'
+const denied = (action: 'post' | 'connection'): Result & { ok: false } => ({ ok: false, status: 403, message: action === 'post' ? POST_REFUSAL : 'Only the Owner or a user with LM can change the connection.' })
 
 // ── Accounts and tags ───────────────────────────────────────────────────────
 
@@ -623,7 +592,6 @@ const partyName = (p: PayableParty) => PARTY_NAME[p]
 const grossBoth = (code: string) => code === payroll.settings.taxPresets.dtp
 /** TS-03: add an account to the payroll account set. Codes and names are unique within the set. */
 export function addPayrollAccount(a: { code: string; name: string; type: PayrollAccount['type']; party: PayableParty | null; reused?: boolean }): Result {
-  if (!can('setup')) return denied('setup')
   const code = a.code.trim(), name = a.name.trim()
   if (!/^\d-\d{5}$/.test(code)) return { ok: false, message: 'Enter a code like 2-20513.' }
   if (!name) return { ok: false, message: 'Enter the account name.' }
@@ -636,7 +604,6 @@ export function addPayrollAccount(a: { code: string; name: string; type: Payroll
 }
 /** Add a value to an existing Jurnal dimension. A new value can fill a blank group by name, so warned drafts rebuild. */
 export function createPayrollTag(dimension: TagDimension, name: string): Result {
-  if (!can('setup')) return denied('setup')
   if (!name.trim()) return { ok: false, message: 'Enter a dimension value.' }
   if (!jurnalDimensions().includes(dimension)) return { ok: false, message: `${dimension} is not a dimension in Jurnal. Pick one from the list.` }
   if (!dimensionValues(dimension).some((x) => norm(x) === norm(name))) { payroll.tags.push({ dimension, name: name.trim() }); recheckHeld() }
@@ -749,7 +716,6 @@ export function validateMapping(row: Pick<PayItemMapping, 'role' | 'debit' | 'cr
 }
 
 export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'programme'>>, overrideReason?: string): Result {
-  if (!can('setup')) return denied('setup')
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'This pay item is no longer in the list. Reload the page.' }
   const next = { ...row, ...patch }
@@ -798,7 +764,6 @@ export function groupDimensionValue(g: Pick<PayGroup, 'values' | 'dims'>, dimens
 }
 /** Add a Jurnal dimension as a column of the Groups table. Only existing dimensions; values come from that dimension. */
 export function addGroupDimension(dimension: string): Result {
-  if (!can('setup')) return denied('setup')
   const name = (dimension ?? '').trim()
   if (!name) return { ok: false, message: 'Pick a dimension from the list.' }
   const dim = jurnalDimensions().find((d) => norm(d) === norm(name))
@@ -811,7 +776,6 @@ export function addGroupDimension(dimension: string): Result {
 }
 /** Remove a dimension column. Groups keep their picks, so adding it back restores them. */
 export function removeGroupDimension(dimension: string): Result {
-  if (!can('setup')) return denied('setup')
   const s = payroll.settings
   const i = s.groupDimensions.findIndex((d) => norm(d) === norm(dimension ?? ''))
   if (i < 0) return { ok: false, message: `${(dimension ?? '').trim() || 'This dimension'} is not added to groups. Reload the page.` }
@@ -895,7 +859,6 @@ export function groupRows(): GroupRow[] {
  * values those groups agreed on (else the defaults); a row holding staff of a New group stays New.
  */
 export function setGroupBy(fields: TalentaField[]): Result {
-  if (!can('setup')) return denied('setup')
   const list = [...new Set(fields)]
   if (list.some((f) => !TALENTA_FIELDS.some((x) => x.field === f))) return { ok: false, message: 'Pick fields from the Talenta list.' }
   if (list.some((f) => !GROUP_FIELDS.includes(f))) return { ok: false, message: "Job position and Job level can't group staff, because a group can be one person. Pick Organization, Branch, Cost center, Business unit or Employment status." }
@@ -945,7 +908,6 @@ function ensureGroup(key: string): PayGroup | null {
 }
 /** The group's expense account (null = use the pay item account). Applies to pay items set to Use group account. */
 export function setGroupAccount(key: string, account: string | null): Result {
-  if (!can('setup')) return denied('setup')
   if (account && !isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
   const g = ensureGroup(key)
   if (!g) return { ok: false, message: 'This group is no longer in a Talenta send. Reload the page.' }
@@ -955,7 +917,6 @@ export function setGroupAccount(key: string, account: string | null): Result {
 }
 /** One dimension value for a group (null = back to the name match, or blank when nothing matches). */
 export function setGroupDimension(key: string, dimension: string, value: string | null): Result {
-  if (!can('setup')) return denied('setup')
   if (value && !payroll.settings.groupDimensions.includes(dimension)) return { ok: false, message: `Add ${dimension} to groups first, then pick its value.` }
   if (value && !dimensionValues(dimension).includes(value)) return { ok: false, message: 'Pick a value from this dimension or create it first.' }
   const g = ensureGroup(key)
@@ -966,7 +927,6 @@ export function setGroupDimension(key: string, dimension: string, value: string 
 }
 /** Save a New group as it is: pay item accounts and dimension values matched by name. Drafts with a 'no-group' or 'no-dimension-value' warning rebuild (changed()). */
 export function saveGroup(key: string): Result {
-  if (!can('setup')) return denied('setup')
   const had = payroll.settings.groups.some((x) => x.key === key)
   const g = ensureGroup(key)
   if (!g) return { ok: false, message: 'This group is no longer in a Talenta send. Reload the page.' }
@@ -1007,7 +967,6 @@ export function useChartAccount(a: { code: string; name: string; type: PayrollAc
  * comes from the row, else from the name and section.
  */
 export function setPayItemAccount(key: string, account: string): Result {
-  if (!can('setup')) return denied('setup')
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'This pay item is no longer in the list. Reload the page.' }
   const a = payrollAccount(account)
@@ -1035,7 +994,6 @@ export function setPayItemAccount(key: string, account: string): Result {
 }
 /** A cost item either takes its staff's group expense account ('Use group account') or posts to its default account for every group. */
 export function setPayItemGroupsCanChange(key: string, on: boolean): Result {
-  if (!can('setup')) return denied('setup')
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'This pay item is no longer in the list. Reload the page.' }
   if (on && !isCostItem(row)) return { ok: false, message: 'Only an allowance or a benefit can use the group\'s expense account.' }
@@ -1049,7 +1007,6 @@ export function setPayItemGroupsCanChange(key: string, on: boolean): Result {
  * payable moves to the new one; Staff also moves Hutang Gaji, DJP PPh 21 and PPh 26 their tax presets.
  */
 export function setPayableAccount(party: PayableParty, code: string): Result {
-  if (!can('setup')) return denied('setup')
   const s = payroll.settings
   const a = payrollAccount(code)
   if (!a || a.type !== 'liability') return { ok: false, message: 'Pick a liability account for a payable.' }
@@ -1074,7 +1031,6 @@ export function setPayableAccount(party: PayableParty, code: string): Result {
 export type TaxAccountKind = 'dtp' | 'resign'
 export const TAX_ACCOUNT_LABEL: Record<TaxAccountKind, string> = { dtp: 'PPh 21 DTP (paid by the government)', resign: 'PPh 21 on severance' }
 export function setTaxAccount(kind: TaxAccountKind, code: string): Result {
-  if (!can('setup')) return denied('setup')
   const s = payroll.settings
   const a = payrollAccount(code)
   if (!a) return { ok: false, message: `Account ${code} is not in the chart of accounts. Pick another account.` }
@@ -1089,13 +1045,11 @@ export function setTaxAccount(kind: TaxAccountKind, code: string): Result {
   return { ok: true }
 }
 export function setLimits(patch: Partial<Limits>): Result {
-  if (!can('setup')) return denied('setup')
   Object.assign(payroll.settings.limits, patch)
   changed('Payroll check limits changed')
   return { ok: true }
 }
 export function setPayday(day: number): Result {
-  if (!can('setup')) return denied('setup')
   if (day < 1 || day > 31) return { ok: false, message: 'Enter a payday from 1 to 31.' }
   payroll.settings.payday = day
   changed(`Payday set to ${day}`)
@@ -1324,7 +1278,7 @@ export function journalsOf(runId: string): Journal[] { return payroll.journals.f
 export function journalById(id: string | null): Journal | undefined { return id ? payroll.journals.find((j) => j.id === id) : undefined }
 export function journalTotals(j: Pick<Journal, 'lines'>) { return { debit: j.lines.reduce((s, l) => s + l.debit, 0), credit: j.lines.reduce((s, l) => s + l.credit, 0) } }
 
-export type RunStatus = 'Awaiting approval' | 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready' | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'
+export type RunStatus = 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready' | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'
 export function runHolds(run: Run): Hold[] {
   const pending = run.versions.filter((v) => v.state === 'waiting-choice' || v.state === 'partial').flatMap((v) => v.holds)
   return [...pending, ...(currentVersionOf(run)?.holds ?? [])]
@@ -1336,7 +1290,6 @@ export function runStatus(run: Run): RunStatus {
   const live = liveJournals(run.id).length > 0
   if (run.reversedAt && !live) return holds.length ? 'Held' : 'Reversed'
   if (holds.length) return 'Held'
-  if (pendingApproval(run)) return 'Awaiting approval'
   if (run.revised && live) return 'Revision ready'
   if (run.ledgerVersion != null && live) return 'Posted'
   if (run.mode !== 'Live') return run.mode
@@ -1453,8 +1406,8 @@ function logReceipt(run: Run, v: RunVersion): SendResult {
         : run.ledgerVersion != null && run.ledgerVersion === v.no ? 'No change to the posted journal.'
           : `Draft journal ready.${v.warnings.length ? ` ${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''} to check.` : ''}`)
   addLog({ type: 'Send', status, reason, nextStep: nextStepFor(run, v), runId: run.id, runKey: run.key, version: v.no, employees: staffCount(v.payload) })
-  if (v.holds.length && v.state !== 'waiting-choice') notify(ACTORS, `Payroll ${periodLabel(run.start, run.end)} v${v.no} needs a fix before posting: ${v.holds[0]!.message}`, `/payroll-runs/${run.id}`)
-  if (v.state === 'waiting-choice') notify(ACTORS, `Talenta sent Payroll ${periodLabel(run.start, run.end)} again with different pay items. Choose: use it as a new version, or make a separate run.`, `/payroll-runs/${run.id}`)
+  if (v.holds.length && v.state !== 'waiting-choice') notify(ROLES, `Payroll ${periodLabel(run.start, run.end)} v${v.no} needs a fix before posting: ${v.holds[0]!.message}`, `/payroll-runs/${run.id}`)
+  if (v.state === 'waiting-choice') notify(ROLES, `Talenta sent Payroll ${periodLabel(run.start, run.end)} again with different pay items. Choose: use it as a new version, or make a separate run.`, `/payroll-runs/${run.id}`)
   return { ok: true, status, message: reason, runId: run.id, versionNo: v.no }
 }
 /** What a run that never posts says instead of a draft: months before the start month, or no start month yet. */
@@ -1463,7 +1416,7 @@ function nextStepFor(run: Run, v: RunVersion): string {
   const h = v.holds[0]
   if (!h) return v.revision ? `Review what changed, then use v${v.no} and repost.` : v.draft && run.ledgerVersion !== v.no ? 'Review the draft journal and post it.' : 'Nothing to do.'
   const steps: Partial<Record<HoldCode, string>> = {
-    'confirm-source': 'The Owner or Ultimate + LM confirms this is your company.', choice: 'Choose: use it as a new version, or make a separate run.',
+    'confirm-source': 'The Owner or a user with LM confirms this is your company.', choice: 'Choose: use it as a new version, or make a separate run.',
     partial: 'Choose: use it as the full run, or reject it.', 'unmapped-item': 'Pick an account for each pay item. The run is checked again when you save.',
   }
   return steps[h.code] ?? 'Fix it in Payroll settings. The run is checked again when you save.'
@@ -1496,8 +1449,7 @@ function partialCheck(run: Run, v: RunVersion): Hold | null {
 }
 
 export function decidePartial(runId: string, no: number, decision: 'replace' | 'reject', reason?: string): Result {
-  if (!can('correct')) return denied('correct')
-  const run = runById(runId), v = run && versionOf(run, no)
+    const run = runById(runId), v = run && versionOf(run, no)
   if (!run || !v || v.state !== 'partial') return { ok: false, message: 'This send no longer needs a choice. Reload the page.' }
   now()
   if (decision === 'reject') {
@@ -1535,8 +1487,7 @@ function looksSeparateRun(run: Run, v: RunVersion): boolean {
   return earning.length / rows.length < 0.5
 }
 export function chooseRevision(runId: string, no: number): Result {
-  if (!can('correct')) return denied('correct')
-  const run = runById(runId), v = run && versionOf(run, no)
+    const run = runById(runId), v = run && versionOf(run, no)
   if (!run || !v || v.state !== 'waiting-choice') return { ok: false, message: 'This send no longer needs a choice. Reload the page.' }
   now()
   v.decision = { kind: 'New version of the posted run', reason: null, by: actingPerson(), at: payroll.clock }
@@ -1549,8 +1500,7 @@ export function chooseRevision(runId: string, no: number): Result {
   return { ok: true }
 }
 export function chooseSeparateRun(runId: string, no: number, o: { type: Exclude<RunKind, 'Regular'>; name: string; reason?: string }): Result {
-  if (!can('correct')) return denied('correct')
-  const run = runById(runId), v = run && versionOf(run, no)
+    const run = runById(runId), v = run && versionOf(run, no)
   if (!run || !v || v.state !== 'waiting-choice') return { ok: false, message: 'This send no longer needs a choice. Reload the page.' }
   const name = o.name.trim()
   if (!name) return { ok: false, message: 'Enter a name for the separate run.' }
@@ -1738,7 +1688,6 @@ function recheckHeld(): void {
 }
 /** Re-check the whole run after fixes (holds clear on their own when a mapping is saved; this is the manual re-check). */
 export function releaseRun(runId: string): Result {
-  if (!can('post')) return denied('post')
   const run = runById(runId), v = run && currentVersionOf(run)
   if (!run || !v) return { ok: false }
   checkVersion(run, v)
@@ -1972,14 +1921,12 @@ export function runWarnings(runId: string): RunWarning[] {
     out.push({ key: `large:${c.key}`, code: 'large-change', message: `${c.label} ${up ? 'up' : 'down'} ${rupiah(Math.abs(c.diff))} from ${prev ? periodLabel(prev.start, prev.end) : 'last period'}. Add a note or mark it as checked.`, details: { rowKey: c.key, diff: c.diff, pct: c.pct } })
   }
   const hc = headcountChanges(runId)
-  // OQ21: the Headcount warning goes only to roles that can see the headcount table behind it.
-  if (hc.unexpected && can('headcount.view')) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `Headcount changed in ${hc.unexpected} group${hc.unexpected > 1 ? 's' : ''}, not marked as expected yet.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
+  if (hc.unexpected) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `Headcount changed in ${hc.unexpected} group${hc.unexpected > 1 ? 's' : ''}, not marked as expected yet.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
   for (const m of manualJournalWarnings(run.month)) out.push({ key: `manual:${m.journalId}`, code: 'manual-journal', message: m.message, details: { ...m } })
   return out.map((w) => ({ ...w, acknowledged: v.acks[w.key] ?? null }))
 }
 /** Mark as checked: the Accountant checks one warning (note optional, up to 500 characters). Checked warnings leave the Post confirm text. */
 export function acknowledgeWarning(runId: string, key: string, note = ''): Result {
-  if (!can('post')) return denied('post')
   const run = runById(runId)
   const v = run ? currentVersionOf(run) : undefined
   if (!run || !v) return { ok: false }
@@ -1989,7 +1936,6 @@ export function acknowledgeWarning(runId: string, key: string, note = ''): Resul
   return { ok: true }
 }
 export function clearAcknowledgement(runId: string, key: string): Result {
-  if (!can('post')) return denied('post')
   const v = currentVersionOf(runById(runId)!)
   if (!v) return { ok: false }
   delete v.acks[key]
@@ -2130,7 +2076,6 @@ function groupIdsOf(runId: string, key: string): GroupIds | null {
 }
 /** The Accountant marks a group's headcount change Expected (HR settled it; the accountant consumes it). Note optional. */
 export function markHeadcountExpected(runId: string, key: string, note = ''): Result {
-  if (!can('post')) return denied('post')
   const run = runById(runId)
   const v = run ? currentVersionOf(run) : undefined
   if (!run || !v) return { ok: false }
@@ -2141,7 +2086,6 @@ export function markHeadcountExpected(runId: string, key: string, note = ''): Re
   return { ok: true }
 }
 export function clearHeadcountExpected(runId: string, key: string): Result {
-  if (!can('post')) return denied('post')
   const run = runById(runId)
   const v = run ? currentVersionOf(run) : undefined
   if (!run || !v) return { ok: false }
@@ -2149,7 +2093,6 @@ export function clearHeadcountExpected(runId: string, key: string): Result {
   return { ok: true }
 }
 export function addChangeNote(runId: string, key: string, note: string): Result {
-  if (!can('post')) return denied('post')
   const v = currentVersionOf(runById(runId)!)
   if (!v) return { ok: false }
   if (note.length > 500) return { ok: false, message: 'Shorten the note to 500 characters or fewer.' }
@@ -2171,7 +2114,6 @@ export function claimsSummary(runId: string) {
 export function isLocked(month: string): boolean { return payroll.lockedMonths.includes(month) }
 export function firstOpenAfter(month: string): string { let m = month; while (isLocked(m)) m = nextMonthOf(m); return m }
 export function lockPeriod(month: string, o: { confirm?: boolean } = {}): Result {
-  if (!can('setup')) return denied('setup')
   const open = payroll.runs.filter((r) => r.month === month && ['Received', 'Held', 'Waiting for your choice', 'Revision ready', 'Ready to post'].includes(runStatus(r)))
   if (open.length && !o.confirm) return { ok: false, needsConfirm: true, runs: open.map((r) => ({ id: r.id, label: periodLabel(r.start, r.end), status: runStatus(r) })), message: `${open.length} run${open.length > 1 ? 's are' : ' is'} not posted yet in ${monthLabel(month)}. Post ${open.length > 1 ? 'them' : 'it'} first, or lock anyway.` }
   if (!isLocked(month)) payroll.lockedMonths.push(month)
@@ -2179,7 +2121,6 @@ export function lockPeriod(month: string, o: { confirm?: boolean } = {}): Result
   return { ok: true }
 }
 export function unlockPeriod(month: string): Result {
-  if (!can('setup')) return denied('setup')
   payroll.lockedMonths = payroll.lockedMonths.filter((m) => m !== month)
   return { ok: true }
 }
@@ -2244,10 +2185,6 @@ export function postRun(runId: string, o: { versionNo?: number; date?: string } 
   const bad = checkEntryDate(date)
   if (bad) return { ok: false, status: 422, message: bad }
   const warnings = unackedMessages(runId)
-  if (!approving) {
-    const gate = approvalGate(run, v, 'post', v.draft.lines.reduce((x, l) => x + l.debit, 0), date)
-    if (gate) return { ...gate, warnings }
-  }
   now()
   const j = addJournal({
     type: 'Payroll', source: 'Talenta payroll', runId, versionNo: v.no, date, taxMonth: run.month,
@@ -2259,82 +2196,30 @@ export function postRun(runId: string, o: { versionNo?: number; date?: string } 
   return { ok: true, journalId: j.id, number: j.number, date, warnings }
 }
 
-// ── Approval (Settings > Approval workflows, transaction type Payroll journal) ──
+// ── Save draft (Other user: everything but posting) ─────────────────────────
 
-let approving = false
-/** The run's approval request while it still applies to the current version. */
-export function pendingApproval(run: Run): PayrollApprovalRequest | null {
-  const a = run.approval
-  return a && a.versionNo === run.currentVersion ? a : null
+/** The saved-draft record while it still applies: same version, still waiting to post. */
+function savedDraftOf(run: Run): NonNullable<Run['savedDraft']> | null {
+  const sd = run.savedDraft
+  if (!sd || sd.versionNo !== run.currentVersion) return null
+  const st = runStatus(run)
+  return st === 'Ready to post' || st === 'Revision ready' ? sd : null
 }
-function approvalTask(run: Run, a: PayrollApprovalRequest): InboxTask {
-  const what = a.kind === 'post' ? 'Post journal' : `Use v${a.versionNo} and repost`
-  return {
-    id: a.taskId, docType: 'Payroll Journal', number: Number(a.taskId.replace(/\D/g, '')) || 0,
-    label: `Payroll ${periodLabel(run.start, run.end)} v${a.versionNo}: ${what}`,
-    details: `Journal date ${dateLabel(a.date)}. Approve and post, or reject, on the run page.`, requestedBy: a.requestedBy,
-    date: isoDateWib(a.requestedAt), dueDate: '', total: a.amount, balanceDue: a.amount, status: 'awaiting approval',
-    warehouse: '', reason: 'Amount limit', link: `/payroll-runs/${run.id}`,
-    approvers: a.approvers.map((name) => ({ name, role: PAYROLL_PEOPLE.find((p) => p.person === name)?.role ?? 'Approver' })),
-  }
+/** "Saved by Other user on 5 Oct 2026. Waiting for someone who can post." or null. */
+export function draftSavedNote(run: Run): string | null {
+  const sd = savedDraftOf(run)
+  return sd ? `Saved by ${sd.by} on ${dateLabel(isoDateWib(sd.at))}. Waiting for someone who can post.` : null
 }
-/** Post journal / Use vN and repost: when an active rule matches, the draft goes to Inbox > Awaiting approval with its journal date. Seeded history predates the rule. */
-function approvalGate(run: Run, v: RunVersion, kind: 'post' | 'repost', amount: number, date: string): Result | null {
-  if (seeding) return null
-  const pending = pendingApproval(run)
-  if (pending) return { ok: false, status: 409, message: `Already sent for approval. Waiting for ${listLabel(pending.approvers)}.` }
-  const check = checkApprovalRequired(amount, actingPerson())
-  if (!check.required) return null
-  const a: PayrollApprovalRequest = {
-    kind, versionNo: v.no, amount, date, ruleId: check.ruleId!, ruleName: check.ruleName!, approvers: check.approvers,
-    requestedBy: actingPerson(), requestedAt: now(), taskId: nextId('PAYJ-'),
-  }
-  run.approval = a; run.rejection = null
-  upsertPayrollApprovalTask(approvalTask(run, a))
-  addLog({ type: 'Decision', status: 'Recorded', reason: `Sent for approval: ${a.ruleName}`, nextStep: `${listLabel(a.approvers)} approves and posts, or rejects, from Inbox > Awaiting approval.`, runId: run.id, runKey: run.key, version: v.no })
-  notify(['Owner'], `Payroll ${periodLabel(run.start, run.end)} v${v.no} (${rupiah(amount)}) waits for your approval: ${a.ruleName}.`, `/payroll-runs/${run.id}`)
-  return { ok: true, awaitingApproval: true, status: 202, ruleName: a.ruleName, approvers: a.approvers, message: `Sent for approval to ${listLabel(a.approvers)} (${a.ruleName}). It posts when approved.` }
-}
-/** True when the acting person is an approver on the run's pending request. */
-export function canApprove(runId: string): boolean {
+/** Save draft: keeps the draft as Ready to post (or New version) and tells the Owner or LM it waits for them. */
+export function saveDraft(runId: string): Result {
   const run = runById(runId)
-  const a = run ? pendingApproval(run) : null
-  return !!a && a.approvers.includes(actingPerson())
-}
-/** Approve and post: the PAY journal (or the reversal and the new PAY journal) posts as requested, on the requested journal date. */
-export function approvePayroll(runId: string): Result {
-  const run = runById(runId)
-  const a = run ? pendingApproval(run) : null
-  if (!run || !a) return { ok: false, message: 'Nothing on this run waits for approval. Reload the page.' }
-  if (!a.approvers.includes(actingPerson())) return { ok: false, status: 403, message: `Only ${listLabel(a.approvers)} can approve or reject this, as set in Approval workflows.` }
-  approving = true
-  let r: Result
-  try { r = a.kind === 'post' ? postRun(runId, { versionNo: a.versionNo, date: a.date }) : reverseAndRepost(runId, { versionNo: a.versionNo, date: a.date }) } finally { approving = false }
-  if (!r.ok) return r
-  run.approval = null
-  removePayrollApprovalTask(a.taskId)
-  addLog({ type: 'Decision', status: 'Recorded', reason: `Approved and posted by ${actingPerson()}: ${a.ruleName}`, nextStep: 'Nothing to do.', runId, runKey: run.key, version: a.versionNo, journalNo: (r.number as string) ?? null })
-  notify(ACTORS, `Payroll ${periodLabel(run.start, run.end)} v${a.versionNo} approved by ${actingPerson()} and posted as ${r.number as string}.`, `/payroll-runs/${run.id}`)
-  return { ...r, approvedBy: actingPerson() }
-}
-/** The approver rejects: the run returns to its draft with the reason; Post sends it again. */
-export function rejectPayroll(runId: string, reason: string): Result {
-  const run = runById(runId)
-  const a = run ? pendingApproval(run) : null
-  if (!run || !a) return { ok: false, message: 'Nothing on this run waits for approval. Reload the page.' }
-  if (!a.approvers.includes(actingPerson())) return { ok: false, status: 403, message: `Only ${listLabel(a.approvers)} can approve or reject this, as set in Approval workflows.` }
-  if (!reason.trim()) return { ok: false, message: 'Enter a reason so the sender knows what to fix.' }
-  now()
-  run.approval = null
-  run.rejection = { reason: reason.trim(), by: actingPerson(), at: payroll.clock, kind: a.kind }
-  removePayrollApprovalTask(a.taskId)
-  addLog({ type: 'Decision', status: 'Recorded', reason: `Rejected by ${actingPerson()}: ${reason.trim()}`, nextStep: 'Fix what the approver asked, then send for approval again.', runId, runKey: run.key, version: a.versionNo })
-  notify(ACTORS, `Payroll ${periodLabel(run.start, run.end)} v${a.versionNo} rejected by ${actingPerson()}: ${reason.trim()}`, `/payroll-runs/${run.id}`)
-  return { ok: true }
-}
-/** Inbox tasks the engine stands behind (after a reload or a sample reset). */
-function syncApprovalTasks(): void {
-  syncPayrollApprovalTasks(payroll.runs.flatMap((r) => { const a = pendingApproval(r); return a ? [approvalTask(r, a)] : [] }))
+  if (!run) return { ok: false, status: 404, message: 'This run is no longer here. Reload the page.' }
+  const v = currentVersionOf(run)
+  const st = runStatus(run)
+  if (!v?.draft || (st !== 'Ready to post' && st !== 'Revision ready')) return { ok: false, message: runHolds(run)[0]?.message ?? 'There is no draft journal to save. It builds when Talenta sends this period.' }
+  run.savedDraft = { versionNo: v.no, by: payroll.viewAs, at: now() }
+  notify(POSTERS, `Payroll ${periodLabel(run.start, run.end)} v${v.no} draft saved by ${payroll.viewAs}. Review it and post.`, `/payroll-runs/${run.id}`)
+  return { ok: true, message: 'Draft saved. Waiting for someone who can post.' }
 }
 
 // ── Revisions: the latest version wins; reverse and repost replaces the ledger version ──
@@ -2408,7 +2293,7 @@ function refreshRevision(run: Run, v: RunVersion): void {
   const first = !v.revision
   v.revision = { summary: revisionSummary(run, oldV, v, v.draft.lines), builtAt: payroll.clock, snapshotId: currentSnapshotId() }
   run.revised = true
-  if (first) notify(ACTORS, revisionNotice(run, v.revision.summary), `/payroll-runs/${run.id}`)
+  if (first) notify(ROLES, revisionNotice(run, v.revision.summary), `/payroll-runs/${run.id}`)
 }
 /** The revision waiting on a run (current version against the ledger), or null. */
 export function revisionOf(runId: string): Revision | null {
@@ -2427,14 +2312,13 @@ function retireLedgerVersion(run: Run, oldV: RunVersion, v: RunVersion) {
   v.revision = null
 }
 /**
- * Reverse and repost (permission 'correct'): reverses every live PAY journal of the run in full
+ * Reverse and repost (permission 'post'): reverses every live PAY journal of the run in full
  * and posts the chosen version (default: the current one) in full, both on one entry date
- * (default the last day of the pay period; a locked period is refused). The approval workflow
- * applies as for a first post; reversal and repost happen together once approved. Payables
+ * (default the last day of the pay period; a locked period is refused). Payables
  * follow (the reversal clears the old amounts, the new journal is owed).
  */
 export function reverseAndRepost(runId: string, o: { versionNo?: number; date?: string } = {}): Result {
-  if (!can('correct')) return denied('correct')
+  if (!can('post')) return denied('post')
   const run = runById(runId)
   if (!run) return { ok: false, status: 404, message: 'This run is no longer here. Reload the page.' }
   const live = liveJournals(run.id)
@@ -2452,11 +2336,6 @@ export function reverseAndRepost(runId: string, o: { versionNo?: number; date?: 
   const bad = checkEntryDate(date, { date: last.date, number: last.number })
   if (bad) return { ok: false, status: 422, message: bad }
   const warnings = v.no === run.currentVersion ? unackedMessages(runId) : []
-  const total = built.draft.lines.reduce((x, l) => x + l.debit, 0)
-  if (!approving) {
-    const gate = approvalGate(run, v, 'repost', total, date)
-    if (gate) return { ...gate, warnings }
-  }
   const oldV = versionOf(run, run.ledgerVersion)!
   now()
   const reversals = live.map((j) => reversalOf(j, date))
@@ -2521,7 +2400,7 @@ export function paymentsFor(runId: string): Payment[] {
 }
 /** Reverse every live journal of a run together (TN-21). */
 export function reverseRun(runId: string, o: { date?: string; confirmPayments?: boolean } = {}): Result {
-  if (!can('correct')) return denied('correct')
+  if (!can('post')) return denied('post')
   const run = runById(runId)
   const live = run ? liveJournals(run.id) : []
   if (!run || !live.length) return { ok: false, message: 'Nothing is posted for this run, so there is nothing to reverse.' }
@@ -2544,7 +2423,7 @@ export function reverseRun(runId: string, o: { date?: string; confirmPayments?: 
   return { ok: true, journals: done.map((d) => d.number) }
 }
 export function reverseJournal(journalId: string, o: { date?: string; confirmPayments?: boolean } = {}): Result {
-  if (!can('correct')) return denied('correct')
+  if (!can('post')) return denied('post')
   const j = journalById(journalId)
   if (!j) return { ok: false, status: 404, message: 'This journal is no longer here. Reload the page.' }
   if (j.reversesId) return { ok: false, message: 'A reversal can\'t be reversed. Post the run again instead.' }
@@ -2831,7 +2710,6 @@ const STATEMENT_TEXT: Record<Exclude<BankPaymentKind, 'partial' | 'overpaid'>, s
  * (half the open balance) and overpaid (open balance + Rp250.000) of `opts.of` (default salary).
  */
 export function simulateBankPayment(kind: BankPaymentKind, o: BankPaymentOptions = {}): Result {
-  if (!can('simulate')) return denied('simulate')
   const base = kind === 'partial' || kind === 'overpaid' ? (o.of ?? 'salary') : kind
   const bank = o.bank ?? ACC.bca
   let account: string, month: string, run: Run | undefined, party: PayableParty, label: string
@@ -2890,7 +2768,6 @@ export function payablePrefill(key: string): PayablePrefill | null {
  * (Dr the payable, Cr the bank) sits with the payroll journals so the tracker and the run agree.
  */
 export function recordPayablePayment(key: string, o: { cashTxId: string; number: string; bank: string; date: string; amount: number }): Result {
-  if (!can('simulate')) return denied('simulate')
   const r = payablesTracker().find((x) => x.key === key)
   if (!r) return { ok: false, message: 'That payable is no longer open. Refresh Payroll payables.' }
   if (o.amount <= 0) return { ok: false, message: 'Enter an amount above Rp0.' }
@@ -2933,7 +2810,6 @@ export function checkSpendMoneyPayment(cashTxId: string, next: SpendMoneyChange)
   if (!p) return { ok: true }
   const moves = !next || next.amount !== p.amount || next.date !== p.date || next.bank !== p.bank
   if (!moves) return { ok: true }
-  if (!can('simulate')) return denied('simulate')
   for (const d of next && next.amount > 0 ? [p.date, next.date] : [p.date]) {
     if (isLocked(monthOf(d))) return { ok: false, message: `${monthLabel(monthOf(d))} is locked. Pick a date in an open month.` }
   }
@@ -2988,7 +2864,6 @@ export function isPayrollAccount(code: string): boolean {
  * Dr Salaries, Cr Hutang Gaji, Rp1.500.000, dated on the latest regular run's end date.
  */
 export function simulateManualJournal(o: { debit?: string; credit?: string; amount?: number; date?: string; memo?: string } = {}): Result {
-  if (!can('simulate')) return denied('simulate')
   const last = regularRuns().filter((r) => r.currentVersion != null).pop()
   const date = o.date ?? last?.end ?? today()
   if (isLocked(monthOf(date))) return { ok: false, message: `${monthLabel(monthOf(date))} is locked. Pick a date in an open month.` }
@@ -3077,14 +2952,14 @@ function seed() {
   Object.assign(payroll, emptyState())
   payroll.roster = sampleRoster()
   setClock('2026-06-01T02:00:00Z')
-  as('Owner', () => { must(startConnection(PAYROLL_COMPANY_ID), 'start'); answerOtherEntities(false) })
+  as('Owner or LM', () => { must(startConnection(PAYROLL_COMPANY_ID), 'start'); answerOtherEntities(false) })
   seedSettings()
   takeSnapshot('Payroll setup: pay items, payable accounts and dimensions')
   // June arrives before the start month is set; the Owner confirms the source and starts booking from July.
   setClock('2026-06-22T03:00:00Z')
   simulateSend('regular', { start: '2026-05-21', end: '2026-06-20', sentAt: '2026-06-22T03:00:00Z' })
-  as('Owner', () => must(confirmSource(), 'confirm source'))
-  payroll.settings.cutover = { firstLive: '2026-07', proposedBy: payrollPerson('Owner').person, confirmedBy: payrollPerson('Owner').person, mode: 'Block' }
+  as('Owner or LM', () => must(confirmSource(), 'confirm source'))
+  payroll.settings.cutover = { firstLive: '2026-07', proposedBy: payrollPerson('Owner or LM').person, confirmedBy: payrollPerson('Owner or LM').person, mode: 'Block' }
   for (const r of payroll.runs) r.mode = runMode(r.month)
   takeSnapshot('Start booking from Jul 2026')
   // July and August: posted, then paid through bank reconciliation matches.
@@ -3092,26 +2967,26 @@ function seed() {
   // August BPJS Kesehatan is left unpaid, so Payroll payables shows one overdue amount.
   monthCycle('2026-07-21', '2026-08-20', '2026-08-21T03:00:00Z', { pay: '2026-08-25', kes: '2026-09-08', tk: '2026-09-14', tax: '2026-09-14' }, ['bpjs-kesehatan'])
   setClock('2026-09-10T03:00:00Z')
-  as('Owner', () => must(lockPeriod('2026-07'), 'lock Jul'))
+  as('Owner or LM', () => must(lockPeriod('2026-07'), 'lock Jul'))
   // September: arrives with a new pay item and holds. HR settled three people changes in
   // Talenta (EMP-0038 left, EMP-0035 moved to Sales Surabaya, EMP-0041 joined Sales Bandung);
   // the send carries them and the draft review shows them against August.
   setClock('2026-09-21T03:00:00Z')
   simulateSend('new-pay-item', { start: '2026-08-21', end: '2026-09-20', sentAt: '2026-09-21T03:00:00Z', newAllowance: { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_000 } })
   setClock('2026-10-05T02:00:00Z')
-  payroll.viewAs = 'Accountant'
+  payroll.viewAs = 'Owner or LM'
   seeding = false
 }
 function monthCycle(start: string, end: string, sentAt: string, d: { pay: string; kes: string; tk: string; tax: string }, unpaid: BankPaymentKind[] = []) {
   setClock(sentAt)
   const r = simulateSend('regular', { start, end, sentAt })
   const run = runById(r.runId)!
-  as('Accountant', () => {
+  as('Owner or LM', () => {
     for (const w of runWarnings(run.id)) acknowledgeWarning(run.id, w.key, 'Checked with HR')
     must(postRun(run.id), `post ${start}`)
   })
   const month = run.month
-  const pay = (kind: BankPaymentKind, date: string, o: BankPaymentOptions = {}) => { if (unpaid.includes(kind)) return; setClock(`${date}T03:00:00Z`); as('Accountant', () => must(simulateBankPayment(kind, { date, ...o }), `${kind} ${month}`)) }
+  const pay = (kind: BankPaymentKind, date: string, o: BankPaymentOptions = {}) => { if (unpaid.includes(kind)) return; setClock(`${date}T03:00:00Z`); as('Owner or LM', () => must(simulateBankPayment(kind, { date, ...o }), `${kind} ${month}`)) }
   pay('salary', d.pay, { runId: run.id })
   pay('bpjs-kesehatan', d.kes, { month })
   pay('bpjs-ketenagakerjaan', d.tk, { month })
@@ -3120,13 +2995,13 @@ function monthCycle(start: string, end: string, sentAt: string, d: { pay: string
   pay('dplk', d.tax, { month })
 }
 
-export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payroll]); syncApprovalTasks() }
+export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payroll]) }
 
 // Load: a saved snapshot wins over the sample. A fresh sample is saved at once so ids stay stable across reloads.
 const snap = loadSnapshot<PayrollState>(SNAPSHOT_KEY)
-if (snap && snap[0] && Array.isArray(snap[0].settings?.groupDimensions) && snap[0].settings?.groupBy) { Object.assign(payroll, snap[0]); syncApprovalTasks() }
+if (snap && snap[0] && Array.isArray(snap[0].settings?.groupDimensions) && snap[0].settings?.groupBy) Object.assign(payroll, snap[0])
 else resetPayroll()
-// Opening the prototype always starts as Owner (user, 2026-10-13); View as switches from there.
-payroll.viewAs = 'Owner'
+// Opening the prototype always starts as Owner or LM (user, 2026-10-13); View as switches from there.
+payroll.viewAs = 'Owner or LM'
 
 watch(payroll, () => saveSnapshot(SNAPSHOT_KEY, [payroll]), { deep: true })

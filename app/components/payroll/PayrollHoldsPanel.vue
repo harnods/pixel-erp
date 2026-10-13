@@ -125,7 +125,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <div class="ph__title">{{ t('To fix before posting') }} ({{ holds.length }})</div>
         <div class="ph__sub">{{ t('Jurnal builds the journal once these are fixed.') }}</div>
       </div>
-      <MpButton v-if="can('post')" variant="secondary" is-rounded @click="release">{{ t('Check again') }}</MpButton>
+      <MpButton variant="secondary" is-rounded @click="release">{{ t('Check again') }}</MpButton>
     </div>
 
     <div v-for="(h, i) in holds" :key="`${h.code}-${i}`" class="ph__hold" :data-hold="h.code">
@@ -146,18 +146,17 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(summary.takeHome) }}</dd></div>
         </dl>
         <MpButton v-if="can('connection')" is-rounded @click="doConfirmSource">{{ t('Confirm company') }}</MpButton>
-        <PayrollReadOnlyNote v-else :text="t('Waiting for the Owner or an Ultimate + LM to confirm the company.')" />
+        <PayrollReadOnlyNote v-else :text="t('Waiting for the Owner or a user with LM to confirm the company.')" />
       </div>
 
       <!-- Same run again or separate run -->
       <div v-else-if="h.code === 'choice'" class="ph__fix">
         <p class="ph__hint">{{ t('Staff also in the posted run') }}: {{ d(h).overlapPct }}%<template v-if="latestPosted"> · {{ t('posted') }} v{{ latestPosted.no }}</template></p>
-        <div v-if="can('correct')" class="ph__row">
+        <div class="ph__row">
           <MpButton is-rounded @click="pickRevision">{{ t('Use as a new version') }}</MpButton>
           <MpButton variant="secondary" is-rounded @click="sep.open = !sep.open">{{ t('Make a separate run') }}</MpButton>
         </div>
-        <PayrollReadOnlyNote v-else :text="t('Choosing needs Owner, Ultimate + LM or Accountant + LM.')" />
-        <div v-if="sep.open && can('correct')" class="ph__form">
+        <div v-if="sep.open" class="ph__form">
           <div class="ph__field">
             <label class="ph__label" for="ph-sep-type">{{ t('Run type') }}</label>
             <ErpFilterSelect id="ph-sep-type" v-model="sep.type" :placeholder="t('Run type')" :options="['THR', 'Bonus', 'Off-cycle']" :is-clearable="false" width="200px" />
@@ -185,18 +184,15 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(d(h).thpAfter) }} {{ t('of') }} {{ rupiah(d(h).thpBefore) }}</dd></div>
           <div v-if="d(h).missing?.length"><dt>{{ t('Missing groups') }}</dt><dd>{{ d(h).missing.join('; ') }}</dd></div>
         </dl>
-        <template v-if="can('correct')">
-          <div class="ph__field">
-            <label class="ph__label" for="ph-partial-reason">{{ t('Reason') }}</label>
-            <MpInput id="ph-partial-reason" v-model="partial.reason" :is-invalid="!!partial.error" />
-            <p v-if="partial.error" class="ph__error">{{ t(partial.error) }}</p>
-          </div>
-          <div class="ph__row">
-            <MpButton is-rounded @click="decide('replace')">{{ t('Use it as the full run') }}</MpButton>
-            <MpButton variant="secondary" is-rounded @click="decide('reject')">{{ t('Reject') }}</MpButton>
-          </div>
-        </template>
-        <PayrollReadOnlyNote v-else :text="t('Deciding needs Owner, Ultimate + LM or Accountant + LM.')" />
+        <div class="ph__field">
+          <label class="ph__label" for="ph-partial-reason">{{ t('Reason') }}</label>
+          <MpInput id="ph-partial-reason" v-model="partial.reason" :is-invalid="!!partial.error" />
+          <p v-if="partial.error" class="ph__error">{{ t(partial.error) }}</p>
+        </div>
+        <div class="ph__row">
+          <MpButton is-rounded @click="decide('replace')">{{ t('Use it as the full run') }}</MpButton>
+          <MpButton variant="secondary" is-rounded @click="decide('reject')">{{ t('Reject') }}</MpButton>
+        </div>
       </div>
 
       <!-- Unmapped pay items -->
@@ -222,7 +218,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
                 <td class="ph__td ph__td--num">{{ rupiah(it.amount) }}</td>
                 <td class="ph__td ph__td--num">{{ it.employees }}</td>
               </tr>
-              <tr v-if="can('setup')">
+              <tr>
                 <td class="ph__td ph__td--sub" colspan="3">
                   <div class="ph__grid ph__grid--one">
                     <div class="ph__field">
@@ -239,15 +235,13 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
             </template>
           </tbody>
         </table>
-        <PayrollReadOnlyNote v-if="!can('setup')" :text="t('Editing needs Set up access.')" />
-        <MpButton v-else variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
+        <MpButton variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
       </div>
 
       <!-- Build checks fixed in settings -->
       <div v-else-if="SETTINGS_FIX.includes(h.code)" class="ph__fix">
         <p v-if="h.code === 'archived-account' && payrollAccount(d(h).account)" class="ph__hint">{{ accountLabel(d(h).account) }}</p>
-        <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
-        <PayrollReadOnlyNote v-else :text="t('Editing needs Set up access.')" />
+        <MpButton variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
       </div>
     </div>
   </div>

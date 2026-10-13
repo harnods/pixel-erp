@@ -1,5 +1,4 @@
 import { reactive } from 'vue'
-import { loadSnapshot, saveSnapshot } from './persist'
 
 export type TaskDocType =
   | 'Sales Quote' | 'Sales Order' | 'Sales Delivery' | 'Sales Invoice'
@@ -7,7 +6,6 @@ export type TaskDocType =
   | 'Purchase Request' | 'Purchase Order' | 'Purchase Delivery' | 'Purchase Invoice'
   | 'Purchase Quote' | 'Purchase Payment' | 'Purchase Return'
   | 'Expense' | 'Warehouse Transfer' | 'Stock In/Out' | 'Stock Count' | 'Product Conversion'
-  | 'Payroll Journal'
 
 export type TaskStatus = 'awaiting approval' | 'action required' | 'submitted'
 
@@ -44,12 +42,6 @@ export interface Task {
   warehouse: string
   /** Approval reason/trigger shown in the awaiting-approval table. */
   reason: string
-  /** Shown instead of "<docType> #00001" (payroll journals carry their period). */
-  label?: string
-  /** Where the number opens, and where Approve / Reject happen (payroll journals: the run page). */
-  link?: string
-  /** Real approvers from the matched approval rule; the mock log is generated when absent. */
-  approvers?: { name: string; role: string }[]
 }
 
 const docTypes: TaskDocType[] = [
@@ -174,34 +166,7 @@ function buildTasks(count: number, status: TaskStatus, seed: number): Task[] {
 
 export const awaitingApprovalTasks = reactive<Task[]>(buildTasks(25, 'awaiting approval', 7))
 
-// ─── Payroll journals awaiting approval ──────────────────────────────────────
-// The payroll engine (payrollStore.ts) adds a task when Post matches an active
-// "Payroll journal" approval rule and removes it on Approve or Reject. They are
-// persisted on their own key so the Inbox shows them without loading payroll.
-const PAYROLL_TASKS_KEY = 'payroll:approval-tasks-v1'
-const payrollTaskSnapshot = loadSnapshot<Task>(PAYROLL_TASKS_KEY)
-if (payrollTaskSnapshot) awaitingApprovalTasks.unshift(...payrollTaskSnapshot)
-function persistPayrollTasks() { saveSnapshot(PAYROLL_TASKS_KEY, awaitingApprovalTasks.filter((t) => t.docType === 'Payroll Journal')) }
-export function upsertPayrollApprovalTask(task: Task): void {
-  const i = awaitingApprovalTasks.findIndex((t) => t.id === task.id)
-  if (i >= 0) awaitingApprovalTasks.splice(i, 1, task)
-  else awaitingApprovalTasks.unshift(task)
-  persistPayrollTasks()
-}
-export function removePayrollApprovalTask(id: string): void {
-  const i = awaitingApprovalTasks.findIndex((t) => t.id === id)
-  if (i >= 0) awaitingApprovalTasks.splice(i, 1)
-  persistPayrollTasks()
-}
-/** Keep only the payroll tasks in `keep` (the engine's view after a reload or a sample reset). */
-export function syncPayrollApprovalTasks(keep: Task[]): void {
-  for (let i = awaitingApprovalTasks.length - 1; i >= 0; i--) if (awaitingApprovalTasks[i]!.docType === 'Payroll Journal' && !keep.some((k) => k.id === awaitingApprovalTasks[i]!.id)) awaitingApprovalTasks.splice(i, 1)
-  for (const k of keep) { const i = awaitingApprovalTasks.findIndex((t) => t.id === k.id); if (i >= 0) awaitingApprovalTasks.splice(i, 1, k); else awaitingApprovalTasks.unshift(k) }
-  persistPayrollTasks()
-}
-
 export function formatTaskNumber(task: Task): string {
-  if (task.label) return task.label
   return `${task.docType} #${String(task.number).padStart(5, '0')}`
 }
 
@@ -259,10 +224,6 @@ export function approvalRequestedBy(task: Task): { name: string; timestamp: stri
 }
 
 export function approvalLevelsFor(task: Task): ApprovalLevel[] {
-  if (task.approvers) {
-    const steps: ApprovalStep[] = task.approvers.map((a) => ({ name: a.name, role: a.role, status: 'awaiting approval' }))
-    return [{ label: 'Approval stage 1', rule: 'any', status: 'awaiting approval', approvedCount: 0, steps }]
-  }
   const n = task.number
   const levelCount = (n % 3 === 0) ? 2 : 1
   const levels: ApprovalLevel[] = []
@@ -304,7 +265,6 @@ export function overallApprovalStatus(levels: ApprovalLevel[]): 'approved' | 'aw
 }
 
 export function commentsFor(task: Task): TaskComment[] {
-  if (task.docType === 'Payroll Journal') return []
   const n = task.number
   const count = n % 4 // 0-3 comments
   return Array.from({ length: count }, (_, i) => {
@@ -340,7 +300,6 @@ export const taskDocTypeTabs: { label: string; docType: TaskDocType | null }[] =
   { label: 'Stock In/Out', docType: 'Stock In/Out' },
   { label: 'Stock counts', docType: 'Stock Count' },
   { label: 'Product conversions', docType: 'Product Conversion' },
-  { label: 'Payroll journals', docType: 'Payroll Journal' },
 ]
 
 // Inbox › Awaiting approval inner tab groups.
@@ -404,12 +363,6 @@ export const taskTypeGroups: { label: string; children: { label: string; value: 
     children: [
       { label: 'Warehouse transfers', value: 'Warehouse Transfer' },
       { label: 'Stock In/Out', value: 'Stock In/Out' },
-    ],
-  },
-  {
-    label: 'Accounting',
-    children: [
-      { label: 'Payroll journals', value: 'Payroll Journal' },
     ],
   },
 ]

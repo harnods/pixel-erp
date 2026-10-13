@@ -11,7 +11,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import PayrollPostDrawer from '~/components/payroll/PayrollPostDrawer.vue'
 import {
-  can, runById, revisionOf, currentVersionOf, pendingApproval, liveJournals,
+  can, runById, revisionOf, currentVersionOf, liveJournals,
   rupiah, wib, accountLabel, tagsLabel, listLabel,
 } from '~/data/payrollStore'
 import { infoToast } from '~/utils/toasts'
@@ -26,7 +26,6 @@ const cur = computed(() => (run.value ? currentVersionOf(run.value) : undefined)
 const live = computed(() => (run.value ? liveJournals(run.value.id) : []))
 const s = computed(() => rev.value?.summary ?? null)
 const partial = computed(() => !!run.value?.versions.some((v) => v.state === 'partial'))
-const awaiting = computed(() => !!run.value && !!pendingApproval(run.value))
 const sign = (n: number) => (n > 0 ? `+${rupiah(n)}` : n < 0 ? `-${rupiah(-n)}` : rupiah(0))
 
 const figures = computed(() => (s.value ? [
@@ -62,11 +61,11 @@ function showCompare() { emit('compare') }
       </div>
       <div class="pcn__actions">
         <MpButton v-if="run.versions.length > 1" variant="secondary" is-rounded @click="showCompare">{{ t('Compare versions') }}</MpButton>
-        <MpButton v-if="can('correct') && !partial && !awaiting" is-rounded data-testid="pcn-repost" data-tour="payroll-repost" @click="open = true">{{ t(`Use v${s.toVersion} and repost`) }}</MpButton>
+        <MpButton v-if="can('post') && !partial" is-rounded data-testid="pcn-repost" data-tour="payroll-repost" @click="open = true">{{ t(`Use v${s.toVersion} and repost`) }}</MpButton>
       </div>
     </div>
 
-    <PayrollReadOnlyNote v-if="!can('correct')" :text="t('Reposting needs Owner, Ultimate + LM or Accountant + LM.')" />
+    <PayrollReadOnlyNote v-if="!can('post')" :text="t('Only the Owner or a user with LM can post.')" />
 
     <div class="pcn__grid" data-tour="payroll-correction">
       <div v-for="f in figures" :key="f.key" class="pcn__fig" :data-figure="f.key">

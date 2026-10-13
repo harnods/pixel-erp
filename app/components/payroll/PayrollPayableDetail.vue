@@ -7,7 +7,7 @@
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollPayDrawer from '~/components/payroll/PayrollPayDrawer.vue'
 import { MpButton } from '@mekari/pixel3'
-import { rupiah, accountLabel, monthLabel, dateLabel, can, type PayableRow } from '~/data/payrollStore'
+import { rupiah, accountLabel, monthLabel, dateLabel, type PayableRow } from '~/data/payrollStore'
 import { payableDrill } from '~/data/payrollUiPayables'
 import { matchedPayments, FLAG_CHIP } from '~/data/payrollUiPay'
 
@@ -31,7 +31,7 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
         <div><dt>{{ t('Paid') }}</dt><dd class="ppx-num">{{ rupiah(row.paid) }}</dd></div>
         <div><dt>{{ t('Balance') }}</dt><dd class="ppx-num">{{ rupiah(row.balance) }}</dd></div>
       </dl>
-      <div v-if="row.balance > 0 && can('simulate')" class="ppx-pay">
+      <div v-if="row.balance > 0" class="ppx-pay">
         <span class="ppx-sub">{{ t('Pay opens New spend money with this payable filled in.') }}</span>
         <MpButton is-rounded data-testid="ppx-pay" @click="navigateTo({ path: '/bank-withdrawals/new', query: { payable: row.key } })">{{ t('Pay') }}</MpButton>
       </div>

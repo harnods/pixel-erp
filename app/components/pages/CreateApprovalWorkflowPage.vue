@@ -90,7 +90,6 @@ const TRANSACTION_TYPE_LABELS: Record<ApprovalTransactionType, string> = {
   'bill': t('Bill'),
   'stock-adjustment': t('Stock adjustment'),
   'warehouse-transfer': t('Warehouse transfer'),
-  'payroll-journal': t('Payroll journal'),
 }
 
 const PROJECT_ACTION_LABELS: Record<ProjectAction, string> = {

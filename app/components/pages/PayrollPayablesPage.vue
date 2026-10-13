@@ -11,8 +11,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import PayrollPayableDetail from '~/components/payroll/PayrollPayableDetail.vue'
 import PayrollSimulateBankMenu from '~/components/payroll/PayrollSimulateBankMenu.vue'
-import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
-import { payablesTracker, can, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
+import { payablesTracker, rupiah, monthLabel, dateLabel, today, accountLabel, type PayableRow } from '~/data/payrollStore'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { statusType } from '~/data/payrollUiRunCopy'
 import { paymentHistory } from '~/data/payrollUiPayables'
@@ -124,8 +123,7 @@ const asPay = (r: unknown) => r as PayHist
   <div ref="root" class="pp">
     <div class="pp-head">
       <MpSegmentedControl id="pp-view" v-model="view" name="pp-view" :data="viewOptions" />
-      <PayrollSimulateBankMenu v-if="can('simulate')" />
-      <PayrollReadOnlyNote v-else :text="t('View only. Payroll actions are off for this role.')" />
+      <PayrollSimulateBankMenu />
     </div>
     <p class="pp-helper">{{ t('PPh 21 and PPh 26 are income tax withheld from local and foreign staff; BPJS is state health and employment insurance; DPLK is the pension fund.') }}</p>
 
@@ -226,7 +224,7 @@ const asPay = (r: unknown) => r as PayHist
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem v-if="asRow(row).balance > 0 && can('simulate')" @click="payNow(asRow(row))">{{ t('Pay') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="asRow(row).balance > 0" @click="payNow(asRow(row))">{{ t('Pay') }}</MpPopoverListItem>
               <MpPopoverListItem @click="openDetail(asRow(row))">{{ t('View details') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="asRow(row).runId" @click="navigateTo(`/payroll-runs/${asRow(row).runId}`)">{{ t('Open payroll run') }}</MpPopoverListItem>
             </MpPopoverList>

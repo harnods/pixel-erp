@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * Payroll inbox (FG-2). One row per run and its current
- * version, the sync log of what Talenta sent, and the month headcount (Owner and
- * Ultimate + LM only): each month's run against the previous posted run, by group,
+ * version, the sync log of what Talenta sent, and the month headcount (everyone
+ * who reaches Payroll): each month's run against the previous posted run, by group,
  * as counts.
  * Talenta sends arrive from the "Simulate Talenta send" menu. Everything reads
  * the payroll engine; no figure is stored here.
@@ -13,8 +13,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateMenu.vue'
-import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
-import { payroll, sendLog, sendLogCsv, can, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
+import { payroll, sendLog, sendLogCsv, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
 import { runRow, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
 import { statusLabel, statusType, nextStepLabel } from '~/data/payrollUiRunCopy'
 
@@ -23,17 +22,16 @@ const router = useRouter()
 const route = useRoute()
 
 type View = 'runs' | 'log' | 'month'
-// Month headcount is for Owner and Ultimate + LM; others fall back to Runs, even from a ?view=month link.
-const canHeadcount = computed(() => can('headcount.view'))
-const allowedViews = computed<View[]>(() => (canHeadcount.value ? ['runs', 'log', 'month'] : ['runs', 'log']))
-const fromQuery = (q: unknown): View => (allowedViews.value.includes(q as View) ? (q as View) : 'runs')
+// Everyone who reaches Payroll sees all three views (no headcount gate since 2026-10-13).
+const VIEWS: View[] = ['runs', 'log', 'month']
+const fromQuery = (q: unknown): View => (VIEWS.includes(q as View) ? (q as View) : 'runs')
 const view = ref<View>(fromQuery(route.query.view))
 watch(view, (v) => { if ((route.query.view ?? 'runs') !== v) router.replace({ query: { ...route.query, view: v === 'runs' ? undefined : v } }) }, { immediate: true })
-watch([() => route.query.view, allowedViews], ([q]) => { const next = fromQuery(q); if (next !== view.value) view.value = next })
+watch(() => route.query.view, (q) => { const next = fromQuery(q); if (next !== view.value) view.value = next })
 const viewOptions = computed(() => [
   { id: 'pi-view-runs', value: 'runs', label: t('Runs') },
   { id: 'pi-view-log', value: 'log', label: t('Sync log') },
-  ...(canHeadcount.value ? [{ id: 'pi-view-month', value: 'month', label: t('Month headcount') }] : []),
+  { id: 'pi-view-month', value: 'month', label: t('Month headcount') },
 ])
 
 // ── Stats ──────────────────────────────────────────────────────────────────
@@ -133,8 +131,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
   <div class="pi">
     <div class="pi__toolbar">
       <MpSegmentedControl id="pi-view" v-model="view" name="pi-view" :data="viewOptions" class="pi__views" data-tour="payroll-inbox-views" />
-      <PayrollReadOnlyNote v-if="!can('simulate')" :text="t('View only. Payroll actions are off for this role.')" />
-      <PayrollInboxSimulateMenu v-else @sent="(id) => { if (id && view === 'runs') statusFilter = '' }" />
+      <PayrollInboxSimulateMenu @sent="(id) => { if (id && view === 'runs') statusFilter = '' }" />
     </div>
 
     <!-- ── Runs ── -->
@@ -172,13 +169,13 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
             <div class="stat-amount">{{ rupiah(ready.reduce((s, r) => s + r.takeHome, 0)) }}</div>
             <a v-if="ready.length" class="stat-link" @click="drill('Ready to post')">{{ ready.length }} {{ t(ready.length === 1 ? 'draft journal' : 'draft journals') }}</a>
           </div>
-          <div class="stat-card" :class="{ 'stat-card--bordered': canHeadcount }">
+          <div class="stat-card stat-card--bordered">
             <div class="stat-title">{{ t('Posted this month') }}</div>
             <div class="stat-period">{{ t('Payroll journals posted in') }} {{ monthLabel(thisMonth) }}</div>
             <div class="stat-amount">{{ postedThisMonth.length }}</div>
             <a v-if="postedThisMonth.length" class="stat-link" @click="drill('Posted')">{{ postedThisMonth.map((j) => j.number).join(', ') }}</a>
           </div>
-          <div v-if="canHeadcount" class="stat-card">
+          <div class="stat-card">
             <div class="stat-title">{{ t('Headcount change') }}</div>
             <div class="stat-period">{{ trackedMonth.previous ? `${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : trackedMonth.label }}</div>
             <div class="stat-amount">{{ trackedMonth.changed }}</div>
@@ -244,7 +241,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           <MpButton v-if="logResult" variant="ghost" is-rounded @click="logResult = ''">{{ t('Clear filters') }}</MpButton>
         </div>
         <div class="filter-right">
-          <MpTooltip v-if="can('view')" :label="t('Export')" placement="bottom">
+          <MpTooltip :label="t('Export')" placement="bottom">
             <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportLog" />
           </MpTooltip>
           <div class="filter-search">
@@ -265,7 +262,7 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
     </ErpTablePage>
 
     <!-- ── Month headcount ── -->
-    <div v-else-if="view === 'month' && canHeadcount" class="pi__month" data-tour="payroll-month-headcount">
+    <div v-else-if="view === 'month'" class="pi__month" data-tour="payroll-month-headcount">
       <div class="stats-section pi__stats">
         <div class="stat-card stat-card--bordered">
           <div class="stat-title">{{ t('Talenta send') }}</div>
@@ -303,8 +300,6 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           <div class="filter-left">
             <ErpFilterSelect id="pm-month" v-model="month" :placeholder="t('Month')" :options="monthOptions" :is-clearable="false" />
             <span class="pi__muted">{{ tracker.runStatus ? `${t('Regular run')} ${tracker.version} · ${t(statusLabel(tracker.runStatus))}` : t(statusLabel(tracker.status)) }}</span>
-          </div>
-        </template>
           </div>
         </template>
         <template #cell-state="{ value }">

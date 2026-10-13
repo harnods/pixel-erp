@@ -11,10 +11,9 @@
 import { computed } from 'vue'
 import { MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { can, runById, currentVersionOf, runWarnings, acknowledgeWarning, clearAcknowledgement, rupiah, wib, type RunWarning } from '~/data/payrollStore'
+import { runById, currentVersionOf, runWarnings, acknowledgeWarning, clearAcknowledgement, rupiah, wib, type RunWarning } from '~/data/payrollStore'
 import { successToast, errorToast } from '~/utils/toasts'
 import { sectionLabel } from '~/data/payrollUiRunCopy'
-import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 
 const props = defineProps<{ runId: string }>()
 const { t } = useLocale()
@@ -80,20 +79,19 @@ function undo(w: RunWarning) {
             <span>{{ w.message }}</span>
           </div>
           <div v-if="detail(w)" class="prw__detail">{{ detail(w) }}</div>
-          <div v-if="noGroups(w).length && can('setup')" class="prw__detail">
+          <div v-if="noGroups(w).length" class="prw__detail">
             <NuxtLink class="prw__link" to="/payroll-settings?section=groups" data-testid="prw-setup-groups">{{ t('Set up groups') }}</NuxtLink>
           </div>
           <div v-if="w.acknowledged" class="prw__detail">
             {{ t('Checked by') }} {{ w.acknowledged.by }} · {{ wib(w.acknowledged.at) }}<template v-if="w.acknowledged.note"> · {{ w.acknowledged.note }}</template>
           </div>
         </div>
-        <div v-if="can('post')" class="prw__actions">
+        <div class="prw__actions">
           <MpButton v-if="w.acknowledged" variant="ghost" is-rounded @click="undo(w)">{{ t('Undo') }}</MpButton>
           <MpButton v-else variant="secondary" is-rounded @click="ack(w)">{{ t('Mark as checked') }}</MpButton>
         </div>
       </li>
     </ul>
-    <div v-if="warnings.length && !can('post')" class="prw__foot"><PayrollReadOnlyNote :text="t('Marking as checked needs Owner, Ultimate or Accountant.')" /></div>
   </section>
 </template>
 

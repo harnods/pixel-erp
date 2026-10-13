@@ -1,8 +1,8 @@
 <template>
   <!--
-    "View as" for the payroll screens: there is no real sign-in, so this picks
-    who is acting (Owner, Ultimate, Ultimate + LM, Accountant, Accountant + LM,
-    View only). Same markup as BudgetViewAsSwitcher; its state lives in payrollStore.
+    "View as" for the payroll screens (prototype-only demo control): there is no real
+    sign-in, so this picks the access type: Owner or LM (can post) or Other user (saves
+    drafts only). Same markup as BudgetViewAsSwitcher; its state lives in payrollStore.
   -->
   <MpPopover
     id="payroll-view-as-switcher"
@@ -23,7 +23,7 @@
     </MpPopoverTrigger>
     <MpPopoverContent class="va-menu" is-unstyled>
       <p class="va-heading">{{ t('View payroll as') }}</p>
-      <p class="va-hint">{{ t('Each role sees only the actions it can take. LM adds edit and delete.') }}</p>
+      <p class="va-hint">{{ t('Only the Owner or a user with LM can post. Others save drafts.') }}</p>
       <nav class="va-list">
         <button
           v-for="p in PAYROLL_PEOPLE"
@@ -34,7 +34,7 @@
         >
           <span class="va-item-label">
             <span class="va-item-name">{{ t(p.role) }}</span>
-            <span class="va-item-sub">{{ p.person }} · {{ t(p.title) }}</span>
+            <span class="va-item-sub">{{ t(p.title) }}</span>
           </span>
           <MpIcon v-if="p.role === payroll.viewAs" name="check" size="md" color="icon.brand" />
         </button>

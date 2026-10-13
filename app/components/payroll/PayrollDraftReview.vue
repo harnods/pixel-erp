@@ -152,7 +152,7 @@ function unmarkExpected(key: string) {
             <td class="pdr__td pdr__num">{{ rupiah(Math.abs(c.new)) }}</td>
             <td class="pdr__td pdr__num">{{ signed(Math.abs(c.new) - Math.abs(c.old)) }} <span class="pdr__muted">({{ pct(c.pct == null ? null : (Math.abs(c.new) - Math.abs(c.old)) / Math.abs(c.old) * 100) }})</span></td>
             <td class="pdr__td pdr__notecell">
-              <template v-if="c.flag && can('post')">
+              <template v-if="c.flag">
                 <div class="pdr__noteform">
                   <MpInput :id="`pdr-note-${safeId(c.key)}`" :model-value="notes[c.key] ?? c.note ?? ''" :is-invalid="!!noteErr[c.key]" @update:model-value="(v: string | number) => notes[c.key] = String(v)" />
                   <MpButton variant="secondary" is-rounded @click="saveNote(c.key)">{{ t('Save') }}</MpButton>
@@ -176,7 +176,7 @@ function unmarkExpected(key: string) {
     </section>
 
     <!-- 3. Headcount by group: counts against the previous posted run; the people are in Talenta -->
-    <section v-if="hc && can('headcount.view')" class="pdr__card" data-section="headcount" data-tour="payroll-draft-headcount">
+    <section v-if="hc" class="pdr__card" data-section="headcount" data-tour="payroll-draft-headcount">
       <header class="pdr__cardhead">
         <div class="pdr__cardtitle">{{ t('Headcount by group') }}</div>
         <div class="pdr__cardsub">
@@ -214,9 +214,9 @@ function unmarkExpected(key: string) {
               <template v-if="h.flagged && h.expected">
                 <div>{{ h.expected.note || t('No note') }}</div>
                 <div class="pdr__muted">{{ h.expected.by }}</div>
-                <span v-if="can('post')" class="pdr__link" @click="unmarkExpected(h.key)">{{ t('Undo') }}</span>
+                <span class="pdr__link" @click="unmarkExpected(h.key)">{{ t('Undo') }}</span>
               </template>
-              <template v-else-if="h.flagged && can('post')">
+              <template v-else-if="h.flagged">
                 <div class="pdr__noteform">
                   <MpInput :id="`pdr-hc-${safeId(h.key)}`" :placeholder="t('Note (optional)')" :model-value="hcNotes[h.key] ?? ''" :is-invalid="!!hcErr[h.key]" @update:model-value="(v: string | number) => hcNotes[h.key] = String(v)" />
                   <MpButton variant="secondary" is-rounded @click="markExpected(h.key)">{{ t('Mark as expected') }}</MpButton>

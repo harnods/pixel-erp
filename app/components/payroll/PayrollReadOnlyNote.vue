@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * The one read-only line on payroll screens: shown where the View as role can see an area but
- * not act in it ("Editing needs Set up access."). Same look on every settings tab and action area.
+ * not act in it ("Only the Owner or a user with LM can post."). Same look wherever it shows.
  */
 import { MpIcon } from '@mekari/pixel3'
 

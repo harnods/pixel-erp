@@ -5,7 +5,8 @@
  * This is a demo layer for walkthroughs, not a product requirement; engineers
  * building the product should ignore it. The only coupling to product screens
  * is the data-tour="..." attributes they carry. It reuses the asset tour
- * runner, with its own reset and View as.
+ * runner, with its own reset and View as (two access types: Owner or LM posts, Other user
+ * does everything else and saves the draft).
  *
  * Every step does its own work on Next (run), then opens the screen that
  * shows the result and points at it. The reader only presses Next.
@@ -16,7 +17,7 @@
 import {
   payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, setPayItemAccount, setPayItemGroupsCanChange,
   setGroupBy, setGroupAccount, setGroupDimension, saveGroup, addGroupDimension, groupDimensions, createPayrollTag, groupRows,
-  runWarnings, acknowledgeWarning, postRun, approvePayroll, reverseAndRepost, simulateSend,
+  runWarnings, acknowledgeWarning, postRun, saveDraft, reverseAndRepost, simulateSend,
   simulateBankPayment, simulateManualJournal, payablesTracker, payablePrefill, recordPayablePayment, payrollAccount,
   useChartAccount,
 } from '~/data/payrollStore'
@@ -53,7 +54,7 @@ export const PAYROLL_TOUR_MARKERS = [
   'payroll-connection', 'payroll-how-to-send', 'payroll-payable-accounts', 'payroll-payitems', 'payroll-type-tip',
   'payroll-groups-can-change', 'payroll-groupby', 'payroll-group-dims', 'payroll-groups-table', 'payroll-viewas',
   'payroll-inbox-runs', 'payroll-synclog', 'payroll-month-headcount', 'payroll-simulate-send', 'payroll-holds',
-  'payroll-warnings', 'payroll-draft-lines', 'payroll-post', 'payroll-approve', 'payroll-journal-date',
+  'payroll-warnings', 'payroll-draft-lines', 'payroll-post', 'payroll-save-draft', 'payroll-saved-draft', 'payroll-journal-date',
   'payroll-revision', 'payroll-repost', 'payroll-versions', 'payroll-run-journals', 'payroll-mapping-used',
   'payroll-claims', 'payroll-payables', 'payroll-payables-simulate', 'payroll-salary-row', 'payroll-payables-flags',
 ] as const
@@ -177,7 +178,7 @@ function markAllChecked(runId: string) {
 }
 /** PAY-2 and PAY-3 start where Set up payroll leaves the groups: staff grouped by Organization and Branch. */
 function groupedByOrganizationAndBranch() {
-  as('Owner', () => setGroupBy(['organization_name', 'branch']))
+  setGroupBy(['organization_name', 'branch'])
 }
 
 // PAY-1
@@ -208,8 +209,9 @@ function setUpNewGroup() {
   saveGroup(key)
 }
 function markChecked() { markAllChecked(sepId()) }
-function sendForApproval() { postRun(sepId()) }
-function ownerApproves() { approvePayroll(sepId()) }
+/** Other user can't post: Save draft keeps September ready for someone who can. */
+function otherUserSavesDraft() { saveDraft(sepId()) }
+function ownerOrLmPosts() { as('Owner or LM', () => postRun(sepId())) }
 function bankPaysSalary() { simulateBankPayment('salary', { runId: sepId(), date: '2026-09-25' }) }
 function bankPaysTooMuch() { simulateBankPayment('overpaid', { runId: sepId(), date: '2026-09-26' }) }
 function manualJournal() { simulateManualJournal() }
@@ -234,16 +236,15 @@ function payBpjsFromSpendMoney() {
 }
 
 // PAY-3
-/** September as the monthly run leaves it: mapped, checked, posted after approval, salary paid. */
+/** September as the monthly run leaves it: mapped, checked, posted, salary paid. */
 function septemberPostedAndPaid() {
   setPayItemAccount(insentif(), ACC.salesSalaries)
   markAllChecked(sepId())
-  postRun(sepId())
-  as('Owner', () => approvePayroll(sepId()))
+  as('Owner or LM', () => postRun(sepId()))
   simulateBankPayment('salary', { runId: sepId(), date: '2026-09-25' })
 }
 function talentaSendsSeptemberAgain() { simulateSend('revision', { runId: sepId() }) }
-function repostV2() { as('Accountant + LM', () => reverseAndRepost(sepId())) }
+function repostV2() { as('Owner or LM', () => reverseAndRepost(sepId())) }
 function octoberWithoutMealAllowance() {
   const r = simulateSend('regular', { omit: ['Uang Makan'], newAllowance: { name: NEW_ITEM, organization: 'Sales', amount: 1_500_000 } })
   tourCtx.octId = r.runId ?? ''
@@ -256,9 +257,9 @@ const setupSteps: PayrollStep[] = [
   {
     route: SETTINGS('connection'),
     target: 'payroll-connection',
-    role: 'Owner',
+    role: 'Owner or LM',
     title: 'Jurnal is connected to Talenta company 1212.',
-    body: 'The Owner connects once. From then on HR settles payroll in Talenta and Jurnal books what Talenta sends. Connecting also blocks the old Talenta to Expense sync, so a month is never booked twice.',
+    body: 'The Owner or a user with LM connects once. From then on HR settles payroll in Talenta and Jurnal books what Talenta sends. Connecting also blocks the old Talenta to Expense sync, so a month is never booked twice.',
     watch: 'Connected to company 1212. Talenta has sent payroll 4 times; the last send arrived on 21 Sep 2026.',
     placement: 'bottom',
   },
@@ -290,7 +291,7 @@ const setupSteps: PayrollStep[] = [
     route: SETTINGS('pay-items'),
     target: 'payroll-payitems',
     find: rowIn('payroll-payitems', NEW_ITEM),
-    title: 'The Owner maps Insentif Penjualan to an expense account.',
+    title: 'Insentif Penjualan gets an expense account.',
     body: 'Any expense or cost of goods sold account can take a cost item. The other side follows the type: an allowance is owed to staff, so it credits Salaries Payable.',
     watch: 'Insentif Penjualan debits 6-60101 Salaries and credits 2-20201 Salaries Payable. The September run is ready to post: Rp554.203.941 on 26 lines.',
     placement: 'top',
@@ -333,28 +334,31 @@ const setupSteps: PayrollStep[] = [
     placement: 'top',
   },
   {
+    route: SETTINGS('groups'),
+    target: 'payroll-viewas',
+    role: 'Other user',
+    title: 'Payroll has two access types: Owner or LM, and Other user.',
+    body: 'The Owner and users with LM post. Anyone else with Payroll is Other user and does everything except posting: map pay items, set up groups, mark warnings as checked and pay payables.',
+    watch: 'As Other user, Groups can still be changed.',
+    placement: 'bottom',
+  },
+  {
+    run: otherUserSavesDraft,
+    route: runRoute(),
+    target: 'payroll-saved-draft',
+    role: 'Other user',
+    title: 'Other user saves the draft for someone who can post.',
+    body: 'Save draft takes the place of Post journal. The draft stays Ready to post and the run says who saved it; the Owner and users with LM are told it waits for them.',
+    watch: 'Saved by Other user on 5 Oct 2026. Waiting for someone who can post. The draft is Rp554.203.941.',
+    placement: 'bottom',
+  },
+  {
     route: runRoute(),
     target: 'payroll-post',
-    title: 'Large payroll journals go to the Owner for approval.',
-    body: 'Settings > Approval workflows holds the rule Payroll journal above Rp500.000.000. A journal above it waits in Inbox > Awaiting approval, and posts when the Owner approves.',
-    watch: 'September\'s draft is Rp554.203.941, above the limit, so the button reads Send for approval instead of Post journal.',
+    role: 'Owner or LM',
+    title: 'The Owner or a user with LM posts with Post journal.',
+    body: 'There is no approval step: Post journal posts at once on the journal date picked. Other user sees "Only the Owner or a user with LM can post." where the button would be.',
     placement: 'bottom',
-  },
-  {
-    route: SETTINGS('pay-items'),
-    target: 'payroll-viewas',
-    role: 'View only',
-    title: 'View only sees payroll and changes nothing.',
-    body: 'An Ultimate or Accountant user with every payroll action off can read every screen. Buttons and settings that change something are not there.',
-    placement: 'bottom',
-  },
-  {
-    route: SETTINGS('groups'),
-    target: 'payroll-groups-table',
-    role: 'Accountant',
-    title: 'An Accountant posts payroll but needs LM to change settings.',
-    body: 'Accountant can review, mark warnings as checked and post. Changing pay items and groups needs the LM authority, which the Owner, Ultimate + LM and Accountant + LM have.',
-    placement: 'top',
   },
 ]
 
@@ -391,7 +395,7 @@ const runSteps: PayrollStep[] = [
     route: runRoute(),
     target: 'payroll-draft-lines',
     find: onTab('payroll-draft-lines', 'Draft'),
-    title: 'Bayu maps it and the draft journal builds.',
+    title: 'Other user maps it and the draft journal builds.',
     body: 'Mapping the item from the hold saves it in Pay items and checks the run again. The hold clears on its own.',
     watch: 'Ready to post: Rp554.203.941 on 25 lines.',
     placement: 'top',
@@ -411,7 +415,7 @@ const runSteps: PayrollStep[] = [
     route: SETTINGS('groups'),
     target: 'payroll-groups-table',
     find: rowIn('payroll-groups-table', NEW_GROUP),
-    title: 'Bayu sets up Operations, Medan.',
+    title: 'Other user sets up Operations, Medan.',
     body: 'The group posts to Direct Labour like the other stores. Medan becomes a Branch value, so the group\'s Branch fills in by name, and Set up group saves it. Saving rebuilds the draft and clears the warning.',
     watch: 'Operations, Medan: 2 staff, 5-50101 Direct Labour, Branch Medan. September v2 is ready to post.',
     placement: 'top',
@@ -431,54 +435,44 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-warnings',
     find: onTab('payroll-warnings', 'Draft'),
     title: 'Warnings point at what changed since August.',
-    body: 'Lines that move more than 10% and Rp1.000.000 are warned. Warnings never stop Post; Bayu checks each one and uses Mark as checked. Headcount changes warn only the Owner and Ultimate + LM, who can see the counts.',
-    watch: '8 warnings, all marked as checked: 8 lines that moved.',
+    body: 'Lines that move more than 10% and Rp1.000.000 are warned. Staff joining, leaving or moving groups warn too. Warnings never stop Post; Other user checks each one and uses Mark as checked.',
+    watch: '9 warnings, all marked as checked: 8 lines that moved and a headcount change.',
     placement: 'top',
   },
   {
     route: '/payroll-inbox?view=month',
     target: 'payroll-month-headcount',
-    role: 'Owner',
-    title: 'The Owner sees the month headcount.',
-    body: 'Month headcount compares this month\'s staff with the last posted month, by group, in counts only. Only the Owner and Ultimate + LM see it.',
+    title: 'Month headcount shows who joined, left or moved.',
+    body: 'Month headcount compares this month\'s staff with the last posted month, by group, in counts only. Everyone with Payroll sees it.',
     watch: '40 staff in September: 1 joined, 1 left and 3 moved between groups.',
+    placement: 'bottom',
+  },
+  {
+    run: otherUserSavesDraft,
+    route: runRoute(),
+    target: 'payroll-saved-draft',
+    title: 'Other user saves the draft instead of posting.',
+    body: 'Only the Owner or a user with LM can post. Save draft keeps the journal Ready to post, notes who saved it and tells the Owner and users with LM it waits for them.',
+    watch: 'Saved by Other user on 5 Oct 2026. Waiting for someone who can post.',
     placement: 'bottom',
   },
   {
     route: runRoute(),
     target: 'payroll-journal-date',
     find: journalDateField,
-    role: 'Accountant + LM',
-    title: 'Send for approval asks for one journal date.',
+    role: 'Owner or LM',
+    title: 'Post journal asks for one journal date.',
     body: 'Journal date defaults to the last day of the pay period. A date in a locked period is refused: July is locked.',
-    watch: 'Journal date 20 Sep 2026. The journal is above Rp500.000.000, so it goes for approval.',
+    watch: 'Journal date 20 Sep 2026.',
     placement: 'left',
   },
   {
-    run: sendForApproval,
-    route: '/payroll-inbox',
-    target: 'payroll-inbox-runs',
-    find: rowIn('payroll-inbox-runs', SEP_LABEL),
-    title: 'Bayu sends the journal for approval.',
-    body: 'The rule in Approval workflows matched, so nothing posts yet. The request waits in Inbox > Awaiting approval, with the journal date Bayu chose.',
-    watch: 'September is awaiting approval from Rizal Candra: Rp554.203.941 dated 20 Sep 2026.',
-    placement: 'bottom',
-  },
-  {
-    route: runRoute(),
-    target: 'payroll-approve',
-    role: 'Owner',
-    title: 'The Owner opens the run from the Inbox.',
-    body: 'Approve and post books the journal on the requested date. Reject sends it back to draft with a reason.',
-    placement: 'bottom',
-  },
-  {
-    run: ownerApproves,
+    run: ownerOrLmPosts,
     route: runRoute('journals'),
     target: 'payroll-run-journals',
     find: onTab('payroll-run-journals', 'Journals'),
-    title: 'Rizal approves and the PAY journal posts.',
-    body: 'One balanced journal per run. A posted journal is never edited; a later send reverses it and posts again.',
+    title: 'The Owner posts and the PAY journal is in the ledger.',
+    body: 'Post journal posts at once; there is no approval step. One balanced journal per run. A posted journal is never edited; a later send reverses it and posts again.',
     watch: 'PAY-0003, 20 Sep 2026, Rp554.203.941.',
     placement: 'top',
   },
@@ -494,7 +488,7 @@ const runSteps: PayrollStep[] = [
   {
     route: runRoute(),
     target: 'payroll-claims',
-    role: 'Accountant + LM',
+    role: 'Other user',
     title: 'Claims paid through payroll show apart.',
     body: 'Reimbursements Talenta pays with the salary are listed by account and dimension, so claims are not mistaken for salary cost.',
     watch: 'Reimbursement Medical: Rp3.000.000 for 6 staff on 6-60106 Medical Expense.',
@@ -542,7 +536,7 @@ const runSteps: PayrollStep[] = [
     target: CASH_FORM_TARGET,
     find: payableBanner,
     title: 'Pay opens Cash management > New spend money, filled in.',
-    body: 'Pay is on the row menu of every payable with a balance, and on its details. The form arrives with the payee, the payable account and the open amount; nothing is paid until it is saved.',
+    body: 'Pay is on the row menu of every payable with a balance, and on its details, for both access types. The form arrives with the payee, the payable account and the open amount; nothing is paid until it is saved.',
     watch: 'Pay from Bank BCA to BPJS Kesehatan: one line on 2-20508 BPJS Kesehatan Payable for Rp16.102.029.',
     placement: 'bottom',
   },
@@ -586,7 +580,7 @@ const resendSteps: PayrollStep[] = [
     target: 'payroll-run-journals',
     find: onTab('payroll-run-journals', 'Journals'),
     title: 'September is posted and the salary is paid.',
-    body: 'This is where the monthly run ends: the Owner approved PAY-0003 and bank reconciliation matched the salary transfer.',
+    body: 'This is where the monthly run ends: the Owner posted PAY-0003 and bank reconciliation matched the salary transfer.',
     watch: 'PAY-0003, 20 Sep 2026, Rp554.203.941. Salary paid by BNK-0012.',
     placement: 'top',
   },
@@ -617,25 +611,26 @@ const resendSteps: PayrollStep[] = [
     placement: 'top',
   },
   {
+    run: otherUserSavesDraft,
+    route: runRoute(),
+    target: 'payroll-saved-draft',
+    role: 'Other user',
+    title: 'Other user saves v2 for someone who can post.',
+    body: 'Reposting is posting, so Other user sees Save draft in place of Use v2 and repost. PAY-0003 stays in the ledger until the Owner or a user with LM reposts.',
+    watch: 'Saved by Other user on 5 Oct 2026. Waiting for someone who can post.',
+    placement: 'bottom',
+  },
+  {
     route: runRoute(),
     target: 'payroll-repost',
-    role: 'Accountant + LM',
+    role: 'Owner or LM',
     title: 'Use v2 and repost replaces the posted journal in full.',
     body: 'Jurnal reverses PAY-0003 in full and posts v2 in full, both on one journal date. The latest version is picked; an older one can be chosen instead.',
-    watch: 'Journal date 20 Sep 2026 for both journals. v2 is Rp556.403.741, above Rp500.000.000, so it goes for approval.',
+    watch: 'Journal date 20 Sep 2026 for both journals. v2 is Rp556.403.741.',
     placement: 'bottom',
   },
   {
     run: repostV2,
-    route: runRoute(),
-    target: 'payroll-approve',
-    role: 'Owner',
-    title: 'Bayu sends the repost; the Owner approves it.',
-    body: 'The repost waits in Inbox > Awaiting approval, like a first post. Approve and post books the reversal and the new journal together.',
-    placement: 'bottom',
-  },
-  {
-    run: ownerApproves,
     route: runRoute('journals'),
     target: 'payroll-run-journals',
     find: onTab('payroll-run-journals', 'Journals'),
@@ -648,7 +643,6 @@ const resendSteps: PayrollStep[] = [
     route: PAYABLES,
     target: 'payroll-salary-row',
     find: sepSalaryRow,
-    role: 'Accountant + LM',
     title: 'Payables follow the new journal.',
     body: 'Staff are now owed the v2 take-home pay. The bank paid the v1 amount, so the rest is still open and the row flags the gap.',
     watch: 'Owed Rp448.634.808, paid Rp446.901.849, balance Rp1.732.959.',
@@ -690,10 +684,10 @@ export const PAYROLL_SETUP_TOUR: AssetTour = {
   id: 'payroll-setup',
   code: 'PAY-1',
   name: 'Set up payroll',
-  persona: 'Owner',
-  role: 'Owner' as unknown as ViewAsRole,
-  blurb: 'The Owner checks the Talenta connection, the payable account of each party, the pay items and the groups that decide where cost lands. Then the approval rule for large journals, and what View only and an Accountant without LM can do.',
-  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item got an account with Use group account on, staff were grouped by Organization and Branch with Organization and Branch added as dimensions, two groups got their own account and dimension value, and large journals go to the Owner for approval. View only reads everything and an Accountant needs LM to change settings. To try it yourself, use Reset sample data under View as.',
+  persona: 'Owner or LM, Other user',
+  role: 'Owner or LM' as unknown as ViewAsRole,
+  blurb: 'The Owner checks the Talenta connection, the payable account of each party, the pay items and the groups that decide where cost lands. Then the two access types: Owner or LM posts, Other user does the rest and saves the draft.',
+  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item got an account with Use group account on, staff were grouped by Organization and Branch with Organization and Branch added as dimensions, and two groups got their own account and dimension value. Other user changed settings and saved the draft; only the Owner or a user with LM posts. To try it yourself, use Reset sample data under View as.',
   steps: setupSteps as unknown as TourStep[],
   onReset: reset(),
   applyRole,
@@ -703,10 +697,10 @@ export const PAYROLL_RUN_TOUR: AssetTour = {
   id: 'payroll-run',
   code: 'PAY-2',
   name: 'Monthly payroll run',
-  persona: 'Accountant + LM, Owner',
-  role: 'Accountant + LM' as unknown as ViewAsRole,
-  blurb: 'September arrives from Talenta with a pay item no one has mapped, then again with a new group. Bayu, an Accountant with LM, fixes both, checks the warnings and sends the journal for approval; Rizal, the Owner, approves and posts it. Bank reconciliation pays the salary, and Pay settles the overdue August BPJS Kesehatan from Cash management. Staff are grouped by Organization and Branch, as in Set up payroll.',
-  closing: 'The new pay item held the run until it was mapped, the new group warned until it was set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, the journal went for approval with its journal date and posted when the Owner approved it, Mapping used and claims explained the journal, Payroll payables showed the bank match and an overpayment, Pay settled the overdue August BPJS Kesehatan through New spend money, Payments named each payment\'s source, and a manual journal was warned. To try it yourself, use Reset sample data under View as.',
+  persona: 'Other user, Owner or LM',
+  role: 'Other user' as unknown as ViewAsRole,
+  blurb: 'September arrives from Talenta with a pay item no one has mapped, then again with a new group. Other user fixes both, checks the warnings and saves the draft; the Owner posts it on one journal date. Bank reconciliation pays the salary, and Pay settles the overdue August BPJS Kesehatan from Cash management. Staff are grouped by Organization and Branch, as in Set up payroll.',
+  closing: 'The new pay item held the run until it was mapped, the new group warned until it was set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, Other user saved the draft and the Owner posted it with its journal date, Mapping used and claims explained the journal, Payroll payables showed the bank match and an overpayment, Pay settled the overdue August BPJS Kesehatan through New spend money, Payments named each payment\'s source, and a manual journal was warned. To try it yourself, use Reset sample data under View as.',
   steps: runSteps as unknown as TourStep[],
   onReset: reset(groupedByOrganizationAndBranch),
   applyRole,
@@ -716,10 +710,10 @@ export const PAYROLL_RESEND_TOUR: AssetTour = {
   id: 'payroll-resend',
   code: 'PAY-3',
   name: 'When Talenta sends again',
-  persona: 'Accountant + LM, Owner',
-  role: 'Accountant + LM' as unknown as ViewAsRole,
-  blurb: 'September is posted and paid when Talenta sends it again. Bayu, an Accountant with LM, sees what changed and uses v2 to repost on one journal date; Rizal, the Owner, approves. Then a send with a missing pay item, and the old Expense sync trying to book the same month.',
-  closing: 'The second send showed what it changes before anything posted, Use v2 and repost reversed the old journal in full and posted the new one on one date after approval, payables followed the new amount, a missing pay item booked what arrived and warned, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
+  persona: 'Owner or LM, Other user',
+  role: 'Owner or LM' as unknown as ViewAsRole,
+  blurb: 'September is posted and paid when Talenta sends it again. Other user sees what changed and saves v2; the Owner uses v2 to repost on one journal date. Then a send with a missing pay item, and the old Expense sync trying to book the same month.',
+  closing: 'The second send showed what it changes before anything posted, Other user saved v2, Use v2 and repost reversed the old journal in full and posted the new one on one date, payables followed the new amount, a missing pay item booked what arrived and warned, and the old sync could not book September twice. To try it yourself, use Reset sample data under View as.',
   steps: resendSteps as unknown as TourStep[],
   onReset: reset(groupedByOrganizationAndBranch),
   applyRole,
@@ -748,9 +742,9 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Group by Talenta fields', tour: 'PAY-1', step: 7 },
   { feature: 'Add dimension to groups, values prefilled by name', tour: 'PAY-1', step: 8 },
   { feature: 'Group expense account and dimension value', tour: 'PAY-1', step: 9 },
-  { feature: 'Approval workflows rule Payroll journal', tour: 'PAY-1', step: 10 },
-  { feature: 'View as: View only has no actions', tour: 'PAY-1', step: 11 },
-  { feature: 'View as: Accountant needs LM for settings', tour: 'PAY-1', step: 12 },
+  { feature: 'View as: Owner or LM and Other user', tour: 'PAY-1', step: 10 },
+  { feature: 'Save draft: Other user keeps the draft for someone who can post', tour: 'PAY-1', step: 11 },
+  { feature: 'Post journal: Owner or LM only, no approval', tour: 'PAY-1', step: 12 },
   { feature: 'Inbox runs', tour: 'PAY-2', step: 1 },
   { feature: 'Sync log', tour: 'PAY-2', step: 2 },
   { feature: 'To fix before posting: unmapped pay item', tour: 'PAY-2', step: 3 },
@@ -759,26 +753,26 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Set up group clears the No group warning', tour: 'PAY-2', step: 6 },
   { feature: 'Draft review lines by account and dimension', tour: 'PAY-2', step: 7 },
   { feature: 'Warnings and Mark as checked', tour: 'PAY-2', step: 8 },
-  { feature: 'Month headcount (Owner)', tour: 'PAY-2', step: 9 },
-  { feature: 'Journal date: default and locked period', tour: 'PAY-2', step: 10 },
-  { feature: 'Send for approval to Inbox > Awaiting approval', tour: 'PAY-2', step: 11 },
-  { feature: 'Approve and post', tour: 'PAY-2', step: 12 },
-  { feature: 'Journals tab', tour: 'PAY-2', step: 13 },
-  { feature: 'Mapping used tab', tour: 'PAY-2', step: 14 },
-  { feature: 'Claims', tour: 'PAY-2', step: 15 },
-  { feature: 'Payables: bank match pays salary', tour: 'PAY-2', step: 16 },
-  { feature: 'Payables: bank payment menu', tour: 'PAY-2', step: 17 },
-  { feature: 'Payables: bank differs flag', tour: 'PAY-2', step: 18 },
-  { feature: 'Payables: overdue statutory payable', tour: 'PAY-2', step: 19 },
-  { feature: 'Pay opens New spend money prefilled', tour: 'PAY-2', step: 20 },
-  { feature: 'Saving the spend money pays the payable', tour: 'PAY-2', step: 21 },
-  { feature: 'Payments: Source column', tour: 'PAY-2', step: 22 },
-  { feature: 'Manual journal on Salaries Payable warning', tour: 'PAY-2', step: 23 },
+  { feature: 'Month headcount', tour: 'PAY-2', step: 9 },
+  { feature: 'Saved by note on the run', tour: 'PAY-2', step: 10 },
+  { feature: 'Journal date: default and locked period', tour: 'PAY-2', step: 11 },
+  { feature: 'Post journal posts at once', tour: 'PAY-2', step: 12 },
+  { feature: 'Journals tab', tour: 'PAY-2', step: 12 },
+  { feature: 'Mapping used tab', tour: 'PAY-2', step: 13 },
+  { feature: 'Claims', tour: 'PAY-2', step: 14 },
+  { feature: 'Payables: bank match pays salary', tour: 'PAY-2', step: 15 },
+  { feature: 'Payables: bank payment menu', tour: 'PAY-2', step: 16 },
+  { feature: 'Payables: bank differs flag', tour: 'PAY-2', step: 17 },
+  { feature: 'Payables: overdue statutory payable', tour: 'PAY-2', step: 18 },
+  { feature: 'Pay opens New spend money prefilled', tour: 'PAY-2', step: 19 },
+  { feature: 'Saving the spend money pays the payable', tour: 'PAY-2', step: 20 },
+  { feature: 'Payments: Source column', tour: 'PAY-2', step: 21 },
+  { feature: 'Manual journal on Salaries Payable warning', tour: 'PAY-2', step: 22 },
   { feature: 'Simulate Talenta send (inbox menu)', tour: 'PAY-3', step: 2 },
   { feature: 'Talenta sent this period again', tour: 'PAY-3', step: 3 },
   { feature: 'Versions: what changed', tour: 'PAY-3', step: 4 },
-  { feature: 'Use v2 and repost on one journal date', tour: 'PAY-3', step: 5 },
-  { feature: 'Repost approval', tour: 'PAY-3', step: 6 },
+  { feature: 'Save draft of a new version', tour: 'PAY-3', step: 5 },
+  { feature: 'Use v2 and repost on one journal date', tour: 'PAY-3', step: 6 },
   { feature: 'Old journal reversed, new one posted', tour: 'PAY-3', step: 7 },
   { feature: 'Payables follow the repost', tour: 'PAY-3', step: 8 },
   { feature: 'Missing pay item books and warns', tour: 'PAY-3', step: 9 },

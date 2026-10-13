@@ -22,7 +22,6 @@ import { MpButton, MpCheckbox, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, M
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollColumnFilter from '~/components/payroll/PayrollColumnFilter.vue'
-import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { successToast, errorToast } from '~/utils/toasts'
 import {
   payroll, can, accountLabel, groupRows, setGroupBy, setGroupAccount, setGroupDimension, saveGroup,
@@ -170,7 +169,7 @@ const someVisibleOn = computed(() => !allVisibleOn.value && visibleKeys.value.so
 function toggleAll(on: boolean) { selected.value = on ? [...visibleKeys.value] : [] }
 // Act only on rows the reader can see: a filter or search change drops hidden rows from the selection.
 watch(visibleKeys, (keys) => { selected.value = selected.value.filter((k) => keys.includes(k)) })
-// A role without Set up access has no checkboxes, so it keeps no selection either.
+// Both access types edit groups; canEdit stays as the one switch should that change.
 watch(canEdit, (on) => { if (!on) selected.value = [] })
 const selectedNew = computed(() => rows.value.filter((r) => r.isNew && isSelected(r.key)).length)
 const bulkAccount = ref('')
@@ -215,7 +214,6 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 
 <template>
   <div class="pset-stack">
-    <PayrollReadOnlyNote v-if="!canEdit" :text="t('Editing needs Set up access.')" />
 
     <!-- Group staff by: one chip per field; a field only groups staff, it fills no dimension. -->
     <div class="pset-card" data-tour="payroll-groupby">
