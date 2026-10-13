@@ -109,16 +109,25 @@ export const JOB_LEVELS = ['Staff', 'Supervisor', 'Manager', 'Director'] as cons
 export const EMPLOYMENT_STATUSES = ['Permanent', 'Contract', 'Probation'] as const
 export const BUSINESS_UNITS = ['Coffee Retail', 'Corporate', 'B2B Beans'] as const
 
-/** A Jurnal dimension, by name. Organization and Branch exist at setup; the Accountant can create more. */
+/** Department and Project values in the sample company's Jurnal (dimensions a group can add). */
+export const DEPARTMENTS = ['Operations', 'Finance', 'Human Capital', 'Sales', 'Marketing'] as const
+export const PROJECTS = ['Store Expansion 2026', 'ERP Rollout'] as const
+
+/**
+ * A Jurnal dimension, by name. The sample company has Organization, Branch, Department and Project;
+ * Payroll settings > Groups adds any of them as a column and each group picks a value.
+ */
 export type TagDimension = string
 export interface PayrollTag { dimension: TagDimension; name: string }
 export const PAYROLL_TAGS: PayrollTag[] = [
   ...ORGANIZATIONS.map((name) => ({ dimension: 'Organization', name })),
   ...BRANCHES.map((name) => ({ dimension: 'Branch', name })),
+  ...DEPARTMENTS.map((name) => ({ dimension: 'Department', name })),
+  ...PROJECTS.map((name) => ({ dimension: 'Project', name })),
 ]
 
 /**
- * Employee fields Talenta sends that can feed a Jurnal dimension, named as the salarydetail
+ * Employee fields Talenta sends that staff can be grouped by (GROUP_FIELDS), named as the salarydetail
  * payload names them. `sbu:<key>` reads one key of the employee's sbu list.
  */
 export type TalentaField =
@@ -137,7 +146,7 @@ export const TALENTA_FIELDS: { field: TalentaField; label: string }[] = [
 /**
  * The Talenta fields staff can be grouped by (Payroll settings > Groups), in TALENTA_FIELDS order.
  * Job position and Job level are left out: they describe a person, not a part of the company, so a
- * group can be one person and the ledger would show that person's pay. They can still feed a dimension.
+ * group can be one person and the ledger would show that person's pay.
  */
 export const GROUP_FIELDS: TalentaField[] = TALENTA_FIELDS.map((f) => f.field).filter((f) => f !== 'job_position' && f !== 'job_level')
 

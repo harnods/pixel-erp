@@ -3,8 +3,9 @@ import {
   payroll, resetPayroll, runs, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals,
   journalTotals, journalById, simulateSend, setPayrollViewAs, setPayItemMapping, payItemKey, postRun, isDraftStale, setPayday,
   chooseRevision, chooseSeparateRun, revisionOf, repostVersions, reverseJournal, reverseAndRepost, lockPeriod, decidePartial,
-  compareVersions, can, addPayrollAccount, syncLog, mapGroup, headcountChanges, markHeadcountExpected,
-  setPayItemAccount, setPayItemGroupsCanChange, setPayableAccount, setGroupBy, setGroupAccount, setGroupDimension, saveGroup, groupRows, linkDimension, createMissingValues, setFieldPolicy, createPayrollTag,
+  compareVersions, can, addPayrollAccount, syncLog, headcountChanges, markHeadcountExpected,
+  setPayItemAccount, setPayItemGroupsCanChange, setPayableAccount, setGroupBy, setGroupAccount, setGroupDimension, saveGroup, groupRows, createPayrollTag, groupDimensions, addGroupDimension, removeGroupDimension,
+  jurnalDimensions, dimensionValues, groupDimensionTable, snapshotById,
   payItemType, payItemParty, payItemAccount, mappingFor, oldSyncExpense,
   clearHeadcountExpected, draftReview, runWarnings, acknowledgeWarning, postConfirmText, payablesTracker, simulateBankPayment,
   simulateManualJournal, manualJournalWarnings, pph21Month, sendFigures, staffRows, receiveSalaryDetail,
@@ -116,9 +117,15 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v11 (v11: Group by limited to GROUP_FIELDS, New groups warn instead of holding)', () => {
+  it('persists under payroll:state-v12 (v12: dimensions added to groups, no Talenta field to dimension links)', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v11'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v12'")
+    expect(payroll.settings).not.toHaveProperty('dimensionLinks')
+    expect(payroll.settings).not.toHaveProperty('groupMaps')
+    // The seed: Organization and Branch added to groups; Group by Organization, Branch and Cost center; no explicit picks.
+    expect(payroll.settings.groupDimensions).toEqual(['Organization', 'Branch'])
+    expect(payroll.settings.groupBy).toEqual(['organization_name', 'branch', 'cost_center'])
+    expect(payroll.settings.groups.every((g) => Object.keys(g.dims).length === 0)).toBe(true)
     expect(payroll.runs.every((r) => !('dryRun' in r))).toBe(true)
   })
 })
@@ -160,7 +167,7 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
     expect(draftOf(sep)).not.toBeNull()
   })
 
-  it('a new group warns and the draft builds; saving it with an unmatched dimension value holds until a value is picked', () => {
+  it('a new group warns and the draft builds; saving it with no matching dimension value warns, never holds', () => {
     mapInsentif()
     payroll.roster.find((e) => e.employee_id === 'EMP-0026')!.moves.push({ effective: '2026-09-01', to: { organization_name: 'Legal', branch_name: 'Jakarta HQ', cost_center_name: 'HQ Finance' } })
     simulateSend('regular', { start: '2026-08-21', end: '2026-09-20', newAllowance: INS })
@@ -168,11 +175,17 @@ describe('intake: Jurnal builds the draft; holds only for no mapping or a partia
     // Legal has no Organization value, but a New group's staff take no dimension from the Group by fields, so nothing holds.
     expect(runHolds(sep)).toHaveLength(0)
     expect(draftOf(sep)).not.toBeNull()
-    expect(runWarnings(sep.id).filter((w) => w.code === 'no-group').map((w) => w.message)).toEqual(['1 staff matched no group (Legal, HQ Finance). Their pay posts to each pay item\'s default account with no group dimension. Set up the group in Payroll settings > Groups.'])
+    expect(runWarnings(sep.id).filter((w) => w.code === 'no-group').map((w) => w.message)).toEqual(['1 staff matched no group (Legal, Jakarta HQ, HQ Finance). Their pay posts to each pay item\'s default account with no group dimension. Set up the group in Payroll settings > Groups.'])
     const key = groupRows().find((g) => g.isNew)!.key
     expect(saveGroup(key).ok).toBe(true)
-    expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-group'])
-    as('Accountant + LM', () => { mapGroup('Organization', 'Legal', 'Finance') })
+    // Legal matches no Organization value: no hold, the cost posts with Organization blank and the run warns.
+    expect(runHolds(sep)).toHaveLength(0)
+    const w = runWarnings(sep.id).filter((x) => x.code === 'no-dimension-value')
+    expect(w.map((x) => x.message)).toEqual(['Organization has no value for 1 group: Legal, Jakarta HQ, HQ Finance. Their cost posts with Organization blank. Pick a value in Payroll settings > Groups.'])
+    expect(w[0]!.details).toEqual({ dimension: 'Organization', groups: [{ key, label: 'Legal, Jakarta HQ, HQ Finance', staff: 1 }] })
+    expect(draftOf(sep)!.lines.some((l) => l.tags.Branch === 'Jakarta HQ' && !l.tags.Organization && isCostCode(l.account))).toBe(true)
+    expect(setGroupDimension(key, 'Organization', 'Finance').ok).toBe(true)
+    expect(runWarnings(sep.id).some((x) => x.code === 'no-dimension-value')).toBe(false)
     expect(runHolds(sep)).toHaveLength(0)
   })
 
@@ -643,8 +656,8 @@ describe('claims, access, copy', () => {
     expect(as('View only', () => simulateBankPayment('salary')).status).toBe(403)
   })
 
-  it('group-map messages say dimension, never tag', () => {
-    expect(mapGroup('Organization', 'New team', 'Nowhere').message).toBe('Pick a value from this dimension or create it first.')
+  it('dimension value messages say dimension, never tag', () => {
+    expect(setGroupDimension(groupRows()[0]!.key, 'Organization', 'Nowhere').message).toBe('Pick a value from this dimension or create it first.')
   })
 
   it('old sync for a month already in Jurnal is blocked', () => {
@@ -901,22 +914,93 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(setPayableAccount('BPJS Kesehatan', '2-20513').message).toBe('BPJS TK Payable New is already the payable for BPJS Ketenagakerjaan. Pick another account.')
   })
 
-  it('dimensions: a Talenta field feeds a Jurnal dimension, values match by name, unmatched values hold', () => {
+  it('dimensions on groups: add any existing Jurnal dimension, refuse unknown and duplicate, remove keeps the picks', () => {
     mapInsentif()
-    expect(linkDimension('job_level', 'Job level').ok).toBe(true)
+    expect(jurnalDimensions()).toEqual(['Organization', 'Branch', 'Department', 'Project'])
+    expect(groupDimensions()).toEqual(['Organization', 'Branch'])
+    expect(addGroupDimension('Department 2').message).toBe('Department 2 is not a dimension in Jurnal. Pick one from the list.')
+    expect(addGroupDimension('branch').message).toBe('Branch is already added to groups. Pick another dimension.')
+    expect(addGroupDimension(' ').message).toBe('Pick a dimension from the list.')
+    expect(as('Accountant', () => addGroupDimension('Department')).message).toBe('Only Owner, Ultimate + LM or Accountant + LM can change this.')
+    expect(as('View only', () => removeGroupDimension('Branch')).status).toBe(403)
+    // Department: groups whose Talenta value is named like a Department value fill in by name.
+    expect(addGroupDimension(' department ').ok).toBe(true)
+    expect(groupDimensions()).toEqual(['Organization', 'Branch', 'Department'])
+    const row = (label: string) => groupRows().find((r) => r.label === label)!
+    const fin = row('Finance, Jakarta HQ, HQ Finance')
+    expect(fin.dimensions).toEqual([
+      { dimension: 'Organization', value: 'Finance', explicit: false },
+      { dimension: 'Branch', value: 'Jakarta HQ', explicit: false },
+      { dimension: 'Department', value: 'Finance', explicit: false },
+    ])
+    expect(fin.dims).toEqual({})
+    // Project: no Talenta value is named like a project, so every group is blank. The run warns, never holds.
+    expect(addGroupDimension('Project').ok).toBe(true)
     const sep = run(SEP)
     rebuildDraft(sep.id)
-    const h = runHolds(sep).find((x) => x.code === 'unmapped-group')!
-    expect((h.details.groups as { value: string }[]).map((g) => g.value).sort()).toEqual(['Director', 'Manager', 'Staff', 'Supervisor'])
-    expect(createMissingValues('job_level', ['Staff', 'Supervisor', 'Manager', 'Director']).created).toBe(4)
     expect(runHolds(sep)).toHaveLength(0)
-    const cost = draftOf(sep)!.lines.filter((l) => l.debit > 0 && l.account === ACC.salaries)
-    expect(cost.every((l) => !!l.tags['Job level'])).toBe(true)
-    expect(draftOf(sep)!.lines.filter((l) => l.account === ACC.pph21).every((l) => !l.tags['Job level'])).toBe(true)
-    // Empty value policy.
-    expect(setFieldPolicy('job_level', 'skip').ok).toBe(true)
-    expect(linkDimension('branch', 'Job level').message).toBe('Job level is already linked to Job level. Pick another dimension.')
-    expect(createPayrollTag('Job level', 'Intern').ok).toBe(true)
+    const w = runWarnings(sep.id).find((x) => x.code === 'no-dimension-value')!
+    const n = groupRows().filter((r) => !r.isNew && r.staff > 0).length
+    expect(w.message).toMatch(new RegExp(`^Project has no value for ${n} groups: .+\\. Their cost posts with Project blank\\. Pick a value in Payroll settings > Groups\\.$`))
+    expect((w.details.groups as { staff: number }[]).reduce((x, g) => x + g.staff, 0)).toBe(40)
+    expect(dimensionValues('Project')).toEqual(['Store Expansion 2026', 'ERP Rollout'])
+    expect(setGroupDimension(fin.key, 'Project', 'ERP Rollout').ok).toBe(true)
+    const cost = draftOf(sep)!.lines.filter((l) => l.tags.Project === 'ERP Rollout')
+    expect(cost.length).toBeGreaterThan(0)
+    expect(cost.every((l) => isCostCode(l.account) && l.tags.Organization === 'Finance')).toBe(true)
+    expect(draftOf(sep)!.lines.filter((l) => !isCostCode(l.account)).every((l) => !l.tags.Project)).toBe(true)
+    // Remove: the column goes, the warning with it; the pick is kept for when it comes back.
+    expect(removeGroupDimension('Project').ok).toBe(true)
+    expect(removeGroupDimension('Project').message).toBe('Project is not added to groups. Reload the page.')
+    rebuildDraft(sep.id)
+    expect(runWarnings(sep.id).some((x) => x.code === 'no-dimension-value')).toBe(false)
+    expect(draftOf(sep)!.lines.some((l) => 'Project' in l.tags)).toBe(false)
+    expect(row('Finance, Jakarta HQ, HQ Finance').dimensions.map((d) => d.dimension)).toEqual(['Organization', 'Branch', 'Department'])
+    expect(addGroupDimension('Project').ok).toBe(true)
+    expect(row('Finance, Jakarta HQ, HQ Finance').dimensions[3]).toEqual({ dimension: 'Project', value: 'ERP Rollout', explicit: true })
+    expect(setGroupDimension(fin.key, 'Department', 'Marketing').ok).toBe(true)
+    expect(removeGroupDimension('Department').ok).toBe(true)
+    expect(setGroupDimension(fin.key, 'Department', 'Finance').message).toBe('Add Department to groups first, then pick its value.')
+    // Mapping used reads the snapshot a journal was built from.
+    rebuildDraft(sep.id)
+    const t = groupDimensionTable(snapshotById(draftOf(sep)!.snapshotId)!.settings)
+    expect(t.dimensions).toEqual(['Organization', 'Branch', 'Project'])
+    expect(t.rows.find((r) => r.key === fin.key)!.values).toEqual([
+      { dimension: 'Organization', value: 'Finance', explicit: false },
+      { dimension: 'Branch', value: 'Jakarta HQ', explicit: false },
+      { dimension: 'Project', value: 'ERP Rollout', explicit: true },
+    ])
+  })
+
+  it('name-match prefill: any Group by value, case and space-insensitive; a pick wins; clearing the pick returns to the match', () => {
+    mapInsentif()
+    expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
+    // Branch "Bandung" fills from the group's second value; Department "Sales" from its first.
+    expect(addGroupDimension('Department').ok).toBe(true)
+    const row = () => groupRows().find((r) => r.label === 'Sales, Bandung')!
+    expect(row().dimensions.map((d) => [d.dimension, d.value, d.explicit])).toEqual([['Organization', 'Sales', false], ['Branch', 'Bandung', false], ['Department', 'Sales', false]])
+    // Values compare without case or extra spaces.
+    as('Owner', () => createPayrollTag('Department', '  human   CAPITAL '))
+    expect(dimensionValues('Department')).not.toContain('human CAPITAL')
+    expect(groupRows().find((r) => r.label === 'Human Capital, Jakarta HQ')!.dimensions[2]!.value).toBe('Human Capital')
+    expect(setGroupDimension(row().key, 'Department', 'Marketing').ok).toBe(true)
+    expect(row().dimensions[2]).toEqual({ dimension: 'Department', value: 'Marketing', explicit: true })
+    expect(setGroupDimension(row().key, 'Department', null).ok).toBe(true)
+    expect(row().dimensions[2]).toEqual({ dimension: 'Department', value: 'Sales', explicit: false })
+    expect(row().dims).toEqual({})
+    // A value created later fills a blank group by name and clears its warning.
+    expect(setGroupBy(['organization_name', 'employment_status']).ok).toBe(true)
+    expect(addGroupDimension('Project').ok).toBe(true)
+    const sep = run(SEP)
+    rebuildDraft(sep.id)
+    expect(runWarnings(sep.id).some((x) => x.code === 'no-dimension-value' && (x.details as { dimension: string }).dimension === 'Branch')).toBe(true)
+    expect(removeGroupDimension('Project').ok).toBe(true)
+    expect(createPayrollTag('Branch', 'Permanent').ok).toBe(true)
+    rebuildDraft(sep.id)
+    const w = runWarnings(sep.id).find((x) => x.code === 'no-dimension-value')!
+    expect(w.message).toMatch(/^Branch has no value for \d+ groups: .*Contract.*\. Their cost posts with Branch blank\./)
+    expect(w.message).not.toMatch(/Permanent/)
+    expect(createPayrollTag('Region', 'North').message).toBe('Region is not a dimension in Jurnal. Pick one from the list.')
   })
 
   it('old sync: blocked from the start month (the connect month), still posts before it; no screen moves the start month', () => {
@@ -958,7 +1042,7 @@ describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use grou
     expect(setGroupBy(['organization_name', 'nope' as never]).message).toBe('Pick fields from the Talenta list.')
   })
 
-  it('a field linked to a dimension: each group row picks the value; it lands on that group\'s cost lines only', () => {
+  it('an added dimension: each group row picks the value; it lands on that group\'s cost lines only', () => {
     expect(setGroupBy(['organization_name', 'branch']).ok).toBe(true)
     const row = groupRows().find((r) => r.label === 'Finance, Jakarta HQ')!
     expect(row.dimensions.map((d) => [d.dimension, d.value, d.explicit])).toEqual([['Organization', 'Finance', false], ['Branch', 'Jakarta HQ', false]])
@@ -979,8 +1063,6 @@ describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use grou
     expect(payroll.settings.groupBy).toEqual(before)
     for (const f of GROUP_FIELDS) expect(setGroupBy([f]).ok, f).toBe(true)
     expect(setGroupBy([...GROUP_FIELDS]).ok).toBe(true)
-    // They can still feed a dimension of their own.
-    expect(linkDimension('job_level', 'Job level').ok).toBe(true)
   })
 
   it('fewStaff: a row covering 1 or 2 staff says so (0 otherwise); it warns, never blocks', () => {
@@ -1036,13 +1118,19 @@ describe('groups: GROUP_FIELDS only, New groups warn until set up, only Use grou
     expect(setGroupAccount(row.key, ACC.directLabour).ok).toBe(true)
     expect(groupRows().find((r) => r.key === row.key)!.isNew).toBe(false)
     expect(runWarnings(sep.id).some((w) => w.code === 'no-group')).toBe(false)
-    // Set up, but Medan has no Branch value in Jurnal yet: that now holds until the value exists.
-    expect(runHolds(sep).map((h) => h.code)).toEqual(['unmapped-group'])
-    expect(runHolds(sep)[0]!.message).toBe('1 Talenta value has no dimension value: Medan (2 staff). Pick a value or create it.')
+    // Set up, but Medan has no Branch value in Jurnal yet: no hold; Branch posts blank and the run warns.
+    expect(runHolds(sep)).toHaveLength(0)
+    const w = runWarnings(sep.id).filter((x) => x.code === 'no-dimension-value')
+    expect(w.map((x) => x.message)).toEqual(['Branch has no value for 1 group: Operations, Medan. Their cost posts with Branch blank. Pick a value in Payroll settings > Groups.'])
+    expect(w[0]!.details).toEqual({ dimension: 'Branch', groups: [{ key: row.key, label: 'Operations, Medan', staff: 2 }] })
+    expect(itemOn(draftOf(sep)!.lines.filter((l) => l.tags.Organization === 'Operations' && !l.tags.Branch), ACC.directLabour, 'Basic Salary')).toBeGreaterThan(0)
+    expect(runStatus(sep)).toBe('Ready to post')
+    // Creating the value fills the group's Branch by name and rebuilds the draft.
     expect(createPayrollTag('Branch', 'Medan').ok).toBe(true)
-    expect(setGroupDimension(row.key, 'Branch', 'Medan').ok).toBe(true)
+    expect(groupRows().find((r) => r.key === row.key)!.dimensions[1]).toEqual({ dimension: 'Branch', value: 'Medan', explicit: false })
     expect(saveGroup(row.key).ok).toBe(true)
     expect(runHolds(sep)).toHaveLength(0)
+    expect(runWarnings(sep.id).some((x) => x.code === 'no-dimension-value')).toBe(false)
     expect(isDraftStale(sep.id)).toBe(false)
     const d = draftOf(sep)!
     expect(journalTotals(d).debit).toBe(total)
@@ -1176,7 +1264,7 @@ describe('copy: every string the engine returns follows the glossary', () => {
     out.push(spend, reverseJournal(spend.id), reverseRun(sep.id), payablesTracker('2026-08'))
     expect(reverseJournal(spend.id).message).toBe('Spend money #5 is a Spend money payment. Change or delete it in Cash management.')
     expect(syncLog.value.find((l) => l.type === 'Post' && l.reason.startsWith('Posted as'))!.nextStep).toBe('Salaries payable clears when you pay it from Payroll payables or bank reconciliation matches the payment.')
-    out.push(as('Owner', () => lockPeriod('2026-10')), setPayday(40), setLimits({}), linkDimension('job_level', ' '))
+    out.push(as('Owner', () => lockPeriod('2026-10')), setPayday(40), setLimits({}), addGroupDimension(' '), addGroupDimension('Region'), addGroupDimension('Branch'), removeGroupDimension('Region'))
     out.push(runs.value.map(runRow), hrMessage(3, '21 Aug-20 Sep 2026'), monthHeadcount('2026-09'))
     out.push(syncLog.value.map((l) => ({ reason: l.reason, nextStep: l.nextStep })), sendLog.value, payroll.notices)
     const all = texts(out).filter(Boolean)
@@ -1191,15 +1279,19 @@ describe('copy: every string the engine returns follows the glossary', () => {
     expect(all.some((x) => /Your role|Nothing to decide|not found\.?$/.test(x))).toBe(false)
   })
 
-  it('groups: the Group by refusal, a New group\'s warning and its why-this-line', () => {
+  it('groups: the Group by refusal, add dimension refusals, the no-dimension-value warning and why-this-line', () => {
     mapInsentif()
     const sep = run(SEP)
     const out: unknown[] = [setGroupBy(['job_position']), setGroupBy(['organization_name', 'branch'])]
+    out.push(addGroupDimension('Project'), addGroupDimension('Project'), addGroupDimension('Region'), setGroupDimension(groupRows()[0]!.key, 'Department', 'Sales'))
     simulateSend('new-group', { runId: sep.id })
+    saveGroup(groupRows().find((r) => r.isNew)!.key)
     out.push(runHolds(sep), runWarnings(sep.id), draftOf(sep)!.lines.map((_, i) => whyLine(sep.id, i)), postConfirmText(sep.id), groupRows(), sendLog.value)
     const all = texts(out).filter(Boolean)
-    expect(all.some((x) => x.includes('matched no group'))).toBe(true)
-    expect(all.some((x) => x.includes('is not set up, so it posts'))).toBe(true)
+    expect(all.some((x) => x.includes('matched no group'))).toBe(false)
+    expect(all.some((x) => x.startsWith('Branch has no value for 1 group: Operations, Medan.'))).toBe(true)
+    expect(all.some((x) => x.startsWith('Project has no value for'))).toBe(true)
+    expect(all.some((x) => x.includes('from group Operations, Medan'))).toBe(true)
     const names = [...payroll.settings.mapping.map((m) => m.name), ...payroll.accounts.map((a) => a.name)].sort((a, b) => b.length - a.length)
     const strip = (x: string) => names.reduce((s, n) => s.split(n).join(''), x)
     expect(all.filter((x) => BANNED.test(strip(x)))).toEqual([])
@@ -1335,7 +1427,7 @@ describe('numbers agree across screens', () => {
     setPayItemAccount(payItemKey('Insentif Penjualan', 'allowance'), ACC.salesSalaries)
     simulateSend('new-group', { runId: sep.id })
     const key = groupRows().find((g) => g.label === 'Operations, Medan')!.key
-    setGroupAccount(key, ACC.directLabour); createPayrollTag('Branch', 'Medan'); setGroupDimension(key, 'Branch', 'Medan'); saveGroup(key)
+    setGroupAccount(key, ACC.directLabour); createPayrollTag('Branch', 'Medan'); saveGroup(key)
     for (const w of runWarnings(sep.id)) acknowledgeWarning(sep.id, w.key, 'Checked')
     setApprovalWorkflowActive(PAYROLL_RULE, true)
     expect(postRun(sep.id).awaitingApproval).toBe(true)

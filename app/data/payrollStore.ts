@@ -11,7 +11,7 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v11` (v11: Group by limited to GROUP_FIELDS, no New group hold); resetPayroll()
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v12` (v12: dimensions are added to groups, no Talenta field to dimension links); resetPayroll()
  * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
@@ -59,15 +59,17 @@
  *   setPayItemGroupsCanChange(key, on)   cost items only: on = the staff's group expense account replaces the row account
  *                                   ('Use group account'); off = 'Use default account'.
  *   payGroupKey(fields, values), groupFor(staffRow), groupLabel(values)
- *   Groups: settings.groupBy (GROUP_FIELDS only) and settings.groups[{ key, values, account, dims }].
+ *   Groups: settings.groupBy (GROUP_FIELDS only), settings.groupDimensions (the dimension columns, in order) and
+ *                                   settings.groups[{ key, values, account, dims }] (dims = explicit picks by dimension name).
  *   GROUP_FIELDS                    (payrollMaster, re-exported) the 5 fields staff can be grouped by, in TALENTA_FIELDS order:
  *                                   Organization, Branch, Cost center, Employment status, Business unit. Never Job position or Job level
- *                                   (a group can be one person, so the ledger would show their pay); those can still feed a dimension.
+ *                                   (a group can be one person, so the ledger would show their pay).
  *   groupRows()                     every combination seen in Talenta sends plus saved ones: { key, values, label, staff (count in the
  *                                   latest regular run's latest send, the one the next journal books),
  *                                   account, dims, isNew, fewStaff (0 = fine; 1 or 2 = the staff count when a row covers only 1 or 2
  *                                   staff, so their pay can be read from the ledger: warn, never block),
- *                                   dimensions[{ dimension, field, value, explicit }] }.
+ *                                   dimensions[{ dimension, value, explicit }] } with one entry per added dimension, in column order:
+ *                                   value = the explicit pick, else the name match, else null (empty cell: "Select value").
  *   setGroupBy(fields)              GROUP_FIELDS only (Job position or Job level: "Job position and Job level can't group staff, ...").
  *                                   Re-forms rows; rows that still exist keep their settings; combinations whose staff were all in
  *                                   set-up groups are set up with defaults; the rest stay New.
@@ -80,9 +82,29 @@
  *   setPayableAccount(party, code)  Payable accounts: the payable each party is owed on (settings.payables).
  *   validateMapping(row), setPayItemMapping(key, patch, overrideReason?)   the full-row save with guardrails.
  *   Every save re-checks held runs (holds clear on their own).
- *   Dimensions: settings.dimensionLinks[{ field, dimension, empty 'hold'|'skip' }] (cost lines only).
- *   linkDimension(field, dimension|null), dimensionFor(field), dimensionValue(dimension, value) (explicit map, else same name),
- *   mapGroup(dimension, value, tag), createPayrollTag(dimension, name), createMissingValues(field, values), setFieldPolicy(field, policy)
+ *   Dimensions on groups (cost lines only, LR-15). No Talenta field fills a dimension: the user adds any existing Jurnal
+ *   dimension to the Groups table and each group picks its value there.
+ *   jurnalDimensions()              every existing Jurnal dimension: Organization, Branch, the sample's Department and Project,
+ *                                   then active ones from Settings > Dimensions. The "+ Dimension" list is this minus groupDimensions().
+ *                                   payrollDimensions() is the same list (old name).
+ *   groupDimensions()               the added dimensions, in column order (settings.groupDimensions; the seed adds Organization, Branch).
+ *   addGroupDimension(dim)          Set up access. Only an existing Jurnal dimension (case-insensitive name), never a new one;
+ *                                   refuses unknown ("Department 2 is not a dimension in Jurnal. Pick one from the list.") and
+ *                                   duplicate ("Branch is already added to groups. Pick another dimension.").
+ *   removeGroupDimension(dim)       Set up access. Drops the column; the groups keep their picks, so adding it back restores them.
+ *   Name-match prefill: when no value is picked, a group gets the dimension value whose name equals one of its Talenta values
+ *   (any Group by field, Group by order, case and space-insensitive), e.g. Branch "Bandung" for Sales, Bandung. Shown in
+ *   GroupRow.dimensions with explicit false; never saved as a pick.
+ *   groupDimensionValue(group, dim, s?)   the value a group posts for a dimension (pick, else name match, else null).
+ *   groupDimensionTable(s?)         Mapping used: { dimensions, rows[{ key, label, account, values[{ dimension, value, explicit }] }] }
+ *                                   for the saved groups of a settings snapshot (pass snapshotById(id).settings).
+ *   dimensionValues(dimension)      the values a group can pick for a dimension (the value select's options).
+ *   dimensionValue(dimension, value)   the dimension value with the same name as a Talenta value, or null.
+ *   createPayrollTag(dimension, name)  adds a value to an existing dimension; drafts warning 'no-dimension-value' rebuild.
+ *   A group with no value for an added dimension does not hold: its cost posts with that dimension blank and the draft warns
+ *   'no-dimension-value' (one per dimension): "Branch has no value for 1 group: Operations, Medan. Their cost posts with Branch
+ *   blank. Pick a value in Payroll settings > Groups." details { dimension, groups[{ key, label, staff }] }. Staff in no group get no
+ *   group dimensions at all ('no-group').
  *   addPayrollAccount({ code, name, type, party, reused? }), useChartAccount({ code, name, type })
  *   PARTY_NAME[party]               the party as screens name it: Staff, Tax office (PPh 21), Tax office (PPh 26), BPJS Kesehatan,
  *                                   BPJS Ketenagakerjaan, DPLK. Engine messages use it.
@@ -103,8 +125,7 @@
  *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready'
  *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received' | 'Awaiting approval'.
  *                                   Internal values; screens show statusLabel() from payrollUiRunCopy.ts ('Revision ready' = "New version").
- *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'unmapped-group',
- *                                   'empty-field' (linked field empty, set to hold), 'two-parties', 'archived-account'
+ *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'two-parties', 'archived-account'
  *                                   (no usable mapping), 'partial' (fewer staff than the last version), 'choice' (separate-run look-alike),
  *                                   'confirm-source' (first send).
  *   decidePartial(runId, no, 'replace'|'reject', reason?)
@@ -124,7 +145,8 @@
  *                                   in this send", one per name+section non-zero last time), 'tax-rule' (PPh 21 lines vs the rule beyond
  *                                   Rp1.000), 'duplicate-employee', 'hutang-gaji', 'negative-payable', 'large-change' (no note),
  *                                   'headcount' (not marked Expected), 'manual-journal' (non-PAY journal on a payroll account this month),
- *                                   'no-group' (staff in a Group by combination no one has set up; see Groups).
+ *                                   'no-group' (staff in a Group by combination no one has set up; see Groups), 'no-dimension-value'
+ *                                   (a set-up group with no value for an added dimension; see Dimensions on groups).
  *   acknowledgeWarning(runId, key, note?) / clearAcknowledgement(runId, key)   "Mark as checked" (post permission).
  *   postConfirmText(runId, date?)   { title, body, warnings[] } for the Post journal / Use vN and repost confirm (lists warnings not checked).
  *   taxFigures(runId)               { benefit, payment, dtp, resign, pph26, paidDeduction, rule, ledger, pph26Ledger, dtpLedger, resignLedger, hasLines }.
@@ -201,6 +223,7 @@ import {
   type PayloadOptions, type TaxField,
 } from './payrollMaster'
 import { checkApprovalRequired } from './payrollApproval'
+import { dimensions as jurnalDimensionList } from './dimensions'
 export { GROUP_FIELDS } from './payrollMaster'
 import { upsertPayrollApprovalTask, removePayrollApprovalTask, syncPayrollApprovalTasks, type Task as InboxTask } from './tasks'
 
@@ -232,15 +255,14 @@ export interface PayItemMapping {
 }
 /**
  * One group: staff with the same values in the Group by fields. `account` (null = use the pay item
- * account) applies to pay items set to Use group account; `dims` picks a dimension value per linked
- * dimension (missing = the value of the same name). Dimensions go on cost lines only.
+ * account) applies to pay items set to Use group account; `dims` holds the value picked per added
+ * dimension (missing = the value named like one of the group's Talenta values, else blank).
+ * Dimensions go on cost lines only.
  */
 export interface PayGroup { key: string; values: string[]; account: string | null; dims: Record<string, string> }
 /** Dimension values on a line, by Jurnal dimension name. Organization and Branch are always present. */
 export interface Tags { Organization: string | null; Branch: string | null; [dimension: string]: string | null }
 export const NO_TAGS: Tags = { Organization: null, Branch: null }
-/** A Talenta employee field that feeds a Jurnal dimension; `empty` says what an empty value does. */
-export interface DimensionLink { field: TalentaField; dimension: string; empty: 'hold' | 'skip' }
 export interface TaxPresets { pph21: string; dtp: string; pph26: string; resign: string; trueUp: string }
 export interface Limits {
   partialStaffPct: number; partialWholeGroup: boolean; partialThpPct: number
@@ -250,11 +272,10 @@ export interface Limits {
 }
 export interface PayrollSettings {
   mapping: PayItemMapping[]
-  /** Talenta value to dimension value, by dimension. A value with no entry matches a dimension value of the same name. */
-  groupMaps: Record<TagDimension, Record<string, string>>
-  dimensionLinks: DimensionLink[]
   /** Talenta fields staff are grouped by, in order; the groups set up for their value combinations. */
   groupBy: TalentaField[]
+  /** Jurnal dimensions added to the Groups table, in column order; each group picks a value for each. */
+  groupDimensions: string[]
   groups: PayGroup[]
   /** The payable each party is owed on: Staff is Hutang Gaji, DJP PPh 21 and PPh 26 follow the tax presets. */
   payables: Record<PayableParty, string>
@@ -269,16 +290,16 @@ export interface PayrollSettings {
 export interface SettingsSnapshot { id: string; at: string; by: string; note: string; settings: PayrollSettings }
 
 /**
- * The only reasons a send stops: no mapping (item, dimension value, or an account the journal cannot use), a partial send, a
- * revision-or-separate-run choice, the first send's source. A New group is not one: its staff post to default accounts ('no-group').
+ * The only reasons a send stops: no mapping (a pay item, or an account the journal cannot use), a partial send, a
+ * revision-or-separate-run choice, the first send's source. A New group ('no-group') and a group with no value for an
+ * added dimension ('no-dimension-value') are warnings, not holds.
  */
 export type HoldCode =
-  | 'confirm-source' | 'choice' | 'partial' | 'unmapped-item' | 'unmapped-group'
-  | 'empty-field' | 'two-parties' | 'archived-account'
+  | 'confirm-source' | 'choice' | 'partial' | 'unmapped-item' | 'two-parties' | 'archived-account'
 export interface Hold { code: HoldCode; message: string; details: Record<string, unknown> }
 
 /** Everything else is a warning on the draft: the Accountant reads it and decides whether to post. */
-export type WarningCode = 'missing-component' | 'tax-rule' | 'duplicate-employee' | 'hutang-gaji' | 'negative-payable' | 'large-change' | 'headcount' | 'manual-journal' | 'no-group'
+export type WarningCode = 'missing-component' | 'tax-rule' | 'duplicate-employee' | 'hutang-gaji' | 'negative-payable' | 'large-change' | 'headcount' | 'manual-journal' | 'no-group' | 'no-dimension-value'
 export interface Ack { note: string; by: string; at: string }
 export interface StoredWarning { key: string; code: WarningCode; message: string; details: Record<string, unknown> }
 export interface RunWarning extends StoredWarning { acknowledged: Ack | null }
@@ -502,14 +523,12 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v11'
+const SNAPSHOT_KEY = 'payroll:state-v12'
 
 function defaultSettings(): PayrollSettings {
   return {
     mapping: [],
-    groupMaps: { Organization: {}, Branch: {} },
-    dimensionLinks: [{ field: 'organization_name', dimension: 'Organization', empty: 'hold' }, { field: 'branch', dimension: 'Branch', empty: 'hold' }],
-    groupBy: [], groups: [],
+    groupBy: [], groupDimensions: [], groups: [],
     payables: { Staff: ACC.hutangGaji, 'DJP PPh 21': ACC.pph21, 'DJP PPh 26': ACC.pph26, 'BPJS Kesehatan': ACC.bpjsKes, 'BPJS Ketenagakerjaan': ACC.bpjsTk, Other: ACC.dplk },
     taxPresets: { pph21: ACC.pph21, dtp: ACC.dtp, pph26: ACC.pph26, resign: ACC.pph21Final, trueUp: ACC.pph21 },
     cutover: { firstLive: null, proposedBy: null, confirmedBy: null, mode: 'Block' },
@@ -615,10 +634,12 @@ export function addPayrollAccount(a: { code: string; name: string; type: Payroll
   changed(`Payroll account ${code} ${name} added`)
   return { ok: true, code }
 }
+/** Add a value to an existing Jurnal dimension. A new value can fill a blank group by name, so warned drafts rebuild. */
 export function createPayrollTag(dimension: TagDimension, name: string): Result {
   if (!can('setup')) return denied('setup')
   if (!name.trim()) return { ok: false, message: 'Enter a dimension value.' }
-  if (!payroll.tags.some((t) => t.dimension === dimension && norm(t.name) === norm(name))) payroll.tags.push({ dimension, name: name.trim() })
+  if (!jurnalDimensions().includes(dimension)) return { ok: false, message: `${dimension} is not a dimension in Jurnal. Pick one from the list.` }
+  if (!dimensionValues(dimension).some((x) => norm(x) === norm(name))) { payroll.tags.push({ dimension, name: name.trim() }); recheckHeld() }
   return { ok: true }
 }
 
@@ -748,64 +769,67 @@ function newMappingRow(name: string, section: PaySection, addedBy: 'Talenta' | '
   return { key: payItemKey(name, section), name: name.trim(), section, role: null, roleConfirmed: false, debit: null, credit: null, party: partyFromName(name), programme: programmeFromName(name), override: null, addedBy }
 }
 
-// ── Dimensions: Talenta field to Jurnal dimension, values matched by name ──
+// ── Dimensions on groups: any Jurnal dimension, a value per group, prefilled by name ──
 
-/** The dimension a Talenta field feeds, or null when the field is not used. */
-export function dimensionFor(field: string, s: PayrollSettings = payroll.settings): string | null { return s.dimensionLinks.find((l) => l.field === field)?.dimension ?? null }
-/** Every Jurnal dimension Payroll knows: the ones with values plus the linked ones. */
-export function payrollDimensions(): string[] {
-  return [...new Set(['Organization', 'Branch', ...payroll.tags.map((t) => t.dimension), ...payroll.settings.dimensionLinks.map((l) => l.dimension)])]
+/** Every existing Jurnal dimension: Organization and Branch, then the others payroll knows, then Settings > Dimensions (active). */
+export function jurnalDimensions(): string[] {
+  return [...new Set(['Organization', 'Branch', ...payroll.tags.map((t) => t.dimension), ...jurnalDimensionList.filter((d) => d.status === 'active').map((d) => d.name)])]
 }
-/** The dimension value a Talenta value lands on: the explicit map, else a value of the same name. */
-export function dimensionValue(dimension: string, value: string, s: PayrollSettings = payroll.settings): string | null {
-  return s.groupMaps[dimension]?.[value] ?? payroll.tags.find((t) => t.dimension === dimension && norm(t.name) === norm(value))?.name ?? null
+/** The values of a Jurnal dimension a group can pick (payroll's sample values plus Settings > Dimensions values). */
+export function dimensionValues(dimension: string): string[] {
+  const fromSettings = jurnalDimensionList.find((d) => d.status === 'active' && d.name === dimension)?.values.map((v) => v.name) ?? []
+  return [...new Set([...payroll.tags.filter((t) => t.dimension === dimension).map((t) => t.name), ...fromSettings])]
 }
-export function linkDimension(field: TalentaField, dimension: string | null): Result {
+/** Old name of jurnalDimensions(). */
+export const payrollDimensions = jurnalDimensions
+/** The Jurnal dimensions added to the Groups table, in column order. */
+export function groupDimensions(s: PayrollSettings = payroll.settings): string[] { return [...(s.groupDimensions ?? [])] }
+/** The dimension value with the same name as a Talenta value (case and space-insensitive), or null. */
+export function dimensionValue(dimension: string, value: string): string | null {
+  if (!value.trim()) return null
+  return dimensionValues(dimension).find((x) => norm(x) === norm(value)) ?? null
+}
+/** The value a group posts for a dimension: its pick, else the first of its Talenta values (Group by order) named like a value. */
+export function groupDimensionValue(g: Pick<PayGroup, 'values' | 'dims'>, dimension: string): string | null {
+  const picked = g.dims[dimension]
+  if (picked) return picked
+  for (const v of g.values) { const m = dimensionValue(dimension, v); if (m) return m }
+  return null
+}
+/** Add a Jurnal dimension as a column of the Groups table. Only existing dimensions; values come from that dimension. */
+export function addGroupDimension(dimension: string): Result {
   if (!can('setup')) return denied('setup')
-  const links = payroll.settings.dimensionLinks
-  const i = links.findIndex((l) => l.field === field)
-  const label = TALENTA_FIELDS.find((f) => f.field === field)?.label ?? field
-  if (!dimension) {
-    if (i < 0) return { ok: true }
-    links.splice(i, 1)
-    changed(`${label} no longer linked to a dimension`)
-    return { ok: true }
-  }
-  const dim = dimension.trim()
-  if (!dim) return { ok: false, message: 'Enter a dimension name.' }
-  const other = links.find((l) => l.dimension === dim && l.field !== field)
-  if (other) return { ok: false, message: `${dim} is already linked to ${TALENTA_FIELDS.find((f) => f.field === other.field)?.label ?? other.field}. Pick another dimension.` }
-  if (i >= 0) links[i]!.dimension = dim
-  else links.push({ field, dimension: dim, empty: 'hold' })
-  payroll.settings.groupMaps[dim] ??= {}
-  changed(`${label} linked to dimension ${dim}`)
+  const name = (dimension ?? '').trim()
+  if (!name) return { ok: false, message: 'Pick a dimension from the list.' }
+  const dim = jurnalDimensions().find((d) => norm(d) === norm(name))
+  if (!dim) return { ok: false, message: `${name} is not a dimension in Jurnal. Pick one from the list.` }
+  const s = payroll.settings
+  if (s.groupDimensions.includes(dim)) return { ok: false, message: `${dim} is already added to groups. Pick another dimension.` }
+  s.groupDimensions.push(dim)
+  changed(`Dimension ${dim} added to groups`)
   return { ok: true }
 }
-export function mapGroup(dimension: TagDimension, value: string, tag: string): Result {
+/** Remove a dimension column. Groups keep their picks, so adding it back restores them. */
+export function removeGroupDimension(dimension: string): Result {
   if (!can('setup')) return denied('setup')
-  if (!payroll.tags.some((t) => t.dimension === dimension && t.name === tag)) return { ok: false, message: 'Pick a value from this dimension or create it first.' }
-  ;(payroll.settings.groupMaps[dimension] ??= {})[value] = tag
-  changed(`${dimension} ${value} mapped to dimension value ${tag}`)
+  const s = payroll.settings
+  const i = s.groupDimensions.findIndex((d) => norm(d) === norm(dimension ?? ''))
+  if (i < 0) return { ok: false, message: `${(dimension ?? '').trim() || 'This dimension'} is not added to groups. Reload the page.` }
+  const [dim] = s.groupDimensions.splice(i, 1)
+  changed(`Dimension ${dim} removed from groups`)
   return { ok: true }
 }
-/** Create a dimension value of the same name for every listed Talenta value that matches nothing. */
-export function createMissingValues(field: TalentaField, values: string[]): Result {
-  if (!can('setup')) return denied('setup')
-  const dim = dimensionFor(field)
-  if (!dim) return { ok: false, message: 'Link the field to a dimension first.' }
-  const missing = values.filter((v) => v.trim() && !dimensionValue(dim, v))
-  for (const v of missing) payroll.tags.push({ dimension: dim, name: v.trim() })
-  if (missing.length) changed(`${missing.length} ${dim} value${missing.length > 1 ? 's' : ''} created`)
-  return { ok: true, created: missing.length }
-}
-/** An employee with an empty linked field: hold the run (default) or leave the dimension blank. */
-export function setFieldPolicy(field: string, policy: 'hold' | 'skip'): Result {
-  if (!can('setup')) return denied('setup')
-  const link = payroll.settings.dimensionLinks.find((l) => l.field === field)
-  if (!link) return { ok: false, message: 'Link this field to a dimension first.' }
-  link.empty = policy
-  changed(`Empty ${TALENTA_FIELDS.find((f) => f.field === field)?.label ?? field}: ${policy === 'hold' ? 'hold the run' : 'leave the dimension blank'}`)
-  return { ok: true }
+/**
+ * Mapping used: the added dimensions and each saved group's account and values in a settings snapshot.
+ * Values are the group's picks, else the name match against today's dimension values.
+ */
+export function groupDimensionTable(s: PayrollSettings = payroll.settings): { dimensions: string[]; rows: { key: string; label: string; account: string | null; values: { dimension: string; value: string | null; explicit: boolean }[] }[] } {
+  const dimensions = groupDimensions(s)
+  const rows = (s.groups ?? []).map((g) => ({
+    key: g.key, label: groupLabel(g.values), account: g.account,
+    values: dimensions.map((d) => ({ dimension: d, value: groupDimensionValue(g, d), explicit: !!g.dims[d] })),
+  })).sort((a, b) => a.label.localeCompare(b.label))
+  return { dimensions, rows }
 }
 
 // ── Groups: staff grouped by any Talenta fields; each group may move the cost account and pick dimension values ──
@@ -845,26 +869,21 @@ function seenCombinations(fields: string[]): Map<string, { values: string[]; sta
   }
   return out
 }
-export interface GroupDimension { dimension: string; field: TalentaField; value: string | null; explicit: boolean }
+/** One cell of a group row's Posts to in Jurnal band: value = the pick, else the name match, else null. */
+export interface GroupDimension { dimension: string; value: string | null; explicit: boolean }
 /** fewStaff: 1 or 2 when the row covers only that many staff (their pay can be read from the ledger), else 0. A warning, never a block. */
 export interface GroupRow extends PayGroup { label: string; staff: number; isNew: boolean; fewStaff: 0 | 1 | 2; dimensions: GroupDimension[] }
-/** The dimensions a group row picks values for: links whose Talenta field is a Group by field. */
-export function groupDimensionLinks(s: PayrollSettings = payroll.settings): DimensionLink[] { return s.dimensionLinks.filter((l) => s.groupBy.includes(l.field)) }
 /** Rows of the Groups table: set-up groups and every combination seen in sends, New first. */
 export function groupRows(): GroupRow[] {
   const s = payroll.settings
   const seen = seenCombinations(s.groupBy)
   const keys = [...new Set([...s.groups.map((g) => g.key), ...seen.keys()])]
-  const links = groupDimensionLinks(s)
+  const added = groupDimensions(s)
   return keys.map((key) => {
     const g = s.groups.find((x) => x.key === key)
     const values = g?.values ?? seen.get(key)!.values
     const dims = g?.dims ?? {}
-    const dimensions = links.map((l) => {
-      const raw = values[s.groupBy.indexOf(l.field)] ?? ''
-      const explicit = !!dims[l.dimension]
-      return { dimension: l.dimension, field: l.field, value: dims[l.dimension] ?? (raw ? dimensionValue(l.dimension, raw, s) : null), explicit }
-    })
+    const dimensions = added.map((d) => ({ dimension: d, value: groupDimensionValue({ values, dims }, d), explicit: !!dims[d] }))
     const staff = seen.get(key)?.staff ?? 0
     const fewStaff: 0 | 1 | 2 = staff === 1 || staff === 2 ? staff : 0
     return { key, values, account: g?.account ?? null, dims, label: groupLabel(values), staff, isNew: !g, fewStaff, dimensions }
@@ -934,17 +953,18 @@ export function setGroupAccount(key: string, account: string | null): Result {
   changed(`Group ${groupLabel(g.values)}: ${account ? accountLabel(account) : 'pay item account'}`)
   return { ok: true }
 }
-/** One dimension value for a group (null = the value of the same name). */
+/** One dimension value for a group (null = back to the name match, or blank when nothing matches). */
 export function setGroupDimension(key: string, dimension: string, value: string | null): Result {
   if (!can('setup')) return denied('setup')
-  if (value && !payroll.tags.some((t) => t.dimension === dimension && t.name === value)) return { ok: false, message: 'Pick a value from this dimension or create it first.' }
+  if (value && !payroll.settings.groupDimensions.includes(dimension)) return { ok: false, message: `Add ${dimension} to groups first, then pick its value.` }
+  if (value && !dimensionValues(dimension).includes(value)) return { ok: false, message: 'Pick a value from this dimension or create it first.' }
   const g = ensureGroup(key)
   if (!g) return { ok: false, message: 'This group is no longer in a Talenta send. Reload the page.' }
   if (value) g.dims[dimension] = value; else delete g.dims[dimension]
   changed(`Group ${groupLabel(g.values)}: ${dimension} ${value ?? 'matched by name'}`)
   return { ok: true }
 }
-/** Save a New group as it is: pay item accounts and dimension values matched by name. Drafts with a 'no-group' warning rebuild (changed()). */
+/** Save a New group as it is: pay item accounts and dimension values matched by name. Drafts with a 'no-group' or 'no-dimension-value' warning rebuild (changed()). */
 export function saveGroup(key: string): Result {
   if (!can('setup')) return denied('setup')
   const had = payroll.settings.groups.some((x) => x.key === key)
@@ -1445,7 +1465,6 @@ function nextStepFor(run: Run, v: RunVersion): string {
   const steps: Partial<Record<HoldCode, string>> = {
     'confirm-source': 'The Owner or Ultimate + LM confirms this is your company.', choice: 'Choose: use it as a new version, or make a separate run.',
     partial: 'Choose: use it as the full run, or reject it.', 'unmapped-item': 'Pick an account for each pay item. The run is checked again when you save.',
-    'unmapped-group': 'Pick a dimension value for each. The run is checked again when you save.',
   }
   return steps[h.code] ?? 'Fix it in Payroll settings. The run is checked again when you save.'
 }
@@ -1561,24 +1580,16 @@ export function fieldValue(e: StaffRow, field: string): string {
   return String((e as unknown as Record<string, unknown>)[field] ?? '')
 }
 /**
- * A staff member's dimension values from the linked fields; an unmatched value or a held empty field is an issue.
- * Staff in a New group (no set-up group for their Group by values) get no dimension from the Group by fields:
- * those values come with setting the group up.
+ * A staff member's dimension values: their group's value for each added dimension (pick, else name match).
+ * A blank value stays off the line ('no-dimension-value' warns). Staff in no group (no Group by fields, or a
+ * New group) get no group dimensions.
  */
-function resolveTags(e: StaffRow, s: PayrollSettings): { tags: Tags; issues: { field: string; dimension: string; value: string; kind: 'empty' | 'unmapped' }[] } {
+function resolveTags(e: StaffRow, s: PayrollSettings): Tags {
   const tags: Tags = { Organization: null, Branch: null }
-  const issues: { field: string; dimension: string; value: string; kind: 'empty' | 'unmapped' }[] = []
   const g = groupFor(e, s)
-  const noGroup = !!s.groupBy.length && !g
-  for (const l of s.dimensionLinks) {
-    if (noGroup && s.groupBy.includes(l.field)) continue
-    const val = fieldValue(e, l.field).trim()
-    if (!val) { if (l.empty === 'hold') issues.push({ field: l.field, dimension: l.dimension, value: '', kind: 'empty' }); continue }
-    const tag = g?.dims[l.dimension] ?? dimensionValue(l.dimension, val, s)
-    if (tag) tags[l.dimension] = tag
-    else issues.push({ field: l.field, dimension: l.dimension, value: val, kind: 'unmapped' })
-  }
-  return { tags, issues }
+  if (!g) return tags
+  for (const d of groupDimensions(s)) { const v = groupDimensionValue(g, d); if (v) tags[d] = v }
+  return tags
 }
 
 /** The send a version is compared with for missing components: the version before it, else the previous regular run's latest send. */
@@ -1650,17 +1661,18 @@ function checkVersion(run: Run, v: RunVersion): void {
     const x = fresh.get(k) ?? { key: k, label: groupLabel(values), staff: new Set<number>() }
     x.staff.add(e.user_id); fresh.set(k, x)
   }
-  // Dimension values with no match, and empty linked fields set to hold (New group staff skip the Group by fields: resolveTags).
-  const groups = new Map<string, { field: string; dimension: string; value: string; staff: number }>()
-  const empty = new Map<string, number>()
+  // Set-up groups with no value for an added dimension do not hold: their cost posts with it blank and the draft warns.
+  const blank = new Map<string, Map<string, { key: string; label: string; staff: Set<number> }>>()
   for (const e of staff) {
-    for (const i of resolveTags(e, s).issues) {
-      if (i.kind === 'empty') empty.set(i.field, (empty.get(i.field) ?? 0) + 1)
-      else { const k = `${i.field}|${i.value}`; const g = groups.get(k) ?? { field: i.field, dimension: i.dimension, value: i.value, staff: 0 }; g.staff++; groups.set(k, g) }
+    const g = groupFor(e, s)
+    if (!g) continue
+    for (const d of groupDimensions(s)) {
+      if (groupDimensionValue(g, d)) continue
+      const m = blank.get(d) ?? new Map<string, { key: string; label: string; staff: Set<number> }>()
+      const x = m.get(g.key) ?? { key: g.key, label: groupLabel(g.values), staff: new Set<number>() }
+      x.staff.add(e.user_id); m.set(g.key, x); blank.set(d, m)
     }
   }
-  if (groups.size) holds.push({ code: 'unmapped-group', message: `${groups.size} Talenta value${groups.size > 1 ? 's have' : ' has'} no dimension value: ${[...groups.values()].map((g) => `${g.value} (${g.staff} staff)`).join(', ')}. Pick a value or create it.`, details: { groups: [...groups.values()] } })
-  if (empty.size) holds.push({ code: 'empty-field', message: `Staff with an empty field linked to a dimension: ${[...empty.entries()].map(([f, n]) => `${TALENTA_FIELDS.find((x) => x.field === f)?.label ?? f}, ${n} staff`).join('; ')}. Ask HR to fill it in Talenta, or leave the dimension blank.`, details: { fields: Object.fromEntries(empty) } })
   // Warnings found on the send itself, and staff in a New group.
   v.warnings = sendWarnings(run, v, staff)
   if (fresh.size) {
@@ -1671,6 +1683,17 @@ function checkVersion(run: Run, v: RunVersion): void {
       code: 'no-group',
       message: `${n} staff matched no group (${list.map((g) => g.label).join('; ')}). Their pay posts to each pay item's default account with no group dimension. Set up the group in Payroll settings > Groups.`,
       details: { groups: list.map((g) => ({ key: g.key, label: g.label, staff: g.staff.size })) },
+    })
+  }
+  for (const d of groupDimensions(s)) {
+    const m = blank.get(d)
+    if (!m) continue
+    const list = [...m.values()].sort((a, b) => a.label.localeCompare(b.label))
+    v.warnings.push({
+      key: `no-dimension-value:${d}:${hash(list.map((g) => g.key).join(','))}`,
+      code: 'no-dimension-value',
+      message: `${d} has no value for ${list.length} group${list.length > 1 ? 's' : ''}: ${list.map((g) => g.label).join('; ')}. Their cost posts with ${d} blank. Pick a value in Payroll settings > Groups.`,
+      details: { dimension: d, groups: list.map((g) => ({ key: g.key, label: g.label, staff: g.staff.size })) },
     })
   }
   if (holds.length) { v.holds = holds; return }
@@ -1708,8 +1731,8 @@ function recheckHeld(): void {
       if (v.state === 'waiting-choice' && v.holds.some((h) => h.code === 'confirm-source')) checkVersion(run, v)
       if (v.state !== 'active' || v.no !== run.currentVersion) continue
       if (run.ledgerVersion === v.no && !run.revised) continue
-      // Holds clear on their own; a draft with staff in a New group rebuilds once the group is set up.
-      if (v.holds.length || v.warnings.some((w) => w.code === 'no-group')) checkVersion(run, v)
+      // Holds clear on their own; a draft with staff in a New group, or a group with a blank dimension, rebuilds on every group save.
+      if (v.holds.length || v.warnings.some((w) => w.code === 'no-group' || w.code === 'no-dimension-value')) checkVersion(run, v)
     }
   }
 }
@@ -1774,7 +1797,8 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
   const others = all.filter((e) => !staff.some((x) => x.user_id === e.user_id))
   const itemsToHG: string[] = []
   for (const e of staff) {
-    const { tags } = resolveTags(e, s)
+    const tags = resolveTags(e, s)
+    const ownGroup = groupFor(e, s)
     for (const [section, k] of SECTIONS) {
       for (const it of e[k]) {
         const m = mappingFor(it.name, section, s)
@@ -1787,7 +1811,7 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
         let ruleWhy = ''
         if (grp?.account) { debit = grp.account; ruleWhy = `Group ${groupLabel(grp.values)} books it to ${accountLabel(grp.account)} (Use group account)` }
         else if (costSide && s.groupBy.length && !groupFor(e, s)) ruleWhy = `Group ${groupLabel(groupValuesOf(e, s))} is not set up, so it posts to the pay item's default account with no group dimension`
-        const tagWhy = isCost(debit) && tagsLabel(lineTags) ? `Dimensions ${tagsLabel(lineTags)} from the staff member's Talenta fields` : ''
+        const tagWhy = isCost(debit) && ownGroup && tagsLabel(lineTags) ? `Dimensions ${tagsLabel(lineTags)} from group ${groupLabel(ownGroup.values)}` : ''
         const src = { item: m.name, section, role: m.role }
         add(debit, lineTags, it.amount, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, String(e.user_id))
         add(m.credit, lineTags, -it.amount, why, src, String(e.user_id))
@@ -3029,18 +3053,21 @@ function seedSettings() {
   M('JHT paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
   M('JP paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
   M('DPLK paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.dplk)
-  // Groups by Organization and Cost center: store pay goes to Direct Labour, sales pay to Sales Salaries; the rest
-  // use the pay item account. Dimension values match Talenta's names, so no explicit value. Salary and employer
-  // contributions take the group account; reimbursements, THR and tax stay the same for all groups.
-  s.groupBy = ['organization_name', 'cost_center']
+  // Groups by Organization, Branch and Cost center: store pay goes to Direct Labour, sales pay to Sales Salaries; the
+  // rest use the pay item account. Organization and Branch are added to groups; every group's values match its
+  // Talenta names, so nothing is picked explicitly (Branch sits in Group by so each group has one Branch, as the
+  // staff's own Branch filled it before). Salary and employer contributions take the group account; reimbursements,
+  // THR and tax stay the same for all groups.
+  s.groupBy = ['organization_name', 'branch', 'cost_center']
+  s.groupDimensions = ['Organization', 'Branch']
   const combos = new Map<string, string[]>()
-  for (const e of payroll.roster) for (const g of [{ organization_name: e.organization_name, cost_center_name: e.cost_center_name }, ...e.moves.map((x) => x.to)]) {
-    const values = [g.organization_name, g.cost_center_name]
+  for (const e of payroll.roster) for (const g of [{ organization_name: e.organization_name, branch_name: e.branch_name, cost_center_name: e.cost_center_name }, ...e.moves.map((x) => x.to)]) {
+    const values = [g.organization_name, g.branch_name, g.cost_center_name]
     combos.set(payGroupKey(s.groupBy, values), values)
   }
   s.groups = [...combos].map(([key, values]) => ({
     key, values, dims: {},
-    account: values[1]!.startsWith('Store') ? ACC.directLabour : values[0] === 'Sales' ? ACC.salesSalaries : null,
+    account: values[2]!.startsWith('Store') ? ACC.directLabour : values[0] === 'Sales' ? ACC.salesSalaries : null,
   }))
   for (const m of s.mapping) if (m.role === 'Earning' || m.role === 'Employer contribution') m.groupsCanChange = true
 }
@@ -3097,7 +3124,7 @@ export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payro
 
 // Load: a saved snapshot wins over the sample. A fresh sample is saved at once so ids stay stable across reloads.
 const snap = loadSnapshot<PayrollState>(SNAPSHOT_KEY)
-if (snap && snap[0] && snap[0].settings?.dimensionLinks && snap[0].settings?.groupBy) { Object.assign(payroll, snap[0]); syncApprovalTasks() }
+if (snap && snap[0] && Array.isArray(snap[0].settings?.groupDimensions) && snap[0].settings?.groupBy) { Object.assign(payroll, snap[0]); syncApprovalTasks() }
 else resetPayroll()
 // Opening the prototype always starts as Owner (user, 2026-10-13); View as switches from there.
 payroll.viewAs = 'Owner'

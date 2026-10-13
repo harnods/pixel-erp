@@ -152,7 +152,7 @@ describe('feature coverage', () => {
     const required = [
       'Connection status and Talenta company', 'How to send from Talenta', 'Payable accounts per party',
       'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', 'Use group account',
-      'Settings > Groups tab', 'Group by Talenta fields', 'Talenta field to dimension links', 'Group expense account and dimension value',
+      'Settings > Groups tab', 'Group by Talenta fields', 'Add dimension to groups, values prefilled by name', 'Group expense account and dimension value',
       'Approval workflows rule Payroll journal', 'View as: View only has no actions', 'View as: Accountant needs LM for settings',
       'Inbox runs', 'Sync log', 'To fix before posting: unmapped pay item', 'Map from the hold; the hold clears',
       'No group warning: new group posts to default accounts', 'Set up group clears the No group warning', 'Draft review lines by account and dimension',
@@ -181,7 +181,7 @@ describe('feature coverage', () => {
     const expectAt: Record<string, string> = {
       'How to send from Talenta': 'payroll-how-to-send', 'Payable accounts per party': 'payroll-payable-accounts',
       'Pay item type from Talenta, with the header tip': 'payroll-type-tip', 'Use group account': 'payroll-groups-can-change',
-      'Group by Talenta fields': 'payroll-groupby', 'Talenta field to dimension links': 'payroll-group-dims',
+      'Group by Talenta fields': 'payroll-groupby', 'Add dimension to groups, values prefilled by name': 'payroll-group-dims',
       'Sync log': 'payroll-synclog', 'Month headcount (Owner)': 'payroll-month-headcount', 'Journal date: default and locked period': 'payroll-journal-date',
       'Approve and post': 'payroll-approve', 'Mapping used tab': 'payroll-mapping-used', 'Claims': 'payroll-claims',
       'Payables: bank payment menu': 'payroll-payables-simulate', 'Payables: bank differs flag': 'payroll-payables-flags',
@@ -256,10 +256,13 @@ describe('PAY-1 Set up payroll (replay)', () => {
     expect(rows.find((g) => g.label === 'Operations, Jakarta HQ')!.staff).toBe(10)
     p.says(6, 'Operations, Jakarta HQ has 10 staff')
     expect(rows.every((g) => !g.isNew)).toBe(true)
-    // 8. Each Group by field fills a dimension.
+    // 8. Add the dimensions you report on: Organization and Branch; values fill in by name.
     p.at(7)
-    expect(settings.value.dimensionLinks.filter((l) => settings.value.groupBy.includes(l.field)).map((l) => [l.field, l.dimension]))
-      .toEqual([['organization_name', 'Organization'], ['branch', 'Branch']])
+    expect(settings.value.groupDimensions).toEqual(['Organization', 'Branch'])
+    p.says(7, 'Organization and Branch are added')
+    expect(groupRows().find((g) => g.label === 'Sales, Bandung')!.dimensions.find((x) => x.dimension === 'Branch')).toEqual({ dimension: 'Branch', value: 'Bandung', explicit: false })
+    p.says(7, 'Sales, Bandung gets Branch Bandung by name')
+    expect(settings.value).not.toHaveProperty('dimensionLinks')
     // 9. A group's account and a group's dimension value.
     p.at(8)
     const ops = groupRows().find((g) => g.label === 'Operations, Jakarta HQ')!
@@ -352,8 +355,10 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     p.at(5)
     const g = groupRows().find((x) => x.label === NEW_GROUP)!
     expect([g.isNew, g.staff, g.account]).toEqual([false, 2, ACC.directLabour])
-    expect(g.dimensions.find((x) => x.dimension === 'Branch')!.value).toBe('Medan')
+    // Medan fills the group's Branch by name once the value exists; nothing is picked by hand.
+    expect(g.dimensions.find((x) => x.dimension === 'Branch')).toEqual({ dimension: 'Branch', value: 'Medan', explicit: false })
     p.says(5, `${NEW_GROUP}: 2 staff, ${accountLabel(ACC.directLabour)}, Branch Medan`)
+    expect(runWarnings(run.id).some((w) => w.code === 'no-dimension-value')).toBe(false)
     expect(runHolds(run)).toEqual([])
     expect(runStatus(run)).toBe('Ready to post')
     // 7. Draft review lines by account and dimension.

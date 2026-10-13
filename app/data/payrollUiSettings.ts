@@ -4,7 +4,7 @@
  * Nothing here writes the payroll state.
  */
 import {
-  payroll, runs, currentVersionOf, payrollAccount, staffRows, fieldValue, dimensionFor, dimensionValue,
+  payroll, runs, currentVersionOf, payrollAccount, staffRows, fieldValue,
   type Run, type RunVersion,
 } from './payrollStore'
 import { SBU_KEY, TALENTA_FIELDS, type PayrollAccountType, type TalentaField } from './payrollMaster'
@@ -55,11 +55,6 @@ export function valuesSeen(field: string): string[] {
 }
 /** True when Talenta has sent at least one non-empty value for the field. */
 export function fieldSent(field: string): boolean { return valuesSeen(field).length > 0 }
-/** Values of a linked field and the dimension value each lands on (null = unmatched). */
-export function valueMatches(field: string): { value: string; tag: string | null; explicit: boolean }[] {
-  const dim = dimensionFor(field)
-  return valuesSeen(field).map((value) => ({ value, tag: dim ? dimensionValue(dim, value) : null, explicit: !!(dim && payroll.settings.groupMaps[dim]?.[value]) }))
-}
 
 // ── Accounts from the chart ─────────────────────────────────────────────────
 
