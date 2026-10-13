@@ -182,7 +182,6 @@ type SortableRow = WorklistRow & {
   availableQty: number
   onOrderQty: number
   coverValue: number
-  velocityValue: number
   vendorName: string
   suggestedQty: number
 }
@@ -197,7 +196,6 @@ function toSortable(rows: WorklistRow[]): SortableRow[] {
     onOrderQty: row.atp.onOrder,
     // Null cover must sort last in both directions rather than read as 0.
     coverValue: row.cover.coverDays ?? Number.POSITIVE_INFINITY,
-    velocityValue: row.velocity.avgDailySales,
     vendorName: row.vendor?.name ?? '',
     // The number the cell shows (the stock-unit need), not the PO-rounded figure.
     suggestedQty: row.suggestion.rawQty,
@@ -372,11 +370,11 @@ const ALL_COLUMNS: TableColumn[] = [
   { key: 'coverValue',    label: 'Days of cover',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'unit',          label: 'Unit',            kind: 'unit' },
   { key: 'vendorName',    label: 'Preferred vendor', kind: 'name',  sortable: true, sortType: 'text' },
-  // The unit is in the header, so these cells are bare numbers like the qty columns.
-  { key: 'leadTimeDays',  label: 'Lead time days',  sortable: true, sortType: 'number', align: 'right' },
-  // `wide`: the header is longer than the default 160px floor and would clip.
-  { key: 'velocityValue', label: 'Demand velocity per day', kind: 'wide', sortable: true, sortType: 'number', align: 'right' },
-  { key: 'safetyDays',    label: 'Safety days',     sortable: true, sortType: 'number', align: 'right' },
+  // Lead time, Demand velocity per day and Safety days are deliberately NOT columns
+  // here: they are the formula inputs, shown together with their effect in the
+  // "View the suggested qty calculation" drawer. Surfacing them in the index too
+  // just asks the reader to re-derive the formula by eye, so they live only in the
+  // drawer (and the CSV export keeps them for offline analysis).
 ]
 
 /**
@@ -804,6 +802,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           </MpTooltip>
           <ColumnSettingsMenu
             id="rp-col-settings"
+            data-devchange="replenishment-formula-input-columns-removed"
             :items="columnItems"
             :visibility="columnVisibility"
             :tooltip="t('Column settings')"
@@ -1011,16 +1010,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Optional numeric columns ── -->
     <template #cell-reorderPoint="{ row }">
       {{ (row as any).reorderPointSource === 'none' ? '—' : num((row as any).reorderPoint) }}
-    </template>
-    <template #cell-leadTimeDays="{ row }">
-      {{ (row as any).leadTimeDays }}
-    </template>
-    <!-- A rate, so it carries its unit: "1,84 Bag" under the "per day" header. -->
-    <template #cell-velocityValue="{ row }">
-      <span data-devchange="replenishment-velocity-unit">{{ num((row as any).velocity.avgDailySales, 2) }} {{ (row as any).unit }}</span>
-    </template>
-    <template #cell-safetyDays="{ row }">
-      {{ (row as any).safetyDays }}
     </template>
 
     <!-- ── Row actions ── -->

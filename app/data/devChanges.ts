@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-formula-input-columns-removed',
+    title: 'To order: removed Lead time, Demand velocity & Safety days columns',
+    description:
+      'The three demand-formula input columns — Lead time days, Demand velocity per day, and Safety days — were removed from the To order table. They are the inputs to the suggested-qty formula and are already shown, together with their effect on the result, in the "View the suggested qty calculation" drawer. Keeping them in the index too just asked the reader to re-derive the formula by eye. The figures still live in the calculation drawer, in the "Stocks out before resupply" signal tooltip (lead + safety), and in the CSV export for offline analysis.',
+    date: '2026-10-13',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
     id: 'replenishment-outlier-cap-off',
     title: 'Demand: removed the demand-qty outlier cap (+ Reminder & Outlier-cap settings rows)',
     description:
@@ -274,14 +282,6 @@ export const DEV_CHANGES: DevChange[] = [
       'An approved PO now posts In-Transit owned by the PO; receiving it hands ownership to WMS Inbound so incoming is counted once (US-028/029). A product that is below its reorder point but already fully covered by that inbound stays on the To order table with a suggested qty of 0 and a "Covered by inbound" signal (US-004 AC-03) — it is counted on its own card instead of To order, has no Request to purchase, and can be isolated with the Signals quick filter. The In transit column and the calculation drawer break the quantity down by owner (on order vs in WMS inbound). A row that still stocks out before resupply keeps the stockout (stockout wins).',
     date: '2026-10-07',
     files: ['replenishment.ts', 'ReplenishmentPage.vue', 'ReplenishmentFiltersDrawer.vue', 'SuggestionBreakdownDrawer.vue'],
-  },
-  {
-    id: 'replenishment-velocity-unit',
-    title: 'Replenishment: demand velocity shows its unit',
-    description:
-      'The "Demand velocity per day" column now shows the unit beside the figure (for example "1,84 Bag"). ',
-    date: '2026-10-02',
-    files: ['ReplenishmentPage.vue', 'VendorItemDrawer.vue'],
   },
   {
     id: 'replenishment-covered-by',
