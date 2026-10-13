@@ -6,7 +6,7 @@
  * paid a salary run a different amount than the posted run, or a manual journal hit a payroll
  * payable account.
  */
-import { MpButton, MpIcon, MpSegmentedControl, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpSegmentedControl, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import PayrollPayableDetail from '~/components/payroll/PayrollPayableDetail.vue'
@@ -59,7 +59,7 @@ const columns: TableColumn[] = [
   { key: 'paid', label: t('Paid'), kind: 'amount', align: 'right' },
   { key: 'balance', label: t('Balance'), kind: 'amount', align: 'right' },
   /* Due date sits under the status badge: a separate 160px date column pushed the table past a 1280 screen. */
-  { key: 'status', label: t('Status'), kind: 'default' },
+  { key: 'status', label: t('Status'), kind: 'status' },
 ]
 const tableRows = computed(() => paginated.value as unknown as Record<string, unknown>[])
 const asRow = (r: unknown) => r as PayableRow
@@ -117,6 +117,8 @@ const payPerPage = ref(25)
 const paymentRows = computed(() => paymentHistory.value.slice((payPage.value - 1) * payPerPage.value, payPage.value * payPerPage.value) as unknown as Record<string, unknown>[])
 type PayHist = (typeof paymentHistory.value)[number]
 const asPay = (r: unknown) => r as PayHist
+/** Runtime public asset (dynamic :src, docs/patterns/ErpTablePage.md > Empty state). */
+const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
 
 <template>
@@ -175,10 +177,10 @@ const asPay = (r: unknown) => r as PayHist
           <MpButton v-if="hasActiveFilter" variant="ghost" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
         </div>
         <div class="filter-right">
-          <div class="filter-search">
-            <MpIcon name="search" size="sm" />
-            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-          </div>
+          <MpInputGroup id="pp-search" class="pp-search">
+            <MpInputLeftAddon><MpIcon name="search" size="sm" /></MpInputLeftAddon>
+            <MpInput id="pp-search-input" v-model="search" type="text" is-clearable :aria-label="t('Search payables')" :placeholder="t('Search...')" @clear="search = ''" />
+          </MpInputGroup>
         </div>
       </template>
 
@@ -232,12 +234,13 @@ const asPay = (r: unknown) => r as PayHist
         </MpPopover>
       </template>
 
+      <!-- Full empty only: ErpTablePage renders the filtered empty state itself (rule/table-empty-state). -->
       <template #empty>
         <div class="pp-empty">
-          <p class="pp-empty-title">{{ t(hasActiveFilter ? 'No payables match the filters' : 'No payables yet') }}</p>
-          <p class="pp-empty-desc">{{ t(hasActiveFilter ? 'Clear the filters to see every payable.' : 'What payroll still owes staff, the tax office, BPJS and DPLK. It fills once you post a payroll journal.') }}</p>
-          <MpButton v-if="hasActiveFilter" variant="secondary" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
-          <MpButton v-else variant="secondary" is-rounded @click="navigateTo('/payroll-inbox')">{{ t('Open payroll inbox') }}</MpButton>
+          <img :src="emptyIllustration" alt="" class="pp-empty-illustration" width="288" height="240" />
+          <p class="pp-empty-title">{{ t('No payables') }}</p>
+          <p class="pp-empty-desc">{{ t('Payables will appear here once you post a payroll journal.') }}</p>
+          <MpButton variant="secondary" is-rounded @click="navigateTo('/payroll-inbox')">{{ t('Open payroll inbox') }}</MpButton>
         </div>
       </template>
     </ErpTablePage>
@@ -251,6 +254,7 @@ const asPay = (r: unknown) => r as PayHist
       :current-page="payPage"
       :per-page="payPerPage"
       filter-empty-label="payment"
+      no-row-hover
       @page-change="(p: number) => (payPage = p)"
       @per-page-change="(n: number) => (payPerPage = n)"
     >
@@ -264,8 +268,10 @@ const asPay = (r: unknown) => r as PayHist
       <template #cell-amount="{ row }">{{ rupiah(asPay(row).amount) }}</template>
       <template #empty>
         <div class="pp-empty">
-          <p class="pp-empty-title">{{ t('No payments yet') }}</p>
-          <p class="pp-empty-desc">{{ t('A payment shows here when you pay a payable, or when bank reconciliation matches a bank line to it.') }}</p>
+          <img :src="emptyIllustration" alt="" class="pp-empty-illustration" width="288" height="240" />
+          <p class="pp-empty-title">{{ t('No payments') }}</p>
+          <p class="pp-empty-desc">{{ t('Payments will appear here when you pay a payable, or when bank reconciliation matches a bank line to it.') }}</p>
+          <MpButton variant="secondary" is-rounded @click="view = 'payables'">{{ t('View payables') }}</MpButton>
         </div>
       </template>
     </ErpTablePage>
@@ -290,20 +296,15 @@ const asPay = (r: unknown) => r as PayHist
 
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.filter-search {
-  display: flex; align-items: center; gap: var(--mp-spacing-2);
-  flex: 0 0 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-full, 999px);
-  color: var(--mp-text-subtle);
-}
-.filter-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); min-width: 0; }
-.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+/* Search pill (rule/filter-bar-search-pill) on Pixel MpInputGroup + MpInput: the MpInput
+   border is the pill, so its own focus ring and clear (x) carry over. */
+.pp-search { flex: 0 0 var(--filter-search-w, 248px); width: var(--filter-search-w, 248px); }
+.pp-search :deep(.mp-input__control) { border-radius: var(--mp-radii-full, 999px); }
 
 .pp-cell { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; white-space: normal; }
 .pp-cell--right { align-items: flex-end; text-align: right; }
-.pp-name { color: var(--mp-text-link); cursor: pointer; }
+.pp-name { color: var(--mp-colors-text-link, #165082); cursor: pointer; }
+.pp-name:hover { text-decoration: underline; }
 .pp-fig { cursor: pointer; }
 .pp-fig:hover { text-decoration: underline; }
 .pp-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
@@ -311,7 +312,9 @@ const asPay = (r: unknown) => r as PayHist
 .pp-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); }
 .pp-flag { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
 .pp-danger { color: var(--mp-text-danger); }
-.pp-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-10, 40px) 0; }
-.pp-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.pp-empty-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+/* Empty state spacing per docs/patterns/ErpTablePage.md: illustration > title 0, title > text 2px, text > button 12px. */
+.pp-empty { display: flex; flex-direction: column; align-items: center; }
+.pp-empty-illustration { width: auto; height: 240px; object-fit: contain; }
+.pp-empty-title { margin: 0 0 var(--mp-spacing-0\.5, 2px); font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pp-empty-desc { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>
