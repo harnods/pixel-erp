@@ -113,9 +113,9 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v14 (v14: one place for cost accounts, Everyone else, pinned cost items)', () => {
+  it('persists under payroll:state-v16 (v14: one place for cost accounts, Everyone else, pinned cost items)', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v14'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v16'")
     expect(payroll.settings).not.toHaveProperty('dimensionLinks')
     expect(payroll.settings).not.toHaveProperty('groupMaps')
     // The seed: Organization and Branch added to groups; Group by Organization, Branch and Cost center; no explicit picks.

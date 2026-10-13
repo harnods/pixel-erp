@@ -11,7 +11,7 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v14` (v14: one place for cost accounts: Everyone else account, pinned cost items, no
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v16` (v16: Pay items toggle back, items keep their own account; v14: one place for cost accounts: Everyone else account, pinned cost items, no
  * group toggle); resetPayroll()
  * returns to the sample.
  *
@@ -63,6 +63,7 @@
  *   setEveryoneElseAccount(code)    expense or COGS only. Following cost items' debit mirrors it (see below); drafts rebuild.
  *   costFollowsGroups(m)            true for a cost item that is not pinned ("Group's expense account", the default).
  *   payItemPinned(m)                the pinned account of a cost item ('Pin to account'), else null.
+ *   payItemOwnAccount(m) / setCostUsesGroup(key, on)   Pay items toggle: Use group account / Use default account.
  *   setPayItemAccount(key, account | null)   the row's one account. A cost item: account = pin it there (any expense or COGS
  *                                   account), null = follow groups ("Group's expense account"); it credits its party's payable.
  *                                   A deduction or tax item credits the account and debits Hutang Gaji (null refused).
@@ -271,6 +272,8 @@ export interface PayItemMapping {
    * ("Group's expense account": the staff's group account, else the Everyone else account).
    */
   pinned?: string | null
+  /** Cost items: the item's own account, kept while it uses the group account, so the toggle can go back to it. */
+  own?: string | null
 }
 /**
  * One group: staff with the same values in the Group by fields. `account` (null = the Everyone else
@@ -529,7 +532,7 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v14'
+const SNAPSHOT_KEY = 'payroll:state-v16'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -748,6 +751,7 @@ export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMappin
   else if ('pinned' in patch) { next.pinned = patch.pinned ?? null; next.debit = next.pinned ?? everyoneElseAccount() }
   else if (patch.debit !== undefined) next.pinned = patch.debit
   else if (!next.pinned) next.debit = everyoneElseAccount()
+  if (isCostItem(next) && next.pinned) next.own = next.pinned
   const v = validateMapping(next)
   if (v.blocks.length) return { ok: false, message: v.blocks[0], blocks: v.blocks, status: 422 }
   if (v.overridable.length) {
@@ -1024,6 +1028,20 @@ export function setPayItemAccount(key: string, account: string | null): Result {
     patch = { role, debit: hg, credit: account!, party: a!.party ?? row.party }
   }
   return setPayItemMapping(key, patch)
+}
+/** Pay items toggle. The cost item's own account ("Use default account"), kept while it uses the group account. */
+export function payItemOwnAccount(m: Pick<PayItemMapping, 'section' | 'role' | 'name' | 'pinned' | 'own'>): string | null {
+  return isCostItem(m) ? m.pinned ?? m.own ?? null : null
+}
+/**
+ * Pay items toggle. On ("Use group account"): the staff's group account, else Everyone else.
+ * Off ("Use default account"): the item's own account for every staff member.
+ */
+export function setCostUsesGroup(key: string, on: boolean): Result {
+  const row = payroll.settings.mapping.find((m) => m.key === key)
+  if (!row || !isCostItem(row)) return { ok: false, message: 'Only an allowance or a company share can use the group account.' }
+  if (on) return setPayItemMapping(key, { pinned: null })
+  return setPayItemMapping(key, { pinned: row.own ?? everyoneElseAccount() })
 }
 /** True for a cost item that follows groups ("Group's expense account"): not pinned to one account. */
 export function costFollowsGroups(m: Pick<PayItemMapping, 'section' | 'role' | 'name' | 'pinned'>): boolean {
@@ -3076,7 +3094,7 @@ function seedSettings() {
   }))
   // Migration from the old group toggle: items that used the group account follow groups; the rest are pinned to their old debit.
   s.everyoneElseAccount = ACC.salaries
-  for (const m of s.mapping) m.pinned = isCostItem(m) && !(m.role === 'Earning' || m.role === 'Employer contribution') ? m.debit : null
+  for (const m of s.mapping) { if (isCostItem(m)) m.own = m.debit; m.pinned = isCostItem(m) && !(m.role === 'Earning' || m.role === 'Employer contribution') ? m.debit : null }
 }
 
 function seed() {
