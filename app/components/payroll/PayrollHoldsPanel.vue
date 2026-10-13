@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * "To fix before posting": each item with its fix inline. A send stops only for a pay item with
- * no account, a dimension value with no match, a partial send, the same-run-or-separate choice,
+ * no account, an account the journal can't use, a partial send, the same-run-or-separate choice,
  * or the first send's company check. Staff in a group nobody set up no longer stop the run: they
- * post to default accounts and show as a 'no-group' warning (PayrollRunWarnings). Every save re-checks held runs, so a fix
+ * post to default accounts and show as a 'no-group' warning (PayrollRunWarnings). A group with no
+ * value for an added dimension doesn't stop it either: 'no-dimension-value' warning. Every save re-checks held runs, so a fix
  * usually clears the item by itself; "Check again" re-checks the run on demand.
  */
 import { computed, reactive } from 'vue'
@@ -12,12 +13,11 @@ import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   payroll, can, runById, runHolds, rupiah, accountLabel, payrollAccount, mappingFor, suggestMapping, setPayItemAccount,
-  useChartAccount, payItemType, isCostItem,
-  mapGroup, createPayrollTag, setFieldPolicy, confirmSource, sourceSummary,
+  useChartAccount, payItemType, isCostItem, confirmSource, sourceSummary,
   chooseRevision, chooseSeparateRun, decidePartial, releaseRun, versionOf,
   type Hold,
 } from '~/data/payrollStore'
-import { TALENTA_FIELDS, type PaySection } from '~/data/payrollMaster'
+import type { PaySection } from '~/data/payrollMaster'
 import { accountChoices, type AccountOption } from '~/data/payrollUiSettings'
 import { successToast, infoToast } from '~/utils/toasts'
 import { sectionLabel } from '~/data/payrollUiRunCopy'
@@ -33,7 +33,6 @@ const holds = computed(() => (run.value ? runHolds(run.value) : []))
 const TITLES: Record<string, string> = {
   'confirm-source': 'Confirm this is your company', choice: 'Talenta sent this period again', partial: 'Looks like part of the run',
   'unmapped-item': 'Pay items with no account',
-  'unmapped-group': 'Values with no dimension value', 'empty-field': 'Empty dimension fields',
   'two-parties': 'Two parties on one payable account', 'archived-account': 'Account is archived',
 }
 const SETTINGS_FIX = ['two-parties', 'archived-account']
@@ -77,36 +76,6 @@ function saveItem(it: { key: string; name: string; section: PaySection }) {
   if (!r.ok) { f.error = r.message ?? 'Not saved. Pick another account.'; return }
   f.error = ''
   successToast(t(`${it.name} now posts to ${accountLabel(f.account)}`))
-}
-
-// ── Groups ────────────────────────────────────────────────────────────────
-const groupPick = reactive<Record<string, string>>({})
-const groupError = reactive<Record<string, string>>({})
-const fieldLabel = (field: string) => TALENTA_FIELDS.find((f) => f.field === field)?.label ?? field
-function tagOptions(dim: string, value: string) {
-  const opts = payroll.tags.filter((tg) => tg.dimension === dim).map((tg) => ({ value: tg.name, label: tg.name }))
-  if (can('setup') && !opts.some((o) => o.value === value)) opts.push({ value: `new:${value}`, label: `${t('Create dimension value')} "${value}"` })
-  return opts
-}
-function saveGroup(g: { field: string; dimension: string; value: string }) {
-  const k = `${g.field}|${g.value}`
-  let tag = groupPick[k] ?? ''
-  if (!tag) { groupError[k] = 'Pick a dimension value.'; return }
-  if (tag.startsWith('new:')) {
-    tag = tag.slice(4)
-    const c = createPayrollTag(g.dimension, tag)
-    if (!c.ok) { groupError[k] = c.message ?? ''; return }
-  }
-  const r = mapGroup(g.dimension, g.value, tag)
-  if (!r.ok) { groupError[k] = r.message ?? ''; return }
-  groupError[k] = ''
-  successToast(t(`${g.value} now fills ${tag}`))
-}
-
-// ── Empty dimension fields ────────────────────────────────────────────────
-function skipEmpty(field: string) {
-  const r = setFieldPolicy(field, 'skip')
-  if (r.ok) successToast(t('Empty values now leave the dimension blank'))
 }
 
 // ── Source, choice, partial ───────────────────────────────────────────────
@@ -274,30 +243,6 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <MpButton v-else variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
       </div>
 
-      <!-- Talenta values with no dimension value -->
-      <div v-else-if="h.code === 'unmapped-group'" class="ph__fix">
-        <div v-for="g in d(h).groups" :key="`${g.field}|${g.value}`" class="ph__line">
-          <div class="ph__linetext">
-            <span class="ph__strong">{{ g.value }}</span>
-            <span class="ph__muted"> · {{ t(g.dimension) }} · {{ g.staff }} {{ t('staff') }}</span>
-          </div>
-          <template v-if="can('setup')">
-            <ErpFilterSelect :id="`ph-tag-${safeId(g.field + '-' + g.value)}`" v-model="groupPick[`${g.field}|${g.value}`]" :placeholder="t('Dimension value')" :options="tagOptions(g.dimension, g.value)" width="220px" />
-            <MpButton variant="secondary" is-rounded @click="saveGroup(g)">{{ t('Save') }}</MpButton>
-          </template>
-          <p v-if="groupError[`${g.field}|${g.value}`]" class="ph__error">{{ t(groupError[`${g.field}|${g.value}`]!) }}</p>
-        </div>
-      </div>
-
-      <!-- Empty dimension fields -->
-      <div v-else-if="h.code === 'empty-field'" class="ph__fix">
-        <div v-for="(n, field) in d(h).fields" :key="field" class="ph__line">
-          <div class="ph__linetext"><span class="ph__strong">{{ t(fieldLabel(String(field))) }}</span><span class="ph__muted"> · {{ n }} {{ t('staff') }}</span></div>
-          <MpButton v-if="can('setup')" variant="secondary" is-rounded @click="skipEmpty(String(field))">{{ t('Leave blank') }}</MpButton>
-        </div>
-        <p class="ph__hint">{{ t('Ask HR to fill the field in Talenta and send again, or leave the dimension blank.') }}</p>
-      </div>
-
       <!-- Build checks fixed in settings -->
       <div v-else-if="SETTINGS_FIX.includes(h.code)" class="ph__fix">
         <p v-if="h.code === 'archived-account' && payrollAccount(d(h).account)" class="ph__hint">{{ accountLabel(d(h).account) }}</p>
@@ -337,9 +282,6 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 .ph__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; }
 .ph__muted { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ph__strong { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.ph__line { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; }
-.ph__line .ph__strong { min-width: 200px; }
-.ph__linetext { min-width: 240px; }
 .ph__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ph__table :deep(.efs) { display: block; width: 100%; min-width: 0; }
 .ph__table :deep(.efs-trigger) { width: 100%; }

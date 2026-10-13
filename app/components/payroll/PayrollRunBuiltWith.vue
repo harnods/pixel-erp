@@ -1,18 +1,30 @@
 <script setup lang="ts">
 /**
  * "Mapping used": the settings a draft or posted journal was built from, read-only. Shows only
- * the pay item to account list and the dimension links.
+ * the pay item to account list and, per group, the value of each dimension added to groups
+ * (an explicit pick, else the value named like one of the group's Talenta values, else blank).
  */
 import { computed } from 'vue'
-import { snapshotById, accountLabel } from '~/data/payrollStore'
+import { snapshotById, accountLabel, groupLabel } from '~/data/payrollStore'
 import { sectionLabel } from '~/data/payrollUiRunCopy'
-import { TALENTA_FIELDS } from '~/data/payrollMaster'
+import { groupDimensionsOf, nameMatch } from '~/data/payrollUiGroupDims'
+import { groupFieldLabel } from '~/data/payrollUiSettings'
 
 const props = defineProps<{ snapshotId: string | null }>()
 const { t } = useLocale()
 const snap = computed(() => snapshotById(props.snapshotId))
 const s = computed(() => snap.value?.settings)
-const fieldLabel = (f: string) => TALENTA_FIELDS.find((x) => x.field === f)?.label ?? f
+/** The dimension columns this journal was built with. */
+const dims = computed(() => (s.value ? groupDimensionsOf(s.value) : []))
+const groups = computed(() => (s.value?.groups ?? [])
+  .map((g) => ({
+    key: g.key,
+    label: groupLabel(g.values),
+    account: g.account,
+    values: dims.value.map((d) => g.dims[d] ?? nameMatch(d, g.values)),
+  }))
+  .sort((a, b) => a.label.localeCompare(b.label)))
+const groupedBy = computed(() => (s.value?.groupBy ?? []).map((f) => t(groupFieldLabel(f))).join(', '))
 </script>
 
 <template>
@@ -37,18 +49,27 @@ const fieldLabel = (f: string) => TALENTA_FIELDS.find((x) => x.field === f)?.lab
       </table>
     </section>
 
-    <section v-if="(s.dimensionLinks ?? []).length" class="pbw__card">
-      <header class="pbw__cardhead"><div class="pbw__cardtitle">{{ t('Dimension links') }}</div></header>
-      <table class="pbw__table">
-        <thead><tr><th class="pbw__th">{{ t('Talenta field') }}</th><th class="pbw__th">{{ t('Fills dimension') }}</th><th class="pbw__th">{{ t('When Talenta sends it empty') }}</th></tr></thead>
-        <tbody>
-          <tr v-for="l in s.dimensionLinks" :key="l.field">
-            <td class="pbw__td">{{ t(fieldLabel(l.field)) }}</td>
-            <td class="pbw__td">{{ t(l.dimension) }}</td>
-            <td class="pbw__td">{{ t(l.empty === 'hold' ? 'Hold the run until it\'s filled' : 'Leave the dimension blank') }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <section v-if="groups.length" class="pbw__card" data-testid="payroll-mapping-groups">
+      <header class="pbw__cardhead">
+        <div class="pbw__cardtitle">{{ t('Groups') }} ({{ groups.length }})</div>
+        <div class="pbw__muted">{{ t('Grouped by') }} {{ groupedBy }}</div>
+      </header>
+      <div class="pbw__scroll">
+        <table class="pbw__table pbw__table--groups">
+          <thead><tr>
+            <th class="pbw__th">{{ t('Group') }}</th>
+            <th class="pbw__th">{{ t('Expense account') }}</th>
+            <th v-for="d in dims" :key="d" class="pbw__th" :data-dimension="d">{{ d }}</th>
+          </tr></thead>
+          <tbody>
+            <tr v-for="g in groups" :key="g.key" :data-group="g.key">
+              <td class="pbw__td">{{ g.label }}</td>
+              <td class="pbw__td">{{ g.account ? accountLabel(g.account) : t('Use default account') }}</td>
+              <td v-for="(v, i) in g.values" :key="dims[i]" class="pbw__td" :class="{ 'pbw__none': !v }">{{ v ?? t('No value') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </div>
   <div v-else class="pbw__card pbw__empty" data-tour="payroll-mapping-used">{{ t('No mapping saved for this run yet. It\'s saved when the draft journal builds.') }}</div>
@@ -67,5 +88,9 @@ const fieldLabel = (f: string) => TALENTA_FIELDS.find((x) => x.field === f)?.lab
 }
 .pbw__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .pbw__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
+.pbw__cardhead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-3); }
+.pbw__scroll { overflow-x: auto; }
+.pbw__none { color: var(--mp-text-secondary); }
+.pbw__table--groups .pbw__td { white-space: nowrap; }
 
 </style>
