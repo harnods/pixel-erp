@@ -1,47 +1,55 @@
 <script setup lang="ts">
 /**
  * Pay items: payable accounts per party on top, then one row per Talenta pay item with its one
- * Jurnal account. A cost item (allowance, benefit) takes any expense or COGS account and is marked
- * Use group account (the staff's group expense account applies, see Groups) or Use default account; a
- * deduction or tax item takes its payable. The type is Talenta's and read-only; "Owed to" follows
- * it. Items with no account come first: they hold the run.
+ * Jurnal account. Groups own cost accounts: a cost item (allowance, benefit) reads "Group's
+ * expense account" by default (each staff's group account, else Everyone else, see Groups) and can
+ * be pinned to one expense or COGS account instead. A deduction or tax item takes its payable.
+ * The type is Talenta's and read-only; "Owed to" follows it. Items with no account come first:
+ * they hold the run.
  */
 import { computed, reactive, ref } from 'vue'
-import { MpIcon, MpToggle, MpTooltip } from '@mekari/pixel3'
+import { MpIcon, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { sectionLabel } from '~/data/payrollUiRunCopy'
 import { successToast } from '~/utils/toasts'
 import {
-  payroll, can, accountLabel, payItemType, isCostItem, payItemAccount, payItemParty, setPayItemAccount, setPayItemGroupsCanChange,
+  payroll, can, accountLabel, payItemType, isCostItem, payItemAccount, payItemParty, setPayItemAccount,
   setPayableAccount, useChartAccount, payrollAccount,
   type PayItemMapping, type PayItemType,
   setTaxAccount, TAX_ACCOUNT_LABEL, type TaxAccountKind,
 } from '~/data/payrollStore'
 import { PAYABLE_PARTIES, type PayableParty, type PayrollAccountType } from '~/data/payrollMaster'
-import { accountChoices, type AccountOption } from '~/data/payrollUiSettings'
+import {
+  accountChoices, type AccountOption, FOLLOW_GROUPS, payItemPinned, setCostAccount, payItemNeedsAccount,
+} from '~/data/payrollUiSettings'
 import { PARTY_LABEL } from '~/data/payrollUiPay'
 
 const { t } = useLocale()
 
 const TYPE_ORDER: PayItemType[] = ['allowance', 'benefit', 'deduction', 'tax']
 
-const needsAccount = (m: PayItemMapping) => !m.roleConfirmed || !m.role || !m.debit || !m.credit
+const needsAccount = (m: PayItemMapping) => payItemNeedsAccount(m)
 const rows = computed(() => [...payroll.settings.mapping].sort((a, b) =>
   Number(needsAccount(b)) - Number(needsAccount(a))
   || TYPE_ORDER.indexOf(payItemType(a)) - TYPE_ORDER.indexOf(payItemType(b))
   || a.name.localeCompare(b.name)))
 const openCount = computed(() => payroll.settings.mapping.filter(needsAccount).length)
-/** The first cost item with an account carries the Use group account tour marker. */
+/** The first set-up cost item carries the tour marker on its account cell. */
 const firstCostKey = computed(() => rows.value.find((m) => isCostItem(m) && !needsAccount(m))?.key ?? null)
 
 // ── Account choices: any expense or COGS account for cost items, payables for the rest ──
 const COST: PayrollAccountType[] = ['expense', 'cogs']
 const costOptions = computed(() => accountChoices(COST))
+/** A cost item's select: "Group's expense account" first, then the accounts it can be pinned to. */
+const costPick = computed(() => [
+  { value: FOLLOW_GROUPS, label: t("Group's expense account"), name: '', type: 'expense' as const },
+  ...costOptions.value.map((o) => ({ ...o, group: t('Pin to account') })),
+])
 const balanceOptions = computed(() => accountChoices(['liability', 'asset']))
 const liabilityOptions = computed(() => accountChoices(['liability']))
 function optionsFor(m: PayItemMapping) {
-  if (isCostItem(m)) return costOptions.value
+  if (isCostItem(m)) return costPick.value
   return payItemType(m) === 'tax' ? liabilityOptions.value : balanceOptions.value
 }
 function adopt(code: string, list: AccountOption[]) {
@@ -49,24 +57,29 @@ function adopt(code: string, list: AccountOption[]) {
   if (o && !payrollAccount(code)) useChartAccount({ code: o.value, name: o.name, type: o.type })
 }
 const rowErrors = reactive<Record<string, string>>({})
+/** The select's value: FOLLOW_GROUPS or the pinned account for a cost item, else the row account. */
+function selected(m: PayItemMapping): string {
+  if (isCostItem(m) && m.roleConfirmed && m.role) return payItemPinned(m) ?? FOLLOW_GROUPS
+  return needsAccount(m) ? '' : (payItemAccount(m) ?? '')
+}
+function readLabel(m: PayItemMapping): string {
+  if (needsAccount(m)) return t('No account yet')
+  if (isCostItem(m)) { const p = payItemPinned(m); return p ? accountLabel(p) : t("Group's expense account") }
+  return accountLabel(payItemAccount(m))
+}
 function onAccount(m: PayItemMapping, code: string) {
-  if (!code || code === payItemAccount(m)) return
-  adopt(code, optionsFor(m))
-  const r = setPayItemAccount(m.key, code)
+  if (!code || code === selected(m)) return
+  if (code !== FOLLOW_GROUPS) adopt(code, optionsFor(m))
+  const r = isCostItem(m) ? setCostAccount(m.key, code === FOLLOW_GROUPS ? null : code) : setPayItemAccount(m.key, code)
   rowErrors[m.key] = r.ok ? '' : t(r.message ?? 'Not saved. Pick another account.')
-  if (r.ok) successToast(t(`${m.name} now posts to ${accountLabel(code)}`))
+  if (r.ok) successToast(t(code === FOLLOW_GROUPS ? `${m.name} now posts to each group's expense account` : `${m.name} now posts to ${accountLabel(code)}`))
 }
 function partyLabel(m: PayItemMapping) {
   const p = payItemParty(m)
   return p ? t(PARTY_LABEL[p]) : t('Company keeps it')
 }
-const GCC_TIP = 'On: staff in a group with its own expense account (see Groups) post to that account. Off: everyone posts to the account above.'
+const ACCOUNT_TIP = 'Cost items post to each group\'s expense account unless you pin them to one account.'
 const TYPE_TIP = 'From Talenta: the payslip section the item sits in (allowance, deduction or benefit). Tax items are found by name. Change it in Talenta.'
-function onGroupsCanChange(m: PayItemMapping, on: boolean) {
-  const r = setPayItemGroupsCanChange(m.key, on)
-  rowErrors[m.key] = r.ok ? '' : t(r.message ?? 'Not saved. Try again.')
-  if (r.ok) successToast(t(on ? `${m.name} now uses the group account where a group has one` : `${m.name} now uses its default account for every group`))
-}
 
 // ── Payable accounts per party ──
 const payables = computed(() => PAYABLE_PARTIES.map((p) => ({ party: p, label: PARTY_LABEL[p], code: payroll.settings.payables[p] })))
@@ -141,7 +154,13 @@ function onTaxAccount(kind: TaxAccountKind, code: string) {
                 </MpTooltip>
               </span>
             </th>
-            <th class="pset-th">{{ t('Account') }}</th>
+            <th class="pset-th">
+              <span class="pset-th__tip">{{ t('Account') }}
+                <MpTooltip id="pset-account-tip" :label="t(ACCOUNT_TIP)" placement="top" use-portal>
+                  <span class="pset-th__icon" data-testid="pset-account-tip" tabindex="0" :aria-label="t(ACCOUNT_TIP)"><MpIcon name="info" size="sm" /></span>
+                </MpTooltip>
+              </span>
+            </th>
             <th class="pset-th">{{ t('Owed to') }}</th>
           </tr>
         </thead>
@@ -154,14 +173,14 @@ function onTaxAccount(kind: TaxAccountKind, code: string) {
               </td>
               <td class="pset-td">{{ t(sectionLabel(payItemType(m))) }}</td>
               <td class="pset-td pset-pi__cell">
-                <ErpFilterSelect v-if="can('setup')" :id="`pset-acct-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="needsAccount(m) ? '' : (payItemAccount(m) ?? '')" :placeholder="t('Select account')" :options="optionsFor(m)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(m, v)" />
-                <span v-else>{{ needsAccount(m) ? t('No account yet') : accountLabel(payItemAccount(m)) }}</span>
-                <div v-if="isCostItem(m) && !needsAccount(m)" class="pset-gcc" :data-groups-can-change="m.groupsCanChange ? 'yes' : 'no'" :data-tour="m.key === firstCostKey ? 'payroll-groups-can-change' : undefined">
-                  <MpToggle v-if="can('setup')" :id="`pset-gcc-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :is-checked="!!m.groupsCanChange" :aria-label="t('Use group account')" @update:is-checked="(v: boolean) => onGroupsCanChange(m, v)" />
-                  <span class="pset-gcc__label">{{ t(m.groupsCanChange ? 'Use group account' : 'Use default account') }}</span>
-                  <MpTooltip :id="`pset-gcc-tip-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :label="t(GCC_TIP)" placement="top" use-portal>
-                    <span class="pset-th__icon" tabindex="0" :aria-label="t(GCC_TIP)"><MpIcon name="info" size="sm" /></span>
-                  </MpTooltip>
+                <!-- A set-up cost item's cell keeps the .pset-gcc hook and the tour marker (PAY-1 step 6). -->
+                <div
+                  :class="{ 'pset-gcc': isCostItem(m) && !needsAccount(m) }"
+                  :data-cost-account="isCostItem(m) && !needsAccount(m) ? (payItemPinned(m) ? 'pinned' : 'groups') : undefined"
+                  :data-tour="m.key === firstCostKey ? 'payroll-groups-can-change' : undefined"
+                >
+                  <ErpFilterSelect v-if="can('setup')" :id="`pset-acct-${m.key.replace(/[^a-zA-Z0-9]/g, '-')}`" :model-value="selected(m)" :placeholder="t('Select account')" :options="optionsFor(m)" width="100%" :is-clearable="false" @update:model-value="(v: string) => onAccount(m, v)" />
+                  <span v-else>{{ readLabel(m) }}</span>
                 </div>
                 <span v-if="rowErrors[m.key]" class="pset-line pset-danger">{{ rowErrors[m.key] }}</span>
               </td>
@@ -185,8 +204,6 @@ function onTaxAccount(kind: TaxAccountKind, code: string) {
 .pset-pi__party { width: 22%; }
 .pset-pi .pset-td { vertical-align: middle; }
 .pset-chip { display: inline-block; margin-left: var(--mp-spacing-2); vertical-align: middle; }
-.pset-gcc { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
-.pset-gcc__label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pset-th__tip { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .pset-th__icon { display: inline-flex; color: var(--mp-text-secondary); cursor: help; }
 .pset-pi__cell :deep(.efs) { display: block; width: 100%; }
