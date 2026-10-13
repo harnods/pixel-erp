@@ -7,8 +7,36 @@ import {
   payroll, runs, currentVersionOf, payrollAccount, staffRows, fieldValue, dimensionFor, dimensionValue,
   type Run, type RunVersion,
 } from './payrollStore'
-import type { PayrollAccountType } from './payrollMaster'
+import { SBU_KEY, TALENTA_FIELDS, type PayrollAccountType, type TalentaField } from './payrollMaster'
 import { coaRecords, isHeader } from './chartOfAccounts'
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+
+/**
+ * The Talenta fields that may group staff, in TALENTA_FIELDS order. Job position and Job level are
+ * left out: they describe a person, so a group can be one person and its ledger lines show that
+ * person's pay. (The engine exports the same list as GROUP_FIELDS; this copy keeps the UI compiling
+ * before that lands.)
+ */
+export const GROUP_FIELDS: TalentaField[] = TALENTA_FIELDS
+  .map((f) => f.field)
+  .filter((f) => ['organization_name', 'branch', 'cost_center', 'employment_status', `sbu:${SBU_KEY}`].includes(f))
+export const isGroupField = (f: string) => (GROUP_FIELDS as string[]).includes(f)
+export const groupFieldLabel = (f: string) => TALENTA_FIELDS.find((x) => x.field === f)?.label ?? f
+
+/** 1 or 2 when a group row covers that few staff (their pay can be read from the ledger), else 0. */
+export function fewStaff(row: { staff: number; fewStaff?: number }): 0 | 1 | 2 {
+  const n = typeof row.fewStaff === 'number' ? row.fewStaff : row.staff
+  return n === 1 || n === 2 ? n : 0
+}
+export function fewStaffMessage(n: 1 | 2): string {
+  return `Covers ${n} staff, so their pay can be read from the ledger.`
+}
+/** True when any of the row's Talenta values contains the search text (case-insensitive). */
+export function groupMatches(values: string[], query: string): boolean {
+  const q = query.trim().toLowerCase()
+  return !q || values.some((v) => v.toLowerCase().includes(q))
+}
 
 /** The send a run is read from: its current version, else its latest. */
 export function sendOf(run: Run): RunVersion | undefined {
