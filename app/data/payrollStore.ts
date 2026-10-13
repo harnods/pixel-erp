@@ -11,7 +11,8 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v13` (v13: two access types, no payroll approval, Save draft); resetPayroll()
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v14` (v14: one place for cost accounts: Everyone else account, pinned cost items, no
+ * group toggle); resetPayroll()
  * returns to the sample.
  *
  * ─── API (UI agents: this block is the contract) ─────────────────────────────
@@ -54,10 +55,21 @@
  *   settings                        computed: the current settings. snapshotById(id), currentSnapshotId().
  *   payItemKey(name, section), mappingFor(name, section), suggestRole(name, section), suggestMapping(name, section)
  *   payItemType(row) 'allowance'|'deduction'|'benefit'|'tax', isCostItem(row), payItemAccount(row), payItemParty(row)
- *   setPayItemAccount(key, account) the row's one account: a cost item debits it (any expense or COGS account) and credits
- *                                   its party's payable; a deduction or tax item credits it and debits Hutang Gaji.
- *   setPayItemGroupsCanChange(key, on)   cost items only: on = the staff's group expense account replaces the row account
- *                                   ('Use group account'); off = 'Use default account'.
+ *   One place for cost accounts (PM decision 2026-10-13): Groups own every cost account. A cost item (allowance not tax,
+ *   benefit) posts per staff to: its pinned account if pinned on Pay items, else the staff's group expense account, else
+ *   the 'Everyone else' account (staff in no group, and groups with no account of their own). Deduction, tax, loan and
+ *   advance items keep their payable or receivable from Pay items. There is no group toggle and no "Use default account".
+ *   everyoneElseAccount()           settings.everyoneElseAccount (seed 6-60101 Salaries): the 'Everyone else' expense account.
+ *   setEveryoneElseAccount(code)    expense or COGS only. Following cost items' debit mirrors it (see below); drafts rebuild.
+ *   costFollowsGroups(m)            true for a cost item that is not pinned ("Group's expense account", the default).
+ *   payItemPinned(m)                the pinned account of a cost item ('Pin to account'), else null.
+ *   setPayItemAccount(key, account | null)   the row's one account. A cost item: account = pin it there (any expense or COGS
+ *                                   account), null = follow groups ("Group's expense account"); it credits its party's payable.
+ *                                   A deduction or tax item credits the account and debits Hutang Gaji (null refused).
+ *                                   On a new pay item's hold, null maps it in one save (role from the name, payable from its party).
+ *   PayItemMapping.pinned           cost items: the pinned account or null. m.debit of a cost item = pinned ?? the Everyone else
+ *                                   account (kept in step), so payItemAccount(m) is never null once mapped; read pinned to tell.
+ *   setPayItemMapping(key, patch)   a debit on a cost item pins it unless the patch sets `pinned` (null = follow groups).
  *   payGroupKey(fields, values), groupFor(staffRow), groupLabel(values)
  *   Groups: settings.groupBy (GROUP_FIELDS only), settings.groupDimensions (the dimension columns, in order) and
  *                                   settings.groups[{ key, values, account, dims }] (dims = explicit picks by dimension name).
@@ -74,11 +86,14 @@
  *                                   Re-forms rows; rows that still exist keep their settings; combinations whose staff were all in
  *                                   set-up groups are set up with defaults; the rest stay New.
  *   setGroupAccount(key, code|null), setGroupDimension(key, dimension, value|null), saveGroup(key)   each saves the row (no longer New)
- *                                   and rebuilds the drafts that carry a 'no-group' warning.
- *   A New group never holds the run. Its staff's cost posts to each pay item's default account with no dimension from the Group by
- *   fields, and the draft carries the warning 'no-group' "2 staff matched no group (Operations, Medan). Their pay posts to each pay
- *   item's default account with no group dimension. Set up the group in Payroll settings > Groups." details { groups[{ key, label,
- *   staff }] }. Setting the group up rebuilds the draft with the group's account and dimension values.
+ *                                   and rebuilds the drafts that carry a 'no-group' warning. GroupRow.account null = the group
+ *                                   uses the Everyone else account (screens: 'Everyone else (6-60101 Salaries)').
+ *   Why-this-line on a cost line: "Group <label> posts it to <account>" / "Pinned to <account> on Pay items" /
+ *                                   "Everyone else account" (group with no account, or staff in no group).
+ *   A New group never holds the run. Its staff's cost posts to the Everyone else account (pinned pay items keep their account) with
+ *   no dimension from the Group by fields, and the draft carries the warning 'no-group' "2 staff matched no group (Operations,
+ *   Medan). Their cost posts to the Everyone else account with no group dimension. Set up the group in Payroll settings > Groups."
+ *   details { groups[{ key, label, staff }] }. Setting the group up rebuilds the draft with the group's account and dimension values.
  *   setPayableAccount(party, code)  Payable accounts: the payable each party is owed on (settings.payables).
  *   validateMapping(row), setPayItemMapping(key, patch, overrideReason?)   the full-row save with guardrails.
  *   Every save re-checks held runs (holds clear on their own).
@@ -251,12 +266,15 @@ export interface PayItemMapping {
   programme: BpjsProgramme | null
   override: Override | null
   addedBy: 'Talenta' | 'Jurnal'
-  /** Cost items only: true = 'Use group account' (the staff's group expense account applies); false = 'Use default account'. */
-  groupsCanChange?: boolean
+  /**
+   * Cost items only: the account the item is pinned to ('Pin to account'), or null to follow groups
+   * ("Group's expense account": the staff's group account, else the Everyone else account).
+   */
+  pinned?: string | null
 }
 /**
- * One group: staff with the same values in the Group by fields. `account` (null = use the pay item
- * account) applies to pay items set to Use group account; `dims` holds the value picked per added
+ * One group: staff with the same values in the Group by fields. `account` (null = the Everyone else
+ * account) applies to every cost item that is not pinned; `dims` holds the value picked per added
  * dimension (missing = the value named like one of the group's Talenta values, else blank).
  * Dimensions go on cost lines only.
  */
@@ -273,6 +291,8 @@ export interface Limits {
 }
 export interface PayrollSettings {
   mapping: PayItemMapping[]
+  /** 'Everyone else': the expense account for staff in no group and groups with no account of their own. */
+  everyoneElseAccount: string
   /** Talenta fields staff are grouped by, in order; the groups set up for their value combinations. */
   groupBy: TalentaField[]
   /** Jurnal dimensions added to the Groups table, in column order; each group picks a value for each. */
@@ -509,11 +529,12 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v13'
+const SNAPSHOT_KEY = 'payroll:state-v14'
 
 function defaultSettings(): PayrollSettings {
   return {
     mapping: [],
+    everyoneElseAccount: ACC.salaries,
     groupBy: [], groupDimensions: [], groups: [],
     payables: { Staff: ACC.hutangGaji, 'DJP PPh 21': ACC.pph21, 'DJP PPh 26': ACC.pph26, 'BPJS Kesehatan': ACC.bpjsKes, 'BPJS Ketenagakerjaan': ACC.bpjsTk, Other: ACC.dplk },
     taxPresets: { pph21: ACC.pph21, dtp: ACC.dtp, pph26: ACC.pph26, resign: ACC.pph21Final, trueUp: ACC.pph21 },
@@ -680,9 +701,9 @@ export function suggestMapping(name: string, section: PaySection): Pick<PayItemM
   const programme = programmeFromName(name)
   const hg = payroll.settings.hutangGaji
   switch (role) {
-    case 'Earning': return { role, debit: ACC.salaries, credit: hg, party: 'Staff', programme: null }
+    case 'Earning': return { role, debit: everyoneElseAccount(), credit: hg, party: 'Staff', programme: null }
     case 'Employee deduction': return party ? { role, debit: hg, credit: PARTY_PAYABLE[party] ?? null, party, programme } : null
-    case 'Employer contribution': return party ? { role, debit: ACC.salaries, credit: PARTY_PAYABLE[party] ?? null, party, programme } : null
+    case 'Employer contribution': return party ? { role, debit: everyoneElseAccount(), credit: PARTY_PAYABLE[party] ?? null, party, programme } : null
     case 'Tax':
       if (section === 'allowance') return { role, debit: payroll.settings.taxPresets.dtp, credit: hg, party: null, programme: null }
       return party ? { role, debit: hg, credit: PARTY_PAYABLE[party] ?? null, party, programme: null } : null
@@ -718,10 +739,15 @@ export function validateMapping(row: Pick<PayItemMapping, 'role' | 'debit' | 'cr
   return { blocks, overridable }
 }
 
-export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'programme'>>, overrideReason?: string): Result {
+export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'programme' | 'pinned'>>, overrideReason?: string): Result {
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'This pay item is no longer in the list. Reload the page.' }
   const next = { ...row, ...patch }
+  // A cost item follows groups (pinned null, debit mirrors the Everyone else account) or is pinned to its debit.
+  if (!isCostItem(next)) next.pinned = null
+  else if ('pinned' in patch) { next.pinned = patch.pinned ?? null; next.debit = next.pinned ?? everyoneElseAccount() }
+  else if (patch.debit !== undefined) next.pinned = patch.debit
+  else if (!next.pinned) next.debit = everyoneElseAccount()
   const v = validateMapping(next)
   if (v.blocks.length) return { ok: false, message: v.blocks[0], blocks: v.blocks, status: 422 }
   if (v.overridable.length) {
@@ -730,12 +756,13 @@ export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMappin
     next.override = { reason: r, by: actingPerson(), at: now(), breaches: v.overridable }
   } else next.override = null
   Object.assign(row, next, { roleConfirmed: !!next.role })
-  changed(`Pay item ${row.name} (${row.section}): Dr ${accountLabel(row.debit)}, Cr ${accountLabel(row.credit)}`)
+  const debitNote = isCostItem(row) && !row.pinned ? "Group's expense account" : accountLabel(row.debit)
+  changed(`Pay item ${row.name} (${row.section}): Dr ${debitNote}, Cr ${accountLabel(row.credit)}`)
   return { ok: true }
 }
 
 function newMappingRow(name: string, section: PaySection, addedBy: 'Talenta' | 'Jurnal'): PayItemMapping {
-  return { key: payItemKey(name, section), name: name.trim(), section, role: null, roleConfirmed: false, debit: null, credit: null, party: partyFromName(name), programme: programmeFromName(name), override: null, addedBy }
+  return { key: payItemKey(name, section), name: name.trim(), section, role: null, roleConfirmed: false, debit: null, credit: null, party: partyFromName(name), programme: programmeFromName(name), override: null, addedBy, pinned: null }
 }
 
 // ── Dimensions on groups: any Jurnal dimension, a value per group, prefilled by name ──
@@ -909,13 +936,13 @@ function ensureGroup(key: string): PayGroup | null {
   s.groups.push(row)
   return row
 }
-/** The group's expense account (null = use the pay item account). Applies to pay items set to Use group account. */
+/** The group's expense account (null = the Everyone else account). Every cost item that is not pinned follows it. */
 export function setGroupAccount(key: string, account: string | null): Result {
   if (account && !isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
   const g = ensureGroup(key)
   if (!g) return { ok: false, message: 'This group is no longer in a Talenta send. Reload the page.' }
   g.account = account
-  changed(`Group ${groupLabel(g.values)}: ${account ? accountLabel(account) : 'pay item account'}`)
+  changed(`Group ${groupLabel(g.values)}: ${account ? accountLabel(account) : 'Everyone else account'}`)
   return { ok: true }
 }
 /** One dimension value for a group (null = back to the name match, or blank when nothing matches). */
@@ -928,7 +955,7 @@ export function setGroupDimension(key: string, dimension: string, value: string 
   changed(`Group ${groupLabel(g.values)}: ${dimension} ${value ?? 'matched by name'}`)
   return { ok: true }
 }
-/** Save a New group as it is: pay item accounts and dimension values matched by name. Drafts with a 'no-group' or 'no-dimension-value' warning rebuild (changed()). */
+/** Save a New group as it is: the Everyone else account and dimension values matched by name. Drafts with a 'no-group' or 'no-dimension-value' warning rebuild (changed()). */
 export function saveGroup(key: string): Result {
   const had = payroll.settings.groups.some((x) => x.key === key)
   const g = ensureGroup(key)
@@ -965,44 +992,61 @@ export function useChartAccount(a: { code: string; name: string; type: PayrollAc
   if (!payrollAccount(a.code)) payroll.accounts.push({ code: a.code, name: a.name, type: a.type, party: null, reused: true })
 }
 /**
- * Pick the one account of a pay item row. A cost item debits it and credits the payable of its
- * party (Payable accounts); a deduction or tax item credits it and debits Hutang Gaji. The role
+ * Pick the one account of a pay item row. A cost item takes an expense or COGS account to pin it
+ * there, or null to follow groups ("Group's expense account"), and credits the payable of its party
+ * (Payable accounts); a deduction or tax item credits the account and debits Hutang Gaji. The role
  * comes from the row, else from the name and section.
  */
-export function setPayItemAccount(key: string, account: string): Result {
+export function setPayItemAccount(key: string, account: string | null): Result {
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'This pay item is no longer in the list. Reload the page.' }
-  const a = payrollAccount(account)
-  if (!a) return { ok: false, message: `Account ${account} is not in the chart of accounts. Pick another account.` }
+  const a = account ? payrollAccount(account) : undefined
+  if (account && !a) return { ok: false, message: `Account ${account} is not in the chart of accounts. Pick another account.` }
   const s = payroll.settings
   const hg = s.hutangGaji
   const sugg = suggestRole(row.name, row.section)
   const known = row.roleConfirmed ? row.role : null
-  let patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party'>>
-  if (row.section === 'allowance' && (known ?? sugg) === 'Tax') patch = { role: 'Tax', debit: account, credit: hg, party: null }
+  const isTaxAllowance = row.section === 'allowance' && (known ?? sugg) === 'Tax'
+  if (!account && (row.section === 'deduction' || isTaxAllowance)) return { ok: false, message: 'Pick an account for this pay item.' }
+  let patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'pinned'>>
+  if (isTaxAllowance) patch = { role: 'Tax', debit: account!, credit: hg, party: null }
   else if (row.section === 'allowance') {
-    if (!isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
+    if (account && !isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
     const role = known && COST_ROLES.includes(known) ? known : sugg && COST_ROLES.includes(sugg) ? sugg : 'Earning'
-    patch = { role, debit: account, credit: s.payables.Staff, party: 'Staff' }
+    patch = { role, pinned: account, credit: s.payables.Staff, party: 'Staff' }
   } else if (row.section === 'benefit') {
-    if (!isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
+    if (account && !isCost(account)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
     const party = row.party ?? partyFromName(row.name) ?? 'Other'
-    patch = { role: 'Employer contribution', debit: account, credit: s.payables[party], party }
+    patch = { role: 'Employer contribution', pinned: account, credit: s.payables[party], party }
   } else {
-    if (isCost(account)) return { ok: false, message: 'A deduction credits a payable or a receivable. Pick one of those, not an expense.' }
-    const role: PayRole = known ?? (a.type === 'asset' ? (/thr/i.test(row.name) ? 'Advance offset' : 'Loan') : sugg === 'Tax' || a.party === 'DJP PPh 21' || a.party === 'DJP PPh 26' ? 'Tax' : 'Employee deduction')
-    patch = { role, debit: hg, credit: account, party: a.party ?? row.party }
+    if (isCost(account!)) return { ok: false, message: 'A deduction credits a payable or a receivable. Pick one of those, not an expense.' }
+    const role: PayRole = known ?? (a!.type === 'asset' ? (/thr/i.test(row.name) ? 'Advance offset' : 'Loan') : sugg === 'Tax' || a!.party === 'DJP PPh 21' || a!.party === 'DJP PPh 26' ? 'Tax' : 'Employee deduction')
+    patch = { role, debit: hg, credit: account!, party: a!.party ?? row.party }
   }
   return setPayItemMapping(key, patch)
 }
-/** A cost item either takes its staff's group expense account ('Use group account') or posts to its default account for every group. */
-export function setPayItemGroupsCanChange(key: string, on: boolean): Result {
-  const row = payroll.settings.mapping.find((m) => m.key === key)
-  if (!row) return { ok: false, message: 'This pay item is no longer in the list. Reload the page.' }
-  if (on && !isCostItem(row)) return { ok: false, message: 'Only an allowance or a benefit can use the group\'s expense account.' }
-  if (!!row.groupsCanChange === on) return { ok: true }
-  row.groupsCanChange = on
-  changed(`Pay item ${row.name} (${row.section}): ${on ? 'uses the group account' : 'uses its default account'}`)
+/** True for a cost item that follows groups ("Group's expense account"): not pinned to one account. */
+export function costFollowsGroups(m: Pick<PayItemMapping, 'section' | 'role' | 'name' | 'pinned'>): boolean {
+  return isCostItem(m) && !m.pinned
+}
+/** The account a cost item is pinned to ('Pin to account'), else null. */
+export function payItemPinned(m: Pick<PayItemMapping, 'section' | 'role' | 'name' | 'pinned'>): string | null {
+  return isCostItem(m) ? m.pinned ?? null : null
+}
+/** 'Everyone else': the expense account for staff in no group and groups with no account of their own. */
+export function everyoneElseAccount(s: PayrollSettings = payroll.settings): string {
+  return s.everyoneElseAccount ?? ACC.salaries
+}
+/** Set the Everyone else account (expense or COGS). Cost items that follow groups mirror it on their row; drafts rebuild. */
+export function setEveryoneElseAccount(code: string): Result {
+  const a = payrollAccount(code)
+  if (!a || !isCost(code)) return { ok: false, message: 'Pick an expense or cost of goods sold account.' }
+  if (a.archived) return { ok: false, message: `${accountLabel(code)} is archived. Pick another account.` }
+  const s = payroll.settings
+  if (s.everyoneElseAccount === code) return { ok: true }
+  s.everyoneElseAccount = code
+  for (const m of s.mapping) if (m.debit && costFollowsGroups(m)) m.debit = code
+  changed(`Everyone else account set to ${accountLabel(code)}`)
   return { ok: true }
 }
 /**
@@ -1634,7 +1678,7 @@ function checkVersion(run: Run, v: RunVersion): void {
     v.warnings.push({
       key: `no-group:${hash(list.map((g) => g.key).join(','))}`,
       code: 'no-group',
-      message: `${n} staff matched no group (${list.map((g) => g.label).join('; ')}). Their pay posts to each pay item's default account with no group dimension. Set up the group in Payroll settings > Groups.`,
+      message: `${n} staff matched no group (${list.map((g) => g.label).join('; ')}). Their cost posts to the Everyone else account with no group dimension. Set up the group in Payroll settings > Groups.`,
       details: { groups: list.map((g) => ({ key: g.key, label: g.label, staff: g.staff.size })) },
     })
   }
@@ -1755,14 +1799,22 @@ function buildJournal(run: Run, v: RunVersion, s: PayrollSettings): BuildResult 
       for (const it of e[k]) {
         const m = mappingFor(it.name, section, s)
         if (!it.amount || !m || !m.debit || !m.credit || isTaxFigure(it.name, section)) continue
+        // One place for cost accounts: pinned account, else the staff's group account, else Everyone else.
         let debit = m.debit
-        const why = `${m.name} (${section}): Dr ${accountLabel(m.debit)}, Cr ${accountLabel(m.credit)}`
-        const costSide = !!m.role && COST_ROLES.includes(m.role) && isCost(debit)
-        const grp = costSide && m.groupsCanChange ? groupFor(e, s) : undefined
-        const lineTags = tags
         let ruleWhy = ''
-        if (grp?.account) { debit = grp.account; ruleWhy = `Group ${groupLabel(grp.values)} books it to ${accountLabel(grp.account)} (Use group account)` }
-        else if (costSide && s.groupBy.length && !groupFor(e, s)) ruleWhy = `Group ${groupLabel(groupValuesOf(e, s))} is not set up, so it posts to the pay item's default account with no group dimension`
+        if (isCostItem(m) && isCost(m.debit)) {
+          const pinned = m.pinned ?? null
+          if (pinned) { debit = pinned; ruleWhy = `Pinned to ${accountLabel(pinned)} on Pay items` }
+          else if (ownGroup?.account) { debit = ownGroup.account; ruleWhy = `Group ${groupLabel(ownGroup.values)} posts it to ${accountLabel(debit)}` }
+          else {
+            debit = everyoneElseAccount(s)
+            ruleWhy = s.groupBy.length && !ownGroup
+              ? `Group ${groupLabel(groupValuesOf(e, s))} is not set up, so it posts to the Everyone else account with no group dimension`
+              : 'Everyone else account'
+          }
+        }
+        const why = `${m.name} (${section}): Dr ${accountLabel(debit)}, Cr ${accountLabel(m.credit)}`
+        const lineTags = tags
         const tagWhy = isCost(debit) && ownGroup && tagsLabel(lineTags) ? `Dimensions ${tagsLabel(lineTags)} from group ${groupLabel(ownGroup.values)}` : ''
         const src = { item: m.name, section, role: m.role }
         add(debit, lineTags, it.amount, [why, ruleWhy, tagWhy].filter(Boolean).join('. '), src, String(e.user_id))
@@ -3007,10 +3059,10 @@ function seedSettings() {
   M('JP paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.bpjsTk)
   M('DPLK paid by company', 'benefit', 'Employer contribution', ACC.salaries, ACC.dplk)
   // Groups by Organization, Branch and Cost center: store pay goes to Direct Labour, sales pay to Sales Salaries; the
-  // rest use the pay item account. Organization and Branch are added to groups; every group's values match its
+  // rest use the Everyone else account (6-60101 Salaries). Organization and Branch are added to groups; every group's values match its
   // Talenta names, so nothing is picked explicitly (Branch sits in Group by so each group has one Branch, as the
-  // staff's own Branch filled it before). Salary and employer contributions take the group account; reimbursements,
-  // THR and tax stay the same for all groups.
+  // staff's own Branch filled it before). Salary and employer contributions follow the group account; reimbursements
+  // and THR are pinned to their account on Pay items; tax stays the same for all groups.
   s.groupBy = ['organization_name', 'branch', 'cost_center']
   s.groupDimensions = ['Organization', 'Branch']
   const combos = new Map<string, string[]>()
@@ -3022,7 +3074,9 @@ function seedSettings() {
     key, values, dims: {},
     account: values[2]!.startsWith('Store') ? ACC.directLabour : values[0] === 'Sales' ? ACC.salesSalaries : null,
   }))
-  for (const m of s.mapping) if (m.role === 'Earning' || m.role === 'Employer contribution') m.groupsCanChange = true
+  // Migration from the old group toggle: items that used the group account follow groups; the rest are pinned to their old debit.
+  s.everyoneElseAccount = ACC.salaries
+  for (const m of s.mapping) m.pinned = isCostItem(m) && !(m.role === 'Earning' || m.role === 'Employer contribution') ? m.debit : null
 }
 
 function seed() {
@@ -3077,7 +3131,7 @@ export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payro
 
 // Load: a saved snapshot wins over the sample. A fresh sample is saved at once so ids stay stable across reloads.
 const snap = loadSnapshot<PayrollState>(SNAPSHOT_KEY)
-if (snap && snap[0] && Array.isArray(snap[0].settings?.groupDimensions) && snap[0].settings?.groupBy) Object.assign(payroll, snap[0])
+if (snap && snap[0] && Array.isArray(snap[0].settings?.groupDimensions) && snap[0].settings?.groupBy && snap[0].settings?.everyoneElseAccount) Object.assign(payroll, snap[0])
 else resetPayroll()
 // Opening the prototype always starts as Owner or LM (user, 2026-10-13); View as switches from there.
 payroll.viewAs = 'Owner or LM'
