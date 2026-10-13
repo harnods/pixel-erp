@@ -2,7 +2,7 @@
 /**
  * Groups: staff who share the same Talenta values (Organization, Branch, ...) form a group, and
  * each group picks where its pay posts in Jurnal: an expense account (every cost pay item not
- * pinned on Pay items) and a value for each dimension added to the table, on the cost lines.
+ * set to Use default account on Pay items) and a value for each dimension added to the table, on the cost lines.
  * An 'Everyone else' row pinned on top holds the account for staff in no group and for groups
  * with no account of their own (their select's first choice reads 'Everyone else (<account>)').
  *
@@ -262,7 +262,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
       <div class="pset-card__head">
         <div>
           <div class="pset-card__title">{{ t('Groups') }}</div>
-          <div class="pset-card__sub">{{ t('Cost pay items post to the group\'s expense account unless pinned on Pay items. Add the dimensions you report on, then pick a value for each group.') }}</div>
+          <div class="pset-card__sub">{{ t('Pay items set to Use group account post to the group\'s expense account. Add the dimensions you report on, then pick a value for each group.') }}</div>
         </div>
         <ErpStatusBadge v-if="newCount" status="new-group" :label="t(newCount === 1 ? '1 new group' : `${newCount} new groups`)" :type="statusType('new-group')" />
       </div>
