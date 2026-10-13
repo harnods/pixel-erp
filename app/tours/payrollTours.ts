@@ -15,7 +15,7 @@
  */
 import {
   payroll, resetPayroll, setPayrollViewAs, runs, payItemKey, setPayItemAccount, setPayItemGroupsCanChange,
-  setGroupBy, setGroupAccount, setGroupDimension, saveGroup, linkDimension, createPayrollTag, groupRows,
+  setGroupBy, setGroupAccount, setGroupDimension, saveGroup, addGroupDimension, groupDimensions, createPayrollTag, groupRows,
   runWarnings, acknowledgeWarning, postRun, approvePayroll, reverseAndRepost, simulateSend,
   simulateBankPayment, simulateManualJournal, payablesTracker, payablePrefill, recordPayablePayment, payrollAccount,
   useChartAccount,
@@ -186,7 +186,8 @@ function mapNewItem() {
   setPayItemAccount(insentif(), ACC.salaries)
 }
 function groupByOrganizationAndBranch() { setGroupBy(['organization_name', 'branch']) }
-function linkBranch() { linkDimension('branch', 'Branch') }
+/** Add dimension: Branch as a Groups column (the sample already has Organization and Branch, so a replay changes nothing). */
+function addBranch() { if (!groupDimensions().includes('Branch')) addGroupDimension('Branch') }
 function setUpTwoGroups() {
   setGroupAccount(groupKey('Operations, Jakarta HQ'), ACC.directLabour)
   setGroupDimension(groupKey('Human Capital, Surabaya'), 'Branch', 'Jakarta HQ')
@@ -196,15 +197,14 @@ function setUpTwoGroups() {
 function mapFromTheHold() { setPayItemAccount(insentif(), ACC.salesSalaries) }
 function talentaSendsANewGroup() { simulateSend('new-group', { runId: sepId() }) }
 /**
- * Set up group on the Groups tab: the expense account, the Branch value Medan, then Set up group.
- * The account goes first: the run stays held until the Branch value exists, so the draft that
- * builds when it clears already carries Direct Labour.
+ * Set up group on the Groups tab: the expense account, then the Branch value Medan, then Set up group.
+ * Nothing holds on the way: until Medan exists the draft warns 'no-dimension-value' and posts Branch
+ * blank; creating the value fills the group's Branch by name (no explicit pick) and rebuilds the draft.
  */
 function setUpNewGroup() {
   const key = groupKey(NEW_GROUP)
   setGroupAccount(key, ACC.directLabour)
   createPayrollTag('Branch', 'Medan')
-  setGroupDimension(key, 'Branch', 'Medan')
   saveGroup(key)
 }
 function markChecked() { markAllChecked(sepId()) }
@@ -314,11 +314,12 @@ const setupSteps: PayrollStep[] = [
     placement: 'bottom',
   },
   {
-    run: linkBranch,
+    run: addBranch,
     route: SETTINGS('groups'),
     target: 'payroll-group-dims',
-    title: 'Each Group by field fills a Jurnal dimension.',
-    body: 'A dimension is how Jurnal reports cost by department or place. Organization fills the Organization dimension and Branch fills Branch, so cost lines carry both.',
+    title: 'Add the dimensions you report on.',
+    body: 'A dimension is how Jurnal reports cost by department or place. Add dimension puts any Jurnal dimension in the table as a column, and each group picks its value there. A value with the same name as the group\'s Talenta value fills in by itself.',
+    watch: 'Organization and Branch are added. Sales, Bandung gets Branch Bandung by name.',
     placement: 'bottom',
   },
   {
@@ -411,7 +412,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-groups-table',
     find: rowIn('payroll-groups-table', NEW_GROUP),
     title: 'Bayu sets up Operations, Medan.',
-    body: 'Medan becomes a Branch value, the group posts to Direct Labour like the other stores, and Set up group saves it. Saving rebuilds the draft and clears the warning.',
+    body: 'The group posts to Direct Labour like the other stores. Medan becomes a Branch value, so the group\'s Branch fills in by name, and Set up group saves it. Saving rebuilds the draft and clears the warning.',
     watch: 'Operations, Medan: 2 staff, 5-50101 Direct Labour, Branch Medan. September v2 is ready to post.',
     placement: 'top',
   },
@@ -486,7 +487,7 @@ const runSteps: PayrollStep[] = [
     target: 'payroll-mapping-used',
     find: onTab('payroll-mapping-used', 'Mapping used'),
     title: 'Mapping used keeps the settings the journal was built from.',
-    body: 'Later changes to pay items or groups never change a posted journal. This tab shows which account each pay item went to and which fields filled which dimension.',
+    body: 'Later changes to pay items or groups never change a posted journal. This tab shows which account each pay item went to and which dimension values each group posted.',
     watch: 'Insentif Penjualan went to 6-60004 Sales Salaries.',
     placement: 'top',
   },
@@ -692,7 +693,7 @@ export const PAYROLL_SETUP_TOUR: AssetTour = {
   persona: 'Owner',
   role: 'Owner' as unknown as ViewAsRole,
   blurb: 'The Owner checks the Talenta connection, the payable account of each party, the pay items and the groups that decide where cost lands. Then the approval rule for large journals, and what View only and an Accountant without LM can do.',
-  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item got an account with Use group account on, staff were grouped by Organization and Branch with a dimension for each, two groups got their own account and dimension value, and large journals go to the Owner for approval. View only reads everything and an Accountant needs LM to change settings. To try it yourself, use Reset sample data under View as.',
+  closing: 'The connection showed where payroll comes from and that the old sync is blocked, each party had its payable account, the new pay item got an account with Use group account on, staff were grouped by Organization and Branch with Organization and Branch added as dimensions, two groups got their own account and dimension value, and large journals go to the Owner for approval. View only reads everything and an Accountant needs LM to change settings. To try it yourself, use Reset sample data under View as.',
   steps: setupSteps as unknown as TourStep[],
   onReset: reset(),
   applyRole,
@@ -705,7 +706,7 @@ export const PAYROLL_RUN_TOUR: AssetTour = {
   persona: 'Accountant + LM, Owner',
   role: 'Accountant + LM' as unknown as ViewAsRole,
   blurb: 'September arrives from Talenta with a pay item no one has mapped, then again with a new group. Bayu, an Accountant with LM, fixes both, checks the warnings and sends the journal for approval; Rizal, the Owner, approves and posts it. Bank reconciliation pays the salary, and Pay settles the overdue August BPJS Kesehatan from Cash management. Staff are grouped by Organization and Branch, as in Set up payroll.',
-  closing: 'The new pay item and the new group held the run until they were set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, the journal went for approval with its journal date and posted when the Owner approved it, Mapping used and claims explained the journal, Payroll payables showed the bank match and an overpayment, Pay settled the overdue August BPJS Kesehatan through New spend money, Payments named each payment\'s source, and a manual journal was warned. To try it yourself, use Reset sample data under View as.',
+  closing: 'The new pay item held the run until it was mapped, the new group warned until it was set up, the draft review showed the exact journal by account and dimension, every warning was marked as checked, the journal went for approval with its journal date and posted when the Owner approved it, Mapping used and claims explained the journal, Payroll payables showed the bank match and an overpayment, Pay settled the overdue August BPJS Kesehatan through New spend money, Payments named each payment\'s source, and a manual journal was warned. To try it yourself, use Reset sample data under View as.',
   steps: runSteps as unknown as TourStep[],
   onReset: reset(groupedByOrganizationAndBranch),
   applyRole,
@@ -745,7 +746,7 @@ export const PAYROLL_FEATURES: { feature: string; tour: 'PAY-1' | 'PAY-2' | 'PAY
   { feature: 'Use group account', tour: 'PAY-1', step: 6 },
   { feature: 'Settings > Groups tab', tour: 'PAY-1', step: 7 },
   { feature: 'Group by Talenta fields', tour: 'PAY-1', step: 7 },
-  { feature: 'Talenta field to dimension links', tour: 'PAY-1', step: 8 },
+  { feature: 'Add dimension to groups, values prefilled by name', tour: 'PAY-1', step: 8 },
   { feature: 'Group expense account and dimension value', tour: 'PAY-1', step: 9 },
   { feature: 'Approval workflows rule Payroll journal', tour: 'PAY-1', step: 10 },
   { feature: 'View as: View only has no actions', tour: 'PAY-1', step: 11 },
