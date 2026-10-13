@@ -14,7 +14,7 @@ export type BadgeType = 'completed' | 'announcement' | 'information' | 'warning'
  *                       a New group (posts to the Everyone else account until set up), No group
  *   information (blue)  ready for the next step: Ready to post, Current, Duplicate
  *   completed (green)   done: Posted, Paid, Accepted, Connected, No change, Expected
- *   announcement (gray) nothing to do here: Before start month, Superseded, Open
+ *   announcement (gray) nothing to do here: Superseded, Open
  */
 const STATUS: Record<string, { label: string; type: BadgeType }> = {
   // Run statuses
@@ -25,8 +25,6 @@ const STATUS: Record<string, { label: string; type: BadgeType }> = {
   'Ready to post': { label: 'Ready to post', type: 'information' },
   Posted: { label: 'Posted', type: 'completed' },
   Reversed: { label: 'Reversed, not reposted', type: 'critical' },
-  'Dry run': { label: 'Before start month', type: 'announcement' },
-  'Before go-live': { label: 'Before start month', type: 'announcement' },
   'Nothing to post': { label: 'Nothing to post', type: 'announcement' },
   Received: { label: 'Received', type: 'announcement' },
   // Version states (Versions tab, compare pickers)
@@ -74,11 +72,11 @@ export function statusBadge(s: string): { label: string; type: BadgeType } {
 export const statusLabel = (s: string) => statusBadge(s).label
 export const statusType = (s: string): BadgeType => statusBadge(s).type
 
-/** Run modes that never post, as a one-line label over their draft review. */
-export function notPostedLabel(mode: string): string {
-  if (mode === 'Before go-live' || mode === 'Dry run') return 'Before start month, not posted'
-  return ''
-}
+/**
+ * There is no start month any more: every run can be posted (PM decision 2026-10-13), so no run mode
+ * is "not posted". Kept returning '' until the run page drops its banner; then delete it.
+ */
+export function notPostedLabel(_mode: string): string { return '' }
 
 /** Next step per status, in glossary words (the engine text may still use old terms). */
 const NEXT_STEP: Record<string, string> = {
@@ -87,8 +85,6 @@ const NEXT_STEP: Record<string, string> = {
   'Ready to post': 'Check the draft journal, then post it.',
   'Revision ready': 'Talenta sent this period again. Check what changed, then repost.',
   Reversed: 'Post the current version again.',
-  'Dry run': 'Months before the start month are not posted.',
-  'Before go-live': 'Months before the start month are not posted.',
   'Nothing to post': 'Nothing to do.',
   Received: 'Nothing to do.',
 }

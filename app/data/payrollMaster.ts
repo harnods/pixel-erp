@@ -72,7 +72,8 @@ export const PAYROLL_ACCOUNTS: PayrollAccount[] = [
   { code: '2-20512', name: 'DPLK Payable', type: 'liability', party: 'Other', reused: false },
   { code: '1-10404', name: 'THR Advance', type: 'asset', party: null, reused: false },
   { code: '1-10301', name: 'Employee Receivables', type: 'asset', party: null, reused: true },
-  { code: '1-10004', name: 'Bank BCA', type: 'cash', party: null, reused: true },
+  // Bank BCA is 1-10003, the code Cash management uses (Spend money, bank reconciliation), so payroll payments and Spend money hit one account.
+  { code: '1-10003', name: 'Bank BCA', type: 'cash', party: null, reused: true },
   { code: '1-10001', name: 'Cash', type: 'cash', party: null, reused: true },
   { code: '1-10006', name: 'Bank Mandiri', type: 'cash', party: null, reused: false },
 ]
@@ -92,7 +93,7 @@ export const ACC = {
   dplk: '2-20512',
   thrAdvance: '1-10404',
   loanReceivable: '1-10301',
-  bca: '1-10004',
+  bca: '1-10003',
   cash: '1-10001',
   mandiri: '1-10006',
 } as const

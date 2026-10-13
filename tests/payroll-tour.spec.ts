@@ -165,6 +165,7 @@ describe('feature coverage', () => {
       'Payments: Source column', 'Manual journal on Salaries Payable warning', 'Simulate Talenta send (inbox menu)', 'Talenta sent this period again',
       'Versions: what changed', 'Save draft of a new version', 'Use v2 and repost on one journal date', 'Old journal reversed, new one posted',
       'Payables follow the repost', 'Missing pay item books and warns', 'Old Talenta to Expense sync blocked',
+      'Already booked by the old sync warning',
     ]
     const listed = PAYROLL_FEATURES.map((f) => f.feature)
     const missing = required.filter((r) => !listed.includes(r))
@@ -340,6 +341,11 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     expect(payablesTracker('2026-07').every((r) => r.balance === 0)).toBe(true)
     expect(payablesTracker('2026-08').filter((r) => r.balance !== 0).map((r) => r.party)).toEqual(['BPJS Kesehatan'])
     p.says(0, 'only August\'s BPJS Kesehatan is still unpaid')
+    // June: no start month, so it is ready to post, with the old sync warning.
+    const jun = runs.value.find((r) => r.month === '2026-06')!
+    expect(runStatus(jun)).toBe('Ready to post')
+    expect(runWarnings(jun.id).map((w) => w.code)).toContain('old-sync-booked')
+    p.says(0, 'June is ready to post too')
     // 2. Sync log.
     p.at(1)
     const row = sendLog.value[0]!
@@ -598,6 +604,12 @@ describe('PAY-3 When Talenta sends again (replay)', () => {
     expect([call.outcome, dateLabel(call.date), call.pattern]).toEqual(['Blocked', '20 Sep 2026', 'Payroll'])
     p.q(9, call.amount, 480_000_000)
     p.says(9, 'dated 20 Sep 2026 is blocked')
+    const jun = runs.value.find((r) => r.month === '2026-06')!
+    const booked = runWarnings(jun.id).find((w) => w.code === 'old-sync-booked')!
+    expect(booked.message).toBe('The old Talenta sync already booked payroll for Jun 2026 as Expense. Posting books it again.')
+    p.says(9, 'the old sync booked Jun 2026')
+    // The blocked September call books nothing, so September carries no such warning.
+    expect(runWarnings(run.id).some((w) => w.code === 'old-sync-booked')).toBe(false)
     p.done()
   })
 
