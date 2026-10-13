@@ -20,10 +20,12 @@
 import { MpIcon, MpInput, MpInputGroup, MpInputRightAddon } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
-import { workOrders, recordSubconProduction, recordSubconCost } from '~/data/workOrders'
+import {
+  workOrders, recordSubconProduction, recordSubconCost, recordSubconDocument, subconAtVendor, subconPlannedComponentQty, subconCostLinesFor,
+} from '~/data/workOrders'
+import { addAdjustment } from '~/data/stockAdjustments'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
-import { warehouseTransfers } from '~/data/warehouseTransfers'
-import { SUBCON_BATCH_QTY } from '~/data/subcon'
+import { subconVendorWarehouse } from '~/data/subcon'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -64,19 +66,13 @@ const batchFactor = computed(() => {
 
 // ── Product components ──────────────────────────────────────────────────────
 
-/** What has actually gone to the vendor, so "remaining" is real and not planned. */
-const sentBySku = computed<Record<string, number>>(() => {
-  const ids = (subcon.value?.raisedDocuments ?? [])
-    .filter(d => d.route === '/warehouse-transfers')
-    .map(d => d.id)
-  const totals: Record<string, number> = {}
-  for (const id of ids) {
-    for (const line of warehouseTransfers.find(tr => tr.id === id)?.lines ?? []) {
-      totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
-    }
-  }
-  return totals
-})
+/**
+ * What the vendor still holds of each component: sent (transfers on Resupply,
+ * component deliveries on Dropship), less what earlier records already issued.
+ * This is the ceiling on what a record may issue (R4).
+ */
+const atVendorBySku = computed<Record<string, number>>(() =>
+  wo.value ? subconAtVendor(wo.value) : {})
 
 /**
  * Components, with the quantity this batch needs pre-filled from its share of
@@ -111,10 +107,11 @@ const subconIsBasic = computed(() => subcon.value?.method === 'basic')
 const components = computed(() => (subconIsBasic.value ? [] : (bom.value?.rawMaterials ?? [])).map((r) => {
   const p = catalogProduct(r.productId)
   const sku = p?.sku ?? '—'
-  const planned = subcon.value?.componentAdjustments?.[sku] ?? r.needed
+  const planned = wo.value ? subconPlannedComponentQty(wo.value, sku, r.needed) : r.needed
   const consumedSoFar = Math.round(planned * (alreadyProduced.value / (wo.value?.plannedQty || 1)))
   const remaining = Math.max(0, planned - consumedSoFar)
-  const suggested = Math.round(planned * batchFactor.value)
+  // The output's share of the plan, never more than the vendor still holds.
+  const suggested = Math.min(Math.round(planned * batchFactor.value), atVendorBySku.value[sku] ?? 0)
   const entered = componentQty.value[sku]
   const needed = entered !== undefined && entered !== '' ? num(entered) : suggested
   return {
@@ -123,7 +120,7 @@ const components = computed(() => (subconIsBasic.value ? [] : (bom.value?.rawMat
     sku,
     unitCost: r.purchaseCost,
     warehouse: componentWarehouseName(r.productId),
-    onHand: sentBySku.value[sku] ?? 0,
+    onHand: atVendorBySku.value[sku] ?? 0,
     remaining,
     needed,
     unit: r.unit,
@@ -151,26 +148,25 @@ const costAmount = ref<Record<string, string>>({})
 
 const subconCostLines = computed(() => {
   const c = subcon.value
-  if (!c) return []
-  const planned = wo.value?.plannedQty ?? 0
-  const orderFactor = planned / SUBCON_BATCH_QTY
-  return (bom.value?.subconCost ?? []).map((l) => {
-    const perOrder = c.costLineOverrides?.[l.productId] ?? Math.round(l.amount * orderFactor)
-    const taken = c.costLineRecorded?.[l.productId] ?? 0
-    const remaining = Math.max(0, perOrder - taken)
+  const w = wo.value
+  if (!c || !w) return []
+  const planned = w.plannedQty
+  // Every line the order carries — the BOM's, any revised, any added on the adjust
+  // form (R9) — so a record can charge them all.
+  return subconCostLinesFor(w, t).map((l) => {
     // The batch's share, never more than is left to charge.
-    const suggested = Math.min(remaining, Math.round(perOrder * batchFactor.value))
-    const entered = costAmount.value[l.productId]
+    const suggested = Math.min(l.remaining, Math.round(l.amount * batchFactor.value))
+    const entered = costAmount.value[l.id]
     const amount = entered !== undefined && entered !== '' ? num(entered) : suggested
     return {
-      id: l.productId,
+      id: l.id,
       account: l.name,
       chargedBy: c.vendorName,
       /** What one unit of output costs at the order's agreed total. */
-      perUnit: planned > 0 ? perOrder / planned : 0,
-      remaining,
+      perUnit: planned > 0 ? l.amount / planned : 0,
+      remaining: l.remaining,
       amount,
-      over: amount > remaining,
+      over: amount > l.remaining,
     }
   })
 })
@@ -248,6 +244,12 @@ function validate(): boolean {
     error.value = t('Pick the date this partial production ended.')
     return false
   }
+  // R4 — a component may not be issued beyond what the vendor still holds.
+  const overIssued = components.value.find(c => c.needed > c.onHand)
+  if (overIssued) {
+    error.value = `${overIssued.product}: ${t('only')} ${overIssued.onHand} ${overIssued.unit} ${t('still at the vendor')}.`
+    return false
+  }
   // A line may not take more than the order still has to give — several partial
   // records must not between them bill more than was agreed.
   const over = subconCostLines.value.find(l => l.over)
@@ -259,6 +261,39 @@ function validate(): boolean {
   return true
 }
 
+/**
+ * R4 — each record issues the components it used: a stock adjustment OUT of the
+ * vendor's warehouse for exactly the quantities entered. Posted before the output
+ * is recorded, so the materials are in WIP when the goods leave it.
+ */
+function postComponentIssue() {
+  const w = wo.value
+  const c = subcon.value
+  if (!w || !c || c.method === 'basic') return
+  const warehouse = c.subconWarehouseId
+    ? { id: c.subconWarehouseId, name: c.subconWarehouseName ?? '' }
+    : (() => { const v = subconVendorWarehouse(c.vendorId); return v?.warehouseId ? { id: v.warehouseId, name: v.warehouseName ?? '' } : undefined })()
+  if (!warehouse) return
+  const lines = components.value
+    .filter(r => r.needed > 0 && r.sku !== '—')
+    // Negative qty is stock OUT — the convention the Stock in/out form uses.
+    .map(r => ({ sku: r.sku, qty: -r.needed }))
+  if (!lines.length) return
+  const adj = addAdjustment({
+    kind: 'in-out',
+    date: endDate.value,
+    warehouseId: warehouse.id,
+    warehouseName: warehouse.name,
+    category: 'General',
+    tags: [],
+    memo: `${t('Components issued to the subcon vendor for')} ${w.number}`,
+    lines,
+  })
+  recordSubconDocument(w.id, {
+    kind: 'componentIssue', id: adj.id, number: adj.number, route: '/stock-adjustments',
+  })
+}
+
 function save() {
   if (!wo.value || !validate()) return
   // Cost first: the quantity record is what changes the order's status, so the
@@ -266,7 +301,11 @@ function save() {
   recordSubconCost(wo.value.id, Object.fromEntries(
     subconCostLines.value.map(l => [l.id, l.amount]),
   ))
-  recordSubconProduction(wo.value.id, batchQty.value)
+  postComponentIssue()
+  // Same date as the component issue above, so the journal releases this
+  // record's materials with it rather than leaving them for the next record.
+  recordSubconProduction(wo.value.id, batchQty.value,
+    subconCostLines.value.reduce((s, l) => s + l.amount, 0), endDate.value)
   const finished = (wo.value.producedQty ?? 0) >= (wo.value.plannedQty ?? 0)
   successToast(t('Partial production recorded'))
   // Both paths return to the work order: the record is made, and what it changed

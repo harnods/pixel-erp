@@ -1,44 +1,46 @@
 /**
- * Subcontracting — the accounting layer.
+ * Subcontracting — the accounting layer (PRD Rev 5, R13 / R14).
  *
  * This module is to journals what `buildDocumentPlan` is to documents: the one
  * place the rules live. It is PURE — no Vue, no stores, no side effects — so the
  * finance fixtures can be run against it directly, and so a page can never quietly
  * grow a second version of a rule.
  *
- * The shape of it: you hand it everything that has happened on a subcon work order
- * (what was bought, handed over, received, invoiced) and it returns the journal
- * entries that should exist. Nothing is posted anywhere; the caller decides what to
- * do with them.
+ * You hand it everything that has happened on a subcon work order (what was
+ * bought, issued, produced, returned, invoiced) and it returns the journal entries
+ * that should exist. Nothing is posted anywhere; the caller decides what to do.
  *
- * ── The invariant ────────────────────────────────────────────────────────────
- * All three supply methods converge on the SAME finished-goods value. Basic,
- * Resupply and Dropship differ in how materials reach the vendor, not in what the
- * output costs. Every entry balances, and a fully received order ends with WIP = 0
- * and every clearing account at 0. `tests/subcon-accounting.spec.ts` asserts all of it.
+ * ── The rules (R13) ──────────────────────────────────────────────────────────
+ * Subcon costing follows the company's existing purchase transaction:
  *
- * ── OPEN QUESTIONS (not settled by the finance simulations) ──────────────────
- * Raised here rather than guessed at silently:
+ *  • A warehouse transfer to the vendor posts NOTHING — location changes, not owner.
+ *  • A component issue (stock OUT of the vendor's warehouse) is the handover:
+ *    Dr WIP / Cr Material inventory.
+ *  • Purchase order approval posts NOTHING.
+ *  • Output recorded (a partial record, or completion): Dr Finished goods /
+ *    Cr WIP at the value of the materials issued for it — never more than was
+ *    really put into WIP.
+ *  • Unused components returned: Dr Material inventory / Cr WIP.
+ *  • Purchase invoice: the vendor's service cost reaches the books here and only
+ *    here — Dr Finished goods (the share still in stock) and Dr Cost of goods sold
+ *    (the share already sold) / Cr Accounts payable.
  *
- *  1. Cost driver `Batch`. The simulations did not cover it. It is treated here
- *     exactly like `Amount` — a whole-batch charge spread pro rata across the
- *     quantity received — on the reasoning that a batch fee is incurred for the
- *     run as a whole. The alternative (charge 100% to the first receipt) is
- *     equally defensible and materially different for staged receipts.
+ * Basic has no materials of ours: output is recorded at zero value and the
+ * invoice carries the whole value. All three methods converge on the same
+ * finished-goods value once every invoice is in.
  *
- *  2. Receipts against a PARTIAL handover. The fixtures always hand over every
- *     component before any finished goods come back, so "materials per unit"
- *     is unambiguous there. Where materials are still outstanding, this module
- *     values a receipt at `materialsActuallyInWip / plannedOutputQty` per unit —
- *     so WIP can only release what was really put into it. The consequence is
- *     that cost per unit drifts if goods are received before materials finish
- *     arriving. Finance has not ruled on which side should give.
+ * ── R14: no tax ──────────────────────────────────────────────────────────────
+ * No PPN and no PPh 23 on any subcon entry. The price-basis and withholding rules
+ * live on in `subconPricing.ts`, switched off by `taxHandling: false`.
  *
- *  3. SETTLED, but noted: the clearing account. The brief seeded it as
- *     `Expense Subcon - <line>`; the product's own chart already carries
- *     `5-50202 Beban Vendor`, which is the same thing, so that is what is used.
- *     It still behaves as a clearing account rather than an expense — it nets to
- *     zero — which may matter to how it is reported.
+ * ── OPEN (Finance) ───────────────────────────────────────────────────────────
+ *  1. How an invoice splits between stock on hand and cost of goods sold. The
+ *     default — `splitInvoiceStockVsSold` — follows each output record's cost
+ *     share and how much of that record has been sold.
+ *  2. An invoice whose value differs from the purchase order is not handled: the
+ *     invoice is posted at its own value.
+ *  3. Cost per unit drifts when goods are recorded before their materials are
+ *     issued; WIP can only release what was really issued.
  */
 
 import type { SubconMethod } from './subcon'
@@ -53,11 +55,8 @@ export type SubconAccountRole =
   | 'materialInventory'
   | 'wip'
   | 'finishedGoods'
+  | 'costOfGoodsSold'
   | 'accountsPayable'
-  | 'subconClearing'
-  | 'vatInput'
-  | 'withholdingTaxPayable'
-  | 'wasteAccount'
 
 /** A resolved account: the code and name a journal line prints. */
 export interface SubconAccount {
@@ -66,27 +65,21 @@ export interface SubconAccount {
 }
 
 /**
- * Role → account. Two roles are per-thing rather than fixed: material inventory is
- * held per component product, and a clearing account exists per subcon cost line,
- * so both take the thing's name and build the account from it.
- *
- * Codes follow the chart already in use (1- asset, 2- liability, 5-/6- expense).
+ * Role → account. Material inventory is held per component product, so that role
+ * takes the component's name and builds the account from it.
  */
 const ACCOUNT_SEED: Record<SubconAccountRole, { code: string; name: string }> = {
-  materialInventory:     { code: '1-10200', name: 'Raw Material Inventory' },
-  wip:                   { code: '1-10201', name: 'WIP Inventory' },
-  finishedGoods:         { code: '1-10202', name: 'Finish Goods Inventory' },
-  vatInput:              { code: '1-40100', name: 'PPN Masukan' },
-  accountsPayable:       { code: '2-10000', name: 'Utang Usaha' },
-  withholdingTaxPayable: { code: '2-20100', name: 'Utang PPh 23' },
-  subconClearing:        { code: '5-50202', name: 'Beban Vendor' },
-  wasteAccount:          { code: '6-30100', name: 'Kerugian Scrap' },
+  materialInventory: { code: '1-10200', name: 'Raw Material Inventory' },
+  wip:               { code: '1-10201', name: 'WIP Inventory' },
+  finishedGoods:     { code: '1-10202', name: 'Finish Goods Inventory' },
+  accountsPayable:   { code: '2-10000', name: 'Utang Usaha' },
+  costOfGoodsSold:   { code: '5-10000', name: 'Cost of goods sold' },
 }
 
 /**
- * Resolve a role. `key` names the component or cost line for the two per-thing
- * roles: it distinguishes the lines WITHIN an entry, while the account code stays
- * the same, so a summary that groups by code merges them back into one row.
+ * Resolve a role. `key` names the component for the per-thing role: it
+ * distinguishes the lines WITHIN an entry, while the account code stays the same,
+ * so a summary that groups by code merges them back into one row.
  */
 export function subconAccount(role: SubconAccountRole, key?: string): SubconAccount {
   const seed = ACCOUNT_SEED[role]
@@ -97,40 +90,6 @@ export function subconAccount(role: SubconAccountRole, key?: string): SubconAcco
 export function accountLabel(role: SubconAccountRole, key?: string): string {
   const a = subconAccount(role, key)
   return `${a.code} – ${a.name}`
-}
-
-// ── Settings still open with Finance (§6 of the brief) ────────────────────────
-
-export interface SubconAccountingSettings {
-  /** Hold vendor-held stock in a separate WIP-at-vendor account, or leave it in
-   *  material inventory separated only by warehouse. */
-  vendorWarehouseUsesSeparateWipAccount: boolean
-  /** Whether Basic runs through WIP at all, or posts straight to finished goods. */
-  basicPassesThroughWip: boolean
-  /** How an unproduced balance is valued when an order is closed short. */
-  shortfallValuation: 'cost'
-  /** Withholding tax (PPh 23) on jasa maklon — Resupply and Dropship only. */
-  withholdingRate: number
-  /** VAT (PPN) on the vendor's invoice. */
-  vatRate: number
-}
-
-/** Defaults are what the three finance simulations used. */
-export const SUBCON_ACCOUNTING_SETTINGS: SubconAccountingSettings = {
-  vendorWarehouseUsesSeparateWipAccount: false,
-  basicPassesThroughWip: true,
-  shortfallValuation: 'cost',
-  withholdingRate: 0.02,
-  vatRate: 0.11,
-}
-
-/**
- * Withholding is jasa maklon only. Under PMK 141/2015 a Basic order is a purchase
- * of GOODS — the vendor supplies the materials and owns the output until handover —
- * so no PPh 23 applies.
- */
-export function withholdingApplies(method: SubconMethod): boolean {
-  return method !== 'basic'
 }
 
 // ── Input ─────────────────────────────────────────────────────────────────────
@@ -146,16 +105,25 @@ export interface SubconComponentInput {
 export type SubconCostDriver = 'Unit' | 'Amount' | 'Batch'
 
 export interface SubconCostLineInput {
-  /** Stable key — also names this line's clearing account. */
+  /** Stable key — the cost line's id. */
   id: string
   name: string
+  /** A label from the service product's unit; it does not select a formula (R12). */
   costDriver: SubconCostDriver
   /** Total charge for the full planned output quantity. */
   amount: number
 }
 
-/** Components issued into the vendor's process. */
+/** Components issued into the vendor's process (a stock adjustment OUT). */
 export interface SubconHandoverInput {
+  id: string
+  date: string
+  documentNumber?: string
+  lines: { sku: string; qty: number }[]
+}
+
+/** Components that came back unused (a stock adjustment IN). */
+export interface SubconReturnInput {
   id: string
   date: string
   documentNumber?: string
@@ -170,21 +138,22 @@ export interface SubconComponentPurchaseInput {
   lines: { sku: string; qty: number }[]
 }
 
-/** Finished goods coming back from the vendor (a purchase delivery). */
-export interface SubconReceiptInput {
+/**
+ * Output recorded on the work order — a partial production record, or the
+ * remainder produced at completion. The ONLY source of produced quantity (R5).
+ */
+export interface SubconOutputInput {
   id: string
   date: string
   documentNumber?: string
   qty: number
+  /** Subcon cost taken onto this record (R12) — its share of the invoice. */
+  cost: number
+  /** Units of this record already sold. Absent → none, so the invoice stays in stock. */
+  soldQty?: number
 }
 
-/**
- * The vendor's charge, per cost line, before VAT.
- *
- * Recognised when the PURCHASE ORDER IS APPROVED — that is the point the price is
- * agreed and committed. The invoice that follows records the document and posts
- * nothing further, so the charge is never counted twice.
- */
+/** The vendor's service invoice, per cost line. No tax (R14). */
 export interface SubconInvoiceInput {
   id: string
   date: string
@@ -200,15 +169,9 @@ export interface SubconAccountingInput {
   costLines: SubconCostLineInput[]
   componentPurchases?: SubconComponentPurchaseInput[]
   handovers?: SubconHandoverInput[]
-  receipts?: SubconReceiptInput[]
-  /** One per APPROVED purchase order — see `SubconInvoiceInput`. */
+  returns?: SubconReturnInput[]
+  outputs?: SubconOutputInput[]
   invoices?: SubconInvoiceInput[]
-  /**
-   * Units the order was closed short by. Whatever is left in WIP once every
-   * receipt is accounted for is swept to the waste account.
-   */
-  closedShort?: boolean
-  settings?: Partial<SubconAccountingSettings>
 }
 
 // ── Output ────────────────────────────────────────────────────────────────────
@@ -216,14 +179,13 @@ export interface SubconAccountingInput {
 export type SubconJournalEvent =
   | 'componentPurchase'
   | 'materialHandover'
+  | 'materialReturn'
+  | 'goodsProduced'
   | 'vendorInvoice'
-  | 'capitalisation'
-  | 'goodsReceived'
-  | 'shortCompletion'
 
 export interface SubconJournalLine {
   role: SubconAccountRole
-  /** "1-30200 WIP" */
+  /** "1-10201 – WIP Inventory" */
   account: string
   debit?: number
   credit?: number
@@ -243,40 +205,17 @@ const debit = (role: SubconAccountRole, amount: number, key?: string): SubconJou
 const credit = (role: SubconAccountRole, amount: number, key?: string): SubconJournalLine =>
   ({ role, account: accountLabel(role, key), credit: amount })
 
-// ── Cost allocation ───────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * What one cost line contributes to one receipt.
- *
- *  • `Unit`   — a per-unit rate: (total ÷ planned output) × quantity received.
- *  • `Amount` — a lump sum spread pro rata on quantity received.
- *  • `Batch`  — treated as `Amount`. See OPEN QUESTIONS 1.
- *
- * All three reduce to the same arithmetic today; they are kept apart because they
- * are different commercial ideas and will not stay identical.
- */
-export function allocateCostLine(
-  line: SubconCostLineInput,
-  receivedQty: number,
-  plannedOutputQty: number,
-): number {
-  if (plannedOutputQty <= 0) return 0
-  switch (line.costDriver) {
-    case 'Unit': {
-      const rate = line.amount / plannedOutputQty
-      return Math.round(rate * receivedQty)
-    }
-    case 'Amount':
-    case 'Batch':
-      return Math.round(line.amount * (receivedQty / plannedOutputQty))
-  }
-}
+const valueOf = (
+  cost: Map<string, SubconComponentInput>,
+  lines: { sku: string; qty: number }[],
+) => lines.reduce((s, l) => s + Math.round((cost.get(l.sku)?.unitCost ?? 0) * l.qty), 0)
 
 /** Total value of components actually issued into the vendor's process. */
 export function handedOverValue(input: SubconAccountingInput): number {
-  const cost = new Map(input.components.map(c => [c.sku, c.unitCost]))
-  return (input.handovers ?? []).reduce((sum, h) =>
-    sum + h.lines.reduce((s, l) => s + (cost.get(l.sku) ?? 0) * l.qty, 0), 0)
+  const cost = new Map(input.components.map(c => [c.sku, c]))
+  return (input.handovers ?? []).reduce((sum, h) => sum + valueOf(cost, h.lines), 0)
 }
 
 /** Planned material value — what the BOM says the run should consume. */
@@ -289,28 +228,40 @@ export function plannedSubconCost(input: SubconAccountingInput): number {
   return input.costLines.reduce((s, l) => s + l.amount, 0)
 }
 
+/**
+ * OPEN (Finance) — how an invoice splits between stock still on hand and stock
+ * already sold. Default: follow the cost share recorded on each output record, and
+ * the fraction of that record that has been sold. With nothing sold — or no output
+ * recorded yet — the whole invoice stays in finished goods.
+ */
+export function splitInvoiceStockVsSold(
+  total: number,
+  outputs: SubconOutputInput[],
+): { stock: number; sold: number } {
+  const weight = (o: SubconOutputInput) => o.cost > 0 ? o.cost : 0
+  let totalWeight = outputs.reduce((s, o) => s + weight(o), 0)
+  const byQty = totalWeight <= 0
+  if (byQty) totalWeight = outputs.reduce((s, o) => s + o.qty, 0)
+  if (totalWeight <= 0) return { stock: total, sold: 0 }
+  const soldShare = outputs.reduce((s, o) => {
+    const fraction = o.qty > 0 ? Math.min(1, Math.max(0, (o.soldQty ?? 0) / o.qty)) : 0
+    return s + ((byQty ? o.qty : weight(o)) / totalWeight) * fraction
+  }, 0)
+  const sold = Math.round(total * soldShare)
+  return { stock: total - sold, sold }
+}
+
 // ── The rules ─────────────────────────────────────────────────────────────────
 
 /**
  * Every journal entry a subcon work order should have produced, in the order the
  * events happened.
- *
- * Method differences, all of which come from §2 of the finance brief:
- *
- *  • Resupply — the warehouse transfer to the vendor raises NOTHING. The goods
- *    change location, not owner. Value moves only when materials are issued into
- *    the vendor's process.
- *  • Dropship — identical, except the components are bought rather than moved:
- *    they land in the vendor's warehouse but are ours from that moment.
- *  • Basic   — the vendor's own materials, so there is no material inventory and
- *    no handover at all. Its invoice folds the material value into the service
- *    cost line, and carries no withholding.
  */
 export function buildSubconJournals(input: SubconAccountingInput): SubconJournalEntry[] {
-  const settings = { ...SUBCON_ACCOUNTING_SETTINGS, ...input.settings }
   const entries: SubconJournalEntry[] = []
   const cost = new Map(input.components.map(c => [c.sku, c]))
   const doc = input.workOrderNumber
+  const outputs = input.outputs ?? []
 
   // 1. Dropship — components bought from a 3rd party, shipped to the vendor.
   for (const purchase of input.componentPurchases ?? []) {
@@ -335,7 +286,7 @@ export function buildSubconJournals(input: SubconAccountingInput): SubconJournal
     })
   }
 
-  // 2. Materials issued into the vendor's process. Posted on HANDOVER, not on
+  // 2. Materials issued into the vendor's process. Posted on the ISSUE, not on
   //    consumption — once they are in the vendor's process they are work in progress.
   for (const handover of input.handovers ?? []) {
     const lines: SubconJournalLine[] = []
@@ -359,115 +310,76 @@ export function buildSubconJournals(input: SubconAccountingInput): SubconJournal
     })
   }
 
-  // 3. The vendor's charge, recognised on approval of the order.
-  const takesWithholding = withholdingApplies(input.method)
-  for (const invoice of input.invoices ?? []) {
-    const service = invoice.lines.reduce((s, l) => s + l.amount, 0)
-    if (!service) continue
-    const vat = Math.round(service * settings.vatRate)
-    const withheld = takesWithholding ? Math.round(service * settings.withholdingRate) : 0
-    const payable = service + vat - withheld
-
-    const lines: SubconJournalLine[] = invoice.lines.map((l) => {
-      const costLine = input.costLines.find(c => c.id === l.costLineId)
-      return debit('subconClearing', l.amount, costLine?.name ?? l.costLineId)
+  // 3. Unused components returned: out of WIP, back into material inventory.
+  for (const ret of input.returns ?? []) {
+    const lines: SubconJournalLine[] = []
+    let total = 0
+    for (const l of ret.lines) {
+      const c = cost.get(l.sku)
+      if (!c) continue
+      const value = Math.round(c.unitCost * l.qty)
+      if (!value) continue
+      total += value
+      lines.push(debit('materialInventory', value, c.name))
+    }
+    if (!total) continue
+    entries.push({
+      id: `${ret.id}-return`,
+      event: 'materialReturn',
+      date: ret.date,
+      description: `Unused components returned — ${doc}`,
+      documentNumber: ret.documentNumber,
+      lines: [...lines, credit('wip', total)],
     })
-    lines.push(debit('vatInput', vat))
-    if (withheld) lines.push(credit('withholdingTaxPayable', withheld))
-    lines.push(credit('accountsPayable', payable))
+  }
 
+  // 4. Output recorded. Finished goods take the value of the materials issued for
+  //    it — everything issued up to that record, less what earlier records and any
+  //    returns already took out of WIP. WIP can only release what was really put
+  //    into it, so goods recorded ahead of their materials carry less; Basic has no
+  //    materials of ours, so its output is at zero value until the invoice.
+  if (input.method !== 'basic') {
+    const handovers = input.handovers ?? []
+    const returns = input.returns ?? []
+    let released = 0
+    for (const output of outputs) {
+      const issuedToDate = handovers
+        .filter(h => h.date <= output.date)
+        .reduce((s, h) => s + valueOf(cost, h.lines), 0)
+      const returnedToDate = returns
+        .filter(r => r.date <= output.date)
+        .reduce((s, r) => s + valueOf(cost, r.lines), 0)
+      const value = Math.max(0, issuedToDate - returnedToDate - released)
+      if (!value) continue
+      released += value
+      entries.push({
+        id: `${output.id}-output`,
+        event: 'goodsProduced',
+        date: output.date,
+        description: `Finished goods recorded — ${doc}`,
+        documentNumber: output.documentNumber,
+        lines: [debit('finishedGoods', value), credit('wip', value)],
+      })
+    }
+  }
+
+  // 5. The vendor's invoice — the one point the service cost reaches the books.
+  for (const invoice of input.invoices ?? []) {
+    const total = invoice.lines.reduce((s, l) => s + l.amount, 0)
+    if (!total) continue
+    const { stock, sold } = splitInvoiceStockVsSold(total, outputs)
     entries.push({
       id: `${invoice.id}-invoice`,
       event: 'vendorInvoice',
       date: invoice.date,
-      // Withholding is computed per charge: two approved orders produce two
-      // withholding entries, never one rolled-up figure.
-      description: `Subcon vendor charge recognised — ${doc}`,
+      description: `Subcon vendor invoice recorded — ${doc}`,
       documentNumber: invoice.documentNumber,
-      lines,
+      lines: [
+        ...(stock ? [debit('finishedGoods', stock)] : []),
+        ...(sold ? [debit('costOfGoodsSold', sold)] : []),
+        credit('accountsPayable', total),
+      ],
     })
-  }
-
-  // 4 & 5. Each receipt capitalises its share of the subcon cost into WIP, then
-  //        releases finished goods out of it.
-  const receipts = input.receipts ?? []
-  const materialsInWip = input.method === 'basic' ? 0 : handedOverValue(input)
-  const totalReceived = receipts.reduce((s, r) => s + r.qty, 0)
-
-  let subconCapitalised = 0
-  let materialsReleased = 0
-
-  receipts.forEach((receipt, i) => {
-    const isLast = i === receipts.length - 1 && totalReceived >= input.plannedOutputQty
-
-    // ── Capitalise this receipt's subcon cost ──
-    // The final receipt of a fully delivered order absorbs any rounding drift, so
-    // the clearing accounts land exactly on zero.
-    const subconTotal = plannedSubconCost(input)
-    const subconLines = input.costLines.map((line) => {
-      const amount = allocateCostLine(line, receipt.qty, input.plannedOutputQty)
-      return { line, amount }
-    })
-    let subconForReceipt = subconLines.reduce((s, l) => s + l.amount, 0)
-    if (isLast) {
-      const drift = subconTotal - (subconCapitalised + subconForReceipt)
-      if (drift !== 0 && subconLines.length) {
-        subconLines[subconLines.length - 1]!.amount += drift
-        subconForReceipt += drift
-      }
-    }
-    if (subconForReceipt) {
-      entries.push({
-        id: `${receipt.id}-capitalisation`,
-        event: 'capitalisation',
-        date: receipt.date,
-        description: `Subcon cost capitalised into WIP — ${doc}`,
-        documentNumber: receipt.documentNumber,
-        lines: [
-          debit('wip', subconForReceipt),
-          ...subconLines
-            .filter(l => l.amount !== 0)
-            .map(l => credit('subconClearing', l.amount, l.line.name)),
-        ],
-      })
-      subconCapitalised += subconForReceipt
-    }
-
-    // ── Release finished goods ──
-    // Materials come out at the rate they went in, so cost per unit holds across
-    // staged receipts (see OPEN QUESTIONS 2 for the partial-handover case).
-    let materialsForReceipt = input.plannedOutputQty > 0
-      ? Math.round(materialsInWip * (receipt.qty / input.plannedOutputQty))
-      : 0
-    if (isLast) materialsForReceipt = materialsInWip - materialsReleased
-    materialsReleased += materialsForReceipt
-
-    const finishedGoods = materialsForReceipt + subconForReceipt
-    if (finishedGoods) {
-      entries.push({
-        id: `${receipt.id}-receipt`,
-        event: 'goodsReceived',
-        date: receipt.date,
-        description: `Finished goods received from the vendor — ${doc}`,
-        documentNumber: receipt.documentNumber,
-        lines: [debit('finishedGoods', finishedGoods), credit('wip', finishedGoods)],
-      })
-    }
-  })
-
-  // 6. Closed short — whatever is still sitting in WIP is written off.
-  if (input.closedShort) {
-    const remaining = wipBalanceFrom(entries)
-    if (remaining > 0) {
-      const last = receipts[receipts.length - 1]
-      entries.push({
-        id: `${input.workOrderNumber}-shortfall`,
-        event: 'shortCompletion',
-        date: last?.date ?? new Date().toISOString().slice(0, 10),
-        description: `Work order closed short — WIP written off — ${doc}`,
-        lines: [debit('wasteAccount', remaining), credit('wip', remaining)],
-      })
-    }
   }
 
   return entries
@@ -542,31 +454,31 @@ export interface SubconCostSummary {
   plannedTotal: number
   plannedPerUnit: number
   actualMaterial: number
+  /** The vendor's service cost as invoiced — zero until an invoice is recorded. */
   actualSubcon: number
   actualTotal: number
   actualPerUnit: number
-  receivedQty: number
+  producedQty: number
+  /** True until the service invoice is recorded: cost per unit holds material value only. */
+  awaitingInvoice: boolean
 }
 
 /**
  * Plan vs actual. "Planned" is what the BOM and cost lines say the run should
- * cost; "actual" is what has really been posted — materials issued, subcon cost
- * capitalised. The two legitimately diverge: reducing a component's planned
- * quantity after part of it has already gone to the vendor changes the plan and
- * posts nothing (see the adjustment rules), and that gap is the point of showing
- * both.
+ * cost; "actual" is what has really been posted — materials issued, and the
+ * vendor's service cost once it is invoiced (R13).
  */
 export function subconCostSummary(input: SubconAccountingInput): SubconCostSummary {
   const entries = buildSubconJournals(input)
-  const receivedQty = (input.receipts ?? []).reduce((s, r) => s + r.qty, 0)
+  const producedQty = (input.outputs ?? []).reduce((s, o) => s + o.qty, 0)
   const plannedMaterial = input.method === 'basic' ? 0 : plannedMaterialValue(input)
   const plannedSubcon = plannedSubconCost(input)
   const plannedTotal = plannedMaterial + plannedSubcon
 
   const actualMaterial = input.method === 'basic' ? 0 : handedOverValue(input)
   const actualSubcon = entries
-    .filter(e => e.event === 'capitalisation')
-    .reduce((s, e) => s + e.lines.reduce((x, l) => x + (l.debit ?? 0), 0), 0)
+    .filter(e => e.event === 'vendorInvoice')
+    .reduce((s, e) => s + e.lines.reduce((x, l) => x + (l.credit ?? 0), 0), 0)
   const actualTotal = actualMaterial + actualSubcon
 
   return {
@@ -577,39 +489,34 @@ export function subconCostSummary(input: SubconAccountingInput): SubconCostSumma
     actualMaterial,
     actualSubcon,
     actualTotal,
-    actualPerUnit: receivedQty > 0
-      ? balanceOf(entries, 'finishedGoods') / receivedQty
-      : (input.plannedOutputQty > 0 ? actualTotal / input.plannedOutputQty : 0),
-    receivedQty,
+    actualPerUnit: input.plannedOutputQty > 0 ? actualTotal / input.plannedOutputQty : 0,
+    producedQty,
+    awaitingInvoice: actualSubcon === 0,
   }
 }
 
-// ── Component quantity adjustment (§4 of the brief) ───────────────────────────
+// ── Component quantity adjustment (R7, R8) ────────────────────────────────────
 
 export type SubconAdjustmentOutcome =
-  /** Raise a new shipment: the extra material has to physically reach the vendor. */
+  /** The vendor does not hold enough for the new quantity: supply is reopened for the difference. */
   | { kind: 'requiresShipment'; extraQty: number }
-  /** Plan-only change. NOT a journal event — only the outstanding quantity moves. */
+  /** A plan-only change: the vendor already holds enough. NOT a journal event. */
   | { kind: 'planOnly' }
-  /** Below what has already gone out; the way back is a material return. */
-  | { kind: 'rejected'; alreadySentQty: number; message: string }
+  /** Lower than the current plan — quantities can only increase (R7). */
+  | { kind: 'rejected'; currentQty: number; message: string }
   /** Basic: the materials are the vendor's, so there is nothing to adjust. */
   | { kind: 'notApplicable' }
 
 /**
  * What changing a component's planned quantity should do.
  *
- * The boundary is `alreadySentQty`, and it decides whether a journal exists at all:
- *
- *  • Increasing past what has been sent needs a NEW shipment document — a transfer
- *    (Resupply) or a purchase (Dropship). Editing the planned number alone moves no
- *    goods, so it must not post anything on its own.
- *  • Decreasing to anywhere at or above what has already gone out posts NOTHING.
- *    The material is legitimately with the vendor; only the outstanding quantity
- *    still to send changes. A correcting entry here would invent a movement that
- *    never happened.
- *  • Decreasing BELOW what has gone out is refused: the goods are already there and
- *    the honest route is a material return from the vendor.
+ *  • A LOWER figure is refused, naming the current value. Quantities only increase
+ *    (R7), so nothing is ever "reduced back" and no shortfall is written off.
+ *  • A higher figure the vendor already holds is a plan-only change and posts
+ *    nothing — only the outstanding quantity changes.
+ *  • A higher figure beyond what the vendor holds reopens supply for the
+ *    DIFFERENCE only (R8): a transfer on Resupply, a component purchase on Dropship.
+ *    Editing the number alone moves no goods, so it posts nothing on its own.
  */
 export function evaluateComponentAdjustment(args: {
   method: SubconMethod
@@ -621,18 +528,15 @@ export function evaluateComponentAdjustment(args: {
 }): SubconAdjustmentOutcome {
   if (args.method === 'basic') return { kind: 'notApplicable' }
 
-  if (args.newPlannedQty > args.alreadySentQty && args.newPlannedQty > args.plannedQty) {
-    const extraQty = args.newPlannedQty - Math.max(args.plannedQty, args.alreadySentQty)
-    if (args.alreadySentQty >= args.plannedQty) return { kind: 'requiresShipment', extraQty }
-  }
-
-  if (args.newPlannedQty < args.alreadySentQty) {
+  if (args.newPlannedQty < args.plannedQty) {
     return {
       kind: 'rejected',
-      alreadySentQty: args.alreadySentQty,
-      message: `${args.alreadySentQty} ${args.unit} of ${args.componentName} has already gone to the vendor. Return it from the vendor first, then reduce the plan.`,
+      currentQty: args.plannedQty,
+      message: `${args.componentName} cannot be lower than the current ${args.plannedQty} ${args.unit}.`,
     }
   }
 
+  const extraQty = args.newPlannedQty - Math.max(args.alreadySentQty, args.plannedQty)
+  if (args.newPlannedQty > args.plannedQty && extraQty > 0) return { kind: 'requiresShipment', extraQty }
   return { kind: 'planOnly' }
 }

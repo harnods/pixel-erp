@@ -275,7 +275,6 @@ const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/Bi
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const SubconOrderDetailsPage = asyncPage(() => import('~/components/pages/SubconOrderDetailsPage.vue'))
 const CreateSubconOrderPage = asyncPage(() => import('~/components/pages/CreateSubconOrderPage.vue'))
-const SubconGoodsReceiptPage = asyncPage(() => import('~/components/pages/SubconGoodsReceiptPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
 const WarehouseTransfersPage = asyncPage(() => import('~/components/pages/WarehouseTransfersPage.vue'))
 const StockAdjustmentsPage = asyncPage(() => import('~/components/pages/StockAdjustmentsPage.vue'))
@@ -690,8 +689,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // order's document chain. The bare index falls through to the registry.
   if (segs.length >= 2 && segs[0] === 'subcon-orders') {
     if (segs[1] === 'new') return { component: CreateSubconOrderPage, id: 'new' }
-    // /subcon-orders/:id/receipt → receive the vendor's output against the order
-    if (segs.length >= 3 && segs[2] === 'receipt') return { component: SubconGoodsReceiptPage, id: segs[1]! }
     return { component: SubconOrderDetailsPage, id: segs[1]! }
   }
   // /bill-of-materials/new → create form; /:id → BOM detail.

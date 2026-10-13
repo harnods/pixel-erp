@@ -125,7 +125,7 @@ const blocker = computed(() => {
   if (o.status === 'pending approval') {
     return {
       type: 'information' as const,
-      title: t('Goods receipt is pending inbound approval'),
+      title: t('Purchase delivery is pending inbound approval'),
       body: t('Inventory and journals post once the receipt is approved, so stock is not on hand yet.'),
     }
   }
@@ -342,7 +342,7 @@ function formatNum(n: number) { return n.toLocaleString('id-ID') }
           <h2 class="sc-section-title">{{ t('Receipt disposition') }}</h2>
 
           <p v-if="!order.disposition" class="sc-empty-line">
-            {{ t('Nothing received yet — quality outcomes appear here after the first goods receipt.') }}
+            {{ t('Nothing received yet — quality outcomes appear here after the first purchase delivery.') }}
           </p>
 
           <dl v-else class="sc-disposition">

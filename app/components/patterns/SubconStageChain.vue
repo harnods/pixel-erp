@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * SubconStageChain — the five-node document-chain progress indicator for a subcon
- * order: BOM & config → Component supply → Subcon PR → Goods receipt → Closed.
+ * order: BOM & config → Component supply → Subcon PR → Purchase delivery → Closed.
  *
  * Node states:
  *   • done      — the stage is behind the order (filled, check-coloured)

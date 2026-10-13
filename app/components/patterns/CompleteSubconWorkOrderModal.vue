@@ -20,6 +20,8 @@ export interface SubconComponentUsage {
   unit: string
   /** Quantity transferred to the vendor across every transfer raised. */
   sent: number
+  /** Already issued out of the vendor's warehouse by earlier partial records. */
+  issued?: number
   /** Warehouse it came from — where anything unused goes back to. */
   originWarehouseId?: string
   originWarehouseName?: string
@@ -59,7 +61,9 @@ watch(() => props.isOpen, (open) => {
 
 function num(v: string | undefined) { return Math.max(0, Number(v) || 0) }
 function usedFor(c: SubconComponentUsage) { return Math.max(0, c.sent - num(unused.value[c.sku])) }
-function isOver(c: SubconComponentUsage) { return num(unused.value[c.sku]) > c.sent }
+/** What the vendor still holds — material already issued into a record is spent. */
+function atVendor(c: SubconComponentUsage) { return Math.max(0, c.sent - (c.issued ?? 0)) }
+function isOver(c: SubconComponentUsage) { return num(unused.value[c.sku]) > atVendor(c) }
 
 const hasError = computed(() => props.components.some(isOver))
 const returnLines = computed(() =>
@@ -109,7 +113,7 @@ function confirm() {
             <template v-if="components.length">
               <p class="csw-lead">
                 {{ t('How much of each component did the vendor use? Anything left over is still your stock at') }}
-                {{ subconWarehouseName || t('the vendor') }}, {{ t('so it is transferred back when you complete.') }}
+                {{ subconWarehouseName || t('the vendor') }}, {{ t('so it comes back to the output warehouse when you complete.') }}
               </p>
 
               <table class="csw-table">
@@ -140,20 +144,20 @@ function confirm() {
                     </td>
                     <td class="csw-td csw-td--num">{{ usedFor(c).toLocaleString('id-ID') }} {{ c.unit }}</td>
                     <td class="csw-td csw-td--muted">
-                      {{ num(unused[c.sku]) > 0 ? (c.originWarehouseName || t('Origin warehouse')) : '—' }}
+                      {{ num(unused[c.sku]) > 0 ? t('Output warehouse') : '—' }}
                     </td>
                   </tr>
                 </tbody>
               </table>
 
               <p v-if="hasError" class="csw-error">
-                {{ t('Unused cannot be more than what was sent.') }}
+                {{ t('Unused cannot be more than what is still at the vendor.') }}
               </p>
               <p v-else-if="returnLines.length" class="csw-note">
                 <MpIcon name="info" size="sm" />
-                {{ t('Completing raises a warehouse transfer returning') }} {{ returnLines.length }}
+                {{ t('Completing returns') }} {{ returnLines.length }}
                 {{ t(returnLines.length === 1 ? 'component' : 'components') }}
-                {{ t('to their origin warehouse.') }}
+                {{ t('to the output warehouse as stock in.') }}
               </p>
             </template>
 

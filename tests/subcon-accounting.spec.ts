@@ -1,13 +1,10 @@
 /**
- * Subcontracting accounting — the three finance simulations, as tests.
+ * Subcontracting accounting — PRD Rev 5 (R13, R14), as tests.
  *
- * The numbers here are NOT illustrative. They are the agreed output of the finance
- * simulations recorded in SUBCONTRACTING-ACCOUNTING-BRIEF.md §5, and they are what
- * `app/data/subconAccounting.ts` has to reproduce exactly.
- *
- * The load-bearing assertion across all of it: all three supply methods converge on
- * the SAME finished-goods value. Basic, Resupply and Dropship differ in how
- * materials reach the vendor, never in what the output costs.
+ * Reference scenario: BOM #10087 Kemeja Formal Pria, 500 pcs, Resupply. The
+ * numbers are the Design Brief's fixtures F1, F2, F7 and F8, and the invariants
+ * I8 (no tax) and I9 (PO approval posts nothing). Every method must converge on
+ * the same finished-goods value once the invoice is in.
  */
 import { describe, it, expect } from 'vitest'
 import {
@@ -19,6 +16,8 @@ import {
   plannedMaterialValue,
   plannedSubconCost,
   evaluateComponentAdjustment,
+  splitInvoiceStockVsSold,
+  subconAccount,
   type SubconAccountingInput,
   type SubconCostLineInput,
   type SubconComponentInput,
@@ -73,180 +72,212 @@ describe('fixture sanity — the brief’s own arithmetic', () => {
   })
 })
 
-// ── Test 1 — full receipt, all three methods ─────────────────────────────────
+const INVOICE_LINES = [
+  { costLineId: 'svc-sew', amount: 12_500_000 },
+  { costLineId: 'svc-handling', amount: 600_000 },
+]
+const INVOICE = { id: 'inv1', date: '2026-09-30', lines: INVOICE_LINES }
+const isInvoice = (e: { event: string }) => e.event === 'vendorInvoice'
 
-describe('Test 1 — one full receipt, all three methods', () => {
-  const resupply = baseInput({
-    method: 'resupply',
-    handovers: [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
-    invoices: [{ id: 'inv1', date: '2026-09-20', lines: [
-      { costLineId: 'svc-sew', amount: 12_500_000 },
-      { costLineId: 'svc-handling', amount: 600_000 },
-    ] }],
-    receipts: [{ id: 'r1', date: '2026-09-25', qty: 500 }],
-  })
+// ── F1 — Partial production ON: two records, then complete ───────────────────
 
-  const dropship = baseInput({
-    method: 'dropship',
-    // The 3rd party ships straight to the vendor — ours from that moment.
-    componentPurchases: [{ id: 'p1', date: '2026-09-17', lines: FULL_HANDOVER }],
-    handovers: [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
-    invoices: [{ id: 'inv1', date: '2026-09-20', lines: [
-      { costLineId: 'svc-sew', amount: 12_500_000 },
-      { costLineId: 'svc-handling', amount: 600_000 },
-    ] }],
-    receipts: [{ id: 'r1', date: '2026-09-25', qty: 500 }],
-  })
-
-  // The vendor's own materials: no inventory, no handover. Its invoice folds the
-  // material value into the service cost line.
-  const basic = baseInput({
-    method: 'basic',
-    components: [],
-    costLines: [
-      { id: 'svc-sew', name: 'Jahit & assembly (incl. materials)', costDriver: 'Unit', amount: 12_500_000 + MATERIALS_TOTAL },
-      { id: 'svc-handling', name: 'Subcon handling & freight', costDriver: 'Amount', amount: 600_000 },
+describe('F1 — partial production ON, two records, then completion', () => {
+  // Record 1: 300 pcs with 60% of the components issued. Completion issues the rest.
+  const input = baseInput({
+    handovers: [
+      { id: 'h1', date: '2026-09-20', lines: shareOfComponents(0.6) },
+      { id: 'h2', date: '2026-09-25', lines: shareOfComponents(0.4) },
     ],
-    invoices: [{ id: 'inv1', date: '2026-09-20', lines: [
-      { costLineId: 'svc-sew', amount: 12_500_000 + MATERIALS_TOTAL },
-      { costLineId: 'svc-handling', amount: 600_000 },
-    ] }],
-    receipts: [{ id: 'r1', date: '2026-09-25', qty: 500 }],
+    outputs: [
+      { id: 'o1', date: '2026-09-20', qty: 300, cost: 7_860_000 },
+      { id: 'o2', date: '2026-09-25', qty: 200, cost: 5_240_000 },
+    ],
+  })
+  const entries = buildSubconJournals(input)
+
+  it('record 1 moves 5,820,000 of materials from WIP to finished goods', () => {
+    const e = entries.find(x => x.id === 'o1-output')!
+    expect(e.lines).toEqual([
+      expect.objectContaining({ role: 'finishedGoods', debit: 5_820_000 }),
+      expect.objectContaining({ role: 'wip', credit: 5_820_000 }),
+    ])
   })
 
-  const cases = [
-    ['Resupply', resupply] as const,
-    ['Dropship', dropship] as const,
-    ['Basic', basic] as const,
-  ]
-
-  it.each(cases)('%s — finished goods = 22,800,000', (_name, input) => {
-    const entries = buildSubconJournals(input)
-    expect(balanceOf(entries, 'finishedGoods')).toBe(PRODUCTION_COST)
+  it('completion releases the remaining 3,880,000', () => {
+    const e = entries.find(x => x.id === 'o2-output')!
+    expect(e.lines[0]).toMatchObject({ role: 'finishedGoods', debit: 3_880_000 })
   })
 
-  it.each(cases)('%s — WIP and clearing both end at zero', (_name, input) => {
-    const entries = buildSubconJournals(input)
+  it('finished goods carry material value only before the invoice', () => {
+    expect(balanceOf(entries, 'finishedGoods')).toBe(MATERIALS_TOTAL)
     expect(wipBalanceFrom(entries)).toBe(0)
-    expect(balanceOf(entries, 'subconClearing')).toBe(0)
   })
 
-  it.each(cases)('%s — every entry balances', (_name, input) => {
-    expect(entriesBalance(buildSubconJournals(input))).toBe(true)
-  })
-
-  it('withholding is 262,000 on Resupply and Dropship', () => {
-    for (const input of [resupply, dropship]) {
-      const entries = buildSubconJournals(input)
-      // A liability: credited, so the signed balance is negative.
-      expect(-balanceOf(entries, 'withholdingTaxPayable')).toBe(262_000)
-    }
-  })
-
-  it('withholding is 0 on Basic — a purchase of goods, not jasa maklon', () => {
-    const entries = buildSubconJournals(basic)
-    expect(balanceOf(entries, 'withholdingTaxPayable')).toBe(0)
-  })
-
-  it('Resupply raises no entry for the warehouse transfer itself', () => {
-    // Location changes, ownership does not. The first entry is the handover.
-    const entries = buildSubconJournals(resupply)
-    expect(entries.some(e => e.event === 'componentPurchase')).toBe(false)
-    expect(entries[0]!.event).toBe('materialHandover')
-  })
-
-  it('Dropship buys the components into inventory, then clears it to WIP', () => {
-    const entries = buildSubconJournals(dropship)
-    expect(entries[0]!.event).toBe('componentPurchase')
-    // Bought in, issued out — material inventory nets to zero.
-    expect(balanceOf(entries, 'materialInventory')).toBe(0)
-  })
-
-  it('accounts payable = service + VAT − withholding', () => {
-    const entries = buildSubconJournals(resupply)
-    const vat = Math.round(SUBCON_TOTAL * 0.11)
-    expect(-balanceOf(entries, 'accountsPayable')).toBe(SUBCON_TOTAL + vat - 262_000)
+  it('the invoice takes finished goods to 22,800,000', () => {
+    const withInvoice = buildSubconJournals({ ...input, invoices: [INVOICE] })
+    expect(balanceOf(withInvoice, 'finishedGoods')).toBe(PRODUCTION_COST)
+    expect(balanceOf(withInvoice, 'accountsPayable')).toBe(-SUBCON_TOTAL)
+    expect(entriesBalance(withInvoice)).toBe(true)
   })
 })
 
-// ── Test 2 — staged handovers and staged receipts ────────────────────────────
+// ── F2 — Partial production OFF ──────────────────────────────────────────────
 
-describe('Test 2 — materials 60/40, receipts of 300 then 200', () => {
+describe('F2 — partial production OFF: Start issues everything', () => {
   const input = baseInput({
-    method: 'resupply',
-    handovers: [
-      { id: 'h1', date: '2026-09-18', lines: shareOfComponents(0.6) },
-      { id: 'h2', date: '2026-09-19', lines: shareOfComponents(0.4) },
-    ],
-    // Two approved purchase orders — the vendor's charge is recognised on
-    // approval, so each one posts its own clearing/VAT/withholding entry.
-    invoices: [
-      { id: 'inv1', date: '2026-09-22', lines: [
-        { costLineId: 'svc-sew', amount: 7_500_000 },
-        { costLineId: 'svc-handling', amount: 360_000 },
-      ] },
-      { id: 'inv2', date: '2026-09-28', lines: [
-        { costLineId: 'svc-sew', amount: 5_000_000 },
-        { costLineId: 'svc-handling', amount: 240_000 },
-      ] },
-    ],
-    receipts: [
-      { id: 'r1', date: '2026-09-23', qty: 300 },
-      { id: 'r2', date: '2026-09-29', qty: 200 },
-    ],
+    handovers: [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
+    outputs: [{ id: 'o1', date: '2026-09-30', qty: 500, cost: SUBCON_TOTAL }],
+    invoices: [INVOICE],
   })
-
   const entries = buildSubconJournals(input)
-  const fgEntries = entries.filter(e => e.event === 'goodsReceived')
 
-  it('receipt 1 (300 pcs) is worth 13,680,000', () => {
-    expect(fgEntries[0]!.lines[0]!.debit).toBe(13_680_000)
+  it('Start posts Dr WIP / Cr Material inventory for 9,700,000', () => {
+    const e = entries.find(x => x.event === 'materialHandover')!
+    expect(e.lines[0]).toMatchObject({ role: 'wip', debit: MATERIALS_TOTAL })
+    expect(e.lines.filter(l => l.role === 'materialInventory').reduce((s, l) => s + (l.credit ?? 0), 0))
+      .toBe(MATERIALS_TOTAL)
   })
 
-  it('receipt 2 (200 pcs) is worth 9,120,000', () => {
-    expect(fgEntries[1]!.lines[0]!.debit).toBe(9_120_000)
+  it('completion produces 500: Dr Finished goods / Cr WIP 9,700,000', () => {
+    const e = entries.find(x => x.event === 'goodsProduced')!
+    expect(e.lines[0]).toMatchObject({ role: 'finishedGoods', debit: MATERIALS_TOTAL })
   })
 
-  it('cost per unit stays 45,600 across both receipts', () => {
-    expect(fgEntries[0]!.lines[0]!.debit! / 300).toBe(COST_PER_UNIT)
-    expect(fgEntries[1]!.lines[0]!.debit! / 200).toBe(COST_PER_UNIT)
-  })
-
-  it('subcon cost splits 7,860,000 / 5,240,000 by driver', () => {
-    const caps = entries.filter(e => e.event === 'capitalisation')
-    expect(caps[0]!.lines[0]!.debit).toBe(7_500_000 + 360_000)
-    expect(caps[1]!.lines[0]!.debit).toBe(5_000_000 + 240_000)
-  })
-
-  it('WIP walks 5,820,000 → 9,700,000 → 17,560,000 → 3,880,000 → 0', () => {
-    // Balance after each entry, in the order the events happened.
-    const trail: number[] = []
-    for (let i = 1; i <= entries.length; i++) trail.push(wipBalanceFrom(entries.slice(0, i)))
-    const wipMoves = trail.filter((v, i) => i === 0 || v !== trail[i - 1])
-    expect(wipMoves).toEqual([5_820_000, 9_700_000, 17_560_000, 3_880_000, 9_120_000, 0])
-  })
-
-  it('after receipt 1, WIP equals the materials still being worked on — 3,880,000', () => {
-    // The explicit assertion the brief calls for: this is the "Components at
-    // vendor" figure, not an incidental intermediate.
-    const upToReceipt1 = entries.slice(0, entries.indexOf(fgEntries[0]!) + 1)
-    expect(wipBalanceFrom(upToReceipt1)).toBe(3_880_000)
-  })
-
-  it('two approved orders produce two withholding entries, never one rolled up', () => {
-    const withholdingLines = entries
-      .filter(e => e.event === 'vendorInvoice')   // the charge-recognised entry
-      .flatMap(e => e.lines.filter(l => l.role === 'withholdingTaxPayable'))
-    expect(withholdingLines).toHaveLength(2)
-    expect(withholdingLines.map(l => l.credit)).toEqual([157_200, 104_800])
-    expect(withholdingLines.reduce((s, l) => s + l.credit!, 0)).toBe(262_000)
-  })
-
-  it('ends square: finished goods 22,800,000, WIP 0, clearing 0', () => {
+  it('the invoice adds 13,100,000 → finished goods 22,800,000', () => {
     expect(balanceOf(entries, 'finishedGoods')).toBe(PRODUCTION_COST)
-    expect(wipBalanceFrom(entries)).toBe(0)
-    expect(balanceOf(entries, 'subconClearing')).toBe(0)
     expect(entriesBalance(entries)).toBe(true)
+  })
+})
+
+// ── The three methods converge ───────────────────────────────────────────────
+
+describe('all three methods converge on the same finished-goods value', () => {
+  const finishedGoods = (method: 'basic' | 'resupply' | 'dropship') => {
+    const own = method === 'basic'
+    const entries = buildSubconJournals(baseInput({
+      method,
+      // Basic: the vendor's own materials, so the invoice carries material AND service.
+      costLines: own
+        ? [{ id: 'svc-all', name: 'Material + service', costDriver: 'Amount', amount: PRODUCTION_COST }]
+        : COST_LINES,
+      components: own ? [] : COMPONENTS,
+      handovers: own ? [] : [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
+      componentPurchases: method === 'dropship'
+        ? [{ id: 'p1', date: '2026-09-15', lines: FULL_HANDOVER }] : [],
+      outputs: [{ id: 'o1', date: '2026-09-30', qty: 500, cost: SUBCON_TOTAL }],
+      invoices: [{
+        id: 'inv1', date: '2026-10-01',
+        lines: own ? [{ costLineId: 'svc-all', amount: PRODUCTION_COST }] : INVOICE_LINES,
+      }],
+    }))
+    return { entries, fg: balanceOf(entries, 'finishedGoods') }
+  }
+
+  it.each(['basic', 'resupply', 'dropship'] as const)('%s ends at 22,800,000', (method) => {
+    const { entries, fg } = finishedGoods(method)
+    expect(fg).toBe(PRODUCTION_COST)
+    expect(entriesBalance(entries)).toBe(true)
+  })
+
+  it('Basic records output at zero value; the invoice carries the whole value', () => {
+    const { entries } = finishedGoods('basic')
+    expect(entries.some(e => e.event === 'goodsProduced')).toBe(false)
+    expect(entries.find(isInvoice)!.lines[0]).toMatchObject({ role: 'finishedGoods', debit: PRODUCTION_COST })
+  })
+
+  it('Resupply raises no entry for the warehouse transfer itself', () => {
+    const { entries } = finishedGoods('resupply')
+    expect(entries.map(e => e.event)).toEqual(['materialHandover', 'goodsProduced', 'vendorInvoice'])
+  })
+
+  it('Dropship buys the components into inventory, then issues them to WIP', () => {
+    const { entries } = finishedGoods('dropship')
+    expect(entries[0]!.event).toBe('componentPurchase')
+    expect(entries[0]!.lines.at(-1)).toMatchObject({ role: 'accountsPayable', credit: MATERIALS_TOTAL })
+  })
+})
+
+// ── F7 — Unused components at completion ─────────────────────────────────────
+
+describe('F7 — unused components come back out of WIP', () => {
+  // Sent 500 m, used 480 m: completion issues all 500 and returns 20 m.
+  const entries = buildSubconJournals(baseInput({
+    handovers: [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
+    returns: [{ id: 'r1', date: '2026-09-30', lines: [{ sku: 'FAB-KTN-01', qty: 20 }] }],
+    outputs: [{ id: 'o1', date: '2026-09-30', qty: 500, cost: SUBCON_TOTAL }],
+  }))
+
+  it('the 20 m returns to Material inventory at cost, from WIP', () => {
+    const e = entries.find(x => x.event === 'materialReturn')!
+    expect(e.lines).toEqual([
+      expect.objectContaining({ role: 'materialInventory', debit: 200_000 }),
+      expect.objectContaining({ role: 'wip', credit: 200_000 }),
+    ])
+  })
+
+  it('finished goods take only the 9,500,000 that was really used; WIP ends at zero', () => {
+    expect(balanceOf(entries, 'finishedGoods')).toBe(9_500_000)
+    expect(wipBalanceFrom(entries)).toBe(0)
+    expect(entriesBalance(entries)).toBe(true)
+  })
+})
+
+// ── R13 — approval posts nothing; the invoice is the only service-cost entry ──
+
+describe('R13 / I9 — purchase order approval posts nothing', () => {
+  it('with no invoice, nothing in the journal carries the service cost', () => {
+    const entries = buildSubconJournals(baseInput({
+      handovers: [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
+      outputs: [{ id: 'o1', date: '2026-09-30', qty: 500, cost: SUBCON_TOTAL }],
+    }))
+    expect(entries.some(isInvoice)).toBe(false)
+    expect(balanceOf(entries, 'accountsPayable')).toBe(0)
+    expect(balanceOf(entries, 'finishedGoods')).toBe(MATERIALS_TOTAL)
+  })
+})
+
+describe('R13 — the invoice splits between stock on hand and cost of goods sold', () => {
+  const outputs = [
+    { id: 'o1', date: '2026-09-20', qty: 300, cost: 7_860_000, soldQty: 300 },
+    { id: 'o2', date: '2026-09-25', qty: 200, cost: 5_240_000, soldQty: 0 },
+  ]
+
+  it('follows each record’s cost share and how much of it was sold (OPEN — Finance)', () => {
+    expect(splitInvoiceStockVsSold(SUBCON_TOTAL, outputs)).toEqual({ stock: 5_240_000, sold: 7_860_000 })
+  })
+
+  it('posts both debits against accounts payable, balanced', () => {
+    const entries = buildSubconJournals(baseInput({ outputs, invoices: [INVOICE] }))
+    const e = entries.find(isInvoice)!
+    expect(e.lines).toEqual([
+      expect.objectContaining({ role: 'finishedGoods', debit: 5_240_000 }),
+      expect.objectContaining({ role: 'costOfGoodsSold', debit: 7_860_000 }),
+      expect.objectContaining({ role: 'accountsPayable', credit: SUBCON_TOTAL }),
+    ])
+    expect(entriesBalance(entries)).toBe(true)
+  })
+
+  it('with nothing sold, or nothing produced yet, the whole invoice stays in stock', () => {
+    expect(splitInvoiceStockVsSold(SUBCON_TOTAL, [])).toEqual({ stock: SUBCON_TOTAL, sold: 0 })
+    expect(splitInvoiceStockVsSold(SUBCON_TOTAL, outputs.map(o => ({ ...o, soldQty: 0 }))))
+      .toEqual({ stock: SUBCON_TOTAL, sold: 0 })
+  })
+})
+
+// ── R14 / I8 — no tax ────────────────────────────────────────────────────────
+
+describe('R14 / I8 — no subcon journal carries PPN or PPh 23', () => {
+  it.each(['basic', 'resupply', 'dropship'] as const)('%s invoice is the service value, untaxed', (method) => {
+    const entries = buildSubconJournals(baseInput({
+      method,
+      handovers: [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
+      outputs: [{ id: 'o1', date: '2026-09-30', qty: 500, cost: SUBCON_TOTAL }],
+      invoices: [INVOICE],
+    }))
+    const codes = entries.flatMap(e => e.lines.map(l => subconAccount(l.role).code))
+    expect(codes).not.toContain('1-40100') // PPN Masukan
+    expect(codes).not.toContain('2-20100') // Utang PPh 23
+    expect(entries.find(isInvoice)!.lines.find(l => l.role === 'accountsPayable')!.credit).toBe(SUBCON_TOTAL)
   })
 })
 
@@ -290,36 +321,25 @@ describe('Test 3 — component adjustments and a new cost line', () => {
     })).toEqual({ kind: 'requiresShipment', extraQty: 50 })
   })
 
-  it('decreasing to at-or-above what was sent posts NOTHING', () => {
-    // Kancing: planned 2,000 → 1,500, with 1,200 already at the vendor.
+  it('an increase the vendor already holds is plan-only and posts nothing', () => {
+    // Planned 400, with 1,200 already at the vendor: raising to 600 needs no shipment.
+    expect(evaluateComponentAdjustment({
+      method: 'resupply',
+      plannedQty: 400, newPlannedQty: 600, alreadySentQty: 1_200,
+      componentName: 'Kancing baju', unit: 'pcs',
+    })).toEqual({ kind: 'planOnly' })
+  })
+
+  it('R7 — a decrease is refused, naming the CURRENT value', () => {
     const outcome = evaluateComponentAdjustment({
       method: 'resupply',
       plannedQty: 2_000, newPlannedQty: 1_500, alreadySentQty: 1_200,
       componentName: 'Kancing baju', unit: 'pcs',
     })
-    expect(outcome).toEqual({ kind: 'planOnly' })
-
-    // And the accounting agrees: what was handed over is untouched by a plan edit.
-    const before = buildSubconJournals(baseInput({
-      handovers: [{ id: 'h1', date: '2026-09-18', lines: [{ sku: 'BTN-STD-04', qty: 1_200 }] }],
-    }))
-    const after = buildSubconJournals(baseInput({
-      components: COMPONENTS.map(c => c.sku === 'BTN-STD-04' ? { ...c, plannedQty: 1_500 } : c),
-      handovers: [{ id: 'h1', date: '2026-09-18', lines: [{ sku: 'BTN-STD-04', qty: 1_200 }] }],
-    }))
-    expect(after).toEqual(before)
-  })
-
-  it('decreasing BELOW what was sent is rejected, naming the sent quantity', () => {
-    const outcome = evaluateComponentAdjustment({
-      method: 'resupply',
-      plannedQty: 2_000, newPlannedQty: 1_000, alreadySentQty: 1_200,
-      componentName: 'Kancing baju', unit: 'pcs',
-    })
     expect(outcome.kind).toBe('rejected')
     if (outcome.kind === 'rejected') {
-      expect(outcome.alreadySentQty).toBe(1_200)
-      expect(outcome.message).toContain('1200')
+      expect(outcome.currentQty).toBe(2_000)
+      expect(outcome.message).toContain('2000')
       expect(outcome.message).toContain('Kancing baju')
     }
   })
@@ -340,26 +360,23 @@ describe('Test 3 — component adjustments and a new cost line', () => {
   })
 })
 
-// ── Short completion ─────────────────────────────────────────────────────────
 
-describe('closing short', () => {
-  it('writes the remaining WIP off to the waste account', () => {
-    const input = baseInput({
-      handovers: [{ id: 'h1', date: '2026-09-18', lines: FULL_HANDOVER }],
-      invoices: [{ id: 'inv1', date: '2026-09-22', lines: [
-        { costLineId: 'svc-sew', amount: 11_250_000 },
-        { costLineId: 'svc-handling', amount: 540_000 },
-      ] }],
-      receipts: [{ id: 'r1', date: '2026-09-25', qty: 450 }],
-      closedShort: true,
-    })
-    const entries = buildSubconJournals(input)
-    const writeOff = entries.find(e => e.event === 'shortCompletion')
+// ── A partial record’s output and its issue share one date ───────────────────
 
-    expect(writeOff).toBeDefined()
-    // 50 of 500 units never produced — their material share stays behind.
-    expect(writeOff!.lines[0]!.debit).toBe(970_000)
-    expect(wipBalanceFrom(entries)).toBe(0)
-    expect(entriesBalance(entries)).toBe(true)
+describe('output dated on the record’s own day releases that record’s materials', () => {
+  it('an issue and an output on the same (past) day post together', () => {
+    const entries = buildSubconJournals(baseInput({
+      handovers: [{ id: 'h1', date: '2026-09-10', lines: shareOfComponents(0.6) }],
+      outputs: [{ id: 'o1', date: '2026-09-10', qty: 300, cost: 7_860_000 }],
+    }))
+    expect(entries.find(e => e.id === 'o1-output')!.lines[0]).toMatchObject({ debit: 5_820_000 })
+  })
+
+  it('an output dated BEFORE its issue would carry nothing — which is why the record’s date is passed through', () => {
+    const entries = buildSubconJournals(baseInput({
+      handovers: [{ id: 'h1', date: '2026-09-12', lines: shareOfComponents(0.6) }],
+      outputs: [{ id: 'o1', date: '2026-09-10', qty: 300, cost: 7_860_000 }],
+    }))
+    expect(entries.some(e => e.id === 'o1-output')).toBe(false)
   })
 })

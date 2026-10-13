@@ -17,7 +17,7 @@ import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { SUBCON_VENDORS, type SubconPriceBasis } from '~/data/subcon'
 import {
-  priceSubconOrder, withholdingCaption, isVatCreditable,
+  priceSubconOrder, withholdingCaption, isVatCreditable, subconLineTaxLabel, subconDocumentUntaxed,
   SUBCON_PRICE_BASIS_LABEL, SUBCON_PRICING_SETTINGS,
 } from '~/data/subconPricing'
 import type { PurchaseOrder, PurchaseRequestLine } from '~/data/types'
@@ -221,7 +221,8 @@ function onNewProduct() {
   if (!p) return
   blankItems.value.push({
     _key: ++_seq, product: p.name, sku: p.code, description: '',
-    qty: 1, unit: p.unit, unitCost: p.price, discountPct: 0, taxLabel: 'PPN 11%',
+    qty: 1, unit: p.unit, unitCost: p.price, discountPct: 0,
+    taxLabel: subconWorkOrder.value ? subconLineTaxLabel() : 'PPN 11%',
     dimensions: {},
   })
   newProduct.value = ''
@@ -267,7 +268,9 @@ const taxBaseValue = computed(() => subtotal.value - discountTotal.value - globa
  * raises the service value that VAT is charged on — computing it here from the
  * pre-gross-up subtotal would leave the totals column not adding up.
  */
-const taxAmount   = computed(() => subconPricing.value
+/** R14 — a subcon order carries no PPN while tax handling is out of scope. */
+const untaxed = computed(() => subconDocumentUntaxed(!!subconWorkOrder.value))
+const taxAmount   = computed(() => untaxed.value ? 0 : subconPricing.value
   ? subconPricing.value.vat
   : Math.round(taxBaseValue.value * 0.11))
 const shippingFee = ref(source.value?.totals.shippingFee ?? 0)
@@ -425,6 +428,9 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
     recordSubconDocument(wo.id, {
       kind: 'purchaseOrder', id: newId, number: newOrder.number, route: '/purchase-orders',
       ...(request ? { fromKind: request.kind } : {}),
+      // Which request this order grew from, so a second request on the run (R11)
+      // can be told apart from one that already has its order.
+      fromId: prId,
     })
     break
   }
@@ -918,7 +924,7 @@ function onSendToFulfillment() {
               <span>{{ fmt(subconPricing.grossUp) }}</span>
             </div>
 
-            <div class="si-totals-row">
+            <div v-if="!untaxed" class="si-totals-row">
               <span>PPN 11%</span>
               <span>{{ fmt(taxAmount) }}</span>
             </div>

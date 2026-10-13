@@ -2,7 +2,10 @@ import { reactive } from 'vue'
 import { TODAY } from './master'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { warehouseTransfers } from './warehouseTransfers'
-import type { SubconScope, SubconSplit, SubconMethod } from './subcon'
+import { stockAdjustments } from './stockAdjustments'
+import { purchaseRequests } from './purchaseRequests'
+import type { SubconScope, SubconSplit, SubconMethod, SubconAdjustmentRecord } from './subcon'
+import { evaluateSubconAdjustment, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY } from './subcon'
 import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
@@ -106,7 +109,7 @@ export interface WorkOrderSubconSetup {
    * silently — the gap between what was ordered and what was accepted is the
    * whole point of keeping it.
    */
-  qtyAdjustment?: { from: number; to: number; reason: string; date: string }
+  adjustments?: SubconAdjustmentRecord[]
   /**
    * Component planned quantities revised after the work order was created, by SKU.
    * Held here rather than edited into the BOM: the BOM is the recipe and is shared
@@ -156,6 +159,12 @@ export interface WorkOrderSubconSetup {
    * so the figure is read once and agreed on everywhere.
    */
   materialsReady?: boolean
+  /**
+   * Output recorded on this order — each partial production record, and the
+   * remainder produced at completion (R5). It is the accounting input for
+   * finished goods: how many units, and how much subcon cost each took (R12).
+   */
+  outputRecords?: { id: string; date: string; qty: number; cost: number }[]
   /**
    * The one step this order owes next. Written by the store whenever a document
    * is recorded; the screen renders it and never works it out for itself.
@@ -212,6 +221,17 @@ export interface RaisedSubconDocument {
    * says which request the chain started from.
    */
   fromKind?: string
+  /**
+   * The id of the request this ORDER was raised from. With several requests on a
+   * run (R11 — a charge added after approval raises its own), this is what tells
+   * which request still has no order of its own.
+   */
+  fromId?: string
+  /**
+   * Which cost lines a service REQUEST covers (R11). A request raised before this
+   * field existed covers every line the BOM had at the time.
+   */
+  lineIds?: string[]
 }
 
 export interface WorkOrderMaterialReservation {
@@ -415,9 +435,95 @@ export function subconSentToVendor(wo: WorkOrder): Record<string, number> {
   return totals
 }
 
+/**
+ * How much of each component has already been issued out of the vendor's
+ * warehouse into the run — the sum of the stock-out lines on every component
+ * issue this order raised. What the vendor still holds is what was sent less this
+ * (R4, R6). A positive line is unused material coming back, not an issue.
+ */
+export function subconIssuedFromVendor(wo: WorkOrder): Record<string, number> {
+  const issued: Record<string, number> = {}
+  for (const doc of wo.subcon?.raisedDocuments ?? []) {
+    if (doc.kind !== 'componentIssue') continue
+    const adj = stockAdjustments.find(a => a.id === doc.id)
+    for (const line of adj?.lines ?? []) {
+      if (line.qty < 0) issued[line.sku] = (issued[line.sku] ?? 0) + Math.abs(line.qty)
+    }
+  }
+  return issued
+}
+
+/** What the vendor still holds of each component: sent, less what has been issued. */
+export function subconAtVendor(wo: WorkOrder): Record<string, number> {
+  const sent = subconSentToVendor(wo)
+  const issued = subconIssuedFromVendor(wo)
+  const out: Record<string, number> = {}
+  for (const sku of Object.keys(sent)) out[sku] = Math.max(0, sent[sku]! - (issued[sku] ?? 0))
+  return out
+}
+
+/**
+ * What the BOM says one component needs for THIS order's output (R8).
+ *
+ * The BOM's figure is what the order needed when it was created, so it is scaled
+ * by how far the output has been raised since: planned ÷ the output the order
+ * started with. That starting output is the `from` of the first output adjustment
+ * (adjustments only ever increase, R7), or simply the current output if it was
+ * never adjusted — so an order that was never adjusted needs exactly what the BOM
+ * says, however its quantity compares with the BOM's own output, and raising the
+ * output raises every component with it, which is what lets an increase reopen
+ * supply for the difference.
+ */
+export function subconComponentBaseQty(wo: WorkOrder, bomNeeded: number): number {
+  const startedAt = wo.subcon?.adjustments?.find(a => a.field === 'output')?.from ?? wo.plannedQty
+  if (!(startedAt > 0)) return bomNeeded
+  return Math.round(bomNeeded * (wo.plannedQty / startedAt) * 1000) / 1000
+}
+
+/**
+ * The quantity of a component this run needs: the BOM scaled to the order's
+ * output, or a component adjustment if that is higher. Adjustments can only
+ * increase (R7), so `max` is exactly "scaled, then any adjustment".
+ */
+export function subconPlannedComponentQty(wo: WorkOrder, sku: string, bomNeeded: number): number {
+  return Math.max(subconComponentBaseQty(wo, bomNeeded), wo.subcon?.componentAdjustments?.[sku] ?? 0)
+}
+
 /** The quantity of a component this run needs, after any adjustment. */
 function plannedComponentQty(wo: WorkOrder, sku: string, needed: number): number {
-  return wo.subcon?.componentAdjustments?.[sku] ?? needed
+  return subconPlannedComponentQty(wo, sku, needed)
+}
+
+/**
+ * Dropship: how much of each component still has to be REQUESTED (R8).
+ *
+ * The need is the plan (scaled to the output, then any adjustment); what covers
+ * it is whichever is further along — what the vendor has already received, or what
+ * the component requests raised so far asked for. Only the difference is offered
+ * again, so raising output asks the third party for the extra and never re-orders
+ * what is already on its way.
+ */
+export function subconDropshipShortfall(wo: WorkOrder): Record<string, number> {
+  const c = wo.subcon
+  if (!c || c.method !== 'dropship') return {}
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
+  const requested: Record<string, number> = {}
+  for (const d of c.raisedDocuments ?? []) {
+    if (!COMPONENT_REQUEST_KINDS.includes(d.kind)) continue
+    for (const l of purchaseRequests.find(r => r.id === d.id)?.lines ?? []) {
+      requested[l.sku] = (requested[l.sku] ?? 0) + l.requestedQty
+    }
+  }
+  const received = c.componentReceipts ?? {}
+  const out: Record<string, number> = {}
+  for (const line of bom?.rawMaterials ?? []) {
+    const sku = catalogProduct(line.productId)?.sku
+    if (!sku) continue
+    const planned = subconPlannedComponentQty(wo, sku, line.needed)
+    const gap = planned - Math.max(received[sku] ?? 0, requested[sku] ?? 0)
+    if (gap > 0) out[sku] = Math.round(gap * 1000) / 1000
+  }
+  return out
 }
 
 /**
@@ -530,17 +636,21 @@ export function deriveNextAction(wo: WorkOrder): SubconNextAction {
   if (!subconMaterialsFulfilled(wo)) {
     if (c.method === 'resupply') return 'create-transfer'
     if (c.method === 'dropship') {
-      if (!has('componentPr') && !has('rawPr')) return 'create-component-request'
-      const componentPo = docs.find(d => d.kind === 'purchaseOrder' && !isServiceOrderDoc(d))
-      return componentPo ? 'view-component-order' : 'view-component-request'
+      // Nothing requested yet — or an increase raised the need past what was
+      // requested (R8): ask for the difference, not the whole run again.
+      if (Object.keys(subconDropshipShortfall(wo)).length) return 'create-component-request'
+      return subconRequestWithoutOrder(wo, 'component') ? 'view-component-request' : 'view-component-order'
     }
   }
 
   // ── The work itself: requested here, ordered from the request ───────────
-  if (!servicePo) {
-    if (!has(serviceRequestKind)) return 'create-service-request'
-    return 'view-service-request'
-  }
+  // R11 — a charge added after the order was approved is not on any request yet,
+  // and gets one of its own. Checked even once the first order exists, so the
+  // step comes back for the uncovered line(s) only.
+  if (subconUncoveredCostLines(wo).length) return 'create-service-request'
+  // Every request needs an order of its own; the original order is never revised.
+  if (subconRequestWithoutOrder(wo, 'service')) return 'view-service-request'
+  if (!servicePo) return has(serviceRequestKind) ? 'view-service-request' : 'create-service-request'
 
   // ── Ordered, and not yet begun. Starting is a deliberate act: it is the
   //    moment the vendor is told to go, and with partial production off it is
@@ -554,6 +664,53 @@ export function deriveNextAction(wo: WorkOrder): SubconNextAction {
 
   // ── Running. Production is recorded against the vendor's deliveries ─────
   return 'complete'
+}
+
+const SERVICE_REQUEST_KINDS = ['subconPr', 'processPr']
+
+/**
+ * The oldest request in a thread that has no order of its own yet.
+ *
+ * A run can hold several requests of one kind — a Dropship run's component
+ * request is asked again for the difference after an increase (R8), and a charge
+ * added after approval raises its own service request (R11) — and each grows its
+ * own order. An order raised before `fromId` existed is matched to the earliest
+ * request still waiting.
+ */
+export function subconRequestWithoutOrder(
+  wo: WorkOrder,
+  thread: 'component' | 'service',
+): RaisedSubconDocument | undefined {
+  const docs = wo.subcon?.raisedDocuments ?? []
+  const kinds = thread === 'component' ? COMPONENT_REQUEST_KINDS : SERVICE_REQUEST_KINDS
+  const requests = docs.filter(d => kinds.includes(d.kind))
+  const orders = docs.filter(d => d.kind === 'purchaseOrder' && (thread === 'service') === isServiceOrderDoc(d))
+  const linked = new Set(orders.map(o => o.fromId).filter(Boolean))
+  let unlinkedOrders = orders.filter(o => !o.fromId).length
+  for (const r of requests) {
+    if (linked.has(r.id)) continue
+    if (unlinkedOrders > 0) { unlinkedOrders--; continue }
+    return r
+  }
+  return undefined
+}
+
+/**
+ * The subcon cost lines no service request covers yet (R11).
+ *
+ * A request raised before `lineIds` was recorded covers every line the BOM had, so
+ * an older run is not suddenly asked to request charges it already did. A line
+ * added on the adjust form is always uncovered until it has a request.
+ */
+export function subconUncoveredCostLines(wo: WorkOrder): SubconCostLineState[] {
+  const requests = (wo.subcon?.raisedDocuments ?? []).filter(d => SERVICE_REQUEST_KINDS.includes(d.kind))
+  const covered = new Set<string>()
+  let coversAllBomLines = false
+  for (const r of requests) {
+    if (r.lineIds) r.lineIds.forEach(id => covered.add(id))
+    else coversAllBomLines = true
+  }
+  return subconCostLinesFor(wo).filter(l => !covered.has(l.id) && !(coversAllBomLines && !l.isExtra))
 }
 
 /** A raised document that places the vendor's WORK, not one that buys material. */
@@ -593,6 +750,67 @@ export function workOrderForDocument(documentId: string): WorkOrder | undefined 
  * total reaches what was planned, so several deliveries can close it out
  * together.
  */
+/** One subcon charge on a work order, read from the one place that knows (R9). */
+export interface SubconCostLineState {
+  /** The line's id — the BOM line's product id, or the id of a line added on this order. */
+  id: string
+  name: string
+  /** A label from the service product's unit; it does not select a formula (R12). */
+  costDriver: string
+  accountMapping?: string
+  /** True for a charge added on the adjust form, not the BOM's own. */
+  isExtra: boolean
+  /** The BOM line scaled to this order's output (R12), before any revision. */
+  scaledAmount: number
+  /** The line total: the scaled amount, or the amount revised on this order. */
+  amount: number
+  /** What partial records have already taken against it. */
+  recorded: number
+  /** What it still has left to charge. */
+  remaining: number
+}
+
+/**
+ * Every subcon charge on this work order — the BOM's lines with any revision
+ * applied, plus every line added on this order (R9).
+ *
+ * The detail page, the partial production form, completion and the journal all read
+ * this and nothing else, so they cannot disagree about the total (I6). Before this
+ * the partial form and completion read the BOM alone, so a charge added on the
+ * adjust form was never taken at all.
+ *
+ * R12: a line total is the BOM amount × planned quantity ÷ the BOM's OWN output
+ * quantity. A BOM that carries no charges falls back to the scope's default pair,
+ * which is priced per `SUBCON_BATCH_QTY` units.
+ */
+export function subconCostLinesFor(wo: WorkOrder, translate: (s: string) => string = s => s): SubconCostLineState[] {
+  const c = wo.subcon
+  if (!c) return []
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
+  const bomLines = bom?.subconCost ?? []
+  const bomQty = bom && bom.finishedGoodQty > 0 ? bom.finishedGoodQty : SUBCON_BATCH_QTY
+  const build = (
+    id: string, name: string, costDriver: string, scaledAmount: number, isExtra: boolean, accountMapping?: string,
+  ): SubconCostLineState => {
+    const amount = c.costLineOverrides?.[id] ?? scaledAmount
+    const recorded = c.costLineRecorded?.[id] ?? 0
+    return { id, name, costDriver, accountMapping, isExtra, scaledAmount, amount, recorded, remaining: Math.max(0, amount - recorded) }
+  }
+
+  const base = bomLines.length
+    ? bomLines.map(l => build(l.productId, l.name, l.costDriver, Math.round(l.amount * wo.plannedQty / bomQty), false, l.accountMapping))
+    : [
+        build('svc-fee', translate(SUBCON_SERVICE_FEE[c.scope].name), 'Unit',
+          Math.round(SUBCON_SERVICE_FEE[c.scope].amount * wo.plannedQty / SUBCON_BATCH_QTY), false),
+        build('svc-handling', translate(SUBCON_HANDLING_FEE.name), 'Amount',
+          Math.round(SUBCON_HANDLING_FEE.amount * wo.plannedQty / SUBCON_BATCH_QTY), false),
+      ]
+  // A line agreed after the order was created: its amount IS its total, so only
+  // a revision (never a scale) can move it.
+  const extras = (c.extraCostLines ?? []).map(l => build(l.id, l.name, l.costDriver, l.amount, true))
+  return [...base, ...extras]
+}
+
 /**
  * Take cost onto a partial production record. Accumulates per line so the
  * remaining amount each later record may charge is what the order agreed less
@@ -648,10 +866,26 @@ export function recordSubconUnusedOutput(
   persistWorkOrders()
 }
 
-export function recordSubconProduction(workOrderId: string, qty: number): void {
+/**
+ * `date` is the day the output was made — the partial record's end date — so it
+ * sorts correctly against the component issue posted for it on the same day.
+ */
+export function recordSubconProduction(
+  workOrderId: string, qty: number, cost = 0, date = new Date().toISOString().slice(0, 10),
+): void {
   const wo = workOrders.find(w => w.id === workOrderId)
   if (!wo || qty <= 0) return
+  const before = wo.producedQty
   wo.producedQty = Math.min(wo.plannedQty, wo.producedQty + qty)
+  if (wo.subcon && wo.producedQty > before) {
+    const records = wo.subcon.outputRecords ?? []
+    wo.subcon.outputRecords = [...records, {
+      id: `${wo.id}-out-${records.length + 1}`,
+      date,
+      qty: wo.producedQty - before,
+      cost,
+    }]
+  }
   if (wo.status === 'not started' || wo.status === 'in progress' || wo.status === 'partially produced') {
     wo.status = wo.producedQty >= wo.plannedQty ? 'partially completed' : 'partially produced'
   }
@@ -672,11 +906,14 @@ export function setSubconComponentQty(workOrderId: string, sku: string, qty: num
 }
 
 /** Revise one cost line's amount on this work order only. */
-export function setSubconCostLineAmount(workOrderId: string, lineId: string, amount: number): void {
+export function setSubconCostLineAmount(workOrderId: string, lineId: string, amount: number): boolean {
   const wo = workOrders.find(w => w.id === workOrderId)
-  if (!wo?.subcon) return
+  if (!wo?.subcon) return false
+  // R10 — a charge cannot be revised below what partial records already took.
+  if (amount < (wo.subcon.costLineRecorded?.[lineId] ?? 0)) return false
   wo.subcon.costLineOverrides = { ...(wo.subcon.costLineOverrides ?? {}), [lineId]: amount }
   persistWorkOrders()
+  return true
 }
 
 /** Add a subcon charge agreed after the order was created. */
@@ -690,17 +927,71 @@ export function addSubconCostLine(
   persistWorkOrders()
 }
 
-export function adjustSubconWorkOrderQty(workOrderId: string, newQty: number, reason: string): void {
+/**
+ * Apply an adjustment to a subcon work order (R7). Quantities can only increase
+ * and a reason is required — the same rules the form applies, enforced again here
+ * so no caller can lower a figure or skip the reason. Returns whether it was
+ * applied. Every change is written to the work order (never the BOM), with the
+ * previous figure, the new one and the reason (I7, I10).
+ */
+export function applySubconAdjustment(
+  workOrderId: string,
+  args: {
+    outputQty?: number
+    components?: Record<string, number>
+    /** Revised lines, and lines added on this adjustment (`newLine`). */
+    costChanges?: { key: string; from: number; to: number; newLine?: { name: string; costDriver: string } }[]
+    reason: string
+  },
+): boolean {
   const wo = workOrders.find(w => w.id === workOrderId)
-  if (!wo?.subcon || newQty <= 0 || newQty > wo.plannedQty) return
-  wo.subcon.qtyAdjustment = {
-    from: wo.plannedQty,
-    to: newQty,
-    reason,
-    date: new Date().toISOString().slice(0, 10),
+  const c = wo?.subcon
+  if (!wo || !c) return false
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
+  const planned = (sku: string) => {
+    const line = (bom?.rawMaterials ?? []).find(r => catalogProduct(r.productId)?.sku === sku)
+    return line ? subconPlannedComponentQty(wo, sku, line.needed) : (c.componentAdjustments?.[sku] ?? 0)
   }
-  wo.plannedQty = newQty
+  const next = args.components ?? {}
+  const result = evaluateSubconAdjustment({
+    currentOutput: wo.plannedQty,
+    newOutput: args.outputQty ?? wo.plannedQty,
+    components: Object.entries(next).map(([sku, qty]) => ({ sku, name: sku, unit: '', current: planned(sku), next: qty })),
+    otherChanges: args.costChanges?.length ?? 0,
+    reason: args.reason,
+  })
+  if (result.issues.length) return false
+  // R10 — a revised line may not fall below what partial records already took.
+  // Checked BEFORE anything is written, so a refused adjustment leaves no trace
+  // in the history and no half-applied change.
+  const costChanges = args.costChanges ?? []
+  if (costChanges.some(ch => !ch.newLine && ch.to < (c.costLineRecorded?.[ch.key] ?? 0))) return false
+
+  const date = new Date().toISOString().slice(0, 10)
+  const reason = args.reason.trim()
+  const records: SubconAdjustmentRecord[] = result.changes.map(ch => ({ ...ch, reason, date }))
+  for (const ch of costChanges) records.push({ field: 'cost', key: ch.key, from: ch.from, to: ch.to, reason, date })
+
+  for (const ch of result.changes) {
+    if (ch.field === 'output') wo.plannedQty = ch.to
+    if (ch.field === 'component' && ch.key) c.componentAdjustments = { ...(c.componentAdjustments ?? {}), [ch.key]: ch.to }
+  }
+  // Cost lines go on in the same write as everything else, so the next step that
+  // is derived below already sees a newly added charge (R11).
+  for (const ch of costChanges) {
+    if (ch.newLine) {
+      c.extraCostLines = [...(c.extraCostLines ?? []), { id: ch.key, name: ch.newLine.name, costDriver: ch.newLine.costDriver, amount: ch.to }]
+    } else {
+      // Held on the order, never the BOM — the shared recipe stays untouched (I10).
+      c.costLineOverrides = { ...(c.costLineOverrides ?? {}), [ch.key]: ch.to }
+    }
+  }
+  c.adjustments = [...(c.adjustments ?? []), ...records]
+  // Raising output raises what the run needs (R8): put the status and the next
+  // step back in step, so supply returns when the vendor no longer holds enough.
+  syncSubconStatus(wo)
   persistWorkOrders()
+  return true
 }
 
 /** Create a new work order from the New work order form — must reference an existing BOM. */

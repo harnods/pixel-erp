@@ -24,6 +24,7 @@ import { addPurchaseRequest } from '~/data/purchaseRequests'
 import type { PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { decodeSubconPrefill, shipsToSubconVendor } from '~/data/subcon'
+import { subconLineTaxLabel } from '~/data/subconPricing'
 import { recordSubconDocument } from '~/data/workOrders'
 
 const router = useRouter()
@@ -202,7 +203,7 @@ function onSave() {
     availableQty: it.availableQty,
     unit: it.unit,
     unitCost: it.unitCost,
-    taxLabel: 'PPN 11%',
+    taxLabel: isSubconRequest.value ? subconLineTaxLabel() : 'PPN 11%',
   }))
   // addPurchaseRequest() rather than a raw push: it is the store's own creator and
   // it PERSISTS. The raw push did not, so a request created here vanished on the
@@ -230,6 +231,9 @@ function onSave() {
       // wherever it appears.
       number: `${t('Purchase Request')} #${request.number}`,
       route: '/purchase-requests',
+      // The cost lines this request covers (R11), so a charge added later is
+      // requested on its own and never mistaken for already-covered.
+      lineIds: (subconPrefill.lines ?? []).map(l => l.lineId).filter((id): id is string => !!id),
     })
   }
   toast.notify({ variant: 'success', title: t('Purchase request created'), rootProps: { class: 'toast-enterprise' } })

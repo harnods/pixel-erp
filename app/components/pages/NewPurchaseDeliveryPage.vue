@@ -27,7 +27,8 @@ import { addPurchaseDelivery } from '~/data/purchaseDeliveries'
 import { setPurchaseOrderStatus } from '~/data/purchaseOrders'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { recordSubconDocument, recordSubconProduction, recordSubconComponentReceipt, workOrderForDocument } from '~/data/workOrders'
+import { recordSubconDocument, recordSubconComponentReceipt, workOrderForDocument, subconPlannedComponentQty } from '~/data/workOrders'
+import { subconLineTaxLabel } from '~/data/subconPricing'
 import { SUBCON_VENDORS } from '~/data/subcon'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 
@@ -148,13 +149,12 @@ const isComponentDelivery = computed(() => {
   return !!order?.fromKind && COMPONENT_REQUEST_KINDS.includes(order.fromKind)
 })
 
-/** What the work order still needs produced — the cap on this delivery. */
+/**
+ * Set when a delivery is attempted against the vendor's WORK. R17: a purchase
+ * delivery exists only for Dropship raw material — output is recorded by partial
+ * production or completion, so no purchase document ever adds to produced.
+ */
 const subconOverDeliverError = ref('')
-
-const outstandingFg = computed(() => {
-  const wo = subconWorkOrder.value
-  return wo ? Math.max(0, wo.plannedQty - wo.producedQty) : 0
-})
 
 onMounted(() => {
   const wo = subconWorkOrder.value
@@ -171,7 +171,7 @@ onMounted(() => {
     items.value = (bom?.rawMaterials ?? []).flatMap((line) => {
       const p = catalogProduct(line.productId)
       if (!p) return []
-      const planned = wo.subcon?.componentAdjustments?.[p.sku] ?? line.needed
+      const planned = subconPlannedComponentQty(wo, p.sku, line.needed)
       const outstanding = Math.max(0, planned - (received[p.sku] ?? 0))
       if (outstanding <= 0) return []
       return [{
@@ -183,7 +183,7 @@ onMounted(() => {
         unit: line.unit,
         unitPrice: line.purchaseCost,
         discountPct: 0,
-        taxLabel: 'PPN 11%',
+        taxLabel: subconLineTaxLabel(),
         productError: false,
         qtyError: false,
       }]
@@ -191,21 +191,8 @@ onMounted(() => {
     return
   }
 
-  const output = catalogProduct(bom?.finishedGoodId ?? '')
-  if (!output) return
-  items.value = [{
-    _key: ++_seq,
-    product: output.name,
-    sku: output.sku,
-    description: `${t('Produced against')} ${wo.number}`,
-    qty: outstandingFg.value,
-    unit: output.unit,
-    unitPrice: 0,
-    discountPct: 0,
-    taxLabel: 'PPN 11%',
-    productError: false,
-    qtyError: false,
-  }]
+  // A delivery against the vendor's work has nothing to prefill: it is refused
+  // on save (R17), so the form does not pretend there is finished goods to bring.
 })
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
@@ -342,17 +329,12 @@ function validate(): boolean {
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
   })
 
-  // A subcon delivery produces finished goods, so it cannot deliver more than the
-  // work order still needs — otherwise a second delivery would over-produce it.
+  // R17 — the vendor's work has no purchase delivery. Refused inline; Save stays on.
   if (subconWorkOrder.value && !isComponentDelivery.value) {
-    const delivered = items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0)
-    if (delivered > outstandingFg.value) {
-      items.value.forEach(it => { it.qtyError = true })
-      subconOverDeliverError.value = `${t('This work order still needs')} ${outstandingFg.value} ${t('to be produced')}`
-      ok = false
-    } else {
-      subconOverDeliverError.value = ''
-    }
+    subconOverDeliverError.value = t('A purchase delivery is only for raw material delivered to the vendor. Output is recorded by partial production or completion.')
+    ok = false
+  } else {
+    subconOverDeliverError.value = ''
   }
   return ok
 }
@@ -387,9 +369,8 @@ function onSave() {
     tags: tagsList.value.map(t2 => String(t2.value)),
   })
 
-  // A subcon delivery is the moment finished goods actually exist: record it on
-  // the work order and add its quantity to what has been produced. The work order
-  // stays "partially produced" until the deliveries add up to the planned qty.
+  // The only subcon delivery is raw material reaching the vendor (R17). It is
+  // recorded on the work order, but never touches produced quantity (R5).
   const wo = subconWorkOrder.value
   if (wo) {
     const deliveredQty = items.value.reduce((sum, it) => sum + (Number(it.qty) || 0), 0)
@@ -402,15 +383,11 @@ function onSave() {
       qty: deliveredQty,
       ...(isComponentDelivery.value ? { fromKind: 'componentPr' } : {}),
     })
-    if (isComponentDelivery.value) {
-      // Components reaching the vendor, per line: this is what fills "Sent to
-      // vendor" on a dropship order, where no warehouse transfer ever happens.
-      recordSubconComponentReceipt(wo.id, items.value
-        .filter(it => it.sku && Number(it.qty) > 0)
-        .map(it => ({ sku: it.sku, qty: Number(it.qty) })))
-    } else {
-      recordSubconProduction(wo.id, deliveredQty)
-    }
+    // Components reaching the vendor, per line: this is what fills "Sent to
+    // vendor" on a dropship order, where no warehouse transfer ever happens.
+    recordSubconComponentReceipt(wo.id, items.value
+      .filter(it => it.sku && Number(it.qty) > 0)
+      .map(it => ({ sku: it.sku, qty: Number(it.qty) })))
   }
   // The goods are in, so the order it was raised against is now waiting on the
   // vendor's bill — which is what makes "Create purchase invoice" the next step.

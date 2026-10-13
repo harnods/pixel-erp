@@ -20,8 +20,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
 import {
-  buildDocumentPlan, SUBCON_SCOPE_LABEL,
-  SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
+  buildDocumentPlan, docMatchesStep, SUBCON_SCOPE_LABEL,
   encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL, SUBCON_VENDORS,
   isComponentSupply, componentSupplyStep, subconServiceProduct, SUBCON_DEFAULT_ACCOUNT_MAPPING,
   type SubconDocKind, type SubconPrefillLine,
@@ -49,7 +48,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, adjustSubconWorkOrderQty, recordSubconDocument, recordSubconUnusedOutput, refreshSubconWorkOrder, subconSentToVendor, subconMaterialsFulfilled, setSubconComponentQty, addSubconCostLine, recordSubconCost, recordSubconProduction, type WorkOrder, type WorkOrderStatus, type SubconNextAction } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, subconAtVendor, subconIssuedFromVendor, subconPlannedComponentQty, subconComponentBaseQty, subconDropshipShortfall, subconCostLinesFor, subconRequestWithoutOrder, subconUncoveredCostLines, recordSubconDocument, recordSubconUnusedOutput, refreshSubconWorkOrder, subconSentToVendor, subconMaterialsFulfilled, addSubconCostLine, recordSubconCost, recordSubconProduction, type WorkOrder, type WorkOrderStatus, type SubconNextAction } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
@@ -107,7 +106,7 @@ const subconPlan = computed(() => {
   const plan = buildDocumentPlan(c.scope, c.split, c.method)
 
   const entriesFor = (steps: typeof plan) => steps.flatMap(step => {
-    const docs = raised.filter(d => d.kind === step.kind)
+    const docs = raised.filter(d => docMatchesStep(d, step.kind))
     // Planned but not yet raised → one placeholder entry naming what it will be.
     return docs.length
       ? docs.map(d => ({ kind: step.kind, title: step.title, tag: step.tag, doc: d }))
@@ -137,7 +136,7 @@ const subconPlan = computed(() => {
      * actually ready for, which is how the work order stays the one place the
      * run is driven from instead of sending the user off to find each form.
      */
-    const isRaised = (kind: SubconDocKind) => raised.some(d => d.kind === kind)
+    const isRaised = (kind: SubconDocKind) => raised.some(d => docMatchesStep(d, kind))
     const requestSteps = purchaseSteps.filter(p => p.tag === 'PR')
     const pendingRequest = requestSteps.find(p => !isRaised(p.kind))
     const anyRequestRaised = requestSteps.some(p => isRaised(p.kind))
@@ -155,14 +154,10 @@ const subconPlan = computed(() => {
       if (anyRequestRaised && !isRaised('purchaseOrder')) {
         actions.push({ kind: 'purchaseOrder', label: t('Create purchase order') })
       }
-      if (isRaised('purchaseOrder')) {
-        // Deliveries repeat — several of them close one work order out — so this
-        // one stays on offer. The invoice only follows once the vendor has actually
-        // delivered against the order, and is raised once.
-        actions.push({ kind: 'purchaseDelivery', label: t('Create purchase delivery') })
-        if (isRaised('purchaseDelivery') && !isRaised('purchaseInvoice')) {
-          actions.push({ kind: 'purchaseInvoice', label: t('Create purchase invoice') })
-        }
+      // The vendor's work has no purchase delivery (R17): once it is ordered, the
+      // run is started and recorded, and the invoice follows.
+      if (isRaised('purchaseOrder') && !isRaised('purchaseInvoice')) {
+        actions.push({ kind: 'purchaseInvoice', label: t('Create purchase invoice') })
       }
     }
 
@@ -254,7 +249,9 @@ const DOC_FUNCTION: Record<string, string> = {
   processPr: 'Subcon cost',
   purchasePr: 'In-house portion',
   purchaseOrder: 'Subcon cost',
-  purchaseDelivery: 'Subcon cost',
+  componentOrder: 'Procure raw material',
+  componentDelivery: 'Procure raw material',
+  purchaseDelivery: 'Procure raw material',
   purchaseInvoice: 'Subcon cost',
   transfer: 'Transfer stock',
   rawTransfer: 'Transfer stock',
@@ -289,58 +286,21 @@ const subconCostLines = computed(() => {
   const c = subcon.value
   const w = wo.value
   if (!c || !w) return []
-  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
-
-  // A Subcontracting BOM defines its own services — those are THE subcon cost for
-  // this work order, and they win. The scope-derived pair below is only the
-  // fallback for a BOM that predates the Subcon cost section.
-  /** A revised amount wins over the BOM's — see `costLineOverrides`. */
-  const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
-
-  const extras = (c.extraCostLines ?? []).map(l => ({
+  // One source for every screen and calculation (R9): the BOM's lines scaled to
+  // this order's output (R12), with revisions applied and added lines included.
+  return subconCostLinesFor(w, t).map(l => ({
+    id: l.id,
     account: l.name,
     chargedBy: c.vendorName,
-    unit: l.costDriver || t('Service'),
+    // The unit the charge was quoted in, so the purchase request is raised in the
+    // same measure. What the BOM saved wins — the product's unit was only the
+    // default it started from. A line added on this order names its own driver.
+    unit: l.costDriver || subconServiceProduct(l.id)?.unit || t('Service'),
     // A charge agreed after the order was created has no product behind it, so
     // it lands where every subcon charge lands.
-    accountMapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
-    amount: amountFor(l.id, l.amount),
+    accountMapping: l.accountMapping || SUBCON_DEFAULT_ACCOUNT_MAPPING,
+    amount: l.amount,
   }))
-
-  const fromBom = bom.value?.subconCost ?? []
-  if (fromBom.length) {
-    return [
-      ...fromBom.map(l => ({
-        account: l.name,
-        chargedBy: c.vendorName,
-        // The unit the charge was quoted in, so the purchase request is raised
-        // in the same measure. What the BOM saved wins — the product's unit was
-        // only the default it started from.
-        unit: l.costDriver || subconServiceProduct(l.productId)?.unit || t('Service'),
-        accountMapping: l.accountMapping || SUBCON_DEFAULT_ACCOUNT_MAPPING,
-        amount: amountFor(l.productId, Math.round(l.amount * factor)),
-      })),
-      ...extras,
-    ]
-  }
-
-  return [
-    {
-      account: t(SUBCON_SERVICE_FEE[c.scope].name),
-      chargedBy: c.vendorName,
-      unit: subconServiceProduct(c.scope === 'finished-good' ? 'svc-roast-pack' : 'svc-roast')?.unit ?? t('Service'),
-      accountMapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
-      amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)),
-    },
-    {
-      account: t(SUBCON_HANDLING_FEE.name),
-      chargedBy: c.vendorName,
-      unit: subconServiceProduct('svc-handling')?.unit ?? t('Service'),
-      accountMapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
-      amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)),
-    },
-    ...extras,
-  ]
 })
 /**
  * ── Vendor price basis ───────────────────────────────────────────────────────
@@ -456,54 +416,56 @@ const subconCurrentPerUnit = computed(() => {
  */
 const accountingCostLines = computed<SubconCostLineInput[]>(() => {
   const w = wo.value
-  const c = subcon.value
-  if (!w || !c) return []
-  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
-  const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
-  const fromBom = (bom.value?.subconCost ?? []).map(l => ({
-    id: l.productId,
-    name: l.name,
-    costDriver: l.costDriver as SubconCostDriver,
-    amount: amountFor(l.productId, Math.round(l.amount * factor)),
+  if (!w?.subcon) return []
+  return subconCostLinesFor(w, t).map(l => ({
+    id: l.id, name: l.name, costDriver: l.costDriver as SubconCostDriver, amount: l.amount,
   }))
-  const base: SubconCostLineInput[] = fromBom.length ? fromBom : [
-    { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), costDriver: 'Unit', amount: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)) },
-    { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), costDriver: 'Amount', amount: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)) },
-  ]
-  // Charges agreed after the order was created sit alongside the BOM's own.
-  return [
-    ...base,
-    ...(c.extraCostLines ?? []).map(l => ({
-      id: l.id, name: l.name, costDriver: l.costDriver as SubconCostDriver, amount: amountFor(l.id, l.amount),
-    })),
-  ]
 })
 
 const accountingComponents = computed<SubconComponentInput[]>(() =>
   rawMaterials.value.map(r => ({
     sku: r.sku,
     name: r.product,
-    plannedQty: subcon.value?.componentAdjustments?.[r.sku] ?? r.needed,
+    plannedQty: plannedQtyFor(r),
     unitCost: r.purchaseCost,
   })),
 )
 
-/** The stock issue posted when the order started — the materials handover. */
-const accountingHandovers = computed(() =>
+/**
+ * Stock adjustments the order raised, split by direction. A negative line is a
+ * component ISSUE — materials leaving the vendor's warehouse into the run, which
+ * is the handover. A positive line is unused material coming BACK, which the
+ * journal takes out of WIP again (R13).
+ */
+const componentAdjustments = computed(() =>
   (subcon.value?.raisedDocuments ?? [])
     .filter(d => d.kind === 'componentIssue')
     .map((d) => {
       const adj = stockAdjustments.find(a => a.id === d.id)
-      return {
-        id: d.id,
-        date: d.raisedAt ?? adj?.date ?? '',
-        documentNumber: d.number,
-        // The adjustment records an issue as a negative delta; a handover is the
-        // positive quantity that left.
-        lines: (adj?.lines ?? []).map(l => ({ sku: l.sku, qty: Math.abs(l.qty) })),
-      }
-    })
+      return { d, date: d.raisedAt ?? adj?.date ?? '', lines: adj?.lines ?? [] }
+    }),
+)
+
+const accountingHandovers = computed(() =>
+  componentAdjustments.value
+    .map(({ d, date, lines }) => ({
+      id: d.id,
+      date,
+      documentNumber: d.number,
+      lines: lines.filter(l => l.qty < 0).map(l => ({ sku: l.sku, qty: Math.abs(l.qty) })),
+    }))
     .filter(h => h.lines.length > 0),
+)
+
+const accountingReturns = computed(() =>
+  componentAdjustments.value
+    .map(({ d, date, lines }) => ({
+      id: d.id,
+      date,
+      documentNumber: d.number,
+      lines: lines.filter(l => l.qty > 0).map(l => ({ sku: l.sku, qty: l.qty })),
+    }))
+    .filter(r => r.lines.length > 0),
 )
 
 /** Dropship only — the 3rd-party purchase that lands components at the vendor. */
@@ -523,49 +485,46 @@ const accountingComponentPurchases = computed(() => {
     .filter(p => p.lines.length > 0)
 })
 
-const accountingReceipts = computed(() =>
-  (subcon.value?.raisedDocuments ?? [])
-    .filter(d => d.kind === 'purchaseDelivery' && (d.qty ?? 0) > 0)
-    .map(d => ({ id: d.id, date: d.raisedAt ?? '', documentNumber: d.number, qty: d.qty! })),
+/** Output recorded on the order — the only source of produced quantity (R5). */
+const accountingOutputs = computed(() =>
+  (subcon.value?.outputRecords ?? []).map(o => ({
+    id: o.id, date: o.date, qty: o.qty, cost: o.cost,
+  })),
 )
 
 /**
- * The vendor's charge, recognised when the PURCHASE ORDER IS APPROVED rather than
- * when the invoice arrives. Approving the order is the point the price is agreed
- * and committed, so that is where the clearing, VAT, withholding and payable
- * entries are posted; the invoice that follows records the document, and posts
- * nothing further, so the charge is never counted twice.
+ * The vendor's service invoices — the one point the subcon cost reaches the books
+ * (R13). Purchase order approval posts nothing. An invoice belongs to this run's
+ * service thread when it bills a service purchase order raised from this order;
+ * a dropship component order buys raw material and is not the subcon vendor's
+ * charge.
  */
-const accountingVendorCharges = computed(() =>
-  (subcon.value?.raisedDocuments ?? [])
-    // The SUBCON vendor's charge only. A dropship component order buys raw
-    // material from a 3rd party — that is already carried as material cost, and
-    // posting it here would charge the same goods twice and credit the subcon
-    // vendor with a payable it is not owed.
-    .filter(isServiceOrder)
+const accountingInvoices = computed(() => {
+  const raised = subcon.value?.raisedDocuments ?? []
+  const serviceOrderNumbers = new Set(
+    raised.filter(isServiceOrder)
+      .map(d => purchaseOrders.find(o => o.id === d.id)?.number)
+      .filter((n): n is string => !!n),
+  )
+  return raised
+    .filter(d => d.kind === 'purchaseInvoice')
     .map((d) => {
-      const po = purchaseOrders.find(o => o.id === d.id)
-      if (!po) return null
-      // `approvedAt` is the record; an order approved before that field existed
-      // still shows the approved status, so fall back to it and date the charge
-      // from the order itself.
-      const approvedOn = po.approvedAt ?? (po.status === 'approved' ? po.date : undefined)
-      // Not approved yet → nothing is recognised.
-      if (!approvedOn) return null
+      const inv = purchaseInvoices.find(i => i.id === d.id)
+      if (!inv || !inv.referenceNo || !serviceOrderNumbers.has(inv.referenceNo)) return null
       return {
         id: d.id,
-        date: approvedOn,
+        date: inv.date,
         documentNumber: d.number,
-        // Order lines carry the service product's name, which is what the cost
-        // line is called — match on that, and fall back to the SKU.
-        lines: (po.lineItems ?? []).map((li) => {
-          const match = accountingCostLines.value.find(c => c.name === li.product)
+        // A line's cost line is found by its service product's SKU, then by name.
+        lines: (inv.lineItems ?? []).map((li) => {
+          const match = accountingCostLines.value.find(c => catalogProduct(c.id)?.sku === li.sku)
+            ?? accountingCostLines.value.find(c => c.name === li.product)
           return { costLineId: match?.id ?? li.sku, amount: li.amount }
         }),
       }
     })
-    .filter((c): c is NonNullable<typeof c> => !!c && c.lines.length > 0),
-)
+    .filter((c): c is NonNullable<typeof c> => !!c && c.lines.length > 0)
+})
 
 const accountingInput = computed<SubconAccountingInput | null>(() => {
   const w = wo.value
@@ -580,9 +539,9 @@ const accountingInput = computed<SubconAccountingInput | null>(() => {
     costLines: accountingCostLines.value,
     componentPurchases: accountingComponentPurchases.value,
     handovers: accountingHandovers.value,
-    receipts: accountingReceipts.value,
-    invoices: accountingVendorCharges.value,
-    closedShort: w.status === 'completed' && w.producedQty < w.plannedQty,
+    returns: accountingReturns.value,
+    outputs: accountingOutputs.value,
+    invoices: accountingInvoices.value,
   }
 })
 
@@ -714,17 +673,22 @@ const pendingExternalDoc = computed(() => {
   if (!rawMaterialsFulfilled.value && c.method === 'dropship') {
     const componentPr = docs.find(d => COMPONENT_REQUEST_KINDS.includes(d.kind))
     if (componentPr) {
-      const componentPo = docs.find(d => d.kind === 'purchaseOrder' && !isServiceOrder(d))
-      if (!componentPo) {
-        return { doc: componentPr, label: t('View purchase request'), next: t('Create purchase order') }
+      // Each component request has an order of its own — after an increase (R8)
+      // there can be several — so the one waiting is found, not the first.
+      const waiting = subconRequestWithoutOrder(wo.value!, 'component')
+      if (waiting) {
+        return { doc: waiting, label: t('View purchase request'), next: t('Create purchase order') }
       }
-      return { doc: componentPo, label: t('View purchase order'), next: t('Create purchase delivery') }
+      const componentPo = [...docs].reverse().find(d => d.kind === 'purchaseOrder' && !isServiceOrder(d))
+      if (componentPo) {
+        return { doc: componentPo, label: t('View purchase order'), next: t('Create purchase delivery') }
+      }
     }
   }
 
   // ── The service thread: request → order ──────────────────────────────────
-  if (rawMaterialsFulfilled.value && !subconPoRaised.value) {
-    const servicePr = docs.find(d => d.kind === 'subconPr' || d.kind === 'processPr')
+  if (rawMaterialsFulfilled.value && wo.value) {
+    const servicePr = subconRequestWithoutOrder(wo.value, 'service')
     if (servicePr) {
       return { doc: servicePr, label: t('View purchase request'), next: t('Create purchase order') }
     }
@@ -877,7 +841,11 @@ const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost *
  * the shared recipe and other orders are built from it.
  */
 function plannedQtyFor(r: { sku: string; needed: number }): number {
-  return subcon.value?.componentAdjustments?.[r.sku] ?? r.needed
+  return wo.value ? subconPlannedComponentQty(wo.value, r.sku, r.needed) : r.needed
+}
+/** What the BOM alone would need for this order's output — the "was" figure of an adjustment. */
+function baseQtyFor(r: { needed: number }): number {
+  return wo.value ? subconComponentBaseQty(wo.value, r.needed) : r.needed
 }
 const rawSubtotal = computed(() =>
   rawMaterials.value.reduce((s, r) => s + r.purchaseCost * plannedQtyFor(r), 0))
@@ -984,6 +952,10 @@ function completeWorkOrder() {
   wo.value.status = 'completed'
   wo.value.endDate = new Date().toISOString().slice(0, 10)
   persistWorkOrders()
+  // A subcon order's header renders the STORED next step. Re-derive it now that
+  // the order is closed, or the header keeps offering the step it owed before
+  // (Complete, Partially produce) until the page is reopened.
+  if (wo.value.subcon) refreshSubconWorkOrder(wo.value.id)
   toast.notify({ variant: 'success', title: 'Work order completed' })
 }
 
@@ -1041,6 +1013,7 @@ const subconComponentUsage = computed<SubconComponentUsage[]>(() =>
       product: r.product,
       unit: r.unit,
       sent: sentToVendorBySku.value[r.sku] ?? 0,
+      issued: wo.value ? (subconIssuedFromVendor(wo.value)[r.sku] ?? 0) : 0,
       originWarehouseId: r.warehouseId,
       originWarehouseName: r.warehouse,
     }))
@@ -1064,43 +1037,69 @@ function completeSubconWorkOrder(unused: { sku: string; qty: number }[]) {
   // cost. Charges go on first: the quantity record is what moves the status, so
   // what it carries has to be on the order by then.
   if (subconShortfall.value > 0) {
+    // Read the remainder BEFORE it is charged: it is this record's cost share.
+    const remainingCost = Object.values(remainingSubconCost.value).reduce((s, n) => s + n, 0)
     recordSubconCost(w.id, remainingSubconCost.value)
-    recordSubconProduction(w.id, subconShortfall.value)
+    recordSubconProduction(w.id, subconShortfall.value, remainingCost)
   }
 
   /**
-   * Components the vendor did not consume come back as an ADDITIONAL OUTPUT of
-   * the run, not as a transfer.
+   * R6 — completion leaves the vendor's warehouse empty of this run's components.
    *
-   * They arrive with the finished goods, into the same receiving warehouse, so a
-   * stock adjustment IN is what actually happened — one movement, at the place
-   * the goods turn up. Returning them to their original warehouse would invent a
-   * second movement nobody made, and because the return was recorded as a
-   * warehouse transfer against this work order it was being counted again as
-   * stock SENT to the vendor, inflating the figure the order reconciles against.
+   * Per component, `atVendor` is what was sent less what earlier records already
+   * issued. All of it leaves the vendor's warehouse: the part the vendor used is
+   * issued into the run (stock OUT), and the part it did not use is issued out and
+   * comes back as stock IN at the output warehouse — one movement at the place
+   * the goods turn up, not a transfer to the origin. Issued + returned therefore
+   * always equals sent (I4). The unused quantity can never exceed what is still
+   * at the vendor: material already issued into a partial record is spent.
    */
-  if (unused.length) {
-    const warehouse = subconReceiving.value
-    if (warehouse) {
-      const adj = addAdjustment({
-        kind: 'in-out',
-        date: new Date().toISOString().slice(0, 10),
-        warehouseId: warehouse.id,
-        warehouseName: warehouse.name,
-        category: 'General',
-        tags: [],
-        memo: `${t('Unused components returned with the output of')} ${w.number}`,
-        // Positive qty is stock IN — the same convention the Stock in/out form uses.
-        lines: unused.map(u => ({ sku: u.sku, qty: u.qty })),
-      })
-      recordSubconDocument(w.id, {
-        kind: 'componentIssue', id: adj.id, number: adj.number, route: '/stock-adjustments',
-      })
-      // Kept on the order so the Finished goods section can show them as the
-      // additional output they are, rather than leaving the adjustment as the
-      // only trace.
-      recordSubconUnusedOutput(w.id, unused)
-    }
+  const atVendor = subconAtVendor(w)
+  const unusedBySku = Object.fromEntries(unused.map(u => [u.sku, u.qty]))
+  const issueLines = Object.entries(atVendor)
+    .filter(([, qty]) => qty > 0)
+    // Negative qty is stock OUT — the same convention the Stock in/out form uses.
+    .map(([sku, qty]) => ({ sku, qty: -qty }))
+  const returnLines = issueLines
+    .map(l => ({ sku: l.sku, qty: Math.min(unusedBySku[l.sku] ?? 0, -l.qty) }))
+    .filter(l => l.qty > 0)
+  const today = new Date().toISOString().slice(0, 10)
+
+  const vendorWarehouse = subconDestination.value
+  if (issueLines.length && vendorWarehouse) {
+    const out = addAdjustment({
+      kind: 'in-out',
+      date: today,
+      warehouseId: vendorWarehouse.id,
+      warehouseName: vendorWarehouse.name,
+      category: 'General',
+      tags: [],
+      memo: `${t('Components issued to the subcon vendor for')} ${w.number}`,
+      lines: issueLines,
+    })
+    recordSubconDocument(w.id, {
+      kind: 'componentIssue', id: out.id, number: out.number, route: '/stock-adjustments',
+    })
+  }
+
+  const receiving = subconReceiving.value
+  if (returnLines.length && receiving) {
+    const back = addAdjustment({
+      kind: 'in-out',
+      date: today,
+      warehouseId: receiving.id,
+      warehouseName: receiving.name,
+      category: 'General',
+      tags: [],
+      memo: `${t('Unused components returned with the output of')} ${w.number}`,
+      // Positive qty is stock IN.
+      lines: returnLines,
+    })
+    recordSubconDocument(w.id, {
+      kind: 'componentIssue', id: back.id, number: back.number, route: '/stock-adjustments',
+    })
+    // Kept on the order so the raw materials table can show Returned qty.
+    recordSubconUnusedOutput(w.id, returnLines)
   }
   completeWorkOrder()
 }
@@ -1121,17 +1120,10 @@ const subconReceiving = computed(() => {
  * order carries the whole agreed cost however many records it took to get there.
  */
 const remainingSubconCost = computed<Record<string, number>>(() => {
-  const c = subcon.value
   const w = wo.value
-  if (!c || !w) return {}
-  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
+  if (!w?.subcon) return {}
   const out: Record<string, number> = {}
-  for (const l of bom.value?.subconCost ?? []) {
-    const perOrder = c.costLineOverrides?.[l.productId] ?? Math.round(l.amount * factor)
-    const taken = c.costLineRecorded?.[l.productId] ?? 0
-    const left = Math.max(0, perOrder - taken)
-    if (left > 0) out[l.productId] = left
-  }
+  for (const l of subconCostLinesFor(w, t)) if (l.remaining > 0) out[l.id] = l.remaining
   return out
 })
 
@@ -1196,10 +1188,11 @@ watch(() => wo.value?.id, (id) => {
  * two places to create the same document.
  */
 const pendingServiceRequest = computed(() => {
-  const raised = subcon.value?.raisedDocuments ?? []
+  // Not "none raised yet": a charge added after approval needs a request of the
+  // same kind (R11). Whether one is due is the store's call — `nextAction` says so.
   const plan = subconPlan.value.flatMap(r => r.entries.map(e => e.kind))
   const kind = plan.find(k => k === 'subconPr' || k === 'processPr')
-  if (!kind || raised.some(d => d.kind === kind)) return undefined
+  if (!kind) return undefined
   return { kind, label: t('Create purchase request') }
 })
 
@@ -1239,9 +1232,9 @@ function postComponentIssue() {
   if (!warehouse) return
 
   const lines = rawMaterials.value
-    .filter(r => r.needed > 0)
+    .filter(r => plannedQtyFor(r) > 0)
     // Negative qty is stock OUT — the same convention the Stock in/out form uses.
-    .map(r => ({ sku: r.sku, qty: -r.needed }))
+    .map(r => ({ sku: r.sku, qty: -plannedQtyFor(r) }))
   if (!lines.length) return
 
   const adj = addAdjustment({
@@ -1324,7 +1317,7 @@ function prefillLines(kind: SubconDocKind, originWarehouseId?: string): SubconPr
     // second time. Lines already fully sent drop out entirely.
     return components
       .map(r => {
-        const remaining = Math.max(0, r.needed - (sentToVendorBySku.value[r.sku] ?? 0))
+        const remaining = Math.max(0, plannedQtyFor(r) - (sentToVendorBySku.value[r.sku] ?? 0))
         return {
           name: r.product, sku: r.sku, qty: remaining, unit: r.unit,
           unitCost: r.purchaseCost, maxQty: remaining,
@@ -1336,23 +1329,35 @@ function prefillLines(kind: SubconDocKind, originWarehouseId?: string): SubconPr
   // A component PR / raw PR buys the components from a third party instead.
   if (kind === 'componentPr' || kind === 'rawPr' || kind === 'purchasePr') {
     const components = kind === 'rawPr' ? rawMaterials.value.slice(0, 1) : rawMaterials.value
-    return components.map(r => ({
-      name: r.product, sku: r.sku, qty: r.needed, unit: r.unit, unitCost: r.purchaseCost,
-    }))
+    // A component request buys only what is not already requested or delivered
+    // (R8) — a second one, after an increase, carries the difference.
+    const shortfall = kind === 'purchasePr' || !wo.value ? undefined : subconDropshipShortfall(wo.value)
+    return components
+      .map(r => ({
+        name: r.product, sku: r.sku, unit: r.unit, unitCost: r.purchaseCost,
+        qty: shortfall ? (shortfall[r.sku] ?? 0) : plannedQtyFor(r),
+      }))
+      .filter(l => l.qty > 0)
   }
 
   // Subcon / process PR — exactly the Subcon cost lines shown on this page, and
   // nothing else. What you read in the Subcon cost section is what lands on the
   // purchase request; the output is not a line here, it arrives on the goods
   // receipt.
-  return subconCostLines.value.map(l => ({
-    name: l.account,
-    sku: 'SVC',
-    qty: 1,
-    unit: l.unit,
-    unitCost: Math.round(l.amount),
-    nonTrack: true,
-  }))
+  // R11 — only the lines no request covers yet: the first request carries them all,
+  // a charge added later gets a request for itself and the original order stays.
+  const uncovered = new Set(wo.value ? subconUncoveredCostLines(wo.value).map(l => l.id) : [])
+  return subconCostLines.value
+    .filter(l => uncovered.has(l.id))
+    .map(l => ({
+      name: l.account,
+      sku: 'SVC',
+      qty: 1,
+      unit: l.unit,
+      unitCost: Math.round(l.amount),
+      nonTrack: true,
+      lineId: l.id,
+    }))
 }
 
 /** An origin was picked in the breakdown — raise that warehouse's transfer. */
@@ -1397,13 +1402,12 @@ function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
       && !COMPONENT_REQUEST_KINDS.includes(d.kind))
     if (request) { router.push({ path: '/purchase-orders', query: { fromPr: request.id } }); return }
   }
-  if (kind === 'purchaseDelivery' || kind === 'purchaseInvoice') {
-    // The vendor's work is delivered and invoiced — not the raw material, which
-    // has its own order and its own delivery.
+  if (kind === 'purchaseInvoice') {
+    // The vendor's work is invoiced — not the raw material, which has its own
+    // order and its own delivery. There is no delivery for the work itself (R17).
     const order = raised.find(isServiceOrder)
     if (order) {
-      const path = kind === 'purchaseDelivery' ? '/purchase-deliveries/new' : '/purchase-invoices/new'
-      router.push({ path, query: { fromPo: order.id } })
+      router.push({ path: '/purchase-invoices/new', query: { fromPo: order.id } })
       return
     }
   }
@@ -1888,9 +1892,12 @@ function suppressFabClick(e: MouseEvent) {
             />
             <!-- Closed short: the original quantity and the reason stay visible,
                  otherwise the adjustment would erase the very thing it records. -->
-            <ContentList v-if="subcon.qtyAdjustment" :label="t('Quantity adjusted')">
-              {{ subcon.qtyAdjustment.from.toLocaleString('id-ID') }} →
-              {{ subcon.qtyAdjustment.to.toLocaleString('id-ID') }} · {{ subcon.qtyAdjustment.reason }}
+            <ContentList
+              v-for="(adj, i) in subcon.adjustments ?? []"
+              :key="`adj-${i}`"
+              :label="adj.field === 'output' ? t('Output adjusted') : adj.field === 'component' ? `${t('Component adjusted')} · ${adj.key}` : t('Cost adjusted')"
+            >
+              {{ adj.from.toLocaleString('id-ID') }} → {{ adj.to.toLocaleString('id-ID') }} · {{ adj.reason }}
             </ContentList>
           </div>
           <div class="content-list-col">
@@ -1957,7 +1964,7 @@ function suppressFabClick(e: MouseEvent) {
                        adjustment never silently rewrites the recipe. -->
                   <td class="wod-td wod-td--num">
                     {{ num(plannedQtyFor(r)) }}
-                    <span v-if="plannedQtyFor(r) !== r.needed" class="wod-product-sub">{{ t('was') }} {{ num(r.needed) }}</span>
+                    <span v-if="plannedQtyFor(r) !== baseQtyFor(r)" class="wod-product-sub">{{ t('was') }} {{ num(baseQtyFor(r)) }}</span>
                   </td>
                   <td class="wod-td wod-td--num">
                     <template v-if="!reportsSentQty">{{ num(consumedFor(r.productId)) }}/{{ num(plannedQtyFor(r)) }}</template>

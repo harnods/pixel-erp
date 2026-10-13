@@ -74,6 +74,24 @@ export const SUBCON_PRICING_SETTINGS: SubconPricingSettings = {
   withholdingRateWithoutNpwp: 0.04,
 }
 
+/**
+ * The tax label a subcon document's lines carry while tax handling is out of scope
+ * (R14): the "Non-PPN" the tax list already offers, so a subcon request, order or
+ * invoice adds no PPN. It reads `taxHandling`, so the switch lives in one place.
+ */
+/**
+ * R14 — whether a document raised from a subcon work order carries no tax at all.
+ * The forms read this instead of each deciding: true means no PPN row and no PPN
+ * in the total, whatever the lines' tax labels say.
+ */
+export function subconDocumentUntaxed(isSubcon: boolean): boolean {
+  return isSubcon && !SUBCON_PRICING_SETTINGS.taxHandling
+}
+
+export function subconLineTaxLabel(defaultLabel = 'PPN 11%'): string {
+  return SUBCON_PRICING_SETTINGS.taxHandling ? defaultLabel : 'Non-PPN'
+}
+
 // ── The withholding rate ──────────────────────────────────────────────────────
 
 /**

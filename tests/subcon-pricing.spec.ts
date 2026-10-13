@@ -209,3 +209,13 @@ describe('VAT creditability is read from the tax code', () => {
     expect(isVatCreditable('Non-PPN')).toBe(false)
   })
 })
+
+describe('R14 — subcon documents carry no tax while tax handling is off', () => {
+  it('lines default to Non-PPN, and keep the normal label once tax handling is on', async () => {
+    const { subconLineTaxLabel, SUBCON_PRICING_SETTINGS } = await import('../app/data/subconPricing')
+    expect(SUBCON_PRICING_SETTINGS.taxHandling).toBe(false)
+    expect(subconLineTaxLabel()).toBe('Non-PPN')
+    SUBCON_PRICING_SETTINGS.taxHandling = true
+    try { expect(subconLineTaxLabel()).toBe('PPN 11%') } finally { SUBCON_PRICING_SETTINGS.taxHandling = false }
+  })
+})

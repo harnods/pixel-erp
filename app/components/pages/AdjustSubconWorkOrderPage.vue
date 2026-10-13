@@ -16,14 +16,13 @@
  * over to the vendor. A row that breaks the rule is flagged inline and Save
  * refuses, with the button staying live (rule/btn-no-disabled-validation).
  */
-import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpInput, MpTextarea } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { successToast } from '~/utils/toasts'
-import { workOrders, setSubconComponentQty, setSubconCostLineAmount, addSubconCostLine, persistWorkOrders } from '~/data/workOrders'
+import { workOrders, applySubconAdjustment, subconSentToVendor, subconPlannedComponentQty, subconCostLinesFor } from '~/data/workOrders'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
-import { warehouseTransfers } from '~/data/warehouseTransfers'
 import { evaluateComponentAdjustment } from '~/data/subconAccounting'
-import { SUBCON_BATCH_QTY, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_COST_DRIVERS, SUBCON_DEFAULT_ACCOUNT_MAPPING } from '~/data/subcon'
+import { evaluateSubconAdjustment, SUBCON_COST_DRIVERS, SUBCON_DEFAULT_ACCOUNT_MAPPING } from '~/data/subcon'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -56,21 +55,9 @@ function componentWarehouseName(productId: string): string {
 
 // ── Components ────────────────────────────────────────────────────────────────
 
-/** How much of each component has actually gone to the vendor. */
-const sentBySku = computed<Record<string, number>>(() => {
-  const c = subcon.value
-  if (!c) return {}
-  const ids = (c.raisedDocuments ?? [])
-    .filter(d => d.route === '/warehouse-transfers')
-    .map(d => d.id)
-  const totals: Record<string, number> = {}
-  for (const id of ids) {
-    for (const line of warehouseTransfers.find(tr => tr.id === id)?.lines ?? []) {
-      totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
-    }
-  }
-  return totals
-})
+/** How much of each component has actually gone to the vendor (transfers or component deliveries). */
+const sentBySku = computed<Record<string, number>>(() =>
+  wo.value ? subconSentToVendor(wo.value) : {})
 
 interface ComponentRow {
   productId: string
@@ -91,7 +78,7 @@ const outputQty = ref('')
 /** Basic: the vendor's own materials, so this order has no components to adjust. */
 const subconIsBasic = computed(() => subcon.value?.method === 'basic')
 
-const costLines = ref<{ id: string; name: string; driver: string; mapping: string; draft: string; isNew?: boolean; baseline: number }[]>([])
+const costLines = ref<{ id: string; name: string; driver: string; mapping: string; draft: string; isNew?: boolean; baseline: number; recorded?: number }[]>([])
 
 /** Load the form from the order. Runs once — this is an edit form, not a live view. */
 onMounted(() => {
@@ -102,7 +89,7 @@ onMounted(() => {
   components.value = (bom.value?.rawMaterials ?? []).map((r) => {
     const p = catalogProduct(r.productId)
     const sku = p?.sku ?? '—'
-    const planned = c.componentAdjustments?.[sku] ?? r.needed
+    const planned = subconPlannedComponentQty(w, sku, r.needed)
     return {
       productId: r.productId,
       sku,
@@ -118,35 +105,13 @@ onMounted(() => {
 
   outputQty.value = String(w.plannedQty)
 
-  const factor = (w.plannedQty / SUBCON_BATCH_QTY) * (c.split === 'partial' ? 0.5 : 1)
-  // A revised amount wins over the BOM's — see `costLineOverrides`.
-  const amountFor = (id: string, fallback: number) => c.costLineOverrides?.[id] ?? fallback
-  const fromBom = (bom.value?.subconCost ?? []).map((l) => {
-    const amount = amountFor(l.productId, Math.round(l.amount * factor))
-    return {
-      id: l.productId, name: l.name, driver: l.costDriver,
-      mapping: l.accountMapping || SUBCON_DEFAULT_ACCOUNT_MAPPING,
-      draft: String(amount), baseline: amount,
-    }
-  })
-  const base = fromBom.length ? fromBom : [
-    { id: 'svc-fee', name: t(SUBCON_SERVICE_FEE[c.scope].name), driver: 'Unit',
-      mapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
-      draft: String(amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor))),
-      baseline: amountFor('svc-fee', Math.round(SUBCON_SERVICE_FEE[c.scope].amount * factor)) },
-    { id: 'svc-handling', name: t(SUBCON_HANDLING_FEE.name), driver: 'Amount',
-      mapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
-      draft: String(amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor))),
-      baseline: amountFor('svc-handling', Math.round(SUBCON_HANDLING_FEE.amount * factor)) },
-  ]
-  costLines.value = [
-    ...base,
-    ...(c.extraCostLines ?? []).map(l => ({
-      id: l.id, name: l.name, driver: l.costDriver,
-      mapping: SUBCON_DEFAULT_ACCOUNT_MAPPING,
-      draft: String(l.amount), baseline: l.amount,
-    })),
-  ]
+  // The same lines every other screen reads (R9): the BOM's, scaled to this order's
+  // output and revised where revised, plus any added on an earlier adjustment.
+  costLines.value = subconCostLinesFor(w, t).map(l => ({
+    id: l.id, name: l.name, driver: l.costDriver,
+    mapping: l.accountMapping || SUBCON_DEFAULT_ACCOUNT_MAPPING,
+    draft: String(l.amount), baseline: l.amount, recorded: l.recorded,
+  }))
 })
 
 /**
@@ -168,6 +133,13 @@ function addCostLine() {
 function removeCostLine(id: string) {
   costLines.value = costLines.value.filter(l => l.id !== id)
 }
+
+/**
+ * R10 — a revised amount cannot fall below what partial records already took
+ * against the line. Refused inline, naming the amount already charged.
+ */
+const belowChargedLines = computed(() =>
+  costLines.value.filter(l => !l.isNew && (l.recorded ?? 0) > 0 && costAmount(l) < (l.recorded ?? 0)))
 
 /** A new line needs a name and an amount before it can be saved. */
 const incompleteNewLines = computed(() =>
@@ -196,6 +168,37 @@ function unitFor(row: ComponentRow) {
 
 const blockedRows = computed(() => components.value.filter(r => outcomeFor(r).kind === 'rejected'))
 
+// ── R7: increase only, always with a reason ───────────────────────────────────
+
+const reason = ref('')
+
+const outputNumber = computed(() => {
+  const n = Number(outputQty.value)
+  return Number.isFinite(n) ? n : (wo.value?.plannedQty ?? 0)
+})
+
+/** Revised or added cost lines — changes the reason must also explain. */
+const costChanges = computed(() =>
+  costLines.value
+    .filter(l => l.isNew ? costAmount(l) > 0 : costAmount(l) !== l.baseline)
+    .map(l => ({
+      key: l.id, from: l.isNew ? 0 : l.baseline, to: costAmount(l),
+      ...(l.isNew ? { newLine: { name: l.name.trim(), costDriver: l.driver } } : {}),
+    })))
+
+const adjustment = computed(() => evaluateSubconAdjustment({
+  currentOutput: wo.value?.plannedQty ?? 0,
+  newOutput: outputNumber.value,
+  components: components.value.map(r => ({
+    sku: r.sku, name: r.product, unit: unitFor(r), current: r.planned, next: qtyOf(r),
+  })),
+  otherChanges: costChanges.value.length,
+  reason: reason.value,
+}))
+const outputLowerIssue = computed(() =>
+  adjustment.value.issues.find(i => i.kind === 'output-lower') as { current: number } | undefined)
+const reasonMissing = computed(() => adjustment.value.issues.some(i => i.kind === 'reason-missing'))
+
 // ── Totals ────────────────────────────────────────────────────────────────────
 
 const componentsSubtotal = computed(() =>
@@ -216,35 +219,31 @@ const perUnit = computed(() => producedQty.value > 0 ? processTotal.value / prod
 // ── Save ──────────────────────────────────────────────────────────────────────
 
 const attempted = ref(false)
+/** The store refused what the form accepted — shown inline, never as a toast. */
+const saveRefused = ref(false)
 
 function onSave() {
   attempted.value = true
   // Errors surface inline on the offending rows, never as a toast.
-  if (blockedRows.value.length || incompleteNewLines.value.length) return
+  if (blockedRows.value.length || incompleteNewLines.value.length || belowChargedLines.value.length || outputLowerIssue.value || reasonMissing.value) return
 
   const w = wo.value
   const c = subcon.value
   if (!w || !c) return
 
-  for (const row of components.value) {
-    if (qtyOf(row) !== row.planned) setSubconComponentQty(w.id, row.sku, qtyOf(row))
-  }
-
-  for (const line of costLines.value) {
-    const amount = costAmount(line)
-    if (line.isNew) {
-      addSubconCostLine(w.id, { id: line.id, name: line.name.trim(), costDriver: line.driver, amount })
-      continue
-    }
-    // A revised amount is recorded as an override on this order, leaving the
-    // BOM — the shared recipe every other order is built from — untouched.
-    if (amount !== line.baseline) setSubconCostLineAmount(w.id, line.id, amount)
-  }
-
-  if (producedQty.value !== w.plannedQty) {
-    w.plannedQty = producedQty.value
-  }
-  persistWorkOrders()
+  // Everything goes through the store in one write: it applies the same
+  // increase-only, reason and charged-floor rules, records the previous figure,
+  // the new one and the reason, and only then re-derives the next step. Nothing is
+  // written if any rule refuses, so the history never lists a change that did not
+  // happen.
+  const applied = applySubconAdjustment(w.id, {
+    outputQty: outputNumber.value,
+    components: Object.fromEntries(components.value.map(r => [r.sku, qtyOf(r)])),
+    costChanges: costChanges.value,
+    reason: reason.value,
+  })
+  saveRefused.value = !applied
+  if (!applied) return
 
   successToast(t('Work order adjusted'))
   goBack()
@@ -313,7 +312,7 @@ function onSave() {
                       </template>
                       <template v-else-if="outcomeFor(row).kind === 'requiresShipment'">
                         {{ t('Adds') }} {{ (outcomeFor(row) as { extraQty: number }).extraQty }} {{ unitFor(row) }} —
-                        {{ t('everything planned is already with the vendor, so this needs a new transfer or purchase to reach them.') }}
+                        {{ t('more than the vendor holds, so supply returns as the next step for the difference.') }}
                       </template>
                     </span>
                   </td>
@@ -369,7 +368,7 @@ function onSave() {
                 <td class="awo-td awo-td--num">
                   <MpInput
                     :id="`awo-cost-${line.id}`" v-model="line.draft" type="number" min="0" class="awo-qty"
-                    :is-invalid="attempted && line.isNew && costAmount(line) <= 0"
+                    :is-invalid="attempted && ((line.isNew && costAmount(line) <= 0) || belowChargedLines.some(b => b.id === line.id))"
                   />
                 </td>
                 <td class="awo-td awo-td--action">
@@ -412,7 +411,7 @@ function onSave() {
                 <td class="awo-td">{{ wo.bomName }}</td>
                 <td class="awo-td">{{ subcon.receivingWarehouseName }}</td>
                 <td class="awo-td awo-td--num">
-                  <MpInput id="awo-output-qty" v-model="outputQty" type="number" min="1" class="awo-qty" />
+                  <MpInput id="awo-output-qty" v-model="outputQty" type="number" min="1" class="awo-qty" :is-invalid="attempted && !!outputLowerIssue" />
                 </td>
                 <td class="awo-td">{{ bom?.finishedGoodUnit ?? '' }}</td>
                 <td class="awo-td awo-td--num">{{ formatIDR(processTotal) }}</td>
@@ -420,6 +419,17 @@ function onSave() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <!-- ── Reason — required for every adjustment (R7) ── -->
+      <section class="awo-section">
+        <h2 class="awo-section-title">{{ t('Reason') }}</h2>
+        <MpTextarea
+          id="awo-reason" v-model="reason" is-full-width :rows="2"
+          :placeholder="t('Why is this order being adjusted?')"
+          :is-invalid="attempted && reasonMissing"
+        />
+        <p v-if="attempted && reasonMissing" class="awo-blocked">{{ t('Give a reason for this adjustment.') }}</p>
       </section>
 
       <!-- ── Totals ── -->
@@ -431,7 +441,18 @@ function onSave() {
       </section>
 
       <p v-if="attempted && blockedRows.length" class="awo-blocked">
-        {{ t('Fix the highlighted quantities before saving — they are below what has already gone to the vendor.') }}
+        {{ t('Quantities can only be increased. Fix the highlighted quantities before saving.') }}
+      </p>
+      <p v-if="attempted && outputLowerIssue" class="awo-blocked">
+        {{ t('Planned output cannot be lower than the current') }} {{ outputLowerIssue.current.toLocaleString('id-ID') }}.
+      </p>
+      <p v-if="attempted && belowChargedLines.length" class="awo-blocked">
+        <template v-for="l in belowChargedLines" :key="l.id">
+          {{ l.name }}: {{ t('cannot be lower than the') }} {{ formatIDR(l.recorded ?? 0) }} {{ t('already charged.') }}
+        </template>
+      </p>
+      <p v-if="saveRefused" class="awo-blocked">
+        {{ t('This adjustment could not be saved. Check the quantities and amounts, then try again.') }}
       </p>
       <p v-if="attempted && incompleteNewLines.length" class="awo-blocked">
         {{ t('Every new subcon cost needs a name and an amount.') }}

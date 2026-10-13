@@ -79,7 +79,7 @@ export const SUBCON_STAGES = [
   { stage: 1, name: 'BOM & config',     icon: 'products' },
   { stage: 2, name: 'Component supply', icon: 'truck'    },
   { stage: 3, name: 'Subcon PR',        icon: 'cart'     },
-  { stage: 4, name: 'Goods receipt',    icon: 'inbox'    },
+  { stage: 4, name: 'Purchase delivery',    icon: 'inbox'    },
   { stage: 5, name: 'Closed',           icon: 'done'     },
 ] as const
 
@@ -95,7 +95,9 @@ export type SubconDocKind =
   | 'rawTransfer'   // company raw material → subcon vendor
   | 'purchasePr'    // the in-house half of a split, bought normally into your warehouse
   | 'purchaseOrder' // the PR, approved and ordered from the vendor
-  | 'purchaseDelivery' // the vendor's delivery back — each one produces FG
+  | 'componentOrder'    // Dropship: the order placed with the 3rd party for raw material
+  | 'componentDelivery' // Dropship: the 3rd party's delivery of raw material to the vendor
+  | 'purchaseDelivery' // a raised delivery document — raw material only (R17), never the vendor's work
   | 'purchaseInvoice'  // the vendor's bill for the subcon work, raised against the PO
   | 'componentIssue'   // stock adjustment OUT — components issued into the vendor's process
   | 'receipt'       // goods receipt back from the vendor
@@ -169,10 +171,20 @@ const DOC_STEPS: Record<SubconDocKind, Omit<SubconDocStep, 'kind'>> = {
     title: 'Purchase order',
     detail: 'Raised from the subcon purchase request — the order placed with the vendor',
   },
+  componentOrder: {
+    tag: 'PO', module: 'Purchases',
+    title: 'Component purchase order',
+    detail: 'Raised from the component request — the raw material ordered from the 3rd party',
+  },
+  componentDelivery: {
+    tag: 'PD', module: 'Purchases',
+    title: 'Component purchase delivery',
+    detail: 'The 3rd party delivers the raw material to the subcon vendor — confirms it arrived',
+  },
   purchaseDelivery: {
     tag: 'PD', module: 'Purchases',
     title: 'Purchase delivery',
-    detail: "The vendor's delivery back — each one produces finished goods against the work order",
+    detail: 'A delivery of raw material to the subcon vendor (Dropship only)',
   },
   purchaseInvoice: {
     tag: 'PI', module: 'Purchases',
@@ -212,12 +224,12 @@ export function buildDocumentPlan(
   if (scope === 'finished-good') {
     // Supply first: the vendor cannot start without materials, and the service
     // request is for work on materials that are already there.
-    if (method === 'dropship') kinds.push('componentPr')
+    if (method === 'dropship') kinds.push('componentPr', 'componentOrder', 'componentDelivery')
     if (method === 'resupply') kinds.push('transfer')
     kinds.push('subconPr')
   } else {
     if (split === 'partial') kinds.push('purchasePr')
-    if (method === 'dropship') kinds.push('rawPr')
+    if (method === 'dropship') kinds.push('rawPr', 'componentOrder', 'componentDelivery')
     if (method === 'resupply') kinds.push('rawTransfer')
     kinds.push('processPr')
   }
@@ -226,11 +238,12 @@ export function buildDocumentPlan(
   // works from its own stock, so there is no company inventory to issue.
   if (method !== 'basic') kinds.push('componentIssue')
 
-  // The service PR does not end the chain: it is ordered, the vendor delivers
-  // against that order, and finally bills for it. Each delivery produces finished
-  // goods on the work order — which is also the goods coming back, so there is no
-  // separate receipt step.
-  kinds.push('purchaseOrder', 'purchaseDelivery', 'purchaseInvoice')
+  // The service PR does not end the chain: it is ordered (PO), the run is started
+  // and recorded (partial production / completion), and the vendor bills for it
+  // (PI). There is NO purchase delivery for the vendor's work, on any method
+  // (R17) — output comes from partial records or completion (R5). The only
+  // delivery in the feature is Dropship's raw material, planned above.
+  kinds.push('purchaseOrder', 'purchaseInvoice')
 
   return kinds.map(kind => ({ kind, ...DOC_STEPS[kind] }))
 }
@@ -259,6 +272,8 @@ export interface SubconPrefillLine {
   unitCost: number
   /** A service line — carries cost, never stock. */
   nonTrack?: boolean
+  /** The work order cost line this line charges (R11) — what the request covers. */
+  lineId?: string
   /**
    * Most that may still be moved for this line — the work order's outstanding
    * quantity (needed minus already sent). The form validates against it, so a
@@ -317,7 +332,7 @@ export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
  * but never offers a Create button for them.
  */
 export const RAISED_ELSEWHERE: SubconDocKind[] = [
-  'purchaseOrder', 'purchaseDelivery', 'purchaseInvoice',
+  'purchaseOrder', 'componentOrder', 'componentDelivery', 'purchaseDelivery', 'purchaseInvoice',
   // Posted by starting the work order, not chosen from a Create menu.
   'componentIssue',
 ]
@@ -725,7 +740,7 @@ const SEED_ORDERS: SubconOrder[] = [
     scope: 'finished-good', split: 'full', method: 'resupply',
     vendorId: 'sv-01', vendorName: 'PT Roastery Nusantara Mandiri',
     productId: SUBCON_OUTPUT.id, productName: SUBCON_OUTPUT.name, qty: 500, unit: SUBCON_OUTPUT.unit,
-    stage: 4, stageCaption: 'At goods receipt — awaiting inbound approval',
+    stage: 4, stageCaption: 'At purchase delivery — awaiting inbound approval',
     receivedQty: 500, disposition: { accepted: 480, rework: 12, scrap: 8 },
     promisedDate: '2026-06-25', lateDays: 0,
     sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
@@ -740,7 +755,7 @@ const SEED_ORDERS: SubconOrder[] = [
     scope: 'finished-good', split: 'full', method: 'basic',
     vendorId: 'sv-02', vendorName: 'CV Kopi Sangrai Sejahtera',
     productId: SUBCON_OUTPUT.id, productName: SUBCON_OUTPUT.name, qty: 300, unit: SUBCON_OUTPUT.unit,
-    stage: 4, stageCaption: 'At goods receipt — 2 partial batches received',
+    stage: 4, stageCaption: 'At purchase delivery — 2 partial batches received',
     receivedQty: 180, disposition: { accepted: 176, rework: 4, scrap: 0 },
     promisedDate: '2026-06-22', lateDays: 0,
     receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
@@ -766,7 +781,7 @@ const SEED_ORDERS: SubconOrder[] = [
     scope: 'finished-good', split: 'full', method: 'resupply',
     vendorId: 'sv-04', vendorName: 'UD Karya Sangrai Utama',
     productId: SUBCON_OUTPUT.id, productName: SUBCON_OUTPUT.name, qty: 300, unit: SUBCON_OUTPUT.unit,
-    stage: 3, stageCaption: 'At subcon PR — awaiting goods receipt',
+    stage: 3, stageCaption: 'At subcon PR — awaiting purchase delivery',
     receivedQty: 0,
     promisedDate: '2026-06-17', lateDays: 9,
     sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
@@ -953,3 +968,87 @@ export function custodyValueTotal(): number {
 
 /** Today, as the dashboard reckons it — keeps late-day maths deterministic. */
 export const SUBCON_TODAY = TODAY_ISO
+
+
+/** Request kinds that buy raw material rather than the vendor's work. */
+const COMPONENT_THREAD_KINDS = ['componentPr', 'rawPr']
+
+/**
+ * Whether a raised document satisfies a planned step. Raised documents keep the
+ * plain kinds of the stores they live in (`purchaseOrder`, `purchaseDelivery`), so
+ * the two Dropship threads are told apart by the request each one grew out of
+ * (`fromKind`): a component order and its delivery belong to the raw-material
+ * thread, every other order to the vendor's work.
+ */
+export function docMatchesStep(
+  doc: { kind: string; fromKind?: string },
+  stepKind: SubconDocKind,
+): boolean {
+  const fromComponent = !!doc.fromKind && COMPONENT_THREAD_KINDS.includes(doc.fromKind)
+  switch (stepKind) {
+    case 'componentOrder': return doc.kind === 'purchaseOrder' && fromComponent
+    case 'componentDelivery': return doc.kind === 'purchaseDelivery'
+    case 'purchaseOrder': return doc.kind === 'purchaseOrder' && !fromComponent
+    default: return doc.kind === stepKind
+  }
+}
+
+
+// ── Adjusting a work order (R7) ───────────────────────────────────────────────
+
+/** One recorded change: the figure before, the figure after, and why. */
+export interface SubconAdjustmentRecord {
+  field: 'output' | 'component' | 'cost'
+  /** The component SKU, or the cost line's id. */
+  key?: string
+  from: number
+  to: number
+  reason: string
+  date: string
+}
+
+export type SubconAdjustmentIssue =
+  | { kind: 'output-lower'; current: number }
+  | { kind: 'component-lower'; sku: string; name: string; unit: string; current: number }
+  | { kind: 'reason-missing' }
+
+/**
+ * The rules for an adjustment, as a pure function so the form and the store apply
+ * the same ones.
+ *
+ * R7 — planned output and component quantities can only INCREASE, and every
+ * adjustment carries a reason. A lower figure is refused, naming the current
+ * value; nothing here ever reduces a quantity, so there is no shortfall to write
+ * off (I7). `changes` lists what actually moved, so a form with nothing changed
+ * is not asked for a reason.
+ */
+export function evaluateSubconAdjustment(args: {
+  currentOutput: number
+  newOutput: number
+  components: { sku: string; name: string; unit: string; current: number; next: number }[]
+  /** Anything else the form changes — a revised or an added cost line. */
+  otherChanges?: number
+  reason: string
+}): { issues: SubconAdjustmentIssue[]; changes: Pick<SubconAdjustmentRecord, 'field' | 'key' | 'from' | 'to'>[] } {
+  const issues: SubconAdjustmentIssue[] = []
+  const changes: Pick<SubconAdjustmentRecord, 'field' | 'key' | 'from' | 'to'>[] = []
+
+  if (args.newOutput < args.currentOutput) {
+    issues.push({ kind: 'output-lower', current: args.currentOutput })
+  } else if (args.newOutput > args.currentOutput) {
+    changes.push({ field: 'output', from: args.currentOutput, to: args.newOutput })
+  }
+
+  for (const c of args.components) {
+    if (c.next < c.current) {
+      issues.push({ kind: 'component-lower', sku: c.sku, name: c.name, unit: c.unit, current: c.current })
+    } else if (c.next > c.current) {
+      changes.push({ field: 'component', key: c.sku, from: c.current, to: c.next })
+    }
+  }
+
+  if ((changes.length || (args.otherChanges ?? 0) > 0) && !args.reason.trim()) {
+    issues.push({ kind: 'reason-missing' })
+  }
+  return { issues, changes }
+}

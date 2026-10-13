@@ -33,6 +33,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
 import { SUBCON_VENDORS } from '~/data/subcon'
+import { subconLineTaxLabel, subconDocumentUntaxed } from '~/data/subconPricing'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -191,7 +192,7 @@ function selectNewProduct(p: typeof products[number]) {
     unit: p.unit,
     unitPrice: p.price,
     discountPct: 0,
-    taxLabel: 'PPN 11%',
+    taxLabel: subconWorkOrder.value ? subconLineTaxLabel() : 'PPN 11%',
     productError: false,
     qtyError: false,
   })
@@ -245,7 +246,9 @@ const globalDiscountAmount = computed(() =>
 )
 
 const taxBase     = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value)
-const taxAmount   = computed(() => Math.round(taxBase.value * 0.11))
+/** R14 — a subcon invoice carries no PPN while tax handling is out of scope. */
+const untaxed = computed(() => subconDocumentUntaxed(!!subconWorkOrder.value))
+const taxAmount   = computed(() => untaxed.value ? 0 : Math.round(taxBase.value * 0.11))
 const shippingFee = ref(0)
 const total       = computed(() => taxBase.value + taxAmount.value + shippingFee.value)
 
@@ -714,7 +717,7 @@ function onSave() {
             </div>
           </div>
 
-          <div class="si-totals-row">
+          <div v-if="!untaxed" class="si-totals-row">
             <span>PPN 11%</span>
             <span>{{ fmt(taxAmount) }}</span>
           </div>
