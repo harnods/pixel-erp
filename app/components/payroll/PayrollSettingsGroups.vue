@@ -20,7 +20,7 @@
  *   sets every combination one by one.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpCheckbox, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollColumnFilter from '~/components/payroll/PayrollColumnFilter.vue'
@@ -327,11 +327,9 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                       @blur="addDimOpen = false" @escape="addDimOpen = false"
                     >
                       <div class="pgr-menu__head">{{ t('Add a Jurnal dimension') }}</div>
-                      <ul v-if="addDimOptions.length" class="pgr-menu">
-                        <li v-for="o in addDimOptions" :key="o">
-                          <button type="button" class="pgr-menu__item" :data-dimension="o" @click="onAddDimension(o)">{{ o }}</button>
-                        </li>
-                      </ul>
+                      <MpPopoverList v-if="addDimOptions.length">
+                        <MpPopoverListItem v-for="o in addDimOptions" :key="o" class="pgr-menu__item" :data-dimension="o" @click="onAddDimension(o)">{{ o }}</MpPopoverListItem>
+                      </MpPopoverList>
                       <p v-else class="pgr-menu__empty">{{ t('Every Jurnal dimension is added. Create one in Settings > Dimensions.') }}</p>
                     </MpPopoverContent>
                   </MpPopover></span>
@@ -480,13 +478,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-novalue { color: var(--mp-text-secondary); }
 .pgr-bandhead { display: inline-flex; align-items: center; gap: var(--mp-spacing-3); }
 .pgr-adddim__btn { text-transform: none; letter-spacing: 0; white-space: nowrap; margin-block: calc(-1 * var(--mp-spacing-2)); }
-.pgr-menu__head { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pgr-menu { list-style: none; margin: 0; padding: 0; }
-.pgr-menu__item {
-  display: block; width: 100%; text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 0; border-radius: var(--mp-radii-md);
-  background: transparent; font: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer;
-}
-.pgr-menu__item:hover, .pgr-menu__item:focus-visible { background: var(--mp-background-neutral-hovered, rgba(0, 0, 0, 0.04)); outline: none; }
+.pgr-menu__head { padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pgr-menu__empty { margin: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 260px; }
 .pgr-thf { display: inline-flex; align-items: center; gap: 2px; }
 .pgr-rows thead .pgr-val { overflow-wrap: normal; word-break: normal; }
