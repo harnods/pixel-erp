@@ -169,7 +169,7 @@ function close() { emit('update:isOpen', false) }
 .sjm-panel {
   width: min(880px, 100%);
   background: var(--mp-background-stage, #fff);
-  border: 1px solid var(--mp-border-default);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-lg, 12px);
   display: flex; flex-direction: column;
 }
@@ -179,7 +179,7 @@ function close() { emit('update:isOpen', false) }
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-5);
   background: var(--mp-background-neutral-subtle, #f5f6f7);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-lg, 12px) var(--mp-radii-lg, 12px) 0 0;
 }
 .sjm-bar__title {
@@ -192,7 +192,7 @@ function close() { emit('update:isOpen', false) }
   padding: 0; border: none; border-radius: var(--mp-radii-md);
   background: transparent; color: var(--mp-text-secondary); cursor: pointer;
 }
-.sjm-close:hover { background: var(--mp-background-neutral-hovered); }
+.sjm-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .sjm-body { padding: var(--mp-spacing-5); }
 .sjm-heading {
@@ -204,20 +204,26 @@ function close() { emit('update:isOpen', false) }
 
 .sjm-tabs {
   display: flex; gap: var(--mp-spacing-5);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   margin-bottom: var(--mp-spacing-4);
 }
+/* Same tab as the work order's own top tabs (.detail-toptab): a flat 2px bar under
+   the active tab. `btn-enterprise` is kept for its reset, but its pill radius is
+   cleared — on a tab it bent the underline into a curve. */
 .sjm-tab {
+  position: relative;
   padding: var(--mp-spacing-2) 0 var(--mp-spacing-3);
-  border: none; background: transparent; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-  border-bottom: var(--mp-border-width-lg, 2px) solid transparent;
-  margin-bottom: calc(-1 * var(--mp-border-width-sm, 1px));
+  border: none; border-radius: 0; background: transparent; cursor: pointer;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-secondary);
 }
 .sjm-tab--on {
-  color: var(--mp-text-link);
+  color: var(--mp-text-selected);
   font-weight: var(--mp-font-weights-semi-bold);
-  border-bottom-color: var(--mp-text-link);
+}
+.sjm-tab--on::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
+  background: var(--mp-background-brand-bold, #029861);
 }
 
 .sjm-warning {
@@ -239,14 +245,14 @@ function close() { emit('update:isOpen', false) }
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
   background: var(--mp-background-neutral-subtle, #f5f6f7);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .sjm-th--num { text-align: right; }
 .sjm-td {
   padding: var(--mp-spacing-3);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default));
+  border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default, #e3e7e9));
 }
 .sjm-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .sjm-tr--total .sjm-td {
