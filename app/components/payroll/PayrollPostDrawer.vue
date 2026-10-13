@@ -9,7 +9,9 @@
  * payables only.
  */
 import { computed, ref, shallowRef, watch } from 'vue'
-import { MpDatePicker, MpRadio } from '@mekari/pixel3'
+import {
+  MpBanner, MpBannerDescription, MpBannerTitle, MpButton, MpDatePicker, MpFormControl, MpFormErrorMessage, MpFormHelpText, MpFormLabel, MpRadio,
+} from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
@@ -107,22 +109,21 @@ function confirm() {
       <div class="ppd__identity">{{ t('Payroll') }} {{ periodLabel(run.start, run.end) }}</div>
 
       <div class="ppd__form">
-        <div v-if="mode === 'repost'" class="ppd__row">
-          <div class="ppd__label">{{ t('Version') }}</div>
-          <div class="ppd__field ppd__choices">
-            <label v-for="x in choices" :key="x.no" class="ppd__choice">
-              <MpRadio :id="`ppd-v${x.no}`" name="ppd-version" :is-checked="versionNo === x.no" @change="versionNo = x.no; error = ''" />
-              <span>v{{ x.no }} · {{ t('sent') }} {{ wib(x.sentAt) }} · {{ sendFigures(x).staff }} {{ t('staff') }}<template v-if="x.no === choices[0]?.no"> · {{ t('latest') }}</template></span>
-            </label>
+        <MpFormControl v-if="mode === 'repost'" id="ppd-version-fc">
+          <MpFormLabel>{{ t('Version') }}</MpFormLabel>
+          <div class="ppd__choices">
+            <MpRadio v-for="x in choices" :id="`ppd-v${x.no}`" :key="x.no" name="ppd-version" :is-checked="versionNo === x.no" @change="versionNo = x.no; error = ''">
+              v{{ x.no }} · {{ t('sent') }} {{ wib(x.sentAt) }} · {{ sendFigures(x).staff }} {{ t('staff') }}<template v-if="x.no === choices[0]?.no"> · {{ t('latest') }}</template>
+            </MpRadio>
           </div>
-        </div>
-        <div class="ppd__row" data-tour="payroll-journal-date">
-          <label class="ppd__label" for="ppd-date">{{ t('Journal date') }}</label>
-          <div class="ppd__field">
-            <MpDatePicker id="ppd-date" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" @update:model-value="error = ''" />
-            <div v-if="dateError" class="ppd__fielderror" data-testid="ppd-date-error">{{ t(dateError) }}</div>
-            <div v-else class="ppd__fieldhint">{{ mode === 'repost' ? t('The reversal and the new journal both use this date.') : t('Defaults to the last day of the pay period.') }}</div>
-          </div>
+        </MpFormControl>
+        <div class="ppd__field" data-tour="payroll-journal-date">
+          <MpFormControl id="ppd-date" :is-invalid="!!dateError">
+            <MpFormLabel>{{ t('Journal date') }}</MpFormLabel>
+            <MpDatePicker id="ppd-date" v-model="date" format="DD/MM/YYYY" value-type="format" use-portal is-full-width :is-clearable="false" :is-invalid="!!dateError" @update:model-value="error = ''" />
+            <MpFormErrorMessage v-if="dateError" data-testid="ppd-date-error">{{ t(dateError) }}</MpFormErrorMessage>
+            <MpFormHelpText v-else>{{ mode === 'repost' ? t('The reversal and the new journal both use this date.') : t('Defaults to the last day of the pay period.') }}</MpFormHelpText>
+          </MpFormControl>
         </div>
       </div>
 
@@ -172,14 +173,8 @@ function confirm() {
                 <td class="ppd__td ppd__num">{{ rupiah(p.amount) }}</td>
                 <td class="ppd__td">
                   <div class="ppd__radios">
-                    <label class="ppd__choice">
-                      <MpRadio :id="`ppd-${slug(p.party)}-payable`" :name="`ppd-pay-${slug(p.party)}`" :is-checked="!payNow[p.party]" @change="setPayNow(p.party, false)" />
-                      <span>{{ t('Record as payable') }}</span>
-                    </label>
-                    <label class="ppd__choice">
-                      <MpRadio :id="`ppd-${slug(p.party)}-paynow`" :name="`ppd-pay-${slug(p.party)}`" :is-checked="!!payNow[p.party]" @change="setPayNow(p.party, true)" />
-                      <span>{{ t('Paid now') }}</span>
-                    </label>
+                    <MpRadio :id="`ppd-${slug(p.party)}-payable`" :name="`ppd-pay-${slug(p.party)}`" :is-checked="!payNow[p.party]" @change="setPayNow(p.party, false)">{{ t('Record as payable') }}</MpRadio>
+                    <MpRadio :id="`ppd-${slug(p.party)}-paynow`" :name="`ppd-pay-${slug(p.party)}`" :is-checked="!!payNow[p.party]" @change="setPayNow(p.party, true)">{{ t('Paid now') }}</MpRadio>
                   </div>
                 </td>
                 <td class="ppd__td ppd__bankcell">
@@ -195,16 +190,18 @@ function confirm() {
         </div>
       </section>
 
-      <div v-if="warnings.length" class="ppd__note" data-testid="ppd-warnings">
-        <div class="ppd__notetitle">{{ warnings.length }} {{ t(warnings.length === 1 ? 'warning not checked yet' : 'warnings not checked yet') }}</div>
+      <MpBanner v-if="warnings.length" id="ppd-warnings" variant="warning" data-testid="ppd-warnings">
+        <MpBannerTitle>{{ warnings.length }} {{ t(warnings.length === 1 ? 'warning not checked yet' : 'warnings not checked yet') }}</MpBannerTitle>
         <ul class="ppd__list"><li v-for="w in warnings" :key="w">{{ w }}</li></ul>
-      </div>
-      <div v-if="error" class="ppd__error" role="alert" data-testid="ppd-error">{{ error }}</div>
+      </MpBanner>
+      <MpBanner v-if="error" id="ppd-error" variant="danger" role="alert" data-testid="ppd-error">
+        <MpBannerDescription>{{ error }}</MpBannerDescription>
+      </MpBanner>
     </template>
 
     <template #footer>
-      <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
-      <button class="btn-enterprise btn-enterprise--primary" type="button" data-testid="ppd-confirm" @click="confirm">{{ confirmLabel }}</button>
+      <MpButton variant="ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded data-testid="ppd-confirm" @click="confirm">{{ confirmLabel }}</MpButton>
     </template>
   </PayrollCompareDrawerShell>
 </template>
@@ -212,12 +209,8 @@ function confirm() {
 <style scoped>
 .ppd__identity { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ppd__form { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
-.ppd__row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--mp-spacing-4); align-items: start; }
-.ppd__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: 38px; }
-.ppd__field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); max-width: 360px; }
-.ppd__choices { max-width: none; gap: var(--mp-spacing-2); padding-top: var(--mp-spacing-2); }
-.ppd__choice { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); cursor: pointer; }
-.ppd__fielderror { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.ppd__field { max-width: 360px; }
+.ppd__choices { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .ppd__fieldhint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .ppd__pay { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .ppd__sectiontitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -229,29 +222,19 @@ function confirm() {
 .ppd__paytable .ppd__th, .ppd__paytable .ppd__td { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); }
 .ppd__paytable .ppd__td { vertical-align: middle; padding-top: var(--mp-spacing-2); padding-bottom: var(--mp-spacing-2); }
 .ppd__paytable .ppd__th:first-child, .ppd__paytable .ppd__td:first-child { padding-left: var(--mp-spacing-4); }
-.ppd__radios { display: flex; gap: var(--mp-spacing-3); flex-wrap: nowrap; }
-.ppd__radios .ppd__choice { white-space: nowrap; }
-.ppd__info { padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.ppd__scroll { overflow-x: auto; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
+.ppd__radios { display: flex; gap: var(--mp-spacing-4); flex-wrap: nowrap; white-space: nowrap; }
+/* A bordered mini-table in a drawer takes the bold outer edge (rule/table-outer-border-bold). */
+.ppd__scroll { overflow-x: auto; border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md); }
 .ppd__table { width: 100%; border-collapse: collapse; }
 .ppd__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); height: var(--mp-sizes-7); padding: var(--mp-spacing-1) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
-.ppd__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
+.ppd__td { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .ppd__table tbody tr:last-child .ppd__td { border-bottom: 0; }
 .ppd__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ppd__nowrap { white-space: nowrap; }
 .ppd__muted { color: var(--mp-text-secondary); }
-.ppd__note {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-warning);
-  border-radius: var(--mp-radii-md); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-md);
-}
-.ppd__notetitle { font-weight: var(--mp-font-weights-semi-bold); margin-bottom: var(--mp-spacing-1); }
-.ppd__list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); }
-.ppd__error {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-colors-background-danger);
-  border-radius: var(--mp-radii-md); color: var(--mp-text-danger); font-size: var(--mp-font-sizes-md);
-}
+.ppd__list { margin: var(--mp-spacing-1) 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 </style>

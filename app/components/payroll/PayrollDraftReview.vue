@@ -7,7 +7,7 @@
  * Post journal writes, each with "Why this line".
  */
 import { computed, reactive, ref } from 'vue'
-import { MpButton, MpInput } from '@mekari/pixel3'
+import { MpBanner, MpBannerDescription, MpButton, MpInput } from '@mekari/pixel3'
 import {
   can, runById, draftReview, whyLine, addChangeNote, accountLabel, tagsLabel, rupiah, currentVersionOf, isDraftStale,
   markHeadcountExpected, clearHeadcountExpected, liveJournals, payroll, type Tags,
@@ -77,9 +77,9 @@ function unmarkExpected(key: string) {
 
 <template>
   <div v-if="review && review.lines.length" class="pdr">
-    <div v-if="stale" class="pdr__notice">
-      {{ t('Settings changed after this draft was built. Posting rebuilds it first and shows what changed.') }}
-    </div>
+    <MpBanner v-if="stale" id="pdr-stale" variant="warning">
+      <MpBannerDescription>{{ t('Settings changed after this draft was built. Posting rebuilds it first and shows what changed.') }}</MpBannerDescription>
+    </MpBanner>
 
     <!-- 1. Pay item totals against Talenta -->
     <section class="pdr__card" data-section="pay-items">
@@ -96,7 +96,7 @@ function unmarkExpected(key: string) {
         </thead>
         <tbody>
           <tr v-for="s in review.totals" :key="s.section">
-            <td class="pdr__td pdr__strong">{{ t(sectionLabel(s.section)) }}</td>
+            <td class="pdr__td">{{ t(sectionLabel(s.section)) }}</td>
             <td class="pdr__td pdr__num">{{ rupiah(s.amount) }}</td>
           </tr>
         </tbody>
@@ -154,7 +154,7 @@ function unmarkExpected(key: string) {
             <td class="pdr__td pdr__notecell">
               <template v-if="c.flag">
                 <div class="pdr__noteform">
-                  <MpInput :id="`pdr-note-${safeId(c.key)}`" :model-value="notes[c.key] ?? c.note ?? ''" :is-invalid="!!noteErr[c.key]" @update:model-value="(v: string | number) => notes[c.key] = String(v)" />
+                  <MpInput :id="`pdr-note-${safeId(c.key)}`" :aria-label="t('Note')" :model-value="notes[c.key] ?? c.note ?? ''" :is-invalid="!!noteErr[c.key]" @update:model-value="(v: string | number) => notes[c.key] = String(v)" />
                   <MpButton variant="secondary" is-rounded @click="saveNote(c.key)">{{ t('Save') }}</MpButton>
                 </div>
                 <p v-if="noteErr[c.key]" class="pdr__error">{{ t(noteErr[c.key]!) }}</p>
@@ -208,7 +208,7 @@ function unmarkExpected(key: string) {
               </div>
             </td>
             <td class="pdr__td pdr__num">{{ hc.previous ? h.last : '' }}</td>
-            <td class="pdr__td pdr__num pdr__strong">{{ h.current }}</td>
+            <td class="pdr__td pdr__num">{{ h.current }}</td>
             <td class="pdr__td pdr__num" :class="{ 'pdr__danger': h.flagged && !h.expected }">{{ hc.previous ? signedCount(h.change) : '' }}</td>
             <td v-if="hc.flagged" class="pdr__td pdr__notecell">
               <template v-if="h.flagged && h.expected">
@@ -218,7 +218,7 @@ function unmarkExpected(key: string) {
               </template>
               <template v-else-if="h.flagged">
                 <div class="pdr__noteform">
-                  <MpInput :id="`pdr-hc-${safeId(h.key)}`" :placeholder="t('Note (optional)')" :model-value="hcNotes[h.key] ?? ''" :is-invalid="!!hcErr[h.key]" @update:model-value="(v: string | number) => hcNotes[h.key] = String(v)" />
+                  <MpInput :id="`pdr-hc-${safeId(h.key)}`" :aria-label="t('Note (optional)')" :model-value="hcNotes[h.key] ?? ''" :is-invalid="!!hcErr[h.key]" @update:model-value="(v: string | number) => hcNotes[h.key] = String(v)" />
                   <MpButton variant="secondary" is-rounded @click="markExpected(h.key)">{{ t('Mark as expected') }}</MpButton>
                 </div>
                 <p v-if="hcErr[h.key]" class="pdr__error">{{ t(hcErr[h.key]!) }}</p>
@@ -328,10 +328,6 @@ function unmarkExpected(key: string) {
 
 <style scoped>
 .pdr { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-.pdr__notice {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md);
-  background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-md);
-}
 .pdr__card { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); background: var(--mp-background-neutral); overflow: hidden; }
 .pdr__empty { padding: var(--mp-spacing-4); color: var(--mp-text-secondary); }
 .pdr__cardhead { padding: var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
@@ -344,7 +340,7 @@ function unmarkExpected(key: string) {
 .pdr__th {
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
   color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  height: var(--mp-sizes-7); padding: var(--mp-spacing-1) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .pdr__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .pdr__th.pdr__num, .pdr__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -354,12 +350,13 @@ function unmarkExpected(key: string) {
 .pdr__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: var(--mp-spacing-1) 0 0; }
 .pdr__badge { margin-left: var(--mp-spacing-2); vertical-align: middle; }
 .pdr__hclist { margin: var(--mp-spacing-1) 0 0; padding: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pdr__notecell { min-width: 280px; }
+.pdr__notecell { min-width: var(--mp-sizes-65, 17.5rem); }
 .pdr__noteform { display: flex; gap: var(--mp-spacing-2); align-items: center; }
 .pdr__whycell { text-align: right; white-space: nowrap; }
 .pdr__link { color: var(--mp-text-link); cursor: pointer; font-size: var(--mp-font-sizes-sm); }
 .pdr__link:hover { text-decoration: underline; }
 .pdr__why { background: var(--mp-background-neutral-subtle); }
 .pdr__whylist { margin: 0; padding-left: var(--mp-spacing-5); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.pdr__total .pdr__td { border-bottom: 0; }
+/* Debits must visibly equal credits: the Total row sits under a bold rule (rule/journal-entry-structure). */
+.pdr__total .pdr__td { border-top: 1px solid var(--mp-colors-border-bold, #8c9596); border-bottom: 0; }
 </style>
