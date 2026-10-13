@@ -16,6 +16,7 @@
  *   the run warns ('no-dimension-value'), it never holds.
  *   A New row (nobody set it up) does not hold the run: its cost posts to the Everyone else
  *   account, with no group dimension, until it is set up. A row covering 1 or 2 staff carries a warning, no block.
+ *   The Staff column, the '1 or 2 staff' filter and that warning are Owner or LM only (can('headcount')).
  * - Filters (All / New / 1 or 2 staff + search) and bulk edit over the selected rows, so nobody
  *   sets every combination one by one.
  */
@@ -44,6 +45,8 @@ import {
 
 const { t } = useLocale()
 const canEdit = computed(() => can('setup'))
+/** Staff counts (Staff column, '1 or 2 staff' filter, small-group icon) are Owner or LM only. */
+const showStaff = computed(() => can('headcount'))
 const safe = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '-')
 const fieldLabel = (f: string) => t(groupFieldLabel(f))
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many)
@@ -105,8 +108,10 @@ const search = ref('')
 const filters = computed(() => [
   { id: 'pgr-filter-all', value: 'all' as const, label: `${t('All')} (${rows.value.length})` },
   { id: 'pgr-filter-new', value: 'new' as const, label: `${t('New')} (${newCount.value})` },
-  { id: 'pgr-filter-few', value: 'few' as const, label: `${t('1 or 2 staff')} (${fewCount.value})` },
+  ...(showStaff.value ? [{ id: 'pgr-filter-few', value: 'few' as const, label: `${t('1 or 2 staff')} (${fewCount.value})` }] : []),
 ])
+// The '1 or 2 staff' segment leaves with the role that may see staff counts; fall back to All.
+watch(showStaff, (on) => { if (!on && filter.value === 'few') filter.value = 'all' })
 // Column filters under each From Talenta header: pick one or more values; none picked = all.
 const colFilters = reactive<Record<string, string[]>>({})
 const colOptions = (i: number) => [...new Set(rows.value.map((r) => valueText(r.values[i] ?? '')))].sort((a, b) => a.localeCompare(b))
@@ -298,7 +303,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
             <colgroup>
               <col v-if="canEdit" class="pgr-c-check">
               <col v-for="f in groupBy" :key="f" class="pgr-c-val">
-              <col class="pgr-c-num">
+              <col v-if="showStaff" class="pgr-c-num">
               <col class="pgr-c-acct">
               <col v-for="c in dimColumns" :key="c" class="pgr-c-dim">
             </colgroup>
@@ -307,7 +312,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                 <th v-if="canEdit" rowspan="2" class="pset-th pgr-check">
                   <MpCheckbox id="pgr-check-all" :aria-label="t('Select all groups shown')" :is-checked="allVisibleOn" :is-indeterminate="someVisibleOn" @change="(on: boolean) => toggleAll(on)" />
                 </th>
-                <th :colspan="groupBy.length + 1" class="pset-th pgr-band pgr-band--talenta" scope="colgroup">{{ t('From Talenta') }}</th>
+                <th :colspan="groupBy.length + (showStaff ? 1 : 0)" class="pset-th pgr-band pgr-band--talenta" scope="colgroup">{{ t('From Talenta') }}</th>
                 <th :colspan="dimColumns.length + 1" class="pset-th pgr-band pgr-band--jurnal" scope="colgroup">
                   <span class="pgr-bandhead">{{ t('Posts to in Jurnal') }}
                   <MpPopover
@@ -340,7 +345,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                     @update:model-value="(v: string[]) => (colFilters[f] = v)"
                   /></span>
                 </th>
-                <th class="pset-th pgr-num">{{ t('Staff') }}</th>
+                <th v-if="showStaff" class="pset-th pgr-num">{{ t('Staff') }}</th>
                 <th class="pset-th pgr-split pgr-acct">{{ t('Expense account') }}</th>
                 <th v-for="c in dimColumns" :key="c" class="pset-th pgr-dim" :data-dimension="c">
                   <span class="pgr-thf">{{ c }}<MpButton
@@ -354,7 +359,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
               <!-- Everyone else: always on top, not selectable, no dimensions. -->
               <tr class="pgr-everyone" data-group="everyone-else" data-tour="payroll-everyone-else" :aria-label="t('Everyone else')">
                 <td v-if="canEdit" class="pset-td pgr-check" />
-                <td :colspan="groupBy.length + 1" class="pset-td pgr-everyone__name">
+                <td :colspan="groupBy.length + (showStaff ? 1 : 0)" class="pset-td pgr-everyone__name">
                   <span class="pgr-everyone__title">{{ t('Everyone else') }}</span>
                   <span class="pgr-everyone__sub">{{ t(EVERYONE_TIP) }}</span>
                   <span v-if="everyoneError" class="pset-line pset-danger">{{ everyoneError }}</span>
@@ -386,7 +391,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                     <span v-if="rowErrors[r.key]" class="pset-line pset-danger">{{ rowErrors[r.key] }}</span>
                   </template>
                 </td>
-                <td class="pset-td pgr-num">
+                <td v-if="showStaff" class="pset-td pgr-num">
                   <span class="pgr-staff">
                     <MpTooltip v-if="fewStaff(r)" :id="`pgr-few-${safe(r.key)}`" :label="fewTip(r)" placement="top" use-portal>
                       <span class="pgr-few" tabindex="0" :aria-label="fewTip(r)" :data-few-staff="fewStaff(r)"><MpIcon name="warning-triangle" size="sm" /></span>
@@ -404,7 +409,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                 </td>
               </tr>
               <tr v-if="!visibleRows.length">
-                <td :colspan="(canEdit ? 1 : 0) + groupBy.length + 2 + dimColumns.length" class="pset-td pgr-none">
+                <td :colspan="(canEdit ? 1 : 0) + groupBy.length + (showStaff ? 2 : 1) + dimColumns.length" class="pset-td pgr-none">
                   <span>{{ search.trim() ? t(`No groups match "${search.trim()}".`) : t('No groups in this view.') }}</span>
                   <MpButton variant="ghost" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
                 </td>

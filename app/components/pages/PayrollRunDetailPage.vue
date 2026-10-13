@@ -3,7 +3,7 @@
  * Payroll run page /payroll-runs/<id>. Header with the one primary action: Post journal for the
  * Owner or a user with LM, Save draft for Accountant/Ultimate (who can't post); "To fix before posting";
  * "Talenta sent this period again" with Use vN and repost; warnings; then tabs: Draft review
- * (the exact journal Post writes; months before the start month are labelled "not posted"),
+ * (the exact journal Post writes; every send builds a draft that can be posted),
  * Versions (with the compare), Journals, Mapping used; claims below.
  */
 import { computed, nextTick, ref, watch } from 'vue'
@@ -27,7 +27,7 @@ import {
   accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
 import { versionFigures } from '~/data/payrollUiIntake'
-import { statusLabel, statusType, notPostedLabel } from '~/data/payrollUiRunCopy'
+import { statusLabel, statusType } from '~/data/payrollUiRunCopy'
 import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId?: string }>()
@@ -46,7 +46,7 @@ const fig = computed(() => versionFigures(v.value))
 const draftTotal = computed(() => (draft.value ? draft.value.lines.reduce((s, l) => s + l.debit, 0) : 0))
 const liveTotal = computed(() => live.value.reduce((s, j) => s + j.lines.reduce((x, l) => x + l.debit, 0), 0))
 const warningCount = computed(() => (run.value ? runWarnings(run.value.id).length : 0))
-const showWarnings = computed(() => !!run.value && !holds.value.length && ((!!draft.value && !live.value.length && run.value.mode === 'Live') || warningCount.value > 0))
+const showWarnings = computed(() => !!run.value && !holds.value.length && ((!!draft.value && !live.value.length) || warningCount.value > 0))
 const hasRevision = computed(() => !!run.value && !!revisionOf(run.value.id))
 const showClaims = computed(() => !!draft.value || live.value.length > 0)
 const showRevisionSlot = computed(() => !!run.value)
@@ -205,14 +205,10 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       </MpTabs>
 
       <template v-if="tab === 'review'">
-        <MpBanner v-if="draft && run.mode !== 'Live'" id="prr-before-start" variant="info" data-testid="prr-before-start">
-          <MpBannerIcon id="prr-before-start-icon" />
-          <MpBannerDescription>{{ t(notPostedLabel(run.mode)) }}</MpBannerDescription>
-        </MpBanner>
         <PayrollDraftReview v-if="draft" :run-id="run.id" />
         <PayrollRunJournals v-else-if="live.length" :run-id="run.id" only-live />
         <div v-else class="prr__card prr__empty">
-          {{ holds.length ? t('No draft journal yet. Fix the items in To fix before posting and it builds.') : run.mode !== 'Live' ? t(notPostedLabel(run.mode)) : t('No draft journal yet. It builds when Talenta sends this period.') }}
+          {{ holds.length ? t('No draft journal yet. Fix the items in To fix before posting and it builds.') : t('No draft journal yet. It builds when Talenta sends this period.') }}
         </div>
       </template>
 
