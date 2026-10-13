@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * Side panel shell for the payroll settings editors (rule/drawer-custom-shell:
- * a Teleport overlay, not MpDrawer). The head stays put and the body scrolls;
+ * a Teleport overlay, not MpDrawer). The overlay is only a backdrop: close is the x
+ * (rule/modal-drawer-close-explicit-only). The head stays put and the body scrolls;
  * the footer slot holds the actions.
  */
 import { MpButton, MpIcon } from '@mekari/pixel3'
@@ -13,7 +14,7 @@ const { t } = useLocale()
 
 <template>
   <Teleport to="body">
-    <div v-if="isOpen" class="psd-overlay" @click.self="emit('close')">
+    <div v-if="isOpen" class="psd-overlay">
       <aside class="psd-panel" :class="{ 'psd-panel--wide': wide }" role="dialog" :aria-label="title">
         <header class="psd-head">
           <div class="psd-headtext">
@@ -37,13 +38,14 @@ const { t } = useLocale()
 
 <style scoped>
 /* 1300 matches BillsFiltersDrawer: the app header is 1100. */
-.psd-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; }
+.psd-overlay { position: fixed; inset: 0; background: var(--mp-colors-background-overlay); z-index: 1300; display: flex; justify-content: flex-end; }
+/* Floating panel: 12px off every edge, 12px radius (docs/patterns/Drawer.md). */
 .psd-panel {
-  position: absolute; top: 0; right: 0; bottom: 0; width: 480px; max-width: 92vw;
+  margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px);
   background: var(--mp-background-neutral); display: flex; flex-direction: column;
-  border-left: 1px solid var(--mp-border-default); overflow: hidden;
+  border-radius: var(--mp-radii-xl, 12px); overflow: hidden;
 }
-.psd-panel--wide { width: 640px; }
+.psd-panel--wide { width: min(640px, calc(100% - 24px)); }
 .psd-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-4) var(--mp-spacing-6); flex: none;
