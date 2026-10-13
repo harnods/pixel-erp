@@ -9,7 +9,8 @@
  */
 import { computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { MpButton, MpIcon, MpInput } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpIcon, MpInput, MpFormControl, MpFormLabel, MpFormErrorMessage } from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   payroll, can, runById, runHolds, rupiah, accountLabel, payrollAccount, mappingFor, suggestMapping, setPayItemAccount,
@@ -150,12 +151,12 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 
       <!-- Confirm source (first send) -->
       <div v-if="h.code === 'confirm-source'" class="ph__fix">
-        <dl v-if="summary" class="ph__facts">
-          <div><dt>{{ t('Organizations') }}</dt><dd>{{ summary.organizations.join(', ') }}</dd></div>
-          <div><dt>{{ t('Branches') }}</dt><dd>{{ summary.branches.join(', ') }}</dd></div>
-          <div v-if="can('headcount')"><dt>{{ t('Headcount') }}</dt><dd>{{ summary.headcount }}</dd></div>
-          <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(summary.takeHome) }}</dd></div>
-        </dl>
+        <div v-if="summary" class="ph__facts">
+          <ContentList :label="t('Organizations')" :value="summary.organizations.join(', ')" />
+          <ContentList :label="t('Branches')" :value="summary.branches.join(', ')" />
+          <ContentList v-if="can('headcount')" :label="t('Headcount')" :value="summary.headcount" />
+          <ContentList :label="t('Take-home pay')" :value="rupiah(summary.takeHome)" />
+        </div>
         <MpButton v-if="can('connection')" is-rounded @click="doConfirmSource">{{ t('Confirm company') }}</MpButton>
         <PayrollReadOnlyNote v-else :text="t('Waiting for the Owner or a user with LM to confirm the company.')" />
       </div>
@@ -168,38 +169,38 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
           <MpButton variant="secondary" is-rounded @click="sep.open = !sep.open">{{ t('Make a separate run') }}</MpButton>
         </div>
         <div v-if="sep.open" class="ph__form">
-          <div class="ph__field">
-            <label class="ph__label" for="ph-sep-type">{{ t('Run type') }}</label>
+          <MpFormControl id="ph-sep-type-fc" class="ph__field">
+            <MpFormLabel>{{ t('Run type') }}</MpFormLabel>
             <ErpFilterSelect id="ph-sep-type" v-model="sep.type" :placeholder="t('Run type')" :options="['THR', 'Bonus', 'Off-cycle']" :is-clearable="false" width="200px" />
-          </div>
-          <div class="ph__field">
-            <label class="ph__label" for="ph-sep-name">{{ t('Name') }}</label>
+          </MpFormControl>
+          <MpFormControl id="ph-sep-name-fc" class="ph__field">
+            <MpFormLabel>{{ t('Name') }}</MpFormLabel>
             <MpInput id="ph-sep-name" v-model="sep.name" />
-          </div>
-          <div class="ph__field">
-            <label class="ph__label" for="ph-sep-reason">{{ t('Reason') }}</label>
+          </MpFormControl>
+          <MpFormControl id="ph-sep-reason-fc" class="ph__field" :is-invalid="!!sep.error">
+            <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
             <MpInput id="ph-sep-reason" v-model="sep.reason" :is-invalid="!!sep.error" />
-            <p v-if="sep.error" class="ph__error">{{ t(sep.error) }}</p>
-          </div>
-          <div class="ph__row">
+            <MpFormErrorMessage>{{ t(sep.error) }}</MpFormErrorMessage>
+          </MpFormControl>
+          <MpButtonGroup class="erp-action-footer ph__formfoot">
             <MpButton variant="ghost" is-rounded @click="sep.open = false">{{ t('Cancel') }}</MpButton>
             <MpButton is-rounded @click="saveSeparate">{{ t('Save separate run') }}</MpButton>
-          </div>
+          </MpButtonGroup>
         </div>
       </div>
 
       <!-- Partial send -->
       <div v-else-if="h.code === 'partial'" class="ph__fix">
-        <dl class="ph__facts">
-          <div><dt>{{ t('Staff') }}</dt><dd>{{ d(h).after }} {{ t('of') }} {{ d(h).before }}</dd></div>
-          <div><dt>{{ t('Take-home pay') }}</dt><dd>{{ rupiah(d(h).thpAfter) }} {{ t('of') }} {{ rupiah(d(h).thpBefore) }}</dd></div>
-          <div v-if="d(h).missing?.length"><dt>{{ t('Missing groups') }}</dt><dd>{{ d(h).missing.join('; ') }}</dd></div>
-        </dl>
-        <div class="ph__field">
-          <label class="ph__label" for="ph-partial-reason">{{ t('Reason') }}</label>
-          <MpInput id="ph-partial-reason" v-model="partial.reason" :is-invalid="!!partial.error" />
-          <p v-if="partial.error" class="ph__error">{{ t(partial.error) }}</p>
+        <div class="ph__facts">
+          <ContentList :label="t('Staff')" :value="`${d(h).after} ${t('of')} ${d(h).before}`" />
+          <ContentList :label="t('Take-home pay')" :value="`${rupiah(d(h).thpAfter)} ${t('of')} ${rupiah(d(h).thpBefore)}`" />
+          <ContentList v-if="d(h).missing?.length" :label="t('Missing groups')" :value="d(h).missing.join('; ')" />
         </div>
+        <MpFormControl id="ph-partial-reason-fc" class="ph__field" :is-invalid="!!partial.error">
+          <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
+          <MpInput id="ph-partial-reason" v-model="partial.reason" :is-invalid="!!partial.error" />
+          <MpFormErrorMessage>{{ t(partial.error) }}</MpFormErrorMessage>
+        </MpFormControl>
         <div class="ph__row">
           <MpButton is-rounded @click="decide('replace')">{{ t('Use it as the full run') }}</MpButton>
           <MpButton variant="secondary" is-rounded @click="decide('reject')">{{ t('Reject') }}</MpButton>
@@ -211,7 +212,7 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         <table class="ph__table">
           <!-- Type and accounts sit in the form row under each item: as three columns beside the
                figures they cut their own values short at 1280. -->
-          <colgroup><col><col style="width: 180px"><col style="width: 96px"></colgroup>
+          <colgroup><col><col class="ph__col-amount"><col class="ph__col-staff"></colgroup>
           <thead>
             <tr>
               <th class="ph__th">{{ t('Pay item') }}</th>
@@ -232,13 +233,13 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
               <tr>
                 <td class="ph__td ph__td--sub" colspan="3">
                   <div class="ph__grid ph__grid--one">
-                    <div class="ph__field">
-                      <label class="ph__label" :for="`ph-acct-${safeId(it.key)}`">{{ t('Account') }}</label>
+                    <MpFormControl :id="`ph-acct-${safeId(it.key)}-fc`" class="ph__field" :is-invalid="!!itemForm(it).error">
+                      <MpFormLabel>{{ t('Account') }}</MpFormLabel>
                       <ErpFilterSelect :id="`ph-acct-${safeId(it.key)}`" v-model="itemForm(it).account" :placeholder="t('Select account')" :options="optionsFor(it)" width="100%" />
-                    </div>
+                      <MpFormErrorMessage>{{ t(itemForm(it).error) }}</MpFormErrorMessage>
+                    </MpFormControl>
                   </div>
                   <div class="ph__row ph__row--end">
-                    <p v-if="itemForm(it).error" class="ph__error">{{ t(itemForm(it).error) }}</p>
                     <MpButton is-rounded @click="saveItem(it)">{{ t('Save account') }}</MpButton>
                   </div>
                 </td>
@@ -274,31 +275,31 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
 .ph__holdtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ph__msg { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); overflow-wrap: anywhere; }
 .ph__fix { margin: var(--mp-spacing-3) 0 0 var(--mp-spacing-8); display: flex; flex-direction: column; gap: var(--mp-spacing-3); align-items: flex-start; }
-.ph__facts { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-6); margin: 0; }
-.ph__facts dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ph__facts dd { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ph__facts { display: flex; flex-wrap: wrap; column-gap: var(--mp-spacing-6); }
 .ph__row { display: flex; gap: var(--mp-spacing-2); align-items: center; flex-wrap: wrap; }
 .ph__row--end { justify-content: flex-end; width: 100%; }
 .ph__form { display: flex; flex-direction: column; gap: var(--mp-spacing-3); width: 100%; max-width: 520px; padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
-.ph__formtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.ph__field { display: flex; flex-direction: column; gap: var(--mp-spacing-2); width: 100%; }
-.ph__label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ph__field { width: 100%; }
+.ph__formfoot { width: 100%; }
 .ph__hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0; overflow-wrap: anywhere; }
-.ph__error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: 0; }
 .ph__muted { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.ph__strong { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.ph__strong { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ph__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ph__table :deep(.efs) { display: block; width: 100%; min-width: 0; }
 .ph__table :deep(.efs-trigger) { width: 100%; }
+.ph__col-amount { width: var(--mp-spacing-40); }
+.ph__col-staff { width: var(--mp-sizes-22); }
+/* Header row 28px, uppercase 12px semibold (rule/table-header-height, rule/table-header-uppercase). */
 .ph__th {
+  height: var(--mp-sizes-7); box-sizing: border-box; line-height: 1;
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .ph__th.ph__th--num, .ph__td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .ph__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
 .ph__grid :deep(.efs) { display: block; width: 100%; min-width: 0; }
 .ph__grid--one { grid-template-columns: minmax(0, 420px); }
-.ph__td { padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
+.ph__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: middle; }
 .ph__td--sub { border-bottom: 1px solid var(--mp-border-default); }
 </style>

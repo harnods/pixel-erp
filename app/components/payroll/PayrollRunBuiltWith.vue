@@ -100,9 +100,11 @@ const groupedBy = computed(() => (s.value?.groupBy ?? []).map((f) => t(groupFiel
 .pbw__cardhead { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
 .pbw__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pbw__table { width: 100%; border-collapse: collapse; }
+/* Header row 28px, uppercase 12px semibold (rule/table-header-height, rule/table-header-uppercase). */
 .pbw__th {
+  height: var(--mp-sizes-7); box-sizing: border-box; line-height: 1;
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .pbw__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .pbw__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
@@ -110,6 +112,5 @@ const groupedBy = computed(() => (s.value?.groupBy ?? []).map((f) => t(groupFiel
 .pbw__scroll { overflow-x: auto; }
 .pbw__none { color: var(--mp-text-secondary); }
 .pbw__table--groups .pbw__td { white-space: nowrap; }
-.pbw__everyone .pbw__td { background: var(--mp-background-neutral-subtle); }
 
 </style>

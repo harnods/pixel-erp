@@ -4,7 +4,7 @@
  * run, and a run reversed but not posted again. The journals list lives in the Journals tab and the
  * version compare in the Versions tab.
  */
-import { MpButton, MpIcon } from '@mekari/pixel3'
+import { MpButton, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import {
   runById, liveJournals, journalTotals, versionOf, currentVersionOf, runStatus, postRun, draftOf,
@@ -60,43 +60,35 @@ const visible = computed(() => (!!partial.value && !!ledgerV.value && !hasRevisi
 <template>
   <div v-if="run && visible" class="prp" data-testid="payroll-revision-panel">
     <!-- The same-run-or-separate choice itself is in To fix before posting; this panel adds nothing for it. -->
-    <section v-if="partial && ledgerV && !hasRevision && !waiting" class="prp__notice prp__notice--warn" data-testid="prp-partial">
-      <MpIcon name="warning-circular" size="md" />
-      <div class="prp__noticebody">
-        <div class="prp__noticetitle">{{ t('Looks like part of the run') }}</div>
-        <div>{{ partialText }}</div>
-      </div>
-    </section>
+    <MpBanner v-if="partial && ledgerV && !hasRevision && !waiting" id="prp-partial" variant="warning" data-testid="prp-partial">
+      <MpBannerIcon id="prp-partial-icon" />
+      <MpBannerTitle>{{ t('Looks like part of the run') }}</MpBannerTitle>
+      <MpBannerDescription>{{ partialText }}</MpBannerDescription>
+    </MpBanner>
 
     <!-- Reversed, not reposted -->
-    <section v-if="reversedNotReposted" class="prp__notice prp__notice--danger" data-testid="prp-reversed">
-      <MpIcon name="error" size="md" />
-      <div class="prp__noticebody">
-        <div class="prp__noticetitle">{{ t(`Reversed, not reposted: ${rupiah(reversedNotReposted.amount)}`) }}</div>
-        <div>{{ t(`Reversed ${reversedNotReposted.at}. Payables for ${monthLabel(run.month)} show nothing owed until you post again.`) }}</div>
-        <div v-if="reversedNotReposted.days >= 2" class="prp__noticesub">{{ t(`${reversedNotReposted.days} working days since the reversal.`) }}</div>
-        <div v-if="repostError" class="prp__noticeerror" role="alert">{{ repostError }}</div>
-        <PayrollReadOnlyNote v-if="!can('post') && cur?.draft && status === 'Reversed'" :text="t('Only the Owner or a user with LM can post.')" />
-      </div>
-      <div v-if="can('post') && cur?.draft && status === 'Reversed'" class="prp__noticeactions">
-        <MpButton is-rounded data-testid="prp-repost" @click="repost">{{ t('Post journal') }} v{{ cur.no }}</MpButton>
-      </div>
-    </section>
+    <MpBanner v-if="reversedNotReposted" id="prp-reversed" variant="danger" data-testid="prp-reversed">
+      <MpBannerIcon id="prp-reversed-icon" />
+      <MpBannerTitle>{{ t(`Reversed, not reposted: ${rupiah(reversedNotReposted.amount)}`) }}</MpBannerTitle>
+      <MpBannerDescription>
+        <div class="prp__noticebody">
+          <div>{{ t(`Reversed ${reversedNotReposted.at}. Payables for ${monthLabel(run.month)} show nothing owed until you post again.`) }}</div>
+          <div v-if="reversedNotReposted.days >= 2" class="prp__noticesub">{{ t(`${reversedNotReposted.days} working days since the reversal.`) }}</div>
+          <div v-if="repostError" class="prp__noticeerror" role="alert">{{ repostError }}</div>
+          <PayrollReadOnlyNote v-if="!can('post') && cur?.draft && status === 'Reversed'" :text="t('Only the Owner or a user with LM can post.')" />
+          <div v-if="can('post') && cur?.draft && status === 'Reversed'" class="prp__noticeactions">
+            <MpButton is-rounded data-testid="prp-repost" @click="repost">{{ t('Post journal') }} v{{ cur.no }}</MpButton>
+          </div>
+        </div>
+      </MpBannerDescription>
+    </MpBanner>
   </div>
 </template>
 
 <style scoped>
 .prp { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
-.prp__notice {
-  display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md);
-}
-.prp__notice--warn { background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); }
-.prp__notice--info { background: var(--mp-background-neutral-subtle); color: var(--mp-text-default); border: 1px solid var(--mp-border-default); }
-.prp__notice--danger { background: var(--mp-colors-background-danger); color: var(--mp-text-danger); }
-.prp__noticebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.prp__noticetitle { font-weight: var(--mp-font-weights-semi-bold); }
+.prp__noticebody { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .prp__noticesub { font-size: var(--mp-font-sizes-sm); }
 .prp__noticeerror { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
-.prp__noticeactions { flex: none; display: flex; gap: var(--mp-spacing-2); }
+.prp__noticeactions { display: flex; margin-top: var(--mp-spacing-2); }
 </style>
