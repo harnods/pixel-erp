@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-import-removed',
+    title: 'Replenishment: removed the Import (bulk per-warehouse settings) button',
+    description:
+      'The Import button was removed from the worklist title bar, along with its page (/replenishment/import), the bulk-settings CSV import module, and its test. It previously implemented US-021 AC-02 (bulk-import per-warehouse settings). Per-warehouse settings — safety days, reorder point and preferred vendor — are still editable individually on a product\'s Stock-by-warehouses tab.',
+    date: '2026-10-13',
+    files: ['[...slug].vue'],
+  },
+  {
     id: 'replenishment-formula-input-columns-removed',
     title: 'To order: removed Lead time, Demand velocity & Safety days columns',
     description:
@@ -162,14 +170,6 @@ export const DEV_CHANGES: DevChange[] = [
       'Selecting 10 or more worklist lines and confirming Request to purchase no longer blocks on one step (PRD US-018 AC-03 / EH-01). The requests are created vendor group by vendor group while a modal shows progress ("12 of 25 lines"); you can close it and a toast reports the end. When done it says how many were created and lists any that failed with a Retry failed button; View purchase requests opens the list. The 10-line threshold is demo scale — production figure TBD (the PRD example is 1,000).',
     date: '2026-10-07',
     files: ['BulkPrProgressModal.vue', 'ReplenishmentPage.vue', 'replenishmentPurchaseRequest.ts'],
-  },
-  {
-    id: 'replenishment-settings-import',
-    title: 'Replenishment: bulk import of per-warehouse settings',
-    description:
-      'New Import button on the worklist title bar opens a page to set safety days, reorder point and preferred vendor for many product × warehouse pairs from one CSV (PRD US-021 AC-02, US-008 EH-01). Download a template that already holds today\'s values, change what should move, upload it, and review before anything is saved: valid rows are applied, rejected rows are listed with the row number and reason and can be downloaded as an error report. A value equal to what the warehouse already inherits stores no override. Max 1,000 rows.',
-    date: '2026-10-07',
-    files: ['ImportReplenishmentSettingsPage.vue', 'replenishmentSettingsImport.ts', '[...slug].vue', 'csv.ts'],
   },
   {
     id: 'product-category-change-warning',
