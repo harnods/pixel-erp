@@ -23,7 +23,7 @@ const v = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const warnings = computed(() => runWarnings(props.runId))
 const open = computed(() => warnings.value.filter((w) => !w.acknowledged).length)
 
-// Keyed by string: 'no-dimension-value' lands in the engine's WarningCode union on the engine branch.
+// Keyed by string so a code the engine adds ('old-sync-booked') can be labelled before it lands in WarningCode.
 const CODE_LABEL: Record<string, string> = {
   'missing-component': 'Missing pay item',
   'tax-rule': 'PPh 21 check',
@@ -35,6 +35,7 @@ const CODE_LABEL: Record<string, string> = {
   'manual-journal': 'Manual journal',
   'no-group': 'No group',
   'no-dimension-value': 'No dimension value',
+  'old-sync-booked': 'Already booked by the old sync',
 }
 /** Warnings whose fix is on Payroll settings > Groups; details.groups lists the groups by label. */
 const GROUP_CODES = ['no-group', 'no-dimension-value']
