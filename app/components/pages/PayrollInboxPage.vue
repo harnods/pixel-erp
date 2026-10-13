@@ -8,16 +8,18 @@
  * the payroll engine; no figure is stored here.
  */
 import { computed, ref, watch } from 'vue'
-import { MpButton, MpIcon, MpTooltip, MpSegmentedControl } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpIcon, MpInput, MpTooltip, MpSegmentedControl } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
 import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateMenu.vue'
 import { can, payroll, sendLog, sendLogCsv, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
 import { runRow, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
 import { statusLabel, statusType, nextStepLabel } from '~/data/payrollUiRunCopy'
 
 const { t } = useLocale()
+const EMPTY_ILLUSTRATION = '/illustrations/empty-folder.png'
 const router = useRouter()
 const route = useRoute()
 
@@ -101,9 +103,15 @@ const logColumns = computed<TableColumn[]>(() => [
   { key: 'result', label: t('Result'), kind: 'status' },
   { key: 'runId', label: t('Run'), kind: 'unit' },
 ])
-function exportLog() {
-  const blob = new Blob([`\ufeff${sendLogCsv(filteredLog.value.map((r) => sendLog.value.find((l) => l.id === r.id)!))}`], { type: 'text/csv;charset=utf-8;' })
+// Export opens the shared ExportModal (rule/export-modal). The CSV always carries every
+// sync log column (sendLogCsv), so each column is listed as required.
+const exportOpen = ref(false)
+const exportColumns = computed(() => logColumns.value.map((c) => ({ key: c.key, label: c.label, required: true })))
+function exportLog(scope: string) {
+  const picked = scope === 'page' ? pagedLog.value : filteredLog.value
+  const blob = new Blob([`\ufeff${sendLogCsv(picked.map((r) => sendLog.value.find((l) => l.id === r.id)!))}`], { type: 'text/csv;charset=utf-8;' })
   const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'payroll-sync-log.csv'; el.click(); URL.revokeObjectURL(el.href)
+  exportOpen.value = false
 }
 
 // ── Month headcount ────────────────────────────────────────────────────────
@@ -147,13 +155,13 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       :per-page="perPage"
       :search="search"
       :has-active-search="!!search"
-      :has-active-filter="!!statusFilter"
+      :has-active-filter="!!statusFilter || !!search"
       filter-empty-label="run"
       is-row-clickable
       @row-click="(row) => openRun((row as { id: string }).id)"
       @page-change="(p) => page = p"
       @per-page-change="(n) => { perPage = n; page = 1 }"
-      @clear-filters="statusFilter = ''"
+      @clear-filters="() => { statusFilter = ''; search = '' }"
       @clear-search="search = ''"
       @clear-all="() => { statusFilter = ''; search = '' }"
     >
@@ -194,7 +202,8 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
         <div class="filter-right">
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
-            <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')">
+            <MpInput id="pi-search" v-model="search" variant="unstyled" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+            <MpButton v-if="search" variant="ghost" class="search-clear-btn" :aria-label="t('Clear search')" is-rounded @click="search = ''"><MpIcon name="close" size="sm" /></MpButton>
           </div>
         </div>
       </template>
@@ -215,6 +224,13 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       <template #cell-reason="{ row }">
         <span class="pi__wrap">{{ (row as { reason: string }).reason || t(nextStepLabel((row as { status: string }).status, (row as { nextStep: string }).nextStep)) }}</span>
       </template>
+      <template #empty>
+        <div class="empty-full">
+          <img :src="EMPTY_ILLUSTRATION" alt="" class="empty-illustration">
+          <p class="empty-full-title">{{ t('No payroll runs') }}</p>
+          <p class="empty-full-desc">{{ t('Payroll runs will appear here.') }}</p>
+        </div>
+      </template>
     </ErpTablePage>
 
     <!-- ── Sync log ── -->
@@ -228,12 +244,12 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       :per-page="logPerPage"
       :search="logSearch"
       :has-active-search="!!logSearch"
-      :has-active-filter="!!logResult"
+      :has-active-filter="!!logResult || !!logSearch"
       filter-empty-label="send"
       no-row-hover
       @page-change="(p) => logPage = p"
       @per-page-change="(n) => { logPerPage = n; logPage = 1 }"
-      @clear-filters="logResult = ''"
+      @clear-filters="() => { logResult = ''; logSearch = '' }"
       @clear-search="logSearch = ''"
       @clear-all="() => { logResult = ''; logSearch = '' }"
     >
@@ -243,12 +259,15 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
           <MpButton v-if="logResult" variant="ghost" is-rounded @click="logResult = ''">{{ t('Clear filters') }}</MpButton>
         </div>
         <div class="filter-right">
-          <MpTooltip :label="t('Export')" placement="bottom">
-            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportLog" />
-          </MpTooltip>
+          <MpButtonGroup class="filter-btn-group">
+            <MpTooltip :label="t('Export')" placement="bottom">
+              <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
+            </MpTooltip>
+          </MpButtonGroup>
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
-            <input v-model="logSearch" class="filter-search-input" type="text" :placeholder="t('Search...')">
+            <MpInput id="pl-search" v-model="logSearch" variant="unstyled" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+            <MpButton v-if="logSearch" variant="ghost" class="search-clear-btn" :aria-label="t('Clear search')" is-rounded @click="logSearch = ''"><MpIcon name="close" size="sm" /></MpButton>
           </div>
         </div>
       </template>
@@ -260,6 +279,13 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
       </template>
       <template #cell-runId="{ row }">
         <span v-if="(row as { runId: string | null }).runId" class="cell-link cell-text" @click.stop="openRun((row as { runId: string }).runId)">{{ t('Open run') }}</span>
+      </template>
+      <template #empty>
+        <div class="empty-full">
+          <img :src="EMPTY_ILLUSTRATION" alt="" class="empty-illustration">
+          <p class="empty-full-title">{{ t('No sends') }}</p>
+          <p class="empty-full-desc">{{ t('Talenta sends will appear here.') }}</p>
+        </div>
       </template>
     </ErpTablePage>
 
@@ -309,6 +335,17 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
         </template>
       </ErpTablePage>
     </div>
+
+    <ExportModal
+      :open="exportOpen"
+      :title="t('Export sync log')"
+      :entity-label="t('sends')"
+      :columns="exportColumns"
+      :total="filteredLog.length"
+      :show-column-search="false"
+      @close="exportOpen = false"
+      @export="(p) => exportLog(p.scope)"
+    />
   </div>
 </template>
 
@@ -348,9 +385,23 @@ const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for 
   padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }
-.filter-search-input {
-  flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md); color: var(--mp-text-default); min-width: 0;
+/* MpInput (unstyled) inside the pill: the class lands on the native control, the root takes the free width. */
+.filter-search :deep(.mp-input__root) { flex: 1; min-width: 0; }
+.filter-search :deep(.filter-search-input) {
+  width: 100%; height: auto; padding: 0; border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
 }
-.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.filter-search :deep(.filter-search-input::placeholder) { color: var(--mp-text-placeholder); }
+/* The pill draws the focus ring (erp.css inset ring on .filter-search:focus-within); drop the field's own ring. */
+.filter-search :deep(.filter-search-input.mp-input__control:focus) { box-shadow: none; } /* pixel-police-allow-shadow: removes a ring, adds none */
+.search-clear-btn {
+  flex: none; width: var(--mp-sizes-5, 1.25rem); height: var(--mp-sizes-5, 1.25rem); min-width: 0; padding: 0;
+  color: var(--mp-text-secondary);
+}
+
+/* Full empty state (docs/patterns/ErpTablePage.md › Empty state). */
+.empty-full { display: flex; flex-direction: column; align-items: center; }
+.empty-illustration { width: var(--empty-illo-w, 288px); height: var(--empty-illo-h, 240px); object-fit: contain; }
+.empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin: var(--mp-spacing-0\.5) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

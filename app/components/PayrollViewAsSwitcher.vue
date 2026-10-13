@@ -2,7 +2,10 @@
   <!--
     "View as" for the payroll screens (prototype-only demo control): there is no real
     sign-in, so this picks the access type: Owner or LM (can post) or Accountant/Ultimate (saves
-    drafts only). Same markup as BudgetViewAsSwitcher; its state lives in payrollStore.
+    drafts only). Its state lives in payrollStore.
+    The trigger stays a native button element: it is a two-line label on the dark header bar,
+    which no MpButton variant draws (the header's other triggers, IconButton, ErpQuickCreateMenu,
+    ErpViewAsSwitcher, are native too). The menu itself is Pixel (MpPopoverList / MpPopoverListItem).
   -->
   <MpPopover
     id="payroll-view-as-switcher"
@@ -10,7 +13,8 @@
     use-portal
     is-close-on-blur
     is-close-on-escape
-    v-slot="{ onClosePopover }"
+    is-close-on-select
+    :is-keep-alive="false"
   >
     <MpPopoverTrigger>
       <button type="button" class="va-trigger" data-tour="payroll-viewas" :aria-label="t('View as')">
@@ -21,46 +25,43 @@
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
       </button>
     </MpPopoverTrigger>
-    <MpPopoverContent class="va-menu" is-unstyled>
+    <MpPopoverContent class="erp-dropdown-menu va-menu">
       <p class="va-heading">{{ t('View payroll as') }}</p>
       <p class="va-hint">{{ t('Only the Owner or a user with LM can post. Others save drafts.') }}</p>
-      <nav class="va-list">
-        <button
+      <MpPopoverList>
+        <MpPopoverListItem
           v-for="p in PAYROLL_PEOPLE"
           :key="p.role"
-          type="button"
           class="va-item"
-          @click="select(p.role, onClosePopover)"
+          :is-active="p.role === payroll.viewAs"
+          @click="setPayrollViewAs(p.role)"
         >
           <span class="va-item-label">
             <span class="va-item-name">{{ t(p.role) }}</span>
             <span class="va-item-sub">{{ t(p.title) }}</span>
           </span>
+          <!-- Trailing selected check (not a leading icon; see rule/popover-no-icons). -->
           <MpIcon v-if="p.role === payroll.viewAs" name="check" size="md" color="icon.brand" />
-        </button>
-      </nav>
-      <button type="button" class="va-item va-reset" @click="reset(onClosePopover)">
-        <span class="va-item-name">{{ t('Reset sample data') }}</span>
-      </button>
+        </MpPopoverListItem>
+      </MpPopoverList>
+      <div class="va-divider" />
+      <MpPopoverList>
+        <MpPopoverListItem class="va-item va-reset" @click="reset">{{ t('Reset sample data') }}</MpPopoverListItem>
+      </MpPopoverList>
     </MpPopoverContent>
   </MpPopover>
 </template>
 
 <script setup lang="ts">
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon } from '@mekari/pixel3'
 import { payroll, setPayrollViewAs, resetPayroll } from '~/data/payrollStore'
-import { PAYROLL_PEOPLE, type PayrollRole } from '~/data/payrollMaster'
+import { PAYROLL_PEOPLE } from '~/data/payrollMaster'
 import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 
-function select(role: PayrollRole, closePopover: () => void) {
-  setPayrollViewAs(role)
-  closePopover()
-}
-function reset(closePopover: () => void) {
+function reset() {
   resetPayroll()
-  closePopover()
   successToast(t('Sample data reset'))
 }
 </script>
@@ -97,43 +98,26 @@ function reset(closePopover: () => void) {
   white-space: nowrap;
 }
 
-:global(.mp-popover.va-menu) {
-  z-index: var(--mp-z-indices-popover, 1600);
-  min-width: 264px;
-  padding: 0 0 var(--mp-spacing-2);
-  background: var(--mp-colors-background-stage, #fff);
-  border: var(--mp-border-width-sm, 1px) solid var(--mp-colors-border-default, #e3e7e9);
-  border-radius: var(--mp-radii-md, 6px);
-  overflow: hidden;
-}
 .va-heading {
   margin: 0;
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-1);
+  padding: var(--mp-spacing-1) var(--mp-spacing-3) 0;
   font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-colors-text-secondary);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-colors-text-secondary, #3a4749);
 }
 .va-hint {
   margin: 0;
-  padding: 0 var(--mp-spacing-4) var(--mp-spacing-2);
+  padding: 0 var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-colors-text-secondary);
+  color: var(--mp-colors-text-secondary, #3a4749);
+  white-space: nowrap;
 }
-.va-list { display: flex; flex-direction: column; }
-.va-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  text-align: left;
-}
-.va-item:hover { background: var(--mp-colors-background-neutral-hovered); }
 .va-item-label { display: flex; flex-direction: column; }
-.va-item-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default); }
-.va-item-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
-.va-reset { border-top: 1px solid var(--mp-colors-border-default); margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-3); }
-.va-reset .va-item-name { color: var(--mp-colors-text-link, #165082); }
+.va-item-name { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); }
+.va-item-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #3a4749); }
+.va-divider {
+  height: var(--mp-sizes-0\.25, 1px);
+  margin: var(--mp-spacing-1) 0;
+  background-color: var(--mp-colors-border-default, #e3e7e9);
+}
 </style>
