@@ -9,8 +9,9 @@ export type BadgeType = 'completed' | 'announcement' | 'information' | 'warning'
 
 /**
  * Status -> label and colour. One meaning per colour across payroll:
- *   critical (red)      stops posting or money is late: Held, Rejected, Overdue, New group, Needs account
- *   warning (yellow)    waits on a person: Awaiting approval, Sent again, Choose, Partly paid
+ *   critical (red)      stops posting or money is late: Held, Rejected, Overdue, Needs account
+ *   warning (yellow)    waits on a person: Awaiting approval, Sent again, Choose, Partly paid,
+ *                       a New group (posts to default accounts until set up), No group
  *   information (blue)  ready for the next step: Ready to post, Current, Duplicate
  *   completed (green)   done: Posted, Paid, Accepted, Connected, No change, Expected
  *   announcement (gray) nothing to do here: Before start month, Superseded, Open
@@ -61,7 +62,10 @@ const STATUS: Record<string, { label: string; type: BadgeType }> = {
   Ended: { label: 'Disconnected', type: 'announcement' },
   'Not connected': { label: 'Not connected', type: 'announcement' },
   'needs-account': { label: 'Needs account', type: 'critical' },
-  'new-group': { label: 'New', type: 'critical' },
+  // A group nobody set up no longer holds the run: its pay posts to default accounts, so it waits
+  // on the Accountant (yellow), not red. 'no-group' is the run warning for those staff.
+  'new-group': { label: 'New', type: 'warning' },
+  'no-group': { label: 'No group', type: 'warning' },
 }
 
 /** Label and colour for any payroll status. Unknown values keep their text, gray. */

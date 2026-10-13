@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * "To fix before posting": each item with its fix inline. A send stops only for a pay item with
- * no account, a New group, a dimension value with no match, a partial send, the same-run-or-
- * separate choice, or the first send's company check. Every save re-checks held runs, so a fix
+ * no account, a dimension value with no match, a partial send, the same-run-or-separate choice,
+ * or the first send's company check. Staff in a group nobody set up no longer stop the run: they
+ * post to default accounts and show as a 'no-group' warning (PayrollRunWarnings). Every save re-checks held runs, so a fix
  * usually clears the item by itself; "Check again" re-checks the run on demand.
  */
 import { computed, reactive } from 'vue'
@@ -31,7 +32,7 @@ const holds = computed(() => (run.value ? runHolds(run.value) : []))
 
 const TITLES: Record<string, string> = {
   'confirm-source': 'Confirm this is your company', choice: 'Talenta sent this period again', partial: 'Looks like part of the run',
-  'unmapped-item': 'Pay items with no account', 'new-group': 'New group not set up',
+  'unmapped-item': 'Pay items with no account',
   'unmapped-group': 'Values with no dimension value', 'empty-field': 'Empty dimension fields',
   'two-parties': 'Two parties on one payable account', 'archived-account': 'Account is archived',
 }
@@ -271,16 +272,6 @@ const latestPosted = computed(() => (run.value ? versionOf(run.value, run.value.
         </table>
         <PayrollReadOnlyNote v-if="!can('setup')" :text="t('Editing needs Set up access.')" />
         <MpButton v-else variant="secondary" is-rounded @click="router.push({ path: '/payroll-settings', query: { section: 'pay-items' } })">{{ t('Open pay items') }}</MpButton>
-      </div>
-
-      <!-- New groups: set up in Settings > Groups -->
-      <div v-else-if="h.code === 'new-group'" class="ph__fix">
-        <div v-for="g in d(h).groups" :key="g.key" class="ph__line">
-          <span class="ph__strong">{{ g.label }}</span>
-          <span class="ph__muted">{{ g.staff }} {{ t('staff') }}</span>
-        </div>
-        <MpButton v-if="can('setup')" variant="secondary" is-rounded data-testid="ph-open-groups" @click="router.push({ path: '/payroll-settings', query: { section: 'groups' } })">{{ t('Set up group') }}</MpButton>
-        <PayrollReadOnlyNote v-else :text="t('Editing needs Set up access.')" />
       </div>
 
       <!-- Talenta values with no dimension value -->

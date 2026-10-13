@@ -3,7 +3,8 @@
  * Warnings on the run's current version: worth a look, never stop posting. Each one marked as
  * checked leaves the Post journal drawer's list. A missing pay item comes from the send, a manual
  * journal on a payroll account from the ledger, large changes and headcount from the draft review
- * (a note or an Expected mark clears those).
+ * (a note or an Expected mark clears those). 'no-group' lists staff in a group nobody set up: their
+ * pay posts to each pay item's default account, and setting the group up rebuilds the draft.
  */
 import { computed } from 'vue'
 import { MpButton } from '@mekari/pixel3'
@@ -21,7 +22,8 @@ const v = computed(() => (run.value ? currentVersionOf(run.value) : undefined))
 const warnings = computed(() => runWarnings(props.runId))
 const open = computed(() => warnings.value.filter((w) => !w.acknowledged).length)
 
-const CODE_LABEL: Record<RunWarning['code'], string> = {
+// Keyed by string: 'no-group' lands in the engine's WarningCode union on the engine branch.
+const CODE_LABEL: Record<string, string> = {
   'missing-component': 'Missing pay item',
   'tax-rule': 'PPh 21 check',
   'duplicate-employee': 'Same person twice',
@@ -30,10 +32,18 @@ const CODE_LABEL: Record<RunWarning['code'], string> = {
   'large-change': 'Large change',
   'headcount': 'Headcount',
   'manual-journal': 'Manual journal',
+  'no-group': 'No group',
+}
+const NO_GROUP = 'no-group'
+interface NoGroup { key: string; label: string; staff: number }
+function noGroups(w: RunWarning): NoGroup[] {
+  const g = (w.details as Record<string, unknown>).groups
+  return w.code === (NO_GROUP as RunWarning['code']) && Array.isArray(g) ? (g as NoGroup[]) : []
 }
 function detail(w: RunWarning): string {
   const d = w.details as Record<string, unknown>
   if (w.code === 'missing-component' && typeof d.lastAmount === 'number') return `${t(sectionLabel(String(d.section ?? '')))} · ${rupiah(d.lastAmount)} ${t('in')} ${String(d.last ?? t('the last send'))}`
+  if (noGroups(w).length) return noGroups(w).map((g) => `${g.label} (${g.staff} ${t('staff')})`).join('; ') // labels hold commas
   if (w.code === 'headcount' && Array.isArray(d.groups)) return (d.groups as string[]).join('; ') // group names hold commas ("Sales, Bandung")
   return ''
 }
@@ -66,6 +76,9 @@ function undo(w: RunWarning) {
             <span>{{ w.message }}</span>
           </div>
           <div v-if="detail(w)" class="prw__detail">{{ detail(w) }}</div>
+          <div v-if="noGroups(w).length && can('setup')" class="prw__detail">
+            <NuxtLink class="prw__link" to="/payroll-settings?section=groups" data-testid="prw-setup-groups">{{ t('Set up groups') }}</NuxtLink>
+          </div>
           <div v-if="w.acknowledged" class="prw__detail">
             {{ t('Checked by') }} {{ w.acknowledged.by }} · {{ wib(w.acknowledged.at) }}<template v-if="w.acknowledged.note"> · {{ w.acknowledged.note }}</template>
           </div>
@@ -97,5 +110,7 @@ function undo(w: RunWarning) {
 .prw__detail { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); overflow-wrap: anywhere; }
 .prw__msg > :first-child { flex: none; }
 .prw__foot { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
+.prw__link { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); text-decoration: none; }
+.prw__link:hover { text-decoration: underline; }
 .prw__actions { flex: none; display: flex; gap: var(--mp-spacing-2); }
 </style>
