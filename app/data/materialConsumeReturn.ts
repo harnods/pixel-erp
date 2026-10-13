@@ -4,6 +4,7 @@ import { workOrders, type WorkOrderStatus, type WorkOrderMaterialReservation } f
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { warehouses } from './warehouses'
 import { isBatchTracked, isSerialized, autoSelectBatches, autoSelectSerials } from './warehouseDetails'
+import { applyConsumption, releaseConsumption } from './stockRequests'
 
 /**
  * A single material consume/return entry (Work order detail → Material consume &
@@ -178,5 +179,10 @@ export function addMaterialConsumeReturnRecord(data: Omit<MaterialConsumeReturnR
   }
   materialConsumeReturnRecords.push(rec)
   persistMaterialConsumeReturn()
+  // Producing draws the reservation DOWN: consumed stock has left the rack, so it
+  // must stop counting as held. A Return puts it back. Hooked here rather than at
+  // each call site so every consumption path stays in step with the stock request.
+  if (rec.qty > 0) applyConsumption(rec.workOrderId, rec.productId, rec.qty)
+  else if (rec.qty < 0) releaseConsumption(rec.workOrderId, rec.productId, -rec.qty)
   return rec
 }

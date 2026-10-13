@@ -224,9 +224,9 @@ function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceipts">{{ t('Receipts') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goReceipts">{{ t('Receipts') }}</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goBack">{{ receipt.purchaseNo }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goBack">{{ receipt.purchaseNo }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Create purchase receiving') }}</h1>
@@ -291,11 +291,11 @@ function handleCreate() {
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="pr-filter-search-input" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" type="button" variant="ghost" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -398,7 +398,7 @@ function handleCreate() {
   <!-- Not found fallback -->
   <div v-else class="pr-not-found">
     <p>{{ t('Purchase order not found') }}</p>
-    <button class="detail-breadcrumb" @click="router.push('/inbound-delivery')">{{ t('Back to Inbound delivery') }}</button>
+    <MpButton variant="textLink" class="detail-breadcrumb" @click="router.push('/inbound-delivery')">{{ t('Back to Inbound delivery') }}</MpButton>
   </div>
 </template>
 

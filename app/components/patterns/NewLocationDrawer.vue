@@ -192,7 +192,7 @@ async function save() {
           <MpFormControl id="nl-type" is-required>
             <MpFormLabel>Storage preference</MpFormLabel>
             <div class="nl-type-cards">
-              <button
+              <MpButton
                 v-for="opt in [
                   { value: 'Organizational', title: 'Organizational', desc: 'For grouping only. Stock cannot be stored here directly.' },
                   { value: 'Storage', title: 'Storage', desc: 'Stock can be stored and tracked at this location.' },
@@ -200,12 +200,13 @@ async function save() {
                 :key="opt.value"
                 type="button"
                 class="nl-type-card"
+                variant="ghost"
                 :class="{ 'nl-type-card--active': type === opt.value }"
                 @click="type = opt.value as LocType"
               >
                 <span class="nl-type-title">{{ opt.title }}</span>
                 <span class="nl-type-desc">{{ opt.desc }}</span>
-              </button>
+              </MpButton>
             </div>
             <MpFormHelpText>{{ typeHelp }}</MpFormHelpText>
           </MpFormControl>

@@ -6,7 +6,7 @@
  * Source and Completion state are borderless checkbox groups (fixed small option
  * sets). Edits a local draft; commits to the parent only on Apply, so
  * Cancel/close-outside discards. */
-import { MpIcon, MpCheckbox, MpFormControl, MpFormLabel, MpInputTag, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, type DataInterface } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpInputTag, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, type DataInterface } from '@mekari/pixel3'
 
 export interface WmsReportFiltersValue {
   /** free-text keyword; empty = no keyword filter */
@@ -87,156 +87,100 @@ function clearAll() {
 </script>
 
 <template>
-  <Transition name="wrf-filters">
-    <div v-if="isOpen" class="wrf-filters-overlay">
-      <div class="wrf-filters-panel" role="dialog" :aria-label="t('All filters')">
-        <header class="wrf-filters-header">
-          <span class="wrf-filters-title">{{ t('All filters') }}</span>
-          <button class="wrf-filters-close" type="button" :aria-label="t('Close')" @click="close">
-            <MpIcon name="close" size="md" />
-          </button>
-        </header>
-
-        <div class="wrf-filters-body">
-          <MpFormControl id="wrf-filters-keyword-fc">
-            <MpFormLabel>{{ t('Keywords') }}</MpFormLabel>
-            <div class="wrf-keyword">
-              <input
-                v-model="keyword"
-                class="wrf-keyword-input"
-                type="text"
-                :placeholder="t('Search keywords...')"
-                @keydown.enter.prevent="apply"
-              />
-              <MpPopover id="wrf-filters-keyword-scope" :is-close-on-select="true">
-                <MpPopoverTrigger>
-                  <button type="button" class="wrf-keyword-scope">
-                    <span class="wrf-keyword-scope-label">{{ keywordColumnLabel }}</span>
-                    <svg class="wrf-keyword-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </button>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
-                  <MpPopoverList>
-                    <MpPopoverListItem :is-active="keywordColumn === 'all'" @click="keywordColumn = 'all'">
-                      {{ t('All columns') }}
-                    </MpPopoverListItem>
-                    <MpPopoverListItem
-                      v-for="col in columns"
-                      :key="col.key"
-                      :is-active="keywordColumn === col.key"
-                      @click="keywordColumn = col.key"
-                    >
-                      {{ t(col.label) }}
-                    </MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </MpFormControl>
-
-          <MpFormControl id="wrf-filters-sku-fc">
-            <MpFormLabel>{{ t('Product name') }}</MpFormLabel>
-            <MpInputTag
-              id="wrf-filters-sku"
-              :data="skuData"
-              :suggestions="skuOptions"
-              :is-show-suggestions="true"
-              :is-enable-create-new-tag="false"
-              :is-show-icon-chevron-down="true"
-              :placeholder="t('Search product name...')"
-              @change="onSkuChange"
-            />
-          </MpFormControl>
-
-          <MpFormControl id="wrf-filters-source-fc">
-            <MpFormLabel>{{ t('Source') }}</MpFormLabel>
-            <div class="wrf-filters-checkbox-list">
-              <label v-for="opt in sourceOptions" :key="opt.id" class="wrf-filters-checkbox-item">
-                <MpCheckbox
-                  :id="`wrf-filters-source-${opt.id.replace(/\s+/g, '-')}`"
-                  :is-checked="sources.includes(opt.id)"
-                  @change="toggleSource(opt.id)"
+  <ErpDrawer :is-open="isOpen" :title="t('All filters')" @close="close">
+    <template #body>
+      <MpFormControl id="wrf-filters-keyword-fc">
+        <MpFormLabel>{{ t('Keywords') }}</MpFormLabel>
+        <div class="wrf-keyword">
+          <input
+            v-model="keyword"
+            class="wrf-keyword-input"
+            type="text"
+            :placeholder="t('Search keywords...')"
+            @keydown.enter.prevent="apply"
+          />
+          <MpPopover id="wrf-filters-keyword-scope" :is-close-on-select="true">
+            <MpPopoverTrigger>
+              <MpButton type="button" class="wrf-keyword-scope" variant="ghost">
+                <span class="wrf-keyword-scope-label">{{ keywordColumnLabel }}</span>
+                <svg class="wrf-keyword-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })">
+              <MpPopoverList>
+                <MpPopoverListItem :is-active="keywordColumn === 'all'" @click="keywordColumn = 'all'">
+                  {{ t('All columns') }}
+                </MpPopoverListItem>
+                <MpPopoverListItem
+                  v-for="col in columns"
+                  :key="col.key"
+                  :is-active="keywordColumn === col.key"
+                  @click="keywordColumn = col.key"
                 >
-                  {{ t(opt.name) }}
-                </MpCheckbox>
-              </label>
-            </div>
-          </MpFormControl>
-
-          <MpFormControl id="wrf-filters-state-fc">
-            <MpFormLabel>{{ t('Completion state') }}</MpFormLabel>
-            <div class="wrf-filters-checkbox-list">
-              <label v-for="opt in receiveStateOptions" :key="opt.id" class="wrf-filters-checkbox-item">
-                <MpCheckbox
-                  :id="`wrf-filters-state-${opt.id}`"
-                  :is-checked="receiveStates.includes(opt.id)"
-                  @change="toggleReceiveState(opt.id)"
-                >
-                  {{ t(opt.name) }}
-                </MpCheckbox>
-              </label>
-            </div>
-          </MpFormControl>
+                  {{ t(col.label) }}
+                </MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
+      </MpFormControl>
 
-        <footer class="wrf-filters-footer">
-          <button class="wrf-filters-reset" type="button" @click="clearAll">{{ t('Reset') }}</button>
-          <div class="wrf-filters-footer-actions">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">{{ t('Apply') }}</button>
-          </div>
-        </footer>
+      <MpFormControl id="wrf-filters-sku-fc">
+        <MpFormLabel>{{ t('Product name') }}</MpFormLabel>
+        <MpInputTag
+          id="wrf-filters-sku"
+          :data="skuData"
+          :suggestions="skuOptions"
+          :is-show-suggestions="true"
+          :is-enable-create-new-tag="false"
+          :is-show-icon-chevron-down="true"
+          :placeholder="t('Search product name...')"
+          @change="onSkuChange"
+        />
+      </MpFormControl>
+
+      <MpFormControl id="wrf-filters-source-fc">
+        <MpFormLabel>{{ t('Source') }}</MpFormLabel>
+        <div class="wrf-filters-checkbox-list">
+          <label v-for="opt in sourceOptions" :key="opt.id" class="wrf-filters-checkbox-item">
+            <MpCheckbox
+              :id="`wrf-filters-source-${opt.id.replace(/\s+/g, '-')}`"
+              :is-checked="sources.includes(opt.id)"
+              @change="toggleSource(opt.id)"
+            >
+              {{ t(opt.name) }}
+            </MpCheckbox>
+          </label>
+        </div>
+      </MpFormControl>
+
+      <MpFormControl id="wrf-filters-state-fc">
+        <MpFormLabel>{{ t('Completion state') }}</MpFormLabel>
+        <div class="wrf-filters-checkbox-list">
+          <label v-for="opt in receiveStateOptions" :key="opt.id" class="wrf-filters-checkbox-item">
+            <MpCheckbox
+              :id="`wrf-filters-state-${opt.id}`"
+              :is-checked="receiveStates.includes(opt.id)"
+              @change="toggleReceiveState(opt.id)"
+            >
+              {{ t(opt.name) }}
+            </MpCheckbox>
+          </label>
+        </div>
+      </MpFormControl>
+    </template>
+
+    <template #footer>
+      <MpButton class="wrf-filters-reset" variant="ghost" type="button" @click="clearAll">{{ t('Reset') }}</MpButton>
+      <div class="wrf-filters-footer-actions">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">{{ t('Cancel') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">{{ t('Apply') }}</MpButton>
       </div>
-    </div>
-  </Transition>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.wrf-filters-enter-active { transition: background-color 250ms ease; }
-.wrf-filters-leave-active { transition: background-color 250ms ease; }
-.wrf-filters-enter-from, .wrf-filters-leave-to { background-color: transparent; }
-.wrf-filters-enter-active .wrf-filters-panel { transition: transform 350ms ease-out; }
-.wrf-filters-leave-active .wrf-filters-panel { transition: transform 250ms ease-in; }
-.wrf-filters-enter-from .wrf-filters-panel,
-.wrf-filters-leave-to .wrf-filters-panel { transform: translateX(calc(100% + 12px)); }
-
-.wrf-filters-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: rgba(8, 13, 14, 0.45);
-  display: flex; justify-content: flex-end;
-}
-.wrf-filters-panel {
-  margin: var(--mp-spacing-3);
-  width: min(420px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: 24px;
-  overflow: hidden;
-}
-.wrf-filters-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.wrf-filters-title {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-.wrf-filters-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.wrf-filters-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.wrf-filters-body {
-  flex: 1; overflow-y: auto;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-4);
-}
 /* Keywords — text input with an inline column-scope dropdown suffix (Figma
    4546-46593). White box + form border; the suffix hugs the right edge with a
    subtle fill and rounded-right corners. */
@@ -274,17 +218,4 @@ function clearAll() {
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
 }
 .wrf-filters-checkbox-item { display: flex; align-items: flex-start; }
-
-/* Action group — no top border (per Figma). */
-.wrf-filters-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-4);
-}
-.wrf-filters-footer-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.wrf-filters-reset {
-  border: none; background: none; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-secondary);
-}
-.wrf-filters-reset:hover { text-decoration: underline; }
 </style>

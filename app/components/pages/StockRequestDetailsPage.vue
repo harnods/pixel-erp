@@ -19,19 +19,28 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, toast, css,
+  MpIcon, MpBadge, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import { entriesFor, lastActivity } from '~/data/activityLog'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
 import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
-  isOverdue, canReject, reserveWorkOrderProducts, unreserveWorkOrderProducts, rejectRequest,
+  isOverdue, canReject, canRejectLine, reserveRequestProducts, unreserveRequestProducts, rejectRequestLine,
+  stockRequestLineStatus,
+  reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
+  workOrderFor,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
 } from '~/data/stockRequests'
+import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
+import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import { TODAY_ISO } from '~/data/master'
+import { pushNotification } from '~/data/notifications'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -45,6 +54,8 @@ function goWorkOrder() { if (req.value) router.push(`/work-orders/${req.value.wo
 // ─── Roll-ups ──────────────────────────────────────────────────────────────────
 const status = computed(() => req.value ? stockRequestStatus(req.value) : 'requested')
 const lines = computed(() => req.value?.lines ?? [])
+/** Everyone who has changed a line's demand on this request (OPEN-17). */
+const requestors = computed(() => [...new Set(lines.value.map(l => l.requestor))].join(', ') || '—')
 const componentCount = computed(() => lines.value.length)
 const reservedLines = computed(() => lines.value.filter(l => lineCovered(l) >= l.qty).length)
 const consumedLines = computed(() => lines.value.filter(l => l.qty > 0 && l.consumed >= l.qty).length)
@@ -76,12 +87,15 @@ const READINESS_LABEL: Record<string, string> = {
   'partially reserved': 'Partially reserved',
   reserved: 'Reserved',
   'issued / picked': 'Issued / picked',
+  rejected: 'Rejected',
+  canceled: 'Canceled',
 }
-function lineStatus(line: StockRequestLine): string {
-  const r = lineReadiness(line)
-  if (r === 'reserved') return line.consumed >= line.qty ? 'issued / picked' : 'reserved'
-  return lineCovered(line) > 0 ? 'partially reserved' : 'requested'
-}
+/**
+ * W-3 — derived centrally in the data layer so this page cannot drift from the
+ * dashboard. It previously had its own copy, which did not know about rejection
+ * and showed a declined line as still Requested.
+ */
+const lineStatus = stockRequestLineStatus
 
 // ─── Actions ───────────────────────────────────────────────────────────────────
 const reserveOpen = ref(false)
@@ -89,31 +103,39 @@ const unreserveOpen = ref(false)
 
 function onReserve(productIds: string[]) {
   if (!req.value) return
-  const r = reserveWorkOrderProducts(req.value.workOrderId, productIds)
+  // PPIC acting on the dashboard side — the default source, logged as such.
+  const r = reserveRequestProducts(req.value.id, productIds, { source: 'stock-request' })
   reserveOpen.value = false
   if (r.reservedProducts === 0) {
-    toast.notify({ variant: 'error', title: t('Nothing could be reserved — warehouse stock does not cover any selected component in full'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('No stock to reserve — the destination warehouse has none of the selected components'), maxWidth: 'max-content' })
     return
   }
-  const msg = r.skippedProducts > 0
-    ? `${r.reservedProducts} ${t('component(s) reserved')} · ${r.skippedProducts} ${t('still short')}`
-    : `${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`
+  const parts = [`${r.reservedProducts} ${t('component(s) reserved')} (${r.reservedQty} ${t('unit')})`]
+  if (r.partialProducts > 0) parts.push(`${r.partialProducts} ${t('reserved short')}`)
+  if (r.skippedProducts > 0) parts.push(`${r.skippedProducts} ${t('had no stock')}`)
+  const msg = parts.join(' · ')
   toast.notify({ variant: 'success', title: msg, maxWidth: 'max-content' })
 }
 
 function onUnreserve(payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }) {
   if (!req.value) return
-  const released = unreserveWorkOrderProducts(req.value.workOrderId, payload.productIds, payload.disposition)
+  const released = unreserveRequestProducts(req.value.id, payload.productIds, payload.disposition, {
+    source: 'stock-request', reason: payload.reason,
+  })
   unreserveOpen.value = false
   if (released === 0) return
   const where = payload.disposition === 'return-to-warehouse'
     ? t('returned to warehouse')
     : t('charged to production cost')
+  // R-9 — a release on somebody else's work order notifies its owner, naming the
+  // components, qty and reason. Reservation removed by another person must not be
+  // discovered at start time.
+  notifyWorkOrderOwner(payload.productIds, released, where, payload.reason)
   toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
 }
 
-/** A transfer is raised per destination warehouse — the group carries the scope,
- *  so the form is prefilled with just that warehouse's short lines. */
+/** A transfer is raised per destination warehouse; called with no warehouse from
+ *  Actions, the form opens on the whole request and the user picks the scope. */
 function createWarehouseTransfer(warehouseId?: string) {
   if (!req.value) return
   router.push({
@@ -125,12 +147,148 @@ function createPurchaseRequest() {
   if (!req.value) return
   router.push({ path: '/purchase-requests/new', query: { fromStockRequest: req.value.id } })
 }
-function reject() {
-  if (!req.value || !rejectRequest(req.value.id)) return
-  toast.notify({ variant: 'success', title: `${req.value.number} ${t('request rejected')}`, maxWidth: 'max-content' })
+/**
+ * W-7 — decline ONE line. Only Additional stock and Adjustment lines can be
+ * rejected; the components the work order itself committed to are not the
+ * warehouse's to refuse.
+ */
+function rejectLine(line: StockRequestLine) {
+  if (!req.value || !rejectRequestLine(req.value.id, line)) return
+  toast.notify({
+    variant: 'success',
+    title: `${line.product} ${t('line rejected')}`,
+    maxWidth: 'max-content',
+  })
+}
+
+/** Decline every eligible line at once — the Actions-list shortcut. */
+function rejectAllTagged() {
+  const r = req.value
+  if (!r) return
+  const rejectable = r.lines.filter(canRejectLine)
+  if (rejectable.length === 0) return
+  for (const line of rejectable) rejectRequestLine(r.id, line)
+  toast.notify({
+    variant: 'success',
+    title: `${rejectable.length} ${t('line rejected on')} ${r.number}`,
+    maxWidth: 'max-content',
+  })
+}
+
+/**
+ * R-9 — the stockist releasing a reservation is acting on somebody else's job, so
+ * its owner is told rather than left to discover it when the job won't start.
+ */
+function notifyWorkOrderOwner(productIds: string[], qty: number, disposition: string, reason: string) {
+  const r = req.value
+  if (!r || qty <= 0) return
+  const names = productIds
+    .map(id => lines.value.find(l => l.productId === id)?.product ?? id)
+    .join(', ')
+  pushNotification({
+    title: `${t('Reservation released on')} ${r.workOrderNumber}`,
+    preview: `${names} — ${qty} ${t('unit released from reservation')} (${disposition})`,
+    heading: `${t('Reservation released on')} ${r.workOrderNumber}`,
+    description: t('A stockist released material reserved for this work order. Check material readiness before starting it.'),
+    fields: [
+      { label: t('Components'), value: names },
+      { label: t('Qty released'), value: `${qty}` },
+      { label: t('Disposition'), value: disposition },
+      { label: t('Stock request'), value: r.number },
+      ...(reason ? [{ label: t('Reason'), value: reason }] : []),
+    ],
+    actions: [{ label: t('View work order'), primary: true }, { label: t('View stock request') }],
+  })
 }
 
 const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
+
+/**
+ * UC-03 / D-6 — unreserve exists in exactly two places: here and on the work order
+ * page, and on BOTH only while the work order has not started. Once it is running,
+ * the only way out of a reservation is inside the Adjust modal, where the Adjust
+ * reason stands in for the approval this path would otherwise need.
+ *
+ * PPIC may release another job's reservation to serve a more urgent one (Roles),
+ * which is why this is offered to the stockist at all — but the started-job rule
+ * is the same for both roles: material already committed to a running job is not
+ * something a second person should be able to pull out from under it.
+ */
+/**
+ * rule/detail-jump-to — hop straight to another request without going back to the
+ * list. Most recent first, captioned by the transaction that raised it.
+ */
+const jumpItems = computed(() =>
+  [...stockRequests]
+    .sort((a, b) => b.requestDate.localeCompare(a.requestDate))
+    .slice(0, 12)
+    .map(r => ({ id: r.id, primary: r.number, secondary: r.workOrderNumber })),
+)
+function jumpTo(id: string) { router.push(`/stock-requests/${id}`) }
+
+const workOrder = computed(() => req.value ? workOrderFor(req.value) : undefined)
+const workOrderNotStarted = computed(() => (workOrder.value?.status ?? 'not started') === 'not started')
+const canUnreserve = computed(() => hasReservation.value && workOrderNotStarted.value)
+
+/**
+ * Activity log (rule/detail-activity-log-always, US-8). Reserve, unreserve and
+ * every release are written to the shared store; the request's own creation is
+ * derived, so a request nobody has acted on still shows how it came to exist.
+ */
+const activityOpen = ref(false)
+const activityEntries = computed(() => {
+  const r = req.value
+  if (!r) return []
+  return entriesFor('stock-request', r.id, [{
+    date: `${r.requestDate}T08:00:00`,
+    user: r.lines[0]?.requestor ?? '—',
+    activity: t('Request raised'),
+    details: [
+      { label: t('Transaction'), value: `${t('Work order')} ${r.workOrderNumber}` },
+      { label: t('Components'), value: String(r.lines.length) },
+    ],
+  }])
+})
+const lastUpdated = computed(() => {
+  const r = req.value
+  if (!r) return undefined
+  return lastActivity('stock-request', r.id)
+})
+
+// ── Batch / serial (PPIC may reserve units other than the ones the work order
+// picked; the work order detail is told about it) ─────────────────────────────
+const trackingRow = ref<StockRequestLine | null>(null)
+const batchOpen = ref(false)
+const serialOpen = ref(false)
+
+function trackingLabel(line: StockRequestLine): string {
+  const tracking = lineTracking(line)
+  if (!tracking) return '—'
+  const { batches, serials } = reservedTracking(line)
+  if (tracking === 'serial') return serials.length ? serials.join(', ') : t('Select serial number')
+  return batches.length ? batches.map(b => `${b.batchNo} (${b.qty})`).join(', ') : t('Select batch')
+}
+function isChanged(line: StockRequestLine): boolean { return trackingChanged(line) }
+
+function openTracking(line: StockRequestLine) {
+  trackingRow.value = line
+  if (lineTracking(line) === 'serial') serialOpen.value = true
+  else if (lineTracking(line) === 'batch') batchOpen.value = true
+}
+function saveBatches(batches: { batchNo: string; qty: number }[]) {
+  if (req.value && trackingRow.value) {
+    setReservedBatches(req.value.id, trackingRow.value.productId, batches)
+    toast.notify({ variant: 'success', title: t('Batch updated — the work order will be notified'), maxWidth: 'max-content' })
+  }
+  batchOpen.value = false
+}
+function saveSerials(serials: string[]) {
+  if (req.value && trackingRow.value) {
+    setReservedSerials(req.value.id, trackingRow.value.productId, serials)
+    toast.notify({ variant: 'success', title: t('Serial numbers updated — the work order will be notified'), maxWidth: 'max-content' })
+  }
+  serialOpen.value = false
+}
 </script>
 
 <template>
@@ -141,10 +299,17 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
         <a class="detail-breadcrumb" @click="goList">{{ t('Stock requests') }}</a>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Stock request') }} {{ req.number }}</h1>
-          <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
-          <span v-if="req.kind" class="sr-tag" :class="`sr-tag--${req.kind}`">
-            {{ req.kind === 'additional' ? t('Additional stock') : t('Adjustment') }}
-          </span>
+          <ErpStatusBadge :status="status" badge-for="additionalInformation" />
+          <!-- W-7 — a tag belongs to a LINE, so the lines below carry their own and
+               the title says nothing about them (same rule the index follows). -->
+          <DetailJumpTo
+            id="srd-jump"
+            :items="jumpItems"
+            :aria-label="t('Switch stock request')"
+            :placeholder="t('Search...')"
+            :empty-text="t('No stock requests found')"
+            @select="jumpTo"
+          />
         </div>
       </div>
 
@@ -155,9 +320,7 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
           <MpPopoverTrigger>
             <button class="btn-enterprise btn-enterprise--secondary">
               {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+              <MpIcon name="chevrons-down" size="sm" />
             </button>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -165,35 +328,37 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
               <MpPopoverListItem @click="createPurchaseRequest">{{ t('Create purchase request') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createWarehouseTransfer()">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
               <MpPopoverListItem @click="goWorkOrder">{{ t('Open work order') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="hasReservation" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canUnreserve" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
             </MpPopoverList>
             <template v-if="canReject(req)">
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="reject">{{ t('Reject request') }}</MpPopoverListItem>
+                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="rejectAllTagged">{{ t('Reject added lines') }}</MpPopoverListItem>
               </MpPopoverList>
             </template>
           </MpPopoverContent>
         </MpPopover>
 
-        <button v-if="!req.rejected" class="btn-enterprise btn-enterprise--primary" @click="reserveOpen = true">{{ t('Reserve stock') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="reserveOpen = true">{{ t('Reserve stock') }}</button>
       </div>
     </header>
 
     <!-- ── Stage ── -->
     <div class="detail-stage">
-      <div v-if="req.rejected" class="srd-banner srd-banner--muted">
-        <MpIcon name="information" size="md" />
-        <span>{{ t('This request was rejected. No further stock actions are available.') }}</span>
-      </div>
-      <div v-else-if="transferLines.length" class="srd-banner srd-banner--critical">
-        <MpIcon name="warning" size="md" />
-        <span>
+      <!-- A rejected line is already dimmed and badged on its own row, so it needs
+           no banner of its own; only the shortfall asks the crew to act now.
+           A shortfall is the warehouse's ordinary business, and the banner names
+           the two ways out of it, so it reads as a warning rather than an error. -->
+      <MpBanner v-if="transferLines.length" id="srd-shortfall" variant="warning" class="srd-banner" data-devchange="sr-detail-shortfall-banner">
+        <MpBannerIcon id="srd-shortfall-icon" />
+        <MpBannerTitle id="srd-shortfall-title">
           {{ transferLines.length }}
-          {{ transferLines.length === 1 ? t('component is short at its destination warehouse.') : t('components are short at their destination warehouse.') }}
-          {{ t('Transfer stock in per warehouse below, or raise a purchase request.') }}
-        </span>
-      </div>
+          {{ transferLines.length === 1 ? t('component is short at its destination warehouse') : t('components are short at their destination warehouses') }}
+        </MpBannerTitle>
+        <MpBannerDescription id="srd-shortfall-desc">
+          {{ t('Create a warehouse transfer or a purchase request from Actions.') }}
+        </MpBannerDescription>
+      </MpBanner>
 
       <!-- ── Request info ── -->
       <section class="wod-section">
@@ -202,7 +367,9 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
           <div class="srd-summary-grid">
             <div>
               <ContentList :label="t('Request no.')" :value="req.number" />
-              <ContentList :label="t('Requestor')" :value="req.requestor" />
+              <!-- OPEN-17 — requestor is per LINE, so the summary names everyone
+                   who has changed this request's demand; each line names its own. -->
+              <ContentList :label="t('Requestors')" :value="requestors" />
             </div>
             <div>
               <!-- The transaction is a reference on the request, not its identity -->
@@ -222,13 +389,13 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
             </span>
             <span class="srd-emphasis-sub">{{ t('components fully reserved') }}</span>
             <span v-if="consumedLines > 0" class="srd-emphasis-sub">{{ consumedLines }}/{{ componentCount }} {{ t('consumed by production') }}</span>
-            <span v-if="overdue" class="srd-emphasis-sub srd-short">{{ t('Overdue — reminder sent') }}</span>
+            <span v-if="overdue" class="srd-emphasis-sub srd-short">{{ t('Overdue') }}</span>
           </div>
         </div>
       </section>
 
       <!-- ── Components, grouped by destination warehouse ──
-           One transfer covers one warehouse, so the action sits on the group. -->
+           One transfer covers one warehouse, so each group states its own shortfall. -->
       <section
         v-for="(g, gi) in warehouseGroups" :key="g.warehouse"
         class="wod-section" :class="{ 'wod-section--last': gi === warehouseGroups.length - 1 }"
@@ -238,17 +405,10 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
             <MpIcon name="warehouse" size="md" />
             {{ g.warehouse }}
           </h2>
-          <div class="srd-group-right">
-            <span class="srd-section-sub">
-              {{ g.lines.length }} {{ g.lines.length === 1 ? t('component') : t('components') }}
-              <template v-if="g.toTransfer > 0"> · <span class="srd-short">{{ g.toTransfer }} {{ t('to transfer') }}</span></template>
-            </span>
-            <button
-              v-if="!req.rejected && g.toTransfer > 0"
-              class="btn-enterprise btn-enterprise--secondary"
-              @click="createWarehouseTransfer(g.warehouseId)"
-            >{{ t('Create warehouse transfer') }}</button>
-          </div>
+          <span class="srd-section-sub">
+            {{ g.lines.length }} {{ g.lines.length === 1 ? t('component') : t('components') }}
+            <template v-if="g.toTransfer > 0"> · <span class="srd-short">{{ g.toTransfer }} {{ t('to transfer') }}</span></template>
+          </span>
         </div>
 
         <div class="wod-table-scroll">
@@ -256,21 +416,34 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
             <thead>
               <tr>
                 <th class="wod-th">{{ t('Product') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Request') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Available') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Reserved') }}</th>
-                <th class="wod-th wod-th--num">{{ t('Consumed') }}</th>
-                <th class="wod-th wod-th--num">{{ t('To transfer') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Requested qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Available qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Reserved qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
+                <th class="wod-th wod-th--num">{{ t('Qty to transfer') }}</th>
                 <th class="wod-th">{{ t('Required date') }}</th>
+                <!-- W-9 — each line names who last changed ITS demand (OPEN-17). -->
+                <th class="wod-th">{{ t('Requestor') }}</th>
+                <th class="wod-th">{{ t('Batch / SN') }}</th>
                 <th class="wod-th">{{ t('Status') }}</th>
+                <th class="wod-th wod-th--actions" />
               </tr>
             </thead>
             <tbody>
-              <tr v-for="l in g.lines" :key="l.productId" class="wod-tr">
+              <!-- Keyed by INDEX, not productId: one component can hold several
+                   lines on a request (original + Adjustment deltas), so productId
+                   is no longer unique here. -->
+              <tr v-for="(l, li) in g.lines" :key="`${l.productId}-${li}`" class="wod-tr" :class="{ 'srd-tr--rejected': l.rejected }">
                 <td class="wod-td wod-td--wrap">
                   <div class="srd-product">
                     <span class="srd-product-name">{{ l.product }}</span>
                     <span class="srd-product-sku">{{ l.sku }}</span>
+                    <!-- W-7 — what kind of demand this line is. MpBadge is the one
+                         badge component (rule/badge-single-mpbadge); these used to be
+                         a hand-rolled chip with its own colours. -->
+                    <MpBadge v-if="l.tag" for="tableStatus" :type="l.tag === 'additional' ? 'warning' : 'information'">
+                      {{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
+                    </MpBadge>
                   </div>
                 </td>
                 <td class="wod-td wod-td--num">{{ l.qty }} {{ l.unit }}</td>
@@ -281,8 +454,28 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
                   {{ lineToTransfer(l) > 0 ? `${lineToTransfer(l)} ${l.unit}` : '—' }}
                 </td>
                 <td class="wod-td">{{ formatDate(l.requiredDate) }}</td>
+                <td class="wod-td">{{ l.requestor }}</td>
+                <!-- Tracked components carry the work order's pick; PPIC may reserve
+                     other units, and the work order detail is told when they do. -->
+                <td class="wod-td wod-td--wrap">
+                  <span v-if="!lineTracking(l)" class="srd-muted">—</span>
+                  <span v-else class="srd-tracking">
+                    <span class="cell-link" @click="openTracking(l)">{{ trackingLabel(l) }}</span>
+                    <span v-if="isChanged(l)" class="srd-tracking-changed">{{ t('changed') }}</span>
+                  </span>
+                </td>
                 <td class="wod-td">
                   <ErpStatusBadge :status="lineStatus(l)" :label="t(READINESS_LABEL[lineStatus(l)] ?? '')" />
+                </td>
+                <!-- W-7 — reject is offered ONLY on a tagged line; the components
+                     the work order itself committed to are not the warehouse's to
+                     refuse, so there is no button to explain away on those rows. -->
+                <td class="wod-td wod-td--actions">
+                  <button
+                    v-if="canRejectLine(l)"
+                    class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm srd-reject"
+                    @click="rejectLine(l)"
+                  >{{ t('Reject') }}</button>
                 </td>
               </tr>
             </tbody>
@@ -291,7 +484,41 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
       </section>
     </div>
 
+    <!-- ── Batch / serial pick (PPIC reserves specific units) ── -->
+    <PickBatchDrawer
+      v-if="trackingRow"
+      :open="batchOpen" :product-name="trackingRow.product" :sku="trackingRow.sku"
+      :warehouse-id="trackingRow.destinationWarehouseId" :warehouse-name="trackingRow.destinationWarehouse"
+      :unit="trackingRow.unit" :target-count="trackingRow.qty"
+      :model-value="reservedTracking(trackingRow).batches"
+      @update:open="batchOpen = $event" @save="saveBatches"
+    />
+    <PickSerialNumberDrawer
+      v-if="trackingRow"
+      :open="serialOpen" :product-name="trackingRow.product" :sku="trackingRow.sku"
+      :warehouse-id="trackingRow.destinationWarehouseId" :warehouse-name="trackingRow.destinationWarehouse"
+      :unit="trackingRow.unit" :target-count="trackingRow.qty"
+      :model-value="reservedTracking(trackingRow).serials"
+      @update:open="serialOpen = $event" @save="saveSerials"
+    />
+
     <!-- ── Reserve / Unreserve (UC-02 / UC-03) ── -->
+    <!-- Provenance line — the ONLY way into the activity log
+         (rule/activity-log-trigger). -->
+    <a class="detail-updated" @click.prevent="activityOpen = true">
+      {{ t('Last updated by') }} {{ lastUpdated?.user ?? (req.lines[0]?.requestor ?? '—') }}
+      {{ t('on') }} {{ formatDate((lastUpdated?.date ?? req.requestDate).slice(0, 10)) }}
+    </a>
+
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="`${t('Stock request')} ${req.number}`"
+      :updated-by="lastUpdated?.user ?? (req.lines[0]?.requestor ?? '—')"
+      :updated-at="lastUpdated?.date ?? req.requestDate"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
+
     <ReserveMaterialsModal
       id="srd-reserve" :is-open="reserveOpen"
       :work-order-number="req.number" :lines="lines"
@@ -303,9 +530,29 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
       @close="unreserveOpen = false" @unreserve="onUnreserve"
     />
   </div>
+
+  <!-- Not found — a stale or mistyped link is a reachable state, and it used to
+       land on a blank page (docs/design/reachable-states.md). -->
+  <div v-else class="detail-page">
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <a class="detail-breadcrumb" @click="goList">{{ t('Stock requests') }}</a>
+        <div class="detail-titlerow-left"><h1 class="detail-title">{{ t('Stock request not found') }}</h1></div>
+      </div>
+    </header>
+  </div>
 </template>
 
 <style scoped>
+.srd-tracking { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.srd-tracking-changed {
+  display: inline-flex; padding: 0 var(--mp-spacing-2);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-information-subtle, #eaf2fd);
+  color: var(--mp-text-link, #165082);
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+}
+
 /* Structural detail-page classes mirror WorkOrderDetailsPage — the same shell is
    reused across transaction detail pages (docs/patterns/details-page-format.md). */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -382,7 +629,6 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-critical, #a8352d);
 }
 /* Four summary columns on the product perspective, three on the transaction one. */
-.srd-group-right { display: flex; align-items: center; gap: var(--mp-spacing-4); flex-wrap: wrap; }
 
 .srd-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-6); flex-wrap: wrap; }
 .srd-summary-grid {
@@ -405,35 +651,20 @@ const hasReservation = computed(() => lines.value.some(l => l.reserved > 0))
 .srd-product { display: flex; flex-direction: column; }
 .srd-product-name { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); }
 .srd-product-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
+.detail-updated {
+  margin: 0; align-self: flex-start;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
+}
+.srd-tr--rejected .wod-td { opacity: 0.55; }
+.srd-reject { color: var(--mp-text-critical); }
 .srd-muted { color: var(--mp-text-secondary, #3a4749); }
 .srd-warn { color: var(--mp-text-warning, #a35200); }
 .srd-short { color: var(--mp-text-critical, #a8352d); font-weight: var(--mp-font-weights-semi-bold); }
 .srd-ok { color: var(--mp-text-success, #186f4a); }
 
-/* ── Banners ── */
-.srd-banner {
-  display: flex; align-items: center; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-md, 6px);
-  font-size: var(--mp-font-sizes-md);
-}
-.srd-banner--critical {
-  background: var(--mp-background-danger-subtle, #fceeed);
-  border: 1px solid var(--mp-border-danger, #f0c8c4);
-  color: var(--mp-text-critical, #a8352d);
-}
-.srd-banner--muted {
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  color: var(--mp-text-secondary, #3a4749);
-}
-.srd-banner-btn { margin-left: auto; flex-shrink: 0; }
+/* ── Shortfall banner ── */
+/* The library MpBanner carries its own surface, border, icon and tone, and the
+   section below it already pads its own top — so the page styles nothing here. */
 
 /* Request tags (W-7) — same chips as the index */
-.sr-tag {
-  display: inline-flex; align-items: center; flex-shrink: 0;
-  padding: 0 var(--mp-spacing-2); border-radius: var(--mp-radii-full, 999px);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap;
-}
-.sr-tag--additional { background: var(--mp-background-warning-subtle, #fff3e0); color: var(--mp-text-warning, #a35200); }
-.sr-tag--adjustment { background: var(--mp-background-information-subtle, #eaf2fd); color: var(--mp-text-link, #165082); }
 </style>

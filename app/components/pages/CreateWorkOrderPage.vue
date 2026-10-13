@@ -23,7 +23,7 @@ import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
 import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
 import { raiseStockRequestForWorkOrder } from '~/data/stockRequests'
-import { productionSettings, reservationEnabled } from '~/data/productionSettings'
+import { reservationOnWorkOrder } from '~/data/productionSettings'
 import { STAFF } from '~/data/master'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
@@ -414,12 +414,12 @@ function saveWorkOrder() {
 }
 /**
  * C-4 — saving a work order pushes a stock request carrying its component lines,
- * so it is on the warehouse's dashboard immediately. C-3 — under One-step, lines
- * the destination warehouse covers in full reserve straight away; the toast says
- * which case applied.
+ * so it is on the warehouse's dashboard immediately. Reservation is always on
+ * (L-12), so this runs for every work order. C-3 — under One-step a line reserves
+ * only when destination stock covers it in FULL; partly covered lines stay
+ * Requested for the stockist. The toast says which case applied.
  */
 function raiseStockRequest(wo: { id: string; number: string }) {
-  if (!reservationEnabled()) return
   const planStart = parseDateRange(planDates.value).start
   // The row's Required date is the picker's DISPLAY value (DD/MM/YYYY); every date
   // stored on a request is ISO, so normalise before handing it over.
@@ -441,6 +441,14 @@ function raiseStockRequest(wo: { id: string; number: string }) {
       // warehouse transfer can cover a whole group.
       destinationWarehouse: warehouses.find(w => w.id === r.warehouseId)?.name ?? t('Unassigned warehouse'),
       destinationWarehouseId: r.warehouseId,
+      // Share the batch / serial the work order picked, so the warehouse starts
+      // from the same units (it may reserve different ones — see trackingChanged).
+      ...(trackingTypeFor(r.productId) === 'batch' && r.batchSelection.length
+        ? { tracking: 'batch' as const, requestedBatches: r.batchSelection.map(b => ({ ...b })) }
+        : {}),
+      ...(trackingTypeFor(r.productId) === 'serial' && r.serialSelection.length
+        ? { tracking: 'serial' as const, requestedSerials: [...r.serialSelection] }
+        : {}),
     }
   })
   if (!lines.length) return
@@ -451,16 +459,17 @@ function raiseStockRequest(wo: { id: string; number: string }) {
     requestor: STAFF[0]!,
     requestDate: planStart,
     lines,
-  }, { autoReserve: productionSettings.reservationMethod === 'one-step' })
+  }, { autoReserve: reservationOnWorkOrder() })
 
   if (!result.created) return
   if (result.reservedProducts > 0) {
-    const tail = result.shortProducts > 0
-      ? ` · ${result.shortProducts} ${t('sent to the stockist as a request')}`
-      : ''
+    // C-3 — auto-reserve is all-or-nothing per line, so there are exactly two
+    // cases: reserved in full, or left with the stockist as a request.
+    const parts = [`${result.reservedProducts} ${t('component(s) reserved automatically')}`]
+    if (result.shortProducts > 0) parts.push(`${result.shortProducts} ${t('sent to the stockist as a request')}`)
     toast.notify({
       variant: 'success',
-      title: `${result.reservedProducts} ${t('component(s) reserved automatically')}${tail}`,
+      title: parts.join(' · '),
       maxWidth: 'max-content',
     })
   } else {
@@ -514,7 +523,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+          <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New work order') }}</h1>
@@ -636,7 +645,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <li v-for="f in attachedFiles" :key="f.name" class="wo-file-item">
                 <MpIcon name="document" size="sm" />
                 <span class="wo-file-name">{{ f.name }}</span>
-                <button class="wo-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="minus-circular" size="sm" /></button>
+                <MpButton class="wo-file-remove" variant="ghost" type="button" left-icon="minus-circular" @click="removeFile(f.name)" />
               </li>
             </ul>
           </div>
@@ -700,7 +709,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.productId && (!hasBom || bomAllowsAdjustment)" class="wo-del-btn" type="button" @click="removeRow(rawRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.productId && (!hasBom || bomAllowsAdjustment)" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(rawRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -745,7 +754,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-mult-${row.id}`" v-model="row.multiplier" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.account">{{ formatIDR(costAmount(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.account" class="wo-del-btn" type="button" @click="removeRow(costRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.account" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(costRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -789,7 +798,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.process" :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.process" class="wo-del-btn" type="button" @click="removeRow(routeRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.process" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(routeRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -885,7 +894,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.productId" class="wo-del-btn" type="button" @click="removeRow(otherRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.productId" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(otherRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -927,7 +936,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input"><MpInput v-if="row.accountMapping" :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.accountMapping" :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.accountMapping" class="wo-del-btn" type="button" @click="removeRow(wasteRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.accountMapping" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(wasteRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -983,7 +992,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wo-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="wo-flow-fab" :aria-label="t('Change creation flow')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <MpButton class="wo-flow-fab" variant="ghost" :aria-label="t('Change creation flow')" left-icon="sliders" />
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
         <p class="wo-flow-fab-heading">{{ t('Creation flow') }}</p>

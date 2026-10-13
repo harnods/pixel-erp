@@ -12,7 +12,7 @@
  * A done step (or the current one) is clickable to jump back; upcoming steps are
  * inert until reached (you can't skip ahead of an incomplete step).
  */
-import { MpIcon } from '@mekari/pixel3'
+import { MpButton, MpIcon, css } from '@mekari/pixel3'
 
 interface Step {
   key: string
@@ -47,8 +47,9 @@ function onSelect(key: string) {
 <template>
   <nav class="erp-stepper" aria-label="Setup progress">
     <template v-for="(s, i) in steps" :key="s.key">
-      <button
+      <MpButton
         type="button"
+        variant="ghost"
         class="erp-stepper__step"
         :class="[`erp-stepper__step--${stateOf(s.key)}`, { 'erp-stepper__step--clickable': canSelect(s.key) }]"
         :disabled="!canSelect(s.key)"
@@ -60,7 +61,7 @@ function onSelect(key: string) {
           <template v-else>{{ i + 1 }}</template>
         </span>
         <span class="erp-stepper__label">{{ s.label }}</span>
-      </button>
+      </MpButton>
 
       <span
         v-if="i < steps.length - 1"

@@ -91,10 +91,10 @@ function save() { emit('save', [...draft.value]); close() }
               </div>
               <MpPopover id="aprm-requestor" placement="bottom-end" use-portal is-close-on-select>
                 <MpPopoverTrigger>
-                  <button type="button" class="aprm-requestor-trigger">
+                  <MpButton type="button" class="aprm-requestor-trigger" variant="ghost">
                     <span class="aprm-requestor-label" :class="{ 'aprm-requestor-label--placeholder': !requestorFilter }">{{ requestorFilter || t('Requestor') }}</span>
                     <MpIcon name="chevrons-down" size="sm" />
-                  </button>
+                  </MpButton>
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '200px', maxHeight: '260px', overflowY: 'auto' })">
                   <MpPopoverList>
@@ -194,8 +194,8 @@ function save() { emit('save', [...draft.value]); close() }
         </div>
 
         <footer class="aprm-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="save">{{ t('Save') }}</MpButton>
         </footer>
       </div>
     </div>

@@ -12,7 +12,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpAutocomplete,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpAutocomplete, MpButton,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
@@ -194,8 +194,8 @@ function save() {
       </MpModalBody>
       <MpModalFooter>
         <div class="npm-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

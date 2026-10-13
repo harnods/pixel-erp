@@ -5,9 +5,10 @@
  * stock); tickboxes plus select-all, and Reserve applies to the SELECTED
  * components only.
  *
- * Reservation is per-line all-or-nothing (C-3): a line whose destination stock
- * can't cover its whole outstanding need is not reservable here — it stays a
- * request for the stockist, which is why those rows can't be ticked.
+ * Reservation is by available qty (C-3): a component whose destination stock only
+ * partly covers its outstanding need reserves what there is and stays Partially
+ * reserved. Only a row with NO stock at all (or nothing outstanding) can't be
+ * ticked — there is nothing for it to reserve.
  */
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
@@ -43,10 +44,12 @@ interface Row {
   unit: string
   needed: number
   available: number
-  /** outstanding need — what a reserve would take */
+  /** what a reserve would actually take (outstanding, capped by availability) */
   toReserve: number
+  /** the full outstanding need, for the "of N" hint when reserving short */
+  outstanding: number
   readiness: LineReadiness
-  /** only a fully-coverable outstanding line can be reserved (C-3) */
+  /** anything outstanding AND any stock at the destination (C-3, by available qty) */
   selectable: boolean
 }
 
@@ -59,9 +62,13 @@ const rows = computed<Row[]>(() => props.lines.map((l) => {
     unit: l.unit,
     needed: l.qty,
     available: l.destAvailable,
-    toReserve: Math.max(0, l.qty - lineCovered(l)),
+    // What reserving would actually take: the outstanding need, capped by what the
+    // warehouse can give. A line the warehouse covers only partly is still
+    // selectable — it reserves short rather than being refused.
+    toReserve: Math.min(Math.max(0, l.qty - lineCovered(l)), l.destAvailable),
+    outstanding: Math.max(0, l.qty - lineCovered(l)),
     readiness,
-    selectable: readiness === 'ready',
+    selectable: Math.min(Math.max(0, l.qty - lineCovered(l)), l.destAvailable) > 0,
   }
 }))
 
@@ -114,7 +121,7 @@ function submit() {
       </MpModalHeader>
       <MpModalBody>
         <p class="rm-lead">
-          {{ t('Stock is reserved per component in full — a component the warehouse can only cover partly stays a request for the stockist.') }}
+          {{ t('Each component reserves what the warehouse can give. Where stock falls short it reserves what it can and the rest stays outstanding.') }}
         </p>
 
         <div class="rm-table-wrap">
@@ -147,7 +154,13 @@ function submit() {
                 </td>
                 <td class="rm-td rm-td--num">{{ r.needed }} {{ r.unit }}</td>
                 <td class="rm-td rm-td--num">{{ r.available }} {{ r.unit }}</td>
-                <td class="rm-td rm-td--num">{{ r.toReserve > 0 ? `${r.toReserve} ${r.unit}` : '—' }}</td>
+                <td class="rm-td rm-td--num">
+                  <template v-if="r.toReserve > 0">
+                    {{ r.toReserve }} {{ r.unit }}
+                    <span v-if="r.toReserve < r.outstanding" class="rm-short">{{ t('of') }} {{ r.outstanding }}</span>
+                  </template>
+                  <template v-else>—</template>
+                </td>
                 <td class="rm-td">
                   <MpBadge for="tableStatus" :type="READINESS[r.readiness].type" size="sm">
                     {{ t(READINESS[r.readiness].label) }}
@@ -201,6 +214,8 @@ function submit() {
 .rm-tr--disabled .rm-td { color: var(--mp-text-secondary, #3a4749); }
 .rm-product { display: block; }
 .rm-sku { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
+
+.rm-short { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-warning, #a35200); }
 
 .rm-error {
   margin: var(--mp-spacing-3) 0 0;

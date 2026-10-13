@@ -8,6 +8,7 @@
 import { ref, computed } from 'vue'
 import { infoToast } from '~/utils/toasts'
 import {
+  MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
   css, toast,
@@ -232,12 +233,12 @@ function confirmDelete() {
 
       <MpPopover id="ed-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton class="detail-btn detail-btn--primary">
             {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -251,11 +252,11 @@ function confirmDelete() {
 
     <!-- Page tabs — only for the Personal data view -->
     <div v-if="view === 'personal-data'" class="detail-page-tabs">
-      <button
+      <MpButton
         v-for="pt in PERSONAL_TABS" :key="pt.key"
         class="page-tab" :class="{ 'page-tab--active': personalTab === pt.key }"
         type="button" @click="personalTab = pt.key"
-      >{{ t(pt.label) }}</button>
+      >{{ t(pt.label) }}</MpButton>
     </div>
 
     <!-- ── Stage ── -->
@@ -387,10 +388,10 @@ function confirmDelete() {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     <input v-model="familySearch" type="text" :placeholder="t('Search...')" class="pd-search-input" />
                   </span>
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addFamilyMember">
+                  <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addFamilyMember">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ t('New family member') }}
-                  </button>
+                  </MpButton>
                 </div>
               </div>
 
@@ -424,7 +425,7 @@ function confirmDelete() {
                       <td class="pd-td pd-td--action">
                         <MpPopover :id="`fam-actions-${f.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                           <MpPopoverTrigger>
-                            <button class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
+                            <MpButton class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></MpButton>
                           </MpPopoverTrigger>
                           <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
                             <MpPopoverList>
@@ -455,10 +456,10 @@ function confirmDelete() {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     <input v-model="emergencySearch" type="text" :placeholder="t('Search...')" class="pd-search-input" />
                   </span>
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addEmergencyContact">
+                  <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addEmergencyContact">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ t('New emergency contact') }}
-                  </button>
+                  </MpButton>
                 </div>
               </div>
 
@@ -480,7 +481,7 @@ function confirmDelete() {
                       <td class="pd-td pd-td--action">
                         <MpPopover :id="`ec-actions-${c.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                           <MpPopoverTrigger>
-                            <button class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
+                            <MpButton class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></MpButton>
                           </MpPopoverTrigger>
                           <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
                             <MpPopoverList>
@@ -512,10 +513,10 @@ function confirmDelete() {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     <input v-model="educationSearch" type="text" :placeholder="t('Search...')" class="pd-search-input" />
                   </span>
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addEducation">
+                  <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addEducation">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ t('New formal education') }}
-                  </button>
+                  </MpButton>
                 </div>
               </div>
 
@@ -549,7 +550,7 @@ function confirmDelete() {
                       <td class="pd-td pd-td--action">
                         <MpPopover :id="`edu-actions-${e.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                           <MpPopoverTrigger>
-                            <button class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
+                            <MpButton class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></MpButton>
                           </MpPopoverTrigger>
                           <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
                             <MpPopoverList>
@@ -575,10 +576,10 @@ function confirmDelete() {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     <input v-model="informalSearch" type="text" :placeholder="t('Search...')" class="pd-search-input" />
                   </span>
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addInformal">
+                  <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addInformal">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ t('New informal education') }}
-                  </button>
+                  </MpButton>
                 </div>
               </div>
 
@@ -608,7 +609,7 @@ function confirmDelete() {
                       <td class="pd-td pd-td--action">
                         <MpPopover :id="`inf-actions-${e.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                           <MpPopoverTrigger>
-                            <button class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
+                            <MpButton class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></MpButton>
                           </MpPopoverTrigger>
                           <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
                             <MpPopoverList>
@@ -636,10 +637,10 @@ function confirmDelete() {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     <input v-model="workSearch" type="text" :placeholder="t('Search...')" class="pd-search-input" />
                   </span>
-                  <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addWorkExperience">
+                  <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="addWorkExperience">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     {{ t('New work experience') }}
-                  </button>
+                  </MpButton>
                 </div>
               </div>
 
@@ -663,7 +664,7 @@ function confirmDelete() {
                       <td class="pd-td pd-td--action">
                         <MpPopover :id="`we-actions-${w.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                           <MpPopoverTrigger>
-                            <button class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
+                            <MpButton class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></MpButton>
                           </MpPopoverTrigger>
                           <MpPopoverContent :class="css({ minWidth: '140px', width: 'max-content', whiteSpace: 'nowrap' })">
                             <MpPopoverList>
@@ -764,8 +765,8 @@ function confirmDelete() {
         <MpModalBody>{{ employee.fullName }} {{ t('will be marked as resigned with today as the resign date. You can undo this by editing the employee.') }}</MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="resignModalOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" @click="confirmResign">{{ t('Mark as resign') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="resignModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmResign">{{ t('Mark as resign') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -779,8 +780,8 @@ function confirmDelete() {
         <MpModalBody>{{ t('Deleted employees cannot be restored.') }}</MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="deleteModalOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>

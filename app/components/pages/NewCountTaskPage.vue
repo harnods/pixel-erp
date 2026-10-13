@@ -412,7 +412,7 @@ async function handleSave() {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Cycle counts') }}</button>
+        <MpButton class="detail-breadcrumb" @click="goBack">{{ t('Cycle counts') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ isEdit ? t('Edit count task') : t('New count task') }}</h1>
         </div>
@@ -452,14 +452,14 @@ async function handleSave() {
               <div v-if="pendingCountBy" class="scf-countby-popover">
                 <p class="scf-countby-popover-text">{{ t('Switching will clear all current entries.') }}</p>
                 <div class="scf-countby-popover-btns">
-                  <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancelCountBySwitch">{{ t('Cancel') }}</button>
-                  <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmCountBySwitch">{{ t('Switch') }}</button>
+                  <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" @click="cancelCountBySwitch">{{ t('Cancel') }}</MpButton>
+                  <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmCountBySwitch">{{ t('Switch') }}</MpButton>
                 </div>
                 <span class="scf-countby-popover-arrow" />
               </div>
               <div class="scf-countby-toggle">
-                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'location' }" type="button" @click="requestSwitchCountBy('location')">{{ t('Location') }}</button>
-                <button class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'sku' }" type="button" @click="requestSwitchCountBy('sku')">{{ t('SKU') }}</button>
+                <MpButton class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'location' }" type="button" @click="requestSwitchCountBy('location')">{{ t('Location') }}</MpButton>
+                <MpButton class="scf-countby-btn" :class="{ 'scf-countby-btn--active': countBy === 'sku' }" type="button" @click="requestSwitchCountBy('sku')">{{ t('SKU') }}</MpButton>
               </div>
             </div>
           </div>
@@ -469,10 +469,9 @@ async function handleSave() {
               {{ t('This warehouse uses storage locations. Select location before making adjustments') }}
             </div>
             <div class="scf-loc-actions">
-              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="locationDrawerOpen = true">
-                <MpIcon name="add" size="sm" />
+              <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" left-icon="add" @click="locationDrawerOpen = true">
                 {{ t('Select locations') }}
-              </button>
+              </MpButton>
             </div>
           </template>
 
@@ -481,10 +480,9 @@ async function handleSave() {
               {{ t("Select products to count. They'll be grouped by their storage location.") }}
             </div>
             <div class="scf-loc-actions">
-              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="bySkuDrawerOpen = true">
-                <MpIcon name="add" size="sm" />
+              <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" left-icon="add" @click="bySkuDrawerOpen = true">
                 {{ t('Select products') }}
-              </button>
+              </MpButton>
             </div>
           </template>
 
@@ -492,9 +490,7 @@ async function handleSave() {
             <div class="nct-loc-head">
               <span class="scf-acc-label">{{ loc.fullPath }}</span>
               <span class="scf-acc-meta">{{ t('SKU qty:') }} {{ loc.rows.length }}</span>
-              <button class="scf-acc-remove" type="button" :aria-label="t('Remove location')" @click="removeLoc(loc.locId)">
-                <MpIcon name="minus-circular" size="sm" />
-              </button>
+              <MpButton class="scf-acc-remove" type="button" left-icon="minus-circular" :aria-label="t('Remove location')" @click="removeLoc(loc.locId)" />
             </div>
             <div class="scf-acc-body">
               <div class="scf-table-scroll">
@@ -534,15 +530,15 @@ async function handleSave() {
                       <td class="scf-td scf-td--muted">{{ unitFor(row.sku) }}</td>
                       <td class="scf-td" />
                       <td class="scf-td scf-td--del">
-                        <button class="scf-del-btn" type="button" @click="removeLocRow(loc, row.sku)"><MpIcon name="minus-circular" size="sm" /></button>
+                        <MpButton class="scf-del-btn" type="button" left-icon="minus-circular" @click="removeLocRow(loc, row.sku)" />
                       </td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <button class="scf-add-btn" type="button" @click="loc.productDrawerOpen = true">
-                <MpIcon name="add" size="sm" /> {{ t('Add product') }}
-              </button>
+              <MpButton class="scf-add-btn" type="button" left-icon="add" @click="loc.productDrawerOpen = true">
+                {{ t('Add product') }}
+              </MpButton>
 
               <SelectProductDrawer
                 v-model:open="loc.productDrawerOpen"
@@ -559,10 +555,9 @@ async function handleSave() {
         <!-- Fallback: warehouse has no storage locations — plain SKU list -->
         <div v-else class="nct-flat">
           <div class="scf-loc-actions">
-            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" @click="flatDrawerOpen = true">
-              <MpIcon name="add" size="sm" />
+            <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" type="button" left-icon="add" @click="flatDrawerOpen = true">
               {{ t('Select products') }}
-            </button>
+            </MpButton>
           </div>
 
           <div v-if="flatSkus.length" class="scf-table-scroll">
@@ -602,7 +597,7 @@ async function handleSave() {
                   <td class="scf-td scf-td--muted">{{ unitFor(sku) }}</td>
                   <td class="scf-td" />
                   <td class="scf-td scf-td--del">
-                    <button class="scf-del-btn" type="button" @click="removeFlatSku(sku)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton class="scf-del-btn" type="button" left-icon="minus-circular" @click="removeFlatSku(sku)" />
                   </td>
                 </tr>
               </tbody>
@@ -633,7 +628,7 @@ async function handleSave() {
             <ul v-if="attachedFiles.length" class="scf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="scf-file-item">
                 <span class="scf-file-name">{{ f.name }}</span>
-                <button class="scf-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                <MpButton class="scf-file-remove" type="button" left-icon="close" @click="removeFile(f.name)" />
               </li>
             </ul>
           </div>
@@ -643,8 +638,8 @@ async function handleSave() {
     </div>
 
     <footer class="detail-footer">
-      <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="handleSave">{{ isSaving ? t('Saving…') : t('Save') }}</button>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton class="btn-enterprise btn-enterprise--primary" :is-disabled="isSaving" @click="handleSave">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
     </footer>
 
     <SelectProductDrawer v-model:open="bySkuDrawerOpen" :products="pickerProducts" :model-value="bySkuSelected" @save="applySkuPicker" />
@@ -667,8 +662,8 @@ async function handleSave() {
         </MpModalBody>
         <MpModalFooter>
           <div class="nct-modal-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="removeSkuTarget = null">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" type="button" @click="confirmRemoveSku">{{ t('Remove from all locations') }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" @click="removeSkuTarget = null">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" type="button" @click="confirmRemoveSku">{{ t('Remove from all locations') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -681,15 +676,15 @@ async function handleSave() {
         <div class="loc-spd-panel" role="dialog" :aria-label="t('Select locations')">
           <div class="loc-spd-header">
             <span class="loc-spd-title">{{ t('Select locations') }}</span>
-            <button class="loc-spd-close" type="button" @click="locationDrawerOpen = false"><MpIcon name="close" size="sm" /></button>
+            <MpButton class="loc-spd-close" type="button" left-icon="close" @click="locationDrawerOpen = false" />
           </div>
           <div class="loc-spd-search-wrap">
             <input v-model="locDrawerSearch" class="loc-spd-search-input" type="text" :placeholder="t('Search...')" />
-            <button v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
+            <MpButton v-if="locDrawerSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="locDrawerSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
           <div class="loc-spd-list">
             <template v-for="node in locDrawerItems" :key="node.id">
@@ -721,10 +716,10 @@ async function handleSave() {
             <div v-if="!locDrawerItems.length" class="loc-drawer-empty">{{ t('No storage locations found') }}</div>
           </div>
           <div class="loc-spd-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="locationDrawerOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmLocSelection">
+            <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" @click="locationDrawerOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="confirmLocSelection">
               {{ t('Select') }} ({{ locDrawerSel.size }})
-            </button>
+            </MpButton>
           </div>
         </div>
       </div>

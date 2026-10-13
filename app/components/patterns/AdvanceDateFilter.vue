@@ -14,7 +14,7 @@
  * row filtering).
  */
 import { ref, computed, watch } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpButton, MpIcon, css } from '@mekari/pixel3'
 import {
   resolveDateFilterRange, dateFilterLabel, toIso, fromIso,
   type DateFilterValue, type DateFilterMode,
@@ -36,6 +36,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ 'update:modelValue': [DateFilterValue | null] }>()
 
+const { t } = useLocale()
+
 const isOpen = ref(false)
 
 const PRESETS: { mode: DateFilterMode; label: string }[] = [
@@ -52,9 +54,9 @@ const GRANULARITIES: { mode: DateFilterMode; label: string }[] = [
   { mode: 'custom', label: 'Custom' },
 ]
 
-// Left-panel active granularity (drives the calendar's click behaviour). Presets
-// don't "activate" a sidebar state — they apply immediately — but if the current
-// value is a granularity mode, keep that highlighted when the popover reopens.
+// Left-panel active granularity (drives the calendar's click behaviour). A preset
+// applies immediately and closes, so its active state reads off the bound value
+// when the popover is reopened; a granularity stays active while you pick a date.
 const activeMode = ref<DateFilterMode>('day')
 // The month the calendar is showing.
 const viewYear = ref(props.today.getFullYear())
@@ -117,7 +119,16 @@ const calendarCells = computed<Cell[]>(() => {
   }
   return cells
 })
-const monthTitle = computed(() => `${MONTH_LABEL[viewMonth.value]} ${viewYear.value}`)
+/**
+ * A preset and a granularity are alternatives, so only one side of the sidebar is
+ * ever highlighted. `activeMode` still defaults to 'day' because it decides what
+ * clicking a date does — but while a preset is the bound value, showing "Per day"
+ * highlighted alongside it would read as two selections.
+ */
+const presetActive = computed(() => PRESETS.some(p => p.mode === props.modelValue?.mode))
+const activeGranularity = computed(() => (presetActive.value ? null : activeMode.value))
+
+const monthTitle = computed(() => `${t(MONTH_LABEL[viewMonth.value] ?? '')} ${viewYear.value}`)
 
 function prevMonth() {
   if (viewMonth.value === 0) { viewMonth.value = 11; viewYear.value-- } else viewMonth.value--
@@ -150,10 +161,10 @@ function cellInRange(iso: string): boolean {
 }
 
 // Only prompts while something is genuinely unpicked — with a range already applied
-// and highlighted on the calendar, "you haven't chosen a date yet" would be untrue.
+// and highlighted on the calendar, "no date chosen yet" would be untrue.
 const hint = computed(() => {
   if (activeMode.value === 'custom' && customStart.value && !customEnd.value) return 'Select the end date'
-  return highlightRange.value ? '' : "You haven't chosen a date yet!"
+  return highlightRange.value ? '' : 'No date chosen yet'
 })
 
 function onDayClick(cell: Cell) {
@@ -175,58 +186,62 @@ function onDayClick(cell: Cell) {
 <template>
   <MpPopover :id="id" use-portal :is-keep-alive="false" :is-open="isOpen" @update:is-open="isOpen = $event">
     <MpPopoverTrigger>
-      <button class="adf-trigger" :class="{ 'adf-trigger--placeholder': !modelValue }" type="button">
+      <MpButton
+        class="adf-trigger"
+        :class="{ 'adf-trigger--placeholder': !modelValue }"
+      >
         <span class="adf-trigger-label">{{ modelValue ? label : placeholder }}</span>
         <svg
           v-if="modelValue && clearable" class="adf-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
-          aria-label="Clear" @click="clear"
+          :aria-label="t('Clear')" @click="clear"
         >
           <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
         </svg>
-        <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
+        <!-- A calendar, not a chevron: this opens a date picker, and the chevron
+             made it read as a plain select like the ones beside it. -->
+        <MpIcon v-else class="adf-cal" name="calendar" size="sm" aria-hidden="true" />
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ padding: '0', width: 'max-content' })">
       <div class="adf-panel">
         <!-- ── Left: time range ── -->
         <div class="adf-sidebar">
-          <p class="adf-sidebar-label">Time range</p>
-          <button
-            v-for="p in PRESETS" :key="p.mode" type="button"
-            class="adf-sidebar-item" @click="applyPreset(p.mode)"
-          >{{ p.label }}</button>
+          <p class="adf-sidebar-label">{{ t('Time range') }}</p>
+          <MpButton
+            v-for="p in PRESETS" :key="p.mode"
+            class="adf-sidebar-item" :class="{ 'adf-sidebar-item--active': modelValue?.mode === p.mode }"
+            @click="applyPreset(p.mode)"
+          >{{ t(p.label) }}</MpButton>
           <div class="adf-divider" />
-          <button
-            v-for="g in GRANULARITIES" :key="g.mode" type="button"
-            class="adf-sidebar-item" :class="{ 'adf-sidebar-item--active': activeMode === g.mode }"
+          <MpButton
+            v-for="g in GRANULARITIES" :key="g.mode"
+            class="adf-sidebar-item" :class="{ 'adf-sidebar-item--active': activeGranularity === g.mode }"
             @click="selectGranularity(g.mode)"
-          >{{ g.label }}</button>
+          >{{ t(g.label) }}</MpButton>
         </div>
 
         <!-- ── Right: calendar ── -->
         <div class="adf-calendar">
           <div class="adf-cal-header">
-            <button class="adf-nav-btn" type="button" aria-label="Previous month" @click="prevMonth">
+            <MpButton class="adf-nav-btn" :aria-label="t('Previous month')" @click="prevMonth">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-            </button>
+            </MpButton>
             <span class="adf-cal-title">{{ monthTitle }}</span>
-            <button class="adf-nav-btn" type="button" aria-label="Next month" @click="nextMonth">
+            <MpButton class="adf-nav-btn" :aria-label="t('Next month')" @click="nextMonth">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
 
           <div class="adf-weekdays">
-            <span v-for="d in WEEKDAYS" :key="d">{{ d }}</span>
+            <span v-for="d in WEEKDAYS" :key="d">{{ t(d) }}</span>
           </div>
           <div class="adf-days">
-            <button
-              v-for="cell in calendarCells" :key="cell.iso" type="button"
+            <MpButton
+              v-for="cell in calendarCells" :key="cell.iso"
               class="adf-day"
               :class="{
                 'adf-day--muted': !cell.inMonth,
@@ -234,10 +249,10 @@ function onDayClick(cell: Cell) {
                 'adf-day--selected': cellInRange(cell.iso),
               }"
               @click="onDayClick(cell)"
-            >{{ cell.dayNum }}</button>
+            >{{ cell.dayNum }}</MpButton>
           </div>
 
-          <p v-if="hint" class="adf-hint">{{ hint }}</p>
+          <p v-if="hint" class="adf-hint">{{ t(hint) }}</p>
         </div>
       </div>
     </MpPopoverContent>
@@ -250,14 +265,40 @@ function onDayClick(cell: Cell) {
    38px tall (--mp-sizes-9.5), border = --mp-colors-border-form. Short --mp-*
    aliases are EMPTY in this Pixel build → use the full --mp-colors-* tokens. */
 .adf-trigger {
-  display: inline-flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  min-width: 160px; height: var(--mp-sizes-9\.5, 38px);
-  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md);
-  background: var(--mp-colors-background-neutral, #fff); color: var(--mp-colors-text-default, #080d0e);
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); cursor: pointer;
+  /* Metrics follow ErpFilterSelect's .efs-trigger exactly (rule/select-field-metrics):
+     176px × 38px, the translucent form border, and — the one MpButton leaks that
+     this used to miss — REGULAR weight. MpButton's own semibold made this trigger
+     read bolder than the selects beside it in the same filter bar. */
+  display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
+  /* 176px to match ErpFilterSelect, but free to grow: the Indonesian label
+     ("Tanggal permintaan") does not fit the fixed width, and a filter whose own
+     name is cut off is a filter you have to guess at. */
+  width: auto !important; min-width: var(--adf-w, 176px) !important;
+  height: var(--mp-sizes-9\.5, 38px);
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3) !important;
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important;
+  background: var(--mp-colors-background-neutral, #fff) !important; color: var(--mp-colors-text-default, #080d0e);
+  font-size: var(--mp-font-sizes-md) !important; line-height: var(--mp-line-heights-md);
+  font-weight: var(--mp-font-weights-regular, 400) !important;
+  cursor: pointer;
 }
-.adf-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596); }
+/* Hover and active states, with !important because MpButton's own atoms would
+   otherwise repaint the border back (rule/select-active-neutral: neutral slate,
+   never a brand colour).
+   The ACTIVE state hangs off :focus rather than an open flag: MpPopover in this
+   Pixel build manages its own open state and never emits it back (see the note on
+   `isOpen` above), and the trigger holds focus for as long as its panel is up —
+   so focus is the only signal available, and it is the right one anyway. */
+.adf-trigger:hover { border-color: var(--mp-colors-border-bold, #8c9596) !important; }
+.adf-trigger:focus,
+.adf-trigger:focus:hover {
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
+  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596) !important; /* pixel-police-allow-shadow */
+  outline: none;
+}
+/* A set filter reads as filled, like ErpFilterSelect's own filled state. */
+.adf-trigger:not(.adf-trigger--placeholder) { color: var(--mp-colors-text-default, #080d0e); }
+.adf-cal { color: var(--mp-colors-icon-default, #3a4749); flex-shrink: 0; }
 .adf-trigger svg { color: var(--mp-icon-default, var(--mp-text-secondary)); flex-shrink: 0; }
 .adf-trigger--placeholder { color: var(--mp-text-placeholder); }
 .adf-trigger-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -278,14 +319,25 @@ function onDayClick(cell: Cell) {
   letter-spacing: 0.08em; text-transform: uppercase; color: var(--mp-text-secondary);
 }
 .adf-sidebar-item {
-  display: block; width: 100%; text-align: left;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
-  border: none; background: none; cursor: pointer;
+  display: block !important; width: 100%; text-align: left;
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) !important; border-radius: var(--mp-radii-md) !important;
+  min-width: 0 !important; border: none !important; background: none !important; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md);
 }
-.adf-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.adf-sidebar-item--active { background: var(--mp-background-brand-selected, #e4e7fb); }
-.adf-sidebar-item--active:hover { background: var(--mp-background-brand-selected, #e4e7fb); }
+/* Every state below needs !important, because the base rule above zeroes the
+   background with one to beat MpButton's own atoms — without it the hover and
+   active rules lose to their own base class and nothing ever paints.
+   Active is the ERP's "you are here" pair, the same slate/link the sidebar's
+   level-2 nav uses (rule/segmented-control-pill); the brand lavender it used to
+   name came from a short --mp-* alias that resolves EMPTY in this Pixel build,
+   so only its hardcoded fallback was ever showing. */
+.adf-sidebar-item:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
+.adf-sidebar-item--active,
+.adf-sidebar-item--active:hover {
+  background: var(--mp-colors-background-neutral-pressed, #E2E8F0) !important;
+  color: var(--mp-colors-text-link, #165082) !important;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
 .adf-divider { height: 1px; margin: var(--mp-spacing-2) var(--mp-spacing-1); background: var(--mp-border-default, #e3e7e9); }
 
 /* Right: calendar */
@@ -295,9 +347,9 @@ function onDayClick(cell: Cell) {
 }
 .adf-cal-header { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-2); }
 .adf-nav-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-text-default);
+  display: inline-flex !important; align-items: center; justify-content: center;
+  min-width: 0 !important; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
+  padding: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md) !important; cursor: pointer; color: var(--mp-text-default);
 }
 .adf-nav-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .adf-cal-title {
@@ -310,15 +362,27 @@ function onDayClick(cell: Cell) {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
 }
 .adf-day {
-  display: flex; align-items: center; justify-content: center; height: 36px;
-  border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer;
+  display: flex !important; align-items: center; justify-content: center; height: 36px;
+  min-width: 0 !important; padding: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-sm) !important; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
 }
-.adf-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.adf-day--muted { color: var(--mp-text-disabled, rgba(29,31,36,0.32)); }
-.adf-day--today { background: var(--mp-background-warning-bold, #f5cd47); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
-.adf-day--selected { background: var(--mp-background-brand-bold, #029861); color: var(--mp-text-inverse, #fff); }
-.adf-day--selected.adf-day--today { background: var(--mp-background-warning-bold, #f5cd47); color: var(--mp-text-default); box-shadow: inset 0 0 0 2px var(--mp-background-brand-bold, #029861); }
+.adf-day:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
+.adf-day--muted { color: var(--mp-colors-text-disabled, rgba(29,31,36,0.32)); }
+.adf-day--today {
+  background: var(--mp-colors-background-warning, #fff3e0) !important;
+  color: var(--mp-colors-text-default, #080d0e); font-weight: var(--mp-font-weights-semi-bold);
+}
+/* The picked day and its range read with the same slate/link as every other
+   "selected" surface in the ERP, not Pixel's brand green. */
+.adf-day--selected {
+  background: var(--mp-colors-text-link, #165082) !important;
+  color: var(--mp-colors-text-inverse, #fff) !important;
+}
+.adf-day--selected.adf-day--today {
+  background: var(--mp-colors-text-link, #165082) !important;
+  color: var(--mp-colors-text-inverse, #fff) !important;
+  box-shadow: inset 0 0 0 2px var(--mp-colors-background-warning-bold, #f5cd47); /* pixel-police-allow-shadow */
+}
 
 .adf-hint { margin: var(--mp-spacing-1) 0 0; text-align: right; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>

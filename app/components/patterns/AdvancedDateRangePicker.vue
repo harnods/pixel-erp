@@ -46,12 +46,29 @@ const props = withDefaults(defineProps<{
    *  set, the only granularity option is Custom date range. Existing callers that
    *  omit this keep their direction/periodMode presets unchanged. */
   presets?: { key: Mode; label: string }[]
+  /**
+   * Reference "today" for resolving presets. Defaults to the real clock; pages
+   * running on the prototype's fixed timeline pass their own, or every preset
+   * resolves to a window the seeded data has no rows in.
+   */
+  today?: Date
+  /**
+   * Show a clear (✕) on the field once a range is applied, resetting it to null.
+   * Opt-in, and default OFF: several callers bind a non-nullable `ref<Date[]>`
+   * that always holds a range, and handing those a null would break them. A
+   * filter bar, where the user must be able to undo one filter without clearing
+   * the rest, opts in.
+   */
+  isClearable?: boolean
 }>(), {
   direction: 'past',
   periodMode: false,
   labelPrefixMode: false,
+  isClearable: false,
 })
-const emit = defineEmits<{ 'update:modelValue': [Date[]] }>()
+const emit = defineEmits<{ 'update:modelValue': [Date[] | null] }>()
+
+const { t } = useLocale()
 
 type Mode = 'today' | 'last7' | 'last14' | 'last30' | 'next7' | 'next14' | 'next30' | 'day' | 'week' | 'month' | 'year' | 'custom' | 'thisMonth' | 'thisQuarter' | 'thisYear' | 'thisWeek' | 'nextMonth'
 
@@ -77,7 +94,7 @@ const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 const MONTHS_LONG = ['January','February','March','April','May','June','July','August','September','October','November','December']
 function fmtDayLabel(d: Date) { return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}` }
 
-const today = dayStart(new Date())
+const today = dayStart(props.today ?? new Date())
 
 // Resolved [start, end] for each quick preset — inclusive N-day windows anchored
 // to today (last N = today-(N-1)…today; next N = today…today+(N-1)). `today` is a
@@ -116,6 +133,12 @@ const range = computed<[Date, Date]>(() => {
 })
 function commit(start: Date, end: Date) {
   emit('update:modelValue', [dayStart(start), dayStart(end)])
+}
+
+/** Back to unapplied — the field shows its placeholder and the filter drops out. */
+function clear() {
+  emit('update:modelValue', null)
+  open.value = false
 }
 
 const fieldText = computed(() => {
@@ -286,12 +309,28 @@ function onYearClick(y: number) {
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <MpButton class="adr-field" :class="{ 'adr-field--full': isFullWidth }" type="button" @click.stop="open = !open">
+        <MpButton
+          class="adr-field"
+          :class="{ 'adr-field--full': isFullWidth, 'adr-field--clearable': isClearable && hasValue }"
+          type="button" @click.stop="open = !open"
+        >
           <span class="adr-field__value" :class="{ 'adr-field__value--placeholder': !hasValue }">{{ fieldText }}</span>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M3 9.5H21M8 3V6M16 3V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <!-- One icon slot holding both marks: the calendar says what the field
+               is, and the clear takes its place on hover, so an applied range can
+               be undone without reaching for "Clear all filters" — and without a
+               ✕ sitting on the field at rest. -->
+          <span class="adr-field__icon">
+            <svg class="adr-cal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M3 9.5H21M8 3V6M16 3V6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <svg
+              v-if="isClearable && hasValue" class="adr-clear" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              role="button" :aria-label="t('Clear')" @click.stop="clear"
+            >
+              <path d="M6 6L18 18M18 6L6 18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </span>
         </MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ padding: '0' })" @blur="open = false" @escape="open = false">
@@ -299,21 +338,21 @@ function onYearClick(y: number) {
           <div class="adr-sidebar">
             <template v-if="topPresets.length">
               <div class="adr-sidebar-title">Time range</div>
-              <button
+              <MpButton
                 v-for="opt in topPresets" :key="opt.key"
                 class="adr-sidebar-item adr-sidebar-item--preset" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
                 @click.stop="selectInstant(opt.key)"
               >
                 <span class="adr-preset-label">{{ opt.label }}</span>
                 <span class="adr-preset-range">{{ presetRangeText(opt.key) }}</span>
-              </button>
+              </MpButton>
               <div class="adr-sidebar-divider" />
             </template>
-            <button
+            <MpButton
               v-for="opt in granularityPresets" :key="opt.key"
               class="adr-sidebar-item" :class="{ 'adr-sidebar-item--active': mode === opt.key }"
               @click.stop="opt.instant ? selectInstant(opt.key) : selectGranularity(opt.key)"
-            >{{ opt.label }}</button>
+            >{{ opt.label }}</MpButton>
           </div>
 
           <div v-if="showCalendar" class="adr-calendar">
@@ -332,17 +371,17 @@ function onYearClick(y: number) {
                 <span v-for="wd in ['Su','Mo','Tu','We','Th','Fr','Sa']" :key="wd">{{ wd }}</span>
               </div>
               <div class="adr-cal-days">
-                <button
+                <MpButton
                   v-for="(d, i) in dayGrid" :key="i"
                   class="adr-cal-day"
                   :class="{
                     'adr-cal-day--outside': d.getMonth() !== viewMonth.getMonth(),
                     'adr-cal-day--today': isSameDay(d, today),
-                    'adr-cal-day--inrange': inRange(d),
-                    'adr-cal-day--edge': isSameDay(d, range[0]) || isSameDay(d, range[1]),
+                    'adr-cal-day--inrange': hasValue && inRange(d),
+                    'adr-cal-day--edge': hasValue && (isSameDay(d, range[0]) || isSameDay(d, range[1])),
                   }"
                   @click.stop="onDayClick(d)"
-                >{{ d.getDate() }}</button>
+                >{{ d.getDate() }}</MpButton>
               </div>
               <div class="adr-cal-anchor">Today</div>
             </template>
@@ -359,12 +398,15 @@ function onYearClick(y: number) {
                 </MpButton>
               </div>
               <div class="adr-grid adr-grid--month">
-                <button
+                <MpButton
                   v-for="(m, mi) in MONTHS_SHORT" :key="mi"
                   class="adr-grid-cell"
-                  :class="{ 'adr-grid-cell--current': viewYear === today.getFullYear() && mi === today.getMonth() }"
+                  :class="{
+                    'adr-grid-cell--current': viewYear === today.getFullYear() && mi === today.getMonth(),
+                    'adr-grid-cell--selected': hasValue && mode === 'month' && viewYear === range[0].getFullYear() && mi === range[0].getMonth(),
+                  }"
                   @click.stop="onMonthClick(mi)"
-                >{{ m }}</button>
+                >{{ m }}</MpButton>
               </div>
               <div class="adr-cal-anchor">This month</div>
             </template>
@@ -381,12 +423,15 @@ function onYearClick(y: number) {
                 </MpButton>
               </div>
               <div class="adr-grid adr-grid--year">
-                <button
+                <MpButton
                   v-for="y in Array.from({ length: 10 }, (_, i) => decadeStart + i)" :key="y"
                   class="adr-grid-cell"
-                  :class="{ 'adr-grid-cell--current': y === today.getFullYear() }"
+                  :class="{
+                    'adr-grid-cell--current': y === today.getFullYear(),
+                    'adr-grid-cell--selected': hasValue && mode === 'year' && y === range[0].getFullYear(),
+                  }"
                   @click.stop="onYearClick(y)"
-                >{{ y }}</button>
+                >{{ y }}</MpButton>
               </div>
               <div class="adr-cal-anchor">This Year</div>
             </template>
@@ -410,10 +455,29 @@ function onYearClick(y: number) {
 
 /* Rendered via MpButton, not a raw HTML control — default look reset so it
    can take on the field's own shape (see IconButton/.demo-fab precedent). */
-.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9, 36px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-background-neutral, #ffffff) !important; border: 1px solid var(--mp-border-default, #e3e7e9) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
+/* Metrics follow every other field-style trigger (rule/select-field-metrics):
+   38px tall and the translucent form border, not 36px and the lighter table
+   border — side by side with a select, the two-pixel difference shows. */
+.adr-field { display: inline-flex !important; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); min-width: 0 !important; width: 260px; height: var(--mp-sizes-9\.5, 38px); padding: 0 var(--mp-spacing-3) !important; background: var(--mp-colors-background-neutral, #ffffff) !important; border: 1px solid var(--mp-colors-border-form, #1d1f2429) !important; border-radius: var(--mp-radii-md) !important; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); cursor: pointer; }
 .adr-field--full { width: 100%; }
-.adr-field:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.adr-field:hover { border-color: var(--mp-colors-border-bold, #8c9596) !important; }
 .adr-field svg { flex-shrink: 0; color: var(--mp-text-subtle); }
+/* Both icons share one fixed slot, so swapping them cannot shift the field's
+   text. The clear only appears while the field is hovered or focused — at rest
+   the field says "date", not "remove". */
+.adr-field__icon {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-4\.5, 18px); height: var(--mp-sizes-4\.5, 18px); flex-shrink: 0;
+}
+.adr-clear {
+  position: absolute; inset: 0; margin: auto; display: none;
+  cursor: pointer; border-radius: var(--mp-radii-sm);
+}
+.adr-field--clearable:hover .adr-cal-icon,
+.adr-field--clearable:focus-visible .adr-cal-icon { visibility: hidden; }
+.adr-field--clearable:hover .adr-clear,
+.adr-field--clearable:focus-visible .adr-clear { display: block; }
+.adr-clear:hover { color: var(--mp-colors-text-default, #080d0e); }
 .adr-field__value--placeholder { color: var(--mp-text-placeholder, #8690a2); }
 
 /* ── Popover: sidebar + calendar ── */
@@ -430,28 +494,37 @@ function onYearClick(y: number) {
 }
 .adr-sidebar-item {
   text-align: left;
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  background: transparent;
-  border: none;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) !important;
+  min-width: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-sidebar-item:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+/* Every state below carries !important because the base rule above zeroes the
+   background with one (to beat MpButton's own atoms). Without it each state
+   loses to its own base class and nothing paints — which is why the sidebar
+   showed no selection and the calendar no range. */
+.adr-sidebar-item:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
 /* Quick presets show their resolved range on the right (Today = a single date). */
 .adr-sidebar-item--preset {
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-4);
 }
 .adr-preset-label { white-space: nowrap; }
 .adr-preset-range { color: var(--mp-text-subtle); white-space: nowrap; }
-/* Active/selected = neutral-subtle BG FILL + default text (matches Pixel's native
-   MpPopoverListItem :is-active — rgb(248,249,249), NOT a green text/fill). */
-.adr-sidebar-item--active {
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  color: var(--mp-text-default);
+/* Active/selected = the ERP's "you are here" slate + link text, the pair the
+   sidebar's level-2 nav and the segmented control use
+   (rule/segmented-control-pill). Not Pixel's brand fill. */
+.adr-sidebar-item--active,
+.adr-sidebar-item--active:hover {
+  background: var(--mp-colors-background-neutral-pressed, #E2E8F0) !important;
+  color: var(--mp-colors-text-link, #165082) !important;
+  font-weight: var(--mp-font-weights-semi-bold);
 }
 .adr-sidebar-divider { height: 1px; background: var(--mp-border-default, #e3e7e9); margin: var(--mp-spacing-2) 0; }
 
@@ -486,18 +559,31 @@ function onYearClick(y: number) {
 .adr-cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .adr-cal-day {
   height: var(--mp-sizes-7\.5, 30px);
-  border: none;
-  background: transparent;
-  border-radius: var(--mp-radii-sm);
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: var(--mp-radii-sm) !important;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-cal-day:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.adr-cal-day--outside { color: var(--mp-text-placeholder); }
-.adr-cal-day--inrange { background: var(--mp-background-selected, #e5e2fb); }
-.adr-cal-day--edge { background: var(--mp-background-selected-strong, #c7c1f5); font-weight: var(--mp-font-weights-semi-bold); }
-.adr-cal-day--today { background: var(--mp-background-warning, #fcefc2); outline: 1.5px solid var(--mp-border-warning, #f2b90c); outline-offset: -1.5px; font-weight: var(--mp-font-weights-semi-bold); }
+.adr-cal-day:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
+.adr-cal-day--outside { color: var(--mp-colors-text-placeholder, #6e7a7c); }
+/* The range reads slate, its two ends the link fill — the same selected pair the
+   rest of the ERP uses. The lavender this named before came from short --mp-*
+   aliases that resolve EMPTY in this Pixel build, so only their hardcoded
+   fallbacks were ever in play. */
+.adr-cal-day--inrange { background: var(--mp-colors-background-neutral-pressed, #E2E8F0) !important; }
+.adr-cal-day--edge {
+  background: var(--mp-colors-text-link, #165082) !important;
+  color: var(--mp-colors-text-inverse, #fff) !important;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
+.adr-cal-day--today {
+  outline: 1.5px solid var(--mp-colors-background-warning-bold, #f2b90c); outline-offset: -1.5px;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
 
 .adr-cal-anchor {
   text-align: center;
@@ -510,14 +596,26 @@ function onYearClick(y: number) {
 .adr-grid--month { grid-template-columns: repeat(4, 1fr); }
 .adr-grid--year { grid-template-columns: repeat(4, 1fr); }
 .adr-grid-cell {
-  padding: var(--mp-spacing-2);
-  border: none;
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-2) !important;
+  min-width: 0 !important;
+  border: none !important;
+  background: var(--mp-background-neutral-subtle, #f8f9f9) !important;
+  border-radius: var(--mp-radii-md) !important;
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-default);
   cursor: pointer;
 }
-.adr-grid-cell:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-.adr-grid-cell--current { background: var(--mp-background-warning, #fcefc2); font-weight: var(--mp-font-weights-semi-bold); }
+.adr-grid-cell:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3) !important; }
+.adr-grid-cell--current {
+  outline: 1.5px solid var(--mp-colors-background-warning-bold, #f2b90c); outline-offset: -1.5px;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
+/* Per month / Per year had no selected state at all — picking a month left the
+   grid looking untouched. */
+.adr-grid-cell--selected,
+.adr-grid-cell--selected:hover {
+  background: var(--mp-colors-text-link, #165082) !important;
+  color: var(--mp-colors-text-inverse, #fff) !important;
+  font-weight: var(--mp-font-weights-semi-bold);
+}
 </style>

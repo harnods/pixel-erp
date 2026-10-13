@@ -161,13 +161,13 @@ function close() { emit('update:isOpen', false) }
           </div>
 
           <div class="tdd-footer">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="close">{{ t('Cancel') }}</button>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="close">{{ t('Cancel') }}</MpButton>
             <MpPopover id="tdd-actions-popover" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
               <MpPopoverTrigger>
-                <button type="button" class="btn-enterprise btn-enterprise--primary">
+                <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary">
                   {{ t('Actions') }}
                   <MpIcon name="chevrons-down" size="sm" />
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ width: menuWidth, whiteSpace: 'nowrap' })">
                 <MpPopoverList>

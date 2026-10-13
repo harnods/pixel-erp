@@ -10,7 +10,7 @@
  * Renders inside the shared .stage (white surface + 24px padding already provided
  * by app/pages/[...slug].vue) — no own title bar, no extra stage padding.
  */
-import { MpProgress } from '@mekari/pixel3'
+import { MpProgress, MpButton } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
@@ -101,7 +101,7 @@ function open(node: SitemapNode) {
     <!-- Controls: filter + search -->
     <div class="dsn-controls">
       <div class="dsn-filter" role="tablist">
-        <button
+        <MpButton
           v-for="f in filters"
           :key="f.value"
           class="dsn-filter-btn"
@@ -111,7 +111,7 @@ function open(node: SitemapNode) {
           @click="filter = f.value"
         >
           {{ t(f.label) }}
-        </button>
+        </MpButton>
       </div>
       <div class="dsn-search">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -123,11 +123,11 @@ function open(node: SitemapNode) {
           type="text"
           :placeholder="t('Search pages...')"
         />
-        <button v-if="search" class="dsn-search-clear" type="button" :aria-label="t('Clear search')" @click="search = ''">
+        <MpButton v-if="search" class="dsn-search-clear" type="button" :aria-label="t('Clear search')" @click="search = ''">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
           </svg>
-        </button>
+        </MpButton>
       </div>
     </div>
 

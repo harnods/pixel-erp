@@ -1,3 +1,6 @@
+import { reactive } from 'vue'
+import { loadSnapshot, saveSnapshot } from './persist'
+
 export interface NotificationField {
   label: string
   value: string
@@ -32,7 +35,7 @@ export interface Notification {
   }
 }
 
-export const notifications: Notification[] = [
+export const notifications: Notification[] = reactive([
   // ── Today ──────────────────────────────────────────────────────────────
   {
     id: 'n-01',
@@ -460,4 +463,51 @@ export const notifications: Notification[] = [
       ],
     },
   },
-]
+])
+
+/**
+ * Notifications raised by the running app, kept apart from the seeded ones so a
+ * refresh doesn't duplicate the seeds — they are merged in front of them below.
+ */
+const RAISED_KEY = 'notifications.raised'
+const raised = loadSnapshot<Notification>(RAISED_KEY) ?? []
+if (raised.length) notifications.unshift(...raised)
+
+/**
+ * Raise an in-app notification (L-11 — in-app + email; only the in-app half
+ * exists in the prototype, and email is out of its reach).
+ *
+ * Prepended as unread under "Today", which is how the inbox groups and how a
+ * person reads a list they have just been pinged about. Persisted, because the
+ * point of notifying somebody else is that they see it when they next look —
+ * which, in a prototype people demo from, is usually after a page load.
+ */
+export function pushNotification(input: {
+  title: string
+  preview: string
+  heading?: string
+  description?: string
+  fields?: NotificationField[]
+  actions?: NotificationAction[]
+}): void {
+  const entry: Notification = {
+    id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title: input.title,
+    preview: input.preview,
+    group: 'Today',
+    timeLabel: 'Just now',
+    timestamp: new Date().toLocaleString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    }).replace(',', ''),
+    unread: true,
+    detail: {
+      heading: input.heading ?? input.title,
+      description: input.description ?? input.preview,
+      fields: input.fields ?? [],
+      actions: input.actions ?? [],
+    },
+  }
+  notifications.unshift(entry)
+  raised.unshift(entry)
+  saveSnapshot(RAISED_KEY, raised)
+}

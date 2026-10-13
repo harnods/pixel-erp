@@ -21,7 +21,9 @@ import { reactive, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 import {
   crmModules, getCrmModule, getDeal, dealTotals, lineSubtotal, persistCrmDeals,
+  moduleStores,
   type CrmModule, type CrmModuleField, type CrmFieldType, type Deal,
+  type DealProperty, type DealPropertyType,
 } from '~/data/crm'
 import { salesOrders } from '~/data/salesOrders'
 import { salesQuotes } from '~/data/salesQuotes'
@@ -59,40 +61,29 @@ export interface ErpTargetField {
 // Common fields shared by Sales Quote + Sales Order (PRD §Common mapping +
 // §Sales Quote / §Sales Order mapping requirements).
 const COMMON_ERP_FIELDS: ErpTargetField[] = [
-  { key: 'customer',     label: 'ERP Customer',        requirement: 'required',    category: 'customer',      purpose: 'The ERP customer the transaction bills to' },
+  { key: 'customer',     label: 'Customer',             requirement: 'required',    category: 'customer',      purpose: 'The ERP customer the transaction bills to' },
+  { key: 'total',        label: 'Total',               requirement: 'required',    category: 'money',         purpose: 'Total transaction amount (calculated from line items)' },
   { key: 'txDate',       label: 'Transaction date',    requirement: 'required',    category: 'date',          purpose: 'Date the ERP transaction is dated' },
   { key: 'dueDate',      label: 'Due date',            requirement: 'required',    category: 'date',          purpose: 'Payment due date' },
-  { key: 'paymentTerm',  label: 'Payment term',        requirement: 'conditional', category: 'erp-option',    purpose: 'ERP payment term', conditionNote: 'Required unless a company default term applies' },
+  { key: 'paymentTerm',  label: 'Payment term',        requirement: 'conditional', category: 'erp-option',    purpose: 'ERP payment term' },
+  { key: 'txNumber',     label: 'Transaction no.',     requirement: 'required',    category: 'text',          purpose: 'ERP auto-generated transaction number' },
+  { key: 'warehouse',    label: 'Warehouse',           requirement: 'conditional', category: 'erp-option',    purpose: 'Source warehouse' },
   { key: 'productLines', label: 'Product lines',       requirement: 'required',    category: 'product-lines', purpose: 'Line items (product, qty, price, discount, tax) — 1–100 lines' },
-  { key: 'currency',     label: 'Currency',            requirement: 'required',    category: 'currency-code', purpose: 'Transaction currency code' },
-  { key: 'exchangeRate', label: 'Exchange rate',       requirement: 'conditional', category: 'decimal',       purpose: 'Rate to base currency', conditionNote: 'Required when the currency is not the company base currency' },
-  { key: 'warehouse',    label: 'Warehouse',           requirement: 'conditional', category: 'erp-option',    purpose: 'Source warehouse', conditionNote: 'Required when the tenant tracks inventory' },
-  // Optional (PRD: never required for completeness; if mapped, must be valid)
+  // Optional
+  { key: 'email',            label: 'Email',             requirement: 'optional', category: 'text',           purpose: 'Customer email for transaction correspondence' },
   { key: 'billingAddress',   label: 'Billing address',   requirement: 'optional', category: 'text',           purpose: 'Billing address override' },
   { key: 'shippingAddress',  label: 'Shipping address',  requirement: 'optional', category: 'text',           purpose: 'Shipping address override' },
   { key: 'shipDate',         label: 'Shipping / delivery date', requirement: 'optional', category: 'date',    purpose: 'Requested delivery date' },
   { key: 'shipVia',          label: 'Ship via',          requirement: 'optional', category: 'erp-option',     purpose: 'Shipping method' },
+  { key: 'trackingNo',       label: 'Tracking no.',      requirement: 'optional', category: 'text',           purpose: 'Shipment tracking number' },
   { key: 'referenceNo',      label: 'Reference number',  requirement: 'optional', category: 'text',           purpose: 'External reference (RFQ/PO no.)' },
-  { key: 'shippingFee',      label: 'Shipping fee',      requirement: 'optional', category: 'money',          purpose: 'Flat shipping charge' },
+  { key: 'tags',             label: 'Tags',              requirement: 'optional', category: 'text',           purpose: 'Tags for categorization' },
+  { key: 'message',          label: 'Message',           requirement: 'optional', category: 'text',           purpose: 'Customer-facing message on the transaction' },
   { key: 'memo',             label: 'Memo',              requirement: 'optional', category: 'text',           purpose: 'Internal note carried to ERP' },
+  { key: 'attachments',      label: 'Attachments',       requirement: 'optional', category: 'text',           purpose: 'File attachments on the transaction' },
 ]
 
-/** Sales Quote adds Expiry date (quote validity); Sales Order has no expiry. */
-const QUOTE_ONLY: ErpTargetField = {
-  key: 'expiryDate', label: 'Expiry date', requirement: 'required', category: 'date',
-  purpose: 'Date the quote is valid until (Sales Quote only)',
-}
-
-export function erpTargetFields(target: ConvTarget): ErpTargetField[] {
-  if (target === 'sales-quote') {
-    // Expiry sits right after Due date.
-    const out: ErpTargetField[] = []
-    for (const f of COMMON_ERP_FIELDS) {
-      out.push(f)
-      if (f.key === 'dueDate') out.push(QUOTE_ONLY)
-    }
-    return out
-  }
+export function erpTargetFields(_target: ConvTarget): ErpTargetField[] {
   return COMMON_ERP_FIELDS
 }
 
@@ -110,6 +101,7 @@ export const SOURCE_STRATEGY_LABEL: Record<SourceStrategy, string> = {
 export type SystemValueKey =
   | 'conversion-date' | 'base-currency' | 'erp-customer-id' | 'record-id'
   | 'primary-name' | 'current-company' | 'acting-user' | 'rate-one'
+  | 'calculated-total'
 export const SYSTEM_VALUE_LABEL: Record<SystemValueKey, string> = {
   'conversion-date': 'Conversion date',
   'base-currency': 'Company base currency',
@@ -119,6 +111,7 @@ export const SYSTEM_VALUE_LABEL: Record<SystemValueKey, string> = {
   'current-company': 'Current company',
   'acting-user': 'Acting user',
   'rate-one': 'Exchange rate 1.0',
+  'calculated-total': 'Calculated total from line items',
 }
 
 /** One mapping row: a target field ← a source. */
@@ -209,40 +202,35 @@ function dealsSeed(): ConversionConfig {
     lastSavedBy: 'Rizal Candra', lastSavedAt: '2026-09-10T14:30:00', lastValidatedAt: '2026-09-10T14:30:00',
     criterion: null,
     mappings: [
-      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'customer' },
-      { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'closeDate' },
-      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'dueDate' },
-      { targetKey: 'paymentTerm',  strategy: 'erp-default' },
-      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'products' },
-      { targetKey: 'currency',     strategy: 'system',    systemValue: 'base-currency' },
-      { targetKey: 'exchangeRate', strategy: 'system',    systemValue: 'rate-one' },
-      { targetKey: 'warehouse',    strategy: 'erp-default' },
-      { targetKey: 'referenceNo',  strategy: 'unmapped' },
-      { targetKey: 'memo',         strategy: 'unmapped' },
+      // Mandatory
+      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'contact', protected: true },
+      { targetKey: 'total',        strategy: 'system', systemValue: 'calculated-total', protected: true },
+      { targetKey: 'txDate',       strategy: 'crm-field', sourceFieldId: 'transaction-date', protected: true },
+      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'due-date' },
+      { targetKey: 'paymentTerm',  strategy: 'crm-field', sourceFieldId: 'payment-term', protected: true },
+      { targetKey: 'txNumber',     strategy: 'erp-default', fixedLabel: 'Auto-number', protected: true },
+      { targetKey: 'warehouse',    strategy: 'erp-default', fixedLabel: 'Default warehouse', protected: true },
+      { targetKey: 'productLines', strategy: 'crm-field', sourceFieldId: 'product-list', protected: true },
+      // Optional
+      { targetKey: 'email',            strategy: 'crm-field', sourceFieldId: 'email', protected: true },
+      { targetKey: 'billingAddress',   strategy: 'crm-field', sourceFieldId: 'billing-address', protected: true },
+      { targetKey: 'shippingAddress',  strategy: 'unmapped' },
+      { targetKey: 'shipDate',         strategy: 'unmapped' },
+      { targetKey: 'shipVia',          strategy: 'unmapped' },
+      { targetKey: 'trackingNo',       strategy: 'unmapped' },
+      { targetKey: 'referenceNo',      strategy: 'crm-field', sourceFieldId: 'external-reference-id' },
+      { targetKey: 'tags',             strategy: 'crm-field', sourceFieldId: 'tags', protected: true },
+      { targetKey: 'message',          strategy: 'unmapped' },
+      { targetKey: 'memo',             strategy: 'crm-field', sourceFieldId: 'notes' },
+      { targetKey: 'attachments',      strategy: 'crm-field', sourceFieldId: 'attachments' },
     ],
   }
 }
-function servicesSeed(): ConversionConfig {
-  return {
-    moduleId: 'services', enabled: false, target: 'sales-order', validated: false, revision: 1,
-    lastSavedBy: 'Rizal Candra', lastSavedAt: '2026-09-09T10:00:00',
-    criterion: null,
-    mappings: [
-      { targetKey: 'customer',     strategy: 'crm-field', sourceFieldId: 'customer' },
-      { targetKey: 'txDate',       strategy: 'system',    systemValue: 'conversion-date' },
-      { targetKey: 'dueDate',      strategy: 'crm-field', sourceFieldId: 'closeDate' },
-      // productLines intentionally UNMAPPED → this draft is incomplete.
-      { targetKey: 'productLines', strategy: 'unmapped' },
-      { targetKey: 'currency',     strategy: 'system',    systemValue: 'base-currency' },
-    ],
-  }
-}
-
-const CONFIGS_SEED: ConversionConfig[] = [dealsSeed(), servicesSeed()]
+const CONFIGS_SEED: ConversionConfig[] = [dealsSeed()]
 export const conversionConfigs = reactive<ConversionConfig[]>(
-  load('crm-conversion-configs-v3', CONFIGS_SEED),
+  load('crm-conversion-configs-v4', CONFIGS_SEED),
 )
-export function persistConversionConfigs() { saveSnapshot('crm-conversion-configs-v3', conversionConfigs) }
+export function persistConversionConfigs() { saveSnapshot('crm-conversion-configs-v4', conversionConfigs) }
 
 function load<T>(key: string, fallback: T): T {
   return (loadSnapshot<T>(key) as T) ?? fallback
@@ -273,7 +261,7 @@ const CATEGORY_CRM_TYPES: Record<ErpFieldCategory, CrmFieldType[]> = {
   date: ['date'],
   text: ['text', 'pick-list', 'radio'],
   'email-phone-url': ['text'],
-  'currency-code': [],          // system/fixed only in V1
+  'currency-code': ['pick-list', 'radio', 'text'],
   money: ['currency', 'number'],
   decimal: ['number'],
   percentage: ['number'],
@@ -295,13 +283,33 @@ export function allowedStrategies(field: ErpTargetField): SourceStrategy[] {
 export type EntryStatus = 'compatible' | 'missing' | 'incompatible' | 'unmapped-optional'
 export interface EntryEval { status: EntryStatus; message?: string }
 
-export function evalEntry(entry: MappingEntry, field: ErpTargetField, mod: CrmModule): EntryEval {
+const PROPERTY_TYPE_TO_CRM: Record<DealPropertyType, CrmFieldType | null> = {
+  'Single-line text': 'text', 'Multi-line text': 'text', 'URL': 'text', 'Email': 'text',
+  'Phone number': 'text', 'Number': 'number', 'Calculation': 'number', 'Rollup': 'number',
+  'Date picker': 'date', 'Date and time picker': 'date',
+  'Dropdown select': 'pick-list', 'Radio select': 'radio',
+  'Single checkbox': 'radio', 'Multiple checkboxes': 'pick-list',
+  'User': 'user', 'Product list': 'product-list',
+  'Company': 'customer', 'Contact': 'customer',
+  'Related list': null, 'File': null,
+}
+
+export function evalEntry(entry: MappingEntry, field: ErpTargetField, mod: CrmModule, properties?: DealProperty[]): EntryEval {
   const required = field.requirement === 'required'
   if (entry.strategy === 'unmapped') {
     if (required) return { status: 'missing', message: `${field.label} is required — map a source.` }
     return { status: 'unmapped-optional' }
   }
   if (entry.strategy === 'crm-field') {
+    const props = properties ?? moduleStores(mod.id).properties
+    const p = props.find((x) => x.id === entry.sourceFieldId)
+    if (p) {
+      const crmType = PROPERTY_TYPE_TO_CRM[p.type]
+      if (crmType && !compatibleCrmTypes(field.category).includes(crmType)) {
+        return { status: 'incompatible', message: `${p.name} (${p.type}) is not compatible with ${field.label}.` }
+      }
+      return { status: 'compatible' }
+    }
     const f = mod.fields.find((x) => x.id === entry.sourceFieldId)
     if (!f) return { status: 'incompatible', message: 'Mapped CRM field no longer exists.' }
     if (!compatibleCrmTypes(field.category).includes(f.type)) {
@@ -320,10 +328,11 @@ export function configState(cfg: ConversionConfig): ConfigState {
   }
   if (!cfg.mappings.length && !cfg.enabled) return 'not-configured'
 
+  const props = moduleStores(cfg.moduleId).properties
   const fields = erpTargetFields(cfg.target)
   const anyBroken = fields.some((f) => {
     const e = cfg.mappings.find((m) => m.targetKey === f.key)
-    const status = evalEntry(e ?? { targetKey: f.key, strategy: 'unmapped' }, f, mod ?? ({ fields: [] } as unknown as CrmModule)).status
+    const status = evalEntry(e ?? { targetKey: f.key, strategy: 'unmapped' }, f, mod ?? ({ fields: [] } as unknown as CrmModule), props).status
     return status === 'missing' || status === 'incompatible'
   })
 
@@ -345,11 +354,12 @@ export function isConfigReady(moduleId: string): boolean {
 /** Mapped / total counts for the readiness panel + list "Mapping readiness" cell. */
 export function readinessCounts(cfg: ConversionConfig): { mappedRequired: number; totalRequired: number; mappedOptional: number; totalOptional: number } {
   const mod = getCrmModule(cfg.moduleId) ?? ({ fields: [] } as unknown as CrmModule)
+  const props = moduleStores(cfg.moduleId).properties
   const fields = erpTargetFields(cfg.target)
   let mappedRequired = 0, totalRequired = 0, mappedOptional = 0, totalOptional = 0
   for (const f of fields) {
     const e = cfg.mappings.find((m) => m.targetKey === f.key) ?? { targetKey: f.key, strategy: 'unmapped' as SourceStrategy }
-    const ok = evalEntry(e, f, mod).status === 'compatible'
+    const ok = evalEntry(e, f, mod, props).status === 'compatible'
     if (f.requirement === 'optional') { totalOptional++; if (ok) mappedOptional++ }
     else { totalRequired++; if (ok) mappedRequired++ }
   }
@@ -402,7 +412,6 @@ export function dealConvEligibility(d: Deal): ConvEligibility {
   if (d.stage === 'Lost') return { ok: false, reason: 'Deals in the Lost stage cannot be converted.' }
   if (d.conversion === 'converted') return { ok: false, reason: 'This deal has already been converted.' }
   if (d.conversion === 'processing') return { ok: false, reason: 'A conversion is already in progress.' }
-  if (!(d.products ?? []).length) return { ok: false, reason: 'Add at least one product before converting.' }
   return { ok: true }
 }
 
@@ -419,20 +428,31 @@ function nextNumber(arr: { number: number }[], base: number): number {
 
 export interface ConvResult { ok: boolean; error?: string; target?: ConvTarget; ref?: { id: string; number: number } }
 
-/** Confirm the conversion: create exactly one ERP transaction and project the
- *  result onto the deal. Prototype resolves Processing → Converted immediately;
- *  the eligibility guard above is the exactly-once guarantee. */
-export function runDealConversion(dealId: string): ConvResult {
+/** Confirm the conversion: link the deal to an existing ERP transaction (created
+ *  by the full ERP form), or create one internally as a fallback. When `existingOrder`
+ *  is provided, the order is already in the salesOrders array — we just mark the deal. */
+export function runDealConversion(dealId: string, existingOrder?: SalesOrder): ConvResult {
   const d = getDeal(dealId)
   if (!d) return { ok: false, error: 'Deal not found.' }
+  const today = new Date().toISOString().slice(0, 10)
+  const target = dealTarget()
+
+  if (existingOrder) {
+    d.conversion = 'converted'
+    d.convertedTarget = 'Sales Order'
+    d.salesOrderId = existingOrder.id
+    d.lastActivity = today
+    d.conversionError = undefined
+    persistCrmDeals()
+    return { ok: true, target, ref: { id: existingOrder.id, number: existingOrder.number } }
+  }
+
   const elig = dealConvEligibility(d)
   if (!elig.ok) return { ok: false, error: elig.reason }
-  const target = dealTarget()
   d.conversion = 'processing'
   d.conversionError = undefined
   persistCrmDeals()
 
-  const today = new Date().toISOString().slice(0, 10)
   const totals = dealTotals(d)
   if (target === 'sales-order') {
     const number = nextNumber(salesOrders as { number: number }[], 10000)

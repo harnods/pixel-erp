@@ -25,7 +25,7 @@ const aireneOpen = inject<Ref<boolean>>('aireneOpen')
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'date',       label: 'Date',       kind: 'date',                                 sortType: 'date'   },
-  { key: 'number',     label: 'Number',     kind: 'number', sortable: true,                 sortType: 'text'   },
+  { key: 'number',     label: 'Number',     width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true,                 sortType: 'text'   },
   { key: 'attachment', label: '',           width: '40px',  noHeader: true, align: 'center' },
   { key: 'vendorName', label: 'Vendor',     kind: 'name', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',    label: 'Due date',   kind: 'date',                                 sortType: 'date'   },
@@ -254,9 +254,7 @@ const exportColumns = computed(() => [
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" variant="secondary" class="search-clear-btn" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
         </div>
       </div>
     </template>

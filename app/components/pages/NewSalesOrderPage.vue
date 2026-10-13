@@ -32,7 +32,8 @@ import ProductThumb from '~/components/patterns/ProductThumb.vue'
 import { CATALOG } from '~/data/catalog'
 import { warehouses } from '~/data/warehouses'
 import { availableForSku, totalAvailableForSku } from '~/data/warehouseDetails'
-import type { SalesFormPrefill } from '~/data/salesFormPrefill'
+import { pendingSalesPrefill, pendingConversionDealId, type SalesFormPrefill } from '~/data/salesFormPrefill'
+import { runDealConversion } from '~/data/crmConversion'
 
 // Embedded mode: the form is rendered inside a full-screen drawer (e.g. from a CRM
 // Deal). It hides its own title bar and, instead of routing on cancel/save, emits
@@ -336,7 +337,13 @@ function applyPrefill(p: SalesFormPrefill) {
     }))
   }
 }
-onMounted(() => { if (props.prefill) applyPrefill(props.prefill) })
+onMounted(() => {
+  if (props.prefill) { applyPrefill(props.prefill) }
+  else if (pendingSalesPrefill.value) {
+    applyPrefill(pendingSalesPrefill.value)
+    pendingSalesPrefill.value = null
+  }
+})
 
 function onSave() {
   // Products-only (Deal → Add product): validate line items only, then emit.
@@ -377,6 +384,10 @@ function onSave() {
     shippingFee: shippingFee.value,
   }
   salesOrders.push(order)
+  if (pendingConversionDealId.value) {
+    runDealConversion(pendingConversionDealId.value, order)
+    pendingConversionDealId.value = null
+  }
   toast.notify({ variant: 'success', title: t('Sales order created'), rootProps: { class: 'toast-enterprise' } })
   if (props.embedded) { emit('created', order); return }
   router.push(`/sales-orders/${order.id}`)

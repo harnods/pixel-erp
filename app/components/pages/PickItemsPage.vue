@@ -5,6 +5,7 @@ import {
   MpSpinner, MpIcon, MpTooltip,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
+  MpButton,
   toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -985,9 +986,9 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPicking">{{ t('Picking') }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goPicking">{{ t('Picking') }}</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ task.taskNo }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Picking list') }}</h1>
@@ -1015,19 +1016,19 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
       <div class="pik-sku-section">
         <div class="pik-filter-bar">
           <div class="detail-loc-toggle">
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</button>
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</button>
+            <MpButton class="detail-loc-toggle-btn" variant="secondary" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</MpButton>
+            <MpButton class="detail-loc-toggle-btn" variant="secondary" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</MpButton>
           </div>
           <div class="pik-search-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="pik-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="secondary" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -1037,13 +1038,13 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <span>{{ activeBin }}</span>
-            <button class="pik-active-bin-clear" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
+            <MpButton class="pik-active-bin-clear" variant="secondary" type="button" :aria-label="t('Clear active bin')" @click="activeBin = null">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
               </svg>
-            </button>
+            </MpButton>
           </div>
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
         </ScanBar>
         <p class="pik-scan-caption">{{ t('Scan the storage location first before scanning the SKU.') }}</p>
 
@@ -1176,16 +1177,16 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                        a group's own bin-split rows — one button per SKU, not per bin. -->
                   <td v-if="row.groupIndex === 0 && isBatchTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
                     <MpTooltip :id="`pik-tt-batch-${row.item.key}`" :label="t('Manage batch')" placement="top" use-portal>
-                      <button class="pik-manage-icon-btn" type="button" @click="openBatchDrawer(row.item)">
+                      <MpButton class="pik-manage-icon-btn" variant="secondary" type="button" @click="openBatchDrawer(row.item)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <td v-else-if="row.groupIndex === 0 && isSerialTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
                     <MpTooltip :id="`pik-tt-serial-${row.item.key}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                      <button class="pik-manage-icon-btn" type="button" @click="openSerialDrawer(row.item)">
+                      <MpButton class="pik-manage-icon-btn" variant="secondary" type="button" @click="openSerialDrawer(row.item)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <td v-else-if="row.groupIndex === 0" :rowspan="row.groupSize" class="pik-td pik-td--action"></td>
@@ -1292,16 +1293,16 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
                            as Combined's own Action column. -->
                       <td v-if="row.groupIndex === 0 && isBatchTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
                         <MpTooltip :id="`pik-tt-batch-order-${row.item.key}`" :label="t('View batch')" placement="top" use-portal>
-                          <button class="pik-manage-icon-btn" type="button" :aria-label="t('View batch')" @click="openViewBatchForLine(row.item)">
+                          <MpButton class="pik-manage-icon-btn" variant="secondary" type="button" :aria-label="t('View batch')" @click="openViewBatchForLine(row.item)">
                             <MpIcon name="competencies" size="md" />
-                          </button>
+                          </MpButton>
                         </MpTooltip>
                       </td>
                       <td v-else-if="row.groupIndex === 0 && isSerialTrackedSku(row.item.skuCode)" :rowspan="row.groupSize" class="pik-td pik-td--action">
                         <MpTooltip :id="`pik-tt-serial-order-${row.item.key}`" :label="t('View serial number')" placement="top" use-portal>
-                          <button class="pik-manage-icon-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerialForLine(row.item)">
+                          <MpButton class="pik-manage-icon-btn" variant="secondary" type="button" :aria-label="t('View serial number')" @click="openViewSerialForLine(row.item)">
                             <MpIcon name="competencies" size="md" />
-                          </button>
+                          </MpButton>
                         </MpTooltip>
                       </td>
                       <td v-else-if="row.groupIndex === 0" :rowspan="row.groupSize" class="pik-td pik-td--action"></td>
@@ -1318,15 +1319,15 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="pik-btn pik-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="pik-btn pik-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
-      <button class="pik-btn pik-btn--primary" @click="endPickingClick">{{ t('Finish picking') }}</button>
+      <MpButton class="pik-btn pik-btn--ghost" variant="ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton class="pik-btn pik-btn--secondary" variant="secondary" @click="saveDraft">{{ t('Save draft') }}</MpButton>
+      <MpButton class="pik-btn pik-btn--primary" variant="primary" @click="endPickingClick">{{ t('Finish picking') }}</MpButton>
     </footer>
   </div>
 
   <div v-else class="pik-not-found">
     <p>{{ t('Picking task not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goPicking">{{ t('Back to Picking') }}</button>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goPicking">{{ t('Back to Picking') }}</MpButton>
   </div>
 
   <!-- ── Finish picking confirmation ── -->
@@ -1350,13 +1351,14 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
       </MpModalBody>
       <MpModalFooter>
         <div class="pik-modal-footer">
-          <button class="pik-btn pik-btn--ghost" @click="showConfirm = false">{{ t('Cancel') }}</button>
-          <button class="pik-btn pik-btn--secondary" @click="commitPicking(false)">{{ t('Finish picking') }}</button>
-          <button
+          <MpButton class="pik-btn pik-btn--ghost" variant="ghost" @click="showConfirm = false">{{ t('Cancel') }}</MpButton>
+          <MpButton class="pik-btn pik-btn--secondary" variant="secondary" @click="commitPicking(false)">{{ t('Finish picking') }}</MpButton>
+          <MpButton
             v-if="wouldHaveAnyPackableOrder"
             class="pik-btn pik-btn--primary"
+            variant="primary"
             @click="commitPicking(true)"
-          >{{ t('Finish & create packing') }}</button>
+          >{{ t('Finish & create packing') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -1595,10 +1597,10 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-active-bin {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
-  background: #e6f7ef; border: 1px solid #029861;
+  background: var(--mp-colors-success-weaker); border: 1px solid var(--mp-colors-success-default);
   border-radius: var(--mp-radii-full); white-space: nowrap;
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: #027a4e; flex-shrink: 0;
+  color: var(--mp-colors-success-bolder); flex-shrink: 0;
 }
 .pik-active-bin-clear {
   background: none; border: none; padding: 0; cursor: pointer;

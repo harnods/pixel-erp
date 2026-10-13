@@ -46,6 +46,12 @@ export default defineNuxtConfig({
     "/**": { headers: { "cache-control": "no-cache" } },
   },
 
+  components: [
+    { path: '~/components/patterns', pathPrefix: false },
+    { path: '~/components/pages', pathPrefix: false },
+    { path: '~/components' },
+  ],
+
   build: {
     transpile: ['@ds/proto-review'],
   },

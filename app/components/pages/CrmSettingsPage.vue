@@ -462,8 +462,7 @@ const integrations: Integration[] = [
         </div>
       </div>
       <div class="cd-bar-actions">
-        <!-- Users are managed in the ERP; Invite user is intentionally a no-op placeholder for now. -->
-        <a v-if="section === 'users'" href="#" class="btn-enterprise btn-enterprise--primary cru-invite">{{ t('Invite user') }}</a>
+        <a v-if="section === 'users'" href="/users-and-roles/invite" class="btn-enterprise btn-enterprise--primary cru-invite" data-devchange="crm-invite-user-redirect" @click.prevent="router.push('/users-and-roles/invite')">{{ t('Invite user') }}</a>
         <MpButton v-else-if="section === 'teams'" variant="primary" is-rounded left-icon="add" @click="openNewTeam">{{ t('New team') }}</MpButton>
         <MpButton v-else-if="section === 'views'" variant="secondary" is-rounded @click="soon(t('Create view'))">{{ t('Create view') }}</MpButton>
       </div>
@@ -529,7 +528,7 @@ const integrations: Integration[] = [
               <div class="filter-search">
                 <MpIcon name="search" size="sm" />
                 <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-                <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+                <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
               </div>
             </div>
           </template>
@@ -626,7 +625,7 @@ const integrations: Integration[] = [
               <div class="filter-search">
                 <MpIcon name="search" size="sm" />
                 <input v-model="teamSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-                <button v-if="teamSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="teamSearch = ''"><MpIcon name="close" size="sm" /></button>
+                <MpButton v-if="teamSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="teamSearch = ''" />
               </div>
             </div>
           </template>

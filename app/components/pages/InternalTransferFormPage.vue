@@ -212,9 +212,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <MpFormControl id="it-transno">
           <div class="ex-label-row">
             <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-            <button class="ex-label-icon" type="button" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true">
-              <MpIcon name="settings" size="sm" />
-            </button>
+            <MpButton class="ex-label-icon" type="button" left-icon="settings" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true" />
           </div>
           <MpInput id="it-transno-input" v-model="transactionNo" :placeholder="t('Auto')" is-full-width is-disabled />
         </MpFormControl>

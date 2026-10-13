@@ -284,7 +284,7 @@ async function handleSave() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">Shipping</button>
+          <MpButton class="detail-breadcrumb" @click="goBack">Shipping</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">Create shipment</h1>
@@ -360,7 +360,7 @@ async function handleSave() {
           <MpFormControl id="ho-txno">
             <div class="ho-label-row">
               <MpFormLabel>Transaction no.</MpFormLabel>
-              <button type="button" class="ho-label-icon" aria-label="Transaction no. settings" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
+              <MpButton type="button" class="ho-label-icon" aria-label="Transaction no. settings" left-icon="settings" @click="noSettingsOpen = true" />
             </div>
             <input id="ho-txno-input" class="ho-txno-input" value="" placeholder="[Auto]" disabled />
           </MpFormControl>
@@ -382,16 +382,16 @@ async function handleSave() {
                 <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
               <input v-model="search" class="ho-search" type="text" placeholder="Search..." />
-              <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+              <MpButton v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </div>
           </div>
 
           <ScanBar placeholder="Scan tracking no., packing no., or order no." class="ns-scanbar" @scan="handleScan">
-            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</button>
+            <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</MpButton>
           </ScanBar>
 
           <section class="ho-items-section" :class="{ 'ho-items-section--bordered': isProgressive }">

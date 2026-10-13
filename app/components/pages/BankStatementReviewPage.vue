@@ -19,7 +19,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import {
-  MpAutocomplete, MpCheckbox, MpDatePicker, MpIcon, MpInput, MpTextarea, MpTextlink, toast,
+  MpAutocomplete, MpButton, MpCheckbox, MpDatePicker, MpIcon, MpInput, MpTextarea, MpTextlink, toast,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
@@ -330,12 +330,12 @@ function handleSave() {
                     :is-keep-alive="false" placement="bottom-start"
                   >
                     <MpPopoverTrigger>
-                      <button type="button" class="bsr-movement-trigger btn-enterprise">
+                      <MpButton type="button" class="bsr-movement-trigger btn-enterprise">
                         <span>{{ t(movementLabel(row.movement)) }}</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                           <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
                       <MpPopoverList>
@@ -380,9 +380,9 @@ function handleSave() {
       </section>
 
       <footer class="ex-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ t('Save') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ t('Save') }}</MpButton>
       </footer>
     </div>
   </FileReviewShell>

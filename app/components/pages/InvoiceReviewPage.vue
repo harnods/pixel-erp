@@ -535,9 +535,9 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
           </MpButton>
           <ErpStatusBadge :status="invoiceStatus" badge-for="additionalInformation" />
         </div>
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
+        <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
           {{ moreInfoOpen ? t('Show less') : t('Show more') }}
-        </button>
+        </MpButton>
       </div>
 
       <!-- Vendor -->
@@ -688,7 +688,7 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
                 <MpCheckbox :is-checked="allCardsChecked" :is-indeterminate="someCardsChecked" @change="toggleSelectAllCards" />
                 <span>{{ t('Select all matches') }}</span>
               </div>
-              <button v-if="checkedCards.size > 0" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="acceptCheckedMatches">{{ t('Accept match') }}</button>
+              <MpButton v-if="checkedCards.size > 0" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="acceptCheckedMatches">{{ t('Accept match') }}</MpButton>
             </div>
             <div v-for="card in matchCards" :key="card.id" class="br-match-card">
               <!-- Card header: what the doc says ⟷ what it maps to -->
@@ -954,9 +954,9 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
       </div>
 
       <footer class="ex-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</MpButton>
       </footer>
     </div>
 

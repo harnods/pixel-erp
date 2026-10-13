@@ -86,7 +86,7 @@ function viewDetails(p: DefaultProperty) { selected.value = p; detailsOpen.value
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search properties...')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <MpButton v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
             </div>
           </div>
         </template>

@@ -8,7 +8,7 @@
  * accounting fields of its own — those live on the parent product.
  */
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -146,14 +146,14 @@ const pagedWarehouseStock = computed(() => {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <div v-if="warehouseId" class="detail-breadcrumb-row">
-          <button class="detail-breadcrumb" @click="goToWarehouses">Warehouses</button>
+          <MpButton class="detail-breadcrumb" @click="goToWarehouses">Warehouses</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goToWarehouse">{{ warehouseName }}</button>
+          <MpButton class="detail-breadcrumb" @click="goToWarehouse">{{ warehouseName }}</MpButton>
         </div>
         <div v-else class="detail-breadcrumb-row">
-          <button class="detail-breadcrumb" @click="goToProducts">Products</button>
+          <MpButton class="detail-breadcrumb" @click="goToProducts">Products</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goToProduct">{{ batch.productName }}</button>
+          <MpButton class="detail-breadcrumb" @click="goToProduct">{{ batch.productName }}</MpButton>
         </div>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ batch.batchNo }}</h1>
@@ -162,12 +162,12 @@ const pagedWarehouseStock = computed(() => {
 
       <MpPopover id="bd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton class="detail-btn detail-btn--primary">
             Actions
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -249,11 +249,11 @@ const pagedWarehouseStock = computed(() => {
                   <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
                 </svg>
                 <input v-model="txSearch" class="pd-search-input" type="text" placeholder="Search..." />
-                <button v-if="txSearch" class="pd-search-clear" type="button" aria-label="Clear search" @click="txSearch = ''">
+                <MpButton v-if="txSearch" class="pd-search-clear" type="button" aria-label="Clear search" @click="txSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
               </div>
             </div>
 

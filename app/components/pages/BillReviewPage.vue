@@ -567,11 +567,11 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
           <!-- Chevron → jump-to-file switcher (search + queue) -->
           <MpPopover id="br-file-nav" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch file')">
+              <MpButton class="detail-jump-chevron" variant="ghost" :aria-label="t('Switch file')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
@@ -584,16 +584,17 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
                   />
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="rf in jumpResults"
                     :key="rf.id"
+                    variant="ghost"
                     class="detail-jump-item"
                     :class="{ 'detail-jump-item--active': rf.id === props.orderId }"
                     @click="goToFile(rf.id)"
                   >
                     <span class="detail-jump-item-number">{{ rf.position }}. {{ rf.file }}</span>
                     <span class="detail-jump-item-customer">{{ rf.beneficiary.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No files found.') }}</p>
                 </div>
               </div>
@@ -617,16 +618,16 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
             </div>
           </div>
           <div class="detail-loc-toggle" role="group" :aria-label="t('Zoom')">
-            <button
-              type="button" class="detail-loc-toggle-btn"
+            <MpButton
+              variant="ghost" class="detail-loc-toggle-btn"
               :class="{ 'detail-loc-toggle-btn--active': zoomMode === 'fit' }"
               @click="zoomMode = 'fit'"
-            >{{ t('Fit') }}</button>
-            <button
-              type="button" class="detail-loc-toggle-btn"
+            >{{ t('Fit') }}</MpButton>
+            <MpButton
+              variant="ghost" class="detail-loc-toggle-btn"
               :class="{ 'detail-loc-toggle-btn--active': zoomMode === '100' }"
               @click="zoomMode = '100'"
-            >100%</button>
+            >100%</MpButton>
           </div>
         </div>
         <MpBanner
@@ -662,9 +663,9 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
               </MpButton>
               <ErpStatusBadge :status="expenseStatus" badge-for="additionalInformation" />
             </div>
-            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
+            <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="moreInfoOpen = !moreInfoOpen">
               {{ moreInfoOpen ? t('Show less') : t('Show more') }}
-            </button>
+            </MpButton>
           </div>
 
           <!-- Beneficiary + paid checkbox -->
@@ -1122,9 +1123,9 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
 
         <!-- Footer actions -->
         <footer class="ex-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--secondary" @click="skipWithoutSaving">{{ t('Skip without saving') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goExpenses">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--secondary" @click="skipWithoutSaving">{{ t('Skip without saving') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ isLastFile ? t('Save') : t('Save & next') }}</MpButton>
         </footer>
       </div>
     </div>

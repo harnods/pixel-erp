@@ -744,16 +744,15 @@ function onSendToFulfillment() {
 
         <!-- ── Footer (scrolls with content, not sticky) ── -->
         <footer class="po-form-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="onCancel">Cancel</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="onCancel">Cancel</MpButton>
 
-          <button class="btn-enterprise btn-enterprise--secondary" @click="onSave">Save &amp; close</button>
+          <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="onSave">Save &amp; close</MpButton>
 
           <MpPopover id="po-save-share-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary">
+              <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" right-icon="chevrons-down">
                 Save &amp; share
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -765,9 +764,7 @@ function onSendToFulfillment() {
 
           <MpPopover id="po-menu" use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" aria-label="More actions">
-                <MpIcon name="menu-kebab" size="sm" />
-              </button>
+              <MpButton class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" variant="ghost" aria-label="More actions" left-icon="menu-kebab" />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
