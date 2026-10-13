@@ -24,14 +24,15 @@ function clear() { emit('update:modelValue', []) }
     @open="open = true" @close="open = false"
   >
     <MpPopoverTrigger>
-      <button
-        type="button" class="pcf-btn" :class="{ 'is-on': active }"
+      <MpButton
+        v-tooltip="{ label: t(`Filter ${label}`), placement: 'top' }"
+        variant="ghost" is-rounded class="pcf-btn" :class="{ 'is-on': active }"
         :aria-label="t(active ? `Filter ${label}: ${modelValue.length} selected` : `Filter ${label}`)"
         :aria-pressed="active" :data-testid="`${id}-btn`" @click.stop="open = !open"
       >
         <MpIcon name="filter" size="sm" />
         <span v-if="active" class="pcf-count">{{ modelValue.length }}</span>
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent
       :class="css({ padding: '4px', minWidth: '220px', maxHeight: '300px', overflowY: 'auto', borderRadius: '12px' })"
@@ -44,24 +45,26 @@ function clear() { emit('update:modelValue', []) }
         </li>
       </ul>
       <div v-if="active" class="pcf-foot">
-        <MpButton variant="ghost" size="sm" is-rounded @click="clear">{{ t('Clear') }}</MpButton>
+        <MpButton variant="ghost" is-rounded @click="clear">{{ t('Clear') }}</MpButton>
       </div>
     </MpPopoverContent>
   </MpPopover>
 </template>
 
 <style scoped>
-.pcf-btn {
-  display: inline-flex; align-items: center; gap: 2px; margin-left: var(--mp-spacing-1); padding: 2px 4px;
-  border: 0; border-radius: var(--mp-radii-sm, 4px); background: transparent; color: var(--mp-text-secondary);
-  cursor: pointer; vertical-align: middle; font: inherit;
+/* Icon-only ghost MpButton shrunk to sit in a 28px table header (same idea as .bfd-filters-close). */
+.pcf-btn.pcf-btn {
+  display: inline-flex; align-items: center; gap: var(--mp-sizes-0\.5, 2px); margin-left: var(--mp-spacing-1);
+  height: var(--mp-sizes-6, 24px) !important; min-width: var(--mp-sizes-6, 24px) !important;
+  padding: 0 var(--mp-spacing-1) !important; border: 0 !important; background: transparent;
+  color: var(--mp-colors-text-secondary, #3a4749); vertical-align: middle;
 }
-.pcf-btn:hover { background: var(--mp-background-neutral-hovered, rgba(0, 0, 0, 0.06)); color: var(--mp-text-default); }
-.pcf-btn.is-on { color: var(--mp-text-selected); }
-.pcf-count { font-size: var(--mp-font-sizes-xs, 11px); font-weight: var(--mp-font-weights-semi-bold); line-height: 1; }
+.pcf-btn.pcf-btn:hover { background: var(--mp-colors-background-neutral-hovered, #f8f9f9); color: var(--mp-colors-text-default, #080d0e); }
+.pcf-btn.pcf-btn.is-on { color: var(--mp-colors-text-selected, #0f6d4d); }
+.pcf-count { font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold); line-height: 1; }
 .pcf-list { list-style: none; margin: 0; padding: 0; }
 .pcf-item { display: flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md); cursor: pointer; }
-.pcf-item:hover { background: var(--mp-background-neutral-hovered, rgba(0, 0, 0, 0.04)); }
+.pcf-item:hover { background: var(--mp-colors-background-neutral-hovered, #f8f9f9); }
 .pcf-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-transform: none; letter-spacing: 0; font-weight: var(--mp-font-weights-regular, 400); }
 .pcf-foot { display: flex; justify-content: flex-end; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0; border-top: 1px solid var(--mp-border-default); margin-top: var(--mp-spacing-1); }
 </style>

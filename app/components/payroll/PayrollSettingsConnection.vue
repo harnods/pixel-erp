@@ -5,7 +5,7 @@
  * "How to send from Talenta". Changes take the Owner or a user with LM.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpButtonGroup, MpInput, MpTextlink, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpInput, MpTextlink, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { statusLabel, statusType as badgeType } from '~/data/payrollUiRunCopy'
@@ -105,7 +105,7 @@ const howOpen = ref(false)
 
     <MpModal id="pset-end-modal" :is-open="endOpen" size="md" :is-keep-alive="false" :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="endOpen = false">
       <MpModalContent>
-        <MpModalHeader>{{ t('Disconnect Talenta?') }}</MpModalHeader>
+        <MpModalHeader>{{ t('Disconnect Talenta?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           <div class="pset-stack">
             <p class="pset-hint">{{ t('Posted journals and settings stay. Jurnal stops taking payroll from Talenta until you reconnect.') }}</p>

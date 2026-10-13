@@ -20,7 +20,10 @@
  *   sets every combination one by one.
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { MpButton, MpCheckbox, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import {
+  MpButton, MpCheckbox, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpSegmentedControl, MpTooltip,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+} from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollColumnFilter from '~/components/payroll/PayrollColumnFilter.vue'
@@ -100,9 +103,9 @@ type Filter = 'all' | 'new' | 'few'
 const filter = ref<Filter>('all')
 const search = ref('')
 const filters = computed(() => [
-  { key: 'all' as const, label: t('All'), n: rows.value.length },
-  { key: 'new' as const, label: t('New'), n: newCount.value },
-  { key: 'few' as const, label: t('1 or 2 staff'), n: fewCount.value },
+  { id: 'pgr-filter-all', value: 'all' as const, label: `${t('All')} (${rows.value.length})` },
+  { id: 'pgr-filter-new', value: 'new' as const, label: `${t('New')} (${newCount.value})` },
+  { id: 'pgr-filter-few', value: 'few' as const, label: `${t('1 or 2 staff')} (${fewCount.value})` },
 ])
 // Column filters under each From Talenta header: pick one or more values; none picked = all.
 const colFilters = reactive<Record<string, string[]>>({})
@@ -243,10 +246,10 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
         <ul v-if="fieldRows.length" class="pgr-fieldchips" :aria-label="t('Group staff by')">
           <li v-for="d in fieldRows" :key="d.field" class="pgr-fieldchip" :class="{ 'is-bad': !d.allowed }" :data-field="d.field">
             <span>{{ fieldLabel(d.field) }}</span>
-            <button
-              v-if="canEdit" type="button" class="pgr-x" :aria-label="t(`Remove ${groupFieldLabel(d.field)}`)"
-              :data-testid="`pgr-remove-${safe(d.field)}`" @click="removeField(d.field)"
-            ><MpIcon name="close" size="sm" /></button>
+            <MpButton
+              v-if="canEdit" v-tooltip="{ label: t(`Remove ${groupFieldLabel(d.field)}`), placement: 'top' }" variant="ghost" is-rounded class="pgr-x"
+              :aria-label="t(`Remove ${groupFieldLabel(d.field)}`)" :data-testid="`pgr-remove-${safe(d.field)}`" @click="removeField(d.field)"
+            ><MpIcon name="close" size="sm" /></MpButton>
           </li>
         </ul>
         <span v-else class="pset-hint">{{ t(canEdit ? 'Add a field to start grouping staff.' : 'Staff are not grouped yet.') }}</span>
@@ -270,16 +273,11 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
       <template v-if="rows.length">
         <!-- Filters -->
         <div class="pgr-bar">
-          <div class="pgr-chips" role="group" :aria-label="t('Show groups')">
-            <button
-              v-for="f in filters" :key="f.key" type="button" class="pgr-chip" :class="{ 'is-on': filter === f.key }"
-              :aria-pressed="filter === f.key" :data-filter="f.key" @click="filter = f.key"
-            >{{ f.label }} ({{ f.n }})</button>
-          </div>
-          <div class="pgr-search">
-            <MpIcon name="search" size="sm" />
-            <input v-model="search" class="pgr-search__input" type="search" :placeholder="t('Search Talenta values')" :aria-label="t('Search Talenta values')">
-          </div>
+          <MpSegmentedControl id="pgr-filter" v-model="filter" name="pgr-filter" :data="filters" class="pgr-chips" :aria-label="t('Show groups')" />
+          <MpInputGroup id="pgr-search" class="pgr-search">
+            <MpInputLeftAddon><MpIcon name="search" size="sm" /></MpInputLeftAddon>
+            <MpInput id="pgr-search-input" v-model="search" type="text" :placeholder="t('Search Talenta values')" :aria-label="t('Search Talenta values')" />
+          </MpInputGroup>
         </div>
 
         <!-- Bulk edit -->
@@ -292,7 +290,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
             @update:model-value="(v: string) => onBulkDim(c, v)"
           />
           <MpButton v-if="selectedNew" variant="secondary" size="sm" is-rounded @click="onBulkSetUp">{{ t(selectedNew === 1 ? 'Set up 1 group' : `Set up ${selectedNew} groups`) }}</MpButton>
-          <MpButton variant="ghost" size="sm" is-rounded class="pgr-bulk__clear" @click="selected = []">{{ t('Clear selection') }}</MpButton>
+          <MpButton variant="secondary" size="sm" is-rounded class="pgr-bulk__clear" @click="selected = []">{{ t('Clear selection') }}</MpButton>
         </div>
 
         <div class="pgr-scroll">
@@ -345,10 +343,10 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                 <th class="pset-th pgr-num">{{ t('Staff') }}</th>
                 <th class="pset-th pgr-split pgr-acct">{{ t('Expense account') }}</th>
                 <th v-for="c in dimColumns" :key="c" class="pset-th pgr-dim" :data-dimension="c">
-                  <span class="pgr-thf">{{ c }}<button
-                    v-if="canEdit" type="button" class="pgr-x pgr-dimx" :aria-label="t(`Remove ${c} column`)"
-                    :data-testid="`pgr-dim-remove-${safe(c)}`" @click="onRemoveDimension(c)"
-                  ><MpIcon name="close" size="sm" /></button></span>
+                  <span class="pgr-thf">{{ c }}<MpButton
+                    v-if="canEdit" v-tooltip="{ label: t(`Remove ${c} column`), placement: 'top' }" variant="ghost" is-rounded class="pgr-x pgr-dimx"
+                    :aria-label="t(`Remove ${c} column`)" :data-testid="`pgr-dim-remove-${safe(c)}`" @click="onRemoveDimension(c)"
+                  ><MpIcon name="close" size="sm" /></MpButton></span>
                 </th>
               </tr>
             </thead>
@@ -408,7 +406,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
               <tr v-if="!visibleRows.length">
                 <td :colspan="(canEdit ? 1 : 0) + groupBy.length + 2 + dimColumns.length" class="pset-td pgr-none">
                   <span>{{ search.trim() ? t(`No groups match "${search.trim()}".`) : t('No groups in this view.') }}</span>
-                  <MpButton variant="ghost" size="sm" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
+                  <MpButton variant="ghost" is-rounded @click="clearFilters">{{ t('Clear filters') }}</MpButton>
                 </td>
               </tr>
             </tbody>
@@ -437,30 +435,29 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-by__warn { flex-basis: 100%; margin: 0; }
 .pgr-fieldchips { display: contents; list-style: none; margin: 0; padding: 0; }
 .pgr-fieldchip {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: 32px; padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full); background: var(--mp-background-neutral-subtle);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: var(--mp-sizes-8, 32px); padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
+  border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-full); background: var(--mp-colors-background-neutral-subtle, #f8f9f9);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #080d0e); white-space: nowrap;
 }
-.pgr-fieldchip.is-bad { border-color: var(--mp-border-warning, var(--mp-text-warning)); }
-.pgr-x {
-  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0;
-  border-radius: var(--mp-radii-full); background: transparent; color: var(--mp-text-secondary); cursor: pointer;
+.pgr-fieldchip.is-bad { border-color: var(--mp-colors-border-warning, #f5cd47); }
+/* Icon-only ghost MpButton shrunk to fit the 28px header row (same idea as .bfd-filters-close). */
+.pgr-x.pgr-x {
+  display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-5, 20px) !important; height: var(--mp-sizes-5, 20px) !important;
+  min-width: 0 !important; padding: 0 !important; border: 0 !important; background: transparent; color: var(--mp-colors-text-secondary, #3a4749);
 }
-.pgr-x:hover { background: var(--mp-background-neutral-hovered, rgba(0, 0, 0, 0.06)); color: var(--mp-text-default); }
-.pgr-x:focus-visible { outline: 2px solid var(--mp-border-focus, var(--mp-text-selected)); outline-offset: 1px; }
+.pgr-x.pgr-x:hover { background: var(--mp-colors-background-neutral-hovered, #f8f9f9); color: var(--mp-colors-text-default, #080d0e); }
+.pgr-x:focus-visible { outline: 2px solid var(--mp-colors-border-focused, #41c6a0); outline-offset: 1px; }
 .pgr-rows :deep(.efs) { display: block; width: 100%; min-width: 0; }
 .pgr-rows :deep(.efs-trigger) { width: 100%; }
 .pgr-add { display: flex; }
 
 /* Filters and bulk bar */
 .pgr-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); flex-wrap: wrap; padding: var(--mp-spacing-3) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); }
-.pgr-chips { display: flex; gap: var(--mp-spacing-2); flex-wrap: wrap; }
-.pgr-chip { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full); padding: var(--mp-spacing-1) var(--mp-spacing-3); background: var(--mp-background-neutral); color: var(--mp-text-default); font: inherit; font-size: var(--mp-font-sizes-sm); cursor: pointer; white-space: nowrap; }
-.pgr-chip.is-on { border-color: var(--mp-border-selected, var(--mp-text-selected)); color: var(--mp-text-selected); background: var(--mp-background-selected, var(--mp-background-neutral)); font-weight: var(--mp-font-weights-semi-bold); }
-.pgr-search { display: flex; align-items: center; gap: var(--mp-spacing-2); flex: 0 0 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); color: var(--mp-text-secondary); }
-.pgr-search__input { flex: 1; border: none; outline: none; background: transparent; font: inherit; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 0; }
-.pgr-search__input::placeholder { color: var(--mp-text-placeholder); }
-.pgr-bulk { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; padding: var(--mp-spacing-2) var(--mp-spacing-4); background: var(--mp-background-brand-subtle, #EEF2FF); border-bottom: 1px solid var(--mp-border-default); }
+.pgr-chips :deep(.mp-segmented-control__item) { min-width: max-content; }
+/* Pixel search input (MpInputGroup + left addon), pinned to the filter-bar pill: 248px, fully rounded. */
+.pgr-search { flex: 0 0 248px; width: 248px; }
+.pgr-search :deep(input) { border-radius: var(--mp-radii-full, 999px); }
+.pgr-bulk { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; padding: var(--mp-spacing-2) var(--mp-spacing-4); background: var(--mp-colors-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .pgr-bulk__count { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-right: var(--mp-spacing-2); }
 .pgr-bulk__clear { margin-left: auto; }
 
@@ -487,7 +484,7 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-rows .pset-td { vertical-align: middle; }
 .pgr-rows .pset-td, .pgr-rows .pset-th { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); }
 .pgr-rows tr > :first-child { padding-left: var(--mp-spacing-4); }
-.pgr-rows tbody tr.is-selected .pset-td { background: var(--mp-background-brand-subtle, #EEF2FF); }
+.pgr-rows tbody tr.is-selected .pset-td { background: var(--mp-colors-background-brand, #f0fbf7); }
 .pgr-bands .pset-th { border-bottom: 1px solid var(--mp-border-default); }
 .pgr-band { text-transform: none; letter-spacing: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); background: var(--mp-background-neutral-subtle); }
 .pgr-band--jurnal, .pgr-split { border-left: 1px solid var(--mp-border-default); }
