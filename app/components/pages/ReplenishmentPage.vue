@@ -384,7 +384,7 @@ const ALL_COLUMNS: TableColumn[] = [
  * Suggested qty, Days of cover, Warehouse and Vendor can never be hidden; and the
  * choice is remembered, so the user lands on the same set on every visit.
  */
-const LOCKED_COLUMNS = new Set(['productName', 'suggestedQty', 'coverValue', 'warehouseName', 'vendorName'])
+const LOCKED_COLUMNS = new Set(['productName', 'suggestedQty', 'requestedQty', 'coverValue', 'warehouseName', 'vendorName'])
 for (const c of ALL_COLUMNS) if (LOCKED_COLUMNS.has(c.key)) c.lockHide = true
 const COLUMNS_STORAGE_KEY = 'erp-db:replenishment-worklist-columns'
 const savedColumns = readStore<Record<string, boolean>>(COLUMNS_STORAGE_KEY, {})
