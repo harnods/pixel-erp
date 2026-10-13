@@ -17,7 +17,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { MpButton, MpCheckbox, MpIcon, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
+import PayrollColumnFilter from '~/components/payroll/PayrollColumnFilter.vue'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { successToast, errorToast } from '~/utils/toasts'
 import {
@@ -304,22 +304,15 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
                 <th :colspan="dimColumns.length + 1" class="pset-th pgr-band pgr-band--jurnal" scope="colgroup">{{ t('Posts to in Jurnal') }}</th>
               </tr>
               <tr>
-                <th v-for="f in groupBy" :key="f" class="pset-th pgr-val">{{ fieldLabel(f) }}</th>
+                <th v-for="(f, i) in groupBy" :key="f" class="pset-th pgr-val">
+                  <span class="pgr-thf">{{ fieldLabel(f) }}<PayrollColumnFilter
+                    :id="`pgr-col-${safe(f)}`" :label="fieldLabel(f)" :model-value="colFilters[f] ?? []" :options="colOptions(i)"
+                    @update:model-value="(v: string[]) => (colFilters[f] = v)"
+                  /></span>
+                </th>
                 <th class="pset-th pgr-num">{{ t('Staff') }}</th>
                 <th class="pset-th pgr-split pgr-acct">{{ t('Expense account') }}</th>
                 <th v-for="c in dimColumns" :key="c" class="pset-th pgr-dim">{{ c }}</th>
-              </tr>
-              <tr class="pgr-colfilters" data-testid="pgr-colfilters">
-                <th v-if="canEdit" class="pset-th pgr-check" />
-                <th v-for="(f, i) in groupBy" :key="f" class="pset-th pgr-val pgr-colfilter">
-                  <MultiSelectDropdown
-                    :id="`pgr-col-${safe(f)}`" :model-value="colFilters[f] ?? []" :options="colOptions(i)"
-                    :placeholder="t('All')" is-full-width @update:model-value="(v: string[]) => (colFilters[f] = v)"
-                  />
-                </th>
-                <th class="pset-th pgr-num" />
-                <th class="pset-th pgr-split" />
-                <th v-for="c in dimColumns" :key="c" class="pset-th" />
               </tr>
             </thead>
             <tbody>
@@ -409,8 +402,9 @@ const fewTip = (r: GroupRow) => { const n = fewStaff(r); return n ? t(fewStaffMe
 .pgr-c-acct { width: 248px; }
 .pgr-c-val { width: 156px; }
 .pgr-c-dim { width: 200px; }
-.pgr-colfilters .pset-th { padding-top: 0; padding-bottom: var(--mp-spacing-2); text-transform: none; letter-spacing: 0; font-weight: var(--mp-font-weights-regular, 400); }
-.pgr-colfilter :deep(button) { min-height: 32px; }
+.pgr-thf { display: inline-flex; align-items: center; gap: 2px; }
+.pgr-rows thead .pgr-val { overflow-wrap: normal; word-break: normal; }
+.pgr-c-val { width: 172px; }
 .pgr-rows .pset-th { white-space: normal; }
 .pgr-rows .pset-td { vertical-align: middle; }
 .pgr-rows .pset-td, .pgr-rows .pset-th { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); }
