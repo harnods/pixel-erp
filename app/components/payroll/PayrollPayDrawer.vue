@@ -95,6 +95,7 @@ function close() { emit('update:isOpen', false) }
 .ppd-footer {
   flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);

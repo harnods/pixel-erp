@@ -5,6 +5,7 @@
  * row. No employee names.
  */
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
 import PayrollPayDrawer from '~/components/payroll/PayrollPayDrawer.vue'
 import { MpButton } from '@mekari/pixel3'
 import { rupiah, accountLabel, monthLabel, dateLabel, type PayableRow } from '~/data/payrollStore'
@@ -23,17 +24,14 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
 <template>
   <PayrollPayDrawer :is-open="isOpen" :title="row ? row.label : ''" wide @update:is-open="(v: boolean) => emit('update:isOpen', v)">
     <template v-if="row">
-      <dl class="ppx-facts">
-        <div><dt>{{ t('Account') }}</dt><dd>{{ accountLabel(row.account) }}</dd></div>
-        <div><dt>{{ t('Period') }}</dt><dd>{{ monthLabel(row.month) }}</dd></div>
-        <div><dt>{{ t('Due date') }}</dt><dd>{{ row.dueLabel }}</dd></div>
-        <div><dt>{{ t('Owed') }}</dt><dd class="ppx-num">{{ rupiah(row.owed) }}</dd></div>
-        <div><dt>{{ t('Paid') }}</dt><dd class="ppx-num">{{ rupiah(row.paid) }}</dd></div>
-        <div><dt>{{ t('Balance') }}</dt><dd class="ppx-num">{{ rupiah(row.balance) }}</dd></div>
-      </dl>
-      <div v-if="row.balance > 0" class="ppx-pay">
-        <span class="ppx-sub">{{ t('Pay opens New spend money with this payable filled in.') }}</span>
-        <MpButton is-rounded data-testid="ppx-pay" @click="navigateTo({ path: '/bank-withdrawals/new', query: { payable: row.key } })">{{ t('Pay') }}</MpButton>
+      <!-- Key/value summary on ContentList (rule/detail-contentlist), in a 1px-bordered card. -->
+      <div class="ppx-facts">
+        <ContentList :label="t('Account')" :value="accountLabel(row.account)" />
+        <ContentList :label="t('Period')" :value="monthLabel(row.month)" />
+        <ContentList :label="t('Due date')" :value="row.dueLabel" />
+        <ContentList :label="t('Owed')"><span class="ppx-num">{{ rupiah(row.owed) }}</span></ContentList>
+        <ContentList :label="t('Paid')"><span class="ppx-num">{{ rupiah(row.paid) }}</span></ContentList>
+        <ContentList :label="t('Balance')"><span class="ppx-num">{{ rupiah(row.balance) }}</span></ContentList>
       </div>
 
       <section v-if="row.flags.length" class="ppx-section">
@@ -77,30 +75,37 @@ const pendingChange = computed(() => (props.row?.pendingOwed != null ? props.row
         <p v-if="row.pendingOwed != null" class="ppx-sub">{{ t('Owed after repost') }}: {{ rupiah(row.pendingOwed) }}</p>
       </section>
     </template>
+    <!-- Drawer actions sit in the footer (docs/patterns/Drawer.md > Anatomy). -->
+    <template v-if="row && row.balance > 0" #footer>
+      <span class="ppx-sub ppx-foot-note">{{ t('Pay opens New spend money with this payable filled in.') }}</span>
+      <MpButton is-rounded data-testid="ppx-pay" @click="navigateTo({ path: '/bank-withdrawals/new', query: { payable: row.key } })">{{ t('Pay') }}</MpButton>
+    </template>
   </PayrollPayDrawer>
 </template>
 
 <style scoped>
-.ppx-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--mp-spacing-3) var(--mp-spacing-4); margin: 0; padding: var(--mp-spacing-3) var(--mp-spacing-4); border: 1px solid var(--mp-colors-border-default); border-radius: var(--mp-radii-md); }
-.ppx-facts dt { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
-.ppx-facts dd { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default); }
+/* ContentList owns the 8px field padding, so the grid has no row gap (docs/patterns/ContentList.md). */
+.ppx-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) var(--mp-spacing-4); border: 1px solid var(--mp-colors-border-default, #e3e7e9); border-radius: var(--mp-radii-md); }
 .ppx-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .ppx-h { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default); }
 .ppx-check { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default); }
-.ppx-table { width: 100%; border-collapse: collapse; border: 1px solid var(--mp-colors-border-default); border-radius: var(--mp-radii-md); }
+.ppx-table { width: 100%; border-collapse: collapse; border: 1px solid var(--mp-colors-border-bold, #8c9596); }
 /* Fixed layout: an empty-state row (colspan) no longer stretches the first column and floats its header. */
 .ppx-table--fixed { table-layout: fixed; }
 .ppx-c-num { width: 150px; }
 .ppx-c-date { width: 120px; }
 .ppx-c-amt { width: 150px; }
 .ppx-table td { overflow-wrap: anywhere; }
-.ppx-table th { text-align: left; text-transform: uppercase; white-space: nowrap; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary); background: var(--mp-colors-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-colors-border-default); }
-.ppx-table td { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default); padding: var(--mp-spacing-2) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-colors-border-default); vertical-align: top; }
+/* ERP table metrics (docs/patterns/ErpTablePage.md): 28px header, 10px body-cell padding on a 40px row. */
+.ppx-table th { height: var(--mp-sizes-7, 28px); box-sizing: border-box; text-align: left; text-transform: uppercase; white-space: nowrap; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary); background: var(--mp-colors-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-colors-border-default); }
+.ppx-table td { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-lg, 20px); color: var(--mp-colors-text-default); padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-3); border-bottom: 1px solid var(--mp-colors-border-default); vertical-align: top; }
+.ppx-table tbody tr:last-child td { border-bottom: none; }
 .ppx-table th.ppx-r, .ppx-table .ppx-r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ppx-pending td { color: var(--mp-colors-text-secondary); }
 .ppx-num { font-variant-numeric: tabular-nums; }
 .ppx-sub { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
-.ppx-pay { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
+.ppx-foot-note { margin-right: auto; }
 .ppx-empty { color: var(--mp-colors-text-secondary); text-align: center; }
-.ppx-link { color: var(--mp-colors-text-link, var(--mp-text-link)); text-decoration: none; }
+.ppx-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; }
+.ppx-link:hover { text-decoration: underline; }
 </style>

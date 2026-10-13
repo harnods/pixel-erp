@@ -119,6 +119,8 @@ function removeAttachedFile(name: string) { attachedFiles.value = attachedFiles.
 
 // ── Save ───────────────────────────────────────────────────────────────────────
 const saveFailed = ref(false)
+/** Paying a payable with no line left on its account: shown inline in the error banner (rule/form-errors-inline). */
+const payableLineError = ref('')
 function goBack() {
   if (payable) { router.push('/payroll-payables'); return }
   if (isEdit && props.orderId) router.push(`${base}/${props.orderId}`)
@@ -134,9 +136,9 @@ function handleSave() {
   const payableLines = payable ? filledRows.value.filter((r) => r.accountCode === payable.account) : []
   if (payable && !payableLines.some((r) => amountOf(r) > 0)) {
     const r = rows.value[0]; if (r) r.accountError = true
-    toast.notify({ variant: 'error', title: t(`Keep a line on ${payrollAccountLabel(payable.account)} to pay this payable.`) })
+    payableLineError.value = `Keep a line on ${payrollAccountLabel(payable.account)} to pay this payable.`
     ok = false
-  }
+  } else payableLineError.value = ''
   saveFailed.value = !ok
   if (!ok) return
   const payload = {
@@ -306,7 +308,7 @@ onUnmounted(() => { observer?.disconnect() })
       <MpBanner v-if="saveFailed" id="ctf-error-banner" variant="danger" align-items="center" class="ctf-banner">
         <MpBannerIcon id="ctf-error-banner-icon" />
         <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
-        <MpBannerDescription>{{ t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+        <MpBannerDescription>{{ t(payableLineError || 'The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
       </MpBanner>
 
       <div class="ex-price-includes">

@@ -48,8 +48,9 @@ function manual() {
 <style scoped>
 .psb-menu { min-width: 264px; max-height: 70vh; overflow-y: auto; }
 .psb-head {
-  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
+  /* 16px left: lines up with the item text (4px list padding + 12px item padding). */
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-1);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary);
+  color: var(--mp-colors-text-secondary, #3a4749);
 }
 </style>
