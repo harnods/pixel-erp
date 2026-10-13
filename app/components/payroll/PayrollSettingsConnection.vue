@@ -2,7 +2,7 @@
 /**
  * Connection: status, the Talenta company, the last send and Disconnect. Connecting blocks
  * the old Talenta to Expense sync at once; Jurnal books from the first send after it. HR's steps sit behind
- * "How to send from Talenta". Changes take the Owner or Ultimate + LM.
+ * "How to send from Talenta". Changes take the Owner or a user with LM.
  */
 import { computed, ref } from 'vue'
 import { MpButton, MpButtonGroup, MpInput, MpTextlink, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
@@ -91,7 +91,7 @@ const howOpen = ref(false)
           <MpTextlink id="pset-how-to-send" as="a" data-tour="payroll-how-to-send" @click.prevent="howOpen = true">{{ t('How to send from Talenta') }}</MpTextlink>
           <MpButton v-if="can('connection') && live" variant="secondary" is-rounded @click="endOpen = true">{{ t('Disconnect Talenta') }}</MpButton>
         </div>
-        <PayrollReadOnlyNote v-if="!can('connection')" :text="t('Changing the connection needs Owner or Ultimate + LM.')" />
+        <PayrollReadOnlyNote v-if="!can('connection')" :text="t('Only the Owner or a user with LM can change the connection.')" />
       </div>
     </div>
 

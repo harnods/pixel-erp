@@ -10,7 +10,7 @@
  *   (case and space-insensitive) as any of the group's Talenta values, else empty.
  */
 import * as store from './payrollStore'
-import { payroll, can, payrollDimensions, type GroupRow, type PayrollSettings } from './payrollStore'
+import { payroll, payrollDimensions, type GroupRow, type PayrollSettings } from './payrollStore'
 import { dimensions as jurnalDimensionList } from './dimensions'
 
 type Result = { ok: boolean; message?: string }
@@ -51,7 +51,6 @@ function localSet(next: string[]): void {
 }
 export function addGroupDimension(dim: string): Result {
   if (engine.addGroupDimension) return engine.addGroupDimension(dim)
-  if (!can('setup')) return { ok: false, message: 'Adding a dimension needs Set up access.' }
   if (!jurnalDimensions().includes(dim)) return { ok: false, message: `${dim} is not a Jurnal dimension. Pick one from the list.` }
   if (groupDimensions().includes(dim)) return { ok: false, message: `${dim} is already a column. Pick another dimension.` }
   localSet([...groupDimensions(), dim])
@@ -59,7 +58,6 @@ export function addGroupDimension(dim: string): Result {
 }
 export function removeGroupDimension(dim: string): Result {
   if (engine.removeGroupDimension) return engine.removeGroupDimension(dim)
-  if (!can('setup')) return { ok: false, message: 'Removing a dimension needs Set up access.' }
   localSet(groupDimensions().filter((d) => d !== dim))
   return { ok: true }
 }

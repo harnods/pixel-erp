@@ -10,7 +10,6 @@ import { computed, reactive, ref } from 'vue'
 import { MpIcon, MpToggle, MpTooltip } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import { sectionLabel } from '~/data/payrollUiRunCopy'
 import { successToast } from '~/utils/toasts'
 import {
@@ -93,7 +92,6 @@ function onTaxAccount(kind: TaxAccountKind, code: string) {
 
 <template>
   <div class="pset-stack">
-    <PayrollReadOnlyNote v-if="!can('setup')" :text="t('Editing needs Set up access.')" />
 
     <!-- Payable accounts -->
     <div class="pset-card" data-tour="payroll-payable-accounts">

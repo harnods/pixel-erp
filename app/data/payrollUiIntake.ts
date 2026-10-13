@@ -25,7 +25,7 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
     case 'Posted': return 'completed'
     case 'Held': case 'Failed': case 'Blocked': case 'Missing send': return 'critical'
     case 'Changed': case 'Check': return 'warning'
-    case 'Waiting for your choice': case 'Confirm source': case 'Awaiting approval': case 'Revision ready': case 'Looks partial': return 'warning'
+    case 'Waiting for your choice': case 'Confirm source': case 'Revision ready': case 'Looks partial': return 'warning'
     case 'Ready to post': case 'Received': case 'Current': return 'information'
     case 'No change': case 'Expected': return 'completed'
     default: return 'announcement'
@@ -33,8 +33,7 @@ export function statusType(s: string): 'completed' | 'announcement' | 'informati
 }
 
 const NEXT_STEP: Partial<Record<RunStatus, string>> = {
-  'Confirm source': 'The Owner or an Ultimate + LM confirms this is your company.',
-  'Awaiting approval': 'The approver approves and posts, or rejects, from Inbox > Awaiting approval.',
+  'Confirm source': 'The Owner or a user with LM confirms this is your company.',
   'Waiting for your choice': 'Choose: use it as a new version, or make a separate run.',
   'Ready to post': 'Review the draft journal and post it.',
   'Revision ready': 'Talenta sent this period again. Review it, then use the new version and repost.',

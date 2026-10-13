@@ -29,10 +29,10 @@ const reverseOpen = ref(false)
         <div class="prj__bartitle">{{ t('Payroll journals') }}</div>
         <div class="prj__barsub">{{ live.length ? `${live.length} ${t(live.length === 1 ? 'journal posted' : 'journals posted')}. ${t('A posted journal changes only by reversing it.')}` : t('No posted journal') }}</div>
       </div>
-      <MpButton v-if="can('correct') && live.length" variant="secondary" is-rounded data-testid="prp-reverse" @click="reverseOpen = true">
+      <MpButton v-if="can('post') && live.length" variant="secondary" is-rounded data-testid="prp-reverse" @click="reverseOpen = true">
         {{ live.length > 1 ? t(`Reverse ${live.length} journals`) : t('Reverse journal') }}
       </MpButton>
-      <PayrollReadOnlyNote v-else-if="live.length && can('post')" :text="t('Reversing needs Owner, Ultimate + LM or Accountant + LM.')" />
+      <PayrollReadOnlyNote v-else-if="live.length" :text="t('Only the Owner or a user with LM can post.')" />
     </div>
     <div v-if="!list.length" class="prj__card prj__empty">{{ t('No posted journal yet. Post the draft journal from Draft review.') }}</div>
     <div v-for="j in list" :key="j.id" class="prj__card" :data-journal="j.number" data-tour="payroll-journal">

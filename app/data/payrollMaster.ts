@@ -18,19 +18,15 @@ export const PAYROLL_TODAY = '2026-10-05'
 // ── Roles and people (View as; no real sign-in) ──────────────────────────────
 
 /**
- * Jurnal roles that reach the Payroll menu, with LM (Jurnal's modifier that lets a role edit
- * or delete existing records). View only is Ultimate or Accountant with no payroll action on.
+ * Two access types (PM decision 2026-10-13). "Owner or LM" posts; "Other user" (anyone else who
+ * reaches Payroll) does everything except posting and saves the draft for them.
  */
-export type PayrollRole = 'Owner' | 'Ultimate' | 'Ultimate + LM' | 'Accountant' | 'Accountant + LM' | 'View only'
-export const PAYROLL_ROLES: PayrollRole[] = ['Owner', 'Ultimate', 'Ultimate + LM', 'Accountant', 'Accountant + LM', 'View only']
+export type PayrollRole = 'Owner or LM' | 'Other user'
+export const PAYROLL_ROLES: PayrollRole[] = ['Owner or LM', 'Other user']
 export interface PayrollPerson { role: PayrollRole; person: string; title: string }
 export const PAYROLL_PEOPLE: PayrollPerson[] = [
-  { role: 'Owner', person: 'Rizal Candra', title: 'Owner, PT Central Perk Indonesia' },
-  { role: 'Ultimate', person: 'Cinta Ayu', title: 'Ultimate' },
-  { role: 'Ultimate + LM', person: 'Evelyn Bellinda', title: 'Ultimate, can edit and delete' },
-  { role: 'Accountant', person: 'Andi Pratama', title: 'Accountant' },
-  { role: 'Accountant + LM', person: 'Bayu Ferdian', title: 'Accountant, can edit and delete' },
-  { role: 'View only', person: 'Galih Prakoso', title: 'Ultimate, no payroll actions' },
+  { role: 'Owner or LM', person: 'Rizal Candra', title: 'Can post' },
+  { role: 'Other user', person: 'Andi Pratama', title: 'Saves drafts only' },
 ]
 export function payrollPerson(role: PayrollRole): PayrollPerson {
   return PAYROLL_PEOPLE.find((p) => p.role === role)!

@@ -5,6 +5,7 @@
  * version compare in the Versions tab.
  */
 import { MpButton, MpIcon } from '@mekari/pixel3'
+import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import {
   runById, liveJournals, journalTotals, versionOf, currentVersionOf, runStatus, postRun, draftOf,
   can, monthLabel, rupiah, wib, today, addDays, revisionOf,
@@ -51,7 +52,7 @@ function repost() {
   repostError.value = ''
   const r = postRun(props.runId)
   if (!r.ok) { repostError.value = t(r.message ?? 'Not posted. Check the journal date and try again.'); return }
-  successToast(t(r.awaitingApproval ? 'Sent for approval' : `${r.number} posted`))
+  successToast(t(`${r.number} posted`))
 }
 const visible = computed(() => (!!partial.value && !!ledgerV.value && !hasRevision.value && !waiting.value) || !!reversedNotReposted.value)
 </script>
@@ -75,6 +76,7 @@ const visible = computed(() => (!!partial.value && !!ledgerV.value && !hasRevisi
         <div>{{ t(`Reversed ${reversedNotReposted.at}. Payables for ${monthLabel(run.month)} show nothing owed until you post again.`) }}</div>
         <div v-if="reversedNotReposted.days >= 2" class="prp__noticesub">{{ t(`${reversedNotReposted.days} working days since the reversal.`) }}</div>
         <div v-if="repostError" class="prp__noticeerror" role="alert">{{ repostError }}</div>
+        <PayrollReadOnlyNote v-if="!can('post') && cur?.draft && status === 'Reversed'" :text="t('Only the Owner or a user with LM can post.')" />
       </div>
       <div v-if="can('post') && cur?.draft && status === 'Reversed'" class="prp__noticeactions">
         <MpButton is-rounded data-testid="prp-repost" @click="repost">{{ t('Post journal') }} v{{ cur.no }}</MpButton>

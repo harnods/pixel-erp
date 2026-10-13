@@ -48,11 +48,7 @@ const activeTasks = computed(() =>
   props.tasks.filter(t => !approvedIds.value.has(t.id) && !rejectedIds.value.has(t.id))
 )
 
-const router = useRouter()
-/** Tasks that carry their own record page (payroll journals) open it; Approve / Reject happen there. */
-function openTask(row: Task) { if (row.link) router.push(row.link) }
 function approveTask(row: Task) {
-  if (row.link) { openTask(row); return }
   approvedIds.value = new Set([...approvedIds.value, row.id])
   toast.notify({
     variant: 'success',
@@ -395,7 +391,7 @@ function formatDate(iso: string) {
     <!-- ── Cell: Number — text link, same pattern as the Sales index pages
          (erp.css .cell-link; replaces the old row-hover "View details" chip) ── -->
     <template #cell-number="{ row }">
-      <a class="cell-link cell-text" @click.stop="openTask(row as Task)">{{ formatTaskNumber(row as Task) }}</a>
+      <a class="cell-link cell-text" @click.stop>{{ formatTaskNumber(row as Task) }}</a>
     </template>
 
     <!-- ── Cell: Warehouse ── -->

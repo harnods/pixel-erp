@@ -10,7 +10,7 @@ export type BadgeType = 'completed' | 'announcement' | 'information' | 'warning'
 /**
  * Status -> label and colour. One meaning per colour across payroll:
  *   critical (red)      stops posting or money is late: Held, Rejected, Overdue, Needs account
- *   warning (yellow)    waits on a person: Awaiting approval, Sent again, Choose, Partly paid,
+ *   warning (yellow)    waits on a person: Sent again, Choose, Partly paid,
  *                       a New group (posts to default accounts until set up), No group
  *   information (blue)  ready for the next step: Ready to post, Current, Duplicate
  *   completed (green)   done: Posted, Paid, Accepted, Connected, No change, Expected
@@ -21,7 +21,6 @@ const STATUS: Record<string, { label: string; type: BadgeType }> = {
   Held: { label: 'Held', type: 'critical' },
   'Confirm source': { label: 'Confirm company', type: 'warning' },
   'Waiting for your choice': { label: 'Choose how to use it', type: 'warning' },
-  'Awaiting approval': { label: 'Awaiting approval', type: 'warning' },
   'Revision ready': { label: 'Sent again', type: 'warning' },
   'Ready to post': { label: 'Ready to post', type: 'information' },
   Posted: { label: 'Posted', type: 'completed' },
@@ -83,11 +82,10 @@ export function notPostedLabel(mode: string): string {
 
 /** Next step per status, in glossary words (the engine text may still use old terms). */
 const NEXT_STEP: Record<string, string> = {
-  'Confirm source': 'The Owner or an Ultimate + LM confirms this is your company.',
+  'Confirm source': 'The Owner or a user with LM confirms this is your company.',
   'Waiting for your choice': 'Choose: use it as a new version, or make a separate run.',
   'Ready to post': 'Check the draft journal, then post it.',
   'Revision ready': 'Talenta sent this period again. Check what changed, then repost.',
-  'Awaiting approval': 'Waiting for the approver in Inbox > Awaiting approval.',
   Reversed: 'Post the current version again.',
   'Dry run': 'Months before the start month are not posted.',
   'Before go-live': 'Months before the start month are not posted.',

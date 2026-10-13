@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * Payroll run page /payroll-runs/<id>. Header with the one primary action (Post journal, or
- * Send for approval when a Settings > Approval workflows rule matches); "To fix before posting";
+ * Payroll run page /payroll-runs/<id>. Header with the one primary action: Post journal for the
+ * Owner or a user with LM, Save draft for Other user (who can't post); "To fix before posting";
  * "Talenta sent this period again" with Use vN and repost; warnings; then tabs: Draft review
  * (the exact journal Post writes; months before the start month are labelled "not posted"),
  * Versions (with the compare), Journals, Mapping used; claims below.
@@ -9,7 +9,6 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { MpButton, MpTextlink, MpTabs, MpTabList, MpTab } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import PayrollHoldsPanel from '~/components/payroll/PayrollHoldsPanel.vue'
 import PayrollDraftReview from '~/components/payroll/PayrollDraftReview.vue'
 import PayrollRunBuiltWith from '~/components/payroll/PayrollRunBuiltWith.vue'
@@ -23,14 +22,13 @@ import PayrollCompareView from '~/components/payroll/PayrollCompareView.vue'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import {
   can, runById, runStatus, runHolds, currentVersionOf, versionLabel, draftOf, liveJournals, journalsOf,
-  pendingApproval, canApprove, approvePayroll, rejectPayroll, listLabel, actingPerson,
-  rebuildDraft, isDraftStale, runWarnings, revisionOf, rupiah, wib, dateLabel, periodLabel, monthLabel,
+  saveDraft, draftSavedNote,
+  rebuildDraft, isDraftStale, runWarnings, revisionOf, rupiah, wib, periodLabel, monthLabel,
   accountLabel, tagsLabel, type Tags,
 } from '~/data/payrollStore'
-import { checkApprovalRequired } from '~/data/payrollApproval'
 import { versionFigures } from '~/data/payrollUiIntake'
 import { statusLabel, statusType, notPostedLabel } from '~/data/payrollUiRunCopy'
-import { successToast, errorToast } from '~/utils/toasts'
+import { successToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId?: string }>()
 const { t } = useLocale()
@@ -82,33 +80,20 @@ function rebuild() {
   staleChanges.value = (r.changed as typeof staleChanges.value) ?? []
   successToast(t(staleChanges.value.length ? `Draft rebuilt. ${staleChanges.value.length} ${staleChanges.value.length === 1 ? 'line' : 'lines'} changed` : 'Draft rebuilt. No line changed'))
 }
-/** Post journal, or Send for approval when a Payroll journal rule in Settings > Approval workflows matches. */
-const needsApproval = computed(() => !!draft.value && checkApprovalRequired(draftTotal.value, actingPerson()).required)
-const postLabel = computed(() => t(needsApproval.value ? 'Send for approval' : 'Post journal'))
-
-// ── Approval (Settings > Approval workflows, Payroll journal) ──────────────
-const approval = computed(() => (run.value ? pendingApproval(run.value) : null))
-const isApprover = computed(() => !!run.value && !!approval.value && canApprove(run.value.id))
-const rejectOpen = ref(false)
-function approve() {
+// ── Save draft (Other user: everything but posting) ────────────────────────
+/** Other user keeps a postable draft (first post or a version sent again) for someone who can post. */
+const canSaveDraft = computed(() => !can('post') && (canPostNow.value || status.value === 'Revision ready'))
+const savedNote = computed(() => (run.value ? draftSavedNote(run.value) : null))
+function doSaveDraft() {
   if (!run.value) return
-  const r = approvePayroll(run.value.id)
-  if (!r.ok) { postError.value = r.message ?? ''; errorToast(t('Not posted. The reason is on the page.')); return }
-  const nos = (r.journals as string[] | undefined) ?? (r.number ? [r.number as string] : [])
-  successToast(t(`Approved and posted as ${nos.join(', ')}`))
-  tab.value = 'journals'
-}
-function reject(reason: string) {
-  if (!run.value) return
-  const r = rejectPayroll(run.value.id, reason)
-  rejectOpen.value = false
-  if (!r.ok) { errorToast(t(r.message ?? 'Not rejected. Try again.')); return }
-  successToast(t('Rejected. The journal is back in draft.'))
+  const r = saveDraft(run.value.id)
+  if (!r.ok) { postError.value = r.message ?? ''; return }
+  postError.value = ''
+  successToast(t('Draft saved. Waiting for someone who can post.'))
 }
 function back() { router.push('/payroll-inbox') }
 function showCompare() { tab.value = 'versions'; nextTick(() => document.getElementById('prp-compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }
 const lineLabel = (account: string, tags: Tags) => `${accountLabel(account)}${tagsLabel(tags) ? ` | ${tagsLabel(tags)}` : ''}`
-const approvalWhat = computed(() => (approval.value?.kind === 'post' ? t('Post journal') : t('Reverse and repost')))
 /** The engine records the choice in its own words; show it in glossary words. */
 const decisionLabel = (kind: string) => t(({ 'Revision of the posted run': 'Same run, sent again', 'Replaced the full run': 'Used as the full run', 'Rejected partial send': 'Rejected' } as Record<string, string>)[kind] ?? kind)
 
@@ -132,9 +117,9 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         </p>
       </div>
       <div class="prr__baractions">
-        <MpButton v-if="can('post') && canPostNow && stale && !approval" variant="secondary" is-rounded @click="rebuild">{{ t('Rebuild draft') }}</MpButton>
-        <MpButton v-if="can('post') && canPostNow && !approval" is-rounded data-tour="payroll-post" data-testid="prr-post" @click="askPost">{{ postLabel }}</MpButton>
-        <PayrollReadOnlyNote v-else-if="!can('post')" :text="t('View only. Payroll actions are off for this role.')" />
+        <MpButton v-if="canPostNow && stale" variant="secondary" is-rounded @click="rebuild">{{ t('Rebuild draft') }}</MpButton>
+        <MpButton v-if="can('post') && canPostNow" is-rounded data-tour="payroll-post" data-testid="prr-post" @click="askPost">{{ t('Post journal') }}</MpButton>
+        <MpButton v-else-if="canSaveDraft" is-rounded data-tour="payroll-save-draft" data-testid="prr-save-draft" @click="doSaveDraft">{{ t('Save draft') }}</MpButton>
       </div>
     </header>
 
@@ -165,21 +150,10 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
         </div>
       </div>
 
-      <!-- Approval: Post matched a Payroll journal rule in Settings > Approval workflows. -->
-      <section v-if="approval" class="prr__notice prr__notice--warn prr__notice--row" data-testid="prr-approval" data-tour="payroll-approve">
-        <div class="prr__noticebody">
-          <div class="prr__noticetitle">{{ t('Awaiting approval') }} · {{ approval.ruleName }}</div>
-          <div>{{ approvalWhat }} v{{ approval.versionNo }}, {{ rupiah(approval.amount) }}, {{ t('journal date') }} {{ dateLabel(approval.date) }}. {{ t('Sent by') }} {{ approval.requestedBy }}, {{ wib(approval.requestedAt) }}.</div>
-          <div v-if="!isApprover" class="prr__noticesub">{{ t('Waiting for') }} {{ listLabel(approval.approvers) }} {{ t('in Inbox > Awaiting approval.') }}</div>
-        </div>
-        <div v-if="isApprover" class="prr__noticeactions">
-          <MpButton variant="secondary" is-rounded data-testid="prr-reject" @click="rejectOpen = true">{{ t('Reject') }}</MpButton>
-          <MpButton is-rounded data-testid="prr-approve" @click="approve">{{ t('Approve and post') }}</MpButton>
-        </div>
-      </section>
-      <section v-else-if="run.rejection && !live.length" class="prr__notice prr__notice--danger" data-testid="prr-rejected">
-        <div class="prr__noticetitle">{{ t('Rejected by') }} {{ run.rejection.by }} · {{ wib(run.rejection.at) }}</div>
-        <div>{{ run.rejection.reason }}</div>
+      <!-- Saved by someone who can't post: waits for the Owner or a user with LM. -->
+      <section v-if="savedNote" class="prr__notice prr__notice--info" data-testid="prr-saved-draft" data-tour="payroll-saved-draft">
+        <div>{{ t(savedNote) }}</div>
+        <PayrollReadOnlyNote v-if="!can('post')" :text="t('Only the Owner or a user with LM can post.')" />
       </section>
 
       <!-- Post feedback: blocks only (warnings never block). -->
@@ -277,7 +251,6 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
     </div>
 
     <PayrollPostDrawer mode="post" :is-open="postOpen" :run-id="run.id" @close="postOpen = false" />
-    <RejectTransactionModal :is-open="rejectOpen" doc-type="Payroll journal" @close="rejectOpen = false" @reject="reject" />
   </div>
   <div v-else class="prr">
     <div class="prr__body">

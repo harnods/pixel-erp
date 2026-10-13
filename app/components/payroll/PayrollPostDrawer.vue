@@ -3,17 +3,15 @@
  * Post journal and Reverse and repost: one drawer for both. Post books the draft as one payroll
  * journal. Repost reverses every posted payroll journal of the run in full and posts the chosen
  * version in full (latest preselected). Both take one journal date, default the last day of the
- * pay period; a locked period is refused. When a Settings > Approval workflows rule matches, the
- * button reads Send for approval and the date is kept for the approver.
+ * pay period; a locked period is refused. Posting is direct (no approval).
  */
 import { computed, ref, shallowRef, watch } from 'vue'
 import { MpDatePicker, MpRadio } from '@mekari/pixel3'
 import PayrollCompareDrawerShell from '~/components/payroll/PayrollCompareDrawerShell.vue'
 import {
   runById, currentVersionOf, liveJournals, journalTotals, postRun, reverseAndRepost, repostVersions, previewDryRun,
-  defaultEntryDate, checkEntryDate, postConfirmText, dateLabel, periodLabel, rupiah, wib, sendFigures, actingPerson, listLabel,
+  defaultEntryDate, checkEntryDate, postConfirmText, dateLabel, periodLabel, rupiah, wib, sendFigures,
 } from '~/data/payrollStore'
-import { checkApprovalRequired } from '~/data/payrollApproval'
 import { successToast, infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ isOpen: boolean; runId: string; mode: 'post' | 'repost' }>()
@@ -53,8 +51,7 @@ const dateError = computed(() => {
   const last = [...live.value].sort((a, b) => b.date.localeCompare(a.date))[0]
   return checkEntryDate(iso.value, props.mode === 'repost' && last ? { date: last.date, number: last.number } : undefined) ?? ''
 })
-const approval = computed(() => (props.isOpen && preview.value ? checkApprovalRequired(preview.value.total, actingPerson()) : null))
-const confirmLabel = computed(() => (approval.value?.required ? t('Send for approval') : props.mode === 'post' ? t('Post journal') : t(`Use v${versionNo.value ?? ''} and repost`)))
+const confirmLabel = computed(() => (props.mode === 'post' ? t('Post journal') : t(`Use v${versionNo.value ?? ''} and repost`)))
 
 function confirm() {
   error.value = ''
@@ -64,7 +61,6 @@ function confirm() {
     ? postRun(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
     : reverseAndRepost(props.runId, { versionNo: versionNo.value ?? undefined, date: iso.value })
   if (!r.ok) { error.value = t(r.message ?? 'Not posted. Check the date and try again.'); return }
-  if (r.awaitingApproval) { successToast(t('Sent for approval. The approver sees it in Inbox > Awaiting approval.')); emit('close'); return }
   const nos = (r.journals as string[] | undefined) ?? [r.number as string]
   successToast(t(`${nos.join(', ')} posted`))
   for (const w of (r.warnings as string[] | undefined) ?? []) infoToast(t(w))
@@ -73,7 +69,7 @@ function confirm() {
 </script>
 
 <template>
-  <PayrollCompareDrawerShell :is-open="isOpen" :title="mode === 'post' ? (approval?.required ? t('Send for approval') : t('Post journal')) : t('Reverse and repost')" wide @close="emit('close')">
+  <PayrollCompareDrawerShell :is-open="isOpen" :title="mode === 'post' ? t('Post journal') : t('Reverse and repost')" wide @close="emit('close')">
     <template v-if="run && cur">
       <div class="ppd__identity">{{ t('Payroll') }} {{ periodLabel(run.start, run.end) }}</div>
 
@@ -121,10 +117,6 @@ function confirm() {
             </tr>
           </tbody>
         </table>
-      </div>
-
-      <div v-if="approval?.required" class="ppd__info" data-testid="ppd-approval">
-        {{ t('This journal matches the approval rule') }} {{ approval.ruleName }}. {{ t('It posts on this date once') }} {{ listLabel(approval.approvers) }} {{ t('approves it.') }}
       </div>
 
       <div v-if="warnings.length" class="ppd__note" data-testid="ppd-warnings">
