@@ -59,9 +59,11 @@ const staff = computed(() => data.value.rows.reduce((s, r) => s + r.employees, 0
 .pcl__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pcl__sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 .pcl__table { width: 100%; border-collapse: collapse; }
+/* Header row 28px, uppercase 12px semibold (rule/table-header-height, rule/table-header-uppercase). */
 .pcl__th {
+  height: var(--mp-sizes-7); box-sizing: border-box; line-height: 1;
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .pcl__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }

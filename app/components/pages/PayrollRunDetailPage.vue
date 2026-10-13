@@ -7,7 +7,7 @@
  * Versions (with the compare), Journals, Mapping used; claims below.
  */
 import { computed, nextTick, ref, watch } from 'vue'
-import { MpButton, MpTextlink, MpTabs, MpTabList, MpTab } from '@mekari/pixel3'
+import { MpButton, MpTextlink, MpTabs, MpTabList, MpTab, MpButtonGroup, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollHoldsPanel from '~/components/payroll/PayrollHoldsPanel.vue'
 import PayrollDraftReview from '~/components/payroll/PayrollDraftReview.vue'
@@ -112,18 +112,19 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
           <h1 class="prr__title">{{ t('Payroll') }} {{ periodLabel(run.start, run.end) }}<template v-if="run.kind !== 'Regular'"> · {{ run.kind }} {{ run.label }}</template></h1>
           <ErpStatusBadge :status="status ?? ''" :label="t(statusLabel(status ?? ''))" :type="statusType(status ?? '')" size="md" badge-for="additionalInformation" />
         </div>
-        <p class="prr__sub">
-          {{ t(run.kind) }} · v{{ v.no }} {{ t('of') }} {{ run.versions.length }} · {{ t('sent by Talenta') }} {{ wib(v.sentAt) }} · {{ t('tax month') }} {{ monthLabel(run.month) }}
-        </p>
       </div>
-      <div class="prr__baractions">
+      <MpButtonGroup class="prr__baractions">
         <MpButton v-if="canPostNow && stale" variant="secondary" is-rounded @click="rebuild">{{ t('Rebuild draft') }}</MpButton>
         <MpButton v-if="can('post') && canPostNow" is-rounded data-tour="payroll-post" data-testid="prr-post" @click="askPost">{{ t('Post journal') }}</MpButton>
         <MpButton v-else-if="canSaveDraft" is-rounded data-tour="payroll-save-draft" data-testid="prr-save-draft" @click="doSaveDraft">{{ t('Save draft') }}</MpButton>
-      </div>
+      </MpButtonGroup>
     </header>
 
     <div class="prr__body">
+      <!-- Run facts: kept out of the 72px title bar, which holds only the breadcrumb and title. -->
+      <p class="prr__sub">
+        {{ t(run.kind) }} · v{{ v.no }} {{ t('of') }} {{ run.versions.length }} · {{ t('sent by Talenta') }} {{ wib(v.sentAt) }} · {{ t('tax month') }} {{ monthLabel(run.month) }}
+      </p>
       <!-- Headline figures: house stats band. -->
       <div class="stats-section" data-tour="payroll-run-stats">
         <div class="stat-card stat-card--bordered">
@@ -151,16 +152,22 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       </div>
 
       <!-- Saved by someone who can't post: waits for the Owner or a user with LM. -->
-      <section v-if="savedNote" class="prr__notice prr__notice--info" data-testid="prr-saved-draft" data-tour="payroll-saved-draft">
-        <div>{{ t(savedNote) }}</div>
-        <PayrollReadOnlyNote v-if="!can('post')" :text="t('Only the Owner or a user with LM can post.')" />
-      </section>
+      <MpBanner v-if="savedNote" id="prr-saved-draft" variant="info" data-testid="prr-saved-draft" data-tour="payroll-saved-draft">
+        <MpBannerIcon id="prr-saved-draft-icon" />
+        <MpBannerDescription>
+          <div class="prr__bannerbody">
+            <div>{{ t(savedNote) }}</div>
+            <PayrollReadOnlyNote v-if="!can('post')" :text="t('Only the Owner or a user with LM can post.')" />
+          </div>
+        </MpBannerDescription>
+      </MpBanner>
 
       <!-- Post feedback: blocks only (warnings never block). -->
-      <section v-if="postError" class="prr__notice prr__notice--danger" role="alert">
-        <div class="prr__noticetitle">{{ t('Not posted yet') }}</div>
-        <div>{{ postError }}</div>
-      </section>
+      <MpBanner v-if="postError" id="prr-post-error" variant="danger" role="alert">
+        <MpBannerIcon id="prr-post-error-icon" />
+        <MpBannerTitle>{{ t('Not posted yet') }}</MpBannerTitle>
+        <MpBannerDescription>{{ postError }}</MpBannerDescription>
+      </MpBanner>
       <section v-if="staleChanges.length" class="prr__card">
         <div class="prr__cardhead">
           <div class="prr__cardtitle">{{ t('Lines changed by the rebuild') }}</div>
@@ -198,7 +205,10 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
       </MpTabs>
 
       <template v-if="tab === 'review'">
-        <div v-if="draft && run.mode !== 'Live'" class="prr__notice prr__notice--info" data-testid="prr-before-start">{{ t(notPostedLabel(run.mode)) }}</div>
+        <MpBanner v-if="draft && run.mode !== 'Live'" id="prr-before-start" variant="info" data-testid="prr-before-start">
+          <MpBannerIcon id="prr-before-start-icon" />
+          <MpBannerDescription>{{ t(notPostedLabel(run.mode)) }}</MpBannerDescription>
+        </MpBanner>
         <PayrollDraftReview v-if="draft" :run-id="run.id" />
         <PayrollRunJournals v-else-if="live.length" :run-id="run.id" only-live />
         <div v-else class="prr__card prr__empty">
@@ -225,7 +235,7 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
             </thead>
             <tbody>
               <tr v-for="x in [...run.versions].reverse()" :key="x.no" :class="{ 'prr__current': x.no === run.currentVersion }">
-                <td class="prr__td prr__strong">v{{ x.no }}</td>
+                <td class="prr__td">v{{ x.no }}</td>
                 <td class="prr__td prr__nowrap">{{ wib(x.sentAt) }}</td>
                 <td class="prr__td prr__num">{{ versionFigures(x).staff }}</td>
                 <td class="prr__td prr__num">{{ rupiah(versionFigures(x).takeHome) }}</td>
@@ -263,35 +273,31 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
 </template>
 
 <style scoped>
-.prr { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+/* Detail page shell (page-title-bar.md, Variant B): the 72px title bar stays put on the
+   neutral surface; the white stage below scrolls, with rounded top corners. */
+.prr { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--mp-background-neutral-subtle); }
 .prr__bar {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4);
-  flex: none; min-height: 72px; padding: var(--mp-spacing-4) var(--mp-spacing-6);
-  background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+  flex: none; height: var(--mp-sizes-18, 72px); box-sizing: border-box; padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle);
 }
-.prr__barleft { display: flex; flex-direction: column; min-width: 0; }
-.prr__crumbs { display: flex; align-items: center; gap: var(--mp-spacing-1); }
-.prr__crumb { font-size: var(--mp-font-sizes-sm); }
-.prr__titlerow { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.prr__title { font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
-.prr__sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: var(--mp-spacing-1) 0 0; overflow-wrap: anywhere; }
-.prr__baractions { flex: none; display: flex; gap: var(--mp-spacing-2); align-items: center; min-height: 40px; }
-.prr__body { padding: var(--mp-spacing-6); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.prr__barleft { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
+.prr__crumbs { display: flex; align-items: center; gap: var(--mp-spacing-1); align-self: flex-start; }
+.prr__crumb { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-sizes-4); }
+.prr__titlerow { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.prr__title { font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-sizes-8); margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prr__sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0 0 calc(-1 * var(--mp-spacing-2)); overflow-wrap: anywhere; }
+.prr__baractions { flex: none; }
+.prr__body {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  padding: var(--mp-spacing-6) var(--mp-spacing-6) var(--mp-spacing-8);
+  display: flex; flex-direction: column; gap: var(--mp-spacing-5);
+}
+/* The stage scrolls, so sections keep their own height instead of shrinking to fit. */
+.prr__body > * { flex-shrink: 0; }
 .prr__body > .stats-section { margin-bottom: 0; }
-
-
-.prr__notice {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); border-radius: var(--mp-radii-md); font-size: var(--mp-font-sizes-md);
-  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
-}
-.prr__notice--row { flex-direction: row; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
-.prr__notice--warn { background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); }
-.prr__notice--danger { background: var(--mp-colors-background-danger); color: var(--mp-text-danger); }
-.prr__notice--info { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); border: 1px solid var(--mp-border-default); }
-.prr__noticebody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.prr__noticetitle { font-weight: var(--mp-font-weights-semi-bold); }
-.prr__noticesub { font-size: var(--mp-font-sizes-sm); }
-.prr__noticeactions { flex: none; display: flex; gap: var(--mp-spacing-2); align-items: center; }
+.prr__bannerbody { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .prr__stack { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .prr__nowrap { white-space: nowrap; }
 
@@ -307,15 +313,15 @@ watch(() => route.query.tab, (q) => { if (q === 'journals' || q === 'versions' |
 .prr__cardtitle { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .prr__cardsub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1); }
 .prr__table { width: 100%; border-collapse: collapse; }
+/* Header row 28px, uppercase 12px semibold (rule/table-header-height, rule/table-header-uppercase). */
 .prr__th {
+  height: var(--mp-sizes-7); box-sizing: border-box; line-height: 1;
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .prr__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .prr__th.prr__num, .prr__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.prr__strong { font-weight: var(--mp-font-weights-semi-bold); }
 .prr__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
-.prr__current .prr__td { background: var(--mp-background-neutral-subtle); }
 
 /* House stats band (BillsIndexPage). */
 .stats-section {

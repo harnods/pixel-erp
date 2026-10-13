@@ -89,13 +89,16 @@ const reverseOpen = ref(false)
 .prj__memo { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow-wrap: anywhere; }
 .prj__total { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .prj__table { width: 100%; border-collapse: collapse; border-top: 1px solid var(--mp-border-default); }
+/* Header row 28px, uppercase 12px semibold (rule/table-header-height, rule/table-header-uppercase). */
 .prj__th {
+  height: var(--mp-sizes-7); box-sizing: border-box; line-height: 1;
   text-align: left; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; white-space: nowrap;
-  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-2) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-1) var(--mp-spacing-4); border-bottom: 1px solid var(--mp-border-default);
 }
 .prj__td { padding: var(--mp-spacing-2\.5) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default); vertical-align: top; }
 .prj__th.prj__num, .prj__num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .prj__strong { font-weight: var(--mp-font-weights-semi-bold); }
-.prj__totalrow .prj__td { border-bottom: 0; }
+/* Debits must visibly equal credits: a bold-bordered Total row (rule/journal-entry-structure). */
+.prj__totalrow .prj__td { border-top: 1px solid var(--mp-colors-border-bold, #8c9596); border-bottom: 0; }
 .prj__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 </style>

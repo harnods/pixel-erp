@@ -6,7 +6,8 @@
  * posted journal in full and posts the chosen version in full on one journal date.
  */
 import { computed, ref } from 'vue'
-import { MpButton, MpIcon } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpIcon, MpTextlink, MpBanner, MpBannerIcon, MpBannerDescription } from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PayrollReadOnlyNote from '~/components/payroll/PayrollReadOnlyNote.vue'
 import PayrollPostDrawer from '~/components/payroll/PayrollPostDrawer.vue'
@@ -59,10 +60,10 @@ function showCompare() { emit('compare') }
           {{ `v${s.fromVersion}` }} {{ t('is posted as') }} {{ listLabel(live.map((j) => j.number)) }}. {{ t(`Use v${s.toVersion} and repost to replace it in full.`) }}
         </div>
       </div>
-      <div class="pcn__actions">
+      <MpButtonGroup class="pcn__actions">
         <MpButton v-if="run.versions.length > 1" variant="secondary" is-rounded @click="showCompare">{{ t('Compare versions') }}</MpButton>
         <MpButton v-if="can('post') && !partial" is-rounded data-testid="pcn-repost" data-tour="payroll-repost" @click="open = true">{{ t(`Use v${s.toVersion} and repost`) }}</MpButton>
-      </div>
+      </MpButtonGroup>
     </div>
 
     <PayrollReadOnlyNote v-if="!can('post')" :text="t('Only the Owner or a user with LM can post.')" />
@@ -77,13 +78,12 @@ function showCompare() { emit('compare') }
 
     <div class="pcn__block">
       <div class="pcn__blocktitle">{{ t('Staff') }} · {{ staffCount }} {{ t('changed') }}</div>
-      <ul class="pcn__list">
+      <ul class="pcn__people">
         <li v-for="p in people" :key="p.key" :data-people="p.key">
-          <span class="pcn__lead">{{ t(p.label) }}</span>
-          <span class="pcn__ids">{{ p.count }} {{ t('staff') }}</span>
+          <ContentList horizontal :label="t(p.label)" :value="`${p.count} ${t('staff')}`" />
         </li>
       </ul>
-      <span v-if="staffCount" class="cell-link pcn__seewho" data-testid="pcn-see-who" @click="seeInTalenta">{{ t('See who in Talenta') }}</span>
+      <MpTextlink v-if="staffCount" id="pcn-see-who" as="a" class="pcn__seewho" data-testid="pcn-see-who" @click.prevent="seeInTalenta">{{ t('See who in Talenta') }}</MpTextlink>
     </div>
 
     <div class="pcn__block">
@@ -97,10 +97,13 @@ function showCompare() { emit('compare') }
       <div v-else class="pcn__muted">{{ t('No account changes') }}</div>
     </div>
 
-    <div v-if="s.settingsChanged || partial" class="pcn__notes">
-      <div v-if="s.settingsChanged">{{ t('Settings changed after the posted journal, so part of this change comes from settings.') }}</div>
-      <div v-if="partial">{{ t('A later send looks like part of the run. Use it as the full run or reject it first.') }}</div>
-    </div>
+    <MpBanner v-if="s.settingsChanged || partial" id="pcn-notes" variant="warning">
+      <MpBannerIcon id="pcn-notes-icon" />
+      <MpBannerDescription>
+        <div v-if="s.settingsChanged">{{ t('Settings changed after the posted journal, so part of this change comes from settings.') }}</div>
+        <div v-if="partial">{{ t('A later send looks like part of the run. Use it as the full run or reject it first.') }}</div>
+      </MpBannerDescription>
+    </MpBanner>
 
     <PayrollPostDrawer mode="repost" :is-open="open" :run-id="runId" @close="open = false" />
   </section>
@@ -115,7 +118,7 @@ function showCompare() { emit('compare') }
 .pcn__intro { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .pcn__title { display: flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pcn__text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow-wrap: anywhere; }
-.pcn__actions { flex: none; display: flex; gap: var(--mp-spacing-2); align-items: center; }
+.pcn__actions { flex: none; }
 .pcn__grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .pcn__fig { padding: var(--mp-spacing-3) var(--mp-spacing-4); border-right: 1px solid var(--mp-border-default); display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
 .pcn__fig:last-child { border-right: 0; }
@@ -127,13 +130,9 @@ function showCompare() { emit('compare') }
 .pcn__blocktitle { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); text-transform: uppercase; }
 .pcn__list { margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .pcn__list li { display: flex; gap: var(--mp-spacing-3); justify-content: space-between; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.pcn__lead { flex: none; width: 168px; color: var(--mp-text-secondary); }
 .pcn__ids { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .pcn__seewho { align-self: flex-start; }
 .pcn__amount { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pcn__muted { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.pcn__notes {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-md); background: var(--mp-colors-background-warning); color: var(--mp-colors-text-warning); font-size: var(--mp-font-sizes-sm);
-}
+.pcn__people { margin: 0; padding: 0; list-style: none; }
 </style>
