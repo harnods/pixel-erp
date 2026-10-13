@@ -501,8 +501,10 @@ const accountingOutputs = computed(() =>
  */
 const accountingInvoices = computed(() => {
   const raised = subcon.value?.raisedDocuments ?? []
+  const serviceOrders = raised.filter(isServiceOrder)
+  const serviceOrderIds = new Set(serviceOrders.map(d => d.id))
   const serviceOrderNumbers = new Set(
-    raised.filter(isServiceOrder)
+    serviceOrders
       .map(d => purchaseOrders.find(o => o.id === d.id)?.number)
       .filter((n): n is string => !!n),
   )
@@ -510,7 +512,13 @@ const accountingInvoices = computed(() => {
     .filter(d => d.kind === 'purchaseInvoice')
     .map((d) => {
       const inv = purchaseInvoices.find(i => i.id === d.id)
-      if (!inv || !inv.referenceNo || !serviceOrderNumbers.has(inv.referenceNo)) return null
+      if (!inv) return null
+      // The orders it bills, recorded when it was raised (R16); an invoice from
+      // before that is matched on its reference number(s).
+      const billsService = d.fromIds?.length
+        ? d.fromIds.some(id => serviceOrderIds.has(id))
+        : (inv.referenceNo ?? '').split(',').map(s => s.trim()).some(n => serviceOrderNumbers.has(n))
+      if (!billsService) return null
       return {
         id: d.id,
         date: inv.date,
@@ -1411,9 +1419,13 @@ function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
   if (kind === 'purchaseInvoice') {
     // The vendor's work is invoiced — not the raw material, which has its own
     // order and its own delivery. There is no delivery for the work itself (R17).
-    const order = raised.find(isServiceOrder)
-    if (order) {
-      router.push({ path: '/purchase-invoices/new', query: { fromPo: order.id } })
+    // R16 — every service order not yet billed goes on the one invoice, so a
+    // charge added later is billed together with the original order.
+    const open = raised.filter(isServiceOrder)
+      .filter(d => purchaseOrders.find(o => o.id === d.id)?.status !== 'closed')
+    const orders = open.length ? open : raised.filter(isServiceOrder).slice(0, 1)
+    if (orders.length) {
+      router.push({ path: '/purchase-invoices/new', query: { fromPo: orders.map(o => o.id).join(',') } })
       return
     }
   }

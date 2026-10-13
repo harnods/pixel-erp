@@ -31,8 +31,8 @@ import { getPurchaseOrderDetail } from '~/data/purchaseOrderDetails'
 import { setPurchaseOrderStatus } from '~/data/purchaseOrders'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
-import { SUBCON_VENDORS } from '~/data/subcon'
+import { workOrders, recordSubconDocument, workOrderForDocument } from '~/data/workOrders'
+import { SUBCON_VENDORS, checkInvoiceSources } from '~/data/subcon'
 import { subconLineTaxLabel, subconDocumentUntaxed } from '~/data/subconPricing'
 
 const router = useRouter()
@@ -121,28 +121,39 @@ const items = ref<LineItem[]>([])
 // rather than a blank table. When the order came from a subcon work order, the
 // invoice is also the last document in that work order's chain.
 const route = useRoute()
-const fromPurchaseOrderId = computed(() =>
-  typeof route.query.fromPo === 'string' ? route.query.fromPo : '')
+/**
+ * The orders being billed. R16 — one invoice may cover several orders from the
+ * same work order, passed as `?fromPo=a,b`; a single id works as before.
+ */
+const fromPurchaseOrderIds = computed(() =>
+  typeof route.query.fromPo === 'string' ? route.query.fromPo.split(',').map(s => s.trim()).filter(Boolean) : [])
+const sourceOrders = computed(() =>
+  fromPurchaseOrderIds.value
+    .map(id => purchaseOrders.find(o => o.id === id))
+    .filter((o): o is NonNullable<typeof o> => !!o))
+/** Orders from different work orders cannot share an invoice (R16). */
+const sourceCheck = computed(() =>
+  checkInvoiceSources(sourceOrders.value.map(o => o.id), id => workOrderForDocument(id)?.id))
+const mixedSourcesError = computed(() => !sourceCheck.value.ok)
 const subconWorkOrder = computed(() =>
-  fromPurchaseOrderId.value ? workOrderForDocument(fromPurchaseOrderId.value) : undefined)
-
-/** The order being billed, if this form was opened from one. */
-const sourceOrder = computed(() =>
-  purchaseOrders.find(o => o.id === fromPurchaseOrderId.value))
+  sourceCheck.value.ok && sourceCheck.value.workOrderId
+    ? workOrders.find(w => w.id === (sourceCheck.value as { workOrderId?: string }).workOrderId)
+    : undefined)
 
 onMounted(() => {
-  const po = sourceOrder.value
-  if (!po) return
+  // Refused inline (the banner below) rather than half-filled from one of them.
+  if (!sourceOrders.value.length || mixedSourcesError.value) return
+  const po = sourceOrders.value[0]!
 
   const vendor = vendorOptions.value.find(v => v.name === po.vendor.name)
   if (vendor) vendorId.value = vendor.id
-  referenceNo.value = po.number
+  referenceNo.value = sourceOrders.value.map(o => o.number).join(', ')
   if (po.dueDate) dueDate.value = isoToDMY(po.dueDate)
 
   // The order's own detail is the one place the lines are resolved — it returns
   // the real ones for an order raised through the form and generated ones for a
-  // seeded order, so either way the invoice bills what the order actually says.
-  items.value = getPurchaseOrderDetail(po.id).lineItems.map(l => ({
+  // seeded order, so either way the invoice bills what the orders actually say.
+  items.value = sourceOrders.value.flatMap(o => getPurchaseOrderDetail(o.id).lineItems).map(l => ({
     _key: ++_seq,
     product: l.product,
     sku: l.sku,
@@ -307,6 +318,7 @@ function onCancel() { router.push('/purchase-invoices') }
 
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
+  if (mixedSourcesError.value) return
   if (!validate()) return
   // A subcon vendor is not in the `vendors` store (see vendorOptions), so the
   // name is resolved off the merged option list rather than the store alone.
@@ -339,10 +351,13 @@ function onSave() {
       id: invoice.id,
       number: invoice.number,
       route: '/purchase-invoices',
+      // The orders this invoice bills — several, when it covers a run's
+      // original service order and one raised for a charge added later (R16).
+      fromIds: sourceOrders.value.map(o => o.id),
     })
   }
-  // The order has now been billed, which closes it.
-  if (sourceOrder.value) setPurchaseOrderStatus(sourceOrder.value.id, 'closed')
+  // Every order the invoice bills is now closed.
+  for (const o of sourceOrders.value) setPurchaseOrderStatus(o.id, 'closed')
 
   toast.notify({ variant: 'success', title: t('Purchase invoice created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/purchase-invoices/${invoice.id}`)
@@ -462,6 +477,12 @@ function onSave() {
         <div class="si-items-header-row">
           <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
         </div>
+
+        <MpBanner v-if="mixedSourcesError" id="si-mixed-orders-banner" variant="danger" align-items="center" class="si-items-error-banner">
+          <MpBannerIcon id="si-mixed-orders-banner-icon" />
+          <MpBannerTitle>{{ t('These orders cannot share an invoice') }}</MpBannerTitle>
+          <MpBannerDescription>{{ t('One invoice can only cover purchase orders from the same work order. Create a separate invoice for each work order.') }}</MpBannerDescription>
+        </MpBanner>
 
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />

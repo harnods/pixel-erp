@@ -1092,3 +1092,25 @@ export function allocateReservedBatches(
   }
   return out
 }
+
+
+// ── One invoice, several orders (R16) ─────────────────────────────────────────
+
+/**
+ * Whether a set of purchase orders may be billed on one invoice.
+ *
+ * R16 — an invoice may cover several orders from the SAME work order (the
+ * original service order and one raised for a charge added later, say). Orders
+ * from different work orders — or a subcon order mixed with one that belongs to
+ * no work order — cannot be combined: the invoice would carry cost into two runs,
+ * or into a run and outside it, at once.
+ */
+export function checkInvoiceSources(
+  purchaseOrderIds: string[],
+  workOrderOf: (purchaseOrderId: string) => string | undefined,
+): { ok: true; workOrderId?: string } | { ok: false } {
+  const owners = new Set(purchaseOrderIds.map(id => workOrderOf(id) ?? ''))
+  if (owners.size > 1) return { ok: false }
+  const only = [...owners][0]
+  return { ok: true, ...(only ? { workOrderId: only } : {}) }
+}

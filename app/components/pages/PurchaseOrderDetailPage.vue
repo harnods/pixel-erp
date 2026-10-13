@@ -13,6 +13,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
+import { subconOrdersToInvoice } from '~/data/workOrders'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -88,9 +89,15 @@ const router = useRouter()
 function createPurchaseDelivery() {
   router.push({ path: '/purchase-deliveries/new', query: { fromPo: props.orderId } })
 }
-/** Open the invoice form against this order — the vendor's bill for it. */
+/**
+ * Open the invoice form against this order — the vendor's bill for it. An order
+ * from a subcon run brings the run's other unbilled service orders with it, so
+ * one invoice covers them all (R16); any other order bills only itself.
+ */
 function createPurchaseInvoice() {
-  router.push({ path: '/purchase-invoices/new', query: { fromPo: props.orderId } })
+  const ids = subconOrdersToInvoice(props.orderId,
+    id => purchaseOrders.find(o => o.id === id)?.status === 'closed')
+  router.push({ path: '/purchase-invoices/new', query: { fromPo: ids.join(',') } })
 }
 function confirmDelete() {
   toast.notify({ variant: 'success', title: 'Purchase order deleted', rootProps: { class: 'toast-enterprise' } })

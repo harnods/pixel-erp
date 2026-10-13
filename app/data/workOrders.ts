@@ -233,6 +233,8 @@ export interface RaisedSubconDocument {
    * which request still has no order of its own.
    */
   fromId?: string
+  /** The orders an INVOICE bills (R16) — one invoice may cover several from this run. */
+  fromIds?: string[]
   /**
    * Which cost lines a service REQUEST covers (R11). A request raised before this
    * field existed covers every line the BOM had at the time.
@@ -1035,4 +1037,26 @@ for (const wo of workOrders) {
   if ((wo.status as string) !== 'awaiting purchase order') continue
   wo.status = 'waiting rm procurement'   // a floor `syncSubconStatus` can raise
   syncSubconStatus(wo)
+}
+
+
+/**
+ * The service orders an invoice raised from `purchaseOrderId` should bill (R16).
+ *
+ * For an order that belongs to a subcon run, that is every service order of the
+ * run not yet billed — this one included — so a charge added after approval is
+ * invoiced together with the original order. A component order (Dropship raw
+ * material) and an order outside any run bill only themselves.
+ */
+export function subconOrdersToInvoice(
+  purchaseOrderId: string,
+  isBilled: (purchaseOrderId: string) => boolean,
+): string[] {
+  const wo = workOrderForDocument(purchaseOrderId)
+  const self = wo?.subcon?.raisedDocuments?.find(d => d.id === purchaseOrderId)
+  if (!wo || !self || !isServiceOrderDoc(self)) return [purchaseOrderId]
+  const open = (wo.subcon?.raisedDocuments ?? [])
+    .filter(d => d.kind === 'purchaseOrder' && isServiceOrderDoc(d) && !isBilled(d.id))
+    .map(d => d.id)
+  return open.includes(purchaseOrderId) ? open : [purchaseOrderId, ...open]
 }
