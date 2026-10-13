@@ -15,6 +15,12 @@ import TaxDocumentDetailDrawer from '~/components/patterns/TaxDocumentDetailDraw
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { canGenerateTaxDocument } from '~/data/salesInvoiceLineItems'
 import { salesInvoices } from '~/data'
+import {
+  customerAvailableCredit, applicationsForInvoice, applicationLabel,
+} from '~/data/creditMemos'
+import {
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+} from '@mekari/pixel3'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import {
   getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus,
@@ -71,7 +77,18 @@ function openCreateTaxDocument() {
 // Tabs only appear once they have something to show — an invoice with no
 // payments yet shouldn't offer an empty "Payments" tab, etc.
 const hasLinkedTransactions = computed(() => invoice.value.linkedTransactions.length > 0)
-const hasPayments = computed(() => invoice.value.payments.length > 0)
+const hasPayments = computed(() => paymentRows.value.length > 0)
+// Payment rows = cash payments + credit-memo applications. The credit rows carry a
+// link to their "Credit memo applied" record (Figma: a "VIEW DETAILS" hover chip).
+interface PaymentRow { date: string; number: string; applicationId?: string; method: string; account: string; reference: string; amount: number }
+const paymentRows = computed<PaymentRow[]>(() => {
+  const cash: PaymentRow[] = invoice.value.payments.map(p => ({ date: p.date, number: '—', method: p.method, account: '—', reference: p.reference, amount: p.amount }))
+  const credit: PaymentRow[] = creditApplications.value.map(({ application, amount }) => ({
+    date: application.date, number: applicationLabel(application.number), applicationId: application.id,
+    method: t('Credit memo'), account: '—', reference: '—', amount,
+  }))
+  return [...credit, ...cash].sort((a, b) => b.date.localeCompare(a.date))
+})
 const hasTaxDocuments = computed(() => taxDocuments.value.length > 0)
 
 function onTaxDocumentSaved() {
@@ -237,6 +254,24 @@ function attachmentIcon(name: string): string {
 
 function goBack() { router.push('/sales-invoices') }
 function receivePayment() { router.push('/sales-invoices') }
+
+// ── Credit memo ────────────────────────────────────────────────────────────────
+// Credit the customer has left to apply, and whether this invoice already carries
+// any — drives the "Apply credit memo" affordance and the totals/payment rows.
+const availableCredit = computed(() => customerAvailableCredit(invoice.value.customer.id))
+const creditApplications = computed(() => applicationsForInvoice(invoice.value.id))
+const hasCreditApplied = computed(() => invoice.value.creditApplied > 0)
+// Apply is offered only when there's a balance to reduce AND credit to spend.
+const canApplyCredit = computed(() => invoice.value.balance > 0 && availableCredit.value > 0)
+
+// Figma screen 1: a short confirm ("The customer has <credit> available") before
+// opening the apply form, so the user knows there's credit to spend.
+const applyModalOpen = ref(false)
+function openApplyCredit() { applyModalOpen.value = true }
+function confirmApplyCredit() {
+  applyModalOpen.value = false
+  router.push(`/sales-invoices/${invoice.value.id}/apply-credit-memo`)
+}
 </script>
 
 <template>
@@ -465,9 +500,18 @@ function receivePayment() { router.push('/sales-invoices') }
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.totals.total) }}</span>
           </div>
-          <div class="detail-total-row">
+          <div v-if="invoice.cashPaid > 0" class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(invoice.amountPaid) }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.cashPaid) }}</span>
+          </div>
+          <!-- Credit applied via credit memos (Figma: "Less: Credit Memo") -->
+          <div v-if="hasCreditApplied" class="detail-total-row" data-devchange="invoice-less-credit-memo">
+            <span class="detail-total-row-label">{{ t('Less: Credit Memo') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.creditApplied) }}</span>
+          </div>
+          <div v-if="invoice.cashPaid === 0 && !hasCreditApplied" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(0) }}</span>
           </div>
           <div class="detail-total-rule" />
           <div class="detail-total-row">
@@ -522,26 +566,30 @@ function receivePayment() { router.push('/sales-invoices') }
           </MpTabPanel>
 
           <MpTabPanel v-if="hasPayments" value="payments">
-            <h3 class="detail-tab-heading">{{ t('Payments') }}</h3>
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
-              <colgroup>
-                <col class="detail-linked-col--date" />
-                <col class="detail-linked-col--number" />
-                <col class="detail-linked-col--status" />
-                <col />
-              </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
                   <th class="detail-th">{{ t('Payment method') }}</th>
-                  <th class="detail-th">{{ t('Reference') }}</th>
-                  <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
+                  <th class="detail-th">{{ t('Account') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(p, i) in invoice.payments" :key="i" class="detail-item-row">
+                <tr v-for="(p, i) in paymentRows" :key="i" class="detail-item-row payment-row">
                   <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
+                  <td class="detail-td">
+                    <span v-if="!p.applicationId" class="detail-td--muted">{{ p.number }}</span>
+                    <span v-else class="payment-number-cell">
+                      <a class="cell-link cell-text" @click="router.push(`/credit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
+                      <a class="payment-view-details" @click.stop="router.push(`/credit-memo-applications/${p.applicationId}`)">{{ t('View details') }}</a>
+                    </span>
+                  </td>
                   <td class="detail-td">{{ p.method }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.account }}</td>
                   <td class="detail-td detail-td--muted">{{ p.reference }}</td>
                   <td class="detail-td detail-td--num">{{ formatIDR(p.amount) }}</td>
                 </tr>
@@ -683,7 +731,7 @@ function receivePayment() { router.push('/sales-invoices') }
                 <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Apply credit memo') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canApplyCredit" data-devchange="invoice-apply-credit-memo" @click="openApplyCredit">{{ t('Apply credit memo') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
@@ -742,6 +790,22 @@ function receivePayment() { router.push('/sales-invoices') }
       :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
       @confirm="confirmDelete"
     />
+
+    <!-- Apply credit memo confirm (Figma: "Apply credit memo?") -->
+    <MpModal
+      id="apply-credit-confirm" :is-open="applyModalOpen" size="md" :is-centered="false" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="applyModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Apply credit memo?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>{{ t('The customer has') }} {{ formatIDR(availableCredit) }} {{ t('in available credit.') }}</MpModalBody>
+        <MpModalFooter>
+          <MpButton variant="ghost" is-rounded @click="applyModalOpen = false">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmApplyCredit">{{ t('Apply credit memo') }}</MpButton>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 
   <!-- Not-found reachable state: the id didn't resolve to an invoice -->
@@ -1088,6 +1152,13 @@ function receivePayment() { router.push('/sales-invoices') }
 
 .cell-with-action { position: relative; }
 .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Credit-memo payment row: "View details" chip revealed on row hover */
+.payment-number-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.payment-view-details {
+  display: none; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-link); letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
+}
+.payment-row:hover .payment-view-details { display: inline; }
 /* progressive pagination (load-more) row — see ErpPagination.md */
 .detail-items-count {
   display: flex;

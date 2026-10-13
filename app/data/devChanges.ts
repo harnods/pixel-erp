@@ -28,6 +28,62 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'invoice-apply-credit-memo',
+    title: 'Sales invoice: Apply credit memo',
+    description:
+      'The Add payment split menu now has a working "Apply credit memo" action (shown only when the invoice has a balance and the customer has available credit). It confirms the available credit, then opens the Apply credit memo form.',
+    date: '2026-10-14',
+    files: ['SalesInvoiceDetailsPage.vue', 'ApplyCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'invoice-less-credit-memo',
+    title: 'Sales invoice: credit shown in totals & payments',
+    description:
+      'When a credit memo is applied, the totals block shows a "Less: Credit Memo" line and the Balance due drops accordingly; the Payments tab lists each Credit Memo Applied with a View details link. Invoice status becomes "Partially paid" when only partly settled.',
+    date: '2026-10-14',
+    files: ['SalesInvoiceDetailsPage.vue', 'salesInvoiceDetails.ts', 'creditMemos.ts', 'ErpStatusBadge.vue'],
+  },
+  {
+    id: 'cm-detail-actions',
+    title: 'Credit memo detail page',
+    description:
+      'New Credit memo detail page: available credit, credit-account lines, running balance, Credit applications and Credit refund sections, and an Actions menu (Apply credit memo, Create credit memo refund, Edit, Delete). Delete is blocked with an explanation while the memo is in use.',
+    date: '2026-10-14',
+    files: ['CreditMemoDetailsPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'apply-cm-save',
+    title: 'Apply credit memo form',
+    description:
+      'New Apply credit memo form — spends one credit memo across the customer’s open invoices with per-invoice "amount to apply", live Amount to credit / Remaining credit, and inline validation (over balance, over available, date rules). Reachable from an invoice or a credit memo.',
+    date: '2026-10-14',
+    files: ['ApplyCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'refund-cm-save',
+    title: 'Create credit memo refund form',
+    description:
+      'New Create credit memo refund form — pays a customer’s remaining credit back in cash from a bank/cash account across one or more credit memos, with a live Total refund and inline validation.',
+    date: '2026-10-14',
+    files: ['CreateCreditMemoRefundPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'new-cm-save',
+    title: 'Create / edit credit memo form',
+    description:
+      'Inferred create/edit credit memo form (no explicit Figma frame — flagged as a design gap). Customer, date, credit-account lines, memo, attachments. Editing cannot reduce the memo below credit already used or move it to another customer once used.',
+    date: '2026-10-14',
+    files: ['NewCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'cm-report-links',
+    title: 'Credit memo report wired to the documents',
+    description:
+      'The Credit Memo report is now derived from the credit memo mini-DB (not a separate seed), so creating/editing/deleting a credit memo, application or refund updates the report immediately. Memo numbers and mutation rows deep-link to their detail pages.',
+    date: '2026-10-14',
+    files: ['creditMemoReport.ts', 'CreditMemoReportPage.vue', 'creditMemos.ts'],
+  },
+  {
     id: 'crm-generic-actions-column',
     title: 'Custom module: actions column with kebab menu',
     description:

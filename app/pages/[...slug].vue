@@ -404,6 +404,12 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const ApplyCreditMemoPage = asyncPage(() => import('~/components/pages/ApplyCreditMemoPage.vue'))
+const CreditMemoDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoDetailsPage.vue'))
+const CreditMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoAppliedDetailsPage.vue'))
+const CreditMemoRefundDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoRefundDetailsPage.vue'))
+const CreateCreditMemoRefundPage = asyncPage(() => import('~/components/pages/CreateCreditMemoRefundPage.vue'))
+const NewCreditMemoPage = asyncPage(() => import('~/components/pages/NewCreditMemoPage.vue'))
 const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
 const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
@@ -846,9 +852,46 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
     return { component: NewSalesInvoicePage, id: 'new' }
   }
+  // /sales-invoices/:id/apply-credit-memo → Apply credit memo form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'apply-credit-memo') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {
     return { component: SalesInvoiceDetailsPage, id: segs[1] }
+  }
+  // ── Credit memo flow ───────────────────────────────────────────────────────
+  // /credit-memos/new → create · /credit-memos/:id/edit → edit ·
+  // /credit-memos/:id/apply → apply form · /credit-memos/:id/refund → refund form ·
+  // /credit-memos/:id → detail
+  if (segs.length >= 2 && segs[0] === 'credit-memos' && segs[1] === 'new') {
+    return { component: NewCreditMemoPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'edit') {
+    return { component: NewCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'apply') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'refund') {
+    return { component: CreateCreditMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memos') {
+    return { component: CreditMemoDetailsPage, id: segs[1] }
+  }
+  // /credit-memo-applications/:id/edit → edit · /credit-memo-applications/:id → detail
+  if (segs.length >= 3 && segs[0] === 'credit-memo-applications' && segs[2] === 'edit') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memo-applications') {
+    return { component: CreditMemoAppliedDetailsPage, id: segs[1] }
+  }
+  // /credit-memo-refunds/:id/edit → edit · /credit-memo-refunds/:id → detail
+  if (segs.length >= 3 && segs[0] === 'credit-memo-refunds' && segs[2] === 'edit') {
+    return { component: CreateCreditMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memo-refunds') {
+    return { component: CreditMemoRefundDetailsPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }

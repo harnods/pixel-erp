@@ -195,15 +195,17 @@ function clearFilters() {
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const statusOptions = [
-  { label: t('All status'), value: ''        },
-  { label: t('Paid'),       value: 'paid'    },
-  { label: t('Open'),       value: 'open'    },
-  { label: t('Overdue'),    value: 'overdue' },
+  { label: t('All status'),     value: ''               },
+  { label: t('Paid'),           value: 'paid'           },
+  { label: t('Partially paid'), value: 'partially-paid' },
+  { label: t('Open'),           value: 'open'           },
+  { label: t('Overdue'),        value: 'overdue'        },
 ]
 const drawerStatusOptions = [
-  { label: t('Open'),    value: 'open'    },
-  { label: t('Paid'),    value: 'paid'    },
-  { label: t('Overdue'), value: 'overdue' },
+  { label: t('Open'),           value: 'open'           },
+  { label: t('Partially paid'), value: 'partially-paid' },
+  { label: t('Paid'),           value: 'paid'           },
+  { label: t('Overdue'),        value: 'overdue'        },
 ]
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
