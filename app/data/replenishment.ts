@@ -128,9 +128,12 @@ export function velocityFor(
   const cv = demandCv(sku, warehouseId, Math.min(lookbackDays, series.historyDays), asOf)
   const citations = demandWindow(sku, warehouseId, lookbackDays, asOf).docs
 
-  // Flat average with single-day spikes damped first, so one promo cannot set the
-  // reorder point for months.
-  const win = demandWindowDamped(sku, warehouseId, lookbackDays, cfg.demandOutlierCapMultiple, asOf)
+  // Flat average over real sales days — NO demand-qty damping. The PRD "outlier
+  // cap" (US-002 AC-04/AC-05, §2.7) is about capping the ORDER-UP-TO level (coverage
+  // forced to 0 in the provisional window, see the caller) so a spike cannot drive a
+  // large PR — it never clips individual spike sales days out of the average. Passing
+  // capMultiple 0 disables the damping entirely (spike days count in full).
+  const win = demandWindowDamped(sku, warehouseId, lookbackDays, 0, asOf)
   // Denominator = days since the SKU's FIRST SALE, capped at the lookback (D18).
   // `series.historyDays` is days since first sale; capping keeps a mature SKU on
   // the window and a brand-new fast mover on its true early rate. `win.units`

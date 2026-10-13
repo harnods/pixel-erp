@@ -178,8 +178,11 @@ describe('SettingsReplenishmentPage — renders and validates', () => {
     expect(wrapper.text()).not.toContain('Save changes')
 
     // Edit lives on each section (like Company profile), one open at a time.
+    // Six sections: categories, demand, safety, coverage, lead, FSN. (The Reminder
+    // section and the Outlier-cap row were removed.)
     const edits = wrapper.findAll('button').filter((b) => b.text() === 'Edit')
-    expect(edits.length).toBe(7)
+    expect(edits.length).toBe(6)
+    expect(wrapper.text()).not.toContain('Outlier cap')
     await edits[1]!.trigger('click')
     await nextTick()
     expect(wrapper.text()).toContain('Save changes')

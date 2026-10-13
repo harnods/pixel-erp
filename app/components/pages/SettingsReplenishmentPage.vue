@@ -49,18 +49,17 @@ function cloneConfig(cfg: ReplenishmentConfig): ReplenishmentConfig {
 
 const committed = ref<ReplenishmentConfig>(getReplenishmentConfig())
 const draft = reactive<ReplenishmentConfig>(cloneConfig(getReplenishmentConfig()))
-type SectionId = 'categories' | 'demand' | 'safety' | 'coverage' | 'lead' | 'fsn' | 'reminder'
+type SectionId = 'categories' | 'demand' | 'safety' | 'coverage' | 'lead' | 'fsn'
 /** One section is editable at a time (docs/patterns/settings-page.md, per-section Edit). */
 const editing = ref<SectionId | null>(null)
 /** Config keys each section owns — Reset to defaults touches only these. */
 const SECTION_FIELDS: Record<SectionId, (keyof ReplenishmentConfig)[]> = {
   categories: [],
-  demand: ['lookbackDays', 'volatileCvThreshold', 'demandOutlierCapMultiple', 'coldStartMinDays'],
+  demand: ['lookbackDays', 'volatileCvThreshold', 'coldStartMinDays'],
   safety: ['safetyDaysGlobal', 'safetyDaysByCategory'],
   coverage: ['coverageDaysGlobal', 'coverageDaysByCategory', 'reorderBoundary'],
   lead: ['fallbackLeadTimeDays', 'leadTimeByCategory', 'leadTimeSampleCount', 'leadTimeMinSamples', 'leadTimeOutlierCapDays', 'leadTimeOutlierCapByCategory'],
   fsn: ['fsnWindowDays', 'fsnFastPct', 'fsnSlowPct'],
-  reminder: ['dailyReminder'],
 }
 const SECTION_TITLES: Record<SectionId, string> = {
   categories: 'Product categories',
@@ -69,7 +68,6 @@ const SECTION_TITLES: Record<SectionId, string> = {
   coverage: 'Reorder point & coverage',
   lead: 'Lead time',
   fsn: 'Movement classification (FSN)',
-  reminder: 'Reminder',
 }
 function sectionTitle(id: SectionId): string {
   return editing.value === id ? tf('Edit {section}', { section: t(SECTION_TITLES[id]).toLowerCase() }) : t(SECTION_TITLES[id])
@@ -235,8 +233,6 @@ function validate(): boolean {
   need('lookback', isWhole(draft.lookbackDays) && Number(draft.lookbackDays) >= 1, MIN1)
   need('volatility', String(draft.volatileCvThreshold) !== '' && Number(draft.volatileCvThreshold) > 0,
     t('Enter a number greater than 0'))
-  need('outlier', String(draft.demandOutlierCapMultiple) !== '' && Number(draft.demandOutlierCapMultiple) >= 1,
-    t('Enter a number of 1 or more'))
   need('coldstart', isWhole(draft.coldStartMinDays) && Number(draft.coldStartMinDays) >= 1, MIN1)
   need('safety', isWhole(draft.safetyDaysGlobal) && Number(draft.safetyDaysGlobal) >= 0, MIN0)
   need('coverage', isWhole(draft.coverageDaysGlobal) && Number(draft.coverageDaysGlobal) >= 0, MIN0)
@@ -296,7 +292,6 @@ function save() {
     fsnFastPct: Number(draft.fsnFastPct),
     fsnSlowPct: Number(draft.fsnSlowPct),
     volatileCvThreshold: Number(draft.volatileCvThreshold),
-    demandOutlierCapMultiple: Number(draft.demandOutlierCapMultiple),
     fallbackLeadTimeDays: draft.fallbackLeadTimeDays === null ? null : Number(draft.fallbackLeadTimeDays),
     leadTimeSampleCount: Number(draft.leadTimeSampleCount),
     leadTimeMinSamples: Number(draft.leadTimeMinSamples),
@@ -431,7 +426,7 @@ function goToWorklist() { router.push('/replenishment') }
         <!-- ── Demand ── -->
         <section class="rs-section">
           <div class="rs-section-header">
-            <h2 class="rs-section-title">{{ sectionTitle('demand') }}</h2>
+            <h2 class="rs-section-title" data-devchange="replenishment-outlier-cap-off">{{ sectionTitle('demand') }}</h2>
             <MpButton v-if="canEdit && editing !== 'demand'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('demand')">{{ t('Edit') }}</MpButton>
           </div>
 
@@ -454,30 +449,13 @@ function goToWorklist() { router.push('/replenishment') }
             <div class="rs-label">
               <MpFormLabel>{{ t('Volatility threshold') }}</MpFormLabel>
               <span class="rs-caption">
-                {{ t('When a product\'s day-to-day sales vary more than this (coefficient of variation), it is tagged "Volatile demand" in the worklist\'s Signals column and its spikes are damped in the average. Raise it to flag fewer products.') }}
+                {{ t('When a product\'s day-to-day sales vary more than this (coefficient of variation), it is tagged "Volatile demand" in the worklist\'s Signals column. Raise it to flag fewer products.') }}
               </span>
             </div>
             <div class="rs-control">
               <MpInput v-if="editing === 'demand'" id="rs-cv" v-model="draft.volatileCvThreshold" type="number" step="0.1" :class="css({ width: '176px' })" />
               <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
               <MpFormErrorMessage v-if="fieldErrors.volatility">{{ fieldErrors.volatility }}</MpFormErrorMessage>
-            </div>
-          </MpFormControl>
-
-          <MpFormControl id="rs-outlier-fc" class="rs-row" :is-invalid="!!fieldErrors.outlier" data-devchange="replenishment-outlier-cap">
-            <div class="rs-label">
-              <MpFormLabel>{{ t('Outlier cap') }}</MpFormLabel>
-              <span class="rs-caption">
-                {{ t('A day\'s sales above this multiple of the typical day (the median) are capped at it before averaging, so one promo or bulk order cannot set the reorder point.') }}
-              </span>
-            </div>
-            <div class="rs-control">
-              <MpInputGroup v-if="editing === 'demand'" id="rs-outlier">
-                <MpInput id="rs-outlier-input" v-model="draft.demandOutlierCapMultiple" type="number" step="0.1" :class="css({ width: '176px' })" />
-                <MpInputRightAddon has-background>{{ t('× median') }}</MpInputRightAddon>
-              </MpInputGroup>
-              <span v-else class="rs-value">{{ committed.demandOutlierCapMultiple }}{{ t('× median') }}</span>
-              <MpFormErrorMessage v-if="fieldErrors.outlier">{{ fieldErrors.outlier }}</MpFormErrorMessage>
             </div>
           </MpFormControl>
 
@@ -823,37 +801,6 @@ function goToWorklist() { router.push('/replenishment') }
           </div>
         </section>
 
-        <!-- ── Daily reminder (US-021 AC-05) ── -->
-        <section class="rs-section" data-devchange="replenishment-daily-reminder">
-          <div class="rs-section-header">
-            <h2 class="rs-section-title">{{ sectionTitle('reminder') }}</h2>
-            <MpButton v-if="canEdit && editing !== 'reminder'" variant="secondary" is-rounded data-devchange="replenishment-section-edit" @click="startEdit('reminder')">{{ t('Edit') }}</MpButton>
-          </div>
-
-          <MpFormControl id="rs-reminder-fc" class="rs-row">
-            <div class="rs-label">
-              <MpFormLabel>{{ t('Daily reminder') }}</MpFormLabel>
-              <span class="rs-caption">
-                {{ t('Every day, a notification in your Inbox summarises the products at or below their reorder point, with a link to the worklist.') }}
-              </span>
-            </div>
-            <div class="rs-control">
-              <label v-if="editing === 'reminder'" class="rs-floor-switch" for="rs-reminder-toggle">
-                <MpToggle id="rs-reminder-toggle" v-model:is-checked="draft.dailyReminder" :aria-label="t('Daily reminder')" />
-                <span class="rs-floor-label">{{ t('Remind me when products need ordering') }}</span>
-              </label>
-              <span v-else class="rs-value">{{ committed.dailyReminder ? t('On') : t('Off') }}</span>
-            </div>
-          </MpFormControl>
-          <div v-if="editing === 'reminder'" class="rs-actions">
-            <p v-if="formError" class="rs-footer-error">{{ formError }}</p>
-            <MpButtonGroup class="erp-action-footer">
-              <MpButton variant="ghost" is-rounded @click="resetToDefaults">{{ t('Reset to defaults') }}</MpButton>
-              <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-              <MpButton variant="primary" is-rounded :is-loading="saving" @click="save">{{ t('Save changes') }}</MpButton>
-            </MpButtonGroup>
-          </div>
-        </section>
       </div>
     </div>
 

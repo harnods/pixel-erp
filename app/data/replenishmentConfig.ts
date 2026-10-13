@@ -36,12 +36,6 @@ export interface ReplenishmentConfig {
   lookbackDays: number
   lookbackDaysByCategory: Record<string, number>
   /**
-   * Demand samples above this multiple of the window median are pulled back to it
-   * before averaging, so a promo spike or a bulk return cannot distort the average
-   * (US-002 AC-03). The SKU is still flagged "volatile demand" rather than hidden.
-   */
-  demandOutlierCapMultiple: number
-  /**
    * Days of demand each order should cover BEYOND lead + safety (D9).
    * Sizes the quantity; it plays no part in deciding whether a SKU is due.
    */
@@ -92,8 +86,6 @@ export interface ReplenishmentConfig {
 export const REPL_DEFAULTS: ReplenishmentConfig = {
   lookbackDays: 60,
   lookbackDaysByCategory: {},
-  // PRD §2.2: promo spikes and bulk orders are capped at 1.5× the typical day.
-  demandOutlierCapMultiple: 1.5,
   coverageDaysGlobal: 30,
   // Beans move fast and are cheap to hold, so they carry a longer horizon than a
   // machine nobody wants sitting in a warehouse for a month.

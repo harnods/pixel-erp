@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-outlier-cap-off',
+    title: 'Demand: removed the demand-qty outlier cap (+ Reminder & Outlier-cap settings rows)',
+    description:
+      'The engine no longer clips individual spike sales days out of the demand average — the flat average now counts every real sales day in full. This corrects a misread of the PRD: the "outlier cap" in US-002 AC-04/AC-05 (§2.7) is the provisional ORDER-UP-TO cap (coverage forced to 0 during the launch window so a spike can\'t drive a large PR), which is untouched, NOT a clip on sales qty. The now-dead "Outlier cap" row and the "Reminder" section were removed from Replenishment settings; the Inbox daily-reminder notification itself stays.',
+    date: '2026-10-13',
+    files: ['replenishment.ts', 'replenishmentConfig.ts', 'SettingsReplenishmentPage.vue'],
+  },
+  {
     id: 'replenishment-requested-qty-us030',
     title: 'To order: Requested qty column (partial-request tracking, US-030)',
     description:

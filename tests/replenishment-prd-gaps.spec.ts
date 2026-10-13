@@ -2,7 +2,8 @@
  * PRD gap-closure (items 1–4 of the October review):
  *  1. A covered row that still stocks out keeps the covered state but is labelled to
  *     verify the arrival, and counts as a stockout (§2.7 stockout-wins).
- *  2. The demand outlier cap defaults to 1.5× (§2.2).
+ *  (The demand-qty outlier cap was removed — the PRD "outlier cap" in US-002
+ *   AC-04/AC-05 is the provisional order-up-to cap, not clipping of sales days.)
  *  3. Lead time is never typed (US-001 AC-09) — there is no manual override.
  *  4. An inactive preferred vendor is detected per SKU × warehouse (US-001 EH-01 / D23).
  */
@@ -26,12 +27,6 @@ describe('item 1 — stockout-wins keeps the covered state', () => {
     )
     // None of them is in the To order count.
     expect(wl.totals.due).toBe(wl.rows.length)
-  })
-})
-
-describe('item 2 — demand outlier cap', () => {
-  it('defaults to 1.5× the typical day', () => {
-    expect(REPL_DEFAULTS.demandOutlierCapMultiple).toBe(1.5)
   })
 })
 
