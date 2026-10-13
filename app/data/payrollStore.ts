@@ -3099,5 +3099,7 @@ export function resetPayroll(): void { seed(); saveSnapshot(SNAPSHOT_KEY, [payro
 const snap = loadSnapshot<PayrollState>(SNAPSHOT_KEY)
 if (snap && snap[0] && snap[0].settings?.dimensionLinks && snap[0].settings?.groupBy) { Object.assign(payroll, snap[0]); syncApprovalTasks() }
 else resetPayroll()
+// Opening the prototype always starts as Owner (user, 2026-10-13); View as switches from there.
+payroll.viewAs = 'Owner'
 
 watch(payroll, () => saveSnapshot(SNAPSHOT_KEY, [payroll]), { deep: true })
