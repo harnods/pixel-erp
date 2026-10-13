@@ -11,7 +11,7 @@
  * Hutang Gaji = take-home pay. Tax figures arrive as components (benefits: PPh 21 Benefit,
  * PPh 21 Resign Benefit, PPh 26 Benefit, Total PPh 21 DTP Received; deductions: PPH 21 Paid,
  * PPH 21 Payment). Staff are keyed by user_id internally and shown as counts only.
- * Every figure is computed on read. Persists under `erp-db:payroll:state-v17` (v17: Accountant/Ultimate access type, headcount for Owner or LM only; v16: Pay items toggle back, items keep their own account; v14: one place for cost accounts: Everyone else account, pinned cost items, no
+ * Every figure is computed on read. Persists under `erp-db:payroll:state-v18` (v18: no start month, every run posts, 'old-sync-booked' warning, no reason for unusual accounts, one Bank BCA code 1-10003; v17: Accountant/Ultimate access type, headcount for Owner or LM only; v16: Pay items toggle back, items keep their own account; v14: one place for cost accounts: Everyone else account, pinned cost items, no
  * group toggle); resetPayroll()
  * returns to the sample.
  *
@@ -49,7 +49,9 @@
  *   sourceSummary(runId)            organizations, branches, headcount (user_id), take-home total of a run's latest send.
  *   answerOtherEntities(yes) / markOtherEntity('organization_name'|'branch', value, on)
  *   Connecting blocks the old Talenta to Expense sync from the connect month; Jurnal books from the first send after it.
- *   The start month is the connect month (settings.cutover, internal; no screen sets it). Earlier runs stay Before go-live.
+ *   No start month (PM decision 2026-10-13): Talenta may send any month, even before connecting, and every send builds a
+ *   draft that can be posted (only a locked period refuses). settings.cutover.firstLive (internal, the connect month) is only
+ *   the month from which the old sync is blocked. A month the old sync already booked carries the 'old-sync-booked' warning.
  *
  * Settings, versioned (LR-9): Connection, Pay items, Groups
  *   settings                        computed: the current settings. snapshotById(id), currentSnapshotId().
@@ -96,7 +98,10 @@
  *   Medan). Their cost posts to the Everyone else account with no group dimension. Set up the group in Payroll settings > Groups."
  *   details { groups[{ key, label, staff }] }. Setting the group up rebuilds the draft with the group's account and dimension values.
  *   setPayableAccount(party, code)  Payable accounts: the payable each party is owed on (settings.payables).
- *   validateMapping(row), setPayItemMapping(key, patch, overrideReason?)   the full-row save with guardrails.
+ *   validateMapping(row), setPayItemMapping(key, patch)   the full-row save with guardrails. Only hard blocks (wrong account
+ *                                   type, archived or unknown account, another party's payable, Hutang Gaji on both sides);
+ *                                   an unusual account of the allowed type saves with no reason. Another party's payable:
+ *                                   "BPJSK Employee is owed to BPJS Kesehatan, so it can't use BPJS Ketenagakerjaan's payable."
  *   Every save re-checks held runs (holds clear on their own).
  *   Dimensions on groups (cost lines only, LR-15). No Talenta field fills a dimension: the user adds any existing Jurnal
  *   dimension to the Groups table and each group picks its value there.
@@ -139,7 +144,7 @@
  *                                   Same figures, new sent_at: "No change". Older than the last version: Failed.
  *   runs (computed, newest first), runById(id), versionOf(run, no), currentVersionOf(run), draftOf(run), versionLabel(run, v)
  *   runStatus(run)                  'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready'
- *                                   | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'.
+ *                                   | 'Reversed' | 'Nothing to post' | 'Received'. Every run is Live (run.mode is always 'Live').
  *                                   Internal values; screens show statusLabel() from payrollUiRunCopy.ts ('Revision ready' = "New version").
  *   runHolds(run)                   Hold[] { code, message, details }. A send STOPS only for: 'unmapped-item', 'two-parties', 'archived-account'
  *                                   (no usable mapping), 'partial' (fewer staff than the last version), 'choice' (separate-run look-alike),
@@ -162,7 +167,9 @@
  *                                   Rp1.000), 'duplicate-employee', 'hutang-gaji', 'negative-payable', 'large-change' (no note),
  *                                   'headcount' (not marked Expected), 'manual-journal' (non-PAY journal on a payroll account this month),
  *                                   'no-group' (staff in a Group by combination no one has set up; see Groups), 'no-dimension-value'
- *                                   (a set-up group with no value for an added dimension; see Dimensions on groups).
+ *                                   (a set-up group with no value for an added dimension; see Dimensions on groups), 'old-sync-booked'
+ *                                   (the old Talenta to Expense sync booked payroll for the run's month: "The old Talenta sync already
+ *                                   booked payroll for Jun 2026 as Expense. Posting books it again.", key old-sync-booked:<month>).
  *   acknowledgeWarning(runId, key, note?) / clearAcknowledgement(runId, key)   "Mark as checked" (post permission).
  *   postConfirmText(runId, date?)   { title, body, warnings[] } for the Post journal / Use vN and repost confirm (lists warnings not checked).
  *   taxFigures(runId)               { benefit, payment, dtp, resign, pph26, paidDeduction, rule, ledger, pph26Ledger, dtpLedger, resignLedger, hasLines }.
@@ -226,7 +233,8 @@
  *                                   as 'manual-journal' flags on the payables rows of the accounts it hits.
  *
  * Old sync (OD-11, LR-14)
- *   oldSyncExpense({ date, amount, pattern })   checked against the cut-over.
+ *   oldSyncExpense({ date, amount, pattern })   blocked from settings.cutover.firstLive (the connect month); earlier months
+ *                                   pass and are recorded in payroll.oldSync, which the 'old-sync-booked' warning reads.
  *
  * Log and notices (TS-06)
  *   syncLog (computed, newest first), noticesFor(role)
@@ -254,7 +262,6 @@ export const PAY_ROLES: PayRole[] = ['Earning', 'Employee deduction', 'Employer 
 export const COST_ROLES: PayRole[] = ['Earning', 'Employer contribution', 'Reimbursement', 'THR', 'Severance']
 export type BpjsProgramme = 'Kesehatan' | 'JHT' | 'JKK' | 'JKM' | 'JP'
 
-export interface Override { reason: string; by: string; at: string; breaches: string[] }
 export interface PayItemMapping {
   key: string
   name: string
@@ -265,7 +272,6 @@ export interface PayItemMapping {
   credit: string | null
   party: PayableParty | null
   programme: BpjsProgramme | null
-  override: Override | null
   addedBy: 'Talenta' | 'Jurnal'
   /**
    * Cost items only: the account the item is pinned to ('Pin to account'), or null to follow groups
@@ -304,7 +310,7 @@ export interface PayrollSettings {
   /** The payable each party is owed on: Staff is Hutang Gaji, DJP PPh 21 and PPh 26 follow the tax presets. */
   payables: Record<PayableParty, string>
   taxPresets: TaxPresets
-  /** Start booking from this month; from it the old Talenta to Expense sync is blocked. */
+  /** The connect month: from it the old Talenta to Expense sync is blocked. Not a start month: every month posts. */
   cutover: { firstLive: string | null; proposedBy: string | null; confirmedBy: string | null; mode: 'Block' }
   limits: Limits
   hutangGaji: string
@@ -323,7 +329,7 @@ export type HoldCode =
 export interface Hold { code: HoldCode; message: string; details: Record<string, unknown> }
 
 /** Everything else is a warning on the draft: the Accountant reads it and decides whether to post. */
-export type WarningCode = 'missing-component' | 'tax-rule' | 'duplicate-employee' | 'hutang-gaji' | 'negative-payable' | 'large-change' | 'headcount' | 'manual-journal' | 'no-group' | 'no-dimension-value'
+export type WarningCode = 'missing-component' | 'tax-rule' | 'duplicate-employee' | 'hutang-gaji' | 'negative-payable' | 'large-change' | 'headcount' | 'manual-journal' | 'no-group' | 'no-dimension-value' | 'old-sync-booked'
 export interface Ack { note: string; by: string; at: string }
 export interface StoredWarning { key: string; code: WarningCode; message: string; details: Record<string, unknown> }
 export interface RunWarning extends StoredWarning { acknowledged: Ack | null }
@@ -390,8 +396,8 @@ export interface Run {
   versions: RunVersion[]
   currentVersion: number | null
   ledgerVersion: number | null
-  /** 'Dry run' = no start month yet (nothing posts); 'Before go-live' = before the start month. Screens label both (payrollUiRunCopy.ts). */
-  mode: 'Live' | 'Dry run' | 'Before go-live'
+  /** Always 'Live': there is no start month, every run can be posted (PM decision 2026-10-13). */
+  mode: 'Live'
   /** A newer version is current on a posted run and waits for reverse and repost. */
   revised: boolean
   reversedAt: string | null
@@ -532,7 +538,7 @@ export function tagsLabel(t: Tags): string { return tagDims(t).map((d) => t[d]).
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-const SNAPSHOT_KEY = 'payroll:state-v17'
+const SNAPSHOT_KEY = 'payroll:state-v18'
 
 function defaultSettings(): PayrollSettings {
   return {
@@ -718,9 +724,26 @@ export function suggestMapping(name: string, section: PaySection): Pick<PayItemM
   }
 }
 
-/** OD-06 guardrails. Blocks cannot be overridden; overridable breaches need a reason (20-500 characters). */
-export function validateMapping(row: Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'name' | 'section'>): { blocks: string[]; overridable: string[] } {
-  const blocks: string[] = [], overridable: string[] = []
+/** The party whose payable an account is: the account's party, else the party whose Payable accounts entry it is. */
+function payableOwner(code: string | null): PayableParty | null {
+  if (!code) return null
+  return partyOf(code) ?? PAYABLE_PARTIES.find((p) => payroll.settings.payables[p] === code) ?? null
+}
+/** The refusal for a pay item owed to one party that takes another party's payable (PM decision 2026-10-13). */
+function otherPartyPayable(row: Pick<PayItemMapping, 'role' | 'credit' | 'party' | 'name'>): string | null {
+  if (row.role === 'Earning') return null
+  const owedTo = row.party ?? partyFromName(row.name)
+  const owner = payableOwner(row.credit)
+  if (!owedTo || owedTo === 'Staff' || !owner || owner === 'Staff' || owner === owedTo) return null
+  return `${row.name} is owed to ${partyName(owedTo)}, so it can't use ${partyName(owner)}'s payable.`
+}
+/**
+ * OD-06 guardrails: hard blocks only (PM decision 2026-10-13). Wrong account type, an unknown or archived
+ * account, another party's payable, Hutang Gaji on both sides. An unusual account of the allowed type
+ * (THR Paid, loan instalments, other deductions) saves with no reason.
+ */
+export function validateMapping(row: Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'name' | 'section'>): { blocks: string[] } {
+  const blocks: string[] = []
   const { role, debit, credit } = row
   for (const code of [debit, credit]) {
     const a = payrollAccount(code)
@@ -731,22 +754,14 @@ export function validateMapping(row: Pick<PayItemMapping, 'role' | 'debit' | 'cr
     blocks.push(`${role === 'Loan' ? 'A loan repayment' : 'A deduction from pay'} can't post to an expense account. Pick a payable or receivable.`)
   if ((role === 'Tax' || role === 'Employer contribution') && credit && !isLiability(credit))
     blocks.push(`${role === 'Tax' ? 'A tax item' : 'A company contribution'} credits a payable. Pick a liability account.`)
-  const cp = partyOf(credit)
-  const ip = row.party ?? partyFromName(row.name)
-  if (cp && ip && STATUTORY_PARTIES.includes(ip) && cp !== ip && role !== 'Earning')
-    blocks.push(`${accountName(credit)} is the payable for ${partyName(cp)}, but ${row.name} is owed to ${partyName(ip)}. Pick the ${partyName(ip)} payable.`)
+  const party = otherPartyPayable(row)
+  if (party) blocks.push(party)
   if (credit === payroll.settings.hutangGaji && debit === payroll.settings.hutangGaji)
     blocks.push(`${row.name} posts to ${accountName(credit)} on both sides. Pick another account for one side.`)
-  if ((role === 'Earning' || role === 'THR' || role === 'Severance') && isCost(credit))
-    overridable.push('A pay item paid to staff credits an expense account.')
-  if (role === 'Reimbursement' && debit && !isCost(debit)) overridable.push('A reimbursement should debit an expense or cost of goods sold account.')
-  if (role === 'Reimbursement' && credit !== payroll.settings.hutangGaji) overridable.push(`A claim reaches staff in take-home pay, so it credits ${accountName(payroll.settings.hutangGaji)}.`)
-  if (role === 'Advance offset' && credit && payrollAccount(credit)?.type !== 'asset') overridable.push('An advance offset should credit an asset such as THR Advance.')
-  if (/reimburs|claim|klaim|penggantian/i.test(row.name) && role && role !== 'Reimbursement') overridable.push('The name reads as a claim, but it is not set up as a reimbursement.')
-  return { blocks, overridable }
+  return { blocks }
 }
 
-export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'programme' | 'pinned'>>, overrideReason?: string): Result {
+export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMapping, 'role' | 'debit' | 'credit' | 'party' | 'programme' | 'pinned'>>): Result {
   const row = payroll.settings.mapping.find((m) => m.key === key)
   if (!row) return { ok: false, message: 'This pay item is no longer in the list. Reload the page.' }
   const next = { ...row, ...patch }
@@ -758,11 +773,6 @@ export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMappin
   if (isCostItem(next) && next.pinned) next.own = next.pinned
   const v = validateMapping(next)
   if (v.blocks.length) return { ok: false, message: v.blocks[0], blocks: v.blocks, status: 422 }
-  if (v.overridable.length) {
-    const r = (overrideReason ?? '').trim()
-    if (r.length < 20 || r.length > 500) return { ok: false, message: 'This account is unusual for this pay item. Enter a reason of 20 to 500 characters to keep it.', needsOverride: v.overridable }
-    next.override = { reason: r, by: actingPerson(), at: now(), breaches: v.overridable }
-  } else next.override = null
   Object.assign(row, next, { roleConfirmed: !!next.role })
   const debitNote = isCostItem(row) && !row.pinned ? 'Use group account' : accountLabel(row.debit)
   changed(`Pay item ${row.name} (${row.section}): Dr ${debitNote}, Cr ${accountLabel(row.credit)}`)
@@ -770,7 +780,7 @@ export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMappin
 }
 
 function newMappingRow(name: string, section: PaySection, addedBy: 'Talenta' | 'Jurnal'): PayItemMapping {
-  return { key: payItemKey(name, section), name: name.trim(), section, role: null, roleConfirmed: false, debit: null, credit: null, party: partyFromName(name), programme: programmeFromName(name), override: null, addedBy, pinned: null }
+  return { key: payItemKey(name, section), name: name.trim(), section, role: null, roleConfirmed: false, debit: null, credit: null, party: partyFromName(name), programme: programmeFromName(name), addedBy, pinned: null }
 }
 
 // ── Dimensions on groups: any Jurnal dimension, a value per group, prefilled by name ──
@@ -1029,7 +1039,9 @@ export function setPayItemAccount(key: string, account: string | null): Result {
   } else {
     if (isCost(account!)) return { ok: false, message: 'A deduction credits a payable or a receivable. Pick one of those, not an expense.' }
     const role: PayRole = known ?? (a!.type === 'asset' ? (/thr/i.test(row.name) ? 'Advance offset' : 'Loan') : sugg === 'Tax' || a!.party === 'DJP PPh 21' || a!.party === 'DJP PPh 26' ? 'Tax' : 'Employee deduction')
-    patch = { role, debit: hg, credit: account!, party: a!.party ?? row.party }
+    // The item keeps the party it is owed to (row, else its name); the account's party only fills a blank, so
+    // another party's payable is refused (validateMapping) instead of moving the item to that party.
+    patch = { role, debit: hg, credit: account!, party: row.party ?? partyFromName(row.name) ?? a!.party }
   }
   return setPayItemMapping(key, patch)
 }
@@ -1162,10 +1174,10 @@ export function confirmSource(): Result {
   payroll.connection.sourceConfirmedBy = actingPerson()
   payroll.connection.sourceConfirmedAt = now()
   payroll.connection.status = 'Connected'
-  // The first send after connecting is the first month Jurnal books.
+  // The old sync is blocked from the first month Talenta sends after connecting.
   const c = payroll.settings.cutover
   const first = [...payroll.runs].sort((a, b) => a.month.localeCompare(b.month))[0]
-  if (!seeding && first && c.firstLive && first.month < c.firstLive) { c.firstLive = first.month; for (const r of payroll.runs) r.mode = runMode(r.month) }
+  if (!seeding && first && c.firstLive && first.month < c.firstLive) c.firstLive = first.month
   addLog({ type: 'Connection', status: 'Recorded', reason: 'Company confirmed', nextStep: 'Held runs are checked again.' })
   recheckHeld()
   return { ok: true }
@@ -1334,11 +1346,8 @@ export function versionOf(run: Run, no: number | null): RunVersion | undefined {
 export function currentVersionOf(run: Run): RunVersion | undefined { return versionOf(run, run.currentVersion) }
 function latestVersion(run: Run): RunVersion | undefined { return run.versions[run.versions.length - 1] }
 export function draftOf(run: Run): Draft | null { return currentVersionOf(run)?.draft ?? null }
-function runMode(month: string): Run['mode'] {
-  const c = payroll.settings.cutover
-  if (!c.firstLive || !c.confirmedBy) return 'Dry run'
-  return month < c.firstLive ? 'Before go-live' : 'Live'
-}
+/** Every run is Live: there is no start month, any month Talenta sends can be posted (PM decision 2026-10-13). */
+function runMode(_month: string): Run['mode'] { return 'Live' }
 const BOOKING: JournalType[] = ['Payroll']
 export function liveJournals(runId: string): Journal[] {
   return payroll.journals.filter((j) => j.runId === runId && BOOKING.includes(j.type) && !j.reversedById)
@@ -1347,7 +1356,7 @@ export function journalsOf(runId: string): Journal[] { return payroll.journals.f
 export function journalById(id: string | null): Journal | undefined { return id ? payroll.journals.find((j) => j.id === id) : undefined }
 export function journalTotals(j: Pick<Journal, 'lines'>) { return { debit: j.lines.reduce((s, l) => s + l.debit, 0), credit: j.lines.reduce((s, l) => s + l.credit, 0) } }
 
-export type RunStatus = 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready' | 'Reversed' | 'Dry run' | 'Before go-live' | 'Nothing to post' | 'Received'
+export type RunStatus = 'Confirm source' | 'Waiting for your choice' | 'Held' | 'Ready to post' | 'Posted' | 'Revision ready' | 'Reversed' | 'Nothing to post' | 'Received'
 export function runHolds(run: Run): Hold[] {
   const pending = run.versions.filter((v) => v.state === 'waiting-choice' || v.state === 'partial').flatMap((v) => v.holds)
   return [...pending, ...(currentVersionOf(run)?.holds ?? [])]
@@ -1361,7 +1370,6 @@ export function runStatus(run: Run): RunStatus {
   if (holds.length) return 'Held'
   if (run.revised && live) return 'Revision ready'
   if (run.ledgerVersion != null && live) return 'Posted'
-  if (run.mode !== 'Live') return run.mode
   const d = draftOf(run)
   if (!d) return 'Received'
   return d.nothingToPost ? 'Nothing to post' : 'Ready to post'
@@ -1374,6 +1382,9 @@ export function versionLabel(run: Run, v: RunVersion): string {
   if (v.state === 'rejected') return 'Rejected'
   if (v.state === 'moved') return 'Moved to a separate run'
   if (run.ledgerVersion === v.no && liveJournals(run.id).length) return 'Posted'
+  // One Current version: the run's current one. Another active version (the one a reverse took out of the
+  // ledger while a newer version waited) reads as replaced by it.
+  if (run.currentVersion != null && v.no !== run.currentVersion) return `Replaced by v${run.currentVersion}`
   return 'Current'
 }
 
@@ -1470,17 +1481,14 @@ function activate(run: Run, v: RunVersion) {
 function logReceipt(run: Run, v: RunVersion): SendResult {
   const status: LogStatus = v.state === 'waiting-choice' ? 'Waiting for your choice' : v.holds.length ? 'Held' : 'Received'
   const reason = v.holds[0]?.message
-    ?? (run.mode !== 'Live' ? notPostedText(run.mode)
-      : v.revision ? `Talenta sent this period again. Use v${v.no} and repost.`
-        : run.ledgerVersion != null && run.ledgerVersion === v.no ? 'No change to the posted journal.'
-          : `Draft journal ready.${v.warnings.length ? ` ${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''} to check.` : ''}`)
+    ?? (v.revision ? `Talenta sent this period again. Use v${v.no} and repost.`
+      : run.ledgerVersion != null && run.ledgerVersion === v.no ? 'No change to the posted journal.'
+        : `Draft journal ready.${v.warnings.length ? ` ${v.warnings.length} warning${v.warnings.length > 1 ? 's' : ''} to check.` : ''}`)
   addLog({ type: 'Send', status, reason, nextStep: nextStepFor(run, v), runId: run.id, runKey: run.key, version: v.no, employees: staffCount(v.payload) })
   if (v.holds.length && v.state !== 'waiting-choice') notify(ROLES, `Payroll ${periodLabel(run.start, run.end)} v${v.no} needs a fix before posting: ${v.holds[0]!.message}`, `/payroll-runs/${run.id}`)
   if (v.state === 'waiting-choice') notify(ROLES, `Talenta sent Payroll ${periodLabel(run.start, run.end)} again with different pay items. Choose: use it as a new version, or make a separate run.`, `/payroll-runs/${run.id}`)
   return { ok: true, status, message: reason, runId: run.id, versionNo: v.no }
 }
-/** What a run that never posts says instead of a draft: months before the start month, or no start month yet. */
-function notPostedText(mode: Run['mode']): string { return mode === 'Before go-live' ? 'Before start month, not posted.' : 'No start month yet, not posted.' }
 function nextStepFor(run: Run, v: RunVersion): string {
   const h = v.holds[0]
   if (!h) return v.revision ? `Review what changed, then use v${v.no} and repost.` : v.draft && run.ledgerVersion !== v.no ? 'Review the draft journal and post it.' : 'Nothing to do.'
@@ -1984,8 +1992,9 @@ function largeChanges(run: Run, v: RunVersion) {
 /**
  * Every warning on a run's current version, with its acknowledgement. Stored ones come from
  * the send (missing components, tax rule, duplicate rows, payable below Rp0); computed ones
- * are large changes with no note, headcount changes not marked Expected, and manual journals
- * on payroll accounts in the run's month. Posting is never blocked by a warning.
+ * are large changes with no note, headcount changes not marked Expected, manual journals
+ * on payroll accounts in the run's month, and payroll the old sync already booked as Expense
+ * for the run's month. Posting is never blocked by a warning.
  */
 export function runWarnings(runId: string): RunWarning[] {
   const run = runById(runId)
@@ -2001,6 +2010,8 @@ export function runWarnings(runId: string): RunWarning[] {
   // Headcount is for the Owner or LM only, so the warning goes only to them.
   if (hc.unexpected && can('headcount')) out.push({ key: `headcount:${hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.key).join(',')}`, code: 'headcount', message: `Headcount changed in ${hc.unexpected} group${hc.unexpected > 1 ? 's' : ''}, not marked as expected yet.`, details: { groups: hc.groups.filter((g) => g.flagged && !g.expected).map((g) => g.label) } })
   for (const m of manualJournalWarnings(run.month)) out.push({ key: `manual:${m.journalId}`, code: 'manual-journal', message: m.message, details: { ...m } })
+  const booked = oldSyncBooked(run.month)
+  if (booked.length) out.push({ key: `old-sync-booked:${run.month}`, code: 'old-sync-booked', message: `The old Talenta sync already booked payroll for ${monthLabel(run.month)} as Expense. Posting books it again.`, details: { month: run.month, amount: booked.reduce((x, c) => x + c.amount, 0), calls: booked.length } })
   return out.map((w) => ({ ...w, acknowledged: v.acks[w.key] ?? null }))
 }
 /** Mark as checked: the Accountant checks one warning (note optional, up to 500 characters). Checked warnings leave the Post confirm text. */
@@ -2249,7 +2260,6 @@ export function postRun(runId: string, o: { versionNo?: number; date?: string } 
   if (!run) return { ok: false, status: 404, message: 'This run is no longer here. Reload the page.' }
   const v = currentVersionOf(run)
   if (o.versionNo != null && o.versionNo !== run.currentVersion) return { ok: false, status: 409, message: `Talenta sent v${run.currentVersion} after this one. Review v${run.currentVersion}, then post.` }
-  if (run.mode !== 'Live') return { ok: false, status: 409, message: run.mode === 'Before go-live' ? 'This month is before the start month, so it is not posted.' : 'No start month yet, so nothing posts.' }
   if (run.ledgerVersion != null && liveJournals(run.id).length) {
     const posted = liveJournals(run.id)[0]!
     return { ok: false, status: 409, message: run.revised ? `v${run.ledgerVersion} is posted as ${posted.number}. Use v${run.currentVersion} and repost.` : `v${run.ledgerVersion} is already posted as ${posted.number}.` }
@@ -2497,6 +2507,8 @@ export function reverseRun(runId: string, o: { date?: string; confirmPayments?: 
   const done = live.map((j) => reversalOf(j, date))
   run.reversedAt = payroll.clock
   for (const d of done) addLog({ type: 'Reversal', status: 'Reversed', reason: d.memo, nextStep: 'Post the current version again.', runId, runKey: run.key, version: d.versionNo, journalNo: d.number })
+  // A newer version waiting on the run stays current; the version just taken out of the ledger is replaced by it.
+  for (const x of run.versions) if (x.no !== run.currentVersion && x.state === 'active') { x.state = 'replaced'; x.replacedBy = run.currentVersion; x.revision = null }
   run.ledgerVersion = null; run.revised = false
   const v = currentVersionOf(run)
   if (v) checkVersion(run, v)
@@ -2540,7 +2552,7 @@ function bookedLines(month: string, account: string, runId?: string): number {
  */
 export function pph21Month(month: string) {
   const p = payroll.settings.taxPresets
-  const runsM = payroll.runs.filter((r) => r.month === month && r.mode === 'Live')
+  const runsM = payroll.runs.filter((r) => r.month === month)
   const rule = runsM.reduce((s, r) => { const v = versionOf(r, r.ledgerVersion) ?? latestAccepted(r); return s + (v ? staffRows(v.payload).reduce((x, e) => x + pph21Rule(e), 0) : 0) }, 0)
   const books = bookedLines(month, p.pph21)
   const paid = paidFor(p.pph21, month)
@@ -2549,11 +2561,17 @@ export function pph21Month(month: string) {
 
 // ── Old sync (OD-11, LR-14) ─────────────────────────────────────────────────
 
+/** Payroll the old Talenta to Expense sync booked (passed, not blocked) for a month: the 'old-sync-booked' warning. */
+export function oldSyncBooked(month: string): OldSyncCall[] {
+  return payroll.oldSync.filter((c) => c.pattern === 'Payroll' && c.outcome === 'Passed' && monthOf(c.date) === month)
+}
 export function oldSyncExpense(o: { date: string; amount: number; pattern: 'Payroll' | 'Claim' }): SendResult {
   now()
   const c = payroll.settings.cutover
   const m = monthOf(o.date)
-  let outcome: OldSyncCall['outcome'] = 'Passed', message = o.pattern === 'Claim' ? 'A claim, so the old Talenta to Expense sync still posts it.' : 'Before the start month, so the old Talenta to Expense sync still posts it.'
+  let outcome: OldSyncCall['outcome'] = 'Passed', message = o.pattern === 'Claim' ? 'A claim, so the old Talenta to Expense sync still posts it.'
+    : c.firstLive && c.confirmedBy ? `The old Talenta to Expense sync is blocked from ${monthLabel(c.firstLive)}, so it still posts ${monthLabel(m)}.`
+      : 'Talenta is not connected yet, so the old Talenta to Expense sync still posts it.'
   if (c.firstLive && c.confirmedBy && m >= c.firstLive && o.pattern === 'Payroll') {
     const inJurnal = payroll.runs.some((r) => r.month === m && (draftOf(r) || liveJournals(r.id).length))
     if (inJurnal) { outcome = 'Blocked'; message = `Payroll for ${monthLabel(m)} is already in Jurnal, so the old Talenta to Expense sync was blocked.` }
@@ -2611,7 +2629,7 @@ export function simulateSend(kind: SendKind, o: SimOptions = {}): SendResult {
     case 'regular': { const p = o.start && o.end ? { start: o.start, end: o.end } : nextPeriod(); return send(p.start, p.end) }
     case 'new-pay-item': {
       if (o.start && o.end) return send(o.start, o.end, { newAllowance: o.newAllowance ?? { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_000 } })
-      const open = o.runId ? runById(o.runId) : regularRuns().filter((r) => r.mode === 'Live' && r.ledgerVersion == null).pop()
+      const open = o.runId ? runById(o.runId) : regularRuns().filter((r) => r.ledgerVersion == null).pop()
       if (open) return send(open.start, open.end, { ...saved(open), newAllowance: o.newAllowance ?? { name: 'Tunjangan Transport', amount: 600_000 } })
       const p = nextPeriod()
       return send(p.start, p.end, { newAllowance: o.newAllowance ?? { name: 'Insentif Penjualan', organization: 'Sales', amount: 1_500_000 } })
@@ -3108,17 +3126,19 @@ function seed() {
   seeding = true
   Object.assign(payroll, emptyState())
   payroll.roster = sampleRoster()
-  setClock('2026-06-01T02:00:00Z')
+  // Before connecting, the old Talenta to Expense sync booked June payroll as an Expense.
+  setClock('2026-06-20T10:00:00Z')
+  must(oldSyncExpense({ date: '2026-06-20', amount: 480_000_000, pattern: 'Payroll' }), 'old sync Jun')
+  setClock('2026-06-21T02:00:00Z')
   as('Owner or LM', () => { must(startConnection(PAYROLL_COMPANY_ID), 'start'); answerOtherEntities(false) })
   seedSettings()
+  // From July the old sync is blocked (internal; no screen sets it).
+  payroll.settings.cutover = { firstLive: '2026-07', proposedBy: payrollPerson('Owner or LM').person, confirmedBy: payrollPerson('Owner or LM').person, mode: 'Block' }
   takeSnapshot('Payroll setup: pay items, payable accounts and dimensions')
-  // June arrives before the start month is set; the Owner confirms the source and starts booking from July.
+  // June arrives too and its draft can be posted, with a warning that the old sync already booked it.
   setClock('2026-06-22T03:00:00Z')
   simulateSend('regular', { start: '2026-05-21', end: '2026-06-20', sentAt: '2026-06-22T03:00:00Z' })
   as('Owner or LM', () => must(confirmSource(), 'confirm source'))
-  payroll.settings.cutover = { firstLive: '2026-07', proposedBy: payrollPerson('Owner or LM').person, confirmedBy: payrollPerson('Owner or LM').person, mode: 'Block' }
-  for (const r of payroll.runs) r.mode = runMode(r.month)
-  takeSnapshot('Start booking from Jul 2026')
   // July and August: posted, then paid through bank reconciliation matches.
   monthCycle('2026-06-21', '2026-07-20', '2026-07-22T03:00:00Z', { pay: '2026-07-24', kes: '2026-08-07', tk: '2026-08-12', tax: '2026-08-13' })
   // August BPJS Kesehatan is left unpaid, so Payroll payables shows one overdue amount.

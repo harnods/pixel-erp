@@ -38,8 +38,6 @@ const NEXT_STEP: Partial<Record<RunStatus, string>> = {
   'Ready to post': 'Review the draft journal and post it.',
   'Revision ready': 'Talenta sent this period again. Review it, then use the new version and repost.',
   Reversed: 'Post the current version again.',
-  'Dry run': 'No start month yet, not posted.',
-  'Before go-live': 'Before start month, not posted.',
   'Nothing to post': 'Nothing to do.',
   Received: 'Nothing to do.',
 }

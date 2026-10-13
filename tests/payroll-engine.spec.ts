@@ -113,9 +113,9 @@ describe('seed: rebuilt on the final payload through the engine', () => {
     expect(pph21Month('2026-08')).toMatchObject({ rule: 16_644_111, books: 16_644_111, paid: 16_644_111, balance: 0 })
   })
 
-  it('persists under payroll:state-v17 (v14: one place for cost accounts, Everyone else, pinned cost items)', () => {
+  it('persists under payroll:state-v18 (v18: no start month, old-sync-booked, one Bank BCA code)', () => {
     // loadSnapshot is client-only; pin the key in the source.
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v17'")
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).toContain("const SNAPSHOT_KEY = 'payroll:state-v18'")
     expect(payroll.settings).not.toHaveProperty('dimensionLinks')
     expect(payroll.settings).not.toHaveProperty('groupMaps')
     // The seed: Organization and Branch added to groups; Group by Organization, Branch and Cost center; no explicit picks.
@@ -305,7 +305,7 @@ describe('post (TS-05)', () => {
 
   it('OD-06 / TN-10: two statutory parties on one payable block the save, and hold the draft when the payable has no label', () => {
     const r = setPayItemMapping(payItemKey('BPJSK Employee', 'deduction'), { credit: ACC.bpjsTk })
-    expect(r.message).toBe('BPJS Ketenagakerjaan Payable is the payable for BPJS Ketenagakerjaan, but BPJSK Employee is owed to BPJS Kesehatan. Pick the BPJS Kesehatan payable.')
+    expect(r.message).toBe("BPJSK Employee is owed to BPJS Kesehatan, so it can't use BPJS Ketenagakerjaan's payable.")
     mapInsentif()
     expect(addPayrollAccount({ code: '2-20513', name: 'Other Payroll Payable', type: 'liability', party: null }).ok).toBe(true)
     expect(setPayItemMapping(payItemKey('BPJSK Employee', 'deduction'), { credit: '2-20513' }).ok).toBe(true)
@@ -470,17 +470,53 @@ describe('journal date on every post', () => {
   })
 })
 
-describe('months before the start month: draft shown, never posted (no dry run)', () => {
+describe('no start month: every month Talenta sends can be posted (PM decision 2026-10-13)', () => {
   beforeEach(() => { resetPayroll(); setPayrollViewAs('Owner or LM') })
+  const jun = () => runs.value.find((r) => r.month === '2026-06')!
+  const OLD = 'The old Talenta sync already booked payroll for Jun 2026 as Expense. Posting books it again.'
 
-  it('June arrived before the start month: its draft builds, labelled Before go-live, and Post refuses with a plain reason', () => {
-    const jun = runs.value.find((r) => r.month === '2026-06')!
-    expect(jun.mode).toBe('Before go-live')
-    expect(runStatus(jun)).toBe('Before go-live')
-    expect(draftOf(jun)).not.toBeNull()
-    expect(postRun(jun.id)).toMatchObject({ ok: false, message: 'This month is before the start month, so it is not posted.' })
-    expect(liveJournals(jun.id)).toHaveLength(0)
-    expect(runRow(jun).nextStep).toBe('Before start month, not posted.')
+  it('June, sent before the old sync was blocked, is Ready to post; every run is Live', () => {
+    expect(payroll.runs.every((r) => r.mode === 'Live')).toBe(true)
+    expect(runStatus(jun())).toBe('Ready to post')
+    expect(draftOf(jun())).not.toBeNull()
+    expect(runRow(jun()).nextStep).toBe('Review the draft journal and post it.')
+    expect(runs.value.map(runStatus)).not.toContain('Before go-live')
+  })
+
+  it("June warns 'old-sync-booked' (the old sync booked it as Expense before connecting); the key is stable and Mark as checked works", () => {
+    expect(payroll.oldSync.map((c) => [c.date, c.pattern, c.outcome])).toEqual([['2026-06-20', 'Payroll', 'Passed']])
+    const w = runWarnings(jun().id).filter((x) => x.code === 'old-sync-booked')
+    expect(w).toHaveLength(1)
+    expect(w[0]).toMatchObject({ key: 'old-sync-booked:2026-06', message: OLD, acknowledged: null, details: { month: '2026-06', amount: 480_000_000, calls: 1 } })
+    // Months the old sync never booked carry no such warning.
+    for (const k of [JUL, AUG, SEP]) expect(runWarnings(run(k).id).some((x) => x.code === 'old-sync-booked')).toBe(false)
+    // Everyone with Payroll sees it.
+    expect(as('Accountant/Ultimate', () => runWarnings(jun().id).some((x) => x.key === 'old-sync-booked:2026-06'))).toBe(true)
+    expect(postConfirmText(jun().id).warnings).toContain(OLD)
+    expect(as('Accountant/Ultimate', () => acknowledgeWarning(jun().id, 'old-sync-booked:2026-06', 'Reversed the old Expense first')).ok).toBe(true)
+    expect(runWarnings(jun().id).find((x) => x.code === 'old-sync-booked')!.acknowledged).toMatchObject({ note: 'Reversed the old Expense first' })
+    expect(postConfirmText(jun().id).warnings).not.toContain(OLD)
+  })
+
+  it('the warning never blocks Post: June posts on its journal date; only a locked period refuses', () => {
+    expect(isDraftStale(jun().id)).toBe(false)
+    expect(lockPeriod('2026-06', { confirm: true }).ok).toBe(true)
+    expect(postRun(jun().id)).toMatchObject({ ok: false, status: 422, message: 'Jun 2026 is locked. Pick a journal date in an open month.' })
+    payroll.lockedMonths = payroll.lockedMonths.filter((m) => m !== '2026-06')
+    const r = postRun(jun().id)
+    expect(r).toMatchObject({ ok: true, date: '2026-06-20' })
+    expect(r.warnings).toContain(OLD)
+    expect(runStatus(jun())).toBe('Posted')
+    expect(liveJournals(jun().id)).toHaveLength(1)
+  })
+
+  it('a month sent before connecting builds a postable draft too, with no start month to move', () => {
+    const r = simulateSend('regular', { start: '2026-04-21', end: '2026-05-20' })
+    const may = runById(r.runId)!
+    expect(may.mode).toBe('Live')
+    expect(runStatus(may)).toBe('Ready to post')
+    expect(runWarnings(may.id).some((x) => x.code === 'old-sync-booked')).toBe(false)
+    expect(postRun(may.id).ok).toBe(true)
   })
 
   it('previewDryRun stays only as the engine behind reverse and repost of an older version: it stores and posts nothing', async () => {
@@ -1010,10 +1046,12 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(createPayrollTag('Region', 'North').message).toBe('Region is not a dimension in Jurnal. Pick one from the list.')
   })
 
-  it('old sync: blocked from the start month (the connect month), still posts before it; no screen moves the start month', () => {
+  it('old sync: blocked from the connect month, still posts before it (unchanged); no screen moves that month', () => {
     expect(payroll.settings.cutover.firstLive).toBe('2026-07')
     expect(oldSyncExpense({ date: '2026-10-20', amount: 1, pattern: 'Payroll' })).toMatchObject({ status: 'Blocked', message: 'Payroll from Jul 2026 comes from Talenta payroll runs, so the old Talenta to Expense sync was blocked.' })
-    expect(oldSyncExpense({ date: '2026-06-20', amount: 1, pattern: 'Payroll' })).toMatchObject({ status: 'Recorded', message: 'Before the start month, so the old Talenta to Expense sync still posts it.' })
+    expect(oldSyncExpense({ date: '2026-06-20', amount: 1, pattern: 'Payroll' })).toMatchObject({ status: 'Recorded', message: 'The old Talenta to Expense sync is blocked from Jul 2026, so it still posts Jun 2026.' })
+    // A blocked call books nothing, so it raises no 'old-sync-booked' warning.
+    expect(runWarnings(run(AUG).id).some((x) => x.code === 'old-sync-booked')).toBe(false)
     expect(oldSyncExpense({ date: '2026-10-20', amount: 1, pattern: 'Claim' }).status).toBe('Recorded')
   })
 
@@ -1616,5 +1654,77 @@ describe('PM decisions 2026-10-12/13 (OQ19, headcount warning)', () => {
     const owner = codes('Owner or LM')
     expect(owner).toBeGreaterThan(0)
     expect(codes('Accountant/Ultimate')).toBe(0)
+  })
+})
+
+describe('QA fixes 2026-10-13: party payables, no reason for unusual accounts, one Current version, one Bank BCA', () => {
+  beforeEach(() => { resetPayroll(); setPayrollViewAs('Owner or LM') })
+  const key = (name: string, section: 'allowance' | 'deduction' | 'benefit') => payItemKey(name, section)
+
+  it("decision 1: a deduction owed to one party can't take another party's payable, through either save", () => {
+    const msg = "BPJSK Employee is owed to BPJS Kesehatan, so it can't use BPJS Ketenagakerjaan's payable."
+    expect(setPayItemAccount(key('BPJSK Employee', 'deduction'), ACC.bpjsTk)).toMatchObject({ ok: false, message: msg })
+    expect(setPayItemMapping(key('BPJSK Employee', 'deduction'), { credit: ACC.bpjsTk })).toMatchObject({ ok: false, message: msg })
+    expect(setPayItemAccount(key('JHT Employee', 'deduction'), ACC.bpjsKes).message).toBe("JHT Employee is owed to BPJS Ketenagakerjaan, so it can't use BPJS Kesehatan's payable.")
+    expect(setPayItemAccount(key('PPH 21 Paid', 'deduction'), ACC.dplk).message).toBe("PPH 21 Paid is owed to Tax office (PPh 21), so it can't use DPLK's payable.")
+    expect(mappingFor('BPJSK Employee', 'deduction')).toMatchObject({ credit: ACC.bpjsKes, party: 'BPJS Kesehatan' })
+    // Accounts no party uses stay allowed.
+    expect(addPayrollAccount({ code: '2-20513', name: 'Other Payroll Payable', type: 'liability', party: null }).ok).toBe(true)
+    expect(setPayItemAccount(key('BPJSK Employee', 'deduction'), '2-20513').ok).toBe(true)
+    expect(mappingFor('BPJSK Employee', 'deduction')).toMatchObject({ credit: '2-20513', party: 'BPJS Kesehatan' })
+    // Its own party's payable is fine, and Payable accounts still moves a party's payable.
+    expect(setPayItemAccount(key('BPJSK Employee', 'deduction'), ACC.bpjsKes).ok).toBe(true)
+    expect(addPayrollAccount({ code: '2-20514', name: 'BPJS Kesehatan Payable 2', type: 'liability', party: null }).ok).toBe(true)
+    expect(setPayableAccount('BPJS Kesehatan', '2-20514').ok).toBe(true)
+    expect(mappingFor('BPJSK Employee', 'deduction')!.credit).toBe('2-20514')
+  })
+
+  it('decision 5: THR Paid, loan instalments and other deductions take any account of the allowed type with no reason', () => {
+    expect(addPayrollAccount({ code: '1-10405', name: 'Other Advance', type: 'asset', party: null }).ok).toBe(true)
+    expect(addPayrollAccount({ code: '2-20515', name: 'Accrued Staff Loans', type: 'liability', party: null }).ok).toBe(true)
+    expect(setPayItemAccount(key('THR Paid', 'deduction'), '2-20515')).toEqual({ ok: true })
+    expect(setPayItemAccount(key('Loan Instalment', 'deduction'), '1-10405')).toEqual({ ok: true })
+    expect(setPayItemMapping(key('Reimbursement Medical', 'allowance'), { credit: '2-20515' })).toEqual({ ok: true })
+    expect(mappingFor('THR Paid', 'deduction')).not.toHaveProperty('override')
+    // Hard blocks stay: wrong account type.
+    expect(setPayItemAccount(key('Loan Instalment', 'deduction'), ACC.salaries).message).toBe('A deduction credits a payable or a receivable. Pick one of those, not an expense.')
+    expect(setPayItemMapping(key('JHT paid by company', 'benefit'), { credit: '1-10405' }).message).toBe('A company contribution credits a payable. Pick a liability account.')
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).not.toMatch(/20 to 500 characters|unusual for this pay item/)
+  })
+
+  it('decision 6: after reversing a run while a newer version waits, only one version is Current', () => {
+    postSep()
+    const sep = run(SEP)
+    simulateSend('revision', { runId: sep.id })
+    expect(sep.versions.map((v) => versionLabel(sep, v))).toEqual(['Posted', 'Current'])
+    expect(reverseRun(sep.id, { confirmPayments: true }).ok).toBe(true)
+    expect(sep.versions.map((v) => versionLabel(sep, v))).toEqual(['Replaced by v2', 'Current'])
+    expect(sep.versions.filter((v) => versionLabel(sep, v) === 'Current').map((v) => v.no)).toEqual([sep.currentVersion])
+    expect(runStatus(sep)).toBe('Reversed')
+    // Posting again posts the waiting version; it is then the Posted one and nothing else reads Current.
+    expect(postRun(sep.id).ok).toBe(true)
+    expect(sep.versions.map((v) => versionLabel(sep, v))).toEqual(['Replaced by v2', 'Posted'])
+  })
+
+  it('decision 6: a run reversed with no newer version keeps its one version Current', () => {
+    postSep()
+    const sep = run(SEP)
+    reverseRun(sep.id)
+    expect(sep.versions.map((v) => versionLabel(sep, v))).toEqual(['Current'])
+  })
+
+  it('decision 7: payroll uses one Bank BCA code, the one Cash management uses (1-10003)', async () => {
+    const { cashAccounts } = await import('../app/data/cashAccounts')
+    const bca = cashAccounts.find((a) => a.name === 'Bank BCA')!
+    expect(ACC.bca).toBe(bca.code)
+    expect(ACC.bca).toBe('1-10003')
+    expect(payroll.accounts.filter((a) => a.name === 'Bank BCA').map((a) => a.code)).toEqual(['1-10003'])
+    // Seeded bank matches and new ones credit the same Bank BCA account Spend money uses.
+    const banks = new Set(payroll.payments.map((p) => p.bank))
+    expect([...banks]).toEqual(['1-10003'])
+    postSep()
+    simulateBankPayment('salary', { date: '2026-09-25' })
+    expect(journalById(payroll.payments.at(-1)!.journalId)!.lines.find((l) => l.credit > 0)!.account).toBe('1-10003')
+    expect(JSON.stringify(payroll.journals)).not.toContain('1-10004')
   })
 })
