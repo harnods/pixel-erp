@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * "Mapping used": the settings a draft or posted journal was built from, read-only. Shows only
- * the pay item to account list (a cost item reads "Group's expense account" or its pinned
+ * the pay item to account list (a cost item reads "Use group account" or its own
  * account) and, per group, its expense account (else 'Everyone else') and the value of each
  * dimension added to groups (an explicit pick, else the name match, else blank).
  */
@@ -26,9 +26,9 @@ const groups = computed(() => (s.value?.groups ?? [])
     values: dims.value.map((d) => g.dims[d] ?? nameMatch(d, g.values)),
   }))
   .sort((a, b) => a.label.localeCompare(b.label)))
-/** Cost items: the pinned account or "Group's expense account"; the rest: their one account, as on Pay items. */
+/** Cost items: their own account (Use default account) or "Use group account"; the rest: their one account, as on Pay items. */
 function itemAccount(m: PayItemMapping): string {
-  if (isCostItem(m)) { const p = payItemPinned(m); return p ? accountLabel(p) : t("Group's expense account") }
+  if (isCostItem(m)) { const p = payItemPinned(m); return p ? accountLabel(p) : t('Use group account') }
   const code = payItemAccount(m)
   return code ? accountLabel(code) : '-'
 }

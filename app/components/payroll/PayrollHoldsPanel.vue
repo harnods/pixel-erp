@@ -47,7 +47,7 @@ function release() {
 
 // ── Unmapped pay items ────────────────────────────────────────────────────
 // Same one-account pick as Settings > Pay items: the type comes from Talenta. A cost item starts on
-// "Group's expense account" (each staff's group account, else Everyone else), so one Save clears
+// "Use group account" (each staff's group account, else Everyone else), so one Save clears
 // the hold; it can be pinned to one account instead. A deduction or tax item credits its account.
 interface ItemForm { account: string; error: string }
 const itemForms = reactive<Record<string, ItemForm>>({})
@@ -67,8 +67,8 @@ function isCost(it: { name: string; section: PaySection }): boolean {
   return it.section !== 'deduction' && suggestMapping(it.name, it.section)?.role !== 'Tax'
 }
 const costOptions = computed(() => [
-  { value: FOLLOW_GROUPS, label: t("Group's expense account"), name: '', type: 'expense' as const },
-  ...accountChoices(['expense', 'cogs']).map((o) => ({ ...o, group: t('Pin to account') })),
+  { value: FOLLOW_GROUPS, label: t('Use group account'), name: '', type: 'expense' as const },
+  ...accountChoices(['expense', 'cogs']).map((o) => ({ ...o, group: t('Use default account') })),
 ])
 const balanceOptions = computed(() => accountChoices(['liability', 'asset']))
 const liabilityOptions = computed(() => accountChoices(['liability']))

@@ -134,7 +134,7 @@ describe('payroll guided tours: shape', () => {
 
   it('quotes glossary labels exactly as the screens name them', () => {
     const all = PAYROLL_TOURS.map(allCopyOf).join(' ')
-    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Save draft', 'Only the Owner or a user with LM can post.', 'Owner or LM', 'Other user', 'Use v2 and repost', 'Journal date', 'Everyone else', "Group's expense account", 'Pin to account', 'Cash management > New spend money', 'Set up group', 'Talenta sent this period again', 'Groups', 'New spend money', 'Pay from', 'Spend money', 'Bank reconciliation', 'Source', 'Payments', 'Overdue', 'Paid late'])
+    for (const label of ['To fix before posting', 'Mark as checked', 'Post journal', 'Save draft', 'Only the Owner or a user with LM can post.', 'Owner or LM', 'Other user', 'Use v2 and repost', 'Journal date', 'Everyone else', 'Use group account', 'Use default account', 'Cash management > New spend money', 'Set up group', 'Talenta sent this period again', 'Groups', 'New spend money', 'Pay from', 'Spend money', 'Bank reconciliation', 'Source', 'Payments', 'Overdue', 'Paid late'])
       expect(all).toContain(label)
   })
 })
@@ -153,7 +153,7 @@ describe('feature coverage', () => {
   it('the list holds every feature the brief asks the tours to touch', () => {
     const required = [
       'Connection status and Talenta company', 'How to send from Talenta', 'Payable accounts per party',
-      'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', "Cost pay items follow the group's expense account unless pinned",
+      'Pay item type from Talenta, with the header tip', 'Map a pay item to any expense account', "Use group account / Use default account toggle",
       'Settings > Groups tab', 'Group by Talenta fields', 'Add dimension to groups, values prefilled by name', 'Group expense account and dimension value',
       'View as: Owner or LM and Other user', 'Save draft: Other user keeps the draft for someone who can post', 'Post journal: Owner or LM only, no approval',
       'Inbox runs', 'Sync log', 'To fix before posting: unmapped pay item', 'Map from the hold; the hold clears',
@@ -182,7 +182,7 @@ describe('feature coverage', () => {
     const target = (code: string, step: number) => PAYROLL_TOURS.find((t) => t.code === code)!.steps[step - 1]!.target
     const expectAt: Record<string, string> = {
       'How to send from Talenta': 'payroll-how-to-send', 'Payable accounts per party': 'payroll-payable-accounts',
-      'Pay item type from Talenta, with the header tip': 'payroll-type-tip', "Cost pay items follow the group's expense account unless pinned": 'payroll-groups-can-change',
+      'Pay item type from Talenta, with the header tip': 'payroll-type-tip', "Use group account / Use default account toggle": 'payroll-groups-can-change',
       'Group by Talenta fields': 'payroll-groupby', 'Add dimension to groups, values prefilled by name': 'payroll-group-dims',
       'Sync log': 'payroll-synclog', 'Month headcount': 'payroll-month-headcount', 'Journal date: default and locked period': 'payroll-journal-date',
       'View as: Owner or LM and Other user': 'payroll-viewas', 'Save draft: Other user keeps the draft for someone who can post': 'payroll-saved-draft',
@@ -240,20 +240,20 @@ describe('PAY-1 Set up payroll (replay)', () => {
     expect(costFollowsGroups(m)).toBe(true)
     expect(payItemPinned(m)).toBeNull()
     expect(accountLabel(m.credit)).toBe('2-20201 Salaries Payable')
-    p.says(4, "reads Group's expense account and credits 2-20201 Salaries Payable")
+    p.says(4, 'uses the group account and credits 2-20201 Salaries Payable')
     expect(runStatus(sep())).toBe('Ready to post')
     const d = draftOf(sep())!
     p.q(4, journalTotals(d).debit, 554_203_941)
     expect(d.lines).toHaveLength(26)
     p.says(4, '26 lines')
-    // 6. Cost pay items follow the group's expense account unless pinned: the Sales staff's incentive lands on the Sales groups' account.
+    // 6. Use group account / Use default account toggle: the Sales staff's incentive lands on the Sales groups' account.
     p.at(5)
     expect(costFollowsGroups(mappingFor(NEW_ITEM, 'allowance')!)).toBe(true)
     expect(accountLabel(everyoneElseAccount())).toBe('6-60101 Salaries')
     p.says(5, 'Everyone else, 6-60101 Salaries here')
     expect(accountLabel(payItemPinned(mappingFor('Reimbursement Medical', 'allowance')!))).toBe('6-60106 Medical Expense')
     p.says(5, 'Reimbursement Medical does with 6-60106 Medical Expense')
-    for (const label of ["Group's expense account", 'Everyone else', 'Pin to account']) p.says(5, label)
+    for (const label of ['Use default account', 'Everyone else', 'Reimbursement Medical']) p.says(5, label)
     const src = draftOf(sep())!.lines.flatMap((l) => l.sources.filter((s) => s.item === NEW_ITEM && s.side === 'D').map((s) => ({ account: l.account, staff: s.staff.length })))
     expect([...new Set(src.map((x) => accountLabel(x.account)))]).toEqual(['6-60004 Sales Salaries'])
     expect(src.reduce((s, x) => s + x.staff, 0)).toBe(7)
@@ -433,7 +433,7 @@ describe('PAY-2 Monthly payroll run (replay)', () => {
     const snap = snapshotById(j.snapshotId)!
     const used = snap.settings.mapping.find((x) => x.key === payItemKey(NEW_ITEM, 'allowance'))!
     expect(used.pinned ?? null).toBeNull()
-    p.says(13, "Insentif Penjualan reads Group's expense account")
+    p.says(13, 'Insentif Penjualan uses the group account')
     const insSrc = j.lines.flatMap((l) => l.sources.filter((x) => x.item === NEW_ITEM && x.side === 'D').map((x) => ({ account: l.account, staff: x.staff.length })))
     expect([...new Set(insSrc.map((x) => accountLabel(x.account)))]).toEqual(['6-60004 Sales Salaries'])
     expect(insSrc.reduce((s, x) => s + x.staff, 0)).toBe(7)

@@ -760,7 +760,7 @@ export function setPayItemMapping(key: string, patch: Partial<Pick<PayItemMappin
     next.override = { reason: r, by: actingPerson(), at: now(), breaches: v.overridable }
   } else next.override = null
   Object.assign(row, next, { roleConfirmed: !!next.role })
-  const debitNote = isCostItem(row) && !row.pinned ? "Group's expense account" : accountLabel(row.debit)
+  const debitNote = isCostItem(row) && !row.pinned ? 'Use group account' : accountLabel(row.debit)
   changed(`Pay item ${row.name} (${row.section}): Dr ${debitNote}, Cr ${accountLabel(row.credit)}`)
   return { ok: true }
 }

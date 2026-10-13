@@ -868,7 +868,7 @@ describe('settings: Connection, Pay items, Dimensions', () => {
     expect(pinned).toMatchObject({ 'Basic Salary': null, 'Tunjangan Jabatan': null, 'Uang Makan': null, 'BPJS K paid by company': null, 'DPLK paid by company': null,
       'Reimbursement Medical': ACC.medical, 'THR Keagamaan': ACC.salaries, 'PPh 21 Ditanggung Pemerintah': null, 'JHT Employee': null })
     expect(payroll.settings.mapping.some((m) => 'groupsCanChange' in m)).toBe(false)
-    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).not.toMatch(/groupsCanChange|setPayItemGroupsCanChange|Use default account'|'Use group account/)
+    expect(readFileSync(resolve(__dirname, '..', 'app', 'data', 'payrollStore.ts'), 'utf8')).not.toMatch(/groupsCanChange|setPayItemGroupsCanChange/)
   })
 
   it('multi-field grouping: Organization + Branch rows; a group account moves only that group and its dimension values land on cost lines', () => {
