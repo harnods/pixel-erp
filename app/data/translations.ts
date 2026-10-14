@@ -3853,4 +3853,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Category": "Kategori",
   "Standard": "Standar",
   "Order": "Pesanan",
+  "Production settings": "Pengaturan produksi",
+  "Configure how work orders are produced and closed.": "Atur cara perintah kerja diproduksi dan diselesaikan.",
+  "Work orders": "Perintah kerja",
+  "Record part of a work order’s output at a time. When off, a work order offers Complete alone, and a subcon order issues all its components when it starts.": "Catat sebagian hasil perintah kerja secara bertahap. Jika nonaktif, perintah kerja hanya menawarkan Selesaikan, dan perintah subkontrak mengeluarkan semua komponennya saat dimulai.",
+  "Production settings changes saved": "Perubahan pengaturan produksi disimpan",
 }
