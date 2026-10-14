@@ -1063,9 +1063,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col class="wo-col--product" /><col style="width:150px" /><col v-if="showOriginWarehouse" style="width:180px" />
-                <col style="width:110px" /><col style="width:110px" /><col class="wo-col--date" />
-                <col style="width:150px" /><col style="width:44px" />
+                <col class="wo-col--product" /><col class="wo-col--price" /><col v-if="showOriginWarehouse" class="wo-col--origin" />
+                <col class="wo-col--needed" /><col class="wo-col--unit" /><col class="wo-col--date" />
+                <col class="wo-col--price" /><col class="wo-col--del" />
               </colgroup>
               <thead>
                 <tr>
@@ -1779,6 +1779,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
    than taking whatever the fixed columns leave (rule: name kind, 240–280). */
 .wo-col--product { width: 280px; }
 .wo-col--date { width: 160px; }
+.wo-col--price { width: 150px; }
+.wo-col--origin { width: 180px; }
+.wo-col--needed { width: 110px; }
 .wo-td--right { text-align: right; }
 .wo-td--input { padding: 0; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
 .wo-td--num-input { padding: 0; background: var(--mp-background-neutral, #fff); }

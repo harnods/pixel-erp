@@ -691,7 +691,7 @@ function onSave() {
                   <!-- R15 — a batch-tracked component names the batches that arrived. -->
                   <span v-if="isBatchTrackedLine(item.sku)" class="pd-batch-stack">
                     <span class="pd-batch-val">{{ batchTotalFor(item._key) > 0 ? `${batchTotalFor(item._key).toLocaleString('id-ID')} ${t('in batches')}` : t('No batches yet') }}</span>
-                    <button class="pd-manage-btn" type="button" @click="batchDrawerKey = item._key">{{ t('Manage batch') }}</button>
+                    <MpButton class="pd-manage-btn" variant="ghost" type="button" @click="batchDrawerKey = item._key">{{ t('Manage batch') }}</MpButton>
                   </span>
                 </td>
 
@@ -1245,7 +1245,9 @@ function onSave() {
 .pd-batch-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: var(--mp-spacing-1) var(--mp-spacing-3); }
 .pd-batch-val { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pd-manage-btn {
-  border: none; background: transparent; padding: 0; cursor: pointer;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link);
+  border: none !important; background: transparent !important; padding: 0 !important;
+  height: auto !important; min-width: 0 !important; cursor: pointer;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-link) !important;
 }
+.pd-manage-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
 </style>
