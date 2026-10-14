@@ -22,7 +22,13 @@ const props = withDefaults(defineProps<{
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
-}>(), { width: '176px', isClearable: true })
+  /** Read-only: the value is forced by another field (a cascade's auto-filled
+   *  level), so the menu never opens and the × is withheld. Rendered `readonly`
+   *  rather than `disabled` — a forced value still carries meaning, so it stays
+   *  in the tab order and reachable by a screen reader (a `disabled` input also
+   *  trips the drawer's focus-trap when it is the only control in view). */
+  isDisabled?: boolean
+}>(), { width: '176px', isClearable: true, isDisabled: false })
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -40,7 +46,10 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-function focusOpen() { if (!open.value) { open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) } }
+function focusOpen() {
+  if (props.isDisabled || open.value) return
+  open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus())
+}
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
@@ -51,7 +60,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open }" :style="{ '--efs-w': width }">
+  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !isDisabled && !open, 'efs--disabled': isDisabled, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -61,6 +70,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="modelValue ? selectedLabel : placeholder"
+            :readonly="isDisabled"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -91,6 +101,11 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 
 <style scoped>
 .efs { position: relative; display: inline-flex; }
+/* width="100%" means "fill the form field". The wrapper is inline-flex, so it
+   sizes to its content and the trigger's own width:100% resolves against that
+   — the field ends up narrower than its label and clips the option text. Making
+   the wrapper block-level is what actually lets 100% reach the FormControl. */
+.efs--full { display: flex; width: 100%; }
 .efs-trigger {
   /* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
      38px tall (--mp-sizes-9.5), border = --mp-colors-border-form (#1d1f2429).
@@ -103,6 +118,15 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
   border-radius: var(--mp-radii-md); cursor: text;
 }
 .efs-trigger:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
+/* Forced value — reads as a field, never opens. Matches the disabled form-field
+   treatment in erp.css (subtle fill + muted text), not a greyed-out button. */
+.efs--disabled .efs-trigger {
+  background: var(--mp-colors-background-neutral-subtle, #f5f6f6);
+  cursor: not-allowed;
+}
+.efs--disabled .efs-trigger:focus-within { border-color: var(--mp-colors-border-form, #1d1f2429); box-shadow: none; }
+.efs--disabled .efs-input { color: var(--mp-text-secondary); cursor: not-allowed; }
+.efs--disabled .efs-input::placeholder { color: var(--mp-text-secondary); }
 .efs-input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: text;

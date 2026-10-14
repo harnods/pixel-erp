@@ -54,11 +54,43 @@ export interface TaxDocument {
    *  detail code ('11'..'13'). Same field either way — both are just "the
    *  code this document was raised under" for numbering purposes. */
   djpCode: string
-  /** Foreign, code 11 only. */
+  /**
+   * Which of the two output documents this is — FK (Faktur Keluaran) or DK
+   * (Dokumen Lain Keluaran). Absent on documents created before the eFaktur
+   * keluaran spec landed; `normalize()` backfills them from `lane`.
+   */
+  docKind?: 'FK' | 'DK'
+  /** DK only — the top of its 3-level cascade: '4' (export) or '5' (domestic). */
+  dkTransactionCode?: string
+  /** DK only — the transaction document the cascade settled on (OSD.006xx). */
+  dkDocumentCode?: string
+  /** DK export details 12/13 only — forced invoice code (EBKPTB_GOODS / EJKP_SERVICE). */
+  invoiceCode?: string
+  /** Codes 07/08 only — the selected remark from the catalogue, e.g. '07-02'. */
+  additionalRemark?: string
+  /**
+   * What DJP said back. Today that only ever means a rejection reason, which is
+   * why the column reads "Remark" rather than "Error": the field is the reply
+   * channel, and a rejection is the only reply that carries text.
+   *
+   * Distinct from `additionalRemark` above, which is OUR keterangan tambahan
+   * chosen on the form. This one is theirs, arrives verbatim from Coretax, and
+   * is therefore left untranslated — an error code and message we pass through
+   * rather than author.
+   */
+  djpRemark?: string
+  /** Only when the selected remark requires a supporting document (max 255). */
+  description?: string
+  /** FK: optional, max 300. DK: required for export details 12/13, empty otherwise. */
+  reference?: string
+  /** DK only — required except for export details 12/13. */
+  documentNumber?: string
+  /** Foreign, code 11 only. Superseded by `reference`/`documentNumber`; kept so
+   *  documents saved by the previous form still render. */
   pebReference?: string
-  /** Foreign, codes 12/13 only. */
+  /** Foreign, codes 12/13 only. Superseded by `reference`. */
   exportNoticeReference?: string
-  /** Foreign, codes 12/13 only. */
+  /** Foreign, codes 12/13 only. Superseded by `invoiceCode`. */
   classificationCode?: string
   /**
    * The 13-digit Nomor Seri Faktur Pajak — the tail of the faktur number, WITHOUT
@@ -128,7 +160,11 @@ function normalize(doc: TaxDocument): TaxDocument {
   const serial = !stored || stored.length === SERIAL_LENGTH
     ? stored
     : stored.slice(-SERIAL_LENGTH).padStart(SERIAL_LENGTH, '0')
-  return { ...doc, kind, serial, revision: doc.revision ?? 0 }
+  // Documents saved before the eFaktur keluaran spec carry no docKind. The old
+  // form's two lanes map cleanly: the Foreign lane only ever produced exports,
+  // which are DK; the Domestic lane produced fakturs, which are FK.
+  const docKind = doc.docKind ?? (doc.lane === 'foreign' ? 'DK' : 'FK')
+  return { ...doc, kind, serial, docKind, revision: doc.revision ?? 0 }
 }
 
 /**
@@ -172,6 +208,16 @@ function buildSeedTaxDocuments(): TaxDocument[] {
     {
       ...common, id: 'taxdoc-seed-si149-reissued', salesInvoiceId: 'SI149', date: '02/09/2026',
       serial: '2500008765432', status: 'approved', kind: 'normal', revision: 0,
+    },
+    // SI133 — rejected by DJP, waiting to be corrected and resubmitted. Seeded
+    // because nothing in the prototype can reach this status on its own: the
+    // demo "Refresh DJP status" always resolves to Approved, so without a seed
+    // row the Rejected badge, its remark, and "Resubmit to DJP" would all be
+    // unreachable. Carries no serial — DJP never issued one.
+    {
+      ...common, id: 'taxdoc-seed-si133-rejected', salesInvoiceId: 'SI133', date: '20/09/2026',
+      serial: '', status: 'rejected', kind: 'normal', revision: 0,
+      djpRemark: 'ETAX-API-10012: NITKU pembeli tidak terdaftar pada Coretax. Perbaiki data pembeli lalu kirim ulang.',
     },
   ]
 }
@@ -314,6 +360,15 @@ export function addTaxDocument(input: {
   paymentStage?: TaxDocumentPaymentStage
   lane: TaxDocumentLane
   djpCode: string
+  docKind?: 'FK' | 'DK'
+  dkTransactionCode?: string
+  dkDocumentCode?: string
+  invoiceCode?: string
+  additionalRemark?: string
+  djpRemark?: string
+  description?: string
+  reference?: string
+  documentNumber?: string
   pebReference?: string
   exportNoticeReference?: string
   classificationCode?: string
@@ -532,7 +587,13 @@ export function removeTaxDocument(id: string): void {
 export function updateTaxDocumentStatus(id: string, status: TaxDocumentStatus): void {
   const doc = store.find(d => d.id === id)
   if (!doc) return
+  const wasRejected = doc.status === 'rejected'
   doc.status = status
+
+  // DJP's remark belongs to the rejection that produced it. Leaving it on a
+  // resubmitted document would show a stale failure next to a pending or
+  // approved one, reading as though it had been rejected again.
+  if (wasRejected && status !== 'rejected') doc.djpRemark = undefined
 
   if (status === 'approved' && doc.replacesId) {
     const superseded = store.find(d => d.id === doc.replacesId)

@@ -35,7 +35,21 @@ export const customers: Customer[] = [
   { id: 'C023', code: 'CUST-023', name: 'Filosofi Kopi Melawai',     type: 'company',    email: 'order@filosofikopi.id',          phone: '021-5550023', city: 'Jakarta',           balance: 11_000_000  },
   { id: 'C024', code: 'CUST-024', name: 'One Eighty Coffee',         type: 'company',    email: 'supply@oneeighty.coffee',        phone: '022-5550024', city: 'Bandung',           balance: 26_300_000  },
   { id: 'C025', code: 'CUST-025', name: 'Pochi Coffee Roasters',     type: 'company',    email: 'roastery@pochicoffee.com',       phone: '031-5550025', city: 'Surabaya',          balance: 31_800_000  },
+  // The one buyer abroad — a Nordic specialty roaster taking green beans, which
+  // is what an Indonesian coffee exporter actually sells overseas. Its contact
+  // record (CT013) carries domicile: 'foreign', so a tax document raised against
+  // its invoices defaults to a Dokumen Lain Keluaran / export rather than a faktur.
+  { id: 'C026', code: 'CUST-026', name: 'Nordic Roasters AB',         type: 'company',    email: 'green@nordicroasters.se',        phone: '+46-8-55500026', city: 'Stockholm',      balance: 184_000_000 },
 ]
+
+/**
+ * The export customer. It is deliberately held OUT of the cyclic customer
+ * assignment in salesInvoices.ts / salesOrders.ts — those seeds walk this array
+ * by index, so letting it join the cycle would re-shuffle the buyer of every
+ * existing invoice and order. It is attached to named invoices instead
+ * (EXPORT_INVOICE_IDS in salesInvoices.ts).
+ */
+export const EXPORT_CUSTOMER_ID = 'C026'
 
 /** Fast id → customer lookup, so any module can resolve a customer FK. */
 const byId = new Map(customers.map((c) => [c.id, c]))

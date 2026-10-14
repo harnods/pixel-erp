@@ -26,6 +26,7 @@ import {
 } from '~/data/taxDocuments'
 import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
 import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermission'
+import { useTaxInfoScenario } from '~/composables/useTaxInfoScenario'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -61,16 +62,31 @@ const taxDocDrawerOpen = ref(false)
 const cannotCreateTaxDocDrawerOpen = ref(false)
 const taxDocuments = computed(() => getTaxDocumentsForInvoice(invoice.value.id))
 
-// "Create tax document" is blocked whenever one of the invoice's products is
-// missing a DJP code/unit — opens the read-only "Cannot create" drawer instead
-// (see CannotCreateTaxDocumentDrawer.vue) so the user knows what to fix first.
+// "Create tax document" is blocked whenever the invoice's tax info has a gap —
+// opens the read-only "Cannot create" drawer instead (see
+// CannotCreateTaxDocumentDrawer.vue) so the user knows what to fix first.
+//
+// Which gap (if any) is in the way: on 'auto' — the untouched default — the
+// invoice's own data decides, so a product genuinely missing its DJP code
+// blocks exactly as it did before this toggle existed. Once a scenario is
+// picked it forces its own state, "All tax info complete" included. See
+// useTaxInfoScenario.
+const { taxInfoScenario } = useTaxInfoScenario()
+const taxInfoComplete = computed(() =>
+  taxInfoScenario.value === 'auto'
+    ? canGenerateTaxDocument(invoice.value.id)
+    : taxInfoScenario.value === 'complete',
+)
 function openCreateTaxDocument() {
-  if (canGenerateTaxDocument(invoice.value.id)) {
-    taxDocDrawerOpen.value = true
-  } else {
-    cannotCreateTaxDocDrawerOpen.value = true
-  }
+  taxDocDrawerOpen.value = taxInfoComplete.value
+  cannotCreateTaxDocDrawerOpen.value = !taxInfoComplete.value
 }
+
+// Switching scenario from inside either drawer swaps to whichever one the new
+// scenario belongs to, rather than leaving the stale drawer up.
+watch(taxInfoScenario, () => {
+  if (taxDocDrawerOpen.value || cannotCreateTaxDocDrawerOpen.value) openCreateTaxDocument()
+})
 
 // Tabs only appear once they have something to show — an invoice with no
 // payments yet shouldn't offer an empty "Payments" tab, etc.
@@ -749,7 +765,13 @@ function onSalesReturnConfirm() {
                 <col class="detail-linked-col--number" />
                 <col class="detail-linked-col--type" />
                 <col class="detail-linked-col--stage" />
+                <!-- Status stays the flexible column, as it was before Remark
+                     existed: a badge absorbs leftover width harmlessly, whereas
+                     a flexible Remark soaks up everything the long Coretax
+                     message wants and starves Number and Type down to a few
+                     characters each. -->
                 <col />
+                <col class="detail-linked-col--remark" />
                 <col class="detail-linked-col--actions" />
               </colgroup>
               <thead>
@@ -759,6 +781,7 @@ function onSalesReturnConfirm() {
                   <th class="detail-th">{{ t('Type') }}</th>
                   <th class="detail-th">{{ t('Payment stage') }}</th>
                   <th class="detail-th">{{ t('DJP Status') }}</th>
+                  <th class="detail-th">{{ t('Remark') }}</th>
                   <th class="detail-th" aria-hidden="true"></th>
                 </tr>
               </thead>
@@ -786,6 +809,24 @@ function onSalesReturnConfirm() {
                       :label="t(DJP_STATUS_CONFIG[doc.status].label)"
                       :type="DJP_STATUS_CONFIG[doc.status].type"
                     />
+                  </td>
+                  <!-- Whatever DJP sent back — in practice only ever a rejection
+                       reason. Truncated to one line with the full text on hover,
+                       because a Coretax message runs well past any column width
+                       and must not push the table into a horizontal scroll. -->
+                  <td class="detail-td">
+                    <MpTooltip
+                      v-if="doc.djpRemark"
+                      :id="`taxdoc-remark-${doc.id}`"
+                      placement="top"
+                      use-portal
+                    >
+                      <template #label>
+                        <span class="taxdoc-tt-content" :style="{ width: taxDocMenuWidth }">{{ doc.djpRemark }}</span>
+                      </template>
+                      <span class="detail-taxdoc-remark">{{ doc.djpRemark }}</span>
+                    </MpTooltip>
+                    <span v-else>—</span>
                   </td>
                   <td class="detail-td">
                     <MpPopover :id="`taxdoc-row-actions-${doc.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -1301,7 +1342,25 @@ function onSalesReturnConfirm() {
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--stage  { width: 160px; }
 .detail-linked-col--type   { width: 200px; }
+.detail-linked-col--remark { width: 280px; }
 .detail-linked-col--actions { width: 52px; }
+/* One line, ellipsised — the full message lives in the row's tooltip.
+   The cap is in px, not %: under table-layout:auto a <col width> is only a hint,
+   and a nowrap string reports its FULL length as the column's minimum content
+   width — so a percentage resolves circularly and the Coretax message simply
+   takes 690px, squeezing Number and Type down to a few characters. A hard px
+   bound is what actually lets the ellipsis engage. Matches
+   .detail-linked-col--remark. */
+.detail-taxdoc-remark {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Secondary, not red: the Rejected badge one column over already carries the
+     alarm, and two reds in one row read as two separate problems. */
+  color: var(--mp-text-secondary);
+}
 
 /* Tax documents tab — heading with the scenario control pinned right */
 .detail-taxdoc-heading-row {

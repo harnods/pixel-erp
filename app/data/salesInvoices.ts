@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import type { SalesInvoice } from './types'
-import { customers } from './customers'
+import { customers, EXPORT_CUSTOMER_ID } from './customers'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 
 /**
@@ -21,13 +21,28 @@ const AMOUNTS = [
   98_000_000, 3_200_000, 67_000_000, 34_500_000, 125_000_000, 9_000_000, 55_300_000, 210_000_000,
 ]
 
+/**
+ * The pool the seed walks by index. The export customer is excluded: this
+ * assignment is positional, so admitting it would shift every invoice's buyer
+ * by one and silently rewrite 150 rows of demo data.
+ */
+const CYCLE_CUSTOMERS = customers.filter((c) => c.id !== EXPORT_CUSTOMER_ID)
+
+/**
+ * The invoices sold abroad. Named rather than derived, so the export buyer
+ * lands on invoices that can actually raise a tax document (PPN present, every
+ * product DJP-classified, no seeded faktur of their own) — the state the
+ * export form needs to be reachable from.
+ */
+const EXPORT_INVOICE_IDS = ['SI121', 'SI110', 'SI062']
+
 function buildSalesInvoices(): SalesInvoice[] {
   const out: SalesInvoice[] = []
   for (let i = 0; i < INVOICE_COUNT; i++) {
     const offset = Math.floor((i * SIM_SPAN_DAYS) / INVOICE_COUNT) // 1 Jan → today
     const date = simDay(offset)
     const dueDate = simDay(offset + 30)
-    const cust = customers[i % customers.length]!
+    const cust = CYCLE_CUSTOMERS[i % CYCLE_CUSTOMERS.length]!
     const total = AMOUNTS[i % AMOUNTS.length]! + (i % 5) * 1_300_000
     const duePassed = daysUntil(dueDate) < 0
 
@@ -62,6 +77,16 @@ function buildSalesInvoices(): SalesInvoice[] {
       ...(tags.length ? { tags } : {}),
     })
   }
+  // The export buyer is attached after the cycle has run, so it never disturbs
+  // the positional assignment above.
+  const exportCustomer = customers.find((c) => c.id === EXPORT_CUSTOMER_ID)
+  if (exportCustomer) {
+    for (const id of EXPORT_INVOICE_IDS) {
+      const inv = out.find((o) => o.id === id)
+      if (inv) inv.customer = { id: exportCustomer.id, name: exportCustomer.name }
+    }
+  }
+
   // Newest first (matches how the Sales Invoices page reads best).
   return out.reverse()
 }

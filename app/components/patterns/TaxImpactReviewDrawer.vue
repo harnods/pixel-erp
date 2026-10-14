@@ -16,16 +16,16 @@
  *   • 'sales-return' — a sales return. Nothing was edited, so there is nothing to
  *                      diff; the body is the follow-up the return obliges instead.
  *
- * Chrome follows CreateTaxDocumentDrawer.vue (600px floating drawer, header /
+ * Chrome follows CreateTaxDocumentDrawer.vue (920px floating drawer, header /
  * scrolling body / pinned footer); see that file for why size="full" is required
  * alongside the width override.
  */
 import {
-  MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpText,
+  MpButton, MpText, MpIcon,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
 import {
   TAX_ACTION_CONFIG, decidingChanges, RETURN_NOTE_FOLLOW_UPS,
   type DetectedTaxChange, type TaxAction,
@@ -60,6 +60,12 @@ const isReturn = computed(() => props.trigger === 'sales-return')
 /** The changes that decided the verdict — listed first, and called out as the
  *  reason, so the user isn't left matching rows against a banner themselves. */
 const deciding = computed(() => decidingChanges(props.changes))
+/** Did THIS change set the verdict? Drives the table's Remark column, which
+ *  replaced the standalone "Why ... is required" section. */
+const decidingKeys = computed(() => new Set(deciding.value.map(c => c.key)))
+function isDeciding(c: DetectedTaxChange): boolean {
+  return decidingKeys.value.has(c.key)
+}
 
 /** What confirming will produce, spelled out rather than implied. */
 const generatedDrafts = computed<string[]>(() => {
@@ -89,19 +95,10 @@ function confirm() { emit('confirm') }
 </script>
 
 <template>
-  <MpDrawer
-    id="tax-impact-review-drawer"
-    :is-open="isOpen"
-    placement="right"
-    size="full"
-    variant="floating"
-    is-close-on-overlay-click
-    :is-keep-alive="false"
-    @close="close"
-  >
-    <MpDrawerContent>
-      <MpDrawerBody>
-        <div class="tir-card">
+  <Teleport to="body">
+    <Transition name="tir">
+      <div v-if="isOpen" class="tir-overlay">
+        <div class="tir-panel" role="dialog">
           <div class="tir-header">
             <MpText weight="semiBold">{{ t('Review tax impact') }}</MpText>
             <MpButton left-icon="close" variant="ghost" size="sm" :aria-label="t('Close')" @click="close" />
@@ -116,19 +113,17 @@ function confirm() { emit('confirm') }
             </MpBanner>
 
             <!-- ── The document this edit answers to ── -->
+            <!-- Read as a summary, not as a form: ContentList (label above value)
+                 laid out across the panel, the same shape a detail page's header
+                 summary uses. The old label-left / value-right-aligned rows
+                 stretched a three-field summary across the full width and read
+                 as an editable form. -->
             <section v-if="sourceDocument" class="tir-section">
               <MpText size="h3" weight="semiBold" class="tir-section-title">{{ t('Approved tax document') }}</MpText>
-              <div class="tir-row">
-                <span class="tir-row-label">{{ t('Number') }}</span>
-                <span class="tir-row-value">{{ formatTaxDocumentNumber(sourceDocument) }}</span>
-              </div>
-              <div class="tir-row">
-                <span class="tir-row-label">{{ t('Type') }}</span>
-                <span class="tir-row-value">{{ t(formatTaxDocumentKind(sourceDocument)) }}</span>
-              </div>
-              <div class="tir-row">
-                <span class="tir-row-label">{{ t('Tax document date') }}</span>
-                <span class="tir-row-value">{{ sourceDocument.date }}</span>
+              <div class="tir-summary">
+                <ContentList :label="t('Number')" :value="formatTaxDocumentNumber(sourceDocument)" />
+                <ContentList :label="t('Type')" :value="t(formatTaxDocumentKind(sourceDocument))" />
+                <ContentList :label="t('Tax document date')" :value="sourceDocument.date" />
               </div>
             </section>
 
@@ -138,18 +133,6 @@ function confirm() { emit('confirm') }
               <ol class="tir-steps">
                 <li v-for="step in RETURN_NOTE_FOLLOW_UPS" :key="step" class="tir-reason">{{ t(step) }}</li>
               </ol>
-            </section>
-
-            <!-- ── Why (only when an action is actually required) ── -->
-            <section v-if="deciding.length" class="tir-section">
-              <MpText size="h3" weight="semiBold" class="tir-section-title">
-                {{ action === 'cancellation' ? t('Why cancellation is required') : t('Why a replacement is required') }}
-              </MpText>
-              <ul class="tir-reasons">
-                <li v-for="c in deciding" :key="c.key" class="tir-reason">
-                  <strong>{{ t(c.label) }}</strong> — {{ t(c.reason) }}
-                </li>
-              </ul>
             </section>
 
             <!-- ── Every detected change (edit only — a return diffs nothing) ── -->
@@ -168,6 +151,7 @@ function confirm() { emit('confirm') }
                   <col />
                   <col />
                   <col class="tir-col-impact" />
+                  <col class="tir-col-remark" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -175,6 +159,7 @@ function confirm() { emit('confirm') }
                     <th class="tir-th">{{ t('Before') }}</th>
                     <th class="tir-th">{{ t('After') }}</th>
                     <th class="tir-th">{{ t('Tax impact') }}</th>
+                    <th class="tir-th">{{ t('Remark') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -189,6 +174,13 @@ function confirm() { emit('confirm') }
                         :type="TAX_ACTION_CONFIG[c.action].badgeType"
                       />
                     </td>
+                    <!-- Why this row forced the verdict. Only the deciding rows
+                         carry one: a change that didn't set the outcome has no
+                         bearing to explain, and repeating a reason against every
+                         row would bury the one that actually decided it. -->
+                    <td class="tir-td tir-td--muted">
+                      {{ isDeciding(c) ? t(c.reason) : '—' }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -197,9 +189,16 @@ function confirm() { emit('confirm') }
             <!-- ── What confirming will create ── -->
             <section v-if="generatedDrafts.length" class="tir-section">
               <MpText size="h3" weight="semiBold" class="tir-section-title">{{ t('Will be generated') }}</MpText>
-              <ul class="tir-generated">
-                <li v-for="d in generatedDrafts" :key="d" class="tir-generated-item">{{ t(d) }}</li>
-              </ul>
+              <!-- Not a <ul>: the leading document icon IS the marker here, and a
+                   list whose bullets are suppressed fights the every-li-shows-a-marker
+                   rule instead of complying with it. Flush left — the old 20px
+                   bullet indent pushed these out of line with every other section. -->
+              <div class="tir-generated">
+                <div v-for="d in generatedDrafts" :key="d" class="tir-generated-item">
+                  <MpIcon name="doc" size="sm" class="tir-generated-icon" />
+                  <span>{{ t(d) }}</span>
+                </div>
+              </div>
               <p class="tir-note">{{ t(generatedNote) }}</p>
             </section>
           </div>
@@ -213,27 +212,44 @@ function confirm() { emit('confirm') }
             </button>
           </div>
         </div>
-      </MpDrawerBody>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
-/* Same floating-drawer chrome as CreateTaxDocumentDrawer.vue — including the
-   size="full" requirement explained there (a fixed size preset's stale width
-   lookup fights this override and freezes the open animation). Kept at 600px
-   like every other drawer in the app; the four-column change table fits by
-   wrapping its before/after values rather than by widening the panel. */
-.tir-card { display: flex; flex-direction: column; height: 100%; }
-:deep([data-pixel-component="MpDrawerContent"]) {
-  width: var(--mp-spacing-150, 600px) !important;
-  max-width: 600px !important;
+/* Standard ERP drawer shell (rule/drawer-custom-shell) — copied from
+   BillsFiltersDrawer.vue. Pixel's MpDrawer has no structural CSS in this build:
+   its header and footer detach and the body renders as a bare floating card,
+   which is what these drawers did once they were widened past 600px. The
+   overlay carries NO click handler and there is no Esc listener
+   (rule/modal-drawer-close-explicit-only). */
+.tir-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
+  display: flex; justify-content: flex-end;
 }
+.tir-panel {
+  margin: var(--mp-spacing-3);
+  width: min(920px, calc(100% - 24px));
+  height: calc(100% - 24px);
+  display: flex; flex-direction: column;
+  background: var(--mp-background-stage, #fff);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.tir-enter-active, .tir-leave-active { transition: background-color 250ms ease; }
+.tir-enter-from, .tir-leave-to { background-color: transparent; }
+.tir-enter-active .tir-panel { transition: transform 350ms ease-out; }
+.tir-leave-active .tir-panel { transition: transform 250ms ease-in; }
+.tir-enter-from .tir-panel,
+.tir-leave-to .tir-panel { transform: translateX(calc(100% + 12px)); }
 .tir-header {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
 }
 .tir-body {
@@ -246,18 +262,17 @@ function confirm() { emit('confirm') }
 .tir-section-title { display: block; margin-bottom: var(--mp-spacing-2); }
 
 /* label/value rows — same metrics as TaxDocumentDetailDrawer.vue */
-.tir-row {
-  display: flex; align-items: baseline; justify-content: space-between; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-2) 0;
-  font-size: var(--mp-font-sizes-md);
+/* Auto-fit so the three fields sit side by side at 920px and reflow to fewer
+   columns if the panel is ever narrower, rather than being pinned to 3. */
+.tir-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--mp-spacing-2) var(--mp-spacing-6);
 }
-.tir-row-label { flex: 0 0 240px; color: var(--mp-text-secondary); }
-.tir-row-value { flex: 1; text-align: right; color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 
-.tir-reasons { margin: 0; padding-left: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 /* Ordered, and the numbers matter — these are sequential steps, not a bag of
-   reasons. So no flex column here: `display: flex` on a list drops its markers,
-   which is why .tir-reasons above renders unbulleted. */
+   reasons. So no flex column here: `display: flex` on a list drops its
+   markers. */
 .tir-steps { margin: 0; padding-left: var(--mp-spacing-5); list-style: decimal; }
 .tir-steps > li + li { margin-top: var(--mp-spacing-2); }
 .tir-reason {
@@ -270,6 +285,10 @@ function confirm() { emit('confirm') }
 .tir-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .tir-col-field  { width: 120px; }
 .tir-col-impact { width: 108px; }
+/* Wide enough for a full sentence — this column carries the explanation that
+   used to be its own "Why ... is required" section, so it is the widest in the
+   table rather than an afterthought. */
+.tir-col-remark { width: 280px; }
 .tir-th {
   height: var(--mp-sizes-7, 28px);
   text-align: left;
@@ -304,8 +323,12 @@ function confirm() { emit('confirm') }
   color: var(--mp-text-secondary);
 }
 
-.tir-generated { margin: 0; padding-left: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.tir-generated-item { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.tir-generated { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.tir-generated-item {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
+}
+.tir-generated-icon { flex-shrink: 0; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .tir-note {
   margin: var(--mp-spacing-3) 0 0;
   font-size: var(--mp-font-sizes-sm);
@@ -313,10 +336,9 @@ function confirm() { emit('confirm') }
 }
 
 .tir-footer {
+  flex-shrink: 0;
   display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4) 0;
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default);
-  margin-top: auto;
-  padding-bottom: var(--mp-spacing-3);
 }
 </style>

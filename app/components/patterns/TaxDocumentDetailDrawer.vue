@@ -2,7 +2,7 @@
 /**
  * "Tax document" read-only detail drawer — Sales Invoice detail page ▸ Tax
  * document tab ▸ row kebab ▸ View details (Figma: E-Faktur node 4254-39021).
- * Mirrors CreateTaxDocumentDrawer.vue's chrome (600px floating drawer,
+ * Mirrors CreateTaxDocumentDrawer.vue's chrome (920px floating drawer,
  * Document info / Summary sections) but every field is a plain label/value
  * row instead of an input.
  *
@@ -12,7 +12,6 @@
  * since we're already inside the detail view, and hands it in as `menuItems`.
  */
 import {
-  MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
   MpButton, MpText, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
@@ -87,18 +86,10 @@ function close() { emit('update:isOpen', false) }
 </script>
 
 <template>
-  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
-    id="tax-document-detail-drawer"
-    :is-open="isOpen"
-    placement="right"
-    size="full"
-    variant="floating"
-    :is-keep-alive="false"
-    @close="close"
-  >
-    <MpDrawerContent>
-      <MpDrawerBody>
-        <div v-if="doc" class="tdd-card">
+  <Teleport to="body">
+    <Transition name="tdd">
+      <div v-if="isOpen && doc" class="tdd-overlay">
+        <div class="tdd-panel" role="dialog">
           <div class="tdd-header">
             <MpText weight="semiBold">{{ t('Tax document') }}</MpText>
             <MpButton left-icon="close" variant="ghost" size="sm" :aria-label="t('Close')" @click="close" />
@@ -252,25 +243,44 @@ function close() { emit('update:isOpen', false) }
             </MpPopover>
           </div>
         </div>
-      </MpDrawerBody>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
-/* Same floating-drawer chrome as CreateTaxDocumentDrawer.vue — including the
-   size="full" requirement explained there (a fixed size preset's stale
-   width lookup fights this override and freezes the open animation). */
-.tdd-card { display: flex; flex-direction: column; height: 100%; }
-:deep([data-pixel-component="MpDrawerContent"]) {
-  width: var(--mp-spacing-150, 600px) !important;
-  max-width: 600px !important;
+/* Standard ERP drawer shell (rule/drawer-custom-shell) — copied from
+   BillsFiltersDrawer.vue. Pixel's MpDrawer has no structural CSS in this build:
+   its header and footer detach and the body renders as a bare floating card,
+   which is what these drawers did once they were widened past 600px. The
+   overlay carries NO click handler and there is no Esc listener
+   (rule/modal-drawer-close-explicit-only). */
+.tdd-overlay {
+  position: fixed; inset: 0; z-index: 1300;
+  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
+  display: flex; justify-content: flex-end;
 }
+.tdd-panel {
+  margin: var(--mp-spacing-3);
+  width: min(920px, calc(100% - 24px));
+  height: calc(100% - 24px);
+  display: flex; flex-direction: column;
+  background: var(--mp-background-stage, #fff);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.tdd-enter-active, .tdd-leave-active { transition: background-color 250ms ease; }
+.tdd-enter-from, .tdd-leave-to { background-color: transparent; }
+.tdd-enter-active .tdd-panel { transition: transform 350ms ease-out; }
+.tdd-leave-active .tdd-panel { transition: transform 250ms ease-in; }
+.tdd-enter-from .tdd-panel,
+.tdd-leave-to .tdd-panel { transform: translateX(calc(100% + 12px)); }
 .tdd-header {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
+  background: var(--mp-background-neutral-subtle);
   border-bottom: 1px solid var(--mp-border-default);
 }
 .tdd-form {
@@ -320,8 +330,10 @@ function close() { emit('update:isOpen', false) }
 .tdd-changes-td--muted { color: var(--mp-text-secondary); }
 
 .tdd-footer {
+  flex-shrink: 0;
   display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4) 0;
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-top: 1px solid var(--mp-border-default);
 }
 .tdd-footer .btn-enterprise--primary { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 
