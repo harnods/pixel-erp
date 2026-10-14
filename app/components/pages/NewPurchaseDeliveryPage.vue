@@ -137,11 +137,10 @@ const fromPurchaseOrderId = computed(() =>
  *
  * On `dropship` a work order raises two purchase orders: one for raw material a
  * 3rd party ships straight to the subcon vendor, one for the vendor's own work.
- * A delivery against the first is COMPONENTS ARRIVING AT THE VENDOR — it is the
- * only evidence we get that they did, since the goods never touch our sites —
- * and a delivery against the second is finished goods coming back. Counting the
- * first as production would credit the order with output the vendor has not
- * started on.
+ * A delivery against the first is COMPONENTS ARRIVING AT THE VENDOR — the only
+ * evidence we get that they did, since the goods never touch our sites. The
+ * second, the vendor's work, has no delivery at all (R17): it is refused, and
+ * output is recorded by partial production or completion instead.
  */
 const COMPONENT_REQUEST_KINDS = ['componentPr', 'rawPr']
 const isComponentDelivery = computed(() => {

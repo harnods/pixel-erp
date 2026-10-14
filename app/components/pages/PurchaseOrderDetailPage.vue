@@ -625,8 +625,10 @@ function goBack() { closePurchaseOrder?.() }
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             </template>
             <MpPopoverList>
-              <!-- The vendor delivers against this order; each delivery produces
-                   finished goods on the work order it came from. -->
+              <!-- Records goods arriving against this order. On a subcon run that
+                   is only Dropship raw material reaching the vendor — the
+                   vendor's work has no delivery (R17), and the delivery form
+                   refuses one. -->
               <MpPopoverListItem v-if="!isRejected" @click="createPurchaseDelivery">Create purchase delivery</MpPopoverListItem>
               <MpPopoverListItem v-if="!isRejected" @click="createPurchaseInvoice">Create purchase invoice</MpPopoverListItem>
               <MpPopoverListItem v-if="!isRejected">Edit</MpPopoverListItem>

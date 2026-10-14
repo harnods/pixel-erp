@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * "Complete work order" on a subcon order the vendor has delivered in full.
+ * "Complete work order" on a subcon order (R6).
  *
  * Completing is not just a status flip. Components were sent to the vendor and
  * are still on the company's books until they are accounted for, so closing the
- * order has to answer one question per component: how much did the vendor
- * actually use? Whatever is left is still company stock sitting at a vendor —
- * so the modal returns it, by raising a warehouse transfer back to the warehouse
- * each component came from.
+ * order answers one question per component: how much did the vendor actually
+ * use? Completion then empties the vendor's warehouse of this run: the used part
+ * is issued into the run, and the unused part comes back as a stock IN at the
+ * output warehouse. Unused can never exceed what is still at the vendor —
+ * material already issued into a partial record is spent.
  *
  * Not MpModal: that component renders inline and invisible in this Pixel build
  * (see rule/modal-use-mpmodal, amended) — this uses the Teleport shell that works.

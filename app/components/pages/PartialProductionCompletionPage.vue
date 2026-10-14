@@ -14,8 +14,12 @@
  * or routing to restate; the vendor's charges are the cost.
  *
  * `recordSubconProduction` owns the status rule — partially produced until the
- * total reaches the plan, partially completed once it does — so this form and a
- * vendor delivery cannot disagree about where the order stands.
+ * total reaches the plan, partially completed once it does — so this form and
+ * completion cannot disagree about where the order stands. Output is recorded
+ * here or at completion only; no purchase document adds to it (R5, R17).
+ *
+ * Each record also issues the components it used out of the vendor's warehouse
+ * (R4), capped at what the vendor still holds.
  */
 import { MpIcon, MpInput, MpInputGroup, MpInputRightAddon } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'

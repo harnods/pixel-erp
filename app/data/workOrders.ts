@@ -116,8 +116,8 @@ export interface WorkOrderSubconSetup {
   componentAdjustments?: Record<string, number>
   /**
    * Subcon charges agreed after the order was created — a finishing step the
-   * vendor added, say. They behave exactly like the BOM's own cost lines from
-   * the invoice onward, each with its own clearing account.
+   * vendor added, say. They behave exactly like the BOM's own cost lines, and
+   * each is requested on a purchase request of its own (R11).
    */
   extraCostLines?: { id: string; name: string; costDriver: string; amount: number }[]
   /**
@@ -133,13 +133,11 @@ export interface WorkOrderSubconSetup {
    */
   costLineRecorded?: Record<string, number>
   /**
-   * Components the vendor did not consume, returned with the run's output.
+   * Components the vendor did not consume, returned at completion (R6).
    *
-   * They are an ADDITIONAL OUTPUT of the work order, not a correction to what
-   * was sent: the quantity handed over stands, and this is what came back with
-   * the finished goods. Kept here so the Finished goods section can show them
-   * alongside the main output rather than leaving the stock adjustment as the
-   * only trace.
+   * They come back as a stock adjustment IN at the output warehouse and show as
+   * Returned qty on the Raw materials table — they are not an output of the run.
+   * The quantity sent stands; issued + returned equals sent.
    */
   unusedOutputs?: { sku: string; qty: number }[]
   /**
@@ -749,12 +747,6 @@ export function workOrderForDocument(documentId: string): WorkOrder | undefined 
   return workOrders.find(w => (w.subcon?.raisedDocuments ?? []).some(d => d.id === documentId))
 }
 
-/**
- * Record finished goods produced by a vendor delivery. Each delivery adds to the
- * work order's produced quantity; the order stays `partially produced` until the
- * total reaches what was planned, so several deliveries can close it out
- * together.
- */
 /** One subcon charge on a work order, read from the one place that knows (R9). */
 export interface SubconCostLineState {
   /** The line's id — the BOM line's product id, or the id of a line added on this order. */
@@ -858,7 +850,7 @@ export function recordSubconComponentReceipt(
   persistWorkOrders()
 }
 
-/** Record what came back unused, as additional output of the run. */
+/** Record what came back unused at completion — shown as Returned qty (R6). */
 export function recordSubconUnusedOutput(
   workOrderId: string,
   lines: { sku: string; qty: number }[],

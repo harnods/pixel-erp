@@ -1029,10 +1029,11 @@ const subconComponentUsage = computed<SubconComponentUsage[]>(() =>
 )
 
 /**
- * Complete, returning whatever the vendor did not use. The return is a real
- * warehouse transfer FROM the vendor location back to each component's origin —
- * the same document that sent the stock out, run in reverse — so the custody
- * balance closes instead of being written off silently.
+ * Complete (R6): produce any output still owed, charge each cost line's
+ * remaining share, then empty the vendor's warehouse of this run's components.
+ * What the vendor used is issued (stock OUT); what it did not use is issued too
+ * and comes back as a stock IN at the output warehouse — not a transfer to the
+ * origin. Issued + returned therefore equals sent.
  */
 function completeSubconWorkOrder(unused: { sku: string; qty: number }[]) {
   const w = wo.value
@@ -1305,8 +1306,11 @@ const DOC_ROUTE: Partial<Record<SubconDocKind, string>> = {
 /**
  * The lines the chosen document opens with.
  *  • A transfer moves the BOM's components out of the source warehouse.
- *  • A PR buys the vendor's service, and carries the output as a tracked line so
- *    the goods receipt has something to receive against.
+ *  • A component PR buys the raw material a 3rd party ships to the vendor
+ *    (Dropship), for whatever is not yet requested or delivered (R8).
+ *  • A service PR carries the subcon cost lines no earlier request covers, one
+ *    line each at quantity 1 (R5, R11). There is no output line: output is
+ *    recorded by partial production or completion, never received (R17).
  */
 function prefillLines(kind: SubconDocKind, originWarehouseId?: string): SubconPrefillLine[] {
   const w = wo.value

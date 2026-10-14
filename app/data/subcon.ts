@@ -83,7 +83,7 @@ export type SubconDocKind =
   | 'purchaseDelivery' // a raised delivery document — raw material only (R17), never the vendor's work
   | 'purchaseInvoice'  // the vendor's bill for the subcon work, raised against the PO
   | 'componentIssue'   // stock adjustment OUT — components issued into the vendor's process
-  | 'receipt'       // goods receipt back from the vendor
+  | 'receipt'       // withdrawn: there is no receipt step (R17) — kept only so old records still type
 
 export interface SubconDocStep {
   kind: SubconDocKind
@@ -190,12 +190,13 @@ const DOC_STEPS: Record<SubconDocKind, Omit<SubconDocStep, 'kind'>> = {
  * The document chain a subcon configuration raises, in the order it is raised.
  *
  * This is the rule the whole feature turns on, so it lives in exactly one place:
- *   • finished good — dropship buys the components first (CID); the subcon PR is
- *     always raised; resupply adds the warehouse transfer that supplies it; the
- *     receipt closes the loop.
- *   • component    — a partial split buys the in-house half normally first; the raw
- *     material then reaches the vendor by purchase (dropship) or transfer
- *     (resupply); the process PR and the receipt follow.
+ *   • finished good — supply first: dropship buys the components (PR → PO → PD to
+ *     the vendor), resupply transfers them; the subcon PR is always raised.
+ *   • component (phase 2, locked) — a partial split buys the in-house half
+ *     normally first; the raw material then reaches the vendor by purchase or
+ *     transfer; the process PR follows.
+ * Then the service order and its invoice. There is no receipt step and no
+ * delivery for the vendor's work (R17).
  */
 export function buildDocumentPlan(
   scope: SubconScope,
@@ -315,9 +316,10 @@ export function decodeSubconPrefill(raw: unknown): SubconDocPrefill | null {
 
 /**
  * Documents raised from their own parent document, not from the work order: the
- * goods receipt comes on the vendor's return, the purchase order from the
- * purchase request, and the delivery from that order. The work order lists them
- * but never offers a Create button for them.
+ * purchase order from the purchase request, a Dropship component delivery from
+ * its order, and the invoice from the order(s) it bills. The component issue is
+ * posted by Start, a partial record or completion. The work order lists them but
+ * never offers a Create button for them.
  */
 export const RAISED_ELSEWHERE: SubconDocKind[] = [
   'purchaseOrder', 'componentOrder', 'componentDelivery', 'purchaseDelivery', 'purchaseInvoice',
