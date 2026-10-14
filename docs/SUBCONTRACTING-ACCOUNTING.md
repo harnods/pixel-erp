@@ -6,6 +6,12 @@ The rules live in one place: **`app/data/subconAccounting.ts`**, which is pure
 
 This document is written so the PRD can be updated from it.
 
+> **Superseded in part by PRD Rev 5 (9 Oct 2026).** Sections 1–10 below describe
+> the Rev 3/4 rules — a clearing account, recognition at purchase order approval
+> or delivery, and PPN / PPh 23. Rev 5 replaces those: accounting follows the
+> purchase transaction and carries no tax. Read **§11 — Rev 5, as built** first;
+> sections 1–10 are kept as history and for the switched-off pricing rules.
+
 ---
 
 ## 1. The shape of it
@@ -327,3 +333,86 @@ gross-up), so a rise is visible before the order closes.
    second about VAT-inclusive unit pricing — but both read as "is tax in the
    price?". They are not adjacent on the form, and neither was renamed. Worth a
    copy decision.
+
+---
+
+## 11. Rev 5, as built (DB-18)
+
+Built on `feature/subcontracting` from the Design Brief (Rev 5), tickets DB-01 to
+DB-17. Each rule cites the PRD's stable ID.
+
+### What the code does now
+
+| Rule | As built | Where |
+|---|---|---|
+| R1, R17 | The plan has no purchase delivery for the vendor's work. Dropship runs PR → PO → PD for raw material, then the service PR → PO → PI. A delivery against a service order is refused inline. | `buildDocumentPlan`, `NewPurchaseDeliveryPage.vue` |
+| R2 | One stored next step, re-derived when a document is recorded and when the order opens. Supply first; a late charge (R11) returns the step to "Create purchase request". | `deriveNextAction` |
+| R3, R4 | Partial production off: Start issues every component. On: each partial record issues what it used, capped at what the vendor still holds. | `startWorkOrder`, `PartialProductionCompletionPage.vue` |
+| R5 | Produced comes only from partial records and completion. Each is kept as an output record (qty, date, cost share). | `recordSubconProduction` |
+| R6 | Completion issues everything still at the vendor and returns the unused part as stock IN at the output warehouse; issued + returned = sent. | `completeSubconWorkOrder` |
+| R7 | Quantities only increase, a reason is required, every change is recorded on the order (never the BOM), all-or-nothing. | `evaluateSubconAdjustment`, `applySubconAdjustment` |
+| R8 | Component need = BOM figure × planned ÷ the order's starting output, or a higher adjustment. Supply reopens for the difference only. | `subconPlannedComponentQty`, `subconDropshipShortfall` |
+| R9, R10 | One cost-line source for every screen and the journal, including added lines. A revision below what is charged is refused. | `subconCostLinesFor` |
+| R11 | A charge added after approval is requested on its own PR and ordered on its own PO; the original PO is untouched. | `subconUncoveredCostLines`, `subconRequestWithoutOrder` |
+| R12 | Line total = BOM amount × planned ÷ the BOM's own output quantity. Partial split no longer halves it. | `subconCostLinesFor` |
+| R13 | PO approval posts nothing. Issue: Dr WIP / Cr material. Output: Dr finished goods / Cr WIP at the material value issued for it. Return: Dr material / Cr WIP. Invoice: Dr finished goods (stock) + Dr COGS (sold) / Cr AP. No clearing account. | `buildSubconJournals` |
+| R14 | No PPN or PPh 23 in the journal, and none on subcon PR/PO/PI/PD. Pricing rules kept, switched off by `taxHandling: false`. | `subconLineTaxLabel`, `subconDocumentUntaxed` |
+| R15 | Resupply: the work order's reserved batches carry onto the transfer (the rest picked by the warehouse rule). Dropship: the third party's batches are entered on the component delivery. | `allocateReservedBatches`, `NewPurchaseDeliveryPage.vue` |
+| R16 | One invoice may bill several service POs from one work order; mixing work orders is refused. "Create purchase invoice" on a service PO brings the run's other unbilled service POs. | `checkInvoiceSources`, `subconOrdersToInvoice` |
+| R19 | Report = Excel export from the Work orders index, filtered to Subcontracting. Report screens and the `subconOrders` entity are removed. | `app/data/subconExport.ts` |
+| R20 | Sub-assembly disabled on a Subcontracting BOM and work order, with a tooltip. | `CreateBillOfMaterialsPage.vue`, `CreateWorkOrderPage.vue` |
+| R21 | Production settings page, persisted; off → Complete alone. | `SettingsProductionPage.vue` |
+| R22 | Status transitions pinned by tests, including the move back to waiting rm procurement before the service PO. | `syncSubconStatus` |
+
+Reference run (browser, BOM #10087, 500 pcs, Resupply, partial production on):
+record 1 posts finished goods 5,820,000; completion posts the rest; the invoice
+of 13,100,000 takes finished goods to 22,800,000 less any unused material
+returned. Fixtures F1–F5, F7–F10 are automated under `tests/subcon-*.spec.ts`.
+
+### Where the build departs from the brief — needs a decision
+
+1. **R8 scaling base.** The brief scales needs by `plannedQty ÷ bom.finishedGoodQty`.
+   Applied literally, seeded orders whose quantity differs from their BOM's output
+   (e.g. WO-2026-0025: a 1-bag BOM ordered for 500) jumped to hundreds of sacks.
+   The build scales from the order's *starting* output instead; F4 gives the same
+   result. Either confirm this, or correct the seeded BOM quantities and switch.
+2. **R15 on Dropship.** The brief says the component PR and PO carry the work
+   order's batches. Decided with the product owner instead: the third party's
+   batches are entered on the component delivery, because batches reserved from
+   our own warehouse do not describe goods a third party ships.
+3. **R20 disabled button.** `rule/btn-no-disabled-validation` allows no disabled
+   button except a loading lock. R20 asks for a disabled control for an
+   unsupported feature; built that way with a tooltip. RULES.md needs an
+   exception, or R20 needs rewording.
+4. **R2 and invoicing.** The next-step list ends at Complete, so a completed
+   order offers no invoice step. Invoicing starts from the PO's own page (as the
+   PRD's Screens table describes).
+
+### OPEN items (implemented with the brief's default)
+
+| Item | Default implemented | Owner |
+|---|---|---|
+| Splitting an invoice between stock on hand and COGS | Follow each output record's cost share and how much of it is sold. Nothing records sold quantity yet, so every invoice currently lands in finished goods. | Finance |
+| Invoice value different from the PO | Not handled — the invoice posts at its own value. | Finance |
+| Where the Excel export lives | Work orders index, Category = Subcontracting; Export does nothing otherwise. | Product, UX |
+| Status refresh | Re-derived when the order is opened and when a document is recorded through the app; the real system should derive on every event. | Engineering |
+| Dual Unit Inventory on a Subcontracting BOM | No change. | Product |
+| Cost per unit drift | WIP releases only what was issued; an output recorded before its materials carries less. | Finance |
+
+### Also found and fixed along the way
+
+- Subcon PO and invoice forms added 11% PPN to the total whatever the line tax
+  labels said (R14).
+- The purchase order list hid every `approved` order, and `/purchase-orders/<id>`
+  links landed on the index.
+- The work order header kept offering Complete after completing.
+
+### Known gaps not fixed
+
+- The Dropship component delivery prefills every outstanding BOM component, not
+  only the lines of the PO it was raised from.
+- Seeded WO-2026-0025 reserves a batch that expired on 26/09/2026.
+- The completion modal cannot return unused material when partial production is
+  off: Start already issued everything (follows the brief's formula).
+- `SubconPlanPreview` estimates from a fixed demo BOM, not the BOM chosen.
+
