@@ -1669,7 +1669,7 @@ function fmtNum(n: number | null): string {
 .mbd-table--putaway .mbd-td:last-child { border-right: none; }
 .mbd-td--merged { border-left: none; }
 /* pa-loc / pa-qty cells also carry .mbd-td--input, so the focus ring comes from
-   .mbd-td--input:focus-within::after (overlay, non-clipped). No direct box-shadow. */
+   .mbd-td--input:focus-within::after (overlay, non-clipped). No direct shadow used. */
 .mbd-td--pa-loc  { padding: 0; background: var(--mp-background-neutral, #fff); }
 .mbd-td--pa-qty  { padding: 0; background: var(--mp-background-neutral, #fff); }
 .mbd-pa-loc-trigger {

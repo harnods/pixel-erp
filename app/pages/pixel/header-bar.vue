@@ -124,14 +124,14 @@ useHead({ title: 'Global header bar · Pixel 3 Enterprise' })
   align-items: center;
   gap: var(--mp-spacing-2, 8px);
   width: 100%;
-  height: 56px;
+  height: var(--mp-size-14, 56px);
   padding: 0 var(--mp-spacing-3, 12px) 0 var(--mp-spacing-4, 16px);
   background: var(--mp-colors-background-header, #142d26);
   border-radius: var(--mp-radii-md, 6px);
 }
 .hb-strip__left { flex: 1; min-width: 0; }
 .hb-strip__logo {
-  color: #fff;
+  color: var(--mp-text-on-fill, #fff);
   font-weight: var(--mp-font-weights-bold, 700);
   font-size: var(--mp-font-sizes-md, 14px);
   white-space: nowrap;
@@ -142,11 +142,11 @@ useHead({ title: 'Global header bar · Pixel 3 Enterprise' })
   align-items: center;
   gap: var(--mp-spacing-2, 8px);
   flex: 0 0 200px;
-  height: 32px;
+  height: var(--mp-size-8, 32px);
   padding: 0 var(--mp-spacing-3, 12px);
   border-radius: var(--mp-radii-full, 999px);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
+  background: var(--mp-background-header-search, rgba(255, 255, 255, 0.08));
+  color: var(--mp-text-on-fill-secondary, rgba(255, 255, 255, 0.7));
   font-size: var(--mp-font-sizes-sm, 12px);
 }
 .hb-strip__right {
