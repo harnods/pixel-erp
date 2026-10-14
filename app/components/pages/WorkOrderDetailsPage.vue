@@ -23,6 +23,7 @@ import {
   buildDocumentPlan, docMatchesStep, allocateReservedBatches, SUBCON_SCOPE_LABEL,
   encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL, SUBCON_VENDORS,
   isComponentSupply, componentSupplyStep, subconServiceProduct, SUBCON_DEFAULT_ACCOUNT_MAPPING,
+  buildDirectTransferLines,
   type SubconDocKind, type SubconPrefillLine,
 } from '~/data/subcon'
 import { addAdjustment, stockAdjustments } from '~/data/stockAdjustments'
@@ -54,7 +55,7 @@ import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
-import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
+import { isBatchTracked, isSerialized, getWarehouseDetail, autoSelectSerials } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 
 const props = defineProps<{ orderId: string }>()
@@ -271,13 +272,19 @@ const subconTransactionRows = computed(() => {
   // `raisedDocuments` is appended as each one is created, so its order IS the
   // order the run happened in.
   const raisedOrder = new Map((subcon.value?.raisedDocuments ?? []).map((d, i) => [d.id, i]))
-  return subconTransactions.value.filter(tx => !!tx.doc).map((tx) => {
-    // An order or a delivery inherits its purpose from the request it grew out
-    // of. On dropship both threads raise the same kinds, so by kind alone the
-    // component order and its delivery read as the vendor's work.
-    const inherited = tx.doc?.fromKind ? DOC_FUNCTION[tx.doc.fromKind] : undefined
-    return { ...tx, function: inherited ?? DOC_FUNCTION[tx.kind] ?? '' }
-  }).sort((a, b) => (raisedOrder.get(a.doc!.id) ?? 0) - (raisedOrder.get(b.doc!.id) ?? 0))
+  // Stock adjustments are left out: they are the accounting movements behind the
+  // run, read in full from View journal entry & stock adjustment, not documents
+  // anyone raises or follows up here.
+  return subconTransactions.value
+    .filter(tx => !!tx.doc && tx.kind !== 'componentIssue')
+    .map((tx) => {
+      // An order or a delivery inherits its purpose from the request it grew out
+      // of. On dropship both threads raise the same kinds, so by kind alone the
+      // component order and its delivery read as the vendor's work.
+      const inherited = tx.doc?.fromKind ? DOC_FUNCTION[tx.doc.fromKind] : undefined
+      return { ...tx, function: inherited ?? DOC_FUNCTION[tx.kind] ?? '' }
+    })
+    .sort((a, b) => (raisedOrder.get(a.doc!.id) ?? 0) - (raisedOrder.get(b.doc!.id) ?? 0))
 })
 
 /**
@@ -817,6 +824,8 @@ const sentToVendorBySku = computed<Record<string, number>>(() =>
 /** True when this work order reports sent-to-vendor instead of consumed qty. */
 /** Basic: the vendor's own stock, so this order moves no material of ours. */
 const subconIsBasic = computed(() => subcon.value?.method === 'basic')
+/** Dropship: components go straight to the vendor, never through our warehouses. */
+const subconIsDropship = computed(() => subcon.value?.method === 'dropship')
 
 const reportsSentQty = computed(() => !!subcon.value)
 /**
@@ -1305,8 +1314,6 @@ const DOC_ROUTE: Partial<Record<SubconDocKind, string>> = {
   processPr: '/purchase-requests/new',
   rawPr: '/purchase-requests/new',
   purchasePr: '/purchase-requests/new',
-  transfer: '/warehouse-transfers/new',
-  rawTransfer: '/warehouse-transfers/new',
   receipt: '/warehouse-transfers/new',
 }
 
@@ -1397,6 +1404,69 @@ function openRaisedDocument(doc: { route: string; id: string }) {
 }
 
 /** Open a document's form, prefilled from this work order. */
+/**
+ * Set after a direct transfer could not carry everything the run still needs —
+ * or could carry nothing at all. Shown on the work order, since there is no form
+ * left to show it on.
+ */
+const transferNotice = ref<{ created: boolean; lines: string[] } | null>(null)
+
+/**
+ * Raise a component transfer straight into the warehouse transfer list.
+ *
+ * Everything the work order needs to say is already known — origin, the vendor's
+ * warehouse, what is still to send, the memo — so the form added nothing but a
+ * second Save. The record is the one the form would have written: the same
+ * `addTransfer`, the same draft status, the same link back to this order, and it
+ * appears in the warehouse transfer list like any other.
+ *
+ * The form's checks still apply, applied here instead of refused there: each
+ * line is capped at the origin's available stock, serial-tracked lines take the
+ * warehouse's own serial pick, and a line with nothing to send is left out.
+ */
+function raiseSubconTransfer(kind: SubconDocKind, originWarehouseId?: string) {
+  const w = wo.value
+  const c = subcon.value
+  const dest = subconDestination.value
+  if (!w || !c || !dest) return
+  transferNotice.value = null
+
+  const originId = originWarehouseId ?? subconOrigin.value?.id ?? c.sourceWarehouseId ?? ''
+  const originName = originWarehouseId
+    ? (rawOriginGroups.value.find(g => g.warehouseId === originWarehouseId)?.warehouseName ?? '')
+    : (subconOrigin.value?.name ?? c.sourceWarehouseName ?? '')
+  const stock = getWarehouseDetail(originId)?.stock ?? []
+  const stockFor = (sku: string) => stock.find(s => s.sku === sku)
+
+  // A serial-tracked unit only leaves with its serial named. The form made the
+  // operator pick them; the warehouse's own selection rule picks them here.
+  const { toSend, reduced } = buildDirectTransferLines(
+    prefillLines(kind, originWarehouseId),
+    sku => stockFor(sku)?.available ?? 0,
+    (sku, qty) => (stockFor(sku)?.serials ? autoSelectSerials(originId, sku, qty) : undefined),
+  )
+
+  if (!toSend.length) {
+    transferNotice.value = { created: false, lines: reduced }
+    return
+  }
+
+  const created = addTransfer({
+    date: new Date().toISOString().slice(0, 10),
+    originId,
+    originName,
+    destinationId: dest.id,
+    destinationName: dest.name,
+    tags: [],
+    memo: `${t('Raised from')} ${w.number} · ${t('subcon')} · ${c.vendorName}`,
+    lines: toSend,
+  })
+  recordSubconDocument(w.id, { kind, id: created.id, number: created.number, route: '/warehouse-transfers' })
+  refreshSubconWorkOrder(w.id)
+  if (reduced.length) transferNotice.value = { created: true, lines: reduced }
+  successToast(t('Warehouse transfer created'))
+}
+
 function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
   const w = wo.value
   const c = subcon.value
@@ -1411,6 +1481,11 @@ function createDocument(kind: SubconDocKind, originWarehouseId?: string) {
   if ((kind === 'transfer' || kind === 'rawTransfer') && !originWarehouseId && hasMultipleOrigins.value) {
     originBreakdownKind.value = kind
     originBreakdownOpen.value = true
+    return
+  }
+
+  if (kind === 'transfer' || kind === 'rawTransfer') {
+    raiseSubconTransfer(kind, originWarehouseId)
     return
   }
 
@@ -1824,7 +1899,11 @@ function suppressFabClick(e: MouseEvent) {
           class="detail-btn detail-btn--secondary" variant="secondary"
           @click="goPartialProduction"
         >{{ t('Partially produce') }}</MpButton>
-        <MpButton v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
+        <MpButton
+          v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary"
+          :data-devchange="nextAction === 'create-transfer' ? 'subcon-direct-transfer' : undefined"
+          @click="handlePrimaryAction"
+        >{{ primaryAction }}</MpButton>
       </div>
     </header>
 
@@ -1950,6 +2029,18 @@ function suppressFabClick(e: MouseEvent) {
           <MpBannerDescription>{{ startBlockedMessage }}</MpBannerDescription>
         </MpBanner>
 
+        <!-- The transfer form's own shortfall banner, moved here now that the
+             transfer is raised without opening it. Same variant, same words. -->
+        <MpBanner v-if="transferNotice" variant="warning" class="wod-subcon-blocked">
+          <MpBannerIcon />
+          <MpBannerTitle v-if="!transferNotice.created">{{ t('No transfer created') }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ t('Reduced to the stock this warehouse holds') }}:
+            {{ transferNotice.lines.join(' · ') }}.
+            {{ t('The work order still needs the balance — transfer it once the stock arrives.') }}
+          </MpBannerDescription>
+        </MpBanner>
+
       </section>
 
       <!-- ── Raw materials ──
@@ -1970,7 +2061,13 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <!-- Where the material is DRAWN FROM — named as such so it is
                        not read as where the output lands. -->
-                  <th class="wod-th">{{ t('Origin warehouse') }}</th>
+                  <!-- Dropship draws nothing from our warehouses: a 3rd party
+                       delivers straight to the vendor, so the only warehouse
+                       these components ever sit in is the vendor's. "Origin"
+                       would describe a movement that never happens. -->
+                  <th class="wod-th" data-devchange="subcon-wod-dropship-wh">
+                    {{ subconIsDropship ? t('Warehouse') : t('Origin warehouse') }}
+                  </th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
                   <!-- Subcon reports what LEFT for the vendor; a normal work
                        order reports what was consumed in-house. -->
@@ -1990,7 +2087,7 @@ function suppressFabClick(e: MouseEvent) {
                     <div class="wod-product"><span>{{ r.product }}</span><span class="wod-product-sub">{{ r.sku }}</span></div>
                   </td>
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
-                  <td class="wod-td">{{ r.warehouse }}</td>
+                  <td class="wod-td">{{ subconIsDropship ? (subconDestination?.name ?? '—') : r.warehouse }}</td>
                   <!-- Revised quantities show the BOM figure they replaced, so an
                        adjustment never silently rewrites the recipe. -->
                   <td class="wod-td wod-td--num">

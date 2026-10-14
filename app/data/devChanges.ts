@@ -28,10 +28,34 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
-    id: 'subcon-po-vendor',
-    title: "Subcon: Dropship component PO vendor is chosen",
+    id: 'subcon-direct-transfer',
+    title: "Subcon: Create warehouse transfer raises it directly",
     description:
-      "A component PO raised from a Dropship component request starts with an empty vendor the buyer picks (a 3rd party, not the subcon vendor). Saving without one shows an inline error.",
+      "The transfer is created straight into the warehouse transfer list, without opening the form — capped at available stock, serials picked by the warehouse rule. Anything it could not carry is reported on the work order.",
+    date: '2026-10-14',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'subcon-wod-dropship-wh',
+    title: "Subcon WO detail: Dropship shows the subcon warehouse",
+    description:
+      "On a Dropship order the Raw materials warehouse column shows the subcon warehouse and is headed Warehouse — nothing is drawn from a company warehouse.",
+    date: '2026-10-14',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'subcon-wo-type-assembly',
+    title: "Subcon WO: Assembly only",
+    description:
+      "Disassembly is not offered on a Subcontracting work order, and the type is set to Assembly when the category is chosen.",
+    date: '2026-10-14',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'subcon-po-vendor',
+    title: "Subcon: every subcon PO uses the WO's subcon vendor",
+    description:
+      "Any PO raised from a subcon work order — the vendor's work, and on Dropship the raw material too — opens with the work order's subcon vendor, fixed. Replaces the earlier rule that left the Dropship raw-material PO vendor for the buyer to choose.",
     date: '2026-10-14',
     files: ['PurchaseOrderFormPage.vue'],
   },
@@ -69,9 +93,9 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'subcon-transactions-order',
-    title: "Subcon Transactions tab: run order",
+    title: "Subcon Transactions tab: run order, no stock adjustments",
     description:
-      "Rows are listed in the order the run raised them, not grouped by thread.",
+      "Rows are listed in the order the run raised them, not grouped by thread. Stock adjustments are no longer listed — they are read from View journal entry & stock adjustment.",
     date: '2026-10-14',
     files: ['WorkOrderDetailsPage.vue'],
   },

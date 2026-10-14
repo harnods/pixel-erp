@@ -75,19 +75,17 @@ const subconWorkOrder = computed(() => {
 })
 
 /**
- * Dropship: an order raised from a COMPONENT request buys raw material from a
- * third party (R1) — not from the subcontractor. Its vendor is the buyer's to
- * choose; only an order for the vendor's work is fixed to the subcontractor.
+ * Every order raised from a subcon work order is placed with that order's subcon
+ * vendor — the order for the vendor's work, and on Dropship the order for the
+ * raw material too.
+ *
+ * The raw-material order was briefly left for the buyer to choose (R1), on the
+ * reading that a third party supplies the components. Product review settled it
+ * the other way: the work order already names who the run is bought from, so the
+ * order follows it rather than being re-decided at the purchase step.
  */
-const isComponentOrder = computed(() => {
-  const wo = subconWorkOrder.value
-  const prId = (props.purchaseRequestIds ?? [])[0]
-  const request = prId ? wo?.subcon?.raisedDocuments?.find(d => d.id === prId) : undefined
-  return !!request && ['componentPr', 'rawPr'].includes(request.kind)
-})
-
 const vendor       = ref(source.value?.vendor.name
-  ?? (isComponentOrder.value ? '' : subconWorkOrder.value?.subcon?.vendorName)
+  ?? subconWorkOrder.value?.subcon?.vendorName
   ?? '')
 /** Set when an order is saved with no vendor — shown inline, Save stays enabled. */
 const vendorError  = ref(false)
@@ -201,8 +199,8 @@ const fromPr = computed(() => groups.value.length > 0)
  */
 const isSubconOrder = computed(() =>
   (props.purchaseRequestIds ?? []).some(id => !!workOrderForDocument(id)))
-/** The vendor is fixed only on the subcontractor's own order, not a component order. */
-const vendorFixed = computed(() => isSubconOrder.value && !isComponentOrder.value)
+/** Fixed on every order raised from a subcon work order — see `vendor`. */
+const vendorFixed = computed(() => isSubconOrder.value)
 
 const blankItems = ref<POLine[]>((source.value?.lineItems ?? []).map(it => ({
   _key: ++_seq, product: it.product, sku: it.sku, description: it.description,

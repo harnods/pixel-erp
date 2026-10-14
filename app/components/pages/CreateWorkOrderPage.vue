@@ -159,6 +159,21 @@ const createAsSubAssembly = ref(false)
 const isSubcon = computed(() => category.value === 'Subcontracting')
 
 /**
+ * A subcontracted run only builds. Disassembly breaks an output back into its
+ * components — work the vendor is not engaged for, and that no document in the
+ * subcon plan describes — so it is not offered. With a single type left there
+ * is nothing to choose, so it is set rather than left for the user to pick.
+ */
+const woTypeOptions = computed(() =>
+  isSubcon.value ? WO_TYPE_OPTIONS.filter(o => o.id === 'Assembly') : WO_TYPE_OPTIONS)
+watch(isSubcon, (on) => {
+  if (on && workOrderType.value !== 'Assembly') {
+    workOrderType.value = 'Assembly'
+    workOrderTypeError.value = false
+  }
+})
+
+/**
  * Changing the category re-scopes the BOM list, so a BOM picked under the old
  * category is cleared rather than left as an invalid pairing. Subcontracting also
  * defaults Track routing to No: the routing is the vendor's, and this work order
@@ -850,10 +865,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </MpFormControl>
 
             <!-- Work order type -->
-            <MpFormControl id="wo-type" is-required :is-invalid="workOrderTypeError">
+            <MpFormControl id="wo-type" is-required :is-invalid="workOrderTypeError" data-devchange="subcon-wo-type-assembly">
               <MpFormLabel>{{ t('Work order type') }}</MpFormLabel>
               <MpAutocomplete
-                id="wo-type-ac" v-model="workOrderType" :data="WO_TYPE_OPTIONS"
+                id="wo-type-ac" v-model="workOrderType" :data="woTypeOptions"
                 label-prop="name" value-prop="id" :placeholder="t('Select type')"
                 is-clearable use-portal is-full-width :is-invalid="workOrderTypeError"
                 @update:model-value="workOrderTypeError = false"

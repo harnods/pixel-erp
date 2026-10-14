@@ -389,6 +389,42 @@ export function capLinesToAvailable<T extends { sku: string; qty: number }>(
   return { lines: capped, shortfalls }
 }
 
+/**
+ * The lines a component transfer is raised with when no form is opened.
+ *
+ * The form used to stand between the work order and the transfer, refusing what
+ * could not be saved. Raised directly, the same refusals become adjustments:
+ *   • each line is capped at the origin's available stock (`capLinesToAvailable`);
+ *   • a serial-tracked line can only carry as many units as have a serial to
+ *     name, so it is reduced to the serials the warehouse rule picks;
+ *   • a line left with nothing to send is dropped — a transfer of zero is not a
+ *     movement — but it is still reported, so the gap is stated, not absorbed.
+ *
+ * `reduced` lists every line sent short of what was asked, in the transfer
+ * form's own "name (sent/asked unit)" wording.
+ */
+export function buildDirectTransferLines<T extends { sku: string; qty: number; name: string; unit: string }>(
+  asked: readonly T[],
+  availableFor: (sku: string) => number,
+  serialPickFor: (sku: string, qty: number) => string[] | undefined,
+): { toSend: { sku: string; qty: number; serials?: string[] }[]; reduced: string[] } {
+  const { lines } = capLinesToAvailable(asked, availableFor)
+  const toSend: { sku: string; qty: number; serials?: string[] }[] = []
+  const reduced: string[] = []
+  lines.forEach((line, i) => {
+    const want = asked[i]!.qty
+    let qty = line.qty
+    let serials: string[] | undefined
+    if (qty > 0) {
+      serials = serialPickFor(line.sku, qty)
+      if (serials) qty = Math.min(qty, serials.length)
+    }
+    if (qty < want) reduced.push(`${line.name} (${qty}/${want} ${line.unit})`)
+    if (qty > 0) toSend.push({ sku: line.sku, qty, ...(serials?.length ? { serials: serials.slice(0, qty) } : {}) })
+  })
+  return { toSend, reduced }
+}
+
 export function shipsToSubconVendor(kind: SubconDocKind): boolean {
   return SHIPPED_TO_VENDOR.includes(kind)
 }

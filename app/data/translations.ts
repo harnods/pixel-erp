@@ -4052,4 +4052,5 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Unused component return": "Retur komponen tidak terpakai",
   "Finished goods receipt": "Penerimaan barang jadi",
   "Journal entries will appear here once materials are issued, the vendor invoices, or finished goods come back.": "Jurnal akan muncul di sini setelah material dikeluarkan, vendor menagih, atau barang jadi diterima.",
+  "No transfer created": "Transfer tidak dibuat",
 }
