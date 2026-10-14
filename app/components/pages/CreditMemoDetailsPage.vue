@@ -13,12 +13,13 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  MpButton, MpIcon, MpTextlink, css,
+  MpButton, MpTextlink, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
-import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -44,6 +45,9 @@ const used = computed(() => memoUsed(props.orderId))
 const status = computed(() => memoStatus(props.orderId))
 const applications = computed(() => applicationsForMemo(props.orderId))
 const refunds = computed(() => refundsForMemo(props.orderId))
+const hasApplications = computed(() => applications.value.length > 0)
+const hasRefunds = computed(() => refunds.value.length > 0)
+const hasLinkedTabs = computed(() => hasApplications.value || hasRefunds.value)
 
 function customerContactId(): string | undefined {
   return memo.value ? getContactIdByName(customerNameOf(memo.value.customerId)) : undefined
@@ -113,7 +117,6 @@ function confirmDelete() {
         </nav>
         <div class="cm-titlerow-left">
           <h1 class="cm-title">{{ memoLabel(memo.number) }}</h1>
-          <ErpStatusBadge :status="status" :label="t(MEMO_STATUS_LABEL[status])" badge-for="additionalInformation" size="md" />
           <DetailJumpTo id="cmd-jump" :items="jumpItems" :aria-label="t('Switch credit memo')" :placeholder="t('Search...')" :empty-text="t('No credit memos found')" data-devchange="cm-detail-jump" @select="jumpTo" />
         </div>
       </div>
@@ -137,6 +140,12 @@ function confirmDelete() {
         <div class="content-list-grid--cm">
           <div class="cm-col"><ContentList :label="t('Transaction date')" :value="formatDateLong(memo.date)" /></div>
           <div class="cm-col"><ContentList :label="t('Transaction no.')" :value="memoLabel(memo.number)" /></div>
+          <div class="cm-col">
+            <ContentList :label="t('Tags')">
+              <ErpTagList v-if="memo.tags?.length" :tags="memo.tags" />
+              <template v-else>—</template>
+            </ContentList>
+          </div>
         </div>
       </section>
 
@@ -189,86 +198,82 @@ function confirmDelete() {
       <!-- Last updated → activity log -->
       <a class="cm-updated" data-devchange="cm-detail-activity" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ memo.updatedBy }} {{ t('on') }} {{ formatUpdatedAt(memo.updatedAt) }} (GMT+7)</a>
 
-      <!-- Credit applications -->
-      <section v-if="applications.length" class="cm-related">
-        <h3 class="cm-related-heading">{{ t('Credit applications') }}</h3>
-        <p class="cm-subheading">{{ t('Transactions') }}</p>
-        <table class="cm-items">
-          <thead>
-            <tr>
-              <th class="cm-th">{{ t('Date') }}</th>
-              <th class="cm-th">{{ t('Number') }}</th>
-              <th class="cm-th">{{ t('Invoice') }}</th>
-              <th class="cm-th cm-th--num">{{ t('Credit applied') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="a in applications" :key="a.id" class="cm-related-row">
-              <td class="cm-td">{{ formatDateNumeric(a.date) }}</td>
-              <td class="cm-td"><a class="cm-link" @click="router.push(`/credit-memo-applications/${a.id}`)">{{ applicationLabel(a.number) }}</a></td>
-              <td class="cm-td">
-                <template v-for="(al, i) in a.allocations" :key="i">
-                  <a class="cm-link" @click="router.push(`/sales-invoices/${al.invoiceId}`)">{{ invoiceLabel(invoiceById(al.invoiceId)?.number ?? 0) }}</a><span v-if="i < a.allocations.length - 1">, </span>
-                </template>
-              </td>
-              <td class="cm-td cm-td--num">
-                {{ formatIDR(applicationTotal(a)) }}
-                <a class="cm-view-details" @click.stop="router.push(`/credit-memo-applications/${a.id}`)">{{ t('View details') }}<MpIcon name="chevron-right" size="sm" /></a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <!-- Credit refunds -->
-      <section v-if="refunds.length" class="cm-related">
-        <h3 class="cm-related-heading">{{ t('Credit refund') }}</h3>
-        <p class="cm-subheading">{{ t('Transactions') }}</p>
-        <table class="cm-items">
-          <thead>
-            <tr>
-              <th class="cm-th">{{ t('Date') }}</th>
-              <th class="cm-th">{{ t('Number') }}</th>
-              <th class="cm-th cm-th--num">{{ t('Credit refunded') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in refunds" :key="r.id" class="cm-related-row">
-              <td class="cm-td">{{ formatDateNumeric(r.date) }}</td>
-              <td class="cm-td"><a class="cm-link" @click="router.push(`/credit-memo-refunds/${r.id}`)">{{ refundLabel(r.number) }}</a></td>
-              <td class="cm-td cm-td--num">
-                {{ formatIDR(r.lines.filter(l => l.creditMemoId === memo!.id).reduce((s, l) => s + l.amount, 0)) }}
-                <a class="cm-view-details" @click.stop="router.push(`/credit-memo-refunds/${r.id}`)">{{ t('View details') }}<MpIcon name="chevron-right" size="sm" /></a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+      <!-- Linked transactions — tabs -->
+      <MpTabs v-if="hasLinkedTabs" :key="memo.id" id="cm-detail-tabs" :default-value="0" variant-color="green" class="cm-detail-tabs">
+        <MpTabList>
+          <MpTab v-if="hasApplications" id="cm-tab-applied" value="applied">{{ t('Credit applications') }}</MpTab>
+          <MpTab v-if="hasRefunds" id="cm-tab-refunds" value="refunds">{{ t('Credit refund') }}</MpTab>
+        </MpTabList>
+        <MpTabPanels>
+          <MpTabPanel v-if="hasApplications" value="applied">
+            <h3 class="cm-tab-heading">{{ t('Transactions') }}</h3>
+            <table class="cm-items cm-linked">
+              <colgroup>
+                <col class="cm-linked-col--date" />
+                <col class="cm-linked-col--number" />
+                <col />
+                <col class="cm-linked-col--amount" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="cm-th">{{ t('Date') }}</th>
+                  <th class="cm-th">{{ t('Number') }}</th>
+                  <th class="cm-th">{{ t('Invoice') }}</th>
+                  <th class="cm-th cm-th--num">{{ t('Credit applied') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="a in applications" :key="a.id">
+                  <td class="cm-td">{{ formatDateNumeric(a.date) }}</td>
+                  <td class="cm-td"><a class="cm-link" @click="router.push(`/credit-memo-applications/${a.id}`)">{{ applicationLabel(a.number) }}</a></td>
+                  <td class="cm-td">
+                    <template v-for="(al, i) in a.allocations" :key="i">
+                      <a class="cm-link" @click="router.push(`/sales-invoices/${al.invoiceId}`)">{{ invoiceLabel(invoiceById(al.invoiceId)?.number ?? 0) }}</a><span v-if="i < a.allocations.length - 1">, </span>
+                    </template>
+                  </td>
+                  <td class="cm-td cm-td--num">{{ formatIDR(applicationTotal(a)) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </MpTabPanel>
+          <MpTabPanel v-if="hasRefunds" value="refunds">
+            <h3 class="cm-tab-heading">{{ t('Transactions') }}</h3>
+            <table class="cm-items cm-linked">
+              <colgroup>
+                <col class="cm-linked-col--date" />
+                <col class="cm-linked-col--number" />
+                <col />
+                <col class="cm-linked-col--amount" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="cm-th">{{ t('Date') }}</th>
+                  <th class="cm-th">{{ t('Number') }}</th>
+                  <th class="cm-th" aria-hidden="true"></th>
+                  <th class="cm-th cm-th--num">{{ t('Credit refunded') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in refunds" :key="r.id">
+                  <td class="cm-td">{{ formatDateNumeric(r.date) }}</td>
+                  <td class="cm-td"><a class="cm-link" @click="router.push(`/credit-memo-refunds/${r.id}`)">{{ refundLabel(r.number) }}</a></td>
+                  <td class="cm-td"></td>
+                  <td class="cm-td cm-td--num">{{ formatIDR(r.lines.filter(l => l.creditMemoId === memo!.id).reduce((s, l) => s + l.amount, 0)) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </MpTabPanel>
+        </MpTabPanels>
+      </MpTabs>
     </div>
 
     <!-- ── Footer ── -->
     <footer class="cm-footer">
-      <MpPopover id="cmd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <MpButton variant="secondary" is-rounded left-icon="chevrons-down">{{ t('Print & share') }}</MpButton>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <PrintShareMenu id="cmd-print" />
 
       <MpPopover id="cmd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <MpButton variant="primary" is-rounded left-icon="chevrons-down" data-devchange="cm-detail-actions">{{ t('Actions') }}</MpButton>
+          <MpButton variant="primary" is-rounded right-icon="chevrons-down" data-devchange="cm-detail-actions">{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -331,4 +336,16 @@ function confirmDelete() {
 <style scoped>
 .cm-blocked-list { margin: var(--mp-spacing-2) 0 0; padding-left: var(--mp-spacing-5); }
 .cm-blocked-list li { list-style: disc outside; display: list-item; color: var(--mp-text-default); }
+
+/* ── Linked-transactions tabs ── */
+.cm-detail-tabs { margin-top: 0; }
+.cm-detail-tabs :deep(.mp-tab--isSelected_true),
+.cm-detail-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+.cm-detail-tabs :deep(.mp-tab-selected-border--isSelected_true) { background-color: var(--mp-border-selected, #029861) !important; }
+.cm-detail-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: var(--mp-spacing-5) !important; }
+.cm-tab-heading { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cm-linked { table-layout: fixed; }
+.cm-linked-col--date   { width: 160px; }
+.cm-linked-col--number { width: 260px; }
+.cm-linked-col--amount { width: 200px; }
 </style>

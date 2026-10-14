@@ -14,6 +14,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -138,27 +139,11 @@ function confirmDelete() {
     </div>
 
     <footer class="cm-footer">
-      <MpPopover id="cmrd-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <MpButton variant="secondary" is-rounded left-icon="chevrons-down">{{ t('Print & share') }}</MpButton>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <PrintShareMenu id="cmrd-print" />
 
       <MpPopover id="cmrd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <MpButton variant="primary" is-rounded left-icon="chevrons-down">{{ t('Actions') }}</MpButton>
+          <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>

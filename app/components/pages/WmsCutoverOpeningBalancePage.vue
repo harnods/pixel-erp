@@ -389,7 +389,11 @@ function publish() {
 }
 .ob-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .ob-td--input { padding: 0; }
-.ob-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.ob-td--input { position: relative; }
+.ob-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ob-td--locked { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
 
 /* Group divider row — sticks just below the header so the current category

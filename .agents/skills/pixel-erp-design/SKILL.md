@@ -41,6 +41,7 @@ Identify the surface(s) in your task and load the matching rows. Read
 | A **detail page**              | `rule/detail-*`, `rule/type-*`              | `docs/patterns/details-page-format.md` |
 | An **empty / error / loading** state | `rule/empty-state-structure`, `rule/toast-success-only`, `rule/form-errors-inline` | `docs/patterns/Toast.md` |
 | A **card / surface / page shell** | `rule/surface-*`, `rule/type-*`          | `docs/patterns/pixel-enterprise-overrides.md` |
+| The **global header bar** (`ErpHeader`) / a header icon button | `rule/header-icon-*`              | `docs/patterns/global-header-bar.md` |
 | **Copy / labels / terminology** | `rule/copy-*`                              | uxw-mekari guideline, `app/data/translations.ts` |
 | **Any** of the above (tokens)  | `rule/token-*`                              | `docs/patterns/pixel-enterprise-overrides.md` |
 

@@ -13,16 +13,22 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  MpButton, MpInput, MpAutocomplete, MpDatePicker, MpTextarea, MpUpload, MpUploadList,
-  MpIcon, MpFormControl, MpFormLabel, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpTooltip,
+  MpButton, MpInput, MpInputTag, MpAutocomplete, MpDatePicker, MpTextarea, MpUpload, MpUploadList,
+  MpIcon, MpFormControl, MpFormLabel, MpTooltip,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  css,
 } from '@mekari/pixel3'
+import type { DataInterface } from '@mekari/pixel3'
 import { successToast } from '~/utils/toasts'
 import { formatIDR } from '~/utils/currency'
+import TransactionNoField from '~/components/patterns/TransactionNoField.vue'
+import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
 import {
   getCreditMemo, customerNameOf, customerOptions, CM_ACCOUNTS, cmAccountLabel, memoLabel,
-  validateMemo, createCreditMemo, updateCreditMemo, memoUsed,
+  validateMemo, createCreditMemo, updateCreditMemo, memoUsed, nextMemoNumber,
   type MemoErrors, type FieldError,
 } from '~/data/creditMemos'
+import { getContactIdByName } from '~/data/contacts'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -32,6 +38,16 @@ const router = useRouter()
 const isEdit = computed(() => props.orderId !== 'new')
 const editing = computed(() => (isEdit.value ? getCreditMemo(props.orderId) : undefined))
 const locked = computed(() => (editing.value ? memoUsed(editing.value.id) : 0))
+/** When navigating from a contact/customer page, the customer is pre-selected and locked. */
+const customerFromContact = ref(false)
+const customerLocked = computed(() => locked.value > 0 || customerFromContact.value)
+/** Breadcrumb: customer name + link back to the contact details page. */
+const sourceCustomerName = computed(() => customerFromContact.value ? customerNameOf(customerId.value) : '')
+const sourceContactId = computed(() => {
+  if (!customerFromContact.value) return ''
+  return getContactIdByName(customerNameOf(customerId.value)) ?? ''
+})
+const nextTxNo = computed(() => memoLabel(editing.value ? editing.value.number : nextMemoNumber()))
 
 interface LineRow { id: string; accountCode: string; reason: string; amount: string }
 let seq = 0
@@ -42,6 +58,12 @@ const transactionDate = ref(displayToday())
 const memo = ref('')
 const lines = ref<LineRow[]>([newLine()])
 const attachedFiles = ref<File[]>([])
+const tagsList = ref<DataInterface[]>([])
+
+function toTagData(values: string[]): DataInterface[] {
+  return values.map((v, i) => ({ text: v, id: `${i}-${v}`, value: v, isInvalid: false, isReadOnly: false }))
+}
+function onTagsChange(data: DataInterface[]) { tagsList.value = data }
 
 function displayToday() { const d = new Date(); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
 function toISO(display: string) { const [d, m, y] = display.split('/'); return `${y}-${m}-${d}` }
@@ -72,7 +94,6 @@ function fieldError(e?: FieldError): string {
     default: return t('Check this value')
   }
 }
-const hasError = computed(() => !!errors.value.customer || !!errors.value.date || !!errors.value.total || Object.keys(errors.value.lines).length > 0)
 
 function buildDraft() {
   return {
@@ -80,18 +101,38 @@ function buildDraft() {
     date: toISO(transactionDate.value),
     lines: lines.value.map((l) => ({ id: l.id, accountCode: l.accountCode, reason: l.reason, amount: num(l.amount) })),
     memo: memo.value,
+    tags: tagsList.value.map((t2) => String(t2.value)),
     attachments: attachedFiles.value.map((f) => ({ name: f.name, sizeKB: Math.round(f.size / 1024) })),
   }
 }
-function save() {
+function save(mode: 'close' | 'new' = 'close') {
   const draft = buildDraft()
   const v = validateMemo(draft, editing.value?.id)
   errors.value = v.errors
   if (!v.ok) return
   const res = isEdit.value ? updateCreditMemo(props.orderId, draft) : createCreditMemo(draft)
-  if (res.ok) { successToast(isEdit.value ? t('Credit memo saved') : t('Credit memo created')); router.push(`/credit-memos/${res.id}`) }
+  if (res.ok) {
+    successToast(isEdit.value ? t('Credit memo saved') : t('Credit memo created'))
+    if (mode === 'new' && !isEdit.value) {
+      // Reset the form for another credit memo; keep customer if coming from contact page
+      const keepCustomer = customerFromContact.value ? customerId.value : ''
+      customerId.value = keepCustomer
+      transactionDate.value = displayToday()
+      memo.value = ''
+      lines.value = [newLine()]
+      attachedFiles.value = []
+      tagsList.value = []
+      errors.value = { lines: {} }
+    } else {
+      router.push(`/credit-memos/${res.id}`)
+    }
+  }
 }
-function cancel() { router.push(isEdit.value ? `/credit-memos/${props.orderId}` : '/sales-invoices') }
+function cancel() {
+  if (isEdit.value) return router.push(`/credit-memos/${props.orderId}`)
+  if (sourceContactId.value) return router.push(`/customers/${sourceContactId.value}`)
+  router.push('/sales-invoices')
+}
 
 function onFiles(files: FileList | null) { if (!files) return; for (const f of Array.from(files)) if (!attachedFiles.value.some((x) => x.name === f.name)) attachedFiles.value.push(f) }
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter((f) => f.name !== name) }
@@ -112,7 +153,7 @@ onMounted(() => {
     lines.value = editing.value.lines.map((l) => ({ id: `l${seq++}`, accountCode: l.accountCode, reason: l.reason, amount: l.amount.toLocaleString('id-ID') }))
   } else {
     const q = route.query.customer as string | undefined
-    if (q) customerId.value = q
+    if (q) { customerId.value = q; customerFromContact.value = true }
   }
   nextTick(checkOverflow)
 })
@@ -130,7 +171,12 @@ onUnmounted(() => ro?.disconnect())
     <header class="cm-bar">
       <div class="cm-bar-left">
         <nav class="cm-breadcrumb-trail">
-          <MpButton class="cm-breadcrumb" @click="cancel">{{ isEdit && editing ? memoLabel(editing.number) : t('Sales invoices') }}</MpButton>
+          <template v-if="customerFromContact && sourceCustomerName">
+            <MpButton class="cm-breadcrumb" @click="router.push('/customers')">{{ t('Customers') }}</MpButton>
+            <span class="cm-breadcrumb-sep">/</span>
+            <MpButton class="cm-breadcrumb" @click="cancel">{{ sourceCustomerName }}</MpButton>
+          </template>
+          <MpButton v-else class="cm-breadcrumb" @click="cancel">{{ isEdit && editing ? memoLabel(editing.number) : t('Sales invoices') }}</MpButton>
         </nav>
         <div class="cm-titlerow-left">
           <h1 class="cm-title">{{ isEdit ? t('Edit credit memo') : t('New credit memo') }}</h1>
@@ -139,12 +185,6 @@ onUnmounted(() => ro?.disconnect())
     </header>
 
     <div ref="stageEl" class="cm-form-stage">
-      <MpBanner v-if="hasError" id="memo-error-banner" variant="danger" align-items="center" class="cm-inline-banner">
-        <MpBannerIcon id="memo-error-banner-icon" />
-        <MpBannerTitle>{{ t('Could not save the credit memo') }}</MpBannerTitle>
-        <MpBannerDescription>{{ t('Review the highlighted fields below.') }}</MpBannerDescription>
-      </MpBanner>
-
       <!-- Customer + Total credit -->
       <div class="cm-form-row1">
         <MpFormControl id="memo-customer" class="cm-form-field" is-required :is-invalid="!!errors.customer">
@@ -152,7 +192,7 @@ onUnmounted(() => ro?.disconnect())
           <MpAutocomplete
             id="memo-customer-ac" v-model="customerId" :data="customerOptions()"
             label-prop="name" value-prop="id" is-searchable use-portal is-full-width
-            :placeholder="t('Select customer')" :is-invalid="!!errors.customer" :is-disabled="locked > 0"
+            :placeholder="t('Select customer')" :is-invalid="!!errors.customer" :is-disabled="customerLocked"
             data-devchange="new-cm-form"
             @update:model-value="errors.customer = undefined"
           />
@@ -166,8 +206,8 @@ onUnmounted(() => ro?.disconnect())
         </div>
       </div>
 
-      <!-- Transaction date / Transaction no. -->
-      <div class="cm-form-grid2">
+      <!-- Transaction date / Transaction no. / Tag -->
+      <div class="cm-form-grid3">
         <MpFormControl id="memo-date" is-required :is-invalid="!!errors.date">
           <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
           <div class="cm-datepicker">
@@ -175,9 +215,11 @@ onUnmounted(() => ro?.disconnect())
           </div>
           <p v-if="errors.date" class="cm-form-error">{{ fieldError(errors.date) }}</p>
         </MpFormControl>
-        <MpFormControl id="memo-no">
-          <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-          <MpInput id="memo-no-input" :model-value="t('Auto')" is-full-width is-disabled />
+        <TransactionNoField field-id="memo-no" :next-number="nextTxNo" />
+        <MpFormControl id="memo-tags" class="cm-form-field">
+          <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
+          <MpInputTag id="memo-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
+          <ErpDimensionTagUpsell id="cm-dim-upsell" />
         </MpFormControl>
       </div>
 
@@ -251,7 +293,26 @@ onUnmounted(() => ro?.disconnect())
 
     <footer class="cm-form-footer" :class="{ 'cm-form-footer--floating': overflowing }">
       <MpButton variant="ghost" is-rounded @click="cancel">{{ t('Cancel') }}</MpButton>
-      <MpButton variant="primary" is-rounded data-devchange="new-cm-save" @click="save">{{ isEdit ? t('Save changes') : t('Save') }}</MpButton>
+      <template v-if="isEdit">
+        <MpButton variant="primary" is-rounded data-devchange="new-cm-save" @click="save('close')">{{ t('Save changes') }}</MpButton>
+      </template>
+      <template v-else>
+        <div class="cm-split-btn">
+          <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary cm-split-btn__main" data-devchange="new-cm-save" @click="save('close')">
+            {{ t('Save & close') }}
+          </MpButton>
+          <MpPopover id="cm-save-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+            <MpPopoverTrigger>
+              <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary cm-split-btn__chevron" right-icon="chevrons-down" :aria-label="t('More save options')" />
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="save('new')">{{ t('Save & create another') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+      </template>
     </footer>
   </div>
 </template>
@@ -259,4 +320,9 @@ onUnmounted(() => ro?.disconnect())
 <style scoped>
 .cm-line-del { display: inline-flex !important; align-items: center; justify-content: center; min-width: 0 !important; padding: 0 !important; background: none !important; border: none !important; cursor: pointer; color: var(--mp-icon-default, var(--mp-text-secondary)); }
 .cm-ft-td--del { width: 44px; text-align: center; vertical-align: middle; }
+
+/* Split button — "Save & close" main segment + chevron segment sharing one pill */
+.cm-split-btn { display: inline-flex; align-items: stretch; }
+.cm-split-btn__main { border-radius: var(--mp-radii-full, 999px) 0 0 var(--mp-radii-full, 999px); }
+.cm-split-btn__chevron { padding-left: var(--mp-spacing-3); padding-right: var(--mp-spacing-3); border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0; border-left: 1px solid rgba(255, 255, 255, 0.3); }
 </style>

@@ -264,14 +264,16 @@ const hasCreditApplied = computed(() => invoice.value.creditApplied > 0)
 // Apply is offered only when there's a balance to reduce AND credit to spend.
 const canApplyCredit = computed(() => invoice.value.balance > 0 && availableCredit.value > 0)
 
-// Figma screen 1: a short confirm ("The customer has <credit> available") before
-// opening the apply form, so the user knows there's credit to spend.
+// Figma screen 1: the "Apply credit memo?" prompt. It appears PROACTIVELY when the
+// invoice opens and the customer has credit to spend on it — a nudge, not a gate.
+// Choosing to apply (from the prompt OR from Add payment → Apply credit memo) goes
+// straight to the form; there is no second confirm.
 const applyModalOpen = ref(false)
-function openApplyCredit() { applyModalOpen.value = true }
-function confirmApplyCredit() {
+function goToApplyForm() {
   applyModalOpen.value = false
   router.push(`/sales-invoices/${invoice.value.id}/apply-credit-memo`)
 }
+onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.value = true })
 </script>
 
 <template>
@@ -583,10 +585,7 @@ function confirmApplyCredit() {
                   <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
                   <td class="detail-td">
                     <span v-if="!p.applicationId" class="detail-td--muted">{{ p.number }}</span>
-                    <span v-else class="payment-number-cell">
-                      <a class="cell-link cell-text" @click="router.push(`/credit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
-                      <a class="payment-view-details" @click.stop="router.push(`/credit-memo-applications/${p.applicationId}`)">{{ t('View details') }}</a>
-                    </span>
+                    <a v-else class="cell-link cell-text" @click="router.push(`/credit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
                   </td>
                   <td class="detail-td">{{ p.method }}</td>
                   <td class="detail-td detail-td--muted">{{ p.account }}</td>
@@ -671,7 +670,7 @@ function confirmApplyCredit() {
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" left-icon="chevrons-down">
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" right-icon="chevrons-down">
               {{ t('Print & share') }}
             </MpButton>
           </MpPopoverTrigger>
@@ -692,7 +691,7 @@ function confirmApplyCredit() {
         <!-- Paid: a plain "Actions" primary dropdown (no payment left to record) -->
         <MpPopover v-if="invoice.status === 'paid'" id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" left-icon="chevrons-down">
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" right-icon="chevrons-down">
               {{ t('Actions') }}
             </MpButton>
           </MpPopoverTrigger>
@@ -731,7 +730,7 @@ function confirmApplyCredit() {
                 <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="canApplyCredit" data-devchange="invoice-apply-credit-memo" @click="openApplyCredit">{{ t('Apply credit memo') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canApplyCredit" data-devchange="invoice-apply-credit-memo" @click="goToApplyForm">{{ t('Apply credit memo') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
@@ -800,8 +799,8 @@ function confirmApplyCredit() {
         <MpModalHeader>{{ t('Apply credit memo?') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>{{ t('The customer has') }} {{ formatIDR(availableCredit) }} {{ t('in available credit.') }}</MpModalBody>
         <MpModalFooter>
-          <MpButton variant="ghost" is-rounded @click="applyModalOpen = false">{{ t('Cancel') }}</MpButton>
-          <MpButton variant="primary" is-rounded @click="confirmApplyCredit">{{ t('Apply credit memo') }}</MpButton>
+          <MpButton variant="ghost" is-rounded @click="applyModalOpen = false">{{ t('Not now') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="goToApplyForm">{{ t('Apply credit memo') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -1113,8 +1112,8 @@ function confirmApplyCredit() {
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--stage  { width: 160px; }
@@ -1152,13 +1151,6 @@ function confirmApplyCredit() {
 
 .cell-with-action { position: relative; }
 .cell-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Credit-memo payment row: "View details" chip revealed on row hover */
-.payment-number-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
-.payment-view-details {
-  display: none; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-link); letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer;
-}
-.payment-row:hover .payment-view-details { display: inline; }
 /* progressive pagination (load-more) row — see ErpPagination.md */
 .detail-items-count {
   display: flex;

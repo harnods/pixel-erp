@@ -1668,10 +1668,10 @@ function fmtNum(n: number | null): string {
 .mbd-table--putaway .mbd-td { border-right: 1px solid var(--mp-border-default); }
 .mbd-table--putaway .mbd-td:last-child { border-right: none; }
 .mbd-td--merged { border-left: none; }
+/* pa-loc / pa-qty cells also carry .mbd-td--input, so the focus ring comes from
+   .mbd-td--input:focus-within::after (overlay, non-clipped). No direct box-shadow. */
 .mbd-td--pa-loc  { padding: 0; background: var(--mp-background-neutral, #fff); }
-.mbd-td--pa-loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .mbd-td--pa-qty  { padding: 0; background: var(--mp-background-neutral, #fff); }
-.mbd-td--pa-qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .mbd-pa-loc-trigger {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text;
@@ -1760,7 +1760,7 @@ function fmtNum(n: number | null): string {
    .mbd-td / .mbd-td--pa-loc rules — same specificity, so declaration order
    decides which background/shadow wins. */
 .mbd-td--pa-loc-error { background: var(--mp-colors-danger-weaker); }
-.mbd-td--pa-loc-error:focus-within { box-shadow: inset 0 0 0 1px var(--mp-colors-danger-default); }
+.mbd-td--pa-loc-error:focus-within::after { border-color: var(--mp-colors-danger-default); }
 
 .mbd-cell-input {
   width: 100%; height: var(--mp-sizes-10, 40px);
@@ -1910,10 +1910,13 @@ function fmtNum(n: number | null): string {
 .mbd-loc-th--del { padding: 0; }
 .mbd-loc-tr .mbd-loc-td { border-bottom: 1px solid var(--mp-border-default); }
 .mbd-loc-tr:last-child .mbd-loc-td { border-bottom: none; }
-.mbd-loc-td { background: var(--mp-background-neutral); padding: 0; vertical-align: middle; }
-.mbd-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.mbd-loc-td { background: var(--mp-background-neutral); padding: 0; vertical-align: middle; position: relative; }
+.mbd-loc-td--sel:focus-within::after,
+.mbd-loc-td--qty:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .mbd-loc-td--qty { text-align: right; }
-.mbd-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
 .mbd-loc-td--del { text-align: center; }
 .mbd-loc-trigger { display: flex; align-items: center; height: 36px; padding: 0 var(--mp-spacing-2); gap: var(--mp-spacing-1); }
 .mbd-loc-input {

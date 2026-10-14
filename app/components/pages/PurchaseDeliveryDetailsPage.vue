@@ -413,7 +413,7 @@ function goBack() { router.push('/purchase-deliveries') }
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" left-icon="chevrons-down">
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" right-icon="chevrons-down">
               {{ t('Print & share') }}
             </MpButton>
           </MpPopoverTrigger>
@@ -434,7 +434,7 @@ function goBack() { router.push('/purchase-deliveries') }
         <!-- Actions (primary dropdown) -->
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" left-icon="chevrons-down">
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" right-icon="chevrons-down">
               {{ t('Actions') }}
             </MpButton>
           </MpPopoverTrigger>
@@ -763,8 +763,8 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

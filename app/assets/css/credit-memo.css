@@ -153,14 +153,6 @@
 .cm-related { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .cm-related-heading { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cm-subheading { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cm-related-row { position: relative; }
-.cm-view-details {
-  display: none; position: absolute; right: var(--mp-spacing-2); top: 50%; transform: translateY(-50%);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-link);
-  letter-spacing: 0.04em; text-transform: uppercase; align-items: center; gap: var(--mp-spacing-1); cursor: pointer;
-  background: var(--mp-background-stage); padding-left: var(--mp-spacing-2);
-}
-.cm-items tbody tr:hover .cm-view-details { display: inline-flex; }
 
 /* ── Footer action bar ───────────────────────────────────────────────────────── */
 .cm-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); }
@@ -184,6 +176,7 @@
 .cm-form-field { width: 267px; flex-shrink: 0; min-width: 0; }
 .cm-form-right { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; padding-bottom: var(--mp-spacing-2); white-space: nowrap; }
 .cm-form-grid2 { display: grid; grid-template-columns: 267px 267px; gap: var(--mp-spacing-4) var(--mp-spacing-6); padding: var(--mp-spacing-5) 0 var(--mp-spacing-8); }
+.cm-form-grid3 { display: grid; grid-template-columns: 267px 267px 267px; gap: var(--mp-spacing-4) var(--mp-spacing-6); padding: var(--mp-spacing-5) 0 var(--mp-spacing-8); }
 .cm-label-row { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .cm-label-icon { display: inline-flex !important; align-items: center; color: var(--mp-text-secondary); cursor: pointer; background: none !important; border: none !important; padding: 0 !important; min-width: 0 !important; }
 .cm-datepicker { width: 100%; }
@@ -194,11 +187,13 @@
 /* editable amount table — replicates NewExpensePage form table (FormTable.md) */
 .cm-form-table-section { overflow-x: auto; border-bottom: 1px solid var(--mp-border-default); }
 .cm-form-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+/* Form-table header is WHITE (FormTable.md: form-table variant with a white
+   header), muted uppercase labels — matches Figma "Apply credit memo". */
 .cm-ft-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle); font-size: var(--mp-font-sizes-sm);
-  font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-default);
+  background: var(--mp-background-neutral, #fff); font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary);
   border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
 }
 .cm-ft-th--num { text-align: right; }
@@ -212,23 +207,40 @@
 .cm-ft-td--read { color: var(--mp-text-default); }
 .cm-ft-td--border { border-right: 1px solid var(--mp-border-default); }
 .cm-ft-td--input { padding: 0; position: relative; background: var(--mp-background-neutral, #fff); }
-.cm-ft-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-bold, #8c9596); }
-.cm-ft-td--error { box-shadow: inset 0 0 0 2px var(--mp-border-danger, #dc2626); }
+/* Draw the focus/error ring as an overlay pseudo-element pinned to the cell
+   (z-index ABOVE the neighbouring collapsed column borders) so none of its four
+   edges get clipped or overpainted by adjacent cell borders or the table edge —
+   an inset box-shadow on the cell itself left the left/right edges cut off. */
+.cm-ft-td--input:focus-within::after,
+.cm-ft-td--error::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-bold, #8c9596);
+}
+.cm-ft-td--error::after { box-shadow: inset 0 0 0 2px var(--mp-border-danger, #dc2626); }
+/* The cell owns the border + focus ring (FormTable.md). Strip the inner Pixel
+   input's own border/radius/shadow so it fills the cell instead of floating as a
+   rounded box inside it (the "doesn't fill the cell" bug). */
+.cm-ft-td--input [class*='input'] {
+  border-color: transparent !important; border-radius: 0 !important; box-shadow: none !important; background: transparent;
+}
 .cm-amount-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .cm-amount-prefix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2); background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
-.cm-amount-input { flex: 1; min-width: 0; }
-.cm-amount-input input { text-align: right; }
+.cm-amount-input { flex: 1; min-width: 0; height: 100%; }
+.cm-amount-input input { height: 100%; text-align: left; }
 .cm-ft-count { padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .cm-form-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-6); padding: var(--mp-spacing-5) 0; flex-wrap: wrap; }
 .cm-form-memo { max-width: 440px; flex: 1 1 320px; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cm-helper { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); }
 .cm-form-totals { display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-width: 280px; padding-top: var(--mp-spacing-2); }
-.cm-attach-section { max-width: 558px; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+/* Subtle dashed divider between "Amount to credit" and "Remaining credit" (Figma). */
+.cm-form-totals .cm-total-row:first-child { padding-bottom: var(--mp-spacing-4); border-bottom: 1px dashed var(--mp-border-default); }
+/* Attachment dropzone matches the Customer / Transaction date field width (Figma). */
+.cm-attach-section { max-width: 267px; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .cm-section-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-1); }
 .cm-form-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-neutral, white); border-top: 1px solid transparent; transition: border-top-color 0.15s; }
 .cm-form-footer--floating { border-top-color: var(--mp-border-default); }

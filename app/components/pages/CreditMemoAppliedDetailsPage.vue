@@ -14,6 +14,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -89,16 +90,14 @@ function confirmDelete() {
     <div class="cm-stage-wrapper">
     <div class="cm-stage">
       <section class="cm-summary">
-        <div class="cm-primary">
-          <div class="content-list-grid--cm cm-primary-grid">
-            <div class="cm-col"><ContentList :label="t('Customer')" :value="customerNameOf(app.customerId)" /></div>
-            <div class="cm-col">
-              <ContentList :label="t('Credit memo')">
-                <a class="cm-link" @click="goMemo">{{ memo ? memoLabel(memo.number) : '—' }}</a>
-              </ContentList>
-            </div>
+        <div class="cm-primary cm-primary--cols">
+          <div class="cm-col"><ContentList :label="t('Customer')" :value="customerNameOf(app.customerId)" /></div>
+          <div class="cm-col">
+            <ContentList :label="t('Credit memo')">
+              <a class="cm-link" @click="goMemo">{{ memo ? memoLabel(memo.number) : '—' }}</a>
+            </ContentList>
           </div>
-          <div class="cm-primary-right">
+          <div class="cm-primary-right cm-primary-right--cols">
             <div class="cm-primary-figure">
               <span class="cm-figure-label">{{ t('Total') }}</span>
               <span class="cm-figure-amount">{{ formatIDR(total) }}</span>
@@ -151,27 +150,11 @@ function confirmDelete() {
     </div>
 
     <footer class="cm-footer">
-      <MpPopover id="cma-print" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <MpButton variant="secondary" is-rounded left-icon="chevrons-down">{{ t('Print & share') }}</MpButton>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-            <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <PrintShareMenu id="cma-print" />
 
       <MpPopover id="cma-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
         <MpPopoverTrigger>
-          <MpButton variant="primary" is-rounded left-icon="chevrons-down">{{ t('Actions') }}</MpButton>
+          <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -202,5 +185,8 @@ function confirmDelete() {
 </template>
 
 <style scoped>
-.cm-primary-grid { flex: 1; }
+/* Primary block as a 4-col grid so "Credit memo" (col 2) lines up vertically with
+   "Transaction no." (col 2) in the row below; Total + journal span the right half. */
+.cm-primary--cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: var(--mp-spacing-6); align-items: start; }
+.cm-primary-right--cols { grid-column: 3 / 5; }
 </style>

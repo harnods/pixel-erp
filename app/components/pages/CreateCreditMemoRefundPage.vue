@@ -12,13 +12,14 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   MpButton, MpInput, MpAutocomplete, MpDatePicker, MpTextarea, MpUpload, MpUploadList,
-  MpFormControl, MpFormLabel, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+  MpFormControl, MpFormLabel,
 } from '@mekari/pixel3'
 import { successToast } from '~/utils/toasts'
 import { formatIDR } from '~/utils/currency'
+import TransactionNoField from '~/components/patterns/TransactionNoField.vue'
 import {
   getCreditMemo, getRefund, customerNameOf, memosForCustomer, memoRemaining, memoLabel,
-  refundPayFromAccounts, validateRefund, createRefund, updateRefund,
+  refundPayFromAccounts, validateRefund, createRefund, updateRefund, nextRefundNumber,
   type RefundErrors, type FieldError,
 } from '~/data/creditMemos'
 
@@ -58,6 +59,7 @@ const rows = computed(() =>
 )
 function rowAvailable(memoId: string) { return memoRemaining(memoId, { refundId: editingId.value }) }
 const totalRefund = computed(() => rows.value.reduce((s, r) => s + num(amounts.value[r.id]), 0))
+const nextTxNo = computed(() => `${t('Credit memo refund')} #${nextRefundNumber()}`)
 
 // ── Validation ───────────────────────────────────────────────────────────────────
 const errors = ref<RefundErrors>({ rows: {} })
@@ -72,7 +74,6 @@ function fieldError(e?: FieldError): string {
     default: return t('Check this value')
   }
 }
-const hasError = computed(() => !!errors.value.payFrom || !!errors.value.date || !!errors.value.total || Object.keys(errors.value.rows).length > 0)
 
 function buildDraft() {
   return {
@@ -156,12 +157,6 @@ const breadcrumbLabel = computed(() => {
     </header>
 
     <div ref="stageEl" class="cm-form-stage">
-      <MpBanner v-if="hasError" id="refund-error-banner" variant="danger" align-items="center" class="cm-inline-banner">
-        <MpBannerIcon id="refund-error-banner-icon" />
-        <MpBannerTitle>{{ t('Could not create the refund') }}</MpBannerTitle>
-        <MpBannerDescription>{{ t('Review the highlighted fields below.') }}</MpBannerDescription>
-      </MpBanner>
-
       <!-- Pay from + Customer + Refund amount -->
       <div class="cm-form-row1">
         <MpFormControl id="refund-payfrom" class="cm-form-field" is-required :is-invalid="!!errors.payFrom">
@@ -196,10 +191,7 @@ const breadcrumbLabel = computed(() => {
           </div>
           <p v-if="errors.date" class="cm-form-error">{{ fieldError(errors.date) }}</p>
         </MpFormControl>
-        <MpFormControl id="refund-no">
-          <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-          <MpInput id="refund-no-input" :model-value="t('Auto')" is-full-width is-disabled />
-        </MpFormControl>
+        <TransactionNoField field-id="refund-no" :next-number="nextTxNo" />
       </div>
 
       <!-- Refund table -->

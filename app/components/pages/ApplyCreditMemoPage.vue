@@ -15,14 +15,15 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   MpButton, MpInput, MpAutocomplete, MpDatePicker, MpTextarea, MpUpload, MpUploadList,
-  MpIcon, MpFormControl, MpFormLabel, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
+  MpFormControl, MpFormLabel,
 } from '@mekari/pixel3'
 import { successToast } from '~/utils/toasts'
 import { formatIDR } from '~/utils/currency'
+import TransactionNoField from '~/components/patterns/TransactionNoField.vue'
 import {
   getCreditMemo, getApplication, invoiceById, customerNameOf, customerAvailableCredit,
   memosForCustomer, memoRemaining, memoLabel, invoiceLabel, applicableInvoices, invoiceBalance,
-  validateApplication, createApplication, updateApplication,
+  validateApplication, createApplication, updateApplication, nextApplicationNumber,
   type ApplicationErrors, type FieldError,
 } from '~/data/creditMemos'
 
@@ -68,7 +69,7 @@ function onAmountInput(invoiceId: string, val: string | number) {
 const memoOptions = computed(() =>
   memosForCustomer(customerId.value)
     .filter((m) => memoRemaining(m.id, { applicationId: editingId.value }) > 0 || m.id === creditMemoId.value)
-    .map((m) => ({ id: m.id, name: `${memoLabel(m.number)} · ${formatIDR(memoRemaining(m.id, { applicationId: editingId.value }))}` })),
+    .map((m) => ({ id: m.id, name: memoLabel(m.number) })),
 )
 const selectedMemo = computed(() => getCreditMemo(creditMemoId.value))
 const availableCredit = computed(() => (selectedMemo.value ? memoRemaining(selectedMemo.value.id, { applicationId: editingId.value }) : 0))
@@ -88,6 +89,7 @@ function rowBalance(invoiceId: string) { return invoiceBalance(invoiceId, editin
 
 const amountToCredit = computed(() => rows.value.reduce((s, r) => s + num(amounts.value[r.id]), 0))
 const remainingAfter = computed(() => Math.max(0, availableCredit.value - amountToCredit.value))
+const nextTxNo = computed(() => `${t('Credit memo applied')} #${nextApplicationNumber()}`)
 
 // ── Validation ───────────────────────────────────────────────────────────────────
 const errors = ref<ApplicationErrors>({ rows: {} })
@@ -105,7 +107,6 @@ function fieldError(e?: FieldError): string {
     default: return t('Check this value')
   }
 }
-const hasError = computed(() => !!errors.value.creditMemo || !!errors.value.date || !!errors.value.total || Object.keys(errors.value.rows).length > 0)
 
 function buildDraft() {
   return {
@@ -159,8 +160,18 @@ onMounted(() => {
   } else if (sourceMemo.value) {
     creditMemoId.value = sourceMemo.value.id
   } else {
-    // from invoice → default to the customer's first memo with remaining credit
+    // From an invoice → default to the customer's first memo with remaining credit,
+    // then pre-apply that credit to THIS invoice (capped by its balance due), so the
+    // common case — "I opened this invoice to credit it" — is one click. The
+    // customer's other open invoices stay at 0. (Figma: source invoice pre-filled.)
     creditMemoId.value = memoOptions.value[0]?.id ?? ''
+    if (sourceInvoice.value && creditMemoId.value) {
+      const prefill = Math.min(
+        memoRemaining(creditMemoId.value, { applicationId: editingId.value }),
+        invoiceBalance(sourceInvoice.value.id, editingId.value),
+      )
+      if (prefill > 0) amounts.value[sourceInvoice.value.id] = prefill.toLocaleString('id-ID')
+    }
   }
   nextTick(checkOverflow)
 })
@@ -198,12 +209,6 @@ const breadcrumbLabel = computed(() => {
     </header>
 
     <div ref="stageEl" class="cm-form-stage">
-      <MpBanner v-if="hasError" id="apply-error-banner" variant="danger" align-items="center" class="cm-inline-banner">
-        <MpBannerIcon id="apply-error-banner-icon" />
-        <MpBannerTitle>{{ t('Could not apply the credit') }}</MpBannerTitle>
-        <MpBannerDescription>{{ t('Review the highlighted fields below.') }}</MpBannerDescription>
-      </MpBanner>
-
       <!-- Customer + Credit memo + Available credit -->
       <div class="cm-form-row1">
         <MpFormControl id="apply-customer" class="cm-form-field" is-required>
@@ -238,10 +243,7 @@ const breadcrumbLabel = computed(() => {
           </div>
           <p v-if="errors.date" class="cm-form-error">{{ fieldError(errors.date) }}</p>
         </MpFormControl>
-        <MpFormControl id="apply-no">
-          <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-          <MpInput id="apply-no-input" :model-value="t('Auto')" is-full-width is-disabled />
-        </MpFormControl>
+        <TransactionNoField field-id="apply-no" :next-number="nextTxNo" />
       </div>
 
       <!-- Allocation table -->
@@ -256,7 +258,7 @@ const breadcrumbLabel = computed(() => {
               <th class="cm-ft-th">{{ t('Number') }}</th>
               <th class="cm-ft-th cm-ft-th--num">{{ t('Balance due') }}</th>
               <th class="cm-ft-th cm-ft-th--num">{{ t('Total') }}</th>
-              <th class="cm-ft-th cm-ft-th--num">{{ t('Amount to apply') }}</th>
+              <th class="cm-ft-th">{{ t('Amount to apply') }}</th>
             </tr>
           </thead>
           <tbody>

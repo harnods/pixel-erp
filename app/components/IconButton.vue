@@ -3,10 +3,15 @@
     data-component="IconButton"
     data-component-group="shared"
     variant="ghost"
-    :left-icon="icon"
     :class="buttonClass"
     :aria-label="icon"
   >
+    <!-- Icon color is set explicitly to `icon.inverse` (white) rather than left
+         on the ghost button's default dark icon color: these buttons sit on the
+         dark header (`background.header`), so the glyph must be white and STAY
+         white on hover/active (only the bg fill changes). Same pattern as the
+         quick-create "+" (ErpQuickCreateMenu). -->
+    <MpIcon :name="icon" color="icon.inverse" />
     <template v-if="showBadge">
       <span :class="badgePingClass" aria-hidden="true" />
       <span :class="badgeClass" aria-hidden="true" />
@@ -42,12 +47,21 @@ const buttonClass = computed(() =>
     justifyContent: "center",
     cursor: "pointer",
     rounded: "lg",
-    bg: props.isActive ? "background.surface.bold.pressed" : undefined,
+    // Ghost MpButton ships a 1px border that shows as an outlined box on
+    // hover/focus — the "+" trigger kills it (border: none). Match that: only the
+    // translucent fill should change, never a visible border.
+    border: "none",
+    // Fills match the quick-create "+" trigger (ErpQuickCreateMenu) EXACTLY: a
+    // subtle translucent-white veil over the dark header, NOT the Panda
+    // `background.surface.bold.*` tokens — those resolve to an opaque near-white
+    // (#f8f9f9) in this build, which paints a light box on the dark header and
+    // washes out the white icon. Literal rgba keeps the glyph readable.
+    bg: props.isActive ? "rgba(255, 255, 255, 0.2)" : undefined,
     _hover: {
-      bg: props.isActive ? "background.surface.bold.pressed" : "background.surface.bold.hovered"
+      bg: props.isActive ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.12)"
     },
     _active: {
-      bg: "background.surface.bold.pressed"
+      bg: "rgba(255, 255, 255, 0.2)"
     },
     _focusVisible: {
       outline: "2px solid token(colors.focus)",

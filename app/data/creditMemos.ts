@@ -78,6 +78,7 @@ export interface SalesCreditMemo {
   date: string                    // ISO yyyy-mm-dd
   lines: CreditMemoLine[]
   memo: string
+  tags: string[]
   attachments: CmAttachment[]
   createdAt: string
   updatedAt: string
@@ -142,12 +143,12 @@ function stamp(date: string, time = '10:15'): string { return `${date}T${time}:0
 function created(date: string, details: CmActivityDetail[]): CmActivity[] {
   return [{ date: stamp(date), user: CURRENT_USER, activity: 'Created', details }]
 }
-function mkMemo(id: string, number: number, customerId: string, date: string, lines: Omit<CreditMemoLine, 'id'>[], memo: string): SalesCreditMemo {
+function mkMemo(id: string, number: number, customerId: string, date: string, lines: Omit<CreditMemoLine, 'id'>[], memo: string, tags: string[] = []): SalesCreditMemo {
   const total = lines.reduce((s, l) => s + l.amount, 0)
   return {
     id, number, customerId, date,
     lines: lines.map((l, i) => ({ ...l, id: `${id}-l${i + 1}` })),
-    memo, attachments: [],
+    memo, tags, attachments: [],
     createdAt: stamp(date), updatedAt: stamp(date), updatedBy: CURRENT_USER,
     history: created(date, [
       { label: 'Transaction no.', value: memoLabel(number) },
@@ -414,6 +415,7 @@ export interface MemoDraft {
   date: string
   lines: { id: string; accountCode: string; reason: string; amount: number }[]
   memo: string
+  tags?: string[]
   attachments: CmAttachment[]
 }
 export interface MemoErrors {
@@ -537,7 +539,7 @@ export function createCreditMemo(d: MemoDraft): MutationResult {
   const lines = d.lines.filter((l) => l.accountCode && l.amount > 0).map((l, i) => ({ ...l, id: `${number}-l${i + 1}-${Date.now().toString(36)}` }))
   const m: SalesCreditMemo = {
     id: uid('cm'), number, customerId: d.customerId, date: d.date, lines,
-    memo: d.memo.trim(), attachments: d.attachments,
+    memo: d.memo.trim(), tags: d.tags ?? [], attachments: d.attachments,
     createdAt: at, updatedAt: at, updatedBy: CURRENT_USER,
     history: [{ date: at, user: CURRENT_USER, activity: 'Created', details: [
       { label: 'Transaction no.', value: memoLabel(number) },
@@ -563,7 +565,7 @@ export function updateCreditMemo(id: string, d: MemoDraft): MutationResult {
   diff('Total credit', rp(memoTotal(m)), rp(memoTotal({ lines })), changes)
   diff('Memo', m.memo, d.memo.trim(), changes)
   const at = nowIso()
-  Object.assign(m, { customerId: d.customerId, date: d.date, lines, memo: d.memo.trim(), attachments: d.attachments, updatedAt: at, updatedBy: CURRENT_USER })
+  Object.assign(m, { customerId: d.customerId, date: d.date, lines, memo: d.memo.trim(), tags: d.tags ?? m.tags ?? [], attachments: d.attachments, updatedAt: at, updatedBy: CURRENT_USER })
   m.history.unshift({ date: at, user: CURRENT_USER, activity: 'Edited', details: changes.length ? changes : [{ label: 'Lines', value: 'Updated' }] })
   persistAll()
   syncInvoiceBalances()

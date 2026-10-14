@@ -28,10 +28,42 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'cd-transactions-tab',
+    title: 'Customer details: Transactions tab',
+    description:
+      'The customer (contact) details Transactions tab is now a full ErpTablePage over the customer’s unified documents — sales invoices, orders, quotes and credit memos — with four KPI tiles (Overdue / Unpaid invoices, Payment received, Open credits), Transaction + Status filters, search, and pagination. Credit memo is also a new entry point in the "Create transaction" menu. Built entirely from existing Pixel/ERP components (Figma: Contacts › Transactions).',
+    date: '2026-10-14',
+    files: ['ContactDetailsPage.vue', 'customerTransactions.ts'],
+  },
+  {
+    id: 'print-share-menu',
+    title: 'Shared Print & share menu + detail refinements',
+    description:
+      'The "Print & share" dropdown is now a single reusable component (PrintShareMenu) instead of a hand-rolled MpPopover per page; used on the credit memo detail / applied / refund pages. On the Credit Memo Applied detail, the header now aligns "Credit memo" vertically with "Transaction no." below it. Table-cell "View details" chips were replaced by the row-number textlink.',
+    date: '2026-10-14',
+    files: ['PrintShareMenu.vue', 'CreditMemoAppliedDetailsPage.vue', 'CreditMemoDetailsPage.vue', 'CreditMemoRefundDetailsPage.vue'],
+  },
+  {
+    id: 'txno-settings-gear',
+    title: 'Transaction no. — reusable settings-gear field',
+    description:
+      'The "Transaction no." form field is now a single reusable component (TransactionNoField) whose label carries a settings gear opening the auto-numbering modal — matching New sales invoice. Added to the credit memo Apply / Refund / New forms (previously a plain disabled "Auto" input) and codified as the pattern in docs/patterns/Form.md + rule/form-transaction-no-field.',
+    date: '2026-10-14',
+    files: ['TransactionNoField.vue', 'ApplyCreditMemoPage.vue', 'CreateCreditMemoRefundPage.vue', 'NewCreditMemoPage.vue', 'Form.md'],
+  },
+  {
+    id: 'header-icon-white',
+    title: 'Header icons: white glyph on dark header',
+    description:
+      'The header quick-action icons (help, inbox, upload) now render white (icon.inverse) instead of the dark ghost-button default, and stay white on hover — only the background fill changes. Matches the quick-create "+" icon.',
+    date: '2026-10-14',
+    files: ['IconButton.vue', 'ErpHeader.vue', 'pixel-enterprise-overrides.md'],
+  },
+  {
     id: 'invoice-apply-credit-memo',
     title: 'Sales invoice: Apply credit memo',
     description:
-      'The Add payment split menu now has a working "Apply credit memo" action (shown only when the invoice has a balance and the customer has available credit). It confirms the available credit, then opens the Apply credit memo form.',
+      'Opening an invoice whose customer has available credit (and the invoice has a balance) now proactively shows the "Apply credit memo?" prompt — Apply credit memo opens the form, Not now (or ×) dismisses it. The Add payment split menu also lists Apply credit memo (same condition); choosing it opens the form directly, with no second prompt.',
     date: '2026-10-14',
     files: ['SalesInvoiceDetailsPage.vue', 'ApplyCreditMemoPage.vue', 'creditMemos.ts'],
   },
@@ -58,6 +90,22 @@ export const DEV_CHANGES: DevChange[] = [
       'New Apply credit memo form — spends one credit memo across the customer’s open invoices with per-invoice "amount to apply", live Amount to credit / Remaining credit, and inline validation (over balance, over available, date rules). Reachable from an invoice or a credit memo.',
     date: '2026-10-14',
     files: ['ApplyCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'form-table-focus-ring',
+    title: 'Form-table focus ring no longer clipped',
+    description:
+      'Every editable form-table cell now draws its focus/active (and error) ring as an ::after overlay above the collapsed column borders, so the ring’s left/right edges are no longer clipped or overpainted. Applied repo-wide (~45 cells across 38 form tables); codified in docs/patterns/FormTable.md.',
+    date: '2026-10-14',
+    files: ['FormTable.md', 'credit-memo.css', 'NewSalesInvoicePage.vue', 'CreateReceiptPage.vue', 'ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'apply-cm-form',
+    title: 'Apply credit memo — Figma design pass',
+    description:
+      'Apply credit memo form aligned to Figma: white form-table header (not gray), the "Amount to apply" cell now fills the cell with no floating inner border and a left-aligned value, a subtle dashed divider between Amount to credit and Remaining credit, and the Attachment dropzone narrowed to match the Customer/Transaction date field width. Opening the form from an invoice now pre-applies the available credit to that invoice (capped by its balance).',
+    date: '2026-10-14',
+    files: ['ApplyCreditMemoPage.vue', 'credit-memo.css'],
   },
   {
     id: 'refund-cm-save',

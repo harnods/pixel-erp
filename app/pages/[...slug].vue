@@ -178,11 +178,6 @@ const pageRegistry: Record<string, Component> = {
   'Xpm vendors':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm policy':         defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm integration':    defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
-
-  // ── Mekari Buzz (Marketing tool) — 'Home' branches by scenario below. ──
-  'Buzz campaigns':     defineAsyncComponent(() => import('~/components/pages/BuzzCampaignsPage.vue')),
-  'Buzz branding':      defineAsyncComponent(() => import('~/components/pages/BuzzBrandingPage.vue')),
-  'Buzz photo stocks':  defineAsyncComponent(() => import('~/components/pages/BuzzPhotoStocksPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -208,9 +203,6 @@ const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTa
 const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
-const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFormPage.vue'))
-const BuzzBrandDetailPage = asyncPage(() => import('~/components/pages/BuzzBrandDetailPage.vue'))
-const BuzzCampaignDetailPage = asyncPage(() => import('~/components/pages/BuzzCampaignDetailPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
 const CoworkWorkspacesPage = asyncPage(() => import('~/components/pages/CoworkWorkspacesPage.vue'))
 const CoworkWorkspaceDetailPage = asyncPage(() => import('~/components/pages/CoworkWorkspaceDetailPage.vue'))
@@ -436,7 +428,6 @@ const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendin
 
 // ── XPM (Mekari Expense) — home branch + full-bleed detail/form pages ──────────
 const XpmHomePage = defineAsyncComponent(() => import('~/components/pages/XpmHomePage.vue'))
-const BuzzHomePage = defineAsyncComponent(() => import('~/components/pages/BuzzHomePage.vue'))
 const XpmTripDetailPage = asyncPage(() => import('~/components/pages/XpmTripDetailPage.vue'))
 const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDetailPage.vue'))
 const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
@@ -450,7 +441,6 @@ const XpmCardsTabPage = asyncPage(() => import('~/components/pages/XpmCardsPage.
 const XpmPurchasesTabPage = asyncPage(() => import('~/components/pages/XpmPurchasesPage.vue'))
 const { activeScenario: xpmActiveScenario } = useScenario()
 const { trigger: triggerXpm } = useXpmActions()
-const { trigger: triggerBuzz } = useBuzzActions()
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -562,16 +552,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CoworkAgentFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: CoworkAgentFormPage, id: segs[1]! }
     return { component: CoworkAgentDetailPage, id: segs[1]! }
-  }
-  // /buzz-campaign/:id → campaign detail.
-  if (segs.length >= 2 && segs[0] === 'buzz-campaign') {
-    return { component: BuzzCampaignDetailPage, id: segs[1]! }
-  }
-  // /buzz-brand/:id → brand guideline detail (Frontify-style); /:id/edit → builder form.
-  // (Creating a new brand kit is a modal on the Branding page, not a route.)
-  if (segs.length >= 2 && segs[0] === 'buzz-brand') {
-    if (segs[2] === 'edit') return { component: BuzzBrandFormPage, id: segs[1]! }
-    if (segs[1] !== 'new') return { component: BuzzBrandDetailPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
@@ -1018,7 +998,6 @@ const currentComponent = computed<Component>(() => {
   // Home ('/') is shared across scenarios by URL; render the Expense home when the
   // XPM scenario is active (same flush-top stage treatment as the ERP/HR home).
   if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'XPM') return XpmHomePage
-  if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'BUZZ') return BuzzHomePage
   return pageRegistry[currentPageKey.value] ?? PlaceholderPage
 })
 
@@ -1764,25 +1743,6 @@ function startResize(e: MouseEvent) {
             New workspace
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Buzz photo stocks'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="triggerBuzz('uploadAsset')">Upload asset</button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('generateAsset')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Generate asset
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Buzz branding'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('newBrand')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            New brand kit
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Buzz campaigns'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('createCampaign')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Create campaign
-          </button>
-        </div>
         <div v-else-if="currentPageKey === 'Cowork schedule'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -2288,7 +2248,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
