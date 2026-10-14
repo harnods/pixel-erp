@@ -28,6 +28,86 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-po-vendor',
+    title: "Subcon: Dropship component PO vendor is chosen",
+    description:
+      "A component PO raised from a Dropship component request starts with an empty vendor the buyer picks (a 3rd party, not the subcon vendor). Saving without one shows an inline error.",
+    date: '2026-10-14',
+    files: ['PurchaseOrderFormPage.vue'],
+  },
+  {
+    id: 'subcon-destination-row',
+    title: "Subcon: destination row by method",
+    description:
+      "Basic orders no longer show \"Transfer components to\"; Dropship labels the row \"Deliver components to\".",
+    date: '2026-10-14',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'subcon-pr-linked',
+    title: "Subcon PR: real linked transactions, no Edit",
+    description:
+      "A purchase request raised from a work order lists the work order and the orders raised from it, each clickable. Edit and Duplicate are hidden because its lines are fixed (R5).",
+    date: '2026-10-14',
+    files: ['PurchaseRequestDetailsPage.vue'],
+  },
+  {
+    id: 'subcon-pr-price',
+    title: "Subcon PR form: read-only prices",
+    description:
+      "The requester now sees the work order's unit price, line amount and total on a subcon purchase request.",
+    date: '2026-10-14',
+    files: ['NewPurchaseRequestPage.vue'],
+  },
+  {
+    id: 'subcon-complete-at-vendor',
+    title: "Complete modal: Qty at vendor",
+    description:
+      "Shows how much is still at the vendor \u2014 the real ceiling on unused qty. Column headers follow the qty naming convention.",
+    date: '2026-10-14',
+    files: ['CompleteSubconWorkOrderModal.vue'],
+  },
+  {
+    id: 'subcon-transactions-order',
+    title: "Subcon Transactions tab: run order",
+    description:
+      "Rows are listed in the order the run raised them, not grouped by thread.",
+    date: '2026-10-14',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'subcon-journal-entries',
+    title: "Subcon journal: entries by transaction",
+    description:
+      "Below the per-account totals, each posting is listed with its date, transaction and debit/credit lines.",
+    date: '2026-10-14',
+    files: ['SubconJournalModal.vue'],
+  },
+  {
+    id: 'subcon-wo-origin-wh',
+    title: "Create WO: origin warehouse only on Resupply",
+    description:
+      "Basic and Dropship move no company stock, so the Origin warehouse column, Bulk set warehouse and Manage batch are hidden. Product column widened to 280px.",
+    date: '2026-10-14',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-header-wrap',
+    title: "Work order header: title no longer wraps",
+    description:
+      "With three actions showing, the actions drop below instead of squeezing the title onto two lines.",
+    date: '2026-10-14',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'transfer-qty-prefill',
+    title: "Transfer form: prefilled qty shown",
+    description:
+      "A prefilled transfer qty on storage-location rows now shows in the Transfer qty column, matching After transfer qty.",
+    date: '2026-10-14',
+    files: ['WarehouseTransferFormPage.vue'],
+  },
+  {
     id: 'crm-generic-actions-column',
     title: 'Custom module: actions column with kebab menu',
     description:

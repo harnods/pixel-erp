@@ -137,6 +137,12 @@ if (subconPrefill) {
   }))
 }
 
+/** The work order's price for what this request asks for — read-only here. */
+const subconTotal = computed(() => items.value.reduce((sum, it) => sum + (it.unitCost || 0) * (it.qty || 0), 0))
+function formatRp(n: number): string {
+  return `Rp${new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0)}`
+}
+
 const NEW_ROW_KEY = -1
 const openProductRow = ref<number | null>(null)
 
@@ -314,6 +320,10 @@ function onSave() {
               <col class="si-col-desc" />
               <col class="si-col-qty" />
               <col class="si-col-unit" />
+              <template v-if="isSubconRequest">
+                <col class="si-col-money" />
+                <col class="si-col-money" />
+              </template>
               <col class="si-col-del" />
             </colgroup>
             <thead>
@@ -322,6 +332,10 @@ function onSave() {
                 <th class="si-th">{{ t('Description') }}</th>
                 <th class="si-th">{{ t('Qty') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
+                <template v-if="isSubconRequest">
+                  <th class="si-th si-th--num" data-devchange="subcon-pr-price">{{ t('Unit price') }}</th>
+                  <th class="si-th si-th--num">{{ t('Amount') }}</th>
+                </template>
                 <th class="si-th si-th--del" />
               </tr>
             </thead>
@@ -388,6 +402,13 @@ function onSave() {
                   <MpAutocomplete v-else v-model="item.unit" :data="unitOptions" use-portal is-full-width />
                 </td>
 
+                <!-- Priced by the work order (R9, R12) — shown so the requester
+                     sees what is being asked for; the buyer negotiates on the PO. -->
+                <template v-if="isSubconRequest">
+                  <td class="si-td si-td--border si-td--num">{{ formatRp(item.unitCost) }}</td>
+                  <td class="si-td si-td--border si-td--num">{{ formatRp(item.unitCost * item.qty) }}</td>
+                </template>
+
                 <td class="si-td si-td--del">
                   <!-- The work order's line-up is the request's line-up: a line
                        removed here would leave the run short with no record. -->
@@ -429,6 +450,10 @@ function onSave() {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="isSubconRequest" class="si-items-total" data-devchange="subcon-pr-price">
+          <span>{{ t('Total') }}</span>
+          <span class="si-items-total-value">{{ formatRp(subconTotal) }}</span>
         </div>
       </section>
 
@@ -546,6 +571,15 @@ function onSave() {
 .si-col-qty      { width: 96px; }
 .si-col-unit     { width: 140px; }
 .si-col-del      { width: 52px; }
+.si-col-money    { width: 160px; }
+.si-th--num, .si-td--num { text-align: right; }
+.si-td--num { padding: 0 var(--mp-spacing-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.si-items-total {
+  display: flex; justify-content: flex-end; gap: var(--mp-spacing-6);
+  padding: 0 var(--mp-spacing-3);
+  font-weight: var(--mp-font-weights-semi-bold);
+}
+.si-items-total-value { min-width: 160px; text-align: right; font-variant-numeric: tabular-nums; }
 
 .si-th {
   height: var(--mp-sizes-7, 28px); text-align: left;

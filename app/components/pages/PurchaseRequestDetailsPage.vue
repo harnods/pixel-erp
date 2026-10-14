@@ -12,8 +12,10 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
+import { getPurchaseRequestDetail, type PRLinkedTxn } from '~/data/purchaseRequestDetails'
 import { purchaseRequests } from '~/data/purchaseRequests'
+import { purchaseOrders } from '~/data/purchaseOrders'
+import { workOrderForDocument } from '~/data/workOrders'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -29,6 +31,39 @@ const hasApproval = true
 
 const router = useRouter()
 const request = computed(() => getPurchaseRequestDetail(props.orderId))
+
+// A request raised from a subcon work order. Its lines come from the work order
+// and cannot change here (R5), so Edit and Duplicate are not offered, and its
+// linked transactions are the real ones: the work order and the orders raised
+// from this request.
+const subconWorkOrder = computed(() => workOrderForDocument(props.orderId))
+const linkedTransactions = computed<(PRLinkedTxn & { to?: string })[]>(() => {
+  const wo = subconWorkOrder.value
+  if (!wo) return request.value.linkedTransactions
+  const orders = (wo.subcon?.raisedDocuments ?? [])
+    .filter(d => d.kind === 'purchaseOrder' && d.fromId === props.orderId)
+    .map((d) => {
+      const po = purchaseOrders.find(o => o.id === d.id)
+      return {
+        date: po?.date ?? d.raisedAt ?? request.value.date,
+        type: t('Purchase Order'),
+        number: `#${po?.number ?? d.number}`,
+        status: po?.status ?? 'open',
+        to: `${d.route}/${d.id}`,
+      }
+    })
+  return [
+    {
+      date: wo.planStartDate,
+      type: t('Work order'),
+      number: `#${wo.number.split('-').pop()}`,
+      status: wo.status,
+      to: `/work-orders/${wo.id}`,
+    },
+    ...orders,
+  ]
+})
+function openLinked(txn: { to?: string }) { if (txn.to) router.push(txn.to) }
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
@@ -307,13 +342,13 @@ function goBack() { router.push('/purchase-requests') }
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="!request.linkedTransactions.length">
+                <tr v-if="!linkedTransactions.length">
                   <td class="detail-td detail-td--muted" colspan="4">{{ t('No linked transactions') }}</td>
                 </tr>
-                <tr v-for="(txn, i) in request.linkedTransactions" :key="i" class="detail-item-row">
+                <tr v-for="(txn, i) in linkedTransactions" :key="i" class="detail-item-row" data-devchange="subcon-pr-linked">
                   <td class="detail-td">{{ formatDateNumeric(txn.date) }}</td>
                   <td class="detail-td">
-                    <a class="cell-link cell-text" @click.stop>{{ txn.type }} {{ txn.number }}</a>
+                    <a class="cell-link cell-text" @click.stop="openLinked(txn)">{{ txn.type }} {{ txn.number }}</a>
                   </td>
                   <td class="detail-td"><ErpStatusBadge :status="txn.status" /></td>
                   <td class="detail-td"></td>
@@ -350,9 +385,9 @@ function goBack() { router.push('/purchase-requests') }
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!subconWorkOrder">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createPurchaseOrder">{{ t('Create purchase order') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!subconWorkOrder">{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
             </MpPopoverList>
@@ -395,7 +430,7 @@ function goBack() { router.push('/purchase-requests') }
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   flex-direction: row;
@@ -447,7 +482,7 @@ function goBack() { router.push('/purchase-requests') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .detail-jump { display: flex; flex-direction: column; }
 .detail-jump-search-wrap { padding: var(--mp-spacing-3); position: relative; }
@@ -455,7 +490,7 @@ function goBack() { router.push('/purchase-requests') }
   width: 100%;
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -471,7 +506,7 @@ function goBack() { router.push('/purchase-requests') }
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -486,7 +521,7 @@ function goBack() { router.push('/purchase-requests') }
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -512,7 +547,7 @@ function goBack() { router.push('/purchase-requests') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -520,7 +555,7 @@ function goBack() { router.push('/purchase-requests') }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -554,7 +589,7 @@ function goBack() { router.push('/purchase-requests') }
 /* ── Line items table ── */
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
@@ -573,12 +608,12 @@ function goBack() { router.push('/purchase-requests') }
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .detail-th--num {
@@ -592,7 +627,7 @@ function goBack() { router.push('/purchase-requests') }
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
 .detail-td--num {
@@ -627,7 +662,7 @@ function goBack() { router.push('/purchase-requests') }
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-loading {
   display: inline-flex;

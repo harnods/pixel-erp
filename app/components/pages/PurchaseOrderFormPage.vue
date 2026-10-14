@@ -528,7 +528,7 @@ function onSendToFulfillment() {
 
         <!-- ── Header section 1: Vendor + Email + Total ── -->
         <section class="po-header1 po-dashed-divider">
-          <MpFormControl id="f-vendor" class="po-field po-col-span-3" :is-invalid="vendorError">
+          <MpFormControl id="f-vendor" class="po-field po-col-span-3" :is-invalid="vendorError" data-devchange="subcon-po-vendor">
             <MpFormLabel>Vendor <span class="po-required">*</span></MpFormLabel>
             <!-- Fixed on the subcontractor's own order; a Dropship component order
                  is bought from a third party, so its vendor is chosen here. -->

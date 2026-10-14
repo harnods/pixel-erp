@@ -53,6 +53,27 @@ const rows = computed(() => accountTotals(props.entries))
 const totalDebit = computed(() => rows.value.reduce((s, r) => s + r.debit, 0))
 const totalCredit = computed(() => rows.value.reduce((s, r) => s + r.credit, 0))
 
+/** What each posting was, in words an accountant reads — the data's own
+ *  description is an English sentence built for logs, not for this table. */
+const EVENT_LABEL: Record<SubconJournalEntry['event'], string> = {
+  componentPurchase: 'Component purchase',
+  materialHandover: 'Material issue',
+  materialReturn: 'Unused component return',
+  goodsProduced: 'Finished goods receipt',
+  vendorInvoice: 'Purchase invoice',
+}
+
+/** The totals above, broken out per posting in the order they happened, so an
+ *  accountant can trace each figure back to the transaction that posted it. */
+const entryRows = computed(() =>
+  [...props.entries]
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .map(e => ({
+      ...e,
+      label: t(EVENT_LABEL[e.event] ?? e.event),
+    })),
+)
+
 function close() { emit('update:isOpen', false) }
 </script>
 
@@ -114,8 +135,39 @@ function close() { emit('update:isOpen', false) }
                 </tbody>
               </table>
 
-              <p v-else class="sjm-empty">
-                {{ t('No journal entries yet — they appear as materials are issued, the vendor invoices, and goods come back.') }}
+              <template v-if="entryRows.length">
+                <h4 class="sjm-subheading" data-devchange="subcon-journal-entries">{{ t('Entries by transaction') }}</h4>
+                <table class="sjm-table sjm-table--entries">
+                  <thead>
+                    <tr>
+                      <th class="sjm-th">{{ t('Date') }}</th>
+                      <th class="sjm-th">{{ t('Transaction') }}</th>
+                      <th class="sjm-th">{{ t('Account') }}</th>
+                      <th class="sjm-th sjm-th--num">{{ t('Debit') }}</th>
+                      <th class="sjm-th sjm-th--num">{{ t('Credit') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="entry in entryRows" :key="entry.id">
+                      <tr v-for="(line, i) in entry.lines" :key="`${entry.id}-${i}`" class="sjm-tr" :class="{ 'sjm-tr--entry-end': i === entry.lines.length - 1 }">
+                        <td class="sjm-td">{{ i === 0 && entry.date ? formatDate(entry.date) : '' }}</td>
+                        <td class="sjm-td">
+                          <template v-if="i === 0">
+                            <span class="sjm-entry-label">{{ entry.label }}</span>
+                            <span v-if="entry.documentNumber" class="sjm-entry-doc">{{ entry.documentNumber }}</span>
+                          </template>
+                        </td>
+                        <td class="sjm-td">{{ line.account }}</td>
+                        <td class="sjm-td sjm-td--num">{{ formatIDR(line.debit ?? 0) }}</td>
+                        <td class="sjm-td sjm-td--num">{{ formatIDR(line.credit ?? 0) }}</td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </template>
+
+              <p v-if="!rows.length" class="sjm-empty">
+                {{ t('Journal entries will appear here once materials are issued, the vendor invoices, or finished goods come back.') }}
               </p>
             </template>
 
@@ -260,5 +312,15 @@ function close() { emit('update:isOpen', false) }
   border-bottom: none;
 }
 
+.sjm-subheading {
+  margin: var(--mp-spacing-6) 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.sjm-table--entries .sjm-tr .sjm-td { border-bottom-color: transparent; vertical-align: top; }
+.sjm-table--entries .sjm-tr--entry-end .sjm-td { border-bottom-color: var(--mp-border-default, #e3e7e9); }
+.sjm-entry-label { display: block; }
+.sjm-entry-doc { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .sjm-empty { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

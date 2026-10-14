@@ -121,9 +121,12 @@ function confirm() {
                 <thead>
                   <tr>
                     <th class="csw-th">{{ t('Component') }}</th>
-                    <th class="csw-th csw-th--num">{{ t('Sent') }}</th>
-                    <th class="csw-th csw-th--num">{{ t('Unused') }}</th>
-                    <th class="csw-th csw-th--num">{{ t('Used') }}</th>
+                    <th class="csw-th csw-th--num">{{ t('Sent qty') }}</th>
+                    <!-- The real ceiling on unused: material a partial record already
+                         issued is spent, so only this much can come back. -->
+                    <th class="csw-th csw-th--num" data-devchange="subcon-complete-at-vendor">{{ t('Qty at vendor') }}</th>
+                    <th class="csw-th csw-th--num">{{ t('Unused qty') }}</th>
+                    <th class="csw-th csw-th--num">{{ t('Used qty') }}</th>
                     <th class="csw-th">{{ t('Returned to') }}</th>
                   </tr>
                 </thead>
@@ -134,6 +137,7 @@ function confirm() {
                       <span class="csw-td__sku">{{ c.sku }}</span>
                     </td>
                     <td class="csw-td csw-td--num">{{ c.sent.toLocaleString('id-ID') }} {{ c.unit }}</td>
+                    <td class="csw-td csw-td--num">{{ atVendor(c).toLocaleString('id-ID') }} {{ c.unit }}</td>
                     <td class="csw-td csw-td--input">
                       <MpInput
                         :id="`csw-unused-${c.sku}`"
@@ -152,7 +156,7 @@ function confirm() {
               </table>
 
               <p v-if="hasError" class="csw-error">
-                {{ t('Unused cannot be more than what is still at the vendor.') }}
+                {{ t('Unused qty cannot be more than qty at vendor') }}
               </p>
               <p v-else-if="returnLines.length" class="csw-note">
                 <MpIcon name="info" size="sm" />

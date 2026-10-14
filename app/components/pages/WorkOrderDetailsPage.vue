@@ -266,15 +266,19 @@ const DOC_FUNCTION: Record<string, string> = {
  * still to come is not one. What is due next is already named on the primary
  * button, so it does not need a placeholder row here as well.
  */
-const subconTransactionRows = computed(() =>
-  subconTransactions.value.filter(tx => !!tx.doc).map((tx) => {
+const subconTransactionRows = computed(() => {
+  // The plan lists documents thread by thread; the run raised them interleaved.
+  // `raisedDocuments` is appended as each one is created, so its order IS the
+  // order the run happened in.
+  const raisedOrder = new Map((subcon.value?.raisedDocuments ?? []).map((d, i) => [d.id, i]))
+  return subconTransactions.value.filter(tx => !!tx.doc).map((tx) => {
     // An order or a delivery inherits its purpose from the request it grew out
     // of. On dropship both threads raise the same kinds, so by kind alone the
     // component order and its delivery read as the vendor's work.
     const inherited = tx.doc?.fromKind ? DOC_FUNCTION[tx.doc.fromKind] : undefined
     return { ...tx, function: inherited ?? DOC_FUNCTION[tx.kind] ?? '' }
-  }),
-)
+  }).sort((a, b) => (raisedOrder.get(a.doc!.id) ?? 0) - (raisedOrder.get(b.doc!.id) ?? 0))
+})
 
 /**
  * Subcon cost — the vendor's charges, which stand in for Production cost and
@@ -1792,7 +1796,7 @@ function suppressFabClick(e: MouseEvent) {
       </div>
 
       <!-- Header actions -->
-      <div class="detail-bar-actions">
+      <div class="detail-bar-actions" data-devchange="wo-header-wrap">
         <MpPopover id="wod-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton class="detail-btn detail-btn--secondary" variant="secondary">
@@ -1914,6 +1918,7 @@ function suppressFabClick(e: MouseEvent) {
                  on Dropship a third party delivers them, nothing is transferred. -->
             <ContentList
               v-if="subconDestination && subcon.method !== 'basic'"
+              data-devchange="subcon-destination-row"
               :label="subcon.method === 'dropship' ? t('Deliver components to') : t('Transfer components to')"
               :value="subconDestination.name"
             />
@@ -2323,7 +2328,7 @@ function suppressFabClick(e: MouseEvent) {
           <!-- One table, in the order the run raised its documents. Type says
                what the document is; Function says what it is for — on dropship
                two purchase requests of the same type do entirely different jobs. -->
-          <div v-if="subconTransactionRows.length" class="wod-table-scroll">
+          <div v-if="subconTransactionRows.length" class="wod-table-scroll" data-devchange="subcon-transactions-order">
             <table class="wod-table">
               <thead>
                 <tr>
@@ -2682,6 +2687,9 @@ function suppressFabClick(e: MouseEvent) {
   flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
   background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-3) var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+  /* With three actions showing there is not always room for both sides; the
+     actions drop below rather than squeezing the title onto two lines. */
+  flex-wrap: wrap;
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb {
@@ -2689,7 +2697,8 @@ function suppressFabClick(e: MouseEvent) {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px);
 }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
-.detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: nowrap; }
+.detail-titlerow-left > * { flex-shrink: 0; }
 
 /* ── Top-level tabs (Overview / Material consume & return) ──────────────────── */
 .detail-toptabs {
@@ -2707,6 +2716,7 @@ function suppressFabClick(e: MouseEvent) {
   margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
+  white-space: nowrap;
 }
 .detail-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
 

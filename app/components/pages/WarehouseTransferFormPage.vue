@@ -786,6 +786,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--num">
                     <span class="wtf-qty-stack">
                       <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
+                      <!-- A prefilled qty (a subcon transfer carries the work order's)
+                           is already what "After transfer qty" counts — show it here
+                           too, so the two columns never disagree. -->
+                      <span v-else-if="Number(row.qty) > 0" class="wtf-batch-val" data-devchange="transfer-qty-prefill">{{ Number(row.qty).toLocaleString('id-ID') }}</span>
                       <span v-else class="wtf-batch-empty">—</span>
                       <MpButton class="wtf-manage-btn" variant="ghost" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">{{ t('Manage storage location') }}</MpButton>
                     </span>
@@ -1064,14 +1068,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
 <style scoped>
 /* ── Page shell ──────────────────────────────────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
+.detail-bar { flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box; background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6); display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb { align-self: flex-start; background: none; border: none; padding: 0; cursor: pointer; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); line-height: var(--mp-line-heights-sm, 16px); }
 .detail-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .detail-title { margin: 0; font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
-.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-8); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); }
-.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage); border-top: 1px solid transparent; transition: border-top-color 0.15s; }
+.detail-stage { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0; padding: 0 var(--mp-spacing-6) var(--mp-spacing-8); border-top: var(--mp-spacing-6) solid var(--mp-background-stage); }
+.detail-footer { flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); background: var(--mp-background-stage, #ffffff); border-top: 1px solid transparent; transition: border-top-color 0.15s; }
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 .wtf-body { display: flex; flex-direction: column; }
@@ -1094,7 +1098,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* ── Table toolbar (search + import, right-aligned) ───────────────────────── */
 .wtf-table-toolbar { margin-top: 32px; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
-.wtf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 200px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
+.wtf-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 200px; padding: var(--mp-spacing-2) var(--mp-spacing-3); border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-full, 999px); color: var(--mp-icon-default); }
 .wtf-search-input { flex: 1; min-width: 0; border: none; outline: none; background: none; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .wtf-search-input::placeholder { color: var(--mp-text-placeholder); }
 .search-clear-btn {
@@ -1104,7 +1108,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .wtf-import-btn { padding: var(--mp-spacing-2) var(--mp-spacing-4); border: 1px solid var(--mp-background-inverse, #080d0e); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-inverse, #080d0e); color: #fff; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); cursor: pointer; }
 .wtf-import-btn:hover { opacity: 0.9; }
 
@@ -1128,7 +1132,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .wtf-th--group { text-align: center; padding: var(--mp-spacing-1) var(--mp-spacing-2); }
@@ -1137,9 +1141,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); border-right: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); border-right: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: top;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .wtf-td:last-child { border-right: none; }
 .wtf-td--muted { color: var(--mp-text-secondary); }
@@ -1161,7 +1165,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* Strip the Pixel control's own border + focus ring so it doesn't double up with the
    cell ring — single gray focus border (same grey as the search input), full row height. */
 .wtf-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; box-shadow: none !important; }
-.wtf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.wtf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 
 /* Transfer qty (batch) — qty value + Manage batch stacked as 2 lines in one cell,
    same right-aligned column pattern as .wtf-avail above. */
@@ -1186,7 +1190,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 .wtf-td--del { padding: 0; text-align: center; }
 .wtf-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 40px; border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary); }
-.wtf-del-btn:hover { background: var(--mp-background-neutral); color: var(--mp-text-danger, #dc2626); }
+.wtf-del-btn:hover { background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-danger, #dc2626); }
 .wtf-count { padding: var(--mp-spacing-3) var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .wtf-form-error { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
 
@@ -1241,8 +1245,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-loc-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wtf-loc-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .wtf-loc-close {
@@ -1250,21 +1254,21 @@ onUnmounted(() => { stageObserver?.disconnect() })
   width: 36px; height: 36px; border: none; background: none;
   border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default);
 }
-.wtf-loc-close:hover { background: var(--mp-background-neutral-hovered); }
+.wtf-loc-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .wtf-loc-content { flex: 1; overflow-y: auto; padding: var(--mp-spacing-4); display: flex; flex-direction: column; gap: 20px; }
 
 .wtf-loc-product {
   display: flex; align-items: center; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md);
 }
 .wtf-loc-thumb {
   width: 40px; height: 40px; border-radius: var(--mp-radii-md); object-fit: cover; flex-shrink: 0;
-  border: 1px solid var(--mp-border-subtle); background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-subtle, #e5e7e7); background: var(--mp-background-neutral, #ffffff);
 }
-.wtf-loc-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.wtf-loc-thumb--empty { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .wtf-loc-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .wtf-loc-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wtf-loc-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -1278,7 +1282,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-loc-total { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .wtf-loc-total--warn { color: var(--mp-text-warning, #b45309); font-weight: var(--mp-font-weights-medium); }
 
-.wtf-loc-table-wrap { border: 1px solid var(--mp-border-bold); border-radius: var(--mp-radii-md); overflow: hidden; }
+.wtf-loc-table-wrap { border: 1px solid var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-md); overflow: hidden; }
 .wtf-loc-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
 .wtf-loc-col-qty { width: 80px; }
 .wtf-loc-col-del { width: 44px; }
@@ -1287,16 +1291,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: var(--mp-background-neutral, #fff);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase; text-align: left;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wtf-loc-th--num { text-align: right; }
 .wtf-loc-th--del { padding: 0; }
-.wtf-loc-tr .wtf-loc-td { border-bottom: 1px solid var(--mp-border-default); }
+.wtf-loc-tr .wtf-loc-td { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .wtf-loc-tr:last-child .wtf-loc-td { border-bottom: none; }
 .wtf-loc-td { background: var(--mp-background-neutral, #fff); padding: 0; vertical-align: top; }
-.wtf-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.wtf-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .wtf-loc-td--qty { text-align: right; }
-.wtf-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.wtf-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
 .wtf-loc-td--del { text-align: center; }
 .wtf-loc-trigger { display: flex; align-items: center; height: 40px; padding: 0 var(--mp-spacing-2); gap: var(--mp-spacing-1); }
 .wtf-loc-picker-input {
@@ -1328,7 +1332,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-loc-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-  background: var(--mp-background-stage);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  background: var(--mp-background-stage, #ffffff);
 }
 </style>

@@ -205,6 +205,13 @@ const subconMethodHint = computed(() => t(SUBCON_METHOD_DESCRIPTION[subconScope.
 
 /** Only `resupply` moves stock out of a company warehouse. */
 const subconNeedsSource = computed(() => subconMethod.value === 'resupply')
+/**
+ * A component line names the warehouse it is drawn from only when company stock
+ * actually leaves one. On Basic the vendor uses its own material and on Dropship
+ * a 3rd party ships straight to the vendor, so an origin warehouse there is a
+ * field with nothing behind it — and a batch is recorded at the delivery instead.
+ */
+const showOriginWarehouse = computed(() => !isSubcon.value || subconNeedsSource.value)
 
 /**
  * Both `resupply` and `dropship` need the vendor's own location named.
@@ -683,6 +690,7 @@ function parseDateRange(v: Date[]): { start: string; end: string } {
  *  read where each material actually comes from. */
 function buildComponentWarehouses(): Record<string, { id: string; name: string }> | undefined {
   const out: Record<string, { id: string; name: string }> = {}
+  if (!showOriginWarehouse.value) return undefined
   for (const row of rawRows.value) {
     if (!row.productId || !row.warehouseId) continue
     out[row.productId] = { id: row.warehouseId, name: warehouseName(row.warehouseId) }
@@ -694,6 +702,7 @@ function buildComponentWarehouses(): Record<string, { id: string; name: string }
 // actual pick contribute an entry.
 function buildMaterialReservations(): Record<string, WorkOrderMaterialReservation> | undefined {
   const out: Record<string, WorkOrderMaterialReservation> = {}
+  if (!showOriginWarehouse.value) return undefined
   for (const row of rawRows.value) {
     if (!row.productId) continue
     const type = trackingTypeFor(row.productId)
@@ -1047,29 +1056,29 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <section v-if="hasBom && !subconIsBasic" class="wo-section">
           <h2 class="wo-section-title">{{ t('Raw materials') }}</h2>
           <p class="wo-section-desc">{{ t('Unit purchase cost may change when inventory value adjusts.') }}</p>
-          <label class="wo-checkbox-row wo-checkbox-row--tight">
+          <label v-if="showOriginWarehouse" class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
             <span>{{ t('Bulk set warehouse') }}</span>
           </label>
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col /><col style="width:150px" /><col style="width:180px" />
-                <col style="width:110px" /><col style="width:110px" /><col style="width:150px" />
+                <col class="wo-col--product" /><col style="width:150px" /><col v-if="showOriginWarehouse" style="width:180px" />
+                <col style="width:110px" /><col style="width:110px" /><col class="wo-col--date" />
                 <col style="width:150px" /><col style="width:44px" />
               </colgroup>
               <thead>
                 <tr>
                   <!-- Where the material is DRAWN FROM — named as such so it is
                        not read as where the output lands. -->
-                  <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('Purchase cost') }}</th><th class="wo-th">{{ t('Origin warehouse') }}</th>
+                  <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('Purchase cost') }}</th><th v-if="showOriginWarehouse" class="wo-th" data-devchange="subcon-wo-origin-wh">{{ t('Origin warehouse') }}</th>
                   <th class="wo-th">{{ t('Needed qty') }}</th><th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Required date') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
                 <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
-                  <td v-for="c in 7" :key="c" class="wo-td"><span class="wo-skel" /></td>
+                  <td v-for="c in (showOriginWarehouse ? 7 : 6)" :key="c" class="wo-td"><span class="wo-skel" /></td>
                   <td class="wo-td wo-td--del" />
                 </tr>
               </tbody>
@@ -1079,12 +1088,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
                   </td>
                   <td class="wo-td wo-td--num"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
-                  <td class="wo-td wo-td--input">
+                  <td v-if="showOriginWarehouse" class="wo-td wo-td--input">
                     <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" :placeholder="t('Select warehouse')" is-searchable is-clearable use-portal is-full-width @update:model-value="onRawWarehouse(row)" />
                   </td>
                   <td class="wo-td wo-td--input">
                     <MpInput v-if="row.productId" :id="`raw-need-${row.id}`" v-model="row.needed" type="number" placeholder="0" is-full-width />
-                    <template v-if="row.productId && trackingTypeFor(row.productId)">
+                    <template v-if="row.productId && trackingTypeFor(row.productId) && showOriginWarehouse">
                       <span v-if="reservedCount(row) > 0" class="wo-tracked-hint">{{ reservedCount(row) }} {{ t('of') }} {{ num(row.needed) }} {{ t('selected') }}</span>
                       <a class="wo-tracking" @click.prevent="openRawTracking(row)">{{ trackingTypeFor(row.productId) === 'serial' ? t('Manage serial number') : t('Manage batch') }}</a>
                     </template>
@@ -1331,7 +1340,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col /><col class="wo-col--sku" /><col class="wo-col--qty" />
+                <col class="wo-col--product" /><col class="wo-col--sku" /><col class="wo-col--qty" />
                 <col class="wo-col--unit" /><col v-if="isSubcon" class="wo-col--warehouse" /><col class="wo-col--pct" /><col class="wo-col--cost" /><col class="wo-col--del" />
               </colgroup>
               <thead>
@@ -1381,7 +1390,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="wo-table-scroll">
             <table class="wo-table">
               <colgroup>
-                <col /><col class="wo-col--sku" /><col class="wo-col--qty" />
+                <col class="wo-col--product" /><col class="wo-col--sku" /><col class="wo-col--qty" />
                 <col class="wo-col--unit" /><col v-if="isSubcon" class="wo-col--warehouse" /><col class="wo-col--pct" /><col class="wo-col--cost" /><col class="wo-col--del" />
               </colgroup>
               <thead>
@@ -1766,6 +1775,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-col--pct { width: 140px; }
 .wo-col--cost { width: 160px; }
 .wo-col--del { width: 44px; }
+/* The product name is what the row is about — it keeps a readable width rather
+   than taking whatever the fixed columns leave (rule: name kind, 240–280). */
+.wo-col--product { width: 280px; }
+.wo-col--date { width: 160px; }
 .wo-td--right { text-align: right; }
 .wo-td--input { padding: 0; vertical-align: middle; background: var(--mp-background-neutral, #fff); }
 .wo-td--num-input { padding: 0; background: var(--mp-background-neutral, #fff); }

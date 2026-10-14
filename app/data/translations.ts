@@ -4040,4 +4040,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Work orders": "Perintah kerja",
   "Record part of a work order’s output at a time. When off, a work order offers Complete alone, and a subcon order issues all its components when it starts.": "Catat sebagian hasil perintah kerja secara bertahap. Jika nonaktif, perintah kerja hanya menawarkan Selesaikan, dan perintah subkontrak mengeluarkan semua komponennya saat dimulai.",
   "Production settings changes saved": "Perubahan pengaturan produksi disimpan",
+  // Subcontracting — walkthrough fixes (2026-10-14)
+  "Sent qty": "Qty dikirim",
+  "Qty at vendor": "Qty di vendor",
+  "Unused qty": "Qty tidak terpakai",
+  "Used qty": "Qty terpakai",
+  "Unused qty cannot be more than qty at vendor": "Qty tidak terpakai tidak boleh lebih dari qty di vendor",
+  "Entries by transaction": "Entri per transaksi",
+  "Component purchase": "Pembelian komponen",
+  "Material issue": "Pengeluaran material",
+  "Unused component return": "Retur komponen tidak terpakai",
+  "Finished goods receipt": "Penerimaan barang jadi",
+  "Journal entries will appear here once materials are issued, the vendor invoices, or finished goods come back.": "Jurnal akan muncul di sini setelah material dikeluarkan, vendor menagih, atau barang jadi diterima.",
 }
