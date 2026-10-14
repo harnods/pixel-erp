@@ -428,6 +428,10 @@ function onSave() {
       route: '/purchase-deliveries',
       qty: deliveredQty,
       ...(isComponentDelivery.value ? { fromKind: 'componentPr' } : {}),
+      // Per component, so the journal can post the purchase from the delivery (R13).
+      lines: items.value
+        .filter(it => it.sku && Number(it.qty) > 0)
+        .map(it => ({ sku: it.sku, qty: Number(it.qty) })),
     })
     // Components reaching the vendor, per line: this is what fills "Sent to
     // vendor" on a dropship order, where no warehouse transfer ever happens.

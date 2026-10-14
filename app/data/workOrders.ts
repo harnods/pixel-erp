@@ -232,6 +232,12 @@ export interface RaisedSubconDocument {
   /** The orders an INVOICE bills (R16) — one invoice may cover several from this run. */
   fromIds?: string[]
   /**
+   * What a Dropship COMPONENT DELIVERY brought, per component. The delivery is
+   * the moment the raw material is ours and at the vendor, so it is what the
+   * journal posts the purchase from (R13) — not the request that asked for it.
+   */
+  lines?: { sku: string; qty: number }[]
+  /**
    * Which cost lines a service REQUEST covers (R11). A request raised before this
    * field existed covers every line the BOM had at the time.
    */

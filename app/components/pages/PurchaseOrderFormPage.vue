@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpButton, MpTextlink, MpFormControl, MpFormLabel, MpInput, MpTextarea,
+  MpButton, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
   MpInputGroup, MpInputLeftAddon,
   MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -74,7 +74,24 @@ const subconWorkOrder = computed(() => {
   return null
 })
 
-const vendor       = ref(source.value?.vendor.name ?? subconWorkOrder.value?.subcon?.vendorName ?? '')
+/**
+ * Dropship: an order raised from a COMPONENT request buys raw material from a
+ * third party (R1) — not from the subcontractor. Its vendor is the buyer's to
+ * choose; only an order for the vendor's work is fixed to the subcontractor.
+ */
+const isComponentOrder = computed(() => {
+  const wo = subconWorkOrder.value
+  const prId = (props.purchaseRequestIds ?? [])[0]
+  const request = prId ? wo?.subcon?.raisedDocuments?.find(d => d.id === prId) : undefined
+  return !!request && ['componentPr', 'rawPr'].includes(request.kind)
+})
+
+const vendor       = ref(source.value?.vendor.name
+  ?? (isComponentOrder.value ? '' : subconWorkOrder.value?.subcon?.vendorName)
+  ?? '')
+/** Set when an order is saved with no vendor — shown inline, Save stays enabled. */
+const vendorError  = ref(false)
+watch(vendor, (v) => { if (v) vendorError.value = false })
 
 // ── Vendor price basis ────────────────────────────────────────────────────────
 /**
@@ -184,6 +201,8 @@ const fromPr = computed(() => groups.value.length > 0)
  */
 const isSubconOrder = computed(() =>
   (props.purchaseRequestIds ?? []).some(id => !!workOrderForDocument(id)))
+/** The vendor is fixed only on the subcontractor's own order, not a component order. */
+const vendorFixed = computed(() => isSubconOrder.value && !isComponentOrder.value)
 
 const blankItems = ref<POLine[]>((source.value?.lineItems ?? []).map(it => ({
   _key: ++_seq, product: it.product, sku: it.sku, description: it.description,
@@ -453,7 +472,14 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
   return newId
 }
 
+/** A vendor is required — refused inline (rule/form-errors-inline), never a toast. */
+function vendorMissing(): boolean {
+  vendorError.value = !vendor.value
+  return vendorError.value
+}
+
 function onSave() {
+  if (vendorMissing()) return
   const newId = createDuplicateOrder()
   closePurchaseOrderForm?.()
   if (newId) openPurchaseOrder?.(newId)
@@ -462,6 +488,7 @@ function onSave() {
 function onSaveAndNew() { closePurchaseOrderForm?.() }
 
 function onSendToFulfillment() {
+  if (vendorMissing()) return
   const newId = createDuplicateOrder({ sentToFulfillment: true })
   closePurchaseOrderForm?.()
   if (newId) openPurchaseOrder?.(newId)
@@ -501,10 +528,11 @@ function onSendToFulfillment() {
 
         <!-- ── Header section 1: Vendor + Email + Total ── -->
         <section class="po-header1 po-dashed-divider">
-          <MpFormControl id="f-vendor" class="po-field po-col-span-3">
+          <MpFormControl id="f-vendor" class="po-field po-col-span-3" :is-invalid="vendorError">
             <MpFormLabel>Vendor <span class="po-required">*</span></MpFormLabel>
-            <!-- Fixed when a subcon work order named it; see `isSubconOrder`. -->
-            <MpInput v-if="isSubconOrder" id="f-vendor-fixed" :model-value="vendor" is-disabled is-full-width />
+            <!-- Fixed on the subcontractor's own order; a Dropship component order
+                 is bought from a third party, so its vendor is chosen here. -->
+            <MpInput v-if="vendorFixed" id="f-vendor-fixed" :model-value="vendor" is-disabled is-full-width />
             <MpAutocomplete
               v-else
               id="f-vendor-inp"
@@ -521,6 +549,7 @@ function onSendToFulfillment() {
                 {{ currentSearch ? `Add "${currentSearch}" as a new vendor` : 'Add new vendor' }}
               </template>
             </MpAutocomplete>
+            <MpFormErrorMessage>You must select vendor</MpFormErrorMessage>
           </MpFormControl>
 
           <MpFormControl id="f-email" class="po-field po-col-span-3">

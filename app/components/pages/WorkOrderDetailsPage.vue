@@ -468,20 +468,23 @@ const accountingReturns = computed(() =>
     .filter(r => r.lines.length > 0),
 )
 
-/** Dropship only — the 3rd-party purchase that lands components at the vendor. */
+/**
+ * Dropship only — the 3rd-party purchase that lands components at the vendor.
+ *
+ * Posted from each component DELIVERY, the moment the raw material is ours and at
+ * the vendor (R13) — not from the request, which only asked for it. A delivery
+ * recorded before per-component lines were kept carries none and posts nothing.
+ */
 const accountingComponentPurchases = computed(() => {
   if (subcon.value?.method !== 'dropship') return []
   return (subcon.value.raisedDocuments ?? [])
-    .filter(d => d.kind === 'componentPr' || d.kind === 'rawPr')
-    .map((d) => {
-      const pr = purchaseRequests.find(r => r.id === d.id)
-      return {
-        id: d.id,
-        date: d.raisedAt ?? pr?.date ?? '',
-        documentNumber: d.number,
-        lines: (pr?.lines ?? []).map(l => ({ sku: l.sku, qty: l.requestedQty })),
-      }
-    })
+    .filter(d => d.kind === 'purchaseDelivery' && !!d.fromKind && COMPONENT_REQUEST_KINDS.includes(d.fromKind))
+    .map(d => ({
+      id: d.id,
+      date: d.raisedAt ?? '',
+      documentNumber: d.number,
+      lines: (d.lines ?? []).map(l => ({ sku: l.sku, qty: l.qty })),
+    }))
     .filter(p => p.lines.length > 0)
 })
 
@@ -1907,9 +1910,11 @@ function suppressFabClick(e: MouseEvent) {
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Quantity')" :value="subcon.split === 'partial' ? t('Partial (split)') : t('Full quantity')" />
+            <!-- Basic has no components of ours to send, so no destination (R1);
+                 on Dropship a third party delivers them, nothing is transferred. -->
             <ContentList
-              v-if="subconDestination"
-              :label="t('Transfer components to')"
+              v-if="subconDestination && subcon.method !== 'basic'"
+              :label="subcon.method === 'dropship' ? t('Deliver components to') : t('Transfer components to')"
               :value="subconDestination.name"
             />
             <!-- Closed short: the original quantity and the reason stay visible,
@@ -2604,7 +2609,7 @@ function suppressFabClick(e: MouseEvent) {
 
 /* ── Bottom tabs (Partial production / Linked transactions) ───────────────── */
 .wod-section--tabs { border-bottom: none; }
-.wod-bottom-tabs { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); margin-bottom: var(--mp-spacing-4); }
+.wod-bottom-tabs { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); margin-bottom: var(--mp-spacing-4); }
 .wod-bottom-tab {
   position: relative; background: none; border: none; padding: var(--mp-spacing-2) 0; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md);
@@ -2639,8 +2644,8 @@ function suppressFabClick(e: MouseEvent) {
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle, #75808f);
 }
 .filter-search-input {
@@ -2669,13 +2674,13 @@ function suppressFabClick(e: MouseEvent) {
   cursor: pointer; color: var(--mp-text-secondary);
 }
 .row-kebab svg { display: block; width: var(--mp-sizes-5, 20px); height: var(--mp-sizes-5, 20px); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Page shell (shared detail-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-3) var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -2689,8 +2694,8 @@ function suppressFabClick(e: MouseEvent) {
 /* ── Top-level tabs (Overview / Material consume & return) ──────────────────── */
 .detail-toptabs {
   flex-shrink: 0; display: flex; align-items: center; gap: var(--mp-spacing-5);
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-toptab {
   position: relative; background: none; border: none; padding: var(--mp-spacing-3) 0; cursor: pointer;
@@ -2712,20 +2717,20 @@ function suppressFabClick(e: MouseEvent) {
   cursor: pointer; border: 1px solid transparent; white-space: nowrap;
 }
 .detail-btn--icon { padding-left: var(--mp-spacing-3); }
-.detail-btn--secondary { background: var(--mp-background-neutral); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
-.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered); }
+.detail-btn--secondary { background: var(--mp-background-neutral, #ffffff); border-color: var(--mp-border-bold); color: var(--mp-text-secondary); }
+.detail-btn--secondary:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .detail-btn--primary { background: var(--mp-colors-emerald-700, #029861); border-color: var(--mp-colors-emerald-700, #029861); color: var(--mp-text-inverse); }
 .detail-btn--primary:hover { background: var(--mp-colors-emerald-800, #186f4a); border-color: var(--mp-colors-emerald-800, #186f4a); }
 
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
 }
 
 /* ── Sections ────────────────────────────────────────────────────────────── */
-.wod-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default); }
+.wod-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
 .wod-section:first-child { padding-top: 0; }
 .wod-section--last { border-bottom: none; }
 .wod-section-head {
@@ -2742,16 +2747,16 @@ function suppressFabClick(e: MouseEvent) {
 }
 .wod-subcon-table { width: 100%; border-collapse: collapse; }
 .wod-subcon-th {
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   text-align: left; white-space: nowrap;
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wod-subcon-td {
   padding: var(--mp-spacing-3);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
   vertical-align: top; white-space: nowrap;
 }
@@ -2822,7 +2827,7 @@ function suppressFabClick(e: MouseEvent) {
   gap: var(--mp-spacing-0\.5);
   margin-top: var(--mp-spacing-4);
   padding-top: var(--mp-spacing-3);
-  border-top: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wod-perunit__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .wod-perunit__pair {
@@ -2861,8 +2866,8 @@ function suppressFabClick(e: MouseEvent) {
 /* ── Read-only tables (borderless ERP style) ─────────────────────────────── */
 .wod-table-scroll {
   overflow-x: auto;
-  border-top: 1px solid var(--mp-border-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wod-table { width: 100%; border-collapse: collapse; table-layout: auto; min-width: max-content; }
 /* Main output + Other outputs share the same fixed column widths (via matching
@@ -2871,16 +2876,16 @@ function suppressFabClick(e: MouseEvent) {
 .wod-th {
   height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .wod-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .wod-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .wod-tr:last-child .wod-td { border-bottom: none; }
 .wod-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); }
@@ -2889,7 +2894,7 @@ function suppressFabClick(e: MouseEvent) {
 .wod-product-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* production cost repeated sub-headers */
-.wod-subhead-row .wod-th { border-top: 1px solid var(--mp-border-default); }
+.wod-subhead-row .wod-th { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .wod-table tbody tr:first-child .wod-th { border-top: none; }
 
 /* line status text */
