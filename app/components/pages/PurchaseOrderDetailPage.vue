@@ -13,7 +13,8 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
-import { subconOrdersToInvoice } from '~/data/workOrders'
+import { subconOrdersToInvoice, isSubconServiceOrder, workOrderForDocument } from '~/data/workOrders'
+import { subconDocumentUntaxed } from '~/data/subconPricing'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -85,6 +86,10 @@ const activityEntries = computed(() => [{
 const deleteOpen = ref(false)
 
 const router = useRouter()
+/** R14 — a subcon order carries no PPN while tax handling is off: no PPN row. */
+const untaxed = computed(() => subconDocumentUntaxed(!!workOrderForDocument(props.orderId)))
+/** R17 — the vendor's work has no purchase delivery, so it is not offered. */
+const isServiceOrder = computed(() => isSubconServiceOrder(props.orderId))
 /** Open the delivery form against this order, so it can prefill from it. */
 function createPurchaseDelivery() {
   router.push({ path: '/purchase-deliveries/new', query: { fromPo: props.orderId } })
@@ -227,11 +232,21 @@ function jumpTo(id: string) { openPurchaseOrder?.(id) }
 function formatDeduction(amount: number) {
   return amount > 0 ? `(${formatIDR(amount)})` : formatIDR(0)
 }
+/** An order created through the form may leave a date empty — show "—", don't throw. */
+function validDate(iso: string | undefined): Date | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? null : d
+}
 function formatDateLong(iso: string) {
-  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso))
+  const d = validDate(iso)
+  if (!d) return '—'
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(d)
 }
 function formatDateNumeric(iso: string) {
-  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
+  const d = validDate(iso)
+  if (!d) return '—'
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
 }
 function formatUpdatedAt(iso: string) {
   const d = new Date(iso)
@@ -567,7 +582,7 @@ function goBack() { closePurchaseOrder?.() }
             <span class="detail-total-row-label">Global discount</span>
             <span class="detail-total-row-amt">{{ formatDeduction(order.totals.globalDiscount) }}</span>
           </div>
-          <div class="detail-total-row">
+          <div v-if="!untaxed" class="detail-total-row">
             <span class="detail-total-row-label">{{ order.totals.taxLabel }}</span>
             <span class="detail-total-row-amt">{{ formatIDR(order.totals.taxAmount) }}</span>
           </div>
@@ -628,7 +643,7 @@ function goBack() { closePurchaseOrder?.() }
                    is only Dropship raw material reaching the vendor — the
                    vendor's work has no delivery (R17), and the delivery form
                    refuses one. -->
-              <MpPopoverListItem v-if="!isRejected" @click="createPurchaseDelivery">Create purchase delivery</MpPopoverListItem>
+              <MpPopoverListItem v-if="!isRejected && !isServiceOrder" @click="createPurchaseDelivery">Create purchase delivery</MpPopoverListItem>
               <MpPopoverListItem v-if="!isRejected" @click="createPurchaseInvoice">Create purchase invoice</MpPopoverListItem>
               <MpPopoverListItem v-if="!isRejected">Edit</MpPopoverListItem>
               <MpPopoverListItem v-if="!isAwaitingApproval && !isRejected">Set as recurring</MpPopoverListItem>

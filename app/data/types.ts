@@ -362,6 +362,23 @@ export interface PurchaseOrder {
    */
   approvedAt?: string
   /**
+   * The document details entered on the form, for an order created through it.
+   * The detail page shows these instead of the generated values seeded orders get,
+   * so an order shows what was actually entered — its memo, warehouse, terms.
+   */
+  details?: {
+    billingAddress?: string
+    shipTo?: string
+    shipDate?: string
+    shipVia?: string
+    trackingNo?: string
+    paymentTerms?: string
+    referenceNo?: string
+    warehouse?: string
+    message?: string
+    memo?: string
+  }
+  /**
    * How this order's price relates to withholding tax. Defaults from the vendor
    * and is overridable per order — it is a commercial term of this purchase, not
    * a permanent property of the vendor. Absent on non-subcon orders.

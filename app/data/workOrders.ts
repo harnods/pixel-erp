@@ -1049,3 +1049,11 @@ export function subconOrdersToInvoice(
     .map(d => d.id)
   return open.includes(purchaseOrderId) ? open : [purchaseOrderId, ...open]
 }
+
+
+/** Whether a purchase order is the vendor's WORK on a subcon run (not a component order). */
+export function isSubconServiceOrder(purchaseOrderId: string): boolean {
+  const wo = workOrderForDocument(purchaseOrderId)
+  const self = wo?.subcon?.raisedDocuments?.find(d => d.id === purchaseOrderId && d.kind === 'purchaseOrder')
+  return !!self && isServiceOrderDoc(self)
+}

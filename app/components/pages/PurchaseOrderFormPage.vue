@@ -118,6 +118,8 @@ const shipDate     = ref(isoToDMY(source.value?.shipDate ?? ''))
 const shipVia      = ref(source.value?.shipVia ?? '')
 const paymentTerms = ref(source.value?.paymentTerms ?? '')
 const referenceNo  = ref(source.value?.referenceNo ?? '')
+// Raised from a request → the request's warehouse, which is where the goods (or,
+// for a subcon order, the work) are wanted. A subcon order shows it fixed (R5).
 const warehouse    = ref(source.value?.warehouse ?? '')
 const trackingNo   = ref(source.value?.trackingNo ?? '')
 const shipTo       = ref(source.value?.shipTo ?? '')
@@ -127,6 +129,7 @@ const firstRequest = computed(() => {
   return id ? getPurchaseRequestDetail(id) : undefined
 })
 const memo         = ref(source.value?.memo ?? firstRequest.value?.note ?? '')
+if (!warehouse.value && firstRequest.value?.warehouse) warehouse.value = firstRequest.value.warehouse
 const tagsList     = ref<DataInterface[]>(toTagData(source.value?.tags ?? []))
 
 const requiresShipping = ref(!!source.value?.shipVia)
@@ -402,6 +405,19 @@ function createDuplicateOrder(overrides?: Partial<PurchaseOrder>): string | null
     hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t => String(t.value)),
     duplicatedFromId: props.duplicateOrderId,
+    // What the form actually carries, so the detail page shows it rather than
+    // generated values (see getPurchaseOrderDetail).
+    details: {
+      shipTo: shipTo.value || undefined,
+      shipDate: shipDate.value ? dmyToIso(shipDate.value) : undefined,
+      shipVia: shipVia.value || undefined,
+      trackingNo: trackingNo.value || undefined,
+      paymentTerms: paymentTerms.value || undefined,
+      referenceNo: referenceNo.value || undefined,
+      warehouse: warehouse.value || undefined,
+      message: message.value || undefined,
+      memo: memo.value || undefined,
+    },
     ...(subconPricing.value ? { priceBasis: priceBasis.value } : {}),
     // Persist the real lines — the detail page only synthesizes lines for seeded
     // orders that have none (see getPurchaseOrderDetail).

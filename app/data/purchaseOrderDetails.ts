@@ -302,20 +302,24 @@ export function getPurchaseOrderDetail(id: string): PurchaseOrderDetail {
       ]
     : []
 
+  // An order created through the form shows exactly what was entered — empty
+  // where nothing was — never the generated values seeded orders are dressed in.
+  const d = order.details
+  const own = (v: string | undefined) => v ?? ''
   return {
     ...order,
     email: emailFor(order.vendor.name),
-    billingAddress: pick(BILLING_ADDRESSES, idx),
-    shipTo: pick(SHIP_TO, idx),
-    shipDate: addDays(order.date, 3),
-    shipVia: pick(SHIP_VIA, idx),
-    trackingNo: `TRK${String(1000 + idx)}`,
-    referenceNo: `REF-${order.number.slice(-3)}`,
-    paymentTerms: pick(PAYMENT_TERMS, idx),
-    warehouse: pick(WAREHOUSES, idx),
+    billingAddress: d ? own(d.billingAddress) : pick(BILLING_ADDRESSES, idx),
+    shipTo: d ? own(d.shipTo) : pick(SHIP_TO, idx),
+    shipDate: d ? own(d.shipDate) : addDays(order.date, 3),
+    shipVia: d ? own(d.shipVia) : pick(SHIP_VIA, idx),
+    trackingNo: d ? own(d.trackingNo) : `TRK${String(1000 + idx)}`,
+    referenceNo: d ? own(d.referenceNo) : `REF-${order.number.slice(-3)}`,
+    paymentTerms: d ? own(d.paymentTerms) : pick(PAYMENT_TERMS, idx),
+    warehouse: d ? own(d.warehouse) : pick(WAREHOUSES, idx),
     lineItems: items,
-    message: 'Please deliver during working hours (08:00–16:00). Confirm receipt on arrival.',
-    memo: 'Approved budget line: procurement Q2. Verify item specs against the attached quotation.',
+    message: d ? own(d.message) : 'Please deliver during working hours (08:00–16:00). Confirm receipt on arrival.',
+    memo: d ? own(d.memo) : 'Approved budget line: procurement Q2. Verify item specs against the attached quotation.',
     attachments,
     totals,
     lastUpdatedBy: pick(UPDATED_BY, idx),
