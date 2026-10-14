@@ -26,7 +26,7 @@ const contact = computed(() => getCrmContact(props.orderId))
   <div class="detail-page" v-if="contact">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" type="button" @click="router.push('/crm/contacts')">Contacts</button>
+        <MpButton class="detail-breadcrumb" type="button" variant="textLink" @click="router.push('/crm/contacts')">Contacts</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ contact.name }}</h1>
         </div>

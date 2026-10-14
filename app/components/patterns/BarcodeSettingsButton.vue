@@ -18,7 +18,7 @@
  */
 import {
   MpIcon, MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpFormHelpText, MpFormErrorMessage, MpInput, MpRadio, MpBanner, MpBannerDescription, toast,
+  MpFormControl, MpFormLabel, MpFormHelpText, MpFormErrorMessage, MpInput, MpRadio, MpBanner, MpBannerDescription, MpButton, toast,
 } from '@mekari/pixel3'
 import {
   getBarcodeConfig, setBarcodeFormat, generateNextBarcode, formatBarcodeValue,
@@ -211,8 +211,8 @@ function generate() {
       </MpModalBody>
       <MpModalFooter>
         <div class="bcs-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="close">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="generate">Generate barcode</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="close">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="generate">Generate barcode</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

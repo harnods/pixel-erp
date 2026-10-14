@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { h, ref } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpIcon, toast } from '@mekari/pixel3'
+import { MpButton, MpIcon, toast } from '@mekari/pixel3'
 
 // ── Reusable AI sparkle (4-point star) — matches the SearchBox / Airene mark ──
 const SPARKLE_D_A = 'M10.9077 8.22842L10.5112 8.17805C9.1059 7.99858 8.00071 6.89127 7.82266 5.48602L7.77514 5.11147C7.69781 4.49787 7.09344 4.08431 6.45714 4.08431C5.82793 4.08431 5.22497 4.48085 5.1441 5.09232L5.09374 5.48885C4.91427 6.8941 3.80695 7.99929 2.4017 8.17734L2.02716 8.22487C1.40008 8.30645 1 8.90657 1 9.54287C1 10.1792 1.3788 10.7793 2.00801 10.8559L2.40454 10.9063C3.80979 11.0857 4.91498 12.1931 5.09303 13.5983L5.14056 13.9728C5.21788 14.6113 5.82226 15 6.45856 15C7.08776 15 7.69852 14.5715 7.77159 13.992L7.82195 13.5955C8.00142 12.1902 9.10874 11.085 10.514 10.907L10.8885 10.8594C11.5192 10.7793 11.9157 10.1777 11.9157 9.54145C11.9157 8.90515 11.5199 8.30503 10.9077 8.22842Z'
@@ -123,26 +123,24 @@ const celebrations: Celebration[] = [
       </div>
       <SearchBox class="hero__search" placeholder="How can I help you today?" />
       <div class="chips">
-        <button v-for="c in chips" :key="c.label" class="chip" type="button" @click="soon(c.label)">
-          <MpIcon :name="c.icon" size="sm" class="chip__icon" />
+        <MpButton v-for="c in chips" :key="c.label" class="chip" type="button" :left-icon="c.icon" @click="soon(c.label)">
           {{ c.label }}
-        </button>
-        <button class="chip" type="button" @click="soon('Add actions')">
-          <MpIcon name="add" size="sm" class="chip__icon" />
+        </MpButton>
+        <MpButton class="chip" type="button" left-icon="add" @click="soon('Add actions')">
           Add actions
-        </button>
+        </MpButton>
       </div>
     </section>
 
     <!-- ── Get started strip ────────────────────────────────────────────── -->
     <div class="strip">
-      <button v-for="s in strip" :key="s.title" class="strip__item" type="button" :style="{ background: s.bg }" @click="soon(s.title)">
+      <MpButton v-for="s in strip" :key="s.title" class="strip__item" type="button" :style="{ background: s.bg }" @click="soon(s.title)">
         <span class="strip__text">
           <span class="strip__title">{{ s.title }}</span>
           <span class="strip__desc">{{ s.desc }}</span>
         </span>
         <img :src="s.icon" alt="" class="strip__icon">
-      </button>
+      </MpButton>
     </div>
 
     <!-- Below the strip: 8-of-12-column content, centered (banner + stats + grid) -->
@@ -158,7 +156,7 @@ const celebrations: Celebration[] = [
         <p class="banner__title">February payroll hasn't been finalized yet</p>
         <p class="banner__sub">Due date: 1 Mar - 1 day away. Make sure all attendance data is complete before running payroll.</p>
       </div>
-      <button class="banner__btn" type="button" @click="soon('Review payroll')">Review payroll</button>
+      <MpButton class="banner__btn" type="button" @click="soon('Review payroll')">Review payroll</MpButton>
     </div>
 
     <!-- ── KPI stats ────────────────────────────────────────────────────── -->
@@ -172,10 +170,10 @@ const celebrations: Celebration[] = [
           <svg v-else-if="s.deltaTone === 'warn'" class="stat__delta-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" fill="currentColor"/><path d="M12 9v4" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.05" fill="#fff"/></svg>
           {{ s.delta }}
         </p>
-        <button class="stat__ai" type="button" @click="soon(s.ai)">
+        <MpButton class="stat__ai" type="button" @click="soon(s.ai)">
           <Sparkle :size="14" />
           {{ s.ai }}
-        </button>
+        </MpButton>
       </div>
     </div>
 
@@ -187,10 +185,9 @@ const celebrations: Celebration[] = [
         <section class="card">
           <header class="card__head">
             <h3 class="card__title">Pending requests</h3>
-            <button class="card__filter" type="button" @click="soon('All requests')">
+            <MpButton class="card__filter" type="button" left-icon="caret-down" @click="soon('All requests')">
               All requests
-              <MpIcon name="caret-down" size="sm" />
-            </button>
+            </MpButton>
           </header>
           <div class="ai-note">
             <Sparkle :size="16" />
@@ -204,7 +201,7 @@ const celebrations: Celebration[] = [
                 <p class="req__text">{{ r.text }}</p>
                 <p v-if="r.meta" class="req__meta">{{ r.meta }}</p>
               </div>
-              <button class="icon-btn" type="button" @click="soon('Request actions')"><MpIcon name="menu-kebab" size="md" /></button>
+              <MpButton class="icon-btn" type="button" left-icon="menu-kebab" @click="soon('Request actions')" />
             </div>
           </div>
         </section>
@@ -213,7 +210,7 @@ const celebrations: Celebration[] = [
         <section class="card card--pad">
           <header class="card__head">
             <h3 class="card__title">Attendance today</h3>
-            <button class="card__link" type="button" @click="soon('Attendance report')">Full report <MpIcon name="arrows-right" size="sm" /></button>
+            <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('Attendance report')">Full report</MpButton>
           </header>
           <div class="ai-note">
             <Sparkle :size="16" />
@@ -239,7 +236,7 @@ const celebrations: Celebration[] = [
         <section class="card card--pad">
           <header class="card__head">
             <h3 class="card__title">Announcement</h3>
-            <button class="card__link" type="button" @click="soon('Manage announcements')">Manage announcements <MpIcon name="arrows-right" size="sm" /></button>
+            <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('Manage announcements')">Manage announcements</MpButton>
           </header>
           <div class="ann-list">
             <article v-for="(a, i) in announcements" :key="a.title" class="ann" :class="{ 'ann--divider': i > 0 }">
@@ -257,7 +254,7 @@ const celebrations: Celebration[] = [
         <section class="card card--pad">
           <header class="card__head">
             <h3 class="card__title">Upcoming events</h3>
-            <button class="card__link" type="button" @click="soon('Calendar')">View calendar <MpIcon name="arrows-right" size="sm" /></button>
+            <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('Calendar')">View calendar</MpButton>
           </header>
           <div class="ai-note">
             <Sparkle :size="16" />
@@ -281,7 +278,7 @@ const celebrations: Celebration[] = [
         <section class="card card--pad">
           <header class="card__head">
             <h3 class="card__title">Headcount trend</h3>
-            <button class="card__link" type="button" @click="soon('Headcount report')">Full report <MpIcon name="arrows-right" size="sm" /></button>
+            <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('Headcount report')">Full report</MpButton>
           </header>
           <div class="hc-stats">
             <div class="hc-stat">
@@ -315,7 +312,7 @@ const celebrations: Celebration[] = [
         <section class="card card--pad">
           <header class="card__head">
             <h3 class="card__title">Birthday &amp; anniversaries</h3>
-            <button class="card__link" type="button" @click="soon('All celebrations')">View all <MpIcon name="arrows-right" size="sm" /></button>
+            <MpButton class="card__link" type="button" left-icon="arrows-right" @click="soon('All celebrations')">View all</MpButton>
           </header>
           <div class="cel-list">
             <div v-for="c in celebrations" :key="c.name" class="cel">
@@ -334,10 +331,9 @@ const celebrations: Celebration[] = [
     </div>
 
     <!-- ── Footer ───────────────────────────────────────────────────────── -->
-    <button class="manage" type="button" @click="soon('Manage widgets')">
-      <MpIcon name="settings" size="sm" />
+    <MpButton class="manage" type="button" left-icon="settings" @click="soon('Manage widgets')">
       Manage widgets
-    </button>
+    </MpButton>
   </div>
 </template>
 
@@ -418,7 +414,7 @@ const celebrations: Celebration[] = [
   margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  border: 1px solid #C8E4DA;
+  border: 1px solid var(--mp-colors-success-weaker);
   border-radius: var(--mp-radii-xl, 12px);
   background: var(--mp-background-neutral, #fff);
   overflow: hidden;
@@ -431,7 +427,7 @@ const celebrations: Celebration[] = [
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-5) var(--mp-spacing-6);
   border: none;
-  border-left: 1px solid #C8E4DA;
+  border-left: 1px solid var(--mp-colors-success-weaker);
   cursor: pointer;
   text-align: left;
 }
@@ -464,7 +460,7 @@ const celebrations: Celebration[] = [
   border: none;
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-inverse-bold, #272b32);
-  color: #fff;
+  color: var(--mp-colors-white);
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
   cursor: pointer;

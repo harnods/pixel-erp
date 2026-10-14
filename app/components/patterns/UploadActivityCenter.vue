@@ -6,7 +6,7 @@
  * starts (bound to `uploadCenterOpen`).
  */
 import { computed } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, css, MpButton } from '@mekari/pixel3'
 import IconButton from '~/components/IconButton.vue'
 import {
   uploadBatches, uploadCenterOpen, hasActiveUpload,
@@ -80,7 +80,7 @@ function viewAll() {
         <!-- Bottom bar -->
         <div class="ac-foot">
           <span class="ac-foot__label">{{ footLabel }}</span>
-          <button v-if="uploadBatches.length" type="button" class="ac-foot__btn" @click="viewAll">View all</button>
+          <MpButton v-if="uploadBatches.length" class="ac-foot__btn" @click="viewAll">View all</MpButton>
         </div>
       </div>
     </MpPopoverContent>
@@ -105,6 +105,6 @@ function viewAll() {
 
 .ac-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2, 8px); padding: var(--mp-spacing-3, 12px) var(--mp-spacing-4, 16px); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .ac-foot__label { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
-.ac-foot__btn { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral, #fff); cursor: pointer; font-family: inherit; font-size: var(--mp-font-sizes-sm, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-secondary); }
+.ac-foot__btn { padding: var(--mp-spacing-1, 4px) var(--mp-spacing-3, 12px) !important; border: 1px solid var(--mp-border-default, #e3e7e9) !important; border-radius: var(--mp-radii-full, 999px) !important; background: var(--mp-background-neutral, #fff) !important; cursor: pointer; font-family: inherit !important; font-size: var(--mp-font-sizes-sm, 12px) !important; font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-text-secondary); min-width: 0 !important; }
 .ac-foot__btn:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 </style>

@@ -390,7 +390,7 @@ function onOpenErpCustomer() { infoToast(contact.value?.erpCustomerId ?? '') }
                     <div class="filter-search">
                       <MpIcon name="search" size="sm" />
                       <input v-model="dealSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-                      <button v-if="dealSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="dealSearch = ''"><MpIcon name="close" size="sm" /></button>
+                      <MpButton v-if="dealSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="dealSearch = ''" />
                     </div>
                   </div>
                 </template>
@@ -467,7 +467,7 @@ function onOpenErpCustomer() { infoToast(contact.value?.erpCustomerId ?? '') }
   <div v-else class="cr-missing">
     <MpIcon name="profile" size="lg" />
     <p>{{ t('Contact not found.') }}</p>
-    <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/customers/contacts')">{{ t('Back to Contacts') }}</button>
+    <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/customers/contacts')">{{ t('Back to Contacts') }}</MpButton>
   </div>
 </template>
 

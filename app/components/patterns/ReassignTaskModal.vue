@@ -15,7 +15,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete, MpButton,
 } from '@mekari/pixel3'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { isActiveUserName } from '~/data/users'
@@ -110,8 +110,8 @@ function save() {
       </MpModalBody>
       <MpModalFooter>
         <div class="rtm-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="!options.length" @click="save">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" :is-disabled="!options.length" @click="save">{{ t('Save') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

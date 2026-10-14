@@ -620,7 +620,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('All warehouse transfers') }}</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('All warehouse transfers') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ isEdit ? t('Edit warehouse transfer') : t('New warehouse transfer') }}</h1>
         </div>
@@ -647,7 +647,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <MpFormControl id="wtf-transno" class="wtf-f-transno">
             <div class="wtf-label-row">
               <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-              <button type="button" class="wtf-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
+              <MpButton type="button" class="wtf-label-icon" variant="ghost" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></MpButton>
             </div>
             <MpInput id="wtf-transno-input" model-value="" :placeholder="t('[Auto]')" is-full-width is-disabled />
           </MpFormControl>
@@ -693,20 +693,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="wtf-search-input" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
-          <!-- Hidden on a work order's transfer: its line-up is the order's.
-               Takes the shared `btn-enterprise` base now that the line is being
-               touched; `.wtf-import-btn` is scoped, so it still wins on every
-               property it sets and the button looks exactly as it did. -->
-          <button
-            v-if="!isSubconTransfer"
-            class="wtf-import-btn btn-enterprise" type="button" @click="importProducts"
-          >{{ t('Import') }}</button>
+          <!-- Hidden on a work order's transfer: its line-up is the order's. -->
+          <MpButton v-if="!isSubconTransfer" class="wtf-import-btn" variant="secondary" type="button" @click="importProducts">{{ t('Import') }}</MpButton>
         </div>
 
         <!-- Nothing outstanding on the originating work order: say so, rather
@@ -774,7 +768,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <span class="wtf-qty-stack">
                       <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
                       <span v-else class="wtf-batch-empty">—</span>
-                      <button class="wtf-manage-btn" type="button" @click="openBatchDrawer(row)">{{ t('Manage batch') }}</button>
+                      <MpButton class="wtf-manage-btn" variant="ghost" type="button" @click="openBatchDrawer(row)">{{ t('Manage batch') }}</MpButton>
                     </span>
                   </td>
                   <!-- Transfer qty: serial — input + Manage serial numbers stacked as 2 lines in the same cell -->
@@ -785,7 +779,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                         :value="row.qty"
                         @input="setQty(row, ($event.target as HTMLInputElement).value)"
                       />
-                      <button class="wtf-manage-btn wtf-manage-btn--under-input" type="button" @click="openSerialDrawer(row)">{{ t('Manage serial numbers') }}</button>
+                      <MpButton class="wtf-manage-btn wtf-manage-btn--under-input" variant="ghost" type="button" @click="openSerialDrawer(row)">{{ t('Manage serial numbers') }}</MpButton>
                     </div>
                   </td>
                   <!-- Transfer qty: regular with storage location -->
@@ -793,7 +787,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <span class="wtf-qty-stack">
                       <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
                       <span v-else class="wtf-batch-empty">—</span>
-                      <button class="wtf-manage-btn" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">{{ t('Manage storage location') }}</button>
+                      <MpButton class="wtf-manage-btn" variant="ghost" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">{{ t('Manage storage location') }}</MpButton>
                     </span>
                   </td>
                   <!-- Transfer qty: regular plain -->
@@ -810,17 +804,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wtf-td wtf-td--num">{{ afterTransfer(row).toLocaleString('id-ID') }}</td>
                   <td class="wtf-td wtf-td--muted">{{ row.unit }}</td>
                   <td class="wtf-td wtf-td--del">
-                    <button class="wtf-del-btn" type="button" @click="removeRow(row.id)">
+                    <MpButton class="wtf-del-btn" variant="ghost" type="button" @click="removeRow(row.id)">
                       <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
                 <tr v-if="!isSubconTransfer" class="wtf-tr">
                   <td class="wtf-td wtf-td--prod">
-                    <button class="wtf-prod-trigger" type="button" @click="drawerOpen = true">
+                    <MpButton class="wtf-prod-trigger" variant="ghost" type="button" @click="drawerOpen = true">
                       <span class="wtf-prod-placeholder">{{ t('Select product') }}</span>
                       <svg class="wtf-prod-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    </button>
+                    </MpButton>
                   </td>
                   <td class="wtf-td wtf-td--empty" colspan="7" />
                 </tr>
@@ -857,7 +851,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <ul v-if="attachedFiles.length" class="wtf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wtf-file-item">
                 <span class="wtf-file-name">{{ f.name }}</span>
-                <button class="wtf-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                <MpButton class="wtf-file-remove" variant="ghost" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></MpButton>
               </li>
             </ul>
           </div>
@@ -905,9 +899,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <div class="wtf-loc-panel" role="dialog" :aria-label="t('Manage storage location')">
         <header class="wtf-loc-header">
           <h2 class="wtf-loc-title">{{ t('Manage storage location') }}</h2>
-          <button class="wtf-loc-close" type="button" :aria-label="t('Close')" @click="closeLocDrawer">
+          <MpButton class="wtf-loc-close" variant="ghost" type="button" :aria-label="t('Close')" @click="closeLocDrawer">
             <MpIcon name="close" size="md" />
-          </button>
+          </MpButton>
         </header>
 
         <div class="wtf-loc-content">
@@ -976,9 +970,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <input v-model="r.qty" class="wtf-loc-qty-input" type="number" min="0" placeholder="0" />
                   </td>
                   <td class="wtf-loc-td wtf-loc-td--del">
-                    <button class="wtf-loc-del-btn" type="button" :disabled="locOriginRows.length === 1" @click="removeLocOriginRow(r.id)">
+                    <MpButton class="wtf-loc-del-btn" variant="ghost" type="button" :is-disabled="locOriginRows.length === 1" @click="removeLocOriginRow(r.id)">
                       <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
               </tbody>
@@ -1030,9 +1024,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <input v-model="r.qty" class="wtf-loc-qty-input" type="number" min="0" placeholder="0" />
                   </td>
                   <td class="wtf-loc-td wtf-loc-td--del">
-                    <button class="wtf-loc-del-btn" type="button" :disabled="locDestRows.length === 1" @click="removeLocDestRow(r.id)">
+                    <MpButton class="wtf-loc-del-btn" variant="ghost" type="button" :is-disabled="locDestRows.length === 1" @click="removeLocDestRow(r.id)">
                       <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
               </tbody>
@@ -1043,8 +1037,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
         </div>
 
         <footer class="wtf-loc-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeLocDrawer">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSavingLoc" @click="saveLocDrawer">{{ isSavingLoc ? t('Saving…') : t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="closeLocDrawer">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" :is-disabled="isSavingLoc" @click="saveLocDrawer">{{ isSavingLoc ? t('Saving…') : t('Save') }}</MpButton>
         </footer>
       </div>
     </div>

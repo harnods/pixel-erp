@@ -319,7 +319,7 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPutAway">{{ t('Put-away') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goPutAway">{{ t('Put-away') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New put-away') }}</h1>
@@ -490,14 +490,10 @@ async function handleCreate() {
                   <td class="pa-td">{{ row.unit }}</td>
                   <td class="pa-td pa-td--action">
                     <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pa-tt-batch-${row.rowKey}`" :label="t('View batch')" placement="top" use-portal>
-                      <button class="pa-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton class="pa-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="t('View batch')" @click="openViewBatch(row)" />
                     </MpTooltip>
                     <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pa-tt-serial-${row.rowKey}`" :label="t('View serial number')" placement="top" use-portal>
-                      <button class="pa-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton class="pa-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="t('View serial number')" @click="openViewSerial(row)" />
                     </MpTooltip>
                   </td>
                 </tr>

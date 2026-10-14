@@ -121,7 +121,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</button>
+        <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ bom.number }}</h1>
         </div>
@@ -131,12 +131,9 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
       <div class="detail-bar-actions">
         <MpPopover id="bomd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--secondary">
+            <MpButton class="detail-btn detail-btn--secondary" variant="secondary" right-icon="chevrons-down">
               {{ t('Actions') }}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -148,7 +145,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="detail-btn detail-btn--primary" @click="createWorkOrder">{{ t('Create work order') }}</button>
+        <MpButton class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
       </div>
     </header>
 
@@ -194,10 +191,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <!-- ── Raw materials ── -->
       <section class="bom-section">
-        <button class="bom-section-head" @click="collapsed.raw = !collapsed.raw">
+        <MpButton variant="ghost" class="bom-section-head" @click="collapsed.raw = !collapsed.raw">
           <h2 class="bom-section-title">{{ t('Raw materials') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.raw }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.raw">
           <div class="bom-table-scroll">
             <table class="bom-table">
@@ -231,10 +228,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <!-- ── Production cost — in-house only; a subcon BOM shows Subcon cost ── -->
       <section v-if="!isSubconBom" class="bom-section">
-        <button class="bom-section-head" @click="collapsed.cost = !collapsed.cost">
+        <MpButton variant="ghost" class="bom-section-head" @click="collapsed.cost = !collapsed.cost">
           <h2 class="bom-section-title">{{ t('Production cost') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.cost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.cost">
           <div class="bom-table-scroll">
             <table class="bom-table">
@@ -266,10 +263,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <!-- ── Routing ── -->
       <section v-if="!isSubconBom" class="bom-section">
-        <button class="bom-section-head" @click="collapsed.routing = !collapsed.routing">
+        <MpButton variant="ghost" class="bom-section-head" @click="collapsed.routing = !collapsed.routing">
           <h2 class="bom-section-title">{{ t('Routing') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.routing }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.routing">
           <div class="bom-table-scroll">
             <table class="bom-table">
@@ -297,10 +294,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <!-- ── Subcon cost — the vendor's charges, in place of production + routing ── -->
       <section v-if="isSubconBom" class="bom-section">
-        <button class="bom-section-head btn-enterprise" @click="collapsed.subconCost = !collapsed.subconCost">
+        <MpButton variant="ghost" class="bom-section-head" @click="collapsed.subconCost = !collapsed.subconCost">
           <h2 class="bom-section-title">{{ t('Subcon cost') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.subconCost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.subconCost">
           <div class="bom-table-scroll">
             <table class="bom-table">
@@ -345,10 +342,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <!-- ── Finished goods ── -->
       <section class="bom-section bom-section--last">
-        <button class="bom-section-head" @click="collapsed.finished = !collapsed.finished">
+        <MpButton variant="ghost" class="bom-section-head" @click="collapsed.finished = !collapsed.finished">
           <h2 class="bom-section-title">{{ t('Finished goods') }}</h2>
           <svg class="bom-chevron" :class="{ 'bom-chevron--open': !collapsed.finished }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.finished">
           <!-- Main output -->
           <h3 class="bom-subsection-title">{{ t('Main output') }}</h3>
@@ -449,7 +446,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</button>
+        <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</MpButton>
         <div class="detail-titlerow-left"><h1 class="detail-title">{{ t('Bill of materials not found') }}</h1></div>
       </div>
     </header>

@@ -380,11 +380,11 @@ async function save() {
               <div v-if="form.groups.length" class="nc-chips">
                 <span v-for="g in form.groups" :key="g" class="nc-chip">
                   {{ g }}
-                  <button class="btn-enterprise btn-enterprise--plain nc-chip-remove" :aria-label="`${t('Remove')} ${g}`" @click="toggleGroup(g)">
+                  <MpButton class="btn-enterprise btn-enterprise--plain nc-chip-remove" :aria-label="`${t('Remove')} ${g}`" @click="toggleGroup(g)">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                     </svg>
-                  </button>
+                  </MpButton>
                 </span>
               </div>
             </MpFormControl>
@@ -746,9 +746,7 @@ async function save() {
        well-formed NPWP + NITKU ──────────────────────────────────────────────── -->
   <MpPopover id="nc-demo-fab" is-close-on-select use-portal placement="top-end">
     <MpPopoverTrigger>
-      <button class="demo-fab btn-enterprise" :aria-label="t('Change scenario state')">
-        <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
+      <MpButton class="demo-fab btn-enterprise" left-icon="sliders" :aria-label="t('Change scenario state')" />
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content' })">
       <p class="demo-fab-heading">{{ t('NPWP & NITKU validation result') }}</p>

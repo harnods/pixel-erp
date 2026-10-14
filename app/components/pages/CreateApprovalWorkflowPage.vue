@@ -204,7 +204,7 @@ async function save() {
     <!-- ── Page title bar (neutral-subtle bg, 72px, breadcrumb + title) ── -->
     <div class="caw-titlebar">
       <div class="caw-titlebar-left">
-        <button class="caw-breadcrumb btn-enterprise" @click="goBack">{{ t('Approval workflows') }}</button>
+        <MpButton variant="link" class="caw-breadcrumb btn-enterprise" @click="goBack">{{ t('Approval workflows') }}</MpButton>
         <h1 class="caw-title">{{ isEdit ? t('Edit approval workflow') : t('New approval workflow') }}</h1>
       </div>
     </div>
@@ -422,12 +422,12 @@ async function save() {
             </div>
           </div>
 
-          <button type="button" class="caw-add-level-btn btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="addLevel">
+          <MpButton type="button" class="caw-add-level-btn btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="addLevel">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
             {{ t('Add approver level') }}
-          </button>
+          </MpButton>
         </div>
 
         <div class="caw-divider" />
@@ -448,10 +448,10 @@ async function save() {
         <!-- ── Action group ── -->
         <div class="caw-action-group">
           <div class="caw-action-right">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary caw-btn-save" :disabled="isSaving" @click="save">
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary caw-btn-save" :is-disabled="isSaving" @click="save">
               {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
-            </button>
+            </MpButton>
           </div>
         </div>
 

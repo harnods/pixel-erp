@@ -280,17 +280,16 @@ function confirmDelete() {
 
     <!-- ── View tabs (saved views) ── -->
     <nav class="cc-viewtabs">
-      <button class="page-tab" :class="{ 'page-tab--active': activeViewId === 'all' }" type="button" @click="selectView('all')">All companies</button>
-      <button
+      <MpButton class="page-tab" :class="{ 'page-tab--active': activeViewId === 'all' }" type="button" variant="ghost" @click="selectView('all')">All companies</MpButton>
+      <MpButton
         v-for="v in crmCustomerViews" :key="v.id"
-        class="page-tab" :class="{ 'page-tab--active': activeViewId === v.id }" type="button" @click="selectView(v.id)"
-      >
-        <MpIcon :name="v.type === 'board' ? 'table-view-column' : 'table-view-list'" size="sm" />
-        {{ v.name }}
-      </button>
+        class="page-tab" :class="{ 'page-tab--active': activeViewId === v.id }" type="button" variant="ghost"
+        :left-icon="v.type === 'board' ? 'table-view-column' : 'table-view-list'"
+        @click="selectView(v.id)"
+      >{{ v.name }}</MpButton>
       <MpPopover id="cc-add-view" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
-          <button class="filter-icon-btn" type="button" aria-label="Add view"><MpIcon name="add" size="sm" /></button>
+          <MpButton class="filter-icon-btn" type="button" variant="ghost" aria-label="Add view" left-icon="add" />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
           <MpPopoverList>
@@ -343,26 +342,25 @@ function confirmDelete() {
             @update:model-value="(v: string) => (lifecycleFilter = v)"
           />
 
-          <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="openFilters">
-            <MpIcon name="filter" size="sm" />
+          <MpButton class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" left-icon="filter" @click="openFilters">
             All filters{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
-          </button>
+          </MpButton>
         </div>
 
         <div class="filter-right">
           <div class="filter-btn-group">
             <MpTooltip id="cus-airene" label="Ask Airene" placement="bottom" use-portal>
-              <button class="filter-icon-btn filter-icon-btn--airene" type="button" aria-label="Ask Airene" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
+              <MpButton class="filter-icon-btn filter-icon-btn--airene" type="button" variant="ghost" aria-label="Ask Airene" left-icon="airene-brand" @click="toggleAirene?.()" />
             </MpTooltip>
             <ColumnSettingsMenu v-if="activeView.type === 'table'" id="cus-columns" :items="columnItems" :visibility="columnVisibility" />
             <MpTooltip id="cus-export" label="Export" placement="bottom" use-portal>
-              <button class="filter-icon-btn" type="button" aria-label="Export" @click="exportCsv"><MpIcon name="download" size="md" /></button>
+              <MpButton class="filter-icon-btn" type="button" variant="ghost" aria-label="Export" left-icon="download" @click="exportCsv" />
             </MpTooltip>
           </div>
           <div class="filter-search">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             <input v-model="search" class="filter-search-input" type="text" placeholder="Search companies…" />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+            <MpButton v-if="search" class="search-clear-btn" type="button" variant="ghost" aria-label="Clear search" left-icon="close" @click="search = ''" />
           </div>
         </div>
       </div>
@@ -439,7 +437,7 @@ function confirmDelete() {
         <template #actions="{ row }">
           <MpPopover :id="`cus-actions-${(row as Row).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="row-kebab" type="button" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></button>
+              <MpButton class="row-kebab" type="button" variant="ghost" aria-label="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg></MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>

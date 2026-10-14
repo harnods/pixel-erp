@@ -330,19 +330,19 @@ function formatDate(iso: string) {
 
     <!-- ── Bulk bar → approve / reject selected rows ── -->
     <template #bulk-actions="{ selectedRows, deselectAll }">
-      <button
+      <MpButton
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         @click="bulkApprove(selectedRows as Set<number>, deselectAll)"
       >
         Approve
-      </button>
-      <button
+      </MpButton>
+      <MpButton
         class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
         :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
         @click="openBulkRejectModal(selectedRows as Set<number>, deselectAll)"
       >
         Reject
-      </button>
+      </MpButton>
     </template>
 
     <!-- ── Filter bar (existing pattern: filters, icon buttons, search) ── -->
@@ -447,7 +447,7 @@ function formatDate(iso: string) {
          popover, bottom-end/4px gap, plain-CSS tooltip — see memory) ── -->
     <template #actions="{ row }">
       <div class="row-actions">
-        <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click.stop="approveTask(row as Task)">Approve</button>
+        <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" @click.stop="approveTask(row as Task)">Approve</MpButton>
         <div class="row-actions__icons">
           <ApprovalLogPopover
             :id="`${idPrefix}-applog-${(row as Task).id}`"

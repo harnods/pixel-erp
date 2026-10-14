@@ -173,7 +173,7 @@ function orderBadge(status: string) {
   <div class="detail-page" v-if="customer">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" type="button" @click="router.push('/crm/customers')">Companies</button>
+        <MpButton class="detail-breadcrumb" type="button" variant="textLink" @click="router.push('/crm/customers')">Companies</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ customer.company }}</h1>
           <ErpStatusBadge v-bind="lifecycleBadge(lifecycleOf(customer))" />
@@ -314,17 +314,17 @@ function orderBadge(status: string) {
                   <div class="filter-right">
                     <div class="filter-btn-group">
                       <MpTooltip id="cd-ct-airene" label="Ask Airene" placement="bottom" use-portal>
-                        <button class="filter-icon-btn filter-icon-btn--airene" type="button" aria-label="Ask Airene" @click="toggleAirene?.()"><MpIcon name="airene-brand" size="md" /></button>
+                        <MpButton class="filter-icon-btn filter-icon-btn--airene" type="button" variant="ghost" aria-label="Ask Airene" left-icon="airene-brand" @click="toggleAirene?.()" />
                       </MpTooltip>
                       <ColumnSettingsMenu id="cd-ct-columns" :items="contactColumnItems" :visibility="contactVisibility" />
                       <MpTooltip id="cd-ct-export" label="Export" placement="bottom" use-portal>
-                        <button class="filter-icon-btn" type="button" aria-label="Export"><MpIcon name="download" size="md" /></button>
+                        <MpButton class="filter-icon-btn" type="button" variant="ghost" aria-label="Export" left-icon="download" />
                       </MpTooltip>
                     </div>
                     <div class="filter-search">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                       <input v-model="contactSearch" class="filter-search-input" type="text" placeholder="Search..." />
-                      <button v-if="contactSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="contactSearch = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
+                      <MpButton v-if="contactSearch" class="search-clear-btn" type="button" variant="ghost" aria-label="Clear search" @click="contactSearch = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></MpButton>
                     </div>
                   </div>
                 </template>
@@ -353,7 +353,7 @@ function orderBadge(status: string) {
                     <div class="filter-search">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                       <input v-model="dealSearch" class="filter-search-input" type="text" placeholder="Search..." />
-                      <button v-if="dealSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="dealSearch = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
+                      <MpButton v-if="dealSearch" class="search-clear-btn" type="button" variant="ghost" aria-label="Clear search" @click="dealSearch = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></MpButton>
                     </div>
                     <MpButton variant="tertiary" is-rounded @click="soon('New deal')">New deal</MpButton>
                   </div>
@@ -377,7 +377,7 @@ function orderBadge(status: string) {
                   <div class="filter-search">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                     <input v-model="orderSearch" class="filter-search-input" type="text" placeholder="Search..." />
-                    <button v-if="orderSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="orderSearch = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></button>
+                    <MpButton v-if="orderSearch" class="search-clear-btn" type="button" variant="ghost" aria-label="Clear search" @click="orderSearch = ''"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg></MpButton>
                   </div>
                   <MpButton variant="tertiary" is-rounded @click="soon('New order')">New order</MpButton>
                 </div>
@@ -431,7 +431,7 @@ function orderBadge(status: string) {
   <div v-else class="cd-missing">
     <MpIcon name="profile" size="lg" />
     <p>Company not found.</p>
-    <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/customers')">Back to Companies</button>
+    <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/customers')">Back to Companies</MpButton>
   </div>
 </template>
 

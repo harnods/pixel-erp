@@ -460,8 +460,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   <div v-if="task && po && task.needsCancelAck" class="ri-not-found">
     <p>The purchase order behind this task ({{ task.purchaseNo }}) was canceled.</p>
     <p>{{ t('There\'s nothing left to receive for it — acknowledging will cancel this task too.') }}</p>
-    <button class="ri-btn ri-btn--primary" type="button" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</button>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to task') }}</button>
+    <MpButton class="ri-btn ri-btn--primary" variant="primary" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</MpButton>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('Back to task') }}</MpButton>
   </div>
 
   <div v-else-if="task && po" class="detail-page">
@@ -470,9 +470,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceiving">{{ t('Receiving') }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goReceiving">{{ t('Receiving') }}</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ task.taskNo }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Receive items') }}</h1>
@@ -534,11 +534,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="ri-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="ghost" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -632,16 +632,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <!-- Manage action column — only for batch/serial SKUs -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--action">
                     <MpTooltip :id="`ri-tt-batch-${item.skuCode}`" :label="t('Manage batch')" placement="top" use-portal>
-                      <button class="ri-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(item.skuCode)">
+                      <MpButton class="ri-view-btn" variant="secondary" :aria-label="t('Manage batch')" @click="openBatchDrawer(item.skuCode)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.skuCode)" class="ri-td ri-td--action">
                     <MpTooltip :id="`ri-tt-serial-${item.skuCode}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                      <button class="ri-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(item.skuCode)">
+                      <MpButton class="ri-view-btn" variant="secondary" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(item.skuCode)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <td v-else class="ri-td ri-td--action"></td>
@@ -667,16 +667,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="ri-btn ri-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="ri-btn ri-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
-      <button class="ri-btn ri-btn--primary" @click="endReceiving">{{ t('Finish receiving') }}</button>
+      <MpButton class="ri-btn ri-btn--ghost" variant="ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton class="ri-btn ri-btn--secondary" variant="secondary" @click="saveDraft">{{ t('Save draft') }}</MpButton>
+      <MpButton class="ri-btn ri-btn--primary" variant="primary" @click="endReceiving">{{ t('Finish receiving') }}</MpButton>
     </footer>
   </div>
 
   <!-- Not found -->
   <div v-else class="ri-not-found">
     <p>{{ t('Receiving task not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goReceiving">{{ t('Back to Receiving') }}</button>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goReceiving">{{ t('Back to Receiving') }}</MpButton>
   </div>
 
   <!-- ── Finish receiving confirmation modal ── -->
@@ -703,13 +703,14 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       </MpModalBody>
       <MpModalFooter>
         <div class="ri-modal-footer">
-          <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? t('Continue receiving') : t('Cancel') }}</button>
-          <button
+          <MpButton class="ri-btn ri-btn--ghost" variant="ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? t('Continue receiving') : t('Cancel') }}</MpButton>
+          <MpButton
             class="ri-btn"
             :class="putAwayEnabledForTask ? 'ri-btn--secondary' : 'ri-btn--primary'"
+            :variant="putAwayEnabledForTask ? 'secondary' : 'primary'"
             @click="commitReceiving(false)"
-          >{{ draftOutstanding > 0 ? t('Finish as incomplete') : t('Save') }}</button>
-          <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">{{ t('Save & create put-away') }}</button>
+          >{{ draftOutstanding > 0 ? t('Finish as incomplete') : t('Save') }}</MpButton>
+          <MpButton v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" variant="primary" @click="commitReceiving(true)">{{ t('Save & create put-away') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

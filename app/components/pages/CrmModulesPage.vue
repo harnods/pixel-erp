@@ -14,13 +14,15 @@
 import { computed, reactive, ref, watch } from 'vue'
 import {
   MpButton, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpModal, MpModalHeader, MpModalContent, MpModalBody, MpModalFooter, MpModalCloseButton,
+  MpButtonGroup, MpInput, MpFormControl, MpFormLabel, MpFormErrorMessage, MpRadio,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule } from '~/data/crm'
+import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule, createCustomModule } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -28,8 +30,26 @@ const router = useRouter()
 
 function soon(what: string) { infoToast(`${what} — coming soon`) }
 function manage(m: CrmModule) { router.push(`/crm/settings/modules/${m.id}`) }
-// "+ New module" is its own page (/crm/settings/modules/new) — not a modal.
-function openNewModule() { router.push('/crm/settings/modules/new') }
+
+// ── New module creation modal ────────────────────────────────────────────────
+const newModuleOpen = ref(false)
+const newModuleName = ref('')
+const newModuleAccess = ref<'company' | 'team'>('company')
+const newModuleNameError = ref('')
+
+function openNewModule() {
+  newModuleName.value = ''
+  newModuleAccess.value = 'company'
+  newModuleNameError.value = ''
+  newModuleOpen.value = true
+}
+function continueNewModule() {
+  newModuleNameError.value = ''
+  if (!newModuleName.value.trim()) { newModuleNameError.value = t('Enter a module name.'); return }
+  newModuleOpen.value = false
+  const id = createCustomModule(newModuleName.value.trim(), 'pipeline', newModuleAccess.value, [], 'draft')
+  router.push({ path: `/crm/settings/modules/${id}`, query: { edit: '1', accessLocked: '1' } })
+}
 
 type ModuleRow = CrmModule & { access: string; conversionLabel: string }
 // The Modules index lists EVERY module — the Deals system module (edited via its
@@ -37,9 +57,7 @@ type ModuleRow = CrmModule & { access: string; conversionLabel: string }
 const rows = computed<ModuleRow[]>(() =>
   crmModules.map((m) => ({
     ...m,
-    // Generic custom modules (any id besides the hand-built 'deals'/'services')
-    // keep their own live record count instead of the static seeded field.
-    recordCount: (!m.system && m.id !== 'services') ? genericRecordsFor(m.id).length : m.recordCount,
+    recordCount: !m.system ? genericRecordsFor(m.id).length : m.recordCount,
     access: m.accessLevel === 'company' ? 'Company' : 'Team',
     conversionLabel: m.conversionTarget ? CRM_CONVERSION_LABELS[m.conversionTarget] : '—',
   })),
@@ -54,11 +72,10 @@ const columns: TableColumn[] = [
   { key: 'updatedAt',   label: 'Last updated', kind: 'date',   sortable: true, sortType: 'date'   },
 ]
 
-// Status badge: published=green, draft=gray, incomplete=yellow.
+// Status badge: published=green, draft=gray.
 const STATUS_BADGE: Record<string, { status: string; label: string }> = {
   published:  { status: 'active',  label: 'Published' },
   draft:      { status: 'draft',   label: 'Draft' },
-  incomplete: { status: 'pending', label: 'Incomplete' },
 }
 function statusBadge(s: string): { status: string; label: string } {
   return STATUS_BADGE[s] ?? { status: 'draft', label: s }
@@ -67,7 +84,6 @@ function statusBadge(s: string): { status: string; label: string } {
 const statusFilterOptions = [
   { value: 'published', label: 'Published' },
   { value: 'draft', label: 'Draft' },
-  { value: 'incomplete', label: 'Incomplete' },
 ]
 
 const {
@@ -138,7 +154,7 @@ watch(statusFilter, () => setPage(1))
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
             </div>
           </div>
         </template>
@@ -185,6 +201,38 @@ watch(statusFilter, () => setPage(1))
         </template>
       </ErpTablePage>
     </div>
+
+    <!-- New module creation modal -->
+    <MpModal id="crm-new-module-modal" :is-open="newModuleOpen" :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false" size="sm" @close="newModuleOpen = false" data-devchange="crm-new-module-modal">
+      <MpModalHeader>
+        {{ t('New module') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalContent>
+        <MpModalBody>
+          <div class="nmm-fields">
+            <MpFormControl id="nmm-name-fc">
+              <MpFormLabel>{{ t('Module name') }}</MpFormLabel>
+              <MpInput id="nmm-name" v-model="newModuleName" :placeholder="t('e.g. Projects, Tickets')" is-full-width :is-invalid="!!newModuleNameError" @keydown.enter="continueNewModule" />
+              <MpFormErrorMessage v-if="newModuleNameError">{{ newModuleNameError }}</MpFormErrorMessage>
+            </MpFormControl>
+            <MpFormControl id="nmm-access-fc">
+              <MpFormLabel>{{ t('Access level') }}</MpFormLabel>
+              <div class="nmm-radio-row">
+                <MpRadio id="nmm-access-company" name="nmm-access" value="company" :is-checked="newModuleAccess === 'company'" @change="newModuleAccess = 'company'">{{ t('Company') }}</MpRadio>
+                <MpRadio id="nmm-access-team" name="nmm-access" value="team" :is-checked="newModuleAccess === 'team'" @change="newModuleAccess = 'team'">{{ t('Team') }}</MpRadio>
+              </div>
+            </MpFormControl>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup>
+            <MpButton variant="ghost" is-rounded @click="newModuleOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="continueNewModule">{{ t('Continue') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+    </MpModal>
   </div>
 </template>
 
@@ -227,4 +275,8 @@ watch(statusFilter, () => setPage(1))
   color: var(--mp-colors-icon-default, #536062); border-radius: var(--mp-radii-full, 999px) !important;
 }
 .search-clear-btn:hover { background: var(--mp-colors-background-neutral-hovered, #eef0f3); }
+
+/* New module modal */
+.nmm-fields { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
+.nmm-radio-row { display: flex; align-items: center; gap: var(--mp-spacing-6, 24px); margin-top: var(--mp-spacing-1, 4px); }
 </style>

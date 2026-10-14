@@ -2,7 +2,7 @@
 import { ref, computed, watch, reactive, nextTick } from 'vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
-  MpIcon, MpTooltip,
+  MpIcon, MpTooltip, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpDatePicker, css,
 } from '@mekari/pixel3'
@@ -832,9 +832,9 @@ function fmtNum(n: number | null): string {
       <!-- Header -->
       <header class="mbd-header">
         <h2 class="mbd-title">Manage batch</h2>
-        <button class="mbd-close" type="button" aria-label="Close" @click="handleCancel">
+        <MpButton class="mbd-close" variant="ghost" type="button" aria-label="Close" @click="handleCancel">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <!-- Content -->
@@ -942,17 +942,18 @@ function fmtNum(n: number | null): string {
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <span>{{ activeBin }}</span>
-            <button class="mbd-active-bin-clear" type="button" aria-label="Clear active bin" @click="activeBin = null">
+            <MpButton class="mbd-active-bin-clear" variant="ghost" type="button" aria-label="Clear active bin" @click="activeBin = null">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
-          <button
+          <MpButton
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+            variant="secondary"
             type="button"
             @click="resetPickedCount"
-          >Reset count</button>
+          >Reset count</MpButton>
         </ScanBar>
         <p v-if="isPutAway || isPicking" class="mbd-scan-caption">Scan the storage location first before scanning the batch number.</p>
 
@@ -966,9 +967,9 @@ function fmtNum(n: number | null): string {
             <p v-if="isCountKind" class="mbd-empty-desc">Scan a batch barcode above.</p>
             <template v-else>
               <p class="mbd-empty-desc">Scan a batch barcode above, or add one manually.</p>
-              <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="addNewBatch">
+              <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" type="button" @click="addNewBatch">
                 <MpIcon name="add" size="sm" /> Add new batch
-              </button>
+              </MpButton>
             </template>
           </div>
         </template>
@@ -979,12 +980,12 @@ function fmtNum(n: number | null): string {
           <div class="mbd-filter-left">
             <MpPopover v-if="!isInOut" id="mbd-progress" is-close-on-select use-portal>
               <MpPopoverTrigger>
-                <button class="mbd-progress-btn" :class="{ 'mbd-progress-btn--placeholder': progress === '' }" type="button">
+                <MpButton class="mbd-progress-btn" :class="{ 'mbd-progress-btn--placeholder': progress === '' }" variant="ghost" type="button">
                   {{ progressLabel }}
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
                 <MpPopoverList>
@@ -1001,11 +1002,11 @@ function fmtNum(n: number | null): string {
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
             <input v-model="search" class="mbd-search-input" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -1114,15 +1115,16 @@ function fmtNum(n: number | null): string {
                   </td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.unit }}</td>
                   <td class="mbd-td mbd-td--del">
-                    <button
+                    <MpButton
                       v-if="lr.locationId || row.destLocRows.length > 1"
                       class="mbd-del-btn"
+                      variant="ghost"
                       type="button"
                       aria-label="Remove location"
                       @click="paRemoveLocRow(row, lr)"
                     >
                       <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    </MpButton>
                   </td>
                 </tr>
               </template>
@@ -1220,7 +1222,7 @@ function fmtNum(n: number | null): string {
                     <span v-if="isPutAway" class="mbd-cell-val">{{ row.onHand.toLocaleString('id-ID') }}</span>
                     <span v-else-if="row.counted !== null" class="mbd-cell-val">{{ row.counted.toLocaleString('id-ID') }}</span>
                     <span v-else class="mbd-cell-empty">—</span>
-                    <button class="mbd-loc-link" :class="{ 'mbd-loc-link--set': batchLocIsSet(row) }" type="button" @click="openBatchLocDrawer(row)">Manage location</button>
+                    <MpButton class="mbd-loc-link" :class="{ 'mbd-loc-link--set': batchLocIsSet(row) }" variant="ghost" type="button" @click="openBatchLocDrawer(row)">Manage location</MpButton>
                   </span>
                 </td>
                 <td v-else class="mbd-td mbd-td--input mbd-td--counted" :class="{ 'mbd-td--counted-error': pickOverLimit }">
@@ -1281,9 +1283,9 @@ function fmtNum(n: number | null): string {
 
                 <!-- REMOVE -->
                 <td class="mbd-td mbd-td--del">
-                  <button class="mbd-del-btn" type="button" aria-label="Remove batch" @click="removeRow(row.key)">
+                  <MpButton class="mbd-del-btn" variant="ghost" type="button" aria-label="Remove batch" @click="removeRow(row.key)">
                     <MpIcon name="minus-circular" size="sm" />
-                  </button>
+                  </MpButton>
                 </td>
               </tr>
 
@@ -1343,8 +1345,8 @@ function fmtNum(n: number | null): string {
 
       <!-- Footer -->
       <footer class="mbd-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="handleCancel">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" :is-disabled="isSaving" @click="handleSave">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
       </footer>
 
     </div>
@@ -1357,9 +1359,9 @@ function fmtNum(n: number | null): string {
     <div class="mbd-loc2-panel" role="dialog" aria-label="Manage storage location">
       <header class="mbd-loc2-header">
         <h2 class="mbd-loc2-title">Manage storage location</h2>
-        <button class="mbd-close" type="button" aria-label="Close" @click="closeBatchLocDrawer">
+        <MpButton class="mbd-close" variant="ghost" type="button" aria-label="Close" @click="closeBatchLocDrawer">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <div class="mbd-loc2-content">
@@ -1433,9 +1435,9 @@ function fmtNum(n: number | null): string {
                   <input v-model="lr.qty" class="mbd-loc-qty-input" type="number" min="0" placeholder="0" />
                 </td>
                 <td class="mbd-loc-td mbd-loc-td--del">
-                  <button class="mbd-loc-del-btn" type="button" :disabled="batchLocOriginRows.length <= 1" @click="removeBatchOriginLoc(lr.id)">
+                  <MpButton class="mbd-loc-del-btn" variant="ghost" type="button" :is-disabled="batchLocOriginRows.length <= 1" @click="removeBatchOriginLoc(lr.id)">
                     <MpIcon name="minus-circular" size="sm" />
-                  </button>
+                  </MpButton>
                 </td>
               </tr>
             </tbody>
@@ -1494,9 +1496,9 @@ function fmtNum(n: number | null): string {
                   <input v-model="lr.qty" class="mbd-loc-qty-input" type="number" min="0" placeholder="0" />
                 </td>
                 <td class="mbd-loc-td mbd-loc-td--del">
-                  <button class="mbd-loc-del-btn" type="button" :disabled="batchLocDestRows.length <= 1" @click="removeBatchDestLoc(lr.id)">
+                  <MpButton class="mbd-loc-del-btn" variant="ghost" type="button" :is-disabled="batchLocDestRows.length <= 1" @click="removeBatchDestLoc(lr.id)">
                     <MpIcon name="minus-circular" size="sm" />
-                  </button>
+                  </MpButton>
                 </td>
               </tr>
             </tbody>
@@ -1507,8 +1509,8 @@ function fmtNum(n: number | null): string {
       </div>
 
       <footer class="mbd-loc2-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closeBatchLocDrawer">Cancel</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" :disabled="isSavingLoc" @click="saveBatchLocDrawer">{{ isSavingLoc ? 'Saving…' : 'Save changes' }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="closeBatchLocDrawer">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" :is-disabled="isSavingLoc" @click="saveBatchLocDrawer">{{ isSavingLoc ? 'Saving…' : 'Save changes' }}</MpButton>
       </footer>
     </div>
   </div>
@@ -1717,10 +1719,10 @@ function fmtNum(n: number | null): string {
 .mbd-active-bin {
   display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
   padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-2\.5);
-  background: #e6f7ef; border: 1px solid #029861;
+  background: var(--mp-colors-success-weaker); border: 1px solid var(--mp-colors-success-default);
   border-radius: var(--mp-radii-full); white-space: nowrap;
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: #027a4e; flex-shrink: 0;
+  color: var(--mp-colors-success-bolder); flex-shrink: 0;
 }
 .mbd-active-bin-clear {
   background: none; border: none; padding: 0; cursor: pointer;
@@ -1750,15 +1752,15 @@ function fmtNum(n: number | null): string {
 
 /* Qty to pick exceeds the order qty — same pink cell + red bottom border as the
    New delivery order form's insufficient-stock cell. */
-.mbd-td--counted-error { background: #FCEEED; border-bottom-color: #E2483D; }
+.mbd-td--counted-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .mbd-td--counted-error .mbd-qty-input { background: transparent; }
 .mbd-qty-tooltip-wrap { display: block; width: 100%; }
 
 /* Put-away: qty entered without a storage location. Must come after the base
    .mbd-td / .mbd-td--pa-loc rules — same specificity, so declaration order
    decides which background/shadow wins. */
-.mbd-td--pa-loc-error { background: #FCEEED; }
-.mbd-td--pa-loc-error:focus-within { box-shadow: inset 0 0 0 1px #E2483D; }
+.mbd-td--pa-loc-error { background: var(--mp-colors-danger-weaker); }
+.mbd-td--pa-loc-error:focus-within { box-shadow: inset 0 0 0 1px var(--mp-colors-danger-default); }
 
 .mbd-cell-input {
   width: 100%; height: var(--mp-sizes-10, 40px);

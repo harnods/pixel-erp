@@ -1777,7 +1777,7 @@ function suppressFabClick(e: MouseEvent) {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goList">{{ t('Work orders') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Work order') }} #{{ wo.number.split('-').pop() }}</h1>
           <ErpStatusBadge
@@ -1792,12 +1792,12 @@ function suppressFabClick(e: MouseEvent) {
       <div class="detail-bar-actions">
         <MpPopover id="wod-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
-            <button class="detail-btn detail-btn--secondary">
+            <MpButton class="detail-btn detail-btn--secondary" variant="secondary">
               {{ t('Actions') }}
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -1812,23 +1812,23 @@ function suppressFabClick(e: MouseEvent) {
 
         <!-- Closing short is a different decision from closing, so it stands as
              its own control rather than hiding in the Actions menu. -->
-        <button
+        <MpButton
           v-if="canPartiallyProduce"
-          class="detail-btn detail-btn--secondary"
+          class="detail-btn detail-btn--secondary" variant="secondary"
           @click="goPartialProduction"
-        >{{ t('Partially produce') }}</button>
-        <button v-if="primaryAction" class="detail-btn detail-btn--primary" @click="handlePrimaryAction">{{ primaryAction }}</button>
+        >{{ t('Partially produce') }}</MpButton>
+        <MpButton v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
       </div>
     </header>
 
     <!-- ── Top-level tabs ── -->
     <div class="detail-toptabs" role="tablist">
-      <button
+      <MpButton
         v-for="tab in topTabs" :key="tab"
-        class="detail-toptab" :class="{ 'detail-toptab--active': activeTopTab === tab }"
+        class="detail-toptab" variant="ghost" :class="{ 'detail-toptab--active': activeTopTab === tab }"
         role="tab" :aria-selected="activeTopTab === tab"
         @click="activeTopTab = tab"
-      >{{ tab }}</button>
+      >{{ tab }}</MpButton>
     </div>
 
     <!-- ── Scrollable stage ── -->
@@ -1947,10 +1947,10 @@ function suppressFabClick(e: MouseEvent) {
            from its own stock, so nothing here was ever reserved, sent or
            consumed, and the table would report a plan nobody acted on. -->
       <section v-if="!subconIsBasic" class="wod-section">
-        <button class="wod-section-head" @click="collapsed.raw = !collapsed.raw">
+        <MpButton class="wod-section-head" variant="ghost" @click="collapsed.raw = !collapsed.raw">
           <h2 class="wod-section-title">{{ t('Raw materials') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.raw }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.raw">
           <div class="wod-table-scroll">
             <table class="wod-table">
@@ -2009,10 +2009,10 @@ function suppressFabClick(e: MouseEvent) {
       <!-- ── Production cost ── -->
       <!-- In-house cost structure — replaced by Subcon cost on a subcon WO. -->
       <section v-if="!subcon" class="wod-section">
-        <button class="wod-section-head" @click="collapsed.cost = !collapsed.cost">
+        <MpButton class="wod-section-head" variant="ghost" @click="collapsed.cost = !collapsed.cost">
           <h2 class="wod-section-title">{{ t('Production cost') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.cost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.cost">
           <div class="wod-table-scroll">
             <table class="wod-table">
@@ -2042,10 +2042,10 @@ function suppressFabClick(e: MouseEvent) {
 
       <!-- ── Routing ── -->
       <section v-if="!subcon" class="wod-section">
-        <button class="wod-section-head" @click="collapsed.routing = !collapsed.routing">
+        <MpButton class="wod-section-head" variant="ghost" @click="collapsed.routing = !collapsed.routing">
           <h2 class="wod-section-title">{{ t('Routing') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.routing }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.routing">
           <div class="wod-table-scroll">
             <table class="wod-table">
@@ -2081,10 +2081,10 @@ function suppressFabClick(e: MouseEvent) {
 
       <!-- ── Subcon cost — the vendor's charges, in place of production + routing ── -->
       <section v-if="subcon" class="wod-section">
-        <button class="wod-section-head btn-enterprise" @click="collapsed.subconCost = !collapsed.subconCost">
+        <MpButton class="wod-section-head" variant="ghost" @click="collapsed.subconCost = !collapsed.subconCost">
           <h2 class="wod-section-title">{{ t('Subcon cost') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.subconCost }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.subconCost">
           <div class="wod-table-scroll">
             <table class="wod-table">
@@ -2177,10 +2177,10 @@ function suppressFabClick(e: MouseEvent) {
 
       <!-- ── Finished goods ── -->
       <section class="wod-section wod-section--last">
-        <button class="wod-section-head" @click="collapsed.finished = !collapsed.finished">
+        <MpButton class="wod-section-head" variant="ghost" @click="collapsed.finished = !collapsed.finished">
           <h2 class="wod-section-title">{{ t('Finished goods') }}</h2>
           <svg class="wod-chevron" :class="{ 'wod-chevron--open': !collapsed.finished }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
         <template v-if="!collapsed.finished">
           <!-- Main output — shares its column widths with Other outputs (same colgroup) -->
           <h3 class="wod-subsection-title">{{ t('Main output') }}</h3>
@@ -2281,12 +2281,12 @@ function suppressFabClick(e: MouseEvent) {
       <!-- ── Bottom tabs (Partial production / Linked transactions) ── -->
       <section class="wod-section wod-section--tabs">
         <div class="wod-bottom-tabs" role="tablist">
-          <button
+          <MpButton
             v-for="tab in bottomTabs" :key="tab"
-            class="wod-bottom-tab" :class="{ 'wod-bottom-tab--active': activeBottomTab === tab }"
+            class="wod-bottom-tab" variant="ghost" :class="{ 'wod-bottom-tab--active': activeBottomTab === tab }"
             role="tab" :aria-selected="activeBottomTab === tab"
             @click="activeBottomTab = tab"
-          >{{ t(tab) }}</button>
+          >{{ t(tab) }}</MpButton>
         </div>
 
         <div v-if="activeBottomTab === 'Linked transactions' && fromProductionRequest">
@@ -2371,7 +2371,7 @@ function suppressFabClick(e: MouseEvent) {
         <img src="/illustrations/empty-folder.png" alt="" class="crr-empty-illustration" width="288" height="240" />
         <p class="wod-empty-title">No material consume & return</p>
         <p class="wod-empty-desc">Material consume & return will appear here.</p>
-        <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
+        <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
       </div>
     </div>
 
@@ -2437,7 +2437,7 @@ function suppressFabClick(e: MouseEvent) {
               <input v-model="crrSearch" class="filter-search-input" type="text" placeholder="Search..." />
             </div>
 
-            <button class="detail-btn detail-btn--secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</button>
+            <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
           </div>
         </template>
 
@@ -2472,11 +2472,11 @@ function suppressFabClick(e: MouseEvent) {
         <template #actions="{ row }">
           <MpPopover :id="`crr-actions-${(row as unknown as CrrRecord).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="row-kebab" aria-label="More actions">
+              <MpButton class="row-kebab" variant="ghost" aria-label="More actions">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '190px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -2512,12 +2512,12 @@ function suppressFabClick(e: MouseEvent) {
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wod-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button
-          class="wod-flow-fab" :class="{ 'wod-flow-fab--dragging': fabDragging }"
+        <MpButton
+          class="wod-flow-fab" variant="ghost" :class="{ 'wod-flow-fab--dragging': fabDragging }"
           :style="fabPos ? { left: fabPos.left + 'px', top: fabPos.top + 'px', right: 'auto', bottom: 'auto' } : undefined"
           :aria-label="t('Change work order flow')"
           @pointerdown="onFabPointerDown"
-        ><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        ><MpIcon name="sliders" size="md" color="icon.inverse" /></MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
         <p class="wod-flow-fab-heading">{{ t('Work order flow') }}</p>
@@ -2588,7 +2588,7 @@ function suppressFabClick(e: MouseEvent) {
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+        <MpButton class="detail-breadcrumb" variant="ghost" @click="goList">{{ t('Work orders') }}</MpButton>
         <div class="detail-titlerow-left"><h1 class="detail-title">{{ t('Work order not found') }}</h1></div>
       </div>
     </header>

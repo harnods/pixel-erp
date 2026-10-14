@@ -449,9 +449,7 @@ function confirmBulkDelete() {
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" variant="secondary" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
         </div>
       </div>
     </template>
@@ -508,9 +506,9 @@ function confirmBulkDelete() {
                 </tbody>
               </table>
               <div class="taxdoc-popover-footer">
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
+                <MpButton type="button" variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
                   {{ t('View details') }}
-                </button>
+                </MpButton>
               </div>
             </div>
           </MpPopoverContent>
