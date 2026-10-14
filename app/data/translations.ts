@@ -3958,4 +3958,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Request approved": "Pengajuan disetujui",
   "Request submitted": "Pengajuan dikirim",
   "Waiting for approval from {names} (level {n})": "Menunggu persetujuan dari {names} (level {n})",
+  "Cancellation": "Pembatalan",
+  "Requester": "Pengaju",
+  "Approver": "Penyetuju",
 }

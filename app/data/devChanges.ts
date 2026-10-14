@@ -55,23 +55,23 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-queue',
     title: 'Work orders: Awaiting approval tab',
     description:
-      'Approver queue (PRD "Require approval" tab, named Awaiting approval like other modules) with Approval log, Comments, Approve and Reject (reason required), plus bulk Approve / Reject. Switch "View as" in the scenario FAB to check level 1, level 2 and requester views.',
-    date: '2026-10-02',
+      'Approver queue (PRD "Require approval" tab, named Awaiting approval like other modules) with Approval log, Comments, Approve and Reject (reason required), plus bulk Approve / Reject. Switch "View as" in the scenario FAB to check level 1, level 2 and requester views. Table styled like the other approval queues (Purchase requests / Bills): "Work order #n" number link, Awaiting approval status badge, plain cells, Airene / Column settings / Export tools, inline Approve + quiet icon buttons. UXW copy: columns Date · Number · Transaction type · Warehouse · Requester · Status · Approver; types Start / Adjustment / Completion / Cancellation; search "Search...".',
+    date: '2026-10-14',
     files: ['WorkOrdersAwaitingApprovalPage.vue', 'woApproval.ts', 'ApprovalLogModal.vue'],
   },
   {
     id: 'wo-approval-list-indicator',
     title: 'Work order list: approval icon + status filter',
     description:
-      'Approval status filter (Waiting for approval / Rejected). The status badge stays as-is; while a request is pending an approval icon (Pixel task-todo, the Approval log icon) sits next to it with the tooltip "Waiting for approval" (no approver details) — shown only on work orders that need approval.',
-    date: '2026-10-10',
+      'Approval status filter (Waiting for approval / Rejected). The status badge stays as-is; a work order with a request waiting for approval shows a 12px "Awaiting approval" caption under the badge (no icon, no approver details).',
+    date: '2026-10-14',
     files: ['WorkOrdersIndexPage.vue'],
   },
   {
     id: 'wo-approval-detail',
     title: 'Work order detail: approval notices and guards',
     description:
-      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled). Notices carry no text buttons (the log opens from the header icon; Cancel approval request is in the Actions menu). Only ONE notice shows at a time — the latest: an inline refusal right after a click, otherwise the newest of the pending request (with its adjust / cancel reason), the undismissed rejection and the Adjust / Cancel-close reason.',
+      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled). The notice sits at the top of the scrolling content of the open tab, so it scrolls with the page. Notices carry no text buttons (the log opens from the header icon; Cancel approval request is in the Actions menu). Only ONE notice shows at a time — the latest: an inline refusal right after a click, otherwise the newest of the pending request (with its adjust / cancel reason), the undismissed rejection and the Adjust / Cancel-close reason.',
     date: '2026-10-10',
     files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue'],
   },

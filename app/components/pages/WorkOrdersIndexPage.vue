@@ -68,10 +68,7 @@ const APPROVAL_STATUS_OPTIONS = [
 ]
 const approvalStatusFilter = ref('')
 
-// Approval icon — only on work orders with a request waiting for approval.
-function approvalTooltip(wo: WorkOrder): string {
-  return isFrozen(wo.id) ? t('Waiting for approval') : ''
-}
+
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
 
@@ -300,22 +297,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
     <!-- ── Status badge ── -->
     <template #cell-status="{ row }">
-      <!-- Work order status as-is — a pending request doesn't change it; an approval icon
-           (Pixel task-todo, the Approval log icon) + "Waiting for approval" tooltip -->
+      <!-- Work order status as-is — a pending request doesn't change it; a 12px caption
+           under the badge says it's awaiting approval (rule/type-14-default: 12px = caption) -->
       <span class="wo-status-cell">
         <ErpStatusBadge
           :status="displayStatus(row as unknown as WorkOrder)"
           :label="displayStatus(row as unknown as WorkOrder) === 'in progress' ? t('In progress') : undefined"
           data-devchange="wo-approval-status"
         />
-        <MpTooltip
-          v-if="approvalTooltip(row as unknown as WorkOrder)"
-          :id="`wo-approval-tt-${row.id}`" :label="approvalTooltip(row as unknown as WorkOrder)" placement="top" use-portal
-        >
-          <span class="wo-approval-icon" tabindex="0" :aria-label="approvalTooltip(row as unknown as WorkOrder)" data-devchange="wo-approval-list-indicator">
-            <MpIcon name="task-todo" size="sm" />
-          </span>
-        </MpTooltip>
+        <span v-if="isFrozen((row as unknown as WorkOrder).id)" class="wo-approval-caption" data-devchange="wo-approval-list-indicator">{{ t('Awaiting approval') }}</span>
       </span>
     </template>
 
@@ -456,8 +446,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row */
-.wo-status-cell { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
-.wo-approval-icon { display: inline-flex; color: var(--mp-icon-default); cursor: default; }
+.wo-status-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
+.wo-approval-caption { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .row-kebab {
   display: flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);

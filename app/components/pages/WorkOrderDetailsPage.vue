@@ -23,18 +23,16 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpTooltip, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
-  MpBanner, MpBannerIcon, MpBannerDescription, MpBannerCloseButton,
 } from '@mekari/pixel3'
 import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
 import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import WoTransactionModal, { type WoTransactionMode, type WoTransactionResult } from '~/components/patterns/WoTransactionModal.vue'
-import WoRejectBanner from '~/components/patterns/WoRejectBanner.vue'
+import WoApprovalNotice, { type WoNotice } from '~/components/patterns/WoApprovalNotice.vue'
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
-import WoActionReasonBanner from '~/components/patterns/WoActionReasonBanner.vue'
 import {
   pendingForWorkOrder, rejectedNotices, rejectionOf, dismissRejection, guardMessage, startWorkOrder,
-  approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest, waitingForText,
+  approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest,
   approveRequest, displayStatus, typeLabel, requestTitle, requestById,
   canCancelRequest, cancelRequest, requestsForWorkOrder, commentsFor, addComment,
   type WoApprovalRequest,
@@ -271,11 +269,7 @@ const actionReasonRequest = computed(() => requestById(actionReason.value?.reque
  * (submitted at), an undismissed rejection (rejected at) and the Adjust / Cancel-close
  * reason (given at). A pending request's reason rides on its pending notice instead.
  */
-type Notice =
-  | { kind: 'guard' }
-  | { kind: 'pending'; request: WoApprovalRequest }
-  | { kind: 'rejected'; request: WoApprovalRequest }
-  | { kind: 'reason' }
+type Notice = WoNotice
 const notice = computed<Notice | null>(() => {
   if (guardText.value) return { kind: 'guard' }
   const candidates: { at: string; rank: number; n: Notice }[] = []
@@ -285,15 +279,7 @@ const notice = computed<Notice | null>(() => {
   candidates.sort((a, b) => b.at.localeCompare(a.at) || b.rank - a.rank)
   return candidates[0]?.n ?? null
 })
-const hasNotices = computed(() => !!notice.value)
 
-/** Short request name for the banners — "Start", "Adjustment ADJ-0007", "Cancel/close CXL-0002". */
-const SHORT_TYPE: Record<WoApprovalRequest['type'], string> = {
-  start: 'Start work order', adjustment: 'Adjustment', completion: 'Completion', cancel: 'Cancel/close',
-}
-function shortTitle(req: WoApprovalRequest): string {
-  return req.ref ? `${t(SHORT_TYPE[req.type])} ${req.ref}` : t(SHORT_TYPE[req.type])
-}
 
 // Freeze — any pending request locks every action but Print and Cancel approval request.
 // Actions stay enabled and explain themselves inline (rule: never disabled).
@@ -702,41 +688,14 @@ function suppressFabClick(e: MouseEvent) {
       >{{ t(tab) }}</MpButton>
     </div>
 
-    <!-- ── Work order approval notices — inside the content, under the Overview /
-         Material consume & return tabs, on whichever tab is open ── -->
-    <div v-if="hasNotices"
-      class="wod-notices" data-devchange="wo-approval-detail">
-      <MpBanner v-if="notice?.kind === 'guard'" variant="danger" is-inline data-devchange="wo-approval-freeze">
-        <MpBannerIcon />
-        <MpBannerDescription>{{ t(guardText) }}</MpBannerDescription>
-        <MpBannerCloseButton @click="guardText = ''" />
-      </MpBanner>
-      <MpBanner v-else-if="notice?.kind === 'pending'" variant="warning">
-        <MpBannerIcon />
-        <MpBannerDescription>
-          <span data-devchange="wo-approval-status">
-            {{ t('{action} is waiting for approval from {names} (level {n}). Only Print is available until then.')
-              .replace('{action}', t(shortTitle(notice.request))).replace('{names}', waitingForText(notice.request)).replace('{n}', String(notice.request.currentLevel)) }}
-          </span>
-          <span v-if="notice.request.payload.note && notice.request.type !== 'start'" class="wod-notice-list" data-devchange="wo-approval-reason-banner">
-            {{ t('Reason') }}: {{ notice.request.payload.note }}
-          </span>
-        </MpBannerDescription>
-      </MpBanner>
-      <WoRejectBanner
-        v-else-if="notice?.kind === 'rejected'"
-        :request="notice.request"
-        @dismiss="dismissRejection(notice.request.id)"
-      />
-      <WoActionReasonBanner
-        v-else-if="notice?.kind === 'reason' && actionReason"
-        :reason="actionReason"
-        :ref-no="actionReasonRequest?.ref"
-      />
-    </div>
-
     <!-- ── Scrollable stage ── -->
-    <div v-if="activeTopTab === 'Overview'" class="detail-stage" :class="{ 'detail-stage--continued': hasNotices }">
+    <div v-if="activeTopTab === 'Overview'" class="detail-stage">
+      <!-- Approval notice — top of the scrolling content, scrolls with it -->
+      <WoApprovalNotice
+        v-if="notice" :notice="notice" :guard-text="guardText"
+        :action-reason="actionReason" :action-reason-ref="actionReasonRequest?.ref"
+        @clear-guard="guardText = ''" @dismiss="dismissRejection"
+      />
 
       <!-- ── Work order info ── -->
       <section class="wod-section">
@@ -1042,7 +1001,13 @@ function suppressFabClick(e: MouseEvent) {
     </div>
 
     <!-- ── Material consume & return — no records at all: illustration only, no filter bar ── -->
-    <div v-else-if="consumeReturnRecords.length === 0" class="detail-stage detail-stage--crr" :class="{ 'detail-stage--continued': hasNotices }">
+    <div v-else-if="consumeReturnRecords.length === 0" class="detail-stage detail-stage--crr">
+      <!-- Approval notice — top of the scrolling content, scrolls with it -->
+      <WoApprovalNotice
+        v-if="notice" :notice="notice" :guard-text="guardText"
+        :action-reason="actionReason" :action-reason-ref="actionReasonRequest?.ref"
+        @clear-guard="guardText = ''" @dismiss="dismissRejection"
+      />
       <div class="crr-full-empty">
         <img src="/illustrations/empty-folder.png" alt="" class="crr-empty-illustration" width="288" height="240" />
         <p class="wod-empty-title">No material consume & return</p>
@@ -1052,7 +1017,13 @@ function suppressFabClick(e: MouseEvent) {
     </div>
 
     <!-- ── Material consume & return — with records ── -->
-    <div v-else class="detail-stage detail-stage--crr" :class="{ 'detail-stage--continued': hasNotices }">
+    <div v-else class="detail-stage detail-stage--crr">
+      <!-- Approval notice — top of the scrolling content, scrolls with it -->
+      <WoApprovalNotice
+        v-if="notice" :notice="notice" :guard-text="guardText"
+        :action-reason="actionReason" :action-reason-ref="actionReasonRequest?.ref"
+        @clear-guard="guardText = ''" @dismiss="dismissRejection"
+      />
       <ErpTablePage
         :columns="crrVisibleColumns"
         :rows="(crrPaginated as unknown as Record<string, unknown>[])"
@@ -1292,17 +1263,8 @@ function suppressFabClick(e: MouseEvent) {
   border-radius: 0 var(--mp-radii-full) var(--mp-radii-full) 0 !important;
   border-left: 1px solid var(--mp-border-default) !important;
 }
-/* Notices are the top of the white content area (under the tabs): same surface and
-   top radius as .detail-stage, which then continues square-topped below them.
-   flex-shrink: 0 — the page is a fixed-height flex column; without it the banners get
-   squeezed and scroll internally instead of pushing the stage down. */
-.wod-notices {
-  flex-shrink: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-6) var(--mp-spacing-6) 0;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
-}
-.detail-stage.detail-stage--continued { border-radius: 0; border-top-width: var(--mp-spacing-5); }
-.wod-notice-list { display: block; margin-top: var(--mp-spacing-1); color: var(--mp-text-secondary); }
+/* The approval notice is the stage's first child — keep the first section flush under it. */
+.wan + .wod-section { padding-top: 0; }
 .wod-waiting { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 
 /* The view-tracking drawer opens from inside CompleteWorkOrderModal (z-index
