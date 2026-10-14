@@ -64,13 +64,13 @@ function toggleTag(tag: string) {
 
     <MpPopoverContent :class="css({ padding: '8px', minWidth: '240px', maxHeight: '320px', overflowY: 'auto', borderRadius: '12px' })" @blur="open = false" @escape="open = false">
       <div class="tcf-comparators">
-        <button
+        <MpButton
           v-for="c in COMPARATORS" :key="c"
           class="tcf-option" :class="{ 'tcf-option--selected': c === comparator }"
           type="button" @click.stop="selectComparator(c)"
         >
           {{ COMPARATOR_LABELS[c] }}
-        </button>
+        </MpButton>
       </div>
       <div v-if="options.length" class="tcf-divider" />
       <ul v-if="options.length" class="tcf-list">

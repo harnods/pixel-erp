@@ -60,6 +60,7 @@ const sidebar = [
   },
   {
     label: 'Navigation', items: [
+      { slug: 'header-bar', label: 'Global header bar' },
       { slug: 'tabs', label: 'Tabs' },
       { slug: 'popover', label: 'Popover' },
     ],

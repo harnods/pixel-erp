@@ -9,7 +9,7 @@
  */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { MpProgress, MpIcon } from '@mekari/pixel3'
+import { MpProgress, MpIcon, MpButton } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
   CUTOVER_TOTAL_PRODUCTS,
@@ -103,9 +103,9 @@ function openPending() {
       </div>
 
       <div class="dm-card-actions">
-        <button type="button" class="btn-enterprise btn-enterprise--primary" @click="openCutover">
+        <MpButton type="button" class="btn-enterprise btn-enterprise--primary" @click="openCutover">
           {{ isStarted ? t('Continue setup') : t('Start setup') }}
-        </button>
+        </MpButton>
       </div>
     </section>
 
@@ -125,9 +125,9 @@ function openPending() {
         </div>
       </div>
       <div class="dm-card-actions">
-        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="openPending">
+        <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" @click="openPending">
           {{ t('Review products') }}
-        </button>
+        </MpButton>
       </div>
     </section>
   </div>

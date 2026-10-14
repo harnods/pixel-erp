@@ -199,15 +199,17 @@ function clearFilters() {
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const statusOptions = [
-  { label: t('All status'), value: ''        },
-  { label: t('Paid'),       value: 'paid'    },
-  { label: t('Open'),       value: 'open'    },
-  { label: t('Overdue'),    value: 'overdue' },
+  { label: t('All status'),     value: ''               },
+  { label: t('Paid'),           value: 'paid'           },
+  { label: t('Partially paid'), value: 'partially-paid' },
+  { label: t('Open'),           value: 'open'           },
+  { label: t('Overdue'),        value: 'overdue'        },
 ]
 const drawerStatusOptions = [
-  { label: t('Open'),    value: 'open'    },
-  { label: t('Paid'),    value: 'paid'    },
-  { label: t('Overdue'), value: 'overdue' },
+  { label: t('Open'),           value: 'open'           },
+  { label: t('Partially paid'), value: 'partially-paid' },
+  { label: t('Paid'),           value: 'paid'           },
+  { label: t('Overdue'),        value: 'overdue'        },
 ]
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
@@ -456,9 +458,7 @@ function confirmBulkDelete() {
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" variant="secondary" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
         </div>
       </div>
     </template>
@@ -483,50 +483,50 @@ function confirmBulkDelete() {
         >{{ t('Sales Invoice') }} #{{ value }}</a>
         <span class="number-cell-icons">
           <MpPopover v-if="(row as Row).hasTaxDocument" :id="`si-taxdoc-${(row as Row).id}`" use-portal :is-keep-alive="false" placement="bottom-start">
-              <MpPopoverTrigger>
-                <MpButton class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
-                  <MpIcon name="doc" size="sm" />
-                </MpButton>
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
-                <div class="taxdoc-popover">
-                  <div class="taxdoc-popover-head">
-                    <h3 class="taxdoc-popover-title">{{ t('Tax Document') }}</h3>
-                    <p class="taxdoc-popover-subtitle">{{ t('Sales Invoice') }} #{{ (row as Row).number }}</p>
-                  </div>
-                  <table class="taxdoc-popover-table">
-                    <colgroup>
-                      <col class="taxdoc-popover-col-label" />
-                      <col />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th>{{ t('Date') }}</th>
-                        <th>
-                          <span class="taxdoc-popover-th">
-                            {{ t('Number') }}
-                            <MpTooltip :id="`si-taxdoc-number-tt-${(row as Row).id}`" :label="t('Draft, awaiting approval, or rejected documents have no DJP number yet')" placement="top" use-portal>
-                              <MpIcon name="info" size="sm" />
-                            </MpTooltip>
-                          </span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="doc in taxDocumentsFor((row as Row).id)" :key="doc.id">
-                        <td>{{ doc.date }}</td>
-                        <td>{{ formatTaxDocumentNumber(doc) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <div class="taxdoc-popover-footer">
-                    <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
-                      {{ t('View details') }}
-                    </button>
-                  </div>
+            <MpPopoverTrigger>
+              <MpButton class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
+                <MpIcon name="doc" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
+              <div class="taxdoc-popover">
+                <div class="taxdoc-popover-head">
+                  <h3 class="taxdoc-popover-title">{{ t('Tax Document') }}</h3>
+                  <p class="taxdoc-popover-subtitle">{{ t('Sales Invoice') }} #{{ (row as Row).number }}</p>
                 </div>
-              </MpPopoverContent>
-            </MpPopover>
+                <table class="taxdoc-popover-table">
+                  <colgroup>
+                    <col class="taxdoc-popover-col-label" />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>{{ t('Date') }}</th>
+                      <th>
+                        <span class="taxdoc-popover-th">
+                          {{ t('Number') }}
+                          <MpTooltip :id="`si-taxdoc-number-tt-${(row as Row).id}`" :label="t('Draft, awaiting approval, or rejected documents have no DJP number yet')" placement="top" use-portal>
+                            <MpIcon name="info" size="sm" />
+                          </MpTooltip>
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="doc in taxDocumentsFor((row as Row).id)" :key="doc.id">
+                      <td>{{ doc.date }}</td>
+                      <td>{{ formatTaxDocumentNumber(doc) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="taxdoc-popover-footer">
+                  <MpButton type="button" variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
+                    {{ t('View details') }}
+                  </MpButton>
+                </div>
+              </div>
+            </MpPopoverContent>
+          </MpPopover>
           <MpIcon v-if="(row as Row).attachment" name="attachment" size="sm" class="attachment-icon" />
         </span>
       </div>

@@ -244,6 +244,15 @@ export function contactsOfType(type: ContactType): Contact[] {
   return contacts.filter((c) => c.types.includes(type))
 }
 
+/** Resolve a contact id from a customer/company display name (join on name, as
+ *  the Transactions tab does), so a credit memo can link back to its contact.
+ *  Overlaps with findContactByDisplayName above, which returns the record and
+ *  matches displayName only — worth collapsing into one accessor. */
+export function getContactIdByName(name: string): string | undefined {
+  const n = name.trim().toLowerCase()
+  return contacts.find((c) => c.displayName.toLowerCase() === n || c.companyName.toLowerCase() === n)?.id
+}
+
 /** Next free id (CT014, CT015, …). */
 function nextId(): string {
   const max = contacts.reduce((n, c) => {

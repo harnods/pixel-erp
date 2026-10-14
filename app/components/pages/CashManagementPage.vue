@@ -239,12 +239,12 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
       <div class="filter-right">
         <div class="filter-btn-group">
-          <button class="filter-icon-btn filter-icon-btn--airene btn-enterprise" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+          <MpButton class="filter-icon-btn filter-icon-btn--airene btn-enterprise" variant="ghost" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
               <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
             </svg>
-          </button>
+          </MpButton>
           <ColumnSettingsMenu id="cm-columns" :items="columnItems" :visibility="columnVisibility" />
         </div>
 
@@ -258,11 +258,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn btn-enterprise" type="button" :aria-label="t('Clear search')" @click="search = ''">
+          <MpButton v-if="search" class="search-clear-btn btn-enterprise" variant="ghost" type="button" :aria-label="t('Clear search')" @click="search = ''">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
             </svg>
-          </button>
+          </MpButton>
         </div>
       </div>
     </template>
@@ -270,9 +270,10 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <!-- ── Cell: Account code — chevron toggle + indentation for sub-accounts ── -->
     <template #cell-code="{ row }">
       <div class="code-cell" :style="{ '--depth': (row as TreeRow).depth }">
-        <button
+        <MpButton
           v-if="(row as TreeRow).hasChildren"
           class="tree-toggle btn-enterprise"
+          variant="ghost"
           :class="{ 'tree-toggle--open': isExpanded((row as TreeRow).id) }"
           :aria-label="isExpanded((row as TreeRow).id) ? t('Collapse') : t('Expand')"
           :aria-expanded="isExpanded((row as TreeRow).id)"
@@ -281,7 +282,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-        </button>
+        </MpButton>
         <MpTooltip
           v-else-if="isPinned((row as TreeRow).id)"
           :id="`cash-pin-${(row as TreeRow).id}`"
@@ -289,11 +290,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
           placement="top"
           use-portal
         >
-          <button class="pin-btn btn-enterprise" :aria-label="t('Click to unpin')" @click.stop="togglePin((row as TreeRow).id)">
+          <MpButton class="pin-btn btn-enterprise" variant="ghost" :aria-label="t('Click to unpin')" @click.stop="togglePin((row as TreeRow).id)">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path fill-rule="evenodd" clip-rule="evenodd" d="M12.5793 3.75687L12.8073 5.12526C12.8642 5.46649 12.7359 5.81229 12.4701 6.03375L9.66381 8.37232C10.0287 8.64316 10.3816 8.94698 10.7172 9.28258C11.0528 9.61817 11.3566 9.97111 11.6274 10.336L13.966 7.52967C14.1875 7.26392 14.5333 7.13554 14.8745 7.19241L16.2429 7.42048L12.5793 3.75687ZM12.455 11.686L14.9253 8.72157L17.6149 9.16984C18.5497 9.32563 19.134 8.19026 18.4639 7.52015L12.4796 1.53589C11.8095 0.865779 10.6741 1.45007 10.8299 2.38485L11.2782 5.07444L8.31377 7.5448C6.31575 6.56076 4.05569 6.44913 2.46491 7.65263C1.8483 8.11912 1.92122 8.94735 2.3662 9.39233L5.95649 12.9826L1.46967 17.4694C1.17678 17.7623 1.17678 18.2372 1.46967 18.5301C1.76256 18.823 2.23744 18.823 2.53033 18.5301L7.01715 14.0433L10.6074 17.6336C11.0524 18.0785 11.8806 18.1515 12.3471 17.5349C13.5506 15.9441 13.439 13.684 12.455 11.686ZM3.72167 8.62647C4.79964 8.06193 6.41574 8.16212 8.04645 9.10151C8.60563 9.42363 9.15189 9.83861 9.65653 10.3432C10.1612 10.8479 10.5761 11.3941 10.8982 11.9533C11.8376 13.584 11.9378 15.2001 11.3733 16.2781L3.72167 8.62647Z" fill="currentColor"/>
             </svg>
-          </button>
+          </MpButton>
         </MpTooltip>
         <span v-else class="tree-spacer" />
         <span>{{ (row as TreeRow).code }}</span>
@@ -347,13 +348,13 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <!-- ── Cell: Reconcile — its own right-aligned column (Figma 5527-171257) ── -->
     <template #cell-reconcile="{ row }">
       <span class="reconcile-cell">
-        <button
+        <MpButton
           v-if="(row as CashAccount).unreconciledCount > 0"
           class="reconcile-btn btn-enterprise btn-enterprise--secondary"
           @click.stop="goToDetail((row as CashAccount).id)"
         >
           {{ t('Reconcile') }} ({{ (row as CashAccount).unreconciledCount }})
-        </button>
+        </MpButton>
       </span>
     </template>
 
@@ -446,8 +447,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="archiveTarget = null">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmArchive">{{ t('Archive') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="archiveTarget = null">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmArchive">{{ t('Archive') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -472,8 +473,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       </MpModalBody>
       <MpModalFooter>
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="deleteTarget = null">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="deleteTarget = null">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

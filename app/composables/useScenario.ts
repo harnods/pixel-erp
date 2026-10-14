@@ -11,7 +11,7 @@
 // than relies on Nuxt's auto-import.
 import { ref } from "vue";
 
-export type Scenario = "ERP" | "WMS Standalone" | "WMS Ops" | "WMS Ops 2" | "XPM" | "BUZZ";
+export type Scenario = "ERP" | "WMS Standalone" | "WMS Ops" | "WMS Ops 2" | "XPM";
 
 const STORAGE_KEY = "erp-active-scenario";
 

@@ -18,6 +18,7 @@ import {
   MpIcon, MpButton, MpInput, MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   crmCustomers, addCrmCustomer, CRM_OWNERS, DEAL_STAGES, CRM_CURRENT_USER,
@@ -87,96 +88,71 @@ function openFull() { emit('open-full', seed()) }
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="cqd">
-      <div v-if="open" class="cqd-overlay">
-        <div class="cqd-panel" role="dialog" aria-label="Create deal">
-          <header class="cqd-header">
-            <span class="cqd-title">New deal</span>
-            <MpButton class="cqd-close" aria-label="Close" @click="emit('cancel')"><MpIcon name="close" size="md" /></MpButton>
-          </header>
+  <ErpDrawer :is-open="open" title="New deal" width="460px" aria-label="Create deal" @close="emit('cancel')">
+    <template #body>
+      <MpFormControl id="cqd-name-fc" :is-invalid="!!errors.name">
+        <MpFormLabel>Deal name</MpFormLabel>
+        <MpInput id="cqd-name" v-model="name" is-full-width maxlength="120" :is-invalid="!!errors.name" @update:model-value="errors.name = ''" />
+        <MpFormErrorMessage v-if="errors.name">{{ errors.name }}</MpFormErrorMessage>
+      </MpFormControl>
 
-          <div class="cqd-body">
-            <MpFormControl id="cqd-name-fc" :is-invalid="!!errors.name">
-              <MpFormLabel>Deal name</MpFormLabel>
-              <MpInput id="cqd-name" v-model="name" is-full-width maxlength="120" :is-invalid="!!errors.name" @update:model-value="errors.name = ''" />
-              <MpFormErrorMessage v-if="errors.name">{{ errors.name }}</MpFormErrorMessage>
-            </MpFormControl>
+      <MpFormControl id="cqd-customer-fc" :is-invalid="!!errors.customer">
+        <MpFormLabel>Customer</MpFormLabel>
+        <MpAutocomplete
+          id="cqd-customer"
+          v-model="customerId"
+          :data="customerData"
+          label-prop="name"
+          value-prop="id"
+          is-searchable
+          is-clearable
+          use-portal
+          is-full-width
+          is-show-button-action
+          placeholder="Select customer"
+          :is-invalid="!!errors.customer"
+          @update:model-value="errors.customer = ''"
+          @button-action="onCustomerAdd"
+        >
+          <template #buttonAction="{ currentSearch }">
+            {{ currentSearch ? `Add "${currentSearch}" as a new customer` : 'Add new customer' }}
+          </template>
+        </MpAutocomplete>
+        <MpFormErrorMessage v-if="errors.customer">{{ errors.customer }}</MpFormErrorMessage>
+      </MpFormControl>
 
-            <MpFormControl id="cqd-customer-fc" :is-invalid="!!errors.customer">
-              <MpFormLabel>Customer</MpFormLabel>
-              <MpAutocomplete
-                id="cqd-customer"
-                v-model="customerId"
-                :data="customerData"
-                label-prop="name"
-                value-prop="id"
-                is-searchable
-                is-clearable
-                use-portal
-                is-full-width
-                is-show-button-action
-                placeholder="Select customer"
-                :is-invalid="!!errors.customer"
-                @update:model-value="errors.customer = ''"
-                @button-action="onCustomerAdd"
-              >
-                <template #buttonAction="{ currentSearch }">
-                  {{ currentSearch ? `Add "${currentSearch}" as a new customer` : 'Add new customer' }}
-                </template>
-              </MpAutocomplete>
-              <MpFormErrorMessage v-if="errors.customer">{{ errors.customer }}</MpFormErrorMessage>
-            </MpFormControl>
-
-            <div class="cqd-field">
-              <span class="cqd-label">Stage</span>
-              <ErpFilterSelect id="cqd-stage" :model-value="stage" placeholder="Stage" :options="[...DEAL_STAGES]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (stage = v as DealStage)" />
-            </div>
-            <div class="cqd-field">
-              <span class="cqd-label">Owner</span>
-              <ErpFilterSelect id="cqd-owner" :model-value="owner" placeholder="Owner" :options="[...CRM_OWNERS]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (owner = v)" />
-            </div>
-
-            <p v-if="formError" class="cqd-form-error">{{ formError }}</p>
-          </div>
-
-          <footer class="cqd-footer">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('cancel')">Cancel</button>
-            <!-- Split button: Save + a caret whose menu offers "Continue with more details". -->
-            <div class="cqd-split">
-              <button class="btn-enterprise btn-enterprise--primary cqd-split-main" type="button" @click="save">Save</button>
-              <MpPopover id="cqd-save-more" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-                <MpPopoverTrigger>
-                  <button class="btn-enterprise btn-enterprise--primary cqd-split-caret" type="button" aria-label="More save options"><MpIcon name="chevrons-down" size="sm" /></button>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
-                  <MpPopoverList>
-                    <MpPopoverListItem @click="openFull">Continue with more details</MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </footer>
-        </div>
+      <div class="cqd-field">
+        <span class="cqd-label">Stage</span>
+        <ErpFilterSelect id="cqd-stage" :model-value="stage" placeholder="Stage" :options="[...DEAL_STAGES]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (stage = v as DealStage)" />
       </div>
-    </Transition>
-  </Teleport>
+      <div class="cqd-field">
+        <span class="cqd-label">Owner</span>
+        <ErpFilterSelect id="cqd-owner" :model-value="owner" placeholder="Owner" :options="[...CRM_OWNERS]" :is-clearable="false" width="100%" @update:model-value="(v: string) => (owner = v)" />
+      </div>
+
+      <p v-if="formError" class="cqd-form-error">{{ formError }}</p>
+    </template>
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="emit('cancel')">Cancel</MpButton>
+      <!-- Split button: Save + a caret whose menu offers "Continue with more details". -->
+      <div class="cqd-split">
+        <MpButton class="btn-enterprise btn-enterprise--primary cqd-split-main" variant="primary" type="button" @click="save">Save</MpButton>
+        <MpPopover id="cqd-save-more" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+          <MpPopoverTrigger>
+            <MpButton class="btn-enterprise btn-enterprise--primary cqd-split-caret" variant="primary" type="button" aria-label="More save options"><MpIcon name="chevrons-down" size="sm" /></MpButton>
+          </MpPopoverTrigger>
+          <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+            <MpPopoverList>
+              <MpPopoverListItem @click="openFull">Continue with more details</MpPopoverListItem>
+            </MpPopoverList>
+          </MpPopoverContent>
+        </MpPopover>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.cqd-enter-active, .cqd-leave-active { transition: background-color 250ms ease; }
-.cqd-enter-from, .cqd-leave-to { background-color: transparent; }
-.cqd-enter-active .cqd-panel { transition: transform 350ms ease-out; }
-.cqd-leave-active .cqd-panel { transition: transform 250ms ease-in; }
-.cqd-enter-from .cqd-panel, .cqd-leave-to .cqd-panel { transform: translateX(calc(100% + 12px)); }
-
-.cqd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.cqd-panel { margin: var(--mp-spacing-3); width: min(460px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-.cqd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-5); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
-.cqd-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cqd-close { display: inline-flex !important; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.cqd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-
 .cqd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5); padding: var(--mp-spacing-5); }
 .cqd-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
 .cqd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
@@ -199,8 +175,6 @@ function openFull() { emit('open-full', seed()) }
 .cqd-more:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 .cqd-form-error { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger, #c9372c); }
-
-.cqd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* Split button: Save + attached caret, joined into one pill. */
 .cqd-split { display: inline-flex; align-items: stretch; }

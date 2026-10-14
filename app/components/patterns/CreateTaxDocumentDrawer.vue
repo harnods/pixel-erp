@@ -461,7 +461,7 @@ function submitToDjp() { save('awaiting-approval') }
                     :placeholder="t('Select transaction document')"
                     :options="dkDocumentOptions"
                     :is-clearable="false"
-                    :is-disabled="dkDocumentForced"
+                    :disabled="dkDocumentForced"
                     width="100%"
                     @update:model-value="dkDocument = $event; errors.dkDocument = false"
                   />
@@ -479,7 +479,7 @@ function submitToDjp() { save('awaiting-approval') }
                     :placeholder="''"
                     :options="[{ value: exportDetail?.invoiceCode ?? '', label: exportDetail?.invoiceCode ?? '' }]"
                     :is-clearable="false"
-                    is-disabled
+                    disabled
                     width="100%"
                   />
                   <MpFormHelpText>{{ t('Set by the transaction detail.') }}</MpFormHelpText>
@@ -561,9 +561,9 @@ function submitToDjp() { save('awaiting-approval') }
           </div>
 
           <div class="ctd-footer">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="close">{{ t('Cancel') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">{{ t('Save as draft') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="submitToDjp">{{ t('Save & submit to DJP') }}</button>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="close">{{ t('Cancel') }}</MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="saveDraft">{{ t('Save as draft') }}</MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="submitToDjp">{{ t('Save & submit to DJP') }}</MpButton>
           </div>
         </div>
       </div>

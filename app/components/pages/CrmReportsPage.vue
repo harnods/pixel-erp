@@ -17,11 +17,15 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
+import CrmReportsFiltersDrawer, { emptyReportsFilters, type ReportsFiltersValue } from '~/components/patterns/CrmReportsFiltersDrawer.vue'
 import { useTableState } from '~/composables/useTableState'
 import { successToast } from '~/utils/toasts'
 import {
   crmReports, reportSourceModules, reportIsMine, reportIsSharedWithMe, reportIsAccessibleToMe,
-  cloneCrmReport, archiveCrmReport, restoreCrmReport, transferCrmReport, setCrmReportVisibility,
+  cloneCrmReport, archiveCrmReport, restoreCrmReport, canManageReport,
+  transferCrmReport, setCrmReportVisibility,
   REPORT_OWNER_OPTIONS, type CrmReport, type ReportVisibility,
 } from '~/data/crmReports'
 import { CRM_CURRENT_USER, getCrmModule } from '~/data/crm'
@@ -52,35 +56,60 @@ const visibleByView = computed<CrmReport[]>(() => {
   }
 })
 
-// ─── Filters ────────────────────────────────────────────────────────────────
-const moduleFilter = ref('')
-const ownerFilter = ref('')
-const visibilityFilter = ref('')
+// ─── Filters — a single "All filters" drawer (rule/filter-bar-all-filters-drawer):
+// Module + Owner (Is any of / Is none of) and Status + Visibility (checkboxes). ──
+const reportFilters = ref<ReportsFiltersValue>(emptyReportsFilters())
+const filtersOpen = ref(false)
+function openFilters() { filtersOpen.value = true }
+function onApplyFilters(f: ReportsFiltersValue) { reportFilters.value = f; filtersOpen.value = false }
 
-const moduleOptions = computed(() => reportSourceModules.value.map((m) => ({ value: m.id, label: m.name })))
-const ownerOptions = REPORT_OWNER_OPTIONS.map((o) => ({ value: o, label: o }))
+const moduleNames = computed(() => reportSourceModules.value.map((m) => m.name))
+const ownerNames = [...REPORT_OWNER_OPTIONS]
+// {value,label} shape for the Transfer-ownership ErpFilterSelect (below), as opposed
+// to ownerNames' plain string[] for the tag-comparator drawer field.
+const ownerSelectOptions = REPORT_OWNER_OPTIONS.map((o) => ({ value: o, label: o }))
+const statusOptions = [
+  { value: 'active', label: t('Active') },
+  { value: 'archived', label: t('Archived') },
+]
 const visibilityOptions = [
   { value: 'private', label: t('Private') },
   { value: 'selected', label: t('Selected Users/Teams') },
   { value: 'everyone', label: t('Everyone eligible') },
 ]
 
-const filteredRows = computed<CrmReport[]>(() =>
-  visibleByView.value.filter((r) =>
-    (!moduleFilter.value || r.primaryModuleId === moduleFilter.value)
-    && (!ownerFilter.value || r.ownerId === ownerFilter.value)
-    && (!visibilityFilter.value || r.visibility === visibilityFilter.value),
-  ),
-)
+// Apply an "Is any of / Is none of" tag comparator against a row value.
+function matchTag(comparator: 'isAnyOf' | 'isNoneOf', values: string[], value: string): boolean {
+  if (!values.length) return true
+  const has = values.includes(value)
+  return comparator === 'isAnyOf' ? has : !has
+}
+
+const filteredRows = computed<CrmReport[]>(() => {
+  const f = reportFilters.value
+  return visibleByView.value.filter((r) =>
+    matchTag(f.moduleComparator, f.modules, moduleName(r.primaryModuleId))
+    && matchTag(f.ownerComparator, f.owners, r.ownerId)
+    && (!f.statuses.length || f.statuses.includes(r.status))
+    && (!f.visibilities.length || f.visibilities.includes(r.visibility)),
+  )
+})
+
+const activeFilterCount = computed(() => {
+  const f = reportFilters.value
+  return f.modules.length + f.owners.length + f.statuses.length + f.visibilities.length
+})
+const hasActiveFilter = computed(() => !!search.value || activeFilterCount.value > 0)
+function clearFilters() { search.value = ''; reportFilters.value = emptyReportsFilters() }
 
 // ─── Table ──────────────────────────────────────────────────────────────────
 const allCols: TableColumn[] = [
-  { key: 'name', label: 'Report name', kind: 'name', sortType: 'text' },
-  { key: 'primaryModuleId', label: 'Primary module', sortType: 'text' },
+  { key: 'name', label: 'Name', kind: 'name', sortType: 'text' },
+  { key: 'primaryModuleId', label: 'Module', sortType: 'text' },
   { key: 'ownerId', label: 'Owner', sortType: 'text' },
   { key: 'visibility', label: 'Visibility', sortType: 'text' },
   { key: 'status', label: 'Status', kind: 'status' },
-  { key: 'updatedAt', label: 'Last modified', kind: 'date', sortType: 'date' },
+  { key: 'updatedAt', label: 'Last updated', kind: 'date', sortType: 'date' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map((c) => [c.key, true])))
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
@@ -98,14 +127,11 @@ function moduleName(id: string): string { return getCrmModule(id)?.name ?? id }
 function visibilityLabel(v: ReportVisibility): string {
   return v === 'private' ? t('Private') : v === 'selected' ? t('Selected Users/Teams') : t('Everyone eligible')
 }
-function statusType(status: CrmReport['status']): 'completed' | 'warning' | 'announcement' {
-  return status === 'active' ? 'completed' : status === 'needs-attention' ? 'warning' : 'announcement'
+function statusType(status: CrmReport['status']): 'completed' | 'announcement' {
+  return status === 'active' ? 'completed' : 'announcement'
 }
 function statusLabel(status: CrmReport['status']): string {
-  return status === 'active' ? t('Active') : status === 'needs-attention' ? t('Needs attention') : t('Archived')
-}
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  return status === 'active' ? t('Active') : t('Archived')
 }
 
 // ─── Row actions ────────────────────────────────────────────────────────────
@@ -115,15 +141,31 @@ function duplicate(r: CrmReport) {
   const clone = cloneCrmReport(r.id)
   if (clone) successToast(t('Report duplicated'))
 }
-function doArchive(r: CrmReport) { archiveCrmReport(r.id); successToast(t('Report archived')) }
-function doRestore(r: CrmReport) { restoreCrmReport(r.id); successToast(t('Report restored')) }
+
+// Archive / Restore — confirmed (rule/btn-danger-confirm scope also applied here
+// for consistency, though Archive/Restore are non-destructive/reversible).
+const archiveTarget = ref<CrmReport | null>(null)
+function openArchive(r: CrmReport) { archiveTarget.value = r }
+function confirmArchive() {
+  if (!archiveTarget.value) return
+  if (archiveTarget.value.status === 'archived') { restoreCrmReport(archiveTarget.value.id); successToast(t('Report restored')) }
+  else { archiveCrmReport(archiveTarget.value.id); successToast(t('Report archived')) }
+  archiveTarget.value = null
+}
+const archiveTitle = computed(() => archiveTarget.value?.status === 'archived' ? t('Restore report?') : t('Archive report?'))
+const archiveDescription = computed(() => archiveTarget.value?.status === 'archived' ? t('This report will be restored to the active list.') : t('This report will be archived. You can restore it later.'))
+const archiveConfirmLabel = computed(() => archiveTarget.value?.status === 'archived' ? t('Restore report') : t('Archive report'))
+
 
 // Transfer ownership modal
 const transferTarget = ref<CrmReport | null>(null)
 const transferTo = ref('')
-function openTransfer(r: CrmReport) { transferTarget.value = r; transferTo.value = '' }
+const transferError = ref('')
+function openTransfer(r: CrmReport) { transferTarget.value = r; transferTo.value = ''; transferError.value = '' }
 function confirmTransfer() {
-  if (!transferTarget.value || !transferTo.value) return
+  if (!transferTarget.value) return
+  if (!transferTo.value) { transferError.value = t('Select a new owner before transferring.'); return }
+  transferError.value = ''
   transferCrmReport(transferTarget.value.id, transferTo.value)
   successToast(t('Report ownership transferred'))
   transferTarget.value = null
@@ -172,19 +214,20 @@ const emptyCopy = computed(() => {
         :sort-key="sortKey"
         :sort-dir="sortDir"
         :loading="loading"
-        :has-active-search="!!search || !!moduleFilter || !!ownerFilter || !!visibilityFilter"
+        :search="search"
+        :has-active-filter="hasActiveFilter"
         filter-empty-label="report"
         @page-change="setPage"
         @per-page-change="setPerPage"
         @sort="toggleSort"
         @sort-change="setSort"
-        @clear-filters="search = ''; moduleFilter = ''; ownerFilter = ''; visibilityFilter = ''"
+        @clear-filters="clearFilters"
       >
         <template #filters>
           <div class="filter-left">
-            <ErpFilterSelect id="rpt-module-filter" v-model="moduleFilter" :placeholder="t('Primary module')" :options="moduleOptions" />
-            <ErpFilterSelect id="rpt-owner-filter" v-model="ownerFilter" :placeholder="t('Owner')" :options="ownerOptions" />
-            <ErpFilterSelect id="rpt-visibility-filter" v-model="visibilityFilter" :placeholder="t('Visibility')" :options="visibilityOptions" />
+            <MpButton class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" left-icon="filter" @click="openFilters">
+              {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
+            </MpButton>
           </div>
           <div class="filter-right">
             <MpButtonGroup class="filter-btn-group">
@@ -193,7 +236,7 @@ const emptyCopy = computed(() => {
             <div class="filter-search">
               <MpIcon name="search" size="md" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search reports...')">
-              <MpButton v-if="search" variant="ghost" class="filter-search-clear" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
+              <MpButton v-if="search" variant="ghost" is-rounded class="filter-search-clear" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
             </div>
           </div>
         </template>
@@ -208,10 +251,7 @@ const emptyCopy = computed(() => {
           <ErpStatusBadge :status="(row as unknown as CrmReport).status" :type="statusType((row as unknown as CrmReport).status)" :label="statusLabel((row as unknown as CrmReport).status)" />
         </template>
         <template #cell-updatedAt="{ row }">
-          <div class="rpt-updated">
-            <span>{{ formatDate((row as unknown as CrmReport).updatedAt) }}</span>
-            <span class="rpt-updated-by">{{ (row as unknown as CrmReport).updatedBy }}</span>
-          </div>
+          <LastUpdatedCell :at="(row as unknown as CrmReport).updatedAt" :by="(row as unknown as CrmReport).updatedBy" />
         </template>
 
         <template #actions="{ row }">
@@ -221,17 +261,14 @@ const emptyCopy = computed(() => {
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem @click="openReport(row as unknown as CrmReport)">{{ t('Run') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="openReport(row as unknown as CrmReport)">{{ t('View details') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="editReport(row as unknown as CrmReport)">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="duplicate(row as unknown as CrmReport)">{{ t('Clone') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="duplicate(row as unknown as CrmReport)">{{ t('Duplicate') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="openVisibility(row as unknown as CrmReport)">{{ t('Change visibility') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="openTransfer(row as unknown as CrmReport)">{{ t('Transfer ownership') }}</MpPopoverListItem>
-                <MpPopoverListItem
-                  v-if="(row as unknown as CrmReport).status !== 'archived'"
-                  :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
-                  @click="doArchive(row as unknown as CrmReport)"
-                >{{ t('Archive') }}</MpPopoverListItem>
-                <MpPopoverListItem v-else @click="doRestore(row as unknown as CrmReport)">{{ t('Restore') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canManageReport(row as unknown as CrmReport)" data-devchange="crm-reports-no-delete" @click="openArchive(row as unknown as CrmReport)">
+                  {{ (row as unknown as CrmReport).status === 'archived' ? t('Restore') : t('Archive') }}
+                </MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -250,17 +287,42 @@ const emptyCopy = computed(() => {
       </ErpTablePage>
     </div>
 
+    <!-- All filters drawer -->
+    <CrmReportsFiltersDrawer
+      id="rpt-filters"
+      :is-open="filtersOpen"
+      :model-value="reportFilters"
+      :module-options="moduleNames"
+      :owner-options="ownerNames"
+      :status-options="statusOptions"
+      :visibility-options="visibilityOptions"
+      @update:is-open="filtersOpen = $event"
+      @apply="onApplyFilters"
+    />
+
+    <!-- Archive / Restore confirmation -->
+    <ConfirmModal
+      :is-open="!!archiveTarget"
+      :title="archiveTitle"
+      :description="archiveDescription"
+      :confirm-label="archiveConfirmLabel"
+      :is-danger="false"
+      @update:is-open="(v) => { if (!v) archiveTarget = null }"
+      @confirm="confirmArchive"
+    />
+
     <!-- ── Transfer ownership ── -->
     <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false" id="rpt-transfer-modal" :is-open="!!transferTarget" size="md" :is-keep-alive="false" @close="transferTarget = null">
       <MpModalContent>
         <MpModalHeader>{{ t('Transfer ownership') }}<MpModalCloseButton /></MpModalHeader>
         <MpModalBody>
           <p class="rpt-modal-desc">{{ t('The new owner can edit, share, and manage this report. This does not change its visibility or shared audience.') }}</p>
-          <ErpFilterSelect id="rpt-transfer-to" v-model="transferTo" :placeholder="t('New owner')" :options="ownerOptions" width="100%" />
+          <ErpFilterSelect id="rpt-transfer-to" v-model="transferTo" :placeholder="t('New owner')" :options="ownerSelectOptions" width="100%" />
+          <p v-if="transferError" class="rpt-modal-error">{{ transferError }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="transferTarget = null">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" :disabled="!transferTo" @click="confirmTransfer">{{ t('Transfer') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="transferTarget = null">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmTransfer">{{ t('Transfer') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -275,8 +337,8 @@ const emptyCopy = computed(() => {
           <p class="rpt-modal-desc">{{ t('Sharing lets others discover and run this report. It does not grant them edit, export, or underlying data access beyond their own permissions.') }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="visTarget = null">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmVisibility">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="visTarget = null">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmVisibility">{{ t('Save') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -301,6 +363,7 @@ const emptyCopy = computed(() => {
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 .filter-btn-group { display: flex; align-items: center; }
+.filter-all-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3); font-weight: var(--mp-font-weights-semi-bold); }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
@@ -318,9 +381,8 @@ const emptyCopy = computed(() => {
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
 .filter-search-clear { display: inline-flex !important; align-items: center; justify-content: center; width: 20px !important; height: 20px !important; min-width: 0 !important; padding: 0 !important; color: var(--mp-text-subtle); }
 
-.rpt-updated { display: flex; flex-direction: column; gap: 2px; }
-.rpt-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .rpt-modal-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-3); }
+.rpt-modal-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); margin: var(--mp-spacing-2) 0 0; }
 
 .cell-link { color: var(--mp-text-link); cursor: pointer; white-space: normal; word-break: break-word; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }

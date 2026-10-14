@@ -6,6 +6,7 @@
  * for everything else ("Sales Order", "Manual").
  */
 import { computed } from 'vue'
+import { css } from '@mekari/pixel3'
 import erpIcon from '~/assets/images/marketplace/erp.svg?url'
 import lazadaIcon from '~/assets/images/marketplace/lazada.svg?url'
 import tiktokIcon from '~/assets/images/marketplace/tiktok.svg?url'
@@ -24,17 +25,33 @@ const props = defineProps<{ source: string | null | undefined }>()
 const marketplaceName = computed(() => (props.source ?? '').split(':')[0]?.trim() ?? '')
 const icon = computed(() => MARKETPLACE_ICONS[marketplaceName.value] ?? erpIcon)
 const iconAlt = computed(() => MARKETPLACE_ICONS[marketplaceName.value] ? marketplaceName.value : 'ERP')
+
+const labelClass = css({
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '1.5',
+  minWidth: '0',
+  lineHeight: 'lg',
+})
+
+const iconClass = css({
+  width: '20px',
+  height: '20px',
+  flexShrink: '0',
+  rounded: 'sm',
+})
+
+const textClass = css({
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  lineHeight: 'lg',
+})
 </script>
 
 <template>
-  <span class="source-label">
-    <img :src="icon" class="source-label-icon" :alt="iconAlt" />
-    <span class="source-label-text">{{ source ?? '—' }}</span>
+  <span :class="labelClass">
+    <img :src="icon" :class="iconClass" :alt="iconAlt" />
+    <span :class="textClass">{{ source ?? '—' }}</span>
   </span>
 </template>
-
-<style scoped>
-.source-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); min-width: 0; line-height: 20px; }
-.source-label-icon { width: 20px; height: 20px; flex-shrink: 0; border-radius: var(--mp-radii-sm, 4px); }
-.source-label-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 20px; }
-</style>

@@ -74,6 +74,33 @@ Every field that needs a label, help text, or validation is wrapped in
 
 ---
 
+## Transaction no. field (`TransactionNoField`) ⚠️
+
+Every transaction **form** (sales invoice/order/quote/delivery, credit memo +
+apply + refund, expense, receipt, stock count, transfer, …) has an auto-generated
+**Transaction no.** field: a disabled input whose **label carries a settings
+gear** that opens the shared `NumberFormatSettingsModal` (auto-numbering format).
+
+**Do not hand-roll the label + gear + modal.** Use the single reusable component
+[`TransactionNoField.vue`](../../app/components/patterns/TransactionNoField.vue):
+
+```vue
+<TransactionNoField field-id="apply-no" :next-number="nextTxNo" @save="onSave" />
+```
+
+- `field-id` (required) — unique id stem for the control + modal.
+- `next-number` (required) — the next auto number shown in the modal preview
+  (e.g. `` `${t('Credit memo applied')} #${nextApplicationNumber()}` ``).
+- `label` / `title` / `caption` / `placeholder` / `existing-formats` — optional;
+  default to the "Transaction no." copy and the shared modal defaults.
+
+The component renders the `MpFormControl` + label row (label + gear) + disabled
+input + `NumberFormatSettingsModal`, so it drops straight into a field slot (e.g.
+one cell of a two-column `date / transaction-no` grid). This is the source of
+truth — `rule/form-transaction-no-field`.
+
+---
+
 ## Error message copy
 
 Form error messages must follow the UXW library. When exact UXW copy is not
@@ -326,29 +353,42 @@ items — see [ErpPagination.md → Progressive pagination](ErpPagination.md#pro
 
 ## Full form-page example
 
+A create/edit form is wired via **`detailMatch`** in `app/pages/[...slug].vue`
+(it has a dynamic `:id` route, or is a full-bleed `/new` route) — so **the page
+owns its own layout and applies the 24px stage padding itself**; it is NOT a
+`pageRegistry` page and must not rely on a shared `.stage` wrapper padding it.
+See [page-title-bar.md](page-title-bar.md) for the title bar this page renders
+above the form.
+
 ```vue
 <script setup lang="ts">
 import { MpFormControl, MpFormLabel, MpInput, MpButton, MpFlex } from '@mekari/pixel3'
-
-const { navigate } = useNavigation()
-onMounted(() => navigate('Entity', 'Create entity'))
 </script>
 
 <template>
-  <MpFlex direction="column" gap="6" padding="6" style="max-width: 558px">
-    <MpFormControl id="name" is-required>
-      <MpFormLabel>Name</MpFormLabel>
-      <MpInput id="name-input" placeholder="Example: John Doe" />
-    </MpFormControl>
+  <div class="detail-page">
+    <!-- Title bar: same 72px spec as page-title-bar.md, rendered by this page
+         since detailMatch pages own their full layout (not the shell). -->
+    <header class="page-title-bar">…title + breadcrumb…</header>
 
-    <!-- Action group — always last -->
-    <MpFlex gap="3">
-      <MpButton variant="primary">Save</MpButton>
-      <MpButton variant="ghost">Cancel</MpButton>
-    </MpFlex>
-  </MpFlex>
+    <!-- Stage: THIS page supplies the 24px padding (var(--mp-spacing-6)) -->
+    <div class="stage" style="padding: var(--mp-spacing-6)">
+      <MpFlex direction="column" gap="6" style="max-width: 558px">
+        <MpFormControl id="name" is-required>
+          <MpFormLabel>Name</MpFormLabel>
+          <MpInput id="name-input" placeholder="Example: John Doe" />
+        </MpFormControl>
+
+        <!-- Action group — always last -->
+        <MpFlex gap="3">
+          <MpButton variant="primary">Save</MpButton>
+          <MpButton variant="ghost">Cancel</MpButton>
+        </MpFlex>
+      </MpFlex>
+    </div>
+  </div>
 </template>
 ```
 
-> For the full form-page recipe (page title, stage, action group), see
-> [page-recipes.md](page-recipes.md) → `/create-form-page`.
+For the routing/trigger-phrase table (`/create-form-page` etc.), see
+[page-recipes.md](page-recipes.md).

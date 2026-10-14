@@ -460,7 +460,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
     <!-- ── Title bar ── -->
     <div class="nw-titlebar">
       <div class="nw-titlebar-left">
-        <button class="nw-breadcrumb" @click="goBack">{{ t('Products') }}</button>
+        <MpButton class="nw-breadcrumb" @click="goBack">{{ t('Products') }}</MpButton>
         <h1 class="nw-title">{{ isEdit ? t('Edit product') : t('New product') }}</h1>
       </div>
     </div>
@@ -583,11 +583,11 @@ onUnmounted(() => { footerObserver?.disconnect() })
           </div>
           <div v-else class="np-photo-preview">
             <img :src="photoDataUrl" :alt="t('Product photo')" class="np-photo-img" />
-            <button class="np-photo-remove" type="button" :aria-label="t('Remove photo')" @click="removePhoto">
+            <MpButton class="np-photo-remove" type="button" :aria-label="t('Remove photo')" @click="removePhoto">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
       </div>
@@ -782,11 +782,11 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
     <!-- ── Sticky footer ── -->
     <div ref="footerEl" class="nw-footer" :class="{ 'nw-footer--floating': stageOverflowing }">
-      <button class="nw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
-      <button v-if="!isEdit" class="nw-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="saveAndAdd">
+      <MpButton class="nw-btn-cancel" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton v-if="!isEdit" class="nw-btn-secondary" :is-disabled="isSaving || isSavingAndAdding" @click="saveAndAdd">
         {{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}
-      </button>
-      <button class="nw-btn-save" :disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? t('Saving…') : t('Save') }}</button>
+      </MpButton>
+      <MpButton class="nw-btn-save" :is-disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
     </div>
 
     <!-- ── Demo scenario FAB — Tax info preview states; nothing to preview in WMS ── -->

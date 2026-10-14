@@ -147,6 +147,11 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
+  // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid as
+  // Sales). No report detail pages yet — every card shows the coming-soon toast.
+  'Purchase report':    defineAsyncComponent(() => import('~/components/pages/PurchaseReportsIndexPage.vue')),
+  'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
+  'Cash and bank report': defineAsyncComponent(() => import('~/components/pages/CashBankReportsIndexPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
 
@@ -173,11 +178,6 @@ const pageRegistry: Record<string, Component> = {
   'Xpm vendors':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm policy':         defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm integration':    defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
-
-  // ── Mekari Buzz (Marketing tool) — 'Home' branches by scenario below. ──
-  'Buzz campaigns':     defineAsyncComponent(() => import('~/components/pages/BuzzCampaignsPage.vue')),
-  'Buzz branding':      defineAsyncComponent(() => import('~/components/pages/BuzzBrandingPage.vue')),
-  'Buzz photo stocks':  defineAsyncComponent(() => import('~/components/pages/BuzzPhotoStocksPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -203,9 +203,6 @@ const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTa
 const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
-const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFormPage.vue'))
-const BuzzBrandDetailPage = asyncPage(() => import('~/components/pages/BuzzBrandDetailPage.vue'))
-const BuzzCampaignDetailPage = asyncPage(() => import('~/components/pages/BuzzCampaignDetailPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
 const CoworkWorkspacesPage = asyncPage(() => import('~/components/pages/CoworkWorkspacesPage.vue'))
 const CoworkWorkspaceDetailPage = asyncPage(() => import('~/components/pages/CoworkWorkspaceDetailPage.vue'))
@@ -356,24 +353,24 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
-const CrmServicesPage = asyncPage(() => import('~/components/pages/CrmServicesPage.vue'))
-const CrmServiceDetailPage = asyncPage(() => import('~/components/pages/CrmServiceDetailPage.vue'))
-const NewCrmServicePage = asyncPage(() => import('~/components/pages/NewCrmServicePage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
 const CrmOrdersPage = asyncPage(() => import('~/components/pages/CrmOrdersPage.vue'))
 const CrmTasksPage = asyncPage(() => import('~/components/pages/CrmTasksPage.vue'))
 const CrmCustomersPage = asyncPage(() => import('~/components/pages/CrmCustomersPage.vue'))
 const CrmProductsPage = asyncPage(() => import('~/components/pages/CrmProductsPage.vue'))
 const CrmSettingsPage = asyncPage(() => import('~/components/pages/CrmSettingsPage.vue'))
-const CrmInviteUserPage = asyncPage(() => import('~/components/pages/CrmInviteUserPage.vue'))
 const CrmReportsPage = asyncPage(() => import('~/components/pages/CrmReportsPage.vue'))
 const CrmReportBuilderPage = asyncPage(() => import('~/components/pages/CrmReportBuilderPage.vue'))
 const CrmReportViewerPage = asyncPage(() => import('~/components/pages/CrmReportViewerPage.vue'))
 const CrmActivityLogPage = asyncPage(() => import('~/components/pages/CrmActivityLogPage.vue'))
 const CrmModulesPage = asyncPage(() => import('~/components/pages/CrmModulesPage.vue'))
-const CrmSettingsPropertiesPage = asyncPage(() => import('~/components/pages/CrmSettingsPropertiesPage.vue'))
+const CrmErpIntegrationsPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationsPage.vue'))
+const CrmErpIntegrationDetailPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationDetailPage.vue'))
+const CrmErpIntegrationEditorPage = asyncPage(() => import('~/components/pages/CrmErpIntegrationEditorPage.vue'))
+const CrmNewSalesOrderPage = asyncPage(() => import('~/components/pages/CrmNewSalesOrderPage.vue'))
 const CrmGenericModulePage = asyncPage(() => import('~/components/pages/CrmGenericModulePage.vue'))
 const CrmGenericRecordDetailPage = asyncPage(() => import('~/components/pages/CrmGenericRecordDetailPage.vue'))
+const NewCrmGenericRecordPage = asyncPage(() => import('~/components/pages/NewCrmGenericRecordPage.vue'))
 const CrmModuleBuilderPage = asyncPage(() => import('~/components/pages/CrmModuleBuilderPage.vue'))
 const CrmContactsListPage = asyncPage(() => import('~/components/pages/CrmContactsListPage.vue'))
 const CrmCompaniesListPage = asyncPage(() => import('~/components/pages/CrmCompaniesListPage.vue'))
@@ -399,6 +396,12 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const ApplyCreditMemoPage = asyncPage(() => import('~/components/pages/ApplyCreditMemoPage.vue'))
+const CreditMemoDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoDetailsPage.vue'))
+const CreditMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoAppliedDetailsPage.vue'))
+const CreditMemoRefundDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoRefundDetailsPage.vue'))
+const CreateCreditMemoRefundPage = asyncPage(() => import('~/components/pages/CreateCreditMemoRefundPage.vue'))
+const NewCreditMemoPage = asyncPage(() => import('~/components/pages/NewCreditMemoPage.vue'))
 const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
 const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
@@ -425,7 +428,6 @@ const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendin
 
 // ── XPM (Mekari Expense) — home branch + full-bleed detail/form pages ──────────
 const XpmHomePage = defineAsyncComponent(() => import('~/components/pages/XpmHomePage.vue'))
-const BuzzHomePage = defineAsyncComponent(() => import('~/components/pages/BuzzHomePage.vue'))
 const XpmTripDetailPage = asyncPage(() => import('~/components/pages/XpmTripDetailPage.vue'))
 const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDetailPage.vue'))
 const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
@@ -439,7 +441,6 @@ const XpmCardsTabPage = asyncPage(() => import('~/components/pages/XpmCardsPage.
 const XpmPurchasesTabPage = asyncPage(() => import('~/components/pages/XpmPurchasesPage.vue'))
 const { activeScenario: xpmActiveScenario } = useScenario()
 const { trigger: triggerXpm } = useXpmActions()
-const { trigger: triggerBuzz } = useBuzzActions()
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -469,18 +470,16 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // /crm/deals/new → full detail create form; /crm/deals/:id/edit → edit form (both a PAGE).
     if (sub === 'deals' && id === 'new') return { component: NewCrmDealPage, id: 'new' }
     if (sub === 'deals' && id && segs[3] === 'edit') return { component: NewCrmDealPage, id }
-    // /crm/services → Service deals workspace (custom module); /crm/services/new →
-    // create form; /crm/services/:id/edit → edit form; /crm/services/:id → detail.
-    if (sub === 'services' && id === 'new') return { component: NewCrmServicePage, id: 'new' }
-    if (sub === 'services' && id && segs[3] === 'edit') return { component: NewCrmServicePage, id }
-    if (sub === 'services') return id ? { component: CrmServiceDetailPage, id } : { component: CrmServicesPage, id: '' }
-    // /crm/<moduleId>[/recordId] → any OTHER published custom module (created via
+    if (sub === 'deals' && id && (segs[3] === 'create-order' || segs[3] === 'create-quote')) return { component: CrmNewSalesOrderPage, id }
+    // /crm/<moduleId>[/recordId] → any published custom module (created via
     // "+ New module") gets the generic records workspace/detail, driven entirely
     // by its own pipeline/properties (no per-module page needed). Guarded by a
     // real, non-system module lookup so it can't hijack reserved CRM subpaths.
     {
       const customMod = sub && sub !== 'deals' ? getCrmModule(sub) : undefined
       if (customMod && !customMod.system) {
+        if (id === 'new') return { component: NewCrmGenericRecordPage, id: 'new' }
+        if (id && segs[3] === 'edit') return { component: NewCrmGenericRecordPage, id }
         return id ? { component: CrmGenericRecordDetailPage, id } : { component: CrmGenericModulePage, id: '' }
       }
     }
@@ -497,7 +496,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (sub === 'reports' && id) return { component: CrmReportViewerPage, id }
     if (sub === 'reports') return { component: CrmReportsPage, id: id ?? '' }
     if (sub === 'activity') return { component: CrmActivityLogPage, id: id ?? '' }
-    if (sub === 'settings' && id === 'users' && segs[3] === 'invite') return { component: CrmInviteUserPage, id: 'invite' }
     // Deals settings = the module builder for the 'deals' system module, as its own level-2 menu.
     if (sub === 'settings' && id === 'deals') return { component: CrmModuleBuilderPage, id: 'deals' }
     // "New module" is also handled by the builder — orderId 'new' — so every
@@ -505,7 +503,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     // before the module is actually created (see CrmModuleBuilderPage.vue).
     if (sub === 'settings' && id === 'modules' && segs[3]) return { component: CrmModuleBuilderPage, id: segs[3] }
     if (sub === 'settings' && id === 'modules') return { component: CrmModulesPage, id: '' }
-    if (sub === 'settings' && id === 'properties') return { component: CrmSettingsPropertiesPage, id: '' }
+    // /crm/settings/properties is deprecated — fall through to generic settings
+    // ERP Integration Settings (PRD: ERP Transaction Conversion Settings V1).
+    if (sub === 'settings' && id === 'erp-integrations' && segs[4] === 'edit') return { component: CrmErpIntegrationEditorPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations' && segs[3]) return { component: CrmErpIntegrationDetailPage, id: segs[3] }
+    if (sub === 'settings' && id === 'erp-integrations') return { component: CrmErpIntegrationsPage, id: '' }
     if (sub === 'settings') return { component: CrmSettingsPage, id: id ?? 'company' }
     return { component: CRM_PAGES[sub] ?? CrmDealsPage, id: sub }
   }
@@ -550,16 +552,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CoworkAgentFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: CoworkAgentFormPage, id: segs[1]! }
     return { component: CoworkAgentDetailPage, id: segs[1]! }
-  }
-  // /buzz-campaign/:id → campaign detail.
-  if (segs.length >= 2 && segs[0] === 'buzz-campaign') {
-    return { component: BuzzCampaignDetailPage, id: segs[1]! }
-  }
-  // /buzz-brand/:id → brand guideline detail (Frontify-style); /:id/edit → builder form.
-  // (Creating a new brand kit is a modal on the Branding page, not a route.)
-  if (segs.length >= 2 && segs[0] === 'buzz-brand') {
-    if (segs[2] === 'edit') return { component: BuzzBrandFormPage, id: segs[1]! }
-    if (segs[1] !== 'new') return { component: BuzzBrandDetailPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
@@ -844,9 +836,46 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'edit') {
     return { component: NewSalesInvoicePage, id: segs[1]! }
   }
+  // /sales-invoices/:id/apply-credit-memo → Apply credit memo form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'apply-credit-memo') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {
     return { component: SalesInvoiceDetailsPage, id: segs[1] }
+  }
+  // ── Credit memo flow ───────────────────────────────────────────────────────
+  // /credit-memos/new → create · /credit-memos/:id/edit → edit ·
+  // /credit-memos/:id/apply → apply form · /credit-memos/:id/refund → refund form ·
+  // /credit-memos/:id → detail
+  if (segs.length >= 2 && segs[0] === 'credit-memos' && segs[1] === 'new') {
+    return { component: NewCreditMemoPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'edit') {
+    return { component: NewCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'apply') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'refund') {
+    return { component: CreateCreditMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memos') {
+    return { component: CreditMemoDetailsPage, id: segs[1] }
+  }
+  // /credit-memo-applications/:id/edit → edit · /credit-memo-applications/:id → detail
+  if (segs.length >= 3 && segs[0] === 'credit-memo-applications' && segs[2] === 'edit') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memo-applications') {
+    return { component: CreditMemoAppliedDetailsPage, id: segs[1] }
+  }
+  // /credit-memo-refunds/:id/edit → edit · /credit-memo-refunds/:id → detail
+  if (segs.length >= 3 && segs[0] === 'credit-memo-refunds' && segs[2] === 'edit') {
+    return { component: CreateCreditMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memo-refunds') {
+    return { component: CreditMemoRefundDetailsPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }
@@ -973,7 +1002,6 @@ const currentComponent = computed<Component>(() => {
   // Home ('/') is shared across scenarios by URL; render the Expense home when the
   // XPM scenario is active (same flush-top stage treatment as the ERP/HR home).
   if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'XPM') return XpmHomePage
-  if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'BUZZ') return BuzzHomePage
   return pageRegistry[currentPageKey.value] ?? PlaceholderPage
 })
 
@@ -1719,25 +1747,6 @@ function startResize(e: MouseEvent) {
             New workspace
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Buzz photo stocks'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="triggerBuzz('uploadAsset')">Upload asset</button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('generateAsset')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Generate asset
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Buzz branding'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('newBrand')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            New brand kit
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Buzz campaigns'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('createCampaign')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Create campaign
-          </button>
-        </div>
         <div v-else-if="currentPageKey === 'Cowork schedule'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -2243,7 +2252,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />

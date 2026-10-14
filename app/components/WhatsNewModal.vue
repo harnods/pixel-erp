@@ -5,7 +5,7 @@
  * warehouse fulfillment and AI bank reconciliation features.
  */
 import { ref, watch, onBeforeUnmount } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 
 const props = defineProps<{ isOpen: boolean }>()
 const emit = defineEmits<{ 'update:isOpen': [boolean] }>()
@@ -64,9 +64,7 @@ onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEven
     <Transition name="wn">
       <div v-if="isOpen" class="wn-overlay">
         <div class="wn-card" role="dialog" aria-modal="true" aria-labelledby="wn-title">
-          <button class="wn-close" type="button" aria-label="Close" @click="close">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </button>
+          <MpButton class="wn-close" variant="ghost" size="sm" left-icon="close" aria-label="Close" @click="close" />
 
           <Transition name="wn-slide" mode="out-in">
             <div :key="idx" class="wn-content">
@@ -93,10 +91,10 @@ onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEven
           </Transition>
 
           <div v-if="slides.length > 1" class="wn-dots" role="tablist" aria-label="Feature slides">
-            <button
+            <MpButton
               v-for="(s, i) in slides" :key="i"
               class="wn-dot" :class="{ 'wn-dot--active': i === idx }"
-              type="button" role="tab" :aria-selected="i === idx" :aria-label="`Slide ${i + 1}`"
+              variant="ghost" role="tab" :aria-selected="i === idx" :aria-label="`Slide ${i + 1}`"
               @click="go(i)"
             />
           </div>
@@ -109,8 +107,7 @@ onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEven
 <style scoped>
 .wn-overlay { position: fixed; inset: 0; z-index: 1200; display: flex; align-items: center; justify-content: center; padding: var(--mp-spacing-6); background: rgba(8, 13, 14, 0.38); }
 .wn-card { position: relative; width: 100%; max-width: 460px; max-height: calc(100vh - 48px); overflow-y: auto; background: var(--mp-background-neutral, #fff); border-radius: 20px; padding: var(--mp-spacing-8) var(--mp-spacing-7, 28px) var(--mp-spacing-6); box-shadow: 0 24px 60px rgba(8, 13, 14, 0.24); text-align: center; }
-.wn-close { position: absolute; top: var(--mp-spacing-4); right: var(--mp-spacing-4); z-index: 1; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: none; border-radius: var(--mp-radii-full, 999px); background: none; cursor: pointer; color: var(--mp-text-secondary, #3a4749); }
-.wn-close:hover { background: var(--mp-background-neutral-subtle, #f1f3f3); color: var(--mp-text-default); }
+.wn-close { position: absolute; top: var(--mp-spacing-4); right: var(--mp-spacing-4); z-index: 1; color: var(--mp-text-secondary, #3a4749); }
 
 /* Fixed min-height so the card doesn't jump when slides differ in length. */
 .wn-content { min-height: 328px; }

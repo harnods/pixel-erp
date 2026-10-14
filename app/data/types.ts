@@ -1,6 +1,6 @@
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
-export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
+export type InvoiceStatus    = 'paid' | 'open' | 'overdue' | 'partially-paid'
 export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
 /** 'bill' reviews as an Expense; 'invoice' as a Purchase invoice; 'receipt' as
  *  a Payment receipt; 'bank_statement' as a Cash management bank statement;

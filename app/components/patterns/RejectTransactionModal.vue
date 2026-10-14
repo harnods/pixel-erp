@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpTextarea,
+  MpModalOverlay, MpModalCloseButton, MpTextarea, MpButton,
 } from '@mekari/pixel3'
 
 const props = defineProps<{
@@ -77,8 +77,8 @@ watch(() => props.isOpen, (open) => {
       </MpModalBody>
       <MpModalFooter>
         <div class="rtm-actions">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleClose">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--danger" type="button" @click="handleReject">Reject</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="handleClose">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" @click="handleReject">Reject</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

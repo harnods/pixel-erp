@@ -1,6 +1,7 @@
 import { computeTotals, type SalesOrderTotals } from './salesOrders'
 import { salesInvoices } from './salesInvoices'
 import { getSalesInvoiceEdit } from './salesInvoiceEdits'
+import { invoiceCreditApplied, invoiceCashPaid } from './creditMemos'
 import { CATALOG } from './catalog'
 import type { SalesInvoice, SalesOrderItem, SILineItem } from './types'
 
@@ -62,7 +63,12 @@ export interface SalesInvoiceDetail extends SalesInvoice {
   memo: string
   attachments: SIAttachment[]
   totals: SalesOrderTotals
+  /** Every settlement = cash + credit memo applied (amountPaid + balance === total). */
   amountPaid: number
+  /** Cash collected (seed payments). */
+  cashPaid: number
+  /** Credit memo applied to this invoice (Credit Memo Applied docs). */
+  creditApplied: number
   payments: SIPayment[]
   lastUpdatedBy: string
   lastUpdatedAt: string
@@ -183,12 +189,12 @@ function buildItems(idx: number, count: number, targetBase: number): SalesOrderI
  *  - every invoice is raised from a sales order that has been delivered
  *  - a settled invoice (balance 0) additionally shows its payment receipt
  */
-function buildLinked(inv: SalesInvoice, idx: number): SILinkedTxn[] {
+function buildLinked(inv: SalesInvoice, idx: number, cashPaid: number): SILinkedTxn[] {
   const linked: SILinkedTxn[] = [
     { date: addDays(inv.date, -4), type: 'Sales Order',    number: `#${10090 + idx}`, status: 'closed'    },
     { date: addDays(inv.date, -1), type: 'Sales Delivery', number: `#${30000 + idx}`, status: 'delivered' },
   ]
-  if (inv.balance === 0) {
+  if (cashPaid > 0) {
     linked.push({ date: addDays(inv.dueDate, -2), type: 'Payment Receipt', number: `#${50000 + idx}`, status: 'paid' })
   }
   return linked
@@ -205,13 +211,15 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
   const globalDiscount = items.reduce((s, it) => s + it.amount, 0) - targetBase
   const totals = computeTotals(items, globalDiscount, 0, base.hasPpn ? undefined : 0)
   const amountPaid = base.total - base.balance
+  const creditApplied = invoiceCreditApplied(base.id)
+  const cashPaid = invoiceCashPaid(base.id)
 
-  const payments: SIPayment[] = amountPaid > 0
+  const payments: SIPayment[] = cashPaid > 0
     ? [{
         date: addDays(base.dueDate, -2),
         method: pick(PAYMENT_METHODS, idx),
         reference: `TRF-${String(700000 + idx * 13)}`,
-        amount: amountPaid,
+        amount: cashPaid,
       }]
     : []
 
@@ -229,10 +237,12 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
     attachments: [{ name: `${base.number}-Signed.pdf`, sizeKB: 78 }],
     totals,
     amountPaid,
+    cashPaid,
+    creditApplied,
     payments,
     lastUpdatedBy: 'Rizal Candra',
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
-    linkedTransactions: buildLinked(base, idx),
+    linkedTransactions: buildLinked(base, idx, cashPaid),
     banner: base.status === 'overdue'
       ? { message: 'This invoice is past its due date.', linkLabel: 'Send reminder' }
       : null,

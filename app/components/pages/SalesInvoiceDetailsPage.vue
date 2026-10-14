@@ -18,6 +18,13 @@ import { salesInvoices } from '~/data'
 import EFakturPreviewModal from '~/components/patterns/EFakturPreviewModal.vue'
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import {
+  customerAvailableCredit, applicationsForInvoice, applicationLabel,
+} from '~/data/creditMemos'
+import {
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+} from '@mekari/pixel3'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import {
   getTaxDocumentsForInvoice, formatTaxDocumentNumber, formatTaxDocumentKind,
   updateTaxDocumentStatus, formatPaymentStage,
   taxDocMenuItemDefs, DJP_STATUS_CONFIG,
@@ -91,7 +98,18 @@ watch(taxInfoScenario, () => {
 // Tabs only appear once they have something to show — an invoice with no
 // payments yet shouldn't offer an empty "Payments" tab, etc.
 const hasLinkedTransactions = computed(() => invoice.value.linkedTransactions.length > 0)
-const hasPayments = computed(() => invoice.value.payments.length > 0)
+const hasPayments = computed(() => paymentRows.value.length > 0)
+// Payment rows = cash payments + credit-memo applications. The credit rows carry a
+// link to their "Credit memo applied" record (Figma: a "VIEW DETAILS" hover chip).
+interface PaymentRow { date: string; number: string; applicationId?: string; method: string; account: string; reference: string; amount: number }
+const paymentRows = computed<PaymentRow[]>(() => {
+  const cash: PaymentRow[] = invoice.value.payments.map(p => ({ date: p.date, number: '—', method: p.method, account: '—', reference: p.reference, amount: p.amount }))
+  const credit: PaymentRow[] = creditApplications.value.map(({ application, amount }) => ({
+    date: application.date, number: applicationLabel(application.number), applicationId: application.id,
+    method: t('Credit memo'), account: '—', reference: '—', amount,
+  }))
+  return [...credit, ...cash].sort((a, b) => b.date.localeCompare(a.date))
+})
 const hasTaxDocuments = computed(() => taxDocuments.value.length > 0)
 
 function onTaxDocumentSaved() {
@@ -421,7 +439,26 @@ function onSalesReturnConfirm() {
   })
   showTaxDocumentTab()
 }
-</script>
+
+// ── Credit memo ────────────────────────────────────────────────────────────────
+// Credit the customer has left to apply, and whether this invoice already carries
+// any — drives the "Apply credit memo" affordance and the totals/payment rows.
+const availableCredit = computed(() => customerAvailableCredit(invoice.value.customer.id))
+const creditApplications = computed(() => applicationsForInvoice(invoice.value.id))
+const hasCreditApplied = computed(() => invoice.value.creditApplied > 0)
+// Apply is offered only when there's a balance to reduce AND credit to spend.
+const canApplyCredit = computed(() => invoice.value.balance > 0 && availableCredit.value > 0)
+
+// Figma screen 1: the "Apply credit memo?" prompt. It appears PROACTIVELY when the
+// invoice opens and the customer has credit to spend on it — a nudge, not a gate.
+// Choosing to apply (from the prompt OR from Add payment → Apply credit memo) goes
+// straight to the form; there is no second confirm.
+const applyModalOpen = ref(false)
+function goToApplyForm() {
+  applyModalOpen.value = false
+  router.push(`/sales-invoices/${invoice.value.id}/apply-credit-memo`)
+}
+onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.value = true })</script>
 
 <template>
   <div v-if="invoice" class="detail-page">
@@ -455,15 +492,16 @@ function onSalesReturnConfirm() {
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="inv in jumpResults"
                     :key="inv.id"
+                    variant="secondary"
                     class="detail-jump-item"
                     @click="jumpTo(inv.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Sales Invoice') }} #{{ inv.number }}</span>
                     <span class="detail-jump-item-customer">{{ inv.customer.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -648,9 +686,18 @@ function onSalesReturnConfirm() {
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.totals.total) }}</span>
           </div>
-          <div class="detail-total-row">
+          <div v-if="invoice.cashPaid > 0" class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(invoice.amountPaid) }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.cashPaid) }}</span>
+          </div>
+          <!-- Credit applied via credit memos (Figma: "Less: Credit Memo") -->
+          <div v-if="hasCreditApplied" class="detail-total-row" data-devchange="invoice-less-credit-memo">
+            <span class="detail-total-row-label">{{ t('Less: Credit Memo') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.creditApplied) }}</span>
+          </div>
+          <div v-if="invoice.cashPaid === 0 && !hasCreditApplied" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(0) }}</span>
           </div>
           <div class="detail-total-rule" />
           <div class="detail-total-row">
@@ -705,26 +752,27 @@ function onSalesReturnConfirm() {
           </MpTabPanel>
 
           <MpTabPanel v-if="hasPayments" value="payments">
-            <h3 class="detail-tab-heading">{{ t('Payments') }}</h3>
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
-              <colgroup>
-                <col class="detail-linked-col--date" />
-                <col class="detail-linked-col--number" />
-                <col class="detail-linked-col--status" />
-                <col />
-              </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
                   <th class="detail-th">{{ t('Payment method') }}</th>
-                  <th class="detail-th">{{ t('Reference') }}</th>
-                  <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
+                  <th class="detail-th">{{ t('Account') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(p, i) in invoice.payments" :key="i" class="detail-item-row">
+                <tr v-for="(p, i) in paymentRows" :key="i" class="detail-item-row payment-row">
                   <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
+                  <td class="detail-td">
+                    <span v-if="!p.applicationId" class="detail-td--muted">{{ p.number }}</span>
+                    <a v-else class="cell-link cell-text" @click="router.push(`/credit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
+                  </td>
                   <td class="detail-td">{{ p.method }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.account }}</td>
                   <td class="detail-td detail-td--muted">{{ p.reference }}</td>
                   <td class="detail-td detail-td--num">{{ formatIDR(p.amount) }}</td>
                 </tr>
@@ -871,10 +919,9 @@ function onSalesReturnConfirm() {
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" right-icon="chevrons-down">
               {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -893,10 +940,9 @@ function onSalesReturnConfirm() {
         <!-- Paid: a plain "Actions" primary dropdown (no payment left to record) -->
         <MpPopover v-if="invoice.status === 'paid'" id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" right-icon="chevrons-down">
               {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -930,14 +976,12 @@ function onSalesReturnConfirm() {
              a payment; chevron segment opens the rest (Reject + the create-document
              actions that only make sense before the invoice is settled). -->
         <div v-else class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
+          <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
             {{ t('Add payment') }}
-          </button>
+          </MpButton>
           <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
+              <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('More actions')" />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -947,19 +991,19 @@ function onSalesReturnConfirm() {
                 <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="createSalesReturn">{{ t('Create sales return') }}</MpPopoverListItem>
                 <!-- BR-008: one STANDING document per invoice. Locked with its reason
-                   rather than hidden, so it is clear why it can't be used — a
-                   correction goes through Edit (replacement/cancellation), not
-                   through raising a second faktur. -->
-              <MpTooltip v-if="invoice.hasPpn && hasStandingTaxDoc" id="detail-create-taxdoc-locked-2" placement="top" use-portal>
-                <template #label>
-                  <span class="taxdoc-tt-content" :style="{ width: taxDocMenuWidth }">{{ t(STANDING_TAXDOC_REASON) }}</span>
-                </template>
-                <span class="taxdoc-menu-item-wrap">
-                  <MpPopoverListItem is-disabled>{{ t('Create tax document') }}</MpPopoverListItem>
-                </span>
-              </MpTooltip>
-              <MpPopoverListItem v-else-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Apply credit memo') }}</MpPopoverListItem>
+                     rather than hidden, so it is clear why it can't be used — a
+                     correction goes through Edit (replacement/cancellation), not
+                     through raising a second faktur. -->
+                <MpTooltip v-if="invoice.hasPpn && hasStandingTaxDoc" id="detail-create-taxdoc-locked-2" placement="top" use-portal>
+                  <template #label>
+                    <span class="taxdoc-tt-content" :style="{ width: taxDocMenuWidth }">{{ t(STANDING_TAXDOC_REASON) }}</span>
+                  </template>
+                  <span class="taxdoc-menu-item-wrap">
+                    <MpPopoverListItem is-disabled>{{ t('Create tax document') }}</MpPopoverListItem>
+                  </span>
+                </MpTooltip>
+                <MpPopoverListItem v-else-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canApplyCredit" data-devchange="invoice-apply-credit-memo" @click="goToApplyForm">{{ t('Apply credit memo') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
@@ -1029,6 +1073,22 @@ function onSalesReturnConfirm() {
       :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
       @confirm="confirmDelete"
     />
+
+    <!-- Apply credit memo confirm (Figma: "Apply credit memo?") -->
+    <MpModal
+      id="apply-credit-confirm" :is-open="applyModalOpen" size="md" :is-centered="false" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="applyModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Apply credit memo?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>{{ t('The customer has') }} {{ formatIDR(availableCredit) }} {{ t('in available credit.') }}</MpModalBody>
+        <MpModalFooter>
+          <MpButton variant="ghost" is-rounded @click="applyModalOpen = false">{{ t('Not now') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="goToApplyForm">{{ t('Apply credit memo') }}</MpButton>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 
   <!-- Not-found reachable state: the id didn't resolve to an invoice -->
@@ -1336,8 +1396,8 @@ function onSalesReturnConfirm() {
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--stage  { width: 160px; }

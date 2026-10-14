@@ -26,7 +26,7 @@
 import { reactive, computed } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import {
-  deals, crmModules, crmTeams, CRM_OWNERS, CRM_CURRENT_USER,
+  deals, crmModules, crmTeams, CRM_OWNERS, CRM_CURRENT_USER, CRM_WORKSPACE_OWNER,
   lineSubtotal, getCrmModule, genericRecordsFor, moduleStores,
   type Deal, type DealLineItem, type CrmModule,
 } from './crm'
@@ -78,20 +78,23 @@ const DEALS_LINE_FIELDS: ReportField[] = [
  *  backed by. Only DEFAULT_PROPERTIES ids are ever reportable for a generic
  *  module — a custom-authored property has no real backing value slot yet. */
 const GENERIC_VALUE_KEY: Record<string, keyof NonNullable<ReturnType<typeof genericRecordsFor>>[number]['values']> = {
-  'customer': 'customer',
-  'primary-contact': 'contactPerson',
+  'company': 'customer',
+  'contact': 'contactPerson',
   'deal-value': 'dealValue',
-  'currency': 'currency',
+  'record-name': 'name' as any,
+  'record-owner': 'owner' as any,
+  'currency-code': 'currency',
   'transaction-date': 'transactionDate',
   'due-date': 'dueDate',
-  'payment-terms': 'paymentTerms',
-  'reference-no': 'referenceNo',
-  'description': 'description',
+  'close-date': 'dueDate',
+  'payment-term': 'paymentTerms',
+  'external-reference-id': 'referenceNo',
+  'notes': 'description',
   'memo': 'memo',
 }
 const GENERIC_SYSTEM_FIELDS: ReportField[] = [
   { id: 'name', label: 'Record name', type: 'text' },
-  { id: 'stage', label: 'Stage', type: 'pick-list' },
+  { id: 'stage', label: 'Status', type: 'pick-list' },
   { id: 'owner', label: 'Owner', type: 'user', options: CRM_OWNERS },
   { id: 'createdAt', label: 'Created date', type: 'date' },
 ]
@@ -184,7 +187,7 @@ export const OPERATORS_BY_TYPE: Record<ReportFieldType, ReportOperator[]> = {
 // ─── Report definition ────────────────────────────────────────────────────────
 
 export type ReportVisibility = 'private' | 'selected' | 'everyone'
-export type ReportStatus = 'active' | 'needs-attention' | 'archived'
+export type ReportStatus = 'active' | 'archived'
 export type ReportGrain = 'record' | 'product-line'
 export type ReportAggFn = 'count' | 'sum' | 'average' | 'min' | 'max'
 export type CriteriaLogic = 'AND' | 'OR'
@@ -224,7 +227,6 @@ export interface CrmReport {
   sharedUserIds?: string[]
   sharedTeamIds?: string[]
   status: ReportStatus
-  needsAttentionReason?: string
   createdAt: string
   updatedAt: string
   updatedBy: string
@@ -357,7 +359,6 @@ export function cloneCrmReport(id: string): CrmReport | null {
     sharedUserIds: undefined,
     sharedTeamIds: undefined,
     status: 'active',
-    needsAttentionReason: undefined,
     createdAt: today(),
     updatedAt: today(),
     updatedBy: CRM_CURRENT_USER,
@@ -374,6 +375,15 @@ export function archiveCrmReport(id: string): void {
 export function restoreCrmReport(id: string): void {
   const r = getCrmReport(id)
   if (r) { r.status = 'active'; r.updatedAt = today(); r.updatedBy = CRM_CURRENT_USER; persistCrmReports() }
+}
+export function deleteCrmReport(id: string): void {
+  const i = crmReports.findIndex((r) => r.id === id)
+  if (i >= 0) { crmReports.splice(i, 1); persistCrmReports() }
+}
+/** Archive/Delete are restricted to the workspace owner ("super admin" stand-in,
+ *  always full access in this mock) or the report's own owner. */
+export function canManageReport(r: CrmReport): boolean {
+  return CRM_CURRENT_USER === CRM_WORKSPACE_OWNER || r.ownerId === CRM_CURRENT_USER
 }
 export function transferCrmReport(id: string, newOwnerId: string): void {
   const r = getCrmReport(id)
