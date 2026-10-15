@@ -2116,7 +2116,10 @@ function suppressFabClick(e: MouseEvent) {
                   </td>
                   <td class="wod-td wod-td--num">
                     <template v-if="!reportsSentQty">{{ num(consumedFor(r.productId)) }}/{{ num(plannedQtyFor(r)) }}</template>
-                    <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}/{{ num(plannedQtyFor(r)) }}</template>
+                    <!-- Only what is already in the subcon warehouse — by approved warehouse
+                         transfer (resupply) or purchase delivery (dropship). Not
+                         against planned: Remaining lives in the origin drawer. -->
+                    <template v-else-if="sendsCompanyStock">{{ num(sentToVendorBySku[r.sku] ?? 0) }}</template>
                     <span v-else class="wod-muted">—</span>
                   </td>
                   <td v-if="showReturnedQty" class="wod-td wod-td--num">

@@ -39,7 +39,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'subcon-sent-transferred',
     title: "Subcon WO: Sent to vendor counts moved stock only",
     description:
-      "Sent to vendor counts transfers approved onward. A draft awaiting approval has moved nothing, so it no longer counts — and the run waits for the approval before moving on.",
+      "Sent to vendor shows only the qty already in the subcon warehouse — by approved warehouse transfer (resupply) or purchase delivery (dropship) — as a plain number, not sent/planned. A draft transfer has moved nothing, so it does not count.",
     date: '2026-10-15',
     files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
   },
