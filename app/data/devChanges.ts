@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-by-product-columns',
+    title: 'Stock requests: grid lines, and the By product columns re-ordered',
+    description:
+      'The By product table now draws vertical rules between columns, the way the Production request index does — with eleven columns, several of them numeric, row stripes alone left the eye guessing which figure sat under which header. Destination warehouse moved to sit right after Status, with Available qty beside it, so where the demand is wanted and what is free there read together. The unit moved out of every number into its own column after Remaining qty, which lets the figures column-align. Grid lines are a new opt-in prop on ErpTablePage, so any table can take them.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue', 'ErpTablePage.vue'],
+  },
+  {
     id: 'sr-detail-group-transfer-btn',
     title: 'Stock request detail: the per-warehouse transfer button goes',
     description:

@@ -128,12 +128,18 @@ const skuColumns: TableColumn[] = [
   // Status sits beside the date it depends on — a row is late or not against its
   // earliest required date, so the two read together.
   { key: 'status',      label: t('Status'),              kind: 'status',                 sortType: 'text' },
+  // Where the demand is wanted, then what is free THERE — availability is always
+  // per warehouse (W-10), so the two belong side by side, ahead of the qty block.
+  { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name', sortable: true, sortType: 'text' },
+  { key: 'available',   label: t('Available qty'),                           sortable: true, sortType: 'number', align: 'right' },
+  // The qty block reads across: required → reserved → remaining, then the unit
+  // they are all counted in. One unit column instead of a suffix on every number
+  // keeps the figures column-aligned and comparable down the page.
   { key: 'required',    label: t('Required qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'reserved',    label: t('Reserved qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'remaining',   label: t('Remaining qty'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'unit',        label: t('Unit'),                kind: 'unit' },
   { key: 'consumed',    label: t('Consumed qty'),                            sortable: true, sortType: 'number', align: 'right' },
-  { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'available',   label: t('Available qty'),                           sortable: true, sortType: 'number', align: 'right' },
 ]
 
 // Column show/hide — first column always on; "Last updated" is opt-in (off by default).
@@ -449,6 +455,7 @@ const exportColumns = computed(() => {
   <ErpTablePage
     data-devchange="sr-requested-tab"
     align-top
+    grid-lines
     :columns="view === 'product' ? visibleSkuColumns : visibleWoColumns"
     :rows="(view === 'product' ? skuPaginated : paginated) as unknown as Record<string, unknown>[]"
     :total="view === 'product' ? skuTotal : total"
@@ -579,23 +586,24 @@ const exportColumns = computed(() => {
       <p v-if="sku(row).overdue" class="sr-note">{{ t('Overdue') }}</p>
     </template>
     <template #cell-openWorkOrders="{ row }">{{ sku(row).openWorkOrders }}</template>
-    <template #cell-required="{ row }">{{ sku(row).required }} {{ sku(row).unit }}</template>
-    <template #cell-reserved="{ row }">{{ sku(row).reserved }} {{ sku(row).unit }}</template>
+    <template #cell-required="{ row }">{{ sku(row).required }}</template>
+    <template #cell-reserved="{ row }">{{ sku(row).reserved }}</template>
+    <template #cell-unit="{ row }">{{ sku(row).unit }}</template>
     <template #cell-consumed="{ row }">
-      {{ sku(row).consumed > 0 ? `${sku(row).consumed} ${sku(row).unit}` : '—' }}
+      {{ sku(row).consumed > 0 ? sku(row).consumed : '—' }}
     </template>
 
     <!-- Remaining = Required − Reserved − Consumed (W-2). Consumed counts as
          covered, so a partly issued line never reads as under-reserved. -->
     <template #cell-remaining="{ row }">
       <span :class="{ 'sr-short': sku(row).remaining > 0 }">
-        {{ sku(row).remaining > 0 ? `${sku(row).remaining} ${sku(row).unit}` : '—' }}
+        {{ sku(row).remaining > 0 ? sku(row).remaining : '—' }}
       </span>
     </template>
 
     <!-- Available — minus and red once a backdated transaction pushed it under zero (W-6) -->
     <template #cell-available="{ row }">
-      <span :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }} {{ sku(row).unit }}</span>
+      <span :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }}</span>
     </template>
 
     <!-- Expanded rows. Product view lists the work orders behind this SKU at this
@@ -622,9 +630,10 @@ const exportColumns = computed(() => {
               <span v-else class="sr-muted">—</span>
             </span>
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
-            <template v-else-if="col.key === 'required'">{{ entry.qty }} {{ sku(row).unit }}</template>
-            <template v-else-if="col.key === 'reserved'">{{ entry.covered }} {{ sku(row).unit }}</template>
-            <template v-else-if="col.key === 'available'">{{ entry.destAvailable }} {{ sku(row).unit }}</template>
+            <template v-else-if="col.key === 'required'">{{ entry.qty }}</template>
+            <template v-else-if="col.key === 'reserved'">{{ entry.covered }}</template>
+            <template v-else-if="col.key === 'unit'">{{ sku(row).unit }}</template>
+            <template v-else-if="col.key === 'available'">{{ entry.destAvailable }}</template>
             <template v-else-if="col.key === 'status'">
               <ErpStatusBadge :status="entry.status" />
             </template>
@@ -885,6 +894,11 @@ const exportColumns = computed(() => {
 .has-ai .sr-child-td--actions { right: var(--mp-sizes-7); }
 /* Indent the first cell so the child reads as nested under its component. */
 .sr-child-td:first-child { padding-left: var(--mp-spacing-8); }
+/* Breakdown rows take the table's vertical rules too (ErpTablePage `grid-lines`),
+   otherwise the grid stops at the parent row and the child's numbers float. */
+.erp-table--grid .sr-child-td { border-right: 1px solid var(--mp-border-default); }
+.erp-table--grid .sr-child-td--spacer,
+.erp-table--grid .sr-child-td--actions { border-right: none; }
 .sr-child-sku { display: flex; flex-direction: column; min-width: 0; }
 .sr-child-sku-name {
   color: var(--mp-text-default, #080d0e);

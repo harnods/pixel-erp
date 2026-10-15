@@ -128,6 +128,14 @@ const props = withDefaults(defineProps<{
    *  row [...] actions and no clickable row — nothing to hover-target, so the grey
    *  highlight is noise (e.g. the Activity logs page). See rule/table-no-hover-no-actions. */
   noRowHover?: boolean
+  /**
+   * Draw vertical rules between columns, as the Production request index does.
+   * For a table whose rows carry several numeric columns that must be read ACROSS
+   * — required vs reserved vs remaining vs available — where row stripes alone
+   * leave the eye to guess which number sits under which header. The actions
+   * column and the flexible spacer carry no rule, so the right edge stays clean.
+   */
+  gridLines?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -148,6 +156,7 @@ const props = withDefaults(defineProps<{
   stickyActions: true,
   actionsAlignTop: false,
   alignTop: false,
+  gridLines: false,
 })
 
 const emit = defineEmits<{
@@ -500,7 +509,7 @@ const bulkCountLabel = computed(() => {
       :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing, 'actions-align-top': actionsAlignTop }"
       :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
     >
-      <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty, 'erp-table--align-top': alignTop }">
+      <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty, 'erp-table--align-top': alignTop, 'erp-table--grid': gridLines }">
 
         <!-- ── Colgroup — pins column widths even when header row swaps to bulk bar.
              Skipped on the full empty state so the table fits the container (no scroll). -->
@@ -1177,6 +1186,24 @@ const bulkCountLabel = computed(() => {
 .erp-tr--align-top .erp-td,
 .erp-table--align-top .erp-td {
   vertical-align: top;
+}
+
+/* Vertical column rules (gridLines). Only right-hand rules are drawn, so the
+   first column needs no left edge; the spacer, the actions column and the AI
+   column are excluded so the right edge of the table stays clean. */
+.erp-table--grid .erp-th,
+.erp-table--grid .erp-td {
+  border-right: 1px solid var(--mp-border-default);
+}
+.erp-table--grid .erp-th--spacer,
+.erp-table--grid .erp-td--spacer,
+.erp-table--grid .erp-th--actions,
+.erp-table--grid .erp-td--actions,
+.erp-table--grid .erp-th--ai,
+.erp-table--grid .erp-td--ai,
+.erp-table--grid .erp-th--bulk,
+.erp-table--grid .erp-td--empty {
+  border-right: none;
 }
 /* The actions cell always top-aligns regardless of row height (see
    `.erp-td--actions` below) — the old opt-in `actionsAlignTop`/`.actions-align-top`
