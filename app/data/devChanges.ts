@@ -28,6 +28,70 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'ps-reservation-toggle',
+    title: 'Production settings: reservation can be switched off again',
+    description:
+      'The PRD (12 Oct) restored "a toggle to disable / enable the reservation" and deleted L-12. Off: work orders raise no stock request, show no readiness, Reserved qty, Reservation menu, Adjust or Edit materials, and start without a reservation gate. Requests already raised stay on Stock requests.',
+    date: '2026-10-14',
+    files: ['productionSettings.ts', 'ProductionSettingsPage.vue', 'WorkOrderDetailsPage.vue', 'CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'ps-start-gate-partial-mode',
+    title: 'Production settings: no separate "start with limited stock" toggle',
+    description:
+      'S-4 "is not introduced as a separate toggle" any more. The start gate follows the partial mode alone — partial consume: one component reserved; partial completion: every component holds some; neither: everything reserved in full. This note spells out the rule for the current setting.',
+    date: '2026-10-14',
+    files: ['productionSettings.ts', 'stockRequests.ts', 'ProductionSettingsPage.vue'],
+  },
+  {
+    id: 'wo-request-date-plan-window',
+    title: 'New work order: request dates stay inside the production plan',
+    description:
+      'C-1 — a raw material\'s request date can\'t be before the planned start or after the planned finish. Rows default to the plan start, follow it when the plan moves, days outside the plan are greyed out, and Save names any row still outside.',
+    date: '2026-10-14',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'unreserve-no-disposition',
+    title: 'Unreserve: no disposition to choose',
+    description:
+      'UC-03 dropped the return-to-warehouse / production-defect choice. Released stock always goes back to available warehouse stock; the modal says so instead of asking.',
+    date: '2026-10-14',
+    files: ['UnreserveMaterialsModal.vue', 'stockRequests.ts', 'WorkOrderDetailsPage.vue', 'StockRequestDetailsPage.vue'],
+  },
+  {
+    id: 'wo-edit-auto-unreserve',
+    title: 'Edit materials: a qty change on a reserved component releases it',
+    description:
+      'UC-06 (12 Oct): "System will unreserve remaining reserved qty", then the line is updated in place. The old "unreserve first" block is gone; the modal warns before saving, and under One-step the line is re-reserved on the same save when stock covers it in full.',
+    date: '2026-10-14',
+    files: ['stockRequests.ts', 'EditWorkOrderMaterialsModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-cost-routing-as-created',
+    title: 'Work order: production cost and routing are the ones you entered',
+    description:
+      'Like raw materials, the production cost and routing rows on New work order were never saved, so the work order page showed the BOM\'s — one line per cost group at most. Both are now stored on the work order; each cost group lists every line it has, and the estimated total and main-output cost follow. Older work orders fall back to their BOM.',
+    date: '2026-10-06',
+    files: ['workOrders.ts', 'CreateWorkOrderPage.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-create-remove-row',
+    title: 'New work order: the ⊖ remove button works again',
+    description:
+      'Every ⊖ on New work order (raw materials, production cost, routing, other outputs, waste) threw an error and removed nothing: the template passed the auto-unwrapped row array to a helper that expected the ref. The helper now removes the row from the array in place.',
+    date: '2026-10-06',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-raw-materials-as-created',
+    title: 'Work order: raw materials are the ones you entered, not the BOM\'s',
+    description:
+      'Raw materials added, removed or re-quantified on New work order were saved to the stock request but never to the work order, so its detail page and the material consume / return form listed the BOM instead. The rows are now stored on the work order (with the warehouse picked per row) and both surfaces read them; older work orders fall back to their BOM.',
+    date: '2026-10-06',
+    files: ['workOrders.ts', 'stockRequests.ts', 'CreateWorkOrderPage.vue', 'WorkOrderDetailsPage.vue', 'NewMaterialRecordPage.vue'],
+  },
+  {
     id: 'sr-detail-group-transfer-btn',
     title: 'Stock request detail: the per-warehouse transfer button goes',
     description:

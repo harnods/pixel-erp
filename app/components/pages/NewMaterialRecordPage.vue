@@ -18,7 +18,8 @@ import {
   MpCheckbox, MpRadio, toast,
 } from '@mekari/pixel3'
 import { workOrders } from '~/data/workOrders'
-import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import { catalogProduct } from '~/data/billOfMaterials'
+import { workOrderMaterials } from '~/data/stockRequests'
 import { warehouses } from '~/data/warehouses'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
@@ -30,7 +31,9 @@ const router = useRouter()
 const route = useRoute()
 
 const wo = computed(() => workOrders.find(w => w.id === props.orderId))
-const bom = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
+// The work order's OWN raw materials (as created, with live Edit / Adjust demand) —
+// not its BOM, which only seeded the creation form and may differ from it.
+const materials = computed(() => wo.value ? workOrderMaterials(wo.value) : [])
 
 function goBack() { router.push(`/work-orders/${props.orderId}?tab=material-consume-return`) }
 
@@ -103,7 +106,7 @@ function remainingReservedSerial(productId: string): string[] {
 }
 
 const rows = reactive<MaterialRow[]>(
-  (bom.value?.rawMaterials ?? []).map((r) => {
+  materials.value.map((r) => {
     const p = catalogProduct(r.productId)
     const trackingType = trackingTypeFor(r.productId)
     const prefillSerial = isConsume.value && trackingType === 'serial' ? remainingReservedSerial(r.productId) : []

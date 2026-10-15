@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { STAFF, shiftDays, TODAY_ISO } from './master'
-import { workOrders, type WorkOrder, type WorkOrderStatus } from './workOrders'
+import { workOrders, workOrderRawMaterials, type WorkOrder, type WorkOrderStatus, type WorkOrderRawMaterial } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { getWarehouseDetail, isBatchTracked, isSerialized } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
@@ -814,6 +814,48 @@ function reductionOrder(lines: StockRequestLine[]): StockRequestLine[] {
   return [...lines].sort((a, b) => Number(!!b.tag) - Number(!!a.tag))
 }
 
+/** A work order's raw-material row with its LIVE demand and reservation. */
+export interface WorkOrderMaterial extends WorkOrderRawMaterial {
+  product: string
+  sku: string
+  /** qty at creation — what a back-filled stock request is raised with */
+  plannedNeeded: number
+  /** reserved + already issued on this row's request lines */
+  reserved: number
+}
+
+/**
+ * The work order's raw materials as they stand NOW — the rows it was created with
+ * ({@link workOrderRawMaterials}), each carrying its live need from the stock
+ * request.
+ *
+ * Edit and Adjust change demand on the request, not on the work order (UC-06): the
+ * PRD's worked example ends "the WO now needs 24 + 8 = 32 MDF across two lines". So
+ * while request lines exist for a row, their total is the need.
+ *
+ * A row is matched to its lines by product AND warehouse, because the creation
+ * form lets the same product be drawn from two warehouses and each becomes its own
+ * line. Seeded work orders store no warehouse, so theirs match by product alone.
+ * Rejected lines are left out — the warehouse declined that demand (W-7, OPEN-14).
+ */
+export function workOrderMaterials(wo: WorkOrder): WorkOrderMaterial[] {
+  const req = requestForWorkOrder(wo.id)
+  return workOrderRawMaterials(wo).map((r) => {
+    const p = catalogProduct(r.productId)
+    const lines = req?.lines.filter(l =>
+      l.productId === r.productId && !l.rejected
+      && (r.warehouseId === undefined || l.destinationWarehouseId === r.warehouseId)) ?? []
+    return {
+      ...r,
+      product: p?.name ?? '—',
+      sku: p?.sku ?? '—',
+      plannedNeeded: r.needed,
+      needed: lines.length ? lines.reduce((sum, l) => sum + l.qty, 0) : r.needed,
+      reserved: lines.reduce((sum, l) => sum + lineCovered(l), 0),
+    }
+  })
+}
+
 /** How much of a component this work order has reserved (reserved + already issued). */
 export function reservedForWorkOrder(workOrderId: string, productId: string): number {
   const req = requestForWorkOrder(workOrderId)
@@ -841,42 +883,42 @@ export function isFullyReserved(workOrderId: string): boolean {
 export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-reserved'
 
 /**
- * The start gate — PRD v0.5 UC-04 / D-8, decided by S-4 and the partial mode (S-3):
+ * The start gate — UC-04 / D-8, decided by the partial mode (S-3) alone:
  *
- * | S-4 | partialMode  | Start permitted when                    |
- * | --- | ------------ | --------------------------------------- |
- * | off | any          | EVERY component is fully reserved        |
- * | on  | `consume`    | AT LEAST ONE component is reserved > 0   |
- * | on  | `completion` | EVERY component is reserved > 0          |
- * | on  | `none`       | every component fully reserved (S-4 moot) |
+ * | partialMode  | Start permitted when                      |
+ * | ------------ | ----------------------------------------- |
+ * | `consume`    | AT LEAST ONE component is reserved > 0     |
+ * | `completion` | EVERY component is reserved > 0            |
+ * | `none`       | EVERY component is fully reserved          |
  *
- * The two partial modes are mutually exclusive, so exactly one row applies.
+ * The PRD (12 Oct) no longer has a separate S-4 "start with limited stock" switch:
+ * it "is not introduced as a separate toggle" and uses the partial consume /
+ * partial completion setting instead. Turning a partial mode on already says the
+ * job may run short; a second switch could only repeat that, or silently cancel it.
  *
  * The rules protect different things. Partial consume lets work proceed with
  * whatever has arrived, so one secured component is enough to begin. Partial
  * completion posts output in tranches, and even one finished unit needs a complete
  * set of components — fabric without buttons produces nothing — so every line must
- * hold something. S-4 is the separate question of whether a job may begin short at
- * all: a material-control decision, not a production-recording one.
+ * hold something.
  *
  * This counts RESERVATION, never availability: stock sitting free in the warehouse
  * does not open the gate, because nobody has allocated it to this job yet.
  *
- * Reservation is always on (L-12), so the only free pass is a work order with no
- * request at all — a Subcon work order that raises none (C-4), or seed data.
+ * With reservation switched OFF (UC-00) there is nothing to gate — no request is
+ * raised and nothing is allocated — so the work order starts freely. A work order
+ * with no request at all passes for the same reason.
  */
 export function startGate(
   workOrderId: string,
-  options: { partialMode: PartialMode; startWithLimitedStock: boolean },
+  options: { reservationOn: boolean; partialMode: PartialMode },
 ): { allowed: boolean; reason?: StartBlockReason } {
+  if (!options.reservationOn) return { allowed: true }
   const req = requestForWorkOrder(workOrderId)
   if (!req || req.lines.length === 0) return { allowed: true }
 
   const lines = req.lines
   if (lines.every(l => lineCovered(l) >= l.qty)) return { allowed: true }
-
-  // S-4 off — full reservation, whatever the partial mode says about life after start.
-  if (!options.startWithLimitedStock) return { allowed: false, reason: 'not-fully-reserved' }
 
   switch (options.partialMode) {
     case 'consume':
@@ -1139,8 +1181,6 @@ function productNames(req: StockRequest, productIds: string[]): string {
     .join(', ')
 }
 
-export type UnreserveDisposition = 'return-to-warehouse' | 'production-defect'
-
 /**
  * UC-15 R-1 — what caused a release. All three write the SAME transition, which is
  * why they share one function: a release logged differently depending on how it
@@ -1171,15 +1211,14 @@ export interface ReleaseResult {
  * Releases each line's FULL remaining reserved qty and never part of it (R-8):
  * components are selected individually, quantities are not.
  *
- * `disposition` applies to the manual trigger only. "Production defect" is charged
- * to production cost and never re-enters available stock, so the qty leaves
- * `reserved` without arriving anywhere else; the two automatic triggers always
- * return the stock to the warehouse.
+ * Released stock ALWAYS returns to the warehouse's available stock. UC-03 (12 Oct)
+ * dropped the disposition choice ("Tickbox per product; Reason optional"), so the
+ * "production defect" path — charged to production cost, never re-entering stock —
+ * is gone with it; material that really was spoilt is recorded as consumption.
  */
 export function releaseReservation(
   requestId: string,
   productIds: string[],
-  disposition: UnreserveDisposition = 'return-to-warehouse',
   trigger: ReleaseTrigger = 'unreserve',
   ctx: ActivityContext = {},
 ): ReleaseResult {
@@ -1193,7 +1232,7 @@ export function releaseReservation(
       if (line.reserved <= 0) continue
       productQty += line.reserved
       name = line.product
-      if (disposition === 'return-to-warehouse') line.destAvailable += line.reserved
+      line.destAvailable += line.reserved
       line.reserved = 0
     }
     if (productQty <= 0) continue
@@ -1208,9 +1247,6 @@ export function releaseReservation(
       { label: 'Components', value: result.products.map(p => p.product).join(', ') },
       { label: 'Qty released', value: `${result.qty}` },
       { label: 'Trigger', value: RELEASE_TRIGGER_LABEL[trigger] },
-      ...(trigger === 'unreserve'
-        ? [{ label: 'Disposition', value: disposition === 'return-to-warehouse' ? 'Returned to warehouse' : 'Charged to production cost' }]
-        : []),
       ...(ctx.reason ? [{ label: 'Reason', value: ctx.reason }] : []),
     ], ctx)
   }
@@ -1230,7 +1266,7 @@ export function reservedProductIds(req: StockRequest): string[] {
 export function releaseForCanceledWorkOrder(workOrderId: string, ctx: ActivityContext = {}): ReleaseResult {
   const req = requestForWorkOrder(workOrderId)
   if (!req) return { qty: 0, products: [] }
-  return releaseReservation(req.id, reservedProductIds(req), 'return-to-warehouse', 'cancellation', ctx)
+  return releaseReservation(req.id, reservedProductIds(req), 'cancellation', ctx)
 }
 
 /**
@@ -1244,7 +1280,7 @@ export function releaseForCanceledWorkOrder(workOrderId: string, ctx: ActivityCo
 export function releaseOnCompletion(workOrderId: string, ctx: ActivityContext = {}): ReleaseResult {
   const req = requestForWorkOrder(workOrderId)
   if (!req) return { qty: 0, products: [] }
-  return releaseReservation(req.id, reservedProductIds(req), 'return-to-warehouse', 'completion', ctx)
+  return releaseReservation(req.id, reservedProductIds(req), 'completion', ctx)
 }
 
 /**
@@ -1254,20 +1290,18 @@ export function releaseOnCompletion(workOrderId: string, ctx: ActivityContext = 
 export function unreserveWorkOrderProducts(
   workOrderId: string,
   productIds: string[],
-  disposition: UnreserveDisposition,
   ctx: ActivityContext = { source: 'work-order' },
 ): number {
-  return unreserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds, disposition, ctx)
+  return unreserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds, ctx)
 }
 
 /** Release the full reserved qty of selected components of ONE request, by id. */
 export function unreserveRequestProducts(
   requestId: string,
   productIds: string[],
-  disposition: UnreserveDisposition,
   ctx: ActivityContext = {},
 ): number {
-  return releaseReservation(requestId, productIds, disposition, 'unreserve', ctx).qty
+  return releaseReservation(requestId, productIds, 'unreserve', ctx).qty
 }
 
 /**
@@ -1604,11 +1638,15 @@ export interface DemandChangeResult {
  * the original last (`reductionOrder`), so the most recent extra demand is given
  * up before anything the work order originally committed to.
  *
- * Cutting below what is already reserved releases that component's FULL remaining
- * reservation first (R-4, R-8) — unreserve is never partial — and the updated line
- * then goes back to the request in the same save, to be reserved again by whatever
- * the reservation method is (C-3 under One-step, PPIC under Two-step). Callers
- * must therefore treat a decrease as possibly releasing stock, and log it.
+ * When a reservation is released (R-4, R-8 — always the component's FULL
+ * remaining reserved qty, never part of it), the updated line goes back to the
+ * request in the same save, to be reserved again by the reservation method (C-3
+ * under One-step, PPIC under Two-step). Callers must treat any change as possibly
+ * releasing stock, and log it. What releases depends on the phase:
+ *  • `edit` (Not started) — ANY qty change, up or down, on a component that holds
+ *    a reservation (UC-06, 12 Oct: "System will unreserve remaining reserved qty",
+ *    then the line is updated in place). This replaced the "unreserve first" block.
+ *  • `adjust` (In progress) — only a cut below what is already reserved + issued.
  *
  * Either way, the user making the change becomes the requestor of every line they
  * touched (OPEN-17).
@@ -1636,6 +1674,17 @@ export function applyDemandChanges(
     if (delta === 0) continue
     const product = lines[0]!.product
 
+    // UC-06 Edit — release the component's whole remaining reservation before the
+    // line changes, whichever way the qty moves; it is re-reserved below.
+    let editReleased = false
+    if (phase === 'edit' && lines.some(l => l.reserved > 0)) {
+      const released = releaseReservation(req.id, [change.productId], 'unreserve',
+        options.ctx ?? { source: 'work-order' })
+      result.released.qty += released.qty
+      result.released.products.push(...released.products)
+      editReleased = true
+    }
+
     if (delta > 0) {
       if (phase === 'adjust') {
         // The delta gets its own line, with its own required date and its own
@@ -1660,9 +1709,10 @@ export function applyDemandChanges(
       } else {
         // Edit (Not started) — the existing line absorbs the increase in place;
         // there is no mid-run delta to keep apart and no second required date to
-        // carry. Under One-step the grown line goes back through auto-reserve, so
-        // demand the warehouse can already cover doesn't sit Requested while the
-        // stock is free (C-3, all-or-nothing on what is still outstanding).
+        // carry. Its reservation was released above, so the grown line goes back
+        // through the method as a whole: under One-step it re-reserves only if the
+        // warehouse covers the NEW total (C-3, all-or-nothing) — otherwise it waits
+        // as Requested, even if part of it was reserved before the edit.
         const target = drawdownOrder(lines)[0]!
         target.qty += delta
         target.requiredDate = change.requiredDate
@@ -1680,7 +1730,7 @@ export function applyDemandChanges(
     const covered = lines.reduce((s, l) => s + l.reserved + l.consumed, 0)
     const releasing = change.qty < covered && reserved > 0
     if (releasing) {
-      const released = releaseReservation(req.id, [change.productId], 'return-to-warehouse', 'unreserve',
+      const released = releaseReservation(req.id, [change.productId], 'unreserve',
         options.ctx ?? { source: phase === 'adjust' ? 'work-order' : 'work-order' })
       result.released.qty += released.qty
       result.released.products.push(...released.products)
@@ -1709,14 +1759,15 @@ export function applyDemandChanges(
     // R-4 — "the updated line is sent to the stock request on the same save", and
     // re-reservation follows the method. Worked example: Baut 160 reserved → 150;
     // the 160 is released, the line becomes 150, and One-step reserves 150 again.
-    if (releasing) toSettle.push(...linesForProduct(req, change.productId))
+    if (releasing || editReleased) toSettle.push(...linesForProduct(req, change.productId))
     result.decreased.push({ productId: change.productId, product, delta: -delta })
   }
 
   // C-3 — under One-step both kinds of line go through auto-reserve, all-or-
   // nothing each. Settled original-first, so scarce stock goes to committed demand
   // before a top-up.
-  result.reserved = settleLines(drawdownOrder(toSettle), options.autoReserve)
+  // De-duplicated: an edited line can be queued by both the increase and the release.
+  result.reserved = settleLines(drawdownOrder([...new Set(toSettle)]), options.autoReserve)
   if (result.reserved.reservedQty > 0) {
     logRequestEvent(req, 'Reserved material', [
       { label: 'Components', value: result.reserved.reservedNames.join(', ') },
@@ -1728,22 +1779,3 @@ export function applyDemandChanges(
   return result
 }
 
-/**
- * UC-06 guardrail for WO **Edit** (Not started): a component's qty cannot be set
- * below what is already reserved. The user is told to unreserve first, which they
- * can do because the work order has not started (UC-03).
- *
- * Adjust has no equivalent block — there the cut releases the reservation itself,
- * inside the modal, under the Adjust reason.
- */
-export function blockedByReservation(workOrderId: string, changes: DemandChange[]): string[] {
-  const req = requestForWorkOrder(workOrderId)
-  if (!req) return []
-  return changes
-    .filter((c) => {
-      const lines = linesForProduct(req, c.productId)
-      if (lines.length === 0) return false
-      return c.qty < lines.reduce((s, l) => s + l.reserved + l.consumed, 0)
-    })
-    .map(c => c.productId)
-}

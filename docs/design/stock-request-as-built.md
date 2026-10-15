@@ -5,8 +5,10 @@ diffed against **[PRD] Work Order - Material Reservation**, Draft v0.5 on
 Confluence (page `51289981861`, space `PD`, status *Need feedback*, last edited
 29 Sep 2026). Requirement IDs below (S-x, C-x, D-x, W-x, R-x) are the PRD's own.
 
-**Last reconciled 2 Oct 2026.** Where the build and the PRD disagreed, the build
-moved — see §3. The PRD's own "Known implementation gaps" list is now stale in
+**Last reconciled 14 Oct 2026**, against the PRD revision of **12 Oct** (page now
+titled *[PRD] Work Order: Material Reservation*). That revision changed UC-00,
+C-1, UC-03 and UC-06 and deleted L-12; the build followed — see §3, "Resolved
+14 Oct". Earlier reconciliations (2 Oct) are kept below for history. The PRD's own "Known implementation gaps" list is now stale in
 two respects: reserve and unreserve DO write activity-log entries, and the UC-04
 start-gate rules ARE built.
 
@@ -65,9 +67,10 @@ to-transfer. Request status = the **lowest** among its lines (W-3).
 The localStorage snapshot key is **versioned** (`stockRequests.v2`). A pre-v0.5
 snapshot cannot be read as a v0.5 request — its lines have no requestor, and its
 extra requests would return as duplicates — so it is dropped rather than guessed at.
-`erp.productionSettings` migrates instead: a saved `componentsMustBeReserved:
-false` from the build that carried that toggle maps to **Two-step**, so no tenant
-starts auto-allocating stock on upgrade (L-12).
+`erp.productionSettings` migrates instead: `componentsMustBeReserved` is a live
+setting again and passes through as saved (a tenant who ran the L-12 build comes
+back ON, the default, with the method they had); the removed S-4 field
+`allowStartWithLimitedStock` is dropped.
 
 ---
 
@@ -76,6 +79,38 @@ starts auto-allocating stock on upgrade (L-12).
 **None of substance.** The three divergences this document used to carry (D0,
 D-S4, D1) were resolved on 2 Oct 2026 **in the PRD's favour** — the code changed,
 the PRD stands. They are recorded here only so the history is readable.
+
+### Resolved 14 Oct — the PRD revision of 12 Oct
+
+Diffed word-by-word against the version built on 2 Oct; five changes reach the code.
+
+| PRD change | Build now |
+| --- | --- |
+| **UC-00** — "There is a toggle to disable / enable the reservation"; **L-12 deleted** | The **"Product components must be reserved"** toggle is back (default on). Off: saving a work order raises no stock request; the WO shows no readiness badge, Reserved qty, Reservation menu, batch/rejection notes, Adjust, Edit materials or Request additional stock (all of those act on the request); the start gate lifts. Requests already raised stay on the dashboard |
+| **UC-00 S-4** — "not introduced as a separate toggle"; uses the partial consume / completion setting | **S-4 removed.** `startGate()` follows the partial mode alone (§4). The settings page spells out the start rule for the current mode |
+| **UC-01 C-1** — request date "cannot be earlier than the planned start … cannot be later than the planned finish" | New work order: rows default to the **plan start** and follow it when the plan moves; days outside the plan are greyed out in the picker; Save names any row still outside, inline (`~/utils/planWindow`) |
+| **UC-03** — disposition removed ("Tickbox per product; Reason optional") | Unreserve asks only for the components and an optional reason; released stock **always returns to available warehouse stock**. The production-defect path is gone from the data layer too. Old log entries that say "Disposition" still render (the key is kept) |
+| **UC-06 table** — WO Edit: "System will unreserve remaining reserved qty", then update in place | Edit **auto-unreserves**: any qty change (up or down) on a reserved component releases its full remaining reservation, updates the line in place, and under One-step re-reserves on the same save (all-or-nothing). The modal warns before saving; the "unreserve first" block and `blockedByReservation` are gone. A date-only change releases nothing |
+
+**Where the revision contradicts itself, and what the build follows** (product
+owner's call, 12 Oct):
+
+| PRD says | …but also says | Build follows |
+| --- | --- | --- |
+| UC-02: the WO Reservation button opens **Reserve only**; "Unreserve is handled from the Stock requests area" | UC-03 table: Not-started unreserve via the **Reservation menu on WO detail** | **UC-03** — Unreserve stays in the WO Reservation menu while Not started (and on the stock request detail) |
+| UC-06 table: Edit **auto-unreserves** | UC-06 notes: Edit is **blocked** with "unreserve first" | **The table** — auto-unreserve |
+| UC-03: Unreserve "is **locked** once the WO has started" (the Adjust row was deleted) | UC-06 notes / R-4: a cut below reserved **unreserves inside the Adjust modal** | **UC-06 / R-4** — Adjust keeps releasing |
+| Worked example step 2: after the Edit, MDF is "reserved 20 · Partially reserved" | UC-06 table: the Edit releases MDF's reservation first | **The table** — under One-step with 20 free, MDF 24 re-reserves all-or-nothing and waits as Requested |
+| Key Concepts: One step reserves "by available qty" | S-1 / C-3: "only lines fully covered" | **S-1 / C-3** — all-or-nothing (unchanged since 2 Oct) |
+
+**Consequence worth a PRD note:** under One-step, *raising* the qty of a fully
+reserved line whose new total the warehouse can't cover in full now drops it to
+Requested — the reservation is released and the all-or-nothing re-reserve fails.
+That is the literal reading of the new table.
+
+The Figma *Production Material Requisition & Reservation* is **no longer stale on
+the toggle** — it draws it, and the build has it again. It still does not draw S-4,
+which is now correct.
 
 ### Resolved 2 Oct — the build moved to the PRD
 
@@ -95,49 +130,49 @@ S-4.
 | # | Item |
 | --- | --- |
 | **W-6 fixture** | The backdate-negative flag is a hardcoded seed entry (`backdateRecalc`, product `p03` / SA-0231), not a figure derived from a recalculation. The flag's *behaviour* is real — a negative Available renders red with the note — but the negative itself is staged. Deriving it needs a stock-ledger recalculation this prototype does not have |
-| **C-4 Subcon clause** | OPEN-18 says a Subcon work order raises a request only when its supply method is Resupply. **Not applicable here:** this build has no subcontracting — work orders carry no supply method and no Subcon type — so there is nothing to gate |
 | **OPEN-15** | Numbering is `SR-YYYY-NNNN` with the year taken from the app's current date and the counter continuing from the highest number issued in that year (reset yearly, not gapless). Matches the recommendation; still awaiting PM + EM sign-off |
 
 ---
 
 ## 4. Built to the PRD
 
-- **S-1…S-4** — method One-step / Two-step; under Two-step every reservation entry
-  point on WO surfaces is *hidden* and an info note points to Stock requests.
-  Partial consume / partial completion are one `partialMode` union, so they cannot
-  both be on. S-4 "start with limited stock" is its own setting and governs the
-  start gate only.
+- **UC-00, S-1…S-3** — the reservation toggle; method One-step / Two-step; under
+  Two-step every reservation entry point on WO surfaces is *hidden* and an info
+  note points to Stock requests. Partial consume / partial completion are one
+  `partialMode` union, so they cannot both be on, and they decide the start gate.
+  No separate S-4 setting.
 - **C-3 / C-4** — saving a WO raises exactly one request; under One-step a line
   auto-reserves only when the destination covers it in FULL, and the toast says
-  which case applied: reserved, or sent to the stockist. Idempotent. Reservation
-  cannot be switched off, so every work order raises a request.
+  which case applied: reserved, or sent to the stockist. Idempotent. No request
+  at all while reservation is switched off.
+- **C-1** — each raw-material row's request date stays inside the production plan
+  window (see §3).
 - **The WO's Needed qty follows the request.** After an Adjust the work order needs
   more (worked example: "the WO now needs 24 + 8 = 32 MDF"), so while a request
   exists the WO's Needed qty is its live line total — cost, the completion check
   and the Reserved / Consumed denominators follow. Rejected lines are left out
   because the warehouse declined them; they are flagged on the WO instead (W-7).
-- **UC-04 / D-8** — the PRD's four-row table, in `startGate()`:
+- **UC-04 / D-8** — `startGate()`, decided by the partial mode alone:
 
-  | S-4 | Partial mode | Start permitted when |
-  | --- | --- | --- |
-  | off | any | every component fully reserved |
-  | on | partial consume | at least one component reserved > 0 |
-  | on | partial completion | every component reserved > 0 |
-  | on | neither | every component fully reserved (S-4 has no effect) |
+  | Partial mode | Start permitted when |
+  | --- | --- |
+  | partial consume | at least one component reserved > 0 |
+  | partial completion | every component reserved > 0 |
+  | neither | every component fully reserved |
 
   It counts reservation, never availability: free stock does not open the gate.
-  The only free pass is a work order with no request at all.
+  Free passes: reservation switched off, or a work order with no request at all.
 - **UC-06 (Adjust half)** — Adjust puts an increase on a new Adjustment-tagged line
   carrying only the delta with its own request date, reduces Adjustment-first on a
   decrease, and makes the adjusting user that line's requestor. The form requires a
   reason and a per-line request date of today or later.
 - **UC-06 (Edit half)** — `EditWorkOrderMaterialsModal`, reachable from the Edit
   action on a not-started work order. Updates the existing line IN PLACE, makes
-  the editor its requestor, refuses to remove a component (min 1), and blocks a
-  cut below the reserved qty inline with "unreserve first" rather than releasing
-  — before start, unreserve is a deliberate action the user can take, which is
-  exactly why Adjust releases and Edit refuses to. An increase goes back through
-  auto-reserve under One-step. The warehouse is notified of any qty change.
+  the editor its requestor, refuses to remove a component (min 1), and — since
+  12 Oct — **auto-unreserves**: a qty change on a reserved component releases its
+  full remaining reservation, then the line goes back through the method
+  (One-step re-reserves all-or-nothing on the same save). The modal warns before
+  saving. The warehouse is notified of any qty change.
   Scope: MATERIAL demand only, which is what UC-06 governs — see §5.
 - **D-7 Request additional stock** — `RequestAdditionalStockModal`, on the WO
   Actions menu (not the Reservation menu: asking for material is demand, not
@@ -146,7 +181,8 @@ S-4.
   tagged `additional`, and the stockist can decline them (W-7).
 - **UC-03 / D-6** — Unreserve from the Reservation menu only while Not started;
   after start it is reachable only inside Adjust. Full remaining qty per selected
-  component, never partial (R-8). Mandatory disposition, optional reason.
+  component, never partial (R-8). No disposition — released stock returns to the
+  warehouse — and an optional reason.
 - **UC-09** — Delete allowed Not started or Completed, refused In progress with the
   message naming Cancel. Cancel takes a mandatory reason; both release reservations
   and leave the request as Canceled. The confirmation names qty released and qty
@@ -221,8 +257,9 @@ app/components/pages/WorkOrderDetailsPage.vue      reservation, gate, adjust, ca
 app/components/pages/CreateWorkOrderPage.vue       C-3 / C-4 on save
 app/data/notifications.ts                         in-app notifications (L-11)
 
-tests/wo-start-gate.spec.ts                UC-04's four rows
-tests/reservation-release.spec.ts          UC-15 triggers, R-8, dispositions
+tests/wo-start-gate.spec.ts                UC-04 by partial mode, toggle off
+tests/reservation-release.spec.ts          UC-15 triggers, R-8, no disposition
+tests/wo-reservation-toggle-and-c1.spec.ts UC-00 toggle, C-1 plan window
 tests/stock-request-lifecycle.spec.ts      W-3, UC-06, the PRD's worked example
 tests/stock-request-dashboard.spec.ts      W-2/W-4/W-7 rollup and tab rules
 ```

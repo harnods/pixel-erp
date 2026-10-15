@@ -12,11 +12,11 @@
  *  • Qty can go up or down, minimum 1. A component cannot be REMOVED — the work
  *    order still lists it, and a line that vanishes from the warehouse's request
  *    looks like demand that was never raised.
- *  • Qty cannot go below what is already reserved. That is blocked inline with
- *    "unreserve first" rather than silently releasing: before start, unreserve is
- *    an available, deliberate action (UC-03), so the user is asked to take it.
- *    This is the opposite of Adjust, where the cut itself releases, under the
- *    Adjust reason.
+ *  • Changing the qty of a component that holds a reservation — up OR down —
+ *    releases its full remaining reservation on save, then the line is updated in
+ *    place and goes back through the reservation method (UC-06, 12 Oct: "System
+ *    will unreserve remaining reserved qty"). This replaced the earlier "unreserve
+ *    first" block. The form says so before the user commits, as Adjust does.
  *  • The warehouse is notified of any qty change (in-app; email is out of the
  *    prototype's reach, L-11).
  *
@@ -61,7 +61,7 @@ interface Row {
   sku: string
   unit: string
   current: number
-  /** already reserved — the floor this edit cannot cut below */
+  /** already reserved — released in full if this row's qty changes */
   reserved: number
   qty: string
   /** DD/MM/YYYY, as the picker speaks it */
@@ -115,11 +115,11 @@ function isoFor(productId: string): string {
   return props.lines.find(l => l.productId === productId)?.requiredDate ?? ''
 }
 
-/** The guardrail that defines this form: a cut below what is already reserved. */
-function blockedByReserved(r: Row): boolean {
-  return num(r.qty) < r.reserved
+/** UC-06 — a qty change on a reserved component releases its reservation on save. */
+function willRelease(r: Row): boolean {
+  return r.reserved > 0 && num(r.qty) !== r.current
 }
-const blockedRows = computed(() => rows.value.filter(blockedByReserved))
+const releasingRows = computed(() => rows.value.filter(willRelease))
 
 // Footer actions stay rendered and enabled (rule/form-actions-always-present);
 // an unmet precondition explains itself inline rather than greying the button out.
@@ -131,11 +131,6 @@ function submit() {
   const tooLow = changedRows.value.find(r => num(r.qty) < 1)
   if (tooLow) {
     error.value = `${tooLow.product}: ${t('quantity cannot go below 1 — a component cannot be removed from a work order.')}`
-    return
-  }
-  const blocked = blockedRows.value[0]
-  if (blocked) {
-    error.value = `${blocked.product}: ${t('unreserve first — quantity cannot go below the')} ${blocked.reserved} ${blocked.unit} ${t('already reserved.')}`
     return
   }
   const missingDate = changedRows.value.find(r => !toIso(r.requiredDate))
@@ -209,12 +204,13 @@ function submit() {
           </table>
         </div>
 
-        <!-- The guardrail, said before the user commits rather than on submit. -->
-        <div v-if="blockedRows.length" class="ewm-banner">
+        <!-- UC-06 — say what saving will release, before it happens (as Adjust does). -->
+        <div v-if="releasingRows.length" class="ewm-banner" data-devchange="wo-edit-auto-unreserve">
           <MpIcon name="information" size="md" />
           <span>
-            {{ t('Unreserve') }} {{ blockedRows.map(r => r.product).join(', ') }}
-            {{ t('before cutting below what is already reserved — reservation is released deliberately, never by a quantity edit.') }}
+            {{ t('Saving releases the full remaining reservation of') }}
+            {{ releasingRows.map(r => r.product).join(', ') }}
+            — {{ t('unreserve is never partial. The updated line is sent back to the warehouse to be reserved again.') }}
           </span>
         </div>
 

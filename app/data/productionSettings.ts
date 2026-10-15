@@ -5,15 +5,17 @@ import { reactive, watch } from 'vue'
  * "Production Material Requisition & Reservation" › Production settings:
  * production planning, production readiness, and component request & reservation.
  *
- * Cross-reference: PRD v0.5 "Work Order Material Reservation & Stock Request" ›
- * UC-00 — S-1 method, S-2 entry-point gating, S-3 retained v1 settings (partial
- * consume / partial completion, mutually exclusive), S-4 start with limited stock.
+ * Cross-reference: [PRD] Work Order: Material Reservation (Confluence, 12 Oct) ›
+ * UC-00 — the reservation toggle, S-1 method, S-2 entry-point gating, S-3 retained
+ * v1 settings (partial consume / partial completion, mutually exclusive).
  *
- * Reservation is ALWAYS ON (L-12): it is a structural part of the work order flow,
- * and a tenant wanting minimal control picks One-step (auto), not off. The method
- * is the only choice. An earlier build carried a "Komponen produk harus
- * direservasi" toggle, as the Figma still draws it; that toggle is gone and a
- * tenant who had it OFF migrates to Two-step, so nothing auto-allocates on upgrade.
+ * Reservation CAN be switched off again: "There is a toggle to disable / enable the
+ * reservation of work order", and L-12 ("reservation cannot be disabled") was
+ * deleted. That is the "Komponen produk harus direservasi" toggle the Figma draws.
+ *
+ * S-4 "start with limited stock" is deliberately NOT a setting: the PRD now says it
+ * "is not introduced as a separate toggle" and uses the partial consume / partial
+ * completion setting instead — see `startGate`.
  */
 export type PlanDateField = 'required' | 'optional' | 'hidden'
 export type ReservationMethod = 'one-step' | 'two-step'
@@ -46,18 +48,19 @@ export interface ProductionSettings {
    */
   partialMode: PartialMode
 
-  /**
-   * S-4 — "start with limited stock". Governs the work order START gate only
-   * (UC-04, D-8), and nothing else: whether a job may begin without full coverage
-   * is a material-control decision, separate from partial consume / partial
-   * completion, which govern what may happen AFTER start. What it permits depends
-   * on which partial mode is active — see `startGate`.
-   */
-  allowStartWithLimitedStock: boolean
-
   // ── Component request & reservation ──────────────────────────────────────
   /**
-   * S-1 — who reserves, and when.
+   * Master switch for the whole reservation flow (UC-00). When off, saving a work
+   * order raises no stock request; the work order shows no readiness, no Reserved
+   * qty, no reservation actions and no Adjust / Edit materials (both change demand
+   * on the request); and the start gate does not apply. Requests that already
+   * exist stay on the Stock requests dashboard — switching the flow off does not
+   * rewrite history.
+   */
+  componentsMustBeReserved: boolean
+  /**
+   * S-1 — who reserves, and when. Only meaningful while
+   * {@link ProductionSettings.componentsMustBeReserved} is on.
    *  • `one-step` — components auto-reserve once the work order is created, for
    *    every line the destination warehouse fully covers; Production may also
    *    reserve from the work order page.
@@ -108,7 +111,7 @@ function load(): ProductionSettings {
     planDateField: 'required',
     allowBackdate: false,
     partialMode: 'none',
-    allowStartWithLimitedStock: false,
+    componentsMustBeReserved: true,
     reservationMethod: 'one-step',
   }
   if (typeof localStorage === 'undefined') return fallback
@@ -121,29 +124,28 @@ function load(): ProductionSettings {
   }
 }
 
-/** The shape written by builds before PRD v0.5 — still sitting in localStorage. */
+/** Shapes written by earlier builds — still sitting in localStorage. */
 type LegacySettings = Partial<ProductionSettings> & {
   allowPartialProduction?: boolean
-  /** The retired reservation master switch (L-12). OFF migrates to Two-step. */
-  componentsMustBeReserved?: boolean
+  /** S-4, removed — the partial mode decides the start gate on its own. */
+  allowStartWithLimitedStock?: boolean
 }
 
 /**
- * Carry a pre-v0.5 settings object forward, so anyone who used an earlier build
+ * Carry an older settings object forward, so anyone who used an earlier build
  * doesn't silently drop back to the defaults.
  *
  *  • `allowPartialProduction` → `partialMode: 'consume'`. v0.4's single toggle
- *    covered consuming in tranches; v0.5 splits that from partial completion.
- *  • `componentsMustBeReserved: false` → `reservationMethod: 'two-step'` (L-12's
- *    migration note). Reservation can no longer be switched off, and Two-step is
- *    the reading that allocates nothing on upgrade: every line waits for PPIC.
- *    A saved `true` carries no information — it was the default — and is dropped.
+ *    covered consuming in tranches; v0.5 split that from partial completion.
+ *  • `allowStartWithLimitedStock` (S-4) is dropped: it is no longer a setting.
+ *  • `componentsMustBeReserved` is a live setting again and passes through as
+ *    saved. (The L-12 build mapped OFF to Two-step and stopped saving it; such a
+ *    tenant comes back ON — the default — with the method they had.)
  */
 function migrate(saved: LegacySettings): Partial<ProductionSettings> {
-  const { allowPartialProduction, componentsMustBeReserved, ...rest } = saved
+  const { allowPartialProduction, allowStartWithLimitedStock: _s4, ...rest } = saved
   const next: Partial<ProductionSettings> = { ...rest }
   if (next.partialMode === undefined && allowPartialProduction) next.partialMode = 'consume'
-  if (componentsMustBeReserved === false) next.reservationMethod = 'two-step'
   return next
 }
 
@@ -159,11 +161,8 @@ if (typeof localStorage !== 'undefined') {
   }, { deep: true })
 }
 
-/**
- * L-12 — reservation is structural and cannot be switched off. Kept as a function
- * so the call sites that ask the question read the same as they always did.
- */
-export const reservationEnabled = (): boolean => true
+/** UC-00 — does the reservation flow run at all? ("Product components must be reserved") */
+export const reservationEnabled = (): boolean => productionSettings.componentsMustBeReserved
 
 /**
  * S-2 — are reservation entry points shown on work order surfaces? Also the
@@ -175,10 +174,7 @@ export const reservationEnabled = (): boolean => true
  * from only invites a support ticket. The work order shows an info note instead.
  */
 export const reservationOnWorkOrder = (): boolean =>
-  productionSettings.reservationMethod === 'one-step'
-
-/** S-4 — may a work order start without full coverage? See `startGate` for what it then permits. */
-export const startWithLimitedStockOn = (): boolean => productionSettings.allowStartWithLimitedStock
+  productionSettings.componentsMustBeReserved && productionSettings.reservationMethod === 'one-step'
 
 /** S-3 — convenience readers for the mutually exclusive partial modes. */
 export const partialConsumeOn = (): boolean => productionSettings.partialMode === 'consume'

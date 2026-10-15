@@ -4,17 +4,18 @@
  * Not started; the caller hides the action once it has started.
  *
  * A tickbox per component releases that component's FULL reserved qty — there is
- * no partial-qty unreserve. Disposition is mandatory (return to warehouse, or
- * production defect charged to production cost / HPP); reason is optional. The
+ * no partial-qty unreserve. The released qty always returns to available warehouse
+ * stock — UC-03 (12 Oct) dropped the disposition choice — and the reason is
+ * optional. The
  * Supervisor → Production manager approval flow is designed but skipped in MVP,
  * which the info note states.
  */
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpCheckbox, MpRadio, MpTextarea,
+  MpModalOverlay, MpModalCloseButton, MpCheckbox, MpTextarea,
   MpBanner, MpBannerIcon, MpBannerDescription,
 } from '@mekari/pixel3'
-import type { StockRequestLine, UnreserveDisposition } from '~/data/stockRequests'
+import type { StockRequestLine } from '~/data/stockRequests'
 
 const props = defineProps<{
   id: string
@@ -24,7 +25,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'unreserve', payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }): void
+  (e: 'unreserve', payload: { productIds: string[]; reason: string }): void
 }>()
 
 const { t } = useLocale()
@@ -33,18 +34,15 @@ const { t } = useLocale()
 const rows = computed(() => props.lines.filter(l => l.reserved > 0))
 
 const selected = ref<Set<string>>(new Set())
-const disposition = ref<UnreserveDisposition | ''>('')
 const reason = ref('')
 const error = ref('')
 
 const allSelected = computed(() =>
   rows.value.length > 0 && rows.value.every(r => selected.value.has(r.productId)))
 
-watch(disposition, () => { error.value = '' })
 watch(() => props.isOpen, (open) => {
   if (!open) return
   selected.value = new Set()
-  disposition.value = ''
   reason.value = ''
   error.value = ''
 })
@@ -69,13 +67,8 @@ function submit() {
     error.value = t('Select at least one component to unreserve.')
     return
   }
-  if (!disposition.value) {
-    error.value = t('Choose where the released stock goes.')
-    return
-  }
   emit('unreserve', {
     productIds: [...selected.value],
-    disposition: disposition.value,
     reason: reason.value.trim(),
   })
 }
@@ -129,20 +122,10 @@ function submit() {
           </table>
         </div>
 
-        <!-- Disposition — mandatory (D-6) -->
-        <fieldset class="um-field">
-          <legend class="um-label">{{ t('Disposition') }}</legend>
-          <div class="um-radios">
-            <MpRadio :id="`${id}-disp-return`" v-model="disposition" name="um-disposition" value="return-to-warehouse">
-              {{ t('Return to warehouse') }}
-              <template #description>{{ t('The released quantity goes back to available warehouse stock.') }}</template>
-            </MpRadio>
-            <MpRadio :id="`${id}-disp-defect`" v-model="disposition" name="um-disposition" value="production-defect">
-              {{ t('Production defect') }}
-              <template #description>{{ t('Charged to production cost (HPP). The stock does not return to the warehouse.') }}</template>
-            </MpRadio>
-          </div>
-        </fieldset>
+        <!-- UC-03 — no disposition to choose any more; say where the stock goes. -->
+        <p class="um-dest" data-devchange="unreserve-no-disposition">
+          {{ t('The released quantity goes back to available warehouse stock.') }}
+        </p>
 
         <div class="um-field">
           <label class="um-label" :for="`${id}-reason`">{{ t('Reason') }} <span class="um-optional">({{ t('optional') }})</span></label>
@@ -204,7 +187,10 @@ function submit() {
   color: var(--mp-text-default, #080d0e);
 }
 .um-optional { font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary, #3a4749); }
-.um-radios { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.um-dest {
+  margin: var(--mp-spacing-4) 0 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary, #3a4749);
+}
 
 .um-banner { margin-top: var(--mp-spacing-5); }
 
