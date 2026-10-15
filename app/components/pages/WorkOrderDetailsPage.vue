@@ -32,7 +32,7 @@ import {
   SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICING_SETTINGS, type SubconPriceState,
 } from '~/data/subconPricing'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
-import TransferOriginBreakdownModal, { type TransferOriginGroup } from '~/components/patterns/TransferOriginBreakdownModal.vue'
+import TransferOriginBreakdownDrawer, { type TransferOriginGroup } from '~/components/patterns/TransferOriginBreakdownDrawer.vue'
 import {
   buildSubconJournals, accountLabel,
   type SubconAccountingInput, type SubconCostLineInput, type SubconComponentInput,
@@ -49,7 +49,7 @@ import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { successToast } from '~/utils/toasts'
-import { workOrders, persistWorkOrders, subconAtVendor, subconIssuedFromVendor, subconPlannedComponentQty, subconComponentBaseQty, subconDropshipShortfall, subconCostLinesFor, subconRequestWithoutOrder, subconUncoveredCostLines, recordSubconDocument, recordSubconUnusedOutput, refreshSubconWorkOrder, subconSentToVendor, subconMaterialsFulfilled, addSubconCostLine, recordSubconCost, recordSubconProduction, type WorkOrder, type WorkOrderStatus, type SubconNextAction } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, subconAtVendor, subconIssuedFromVendor, subconPlannedComponentQty, subconComponentBaseQty, subconDropshipShortfall, subconCostLinesFor, subconRequestWithoutOrder, subconUncoveredCostLines, recordSubconDocument, recordSubconUnusedOutput, refreshSubconWorkOrder, subconSentToVendor, subconRaisedToVendor, subconMaterialsFulfilled, addSubconCostLine, recordSubconCost, recordSubconProduction, type WorkOrder, type WorkOrderStatus, type SubconNextAction } from '~/data/workOrders'
 import { warehouseTransfers, addTransfer } from '~/data/warehouseTransfers'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { productionSettings } from '~/data/productionSettings'
@@ -735,6 +735,7 @@ const nextAction = computed<SubconNextAction>(() => {
 const SUBCON_ACTION_LABEL: Record<SubconNextAction, string> = {
   start: t('Start work order'),
   'create-transfer': t('Create warehouse transfer'),
+  'view-transfer': t('View warehouse transfer'),
   'create-component-request': t('Create purchase request for raw material'),
   'view-component-request': t('View purchase request'),
   'view-component-order': t('View purchase order'),
@@ -820,6 +821,13 @@ function consumedFor(productId: string): number {
  */
 const sentToVendorBySku = computed<Record<string, number>>(() =>
   (wo.value ? subconSentToVendor(wo.value) : {}))
+/**
+ * What is already on a transfer that still stands — moved or awaiting approval.
+ * "Still to send" is measured against this, not against moved stock, so a
+ * transfer waiting for approval is not offered again (see subconRaisedToVendor).
+ */
+const raisedToVendorBySku = computed<Record<string, number>>(() =>
+  (wo.value ? subconRaisedToVendor(wo.value) : {}))
 
 /** True when this work order reports sent-to-vendor instead of consumed qty. */
 /** Basic: the vendor's own stock, so this order moves no material of ours. */
@@ -901,7 +909,8 @@ const rawOriginGroups = computed<TransferOriginGroup[]>(() => {
     const line = {
       productId: r.productId, product: r.product, sku: r.sku, unit: r.unit,
       planned,
-      remaining: Math.max(0, planned - (sentToVendorBySku.value[r.sku] ?? 0)),
+      transferred: sentToVendorBySku.value[r.sku] ?? 0,
+      remaining: Math.max(0, planned - (raisedToVendorBySku.value[r.sku] ?? 0)),
     }
     const existing = groups.find(g => g.warehouseId === id)
     if (existing) existing.lines.push(line)
@@ -1343,12 +1352,14 @@ function prefillLines(kind: SubconDocKind, originWarehouseId?: string): SubconPr
     // second time. Lines already fully sent drop out entirely.
     return components
       .map(r => {
-        const sent = sentToVendorBySku.value[r.sku] ?? 0
-        const remaining = Math.max(0, plannedQtyFor(r) - sent)
+        // Measured against what earlier transfers already carry, approved or
+        // not — a draft still waiting for approval has claimed its quantity.
+        const raised = raisedToVendorBySku.value[r.sku] ?? 0
+        const remaining = Math.max(0, plannedQtyFor(r) - raised)
         // R15 — the batches reserved on the work order travel with the transfer,
-        // past whatever earlier transfers already sent.
+        // past whatever earlier transfers already took.
         const reserved = wo.value?.materialReservations?.[r.productId]?.batchSelection ?? []
-        const batches = allocateReservedBatches(reserved, sent, remaining)
+        const batches = allocateReservedBatches(reserved, raised, remaining)
         return {
           name: r.product, sku: r.sku, qty: remaining, unit: r.unit,
           unitCost: r.purchaseCost, maxQty: remaining,
@@ -1576,6 +1587,15 @@ function handlePrimaryAction() {
       }
       // The next move belongs to Purchases, so this page opens the document
       // that carries it rather than duplicating the action.
+      // Every component is on a transfer awaiting approval — approving it is the
+      // next move, on the transfer itself. Opens the newest one still a draft.
+      case 'view-transfer': {
+        const draft = [...(subcon.value?.raisedDocuments ?? [])].reverse()
+          .find(d => d.route === '/warehouse-transfers'
+            && warehouseTransfers.find(tr => tr.id === d.id)?.status === 'draft')
+        if (draft) openRaisedDocument(draft)
+        return
+      }
       case 'view-component-request':
       case 'view-component-order':
       case 'view-service-request': {
@@ -1901,7 +1921,7 @@ function suppressFabClick(e: MouseEvent) {
         >{{ t('Partially produce') }}</MpButton>
         <MpButton
           v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary"
-          :data-devchange="nextAction === 'create-transfer' ? 'subcon-direct-transfer' : undefined"
+          :data-devchange="nextAction === 'create-transfer' ? 'subcon-direct-transfer' : nextAction === 'view-transfer' ? 'subcon-view-transfer' : undefined"
           @click="handlePrimaryAction"
         >{{ primaryAction }}</MpButton>
       </div>
@@ -2071,7 +2091,7 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
                   <!-- Subcon reports what LEFT for the vendor; a normal work
                        order reports what was consumed in-house. -->
-                  <th class="wod-th wod-th--num">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
+                  <th class="wod-th wod-th--num" :data-devchange="reportsSentQty ? 'subcon-sent-transferred' : undefined">{{ reportsSentQty ? t('Sent to vendor') : t('Consumed qty') }}</th>
                   <!-- What came back unconsumed. Beside what was sent, because
                        it is the same material returning — and only once the
                        order is complete, which is when the vendor reports it.
@@ -2460,7 +2480,7 @@ function suppressFabClick(e: MouseEvent) {
           <div v-else class="wod-empty">
             <img src="/illustrations/empty-folder.png" alt="" class="wod-empty-illustration" width="288" height="240" />
             <p class="wod-empty-title">{{ t('No transactions') }}</p>
-            <p class="wod-empty-desc">{{ t('Transactions created for this work order will appear here.') }}</p>
+            <p class="wod-empty-desc">{{ t('Transactions will appear here.') }}</p>
           </div>
         </template>
 
@@ -2597,7 +2617,7 @@ function suppressFabClick(e: MouseEvent) {
       </ErpTablePage>
     </div>
 
-    <TransferOriginBreakdownModal
+    <TransferOriginBreakdownDrawer
       v-if="subcon"
       v-model:is-open="originBreakdownOpen"
       :groups="rawOriginGroups"

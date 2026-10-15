@@ -105,9 +105,9 @@ function confirm() {
               <!-- Said before it happens, not after: completing closes the gap,
                    and the figure above is what it closes. -->
               <span v-if="shortfall > 0" class="csw-produced__note">
-                {{ t('Completing will produce the remaining') }}
+                {{ t('Completing produces the remaining') }}
                 {{ shortfall.toLocaleString('id-ID') }} {{ producedUnit }}
-                {{ t('and charge what the order has left to charge.') }}
+                {{ t('and records the remaining subcon cost.') }}
               </span>
             </div>
 

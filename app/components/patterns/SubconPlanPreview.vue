@@ -12,7 +12,7 @@
 import { MpIcon } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import {
-  buildDocumentPlan, SUBCON_BOM_LINES, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
+  buildDocumentPlan, splitDocumentPlan, SUBCON_BOM_LINES, SUBCON_SERVICE_FEE, SUBCON_HANDLING_FEE, SUBCON_BATCH_QTY,
   type SubconScope, type SubconSplit, type SubconMethod,
 } from '~/data/subcon'
 
@@ -41,6 +41,13 @@ const props = defineProps<{
 const { t } = useLocale()
 
 const plan = computed(() => buildDocumentPlan(props.scope, props.split, props.method))
+const flows = computed(() => {
+  const { rawMaterial, subconCost } = splitDocumentPlan(plan.value)
+  return [
+    { key: 'raw', label: 'Raw materials', steps: rawMaterial },
+    { key: 'cost', label: 'Subcon cost', steps: subconCost },
+  ].filter(f => f.steps.length)
+})
 
 const estimate = computed(() => {
   const factor = (props.qty / SUBCON_BATCH_QTY) * (props.split === 'partial' ? 0.5 : 1)
@@ -54,16 +61,23 @@ const estimate = computed(() => {
 </script>
 
 <template>
-  <!-- Dense: tags only, one line, full names on hover. -->
-  <ol v-if="dense" class="scp__dense">
-    <li v-for="(step, i) in plan" :key="step.kind" class="scp__dense-item">
-      <span
-        class="scp__chip-tag" :class="`scp__chip-tag--${step.tag.toLowerCase()}`"
-        :title="t(step.title)"
-      >{{ t(step.tag) }}</span>
-      <span v-if="i < plan.length - 1" class="scp__dense-sep" aria-hidden="true">›</span>
-    </li>
-  </ol>
+  <!-- Dense: tags only, full names on hover — one line per flow, so procuring
+       the materials and buying the vendor's work read as the separate runs
+       they are. A flow with no documents (Basic's raw materials) is left out. -->
+  <div v-if="dense" class="scp__flows" data-devchange="subcon-plan-two-flows">
+    <div v-for="flow in flows" :key="flow.key" class="scp__flow">
+      <span class="scp__flow-label">{{ t(flow.label) }}</span>
+      <ol class="scp__dense">
+        <li v-for="(step, i) in flow.steps" :key="step.kind" class="scp__dense-item">
+          <span
+            class="scp__chip-tag" :class="`scp__chip-tag--${step.tag.toLowerCase()}`"
+            :title="t(step.title)"
+          >{{ t(step.tag) }}</span>
+          <span v-if="i < flow.steps.length - 1" class="scp__dense-sep" aria-hidden="true">›</span>
+        </li>
+      </ol>
+    </div>
+  </div>
 
   <!-- Compact: the chain as one line of chips. -->
   <ol v-else-if="compact" class="scp__chain">
@@ -113,6 +127,10 @@ const estimate = computed(() => {
 .scp { max-width: 860px; }
 
 /* ── Dense: tags only ────────────────────────────────────────────────────── */
+.scp__flows { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.scp__flow { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+/* Caption: 12px, the same muted tone as the chain's own separators. */
+.scp__flow-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle, #75808f); min-width: var(--mp-sizes-24, 96px); }
 .scp__dense {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1);
   margin: 0; padding: 0; list-style: none;

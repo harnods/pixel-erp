@@ -31,7 +31,7 @@ import {
   SUBCON_SERVICE_PRODUCTS, subconServiceProduct, SUBCON_DEFAULT_ACCOUNT_MAPPING,
   type SubconScope, type SubconSplit, type SubconMethod,
 } from '~/data/subcon'
-import { formatDate } from '~/utils/date'
+import { formatDate, formatDateLong } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
 import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
@@ -122,9 +122,8 @@ const PROCESS_OPTIONS = [
 // A subcon work order buys a service instead of running its own processes, so its
 // cost lines are NON-TRACK service products (the same list the BOM costs against),
 // not in-house labour/overhead/routing accounts.
-const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({
-  id: p.id, name: `${p.name} · ${p.sku}`,
-}))
+// Name only: the SKU has its own column beside the picker.
+const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({ id: p.id, name: p.name }))
 /** A mapping is stored by its label; the pickers address it by id. */
 const optionId = (options: { id: string; name: string }[], label: string) =>
   options.find(o => o.name === label)?.id ?? ''
@@ -161,16 +160,29 @@ const isSubcon = computed(() => category.value === 'Subcontracting')
 /**
  * A subcontracted run only builds. Disassembly breaks an output back into its
  * components — work the vendor is not engaged for, and that no document in the
- * subcon plan describes — so it is not offered. With a single type left there
- * is nothing to choose, so it is set rather than left for the user to pick.
+ * subcon plan describes. It stays in the list so the type reads as unavailable
+ * rather than missing, greyed with a tooltip saying why; with a single usable
+ * type there is nothing to choose, so Assembly is set.
+ *
+ * Pixel's MpAutocomplete has no per-option disabled state (only `isDisabled` for
+ * the whole field), so the greyed row is drawn in the item slot and choosing it
+ * is undone in `onWorkOrderType`.
  */
-const woTypeOptions = computed(() =>
-  isSubcon.value ? WO_TYPE_OPTIONS.filter(o => o.id === 'Assembly') : WO_TYPE_OPTIONS)
+const woTypeOptions = computed(() => WO_TYPE_OPTIONS.map(o => ({
+  ...o, disabled: isSubcon.value && o.id === 'Disassembly',
+})))
+function onWorkOrderType(v: string) {
+  workOrderTypeError.value = false
+  if (isSubcon.value && v === 'Disassembly') workOrderType.value = 'Assembly'
+}
 watch(isSubcon, (on) => {
   if (on && workOrderType.value !== 'Assembly') {
     workOrderType.value = 'Assembly'
     workOrderTypeError.value = false
   }
+  // Becoming a subcon order after the BOM was picked: drop the blank raw-material
+  // row the BOM's adjustment setting added — a subcon order adds none.
+  if (on) rawRows.value = rawRows.value.filter(r => r.productId)
 })
 
 /**
@@ -303,7 +315,12 @@ onUnmounted(() => { if (bomTimer) clearTimeout(bomTimer) })
 // "Create work order" button both arrive via ?bomId=<real BOM id>.
 const presetBomId = route.query.bomId as string | undefined
 if (presetBomId && findBom(presetBomId)) {
-  if (!category.value) category.value = 'Standard'
+  // A Subcontracting BOM opens a Subcontracting work order: the category decides
+  // which sections the form shows, so defaulting to Standard hid the subcon
+  // configuration and the subcon cost the BOM was chosen for.
+  if (!category.value) {
+    category.value = findBom(presetBomId)!.category === 'Subcontracting' ? 'Subcontracting' : 'Standard'
+  }
   bomId.value = presetBomId
   onBomSelect(presetBomId)
 }
@@ -445,7 +462,6 @@ function defaultSubconCostRows(): SubconCostRow[] {
         accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, l.accountMapping),
         amount: String(l.amount),
       })),
-      makeSubconCost(),
     ]
   }
   const service = subconServiceProduct(scopeServiceId.value)!
@@ -461,7 +477,6 @@ function defaultSubconCostRows(): SubconCostRow[] {
       accountMapping: optionId(ACCOUNT_MAPPING_OPTIONS, freight.accountMapping),
       amount: String(freight.defaultPrice),
     }),
-    makeSubconCost(),
   ]
 }
 
@@ -492,7 +507,6 @@ function onSubconCostProduct(row: SubconCostRow, id: string) {
   row.costDriver = p.unit
   row.accountMapping = optionId(ACCOUNT_MAPPING_OPTIONS, p.accountMapping)
   if (!row.amount) row.amount = String(p.defaultPrice)
-  appendIfLast(subconCostRows, row.id, makeSubconCost)
 }
 /** The contract value — the charges as entered, before any gross-up. */
 const subconContractValue = computed(() => subconCostRows.value.reduce((s, r) => s + num(r.amount), 0))
@@ -599,7 +613,9 @@ function fillFromBom(id: string) {
     needed: String(r.needed), unit: r.unit, requiredDate: reqDate,
     batchSelection: [], serialSelection: [],
   }))
-  if (bom.allowBomAdjustment) rawRows.value.push(makeRaw())
+  // No blank row to add from on a subcon order: its components are the BOM's,
+  // and a change to them is an adjustment made on the adjust form.
+  if (bom.allowBomAdjustment && !isSubcon.value) rawRows.value.push(makeRaw())
 
   costRows.value = bom.productionCost.map(c => ({
     id: costSeq++,
@@ -679,11 +695,11 @@ function validate() {
   if (isSubcon.value) {
     const planStart = planDates.value[0] ? toLocalIso(planDates.value[0]) : ''
     if (!subconPromisedDate.value) {
-      subconDateError.value = t('Pick the date the vendor has promised the goods back.')
+      subconDateError.value = t('You must select promised return date')
       ok = false
     } else if (planStart && subconPromisedDate.value < planStart) {
       subconDateError.value =
-        `${t('The promised return date cannot be before the plan start date')} (${planStart}).`
+        `${t('Promised return date is before the plan start date. Please select')} ${formatDateLong(planStart)} ${t('or later')}`
       ok = false
     }
   }
@@ -835,7 +851,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </MpFormControl>
 
             <!-- Category -->
-            <MpFormControl id="wo-category" is-required :is-invalid="categoryError">
+            <MpFormControl id="wo-category" data-devchange="wo-prefill-from-bom" is-required :is-invalid="categoryError">
               <MpFormLabel>{{ t('Category') }}</MpFormLabel>
               <MpAutocomplete
                 id="wo-category-ac" v-model="category" :data="CATEGORY_OPTIONS"
@@ -871,8 +887,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 id="wo-type-ac" v-model="workOrderType" :data="woTypeOptions"
                 label-prop="name" value-prop="id" :placeholder="t('Select type')"
                 is-clearable use-portal is-full-width :is-invalid="workOrderTypeError"
-                @update:model-value="workOrderTypeError = false"
-              />
+                @update:model-value="onWorkOrderType"
+              >
+                <template #default="{ item }">
+                  <MpTooltip
+                    v-if="item.disabled"
+                    :label="t('Cannot select disassembly. Not available for subcontracting yet.')"
+                    placement="right" use-portal
+                  >
+                    <span class="wo-type-opt--off">{{ t(item.name) }}</span>
+                  </MpTooltip>
+                  <span v-else>{{ t(item.name) }}</span>
+                </template>
+              </MpAutocomplete>
               <MpFormErrorMessage>{{ t('You must select work order type') }}</MpFormErrorMessage>
             </MpFormControl>
 
@@ -952,7 +979,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               {{ t('Set as sub-assembly') }}
               <MpTooltip
                 id="wo-subassembly-tip"
-                :label="t('Subcontracting does not support multi-level work orders yet.')"
+                :label="t('Cannot set as sub-assembly. Subcontracting does not support multi-level yet.')"
                 placement="right" use-portal
               >
                 <MpIcon name="info" size="sm" />
@@ -998,14 +1025,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                  they are simply not offered yet. Shown as a filled, disabled
                  field rather than hidden, so the reader can see what this run
                  IS, not just what it is not. -->
-            <MpFormControl id="wo-subcon-scope">
+            <MpFormControl id="wo-subcon-scope" data-devchange="subcon-fixed-fields">
               <MpFormLabel>{{ t('What is subcontracted') }}</MpFormLabel>
               <MpInput
                 id="wo-subcon-scope-input"
                 :model-value="t(SUBCON_SCOPE_LABEL['finished-good'])"
                 is-disabled is-full-width
               />
-              <p class="wo-subcon-hint">{{ t('Subcontracting one component is not supported yet.') }}</p>
             </MpFormControl>
 
             <MpFormControl id="wo-subcon-split">
@@ -1015,7 +1041,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 :model-value="t('Full quantity')"
                 is-disabled is-full-width
               />
-              <p class="wo-subcon-hint">{{ t('Subcontracting part of the quantity is not supported yet.') }}</p>
             </MpFormControl>
 
             <MpFormControl id="wo-subcon-method" is-required>
@@ -1069,7 +1094,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
              stock, so this order neither reserves nor ships any material and the
              table would state a plan nobody acts on. -->
         <section v-if="hasBom && !subconIsBasic" class="wo-section">
-          <h2 class="wo-section-title">{{ t('Raw materials') }}</h2>
+          <h2 class="wo-section-title" :data-devchange="isSubcon ? 'subcon-fixed-lines' : undefined">{{ t('Raw materials') }}</h2>
           <p class="wo-section-desc">{{ t('Unit purchase cost may change when inventory value adjusts.') }}</p>
           <label v-if="showOriginWarehouse" class="wo-checkbox-row wo-checkbox-row--tight">
             <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
@@ -1080,7 +1105,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <colgroup>
                 <col class="wo-col--product" /><col class="wo-col--price" /><col v-if="showOriginWarehouse" class="wo-col--origin" />
                 <col class="wo-col--needed" /><col class="wo-col--unit" /><col class="wo-col--date" />
-                <col class="wo-col--price" /><col class="wo-col--del" />
+                <col class="wo-col--price" /><col v-if="!isSubcon" class="wo-col--del" />
               </colgroup>
               <thead>
                 <tr>
@@ -1088,13 +1113,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                        not read as where the output lands. -->
                   <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('Purchase cost') }}</th><th v-if="showOriginWarehouse" class="wo-th" data-devchange="subcon-wo-origin-wh">{{ t('Origin warehouse') }}</th>
                   <th class="wo-th">{{ t('Needed qty') }}</th><th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Required date') }}</th>
-                  <th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
+                  <th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th v-if="!isSubcon" class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
                 <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
                   <td v-for="c in (showOriginWarehouse ? 7 : 6)" :key="c" class="wo-td"><span class="wo-skel" /></td>
-                  <td class="wo-td wo-td--del" />
+                  <td v-if="!isSubcon" class="wo-td wo-td--del" />
                 </tr>
               </tbody>
               <tbody v-else>
@@ -1120,7 +1145,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal /></div>
                   </td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
-                  <td class="wo-td wo-td--del">
+                  <!-- A subcon order's components are the BOM's: none added, none
+                       removed. A change to them is an adjustment, made on the
+                       adjust form where the reason is recorded. -->
+                  <td v-if="!isSubcon" class="wo-td wo-td--del">
                     <MpButton v-if="row.productId && (!hasBom || bomAllowsAdjustment)" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(rawRows, row.id)" />
                   </td>
                 </tr>
@@ -1238,24 +1266,23 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <colgroup>
                 <!-- All fixed: the vendor name must not wrap, so the table
                      scrolls on a narrow stage rather than squeezing columns. -->
-                <col class="wo-col-svc" /><col class="wo-col-by" />
+                <col class="wo-col-svc" /><col class="wo-col-sku" /><col class="wo-col-by" />
                 <col class="wo-col-driver" /><col class="wo-col-map" />
-                <col class="wo-col-amt" /><col class="wo-col-del" />
+                <col class="wo-col-amt" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="wo-th">{{ t('Service product') }}</th>
+                  <th class="wo-th" data-devchange="subcon-cost-sku">{{ t('SKU') }}</th>
                   <th class="wo-th">{{ t('Charged by') }}</th>
                   <th class="wo-th">{{ t('Unit') }}</th>
                   <th class="wo-th">{{ t('Account mapping') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Amount') }}</th>
-                  <th class="wo-th wo-th--del" />
                 </tr>
               </thead>
               <tbody v-if="bomLoading">
                 <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
-                  <td v-for="c in 5" :key="c" class="wo-td"><span class="wo-skel" /></td>
-                  <td class="wo-td wo-td--del" />
+                  <td v-for="c in 6" :key="c" class="wo-td"><span class="wo-skel" /></td>
                 </tr>
               </tbody>
               <tbody v-else>
@@ -1266,10 +1293,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       v-model="row.productId"
                       :data="SUBCON_PRODUCT_OPTIONS"
                       label-prop="name" value-prop="id"
-                      :placeholder="t('Select non-track product')"
-                      is-searchable is-clearable use-portal is-full-width
+                      :placeholder="t('Select service product')"
+                      is-searchable use-portal is-full-width
                       @update:model-value="(v: string) => onSubconCostProduct(row, v)"
                     />
+                  </td>
+                  <td class="wo-td">
+                    <template v-if="row.productId">{{ subconServiceProduct(row.productId)?.sku ?? '—' }}</template>
                   </td>
                   <!-- Always the subcon vendor: these are their charges, by definition. -->
                   <td class="wo-td">
@@ -1293,13 +1323,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input wo-td--num-input">
                     <MpInput v-if="row.productId" :id="`subcon-cost-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width />
                   </td>
-                  <td class="wo-td wo-td--del">
-                    <MpTooltip v-if="row.productId" :label="t('Remove')" placement="top" use-portal>
-                      <button class="wo-del-btn btn-enterprise" type="button" :aria-label="t('Remove')" @click="removeRow(subconCostRows, row.id)">
-                        <MpIcon name="minus-circular" size="sm" />
-                      </button>
-                    </MpTooltip>
-                  </td>
                 </tr>
 
                 <!-- Derived, not entered. Shown as soon as a vendor whose prices
@@ -1311,11 +1334,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     {{ t('Withholding borne by company') }}
                     <span class="wo-derived-note">{{ t('Arises because the vendor price is agreed net.') }}</span>
                   </td>
+                  <td class="wo-td">—</td>
                   <td class="wo-td">{{ subconVendor.name }}</td>
                   <td class="wo-td">{{ t(SUBCON_PRICE_BASIS_SHORT[subconVendor.defaultPriceBasis]) }}</td>
                   <td class="wo-td">{{ SUBCON_DEFAULT_ACCOUNT_MAPPING }}</td>
                   <td class="wo-td wo-td--num">{{ formatIDR(subconGrossUp) }}</td>
-                  <td class="wo-td wo-td--del" />
                 </tr>
               </tbody>
             </table>
@@ -1641,6 +1664,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 /* Subcon cost column widths — token scale, so the table reads like every other. */
 .wo-col-svc    { width: var(--mp-sizes-75, 300px); }
+.wo-col-sku    { width: var(--mp-sizes-32, 128px); }
 .wo-col-by     { width: var(--mp-sizes-56, 224px); }
 .wo-col-driver { width: var(--mp-sizes-38, 152px); }
 .wo-col-map    { width: var(--mp-sizes-56, 224px); }
@@ -1648,6 +1672,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-col-del    { width: var(--mp-sizes-11, 44px);  }
 
 /* ── Subcontracting ──────────────────────────────────────────────────────── */
+/* Disabled option look — Pixel's disabled text token, and no pointer, since
+   choosing it changes nothing. */
+.wo-type-opt--off { color: var(--mp-colors-text-disabled, #8c9596); cursor: not-allowed; }
 .wo-subcon-hint {
   margin: var(--mp-spacing-1) 0 0;
   font-size: var(--mp-font-sizes-sm);
@@ -1655,7 +1682,9 @@ onUnmounted(() => { stageObserver?.disconnect() })
   color: var(--mp-text-secondary);
 }
 .wo-subcon-plan {
-  display: flex; flex-wrap: wrap; align-items: center;
+  /* Top-aligned: the plan is now two flows deep, and the label belongs level
+     with the first of them. */
+  display: flex; flex-wrap: wrap; align-items: flex-start;
   gap: var(--mp-spacing-2) var(--mp-spacing-3);
   margin-top: var(--mp-spacing-4);
 }

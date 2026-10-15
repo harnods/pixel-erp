@@ -37,9 +37,21 @@ const doc = (kind: string, id: string, extra: Partial<RaisedSubconDocument> = {}
   ({ kind, id, number: id, route: kind === 'transfer' ? '/warehouse-transfers' : '/purchase-requests', ...extra })
 
 /** A transfer into the vendor's warehouse carrying `fraction` of every component. */
+/**
+ * A transfer that has really sent the stock. Only approved-onward transfers
+ * count as at the vendor (see subconSentToVendor); a draft is `draftTransfer`.
+ */
 function sendTransfer(id: string, fraction: number) {
   warehouseTransfers.push({
-    id, destinationId: VENDOR_WH,
+    id, destinationId: VENDOR_WH, status: 'approved',
+    lines: lines.map(l => ({ sku: l.sku, qty: l.qty * fraction })),
+  } as never)
+  return doc('transfer', id)
+}
+/** A transfer raised but still awaiting approval — it has moved nothing yet. */
+function draftTransfer(id: string, fraction: number) {
+  warehouseTransfers.push({
+    id, destinationId: VENDOR_WH, status: 'draft',
     lines: lines.map(l => ({ sku: l.sku, qty: l.qty * fraction })),
   } as never)
   return doc('transfer', id)
@@ -48,6 +60,26 @@ const servicePr = doc('subconPr', 'PR-S')
 const servicePo = doc('purchaseOrder', 'PO-S', { route: '/purchase-orders', fromKind: 'subconPr', fromId: 'PR-S' })
 
 // ── R2 — exactly one next step, in order ─────────────────────────────────────
+
+describe('Sent to vendor counts moved stock only', () => {
+  it('a draft transfer covering everything waits for approval, not another transfer', () => {
+    expect(deriveNextAction(order('resupply', [draftTransfer('wt-d-all', 1)]))).toBe('view-transfer')
+  })
+  it('a draft covering part still asks for a transfer for the rest', () => {
+    expect(deriveNextAction(order('resupply', [draftTransfer('wt-d-half', 0.5)]))).toBe('create-transfer')
+  })
+  it('a draft does not move the run past procurement', () => {
+    const wo = order('resupply', [draftTransfer('wt-d-st', 1)])
+    syncSubconStatus(wo)
+    expect(wo.status).toBe('waiting rm procurement')
+  })
+  it('the same transfer, once approved, does', () => {
+    const wo = order('resupply', [sendTransfer('wt-a-st', 1)])
+    syncSubconStatus(wo)
+    expect(wo.status).toBe('waiting subcon order')
+  })
+})
+
 
 describe('R2 — the next step, method by method', () => {
   it('Basic: service PR → view PR → Start → Complete → none', () => {

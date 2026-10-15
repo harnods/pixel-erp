@@ -150,6 +150,10 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 const router = useRouter()
 function viewDetails(row: BillOfMaterials) { router.push(`/bill-of-materials/${row.id}`) }
+/** Same entry as the detail page's Create work order — the form prefills from it. */
+function createWorkOrder(row: BillOfMaterials) {
+  router.push(`/work-orders/new?source=bom&bomId=${encodeURIComponent(row.id)}`)
+}
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -297,6 +301,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as BillOfMaterials)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem data-devchange="bom-list-create-wo" @click="createWorkOrder(row as unknown as BillOfMaterials)">{{ t('Create work order') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicateBom(row as unknown as BillOfMaterials)">{{ t('Duplicate') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openDeleteModal(row as unknown as BillOfMaterials)">{{ t('Archive') }}</MpPopoverListItem>
           </MpPopoverList>

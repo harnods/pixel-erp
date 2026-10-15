@@ -28,18 +28,22 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ close: [] }>()
 
-const panelClass = computed(() =>
-  css({
-    margin: '3',
-    width: `min(${props.width}, calc(100% - 24px))`,
-    height: 'calc(100% - 24px)',
-    display: 'flex',
-    flexDirection: 'column',
-    bg: 'background.stage',
-    rounded: 'xl',
-    overflow: 'hidden',
-  }),
-)
+const panelClass = css({
+  margin: '3',
+  height: 'calc(100% - 24px)',
+  display: 'flex',
+  flexDirection: 'column',
+  bg: 'background.stage',
+  rounded: 'xl',
+  overflow: 'hidden',
+})
+
+/**
+ * Width is a runtime prop, so it goes on an inline style. Panda extracts
+ * `css()` at build time and never generates a class for an interpolated value —
+ * inside `css()` the width was silently dropped and every drawer opened full width.
+ */
+const panelStyle = computed(() => ({ width: `min(${props.width}, calc(100% - 24px))` }))
 
 const overlayClass = css({
   position: 'fixed',
@@ -96,7 +100,7 @@ const footerClass = css({
         class="erp-drawer-overlay"
         :class="overlayClass"
       >
-        <div :class="panelClass" role="dialog" :aria-label="ariaLabel ?? title">
+        <div :class="panelClass" :style="panelStyle" data-devchange="erp-drawer-width" role="dialog" :aria-label="ariaLabel ?? title">
           <header :class="headerClass">
             <span :class="titleClass">
               <slot name="title">{{ title }}</slot>

@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
-import { warehouseTransfers } from './warehouseTransfers'
+import { warehouseTransfers, type TransferStatus } from './warehouseTransfers'
 import { stockAdjustments } from './stockAdjustments'
 import { purchaseRequests } from './purchaseRequests'
 import type { SubconScope, SubconSplit, SubconMethod, SubconAdjustmentRecord } from './subcon'
@@ -184,6 +184,7 @@ export interface WorkOrderSubconSetup {
 export type SubconNextAction =
   | 'start'
   | 'create-transfer'
+  | 'view-transfer'
   | 'create-component-request'
   | 'view-component-request'
   | 'view-component-order'
@@ -429,19 +430,58 @@ export function subconSentToVendor(wo: WorkOrder): Record<string, number> {
   if (!c) return {}
   if (c.method === 'dropship') return { ...(c.componentReceipts ?? {}) }
   if (c.method !== 'resupply') return {}
+  // Only a transfer that has actually moved the stock: approved onward. A draft
+  // awaiting approval has moved nothing, so counting it reported material as at
+  // the vendor before it left the shelf — and let the run advance on it.
+  return transferTotalsToVendor(wo, TRANSFERRED_STATUSES)
+}
 
+/** Transfer statuses at which the stock has really left the origin warehouse. */
+const TRANSFERRED_STATUSES: readonly TransferStatus[] = ['approved', 'in transit', 'completed']
+/** Transfer statuses that still stand — everything not refused or withdrawn. */
+const RAISED_STATUSES: readonly TransferStatus[] = ['draft', 'approved', 'in transit', 'completed']
+
+/**
+ * How much of each component is already on a transfer that still stands —
+ * moved or merely awaiting approval.
+ *
+ * Not what the vendor holds (that is `subconSentToVendor`), but what no longer
+ * needs a transfer raised for it. Measuring "still to send" against moved stock
+ * alone would offer the same quantity again while its first transfer waits for
+ * approval, and a second press would raise a duplicate.
+ */
+export function subconRaisedToVendor(wo: WorkOrder): Record<string, number> {
+  const c = wo.subcon
+  if (!c || c.method !== 'resupply') return subconSentToVendor(wo)
+  return transferTotalsToVendor(wo, RAISED_STATUSES)
+}
+
+function transferTotalsToVendor(wo: WorkOrder, statuses: readonly TransferStatus[]): Record<string, number> {
+  const c = wo.subcon!
   const vendorWarehouseId = c.subconWarehouseId
   const totals: Record<string, number> = {}
   for (const doc of c.raisedDocuments ?? []) {
     if (doc.route !== '/warehouse-transfers') continue
     const transfer = warehouseTransfers.find(t => t.id === doc.id)
-    if (!transfer) continue
+    if (!transfer || !statuses.includes(transfer.status)) continue
     if (vendorWarehouseId && transfer.destinationId !== vendorWarehouseId) continue
     for (const line of transfer.lines ?? []) {
       totals[line.sku] = (totals[line.sku] ?? 0) + line.qty
     }
   }
   return totals
+}
+
+/** Whether every component already has a transfer raised for its full quantity. */
+function subconTransfersCoverAll(wo: WorkOrder): boolean {
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
+  const lines = bom?.rawMaterials ?? []
+  if (!lines.length) return false
+  const raised = subconRaisedToVendor(wo)
+  return lines.every((line) => {
+    const sku = catalogProduct(line.productId)?.sku
+    return !!sku && (raised[sku] ?? 0) >= plannedComponentQty(wo, sku, line.needed)
+  })
 }
 
 /**
@@ -643,7 +683,9 @@ export function deriveNextAction(wo: WorkOrder): SubconNextAction {
 
   // ── Supply first: the vendor cannot be asked to work on nothing ──────────
   if (!subconMaterialsFulfilled(wo)) {
-    if (c.method === 'resupply') return 'create-transfer'
+    // Every component already on a transfer, just not approved yet: the next
+    // move is approving it, on the transfer itself — not raising another.
+    if (c.method === 'resupply') return subconTransfersCoverAll(wo) ? 'view-transfer' : 'create-transfer'
     if (c.method === 'dropship') {
       // Nothing requested yet — or an increase raised the need past what was
       // requested (R8): ask for the difference, not the whole run again.

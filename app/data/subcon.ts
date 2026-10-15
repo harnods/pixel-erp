@@ -232,6 +232,31 @@ export function buildDocumentPlan(
   return kinds.map(kind => ({ kind, ...DOC_STEPS[kind] }))
 }
 
+/** Documents that get the vendor its materials — everything before the work. */
+const RAW_MATERIAL_KINDS: readonly SubconDocKind[] = [
+  'transfer', 'rawTransfer', 'componentPr', 'rawPr', 'purchasePr',
+  'componentOrder', 'componentDelivery', 'componentIssue',
+]
+
+/**
+ * The plan as two flows: procuring the raw materials, and buying the vendor's
+ * work. They are raised by different people for different things — a warehouse
+ * or a buyer of components on one side, the buyer of the service on the other —
+ * and on Dropship both run a request and an order, so one chain read as if the
+ * same PR → PO happened twice. Order within each flow is the plan's own.
+ *
+ * Basic has no raw-material flow: the vendor supplies its own.
+ */
+export function splitDocumentPlan(plan: readonly SubconDocStep[]): {
+  rawMaterial: SubconDocStep[]
+  subconCost: SubconDocStep[]
+} {
+  return {
+    rawMaterial: plan.filter(s => RAW_MATERIAL_KINDS.includes(s.kind)),
+    subconCost: plan.filter(s => !RAW_MATERIAL_KINDS.includes(s.kind)),
+  }
+}
+
 // ── Document prefill ──────────────────────────────────────────────────────────
 
 /**

@@ -28,6 +28,118 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-view-transfer',
+    title: "Subcon WO: View warehouse transfer",
+    description:
+      "When every component is already on a transfer awaiting approval, the work order points to that transfer instead of offering to raise another.",
+    date: '2026-10-15',
+    files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
+  },
+  {
+    id: 'subcon-sent-transferred',
+    title: "Subcon WO: Sent to vendor counts moved stock only",
+    description:
+      "Sent to vendor counts transfers approved onward. A draft awaiting approval has moved nothing, so it no longer counts — and the run waits for the approval before moving on.",
+    date: '2026-10-15',
+    files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
+  },
+  {
+    id: 'subcon-origin-transferred',
+    title: "Origin breakdown: Transferred qty",
+    description:
+      "New column between Planned and Remaining: what has actually left each warehouse. Remaining is what still needs a transfer raised.",
+    date: '2026-10-15',
+    files: ['TransferOriginBreakdownDrawer.vue'],
+  },
+  {
+    id: 'erp-drawer-width',
+    title: "Drawers open at their set width",
+    description:
+      "Shared drawer shell fix: the width each drawer asks for (420px by default) was being dropped, so every drawer opened across the full screen. It now applies.",
+    date: '2026-10-15',
+    files: ['ErpDrawer.vue'],
+  },
+  {
+    id: 'subcon-origin-drawer',
+    title: "Components by origin warehouse is a drawer",
+    description:
+      "Opens as a drawer over the work order instead of a modal, closes with × only, and has no Cancel — each Create warehouse transfer button acts on its own.",
+    date: '2026-10-15',
+    files: ['TransferOriginBreakdownDrawer.vue'],
+  },
+  {
+    id: 'subcon-fixed-lines',
+    title: "Subcon WO: raw materials and subcon cost come from the BOM",
+    description:
+      "On a Subcontracting work order neither list can be added to or removed from. A later change is made on the adjust form.",
+    date: '2026-10-15',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'subcon-plan-two-flows',
+    title: "Subcon WO: documents in two flows",
+    description:
+      "Documents this work order will raise is shown as two lines — Raw materials and Subcon cost — instead of one chain.",
+    date: '2026-10-15',
+    files: ['SubconPlanPreview.vue', 'subcon.ts'],
+  },
+  {
+    id: 'subcon-fixed-fields',
+    title: "Subcon WO: no captions under fixed fields",
+    description:
+      "The captions under What is subcontracted and Quantity subcontracted are removed.",
+    date: '2026-10-15',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-prefill-from-bom',
+    title: "Create WO from a BOM opens with its category",
+    description:
+      "A work order created from a Subcontracting BOM opens as Subcontracting, so its configuration and subcon cost appear prefilled.",
+    date: '2026-10-15',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'bom-list-create-wo',
+    title: "BOM list: Create work order",
+    description:
+      "Each row's actions now include Create work order, prefilled the same way as from the BOM detail.",
+    date: '2026-10-15',
+    files: ['BillOfMaterialsIndexPage.vue'],
+  },
+  {
+    id: 'bom-category-locked',
+    title: "Edit BOM: category is fixed",
+    description:
+      "The category cannot be changed once a BOM is saved — it decides the recipe's cost structure.",
+    date: '2026-10-15',
+    files: ['CreateBillOfMaterialsPage.vue'],
+  },
+  {
+    id: 'subcon-cost-sku',
+    title: "Subcon cost: SKU column",
+    description:
+      "The SKU moves out of the service product dropdown into its own column.",
+    date: '2026-10-15',
+    files: ['CreateBillOfMaterialsPage.vue', 'CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'bom-adjust-checkbox',
+    title: "Allow BOM adjustment uses Pixel's checkbox",
+    description:
+      "Rebuilt with MpCheckbox's own label and description slots, top-aligned.",
+    date: '2026-10-15',
+    files: ['CreateBillOfMaterialsPage.vue'],
+  },
+  {
+    id: 'bom-subassembly-disabled',
+    title: "Disabled secondary buttons look disabled",
+    description:
+      "A disabled secondary button now uses Pixel's disabled text and fill (it kept the black label before). Applies app-wide; seen here on a Subcontracting BOM.",
+    date: '2026-10-15',
+    files: ['erp.css', 'CreateBillOfMaterialsPage.vue'],
+  },
+  {
     id: 'subcon-direct-transfer',
     title: "Subcon: Create warehouse transfer raises it directly",
     description:
@@ -45,10 +157,10 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'subcon-wo-type-assembly',
-    title: "Subcon WO: Assembly only",
+    title: "Subcon WO: Disassembly listed but disabled",
     description:
-      "Disassembly is not offered on a Subcontracting work order, and the type is set to Assembly when the category is chosen.",
-    date: '2026-10-14',
+      "On a Subcontracting work order Disassembly stays in the Type list, greyed with a tooltip saying it is not available yet, and the type is set to Assembly. Choosing Disassembly leaves it on Assembly.",
+    date: '2026-10-15',
     files: ['CreateWorkOrderPage.vue'],
   },
   {

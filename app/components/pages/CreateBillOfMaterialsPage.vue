@@ -132,9 +132,9 @@ const SUBCON_UNIT_OPTIONS = [...new Set([
   ...SUBCON_SERVICE_PRODUCTS.map(p => p.unit),
 ])].map(u => ({ id: u, name: u }))
 
-const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({
-  id: p.id, name: `${p.name} · ${p.sku}`,
-}))
+// Name only: the SKU has its own column beside the picker, so repeating it in
+// every option made the list harder to scan.
+const SUBCON_PRODUCT_OPTIONS = SUBCON_SERVICE_PRODUCTS.map(p => ({ id: p.id, name: p.name }))
 
 /** Picking the service fills its usual driver, account and price — all still editable. */
 function onSubconProduct(row: SubconCostRow, id: string) {
@@ -588,7 +588,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="bf-grid">
             <MpFormControl id="bf-category" is-required :is-invalid="categoryError">
               <MpFormLabel>{{ t('Category') }}</MpFormLabel>
+              <!-- Fixed once saved: the category decides the recipe's whole cost
+                   structure (Subcon cost vs Production cost + Routing), and the
+                   work orders already raised from it were built on that shape.
+                   Shown filled and disabled, the repo's locked-field form. -->
+              <MpInput
+                v-if="isEditMode" id="bf-category-fixed" data-devchange="bom-category-locked"
+                :model-value="t(CATEGORY_OPTIONS.find(o => o.id === category)?.name ?? category)"
+                is-disabled is-full-width
+              />
               <MpAutocomplete
+                v-else
                 id="bf-category-ac" v-model="category" :data="CATEGORY_OPTIONS"
                 label-prop="name" value-prop="id" :placeholder="t('Select category')"
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
@@ -645,15 +655,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </ul>
           </div>
 
-          <!-- Allow BOM adjustment -->
-          <label class="bf-check">
-            <MpCheckbox id="bf-adjust" :is-checked="allowBomAdjustment" @change="allowBomAdjustment = !allowBomAdjustment" />
-            <span class="bf-check-body">
-              <span class="bf-check-title">
-                {{ t('Allow BOM adjustment') }}
-                <!-- Left usable rather than greyed out: the setting is real and
-                     is saved. The tooltip says how far it currently goes, so
-                     nobody plans around a capability that is still landing. -->
+          <!-- Allow BOM adjustment — Pixel's own label + description slots, as
+               on InviteUserPage, rather than a hand-built label beside the box
+               (rule/checkbox-gap-12, rule/checkbox-multiline-top). Left usable:
+               the setting is real and is saved; the tooltip says how far it
+               currently goes. Clicks on the icon are stopped so reading it does
+               not toggle the box. -->
+          <MpCheckbox
+            id="bf-adjust" class="bf-check" data-devchange="bom-adjust-checkbox"
+            :is-checked="allowBomAdjustment"
+            @change="(on: boolean) => allowBomAdjustment = on"
+          >
+            <span class="bf-check-title">
+              {{ t('Allow BOM adjustment') }}
+              <span class="bf-check-tip" @click.stop.prevent>
                 <MpTooltip
                   id="bf-adjust-tip"
                   :label="t('Adjusting raw materials from a work order is not fully available yet.')"
@@ -662,9 +677,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <MpIcon name="info" size="sm" />
                 </MpTooltip>
               </span>
-              <span class="bf-check-desc">{{ t('You can add or reduce raw materials to the same SKU when creating a work order.') }}</span>
             </span>
-          </label>
+            <template #description>
+              {{ t('You can add or reduce raw materials to the same SKU when creating a work order.') }}
+            </template>
+          </MpCheckbox>
         </section>
 
         <!-- ══ Raw materials ═════════════════════════════════════════════════ -->
@@ -680,11 +697,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpTooltip
               id="bf-subassembly-tip"
               :label="isSubconBom
-                ? t('Subcontracting does not support multi-level work orders yet.')
+                ? t('Cannot add sub-assembly product. Subcontracting does not support multi-level yet.')
                 : t('Adding a sub-assembly product is not available yet.')"
               placement="top" use-portal
             >
-              <MpButton variant="secondary" is-rounded :is-disabled="isSubconBom" @click.prevent>
+              <MpButton variant="secondary" is-rounded :is-disabled="isSubconBom" data-devchange="bom-subassembly-disabled" @click.prevent>
                 <template #leftIcon><MpIcon name="add" size="sm" /></template>
                 {{ t('Sub-assembly product') }}
               </MpButton>
@@ -850,12 +867,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
           <div class="bf-table-scroll">
             <table class="bf-table">
               <colgroup>
-                <col class="bf-col-svc" /><col class="bf-col-driver" />
+                <col class="bf-col-svc" /><col class="bf-col-sku" /><col class="bf-col-driver" />
                 <col class="bf-col-map" /><col class="bf-col-amt" /><col class="bf-col-del" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="bf-th">{{ t('Service product') }}</th>
+                  <th class="bf-th" data-devchange="subcon-cost-sku">{{ t('SKU') }}</th>
                   <th class="bf-th">{{ t('Unit') }}</th>
                   <th class="bf-th">{{ t('Account mapping') }}</th>
                   <th class="bf-th bf-th--right">{{ t('Amount') }}</th>
@@ -870,10 +888,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       v-model="row.productId"
                       :data="SUBCON_PRODUCT_OPTIONS"
                       label-prop="name" value-prop="id"
-                      :placeholder="t('Select non-track product')"
+                      :placeholder="t('Select service product')"
                       is-searchable is-clearable use-portal is-full-width
                       @update:model-value="(v: string) => onSubconProduct(row, v)"
                     />
+                  </td>
+                  <td class="bf-td">
+                    <template v-if="row.productId">{{ subconServiceProduct(row.productId)?.sku ?? '—' }}</template>
                   </td>
                   <!-- Defaults to the service's own unit, and can be changed:
                        the same service is sometimes quoted per piece and
@@ -1145,6 +1166,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-section--last { border-bottom: none; }
 /* Subcon cost column widths — token scale, so the table reads like every other. */
 .bf-col-svc    { width: var(--mp-sizes-80, 320px); }
+.bf-col-sku    { width: var(--mp-sizes-32, 128px); }
 .bf-col-driver { width: var(--mp-sizes-40, 160px); }
 .bf-col-map    { width: var(--mp-sizes-56, 224px); }
 .bf-col-amt    { width: var(--mp-sizes-50, 200px); }
@@ -1182,13 +1204,12 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
 /* Checkbox with title + description — constrained to its own content width so
    only the checkbox + label area is clickable (not the full stage width). */
-.bf-check { display: inline-flex; width: fit-content; max-width: 660px; align-items: flex-start; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); cursor: pointer; }
-.bf-check-body { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
-.bf-check-title {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-}
-.bf-check-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
+/* Spacing only — the box, gap and description styling are MpCheckbox's own. */
+.bf-check { margin-top: var(--mp-spacing-4); max-width: 660px; }
+/* rule/checkbox-multiline-top — title + caption, so the box sits on the first line. */
+.bf-check :deep(.mp-checkbox__root) { align-items: flex-start; }
+.bf-check-title { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
+.bf-check-tip { display: inline-flex; cursor: default; }
 
 /* ── Attachment ──────────────────────────────────────────────────────────── */
 .bf-attachment { margin-top: var(--mp-spacing-6); max-width: 660px; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }

@@ -111,6 +111,22 @@
   border-color: var(--mp-colors-border-bold, #8c9596);
 }
 
+/* ── MpButton secondary — DISABLED keeps Pixel's disabled look ──────────────
+ * The override above is unlayered, so it also beat Pixel's disabled state: a
+ * disabled secondary button kept the near-black label and dark border and read
+ * as clickable (e.g. "Sub-assembly product" on a Subcontracting BOM). Restore
+ * Pixel's own disabled text and fill (text.disabled / background.disabled, read
+ * off the library's `disabled:nextTheme:*` classes). The border is the ERP's
+ * visible-but-muted disabled border, as on MpCheckbox below: Pixel draws it in
+ * background.disabled, which equals the page background and would erase the
+ * button's outline. Higher specificity than the rule above, so no !important. */
+.mp-button--variant_secondary:is(:disabled, [disabled], [aria-disabled="true"], [data-disabled]),
+.mp-button--variant_secondary:is(:disabled, [disabled], [aria-disabled="true"], [data-disabled]):hover {
+  color: var(--mp-colors-text-disabled, #8c9596);
+  background-color: var(--mp-colors-background-disabled, #f8f9f9);
+  border-color: var(--mp-colors-border-default, #e3e7e9);
+}
+
 /* ── MpButton focus ring — neutral, not brand green ──────────────────────────
  * Pixel's :focus-visible ring on a button is a brand-emerald BOX-SHADOW. The ERP
  * uses a NEUTRAL focus everywhere (same as form fields: Slate400 #8C9596). Kill any

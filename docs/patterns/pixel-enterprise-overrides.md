@@ -35,6 +35,16 @@ ERP look without any wrapper. `.btn-enterprise--secondary` is **legacy**
 fully-qualified `--mp-colors-*` tokens + hex fallback (the short `--mp-*` aliases can
 resolve empty; `rule/style-with-css`).
 
+**Disabled.** The black-text override must not reach a disabled secondary button, or
+it reads as clickable. `erp.css` restores Pixel's disabled look for
+`:disabled` / `[aria-disabled=true]`:
+
+| Property | Value |
+|---|---|
+| Fill | `var(--mp-colors-background-disabled, #f8f9f9)` (Pixel) |
+| Border | `var(--mp-colors-border-default, #e3e7e9)` — the ERP's muted disabled border (Pixel's equals the page background and erases the outline; same fix as §9) |
+| Text | `var(--mp-colors-text-disabled, #8c9596)` (Pixel) |
+
 ## 2. Ghost button — regular weight
 
 Ghost is the **only** button that is **regular** weight (primary + secondary are
