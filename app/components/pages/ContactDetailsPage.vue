@@ -26,6 +26,7 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
 import { getCustomerTransactions, getCustomerTxnSummary, customerIdForContact, type CustomerTransaction } from '~/data/customerTransactions'
+import { vendors } from '~/data/vendors'
 import { formatIDR } from '~/utils/currency'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -104,12 +105,21 @@ const txnColumns: TableColumn[] = [
 
 // Toolbar filters — Transaction type + Status
 const txnType = ref('')
-const typeOptions = [
-  { value: 'sales-invoice', label: t('Sales invoice') },
-  { value: 'sales-order',   label: t('Sales order')   },
-  { value: 'sales-quote',   label: t('Sales quote')   },
-  { value: 'credit-memo',   label: t('Credit memo')   },
-]
+const typeOptions = computed(() => {
+  if (listSlug.value === 'vendors') {
+    return [
+      { value: 'purchase-invoice', label: t('Purchase invoice') },
+      { value: 'purchase-quote',   label: t('Purchase quote')   },
+      { value: 'debit-memo',       label: t('Debit memo')       },
+    ]
+  }
+  return [
+    { value: 'sales-invoice', label: t('Sales invoice') },
+    { value: 'sales-order',   label: t('Sales order')   },
+    { value: 'sales-quote',   label: t('Sales quote')   },
+    { value: 'credit-memo',   label: t('Credit memo')   },
+  ]
+})
 function statusLabel(s: string): string { return s.replace(/-/g, ' ').replace(/^\w/, (ch) => ch.toUpperCase()) }
 const statusOptions = computed(() =>
   [...new Set(txnRows.value.map((r) => r.status))].sort().map((value) => ({ value, label: statusLabel(value) })),
@@ -146,14 +156,29 @@ function overdueDaysLabel(row: CustomerTransaction): string | null {
 }
 
 // ── Title-bar actions ─────────────────────────────────────────────────────────
+function vendorIdForContact(c: { displayName?: string; companyName?: string } | undefined): string | undefined {
+  if (!c) return undefined
+  const names = [c.displayName, c.companyName].filter(Boolean).map((n) => n!.toLowerCase())
+  return vendors.find((v) => names.includes(v.name.toLowerCase()))?.id
+}
+
+const isVendorView = computed(() => listSlug.value === 'vendors')
+
 const createTxItems = computed(() => {
+  if (isVendorView.value) {
+    const vendorId = vendorIdForContact(contact.value)
+    return [
+      { label: 'Purchase quote',   to: '/purchase-quotes/new' },
+      { label: 'Purchase invoice', to: '/purchase-invoices'   },
+      { label: 'Debit memo',       to: vendorId ? `/debit-memos/new?vendor=${vendorId}` : '/debit-memos/new' },
+    ]
+  }
   const custId = customerIdForContact(contact.value)
   return [
     { label: 'Sales quote',      to: '/sales-quotes'    },
     { label: 'Sales order',      to: '/sales-orders'    },
     { label: 'Sales invoice',    to: '/sales-invoices'  },
     { label: 'Credit memo',      to: custId ? `/credit-memos/new?customer=${custId}` : '/credit-memos/new' },
-    { label: 'Purchase invoice', to: '/purchase-invoices' },
   ]
 })
 const isDeleteModalOpen = ref(false)

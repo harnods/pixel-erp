@@ -76,6 +76,110 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['SalesInvoiceDetailsPage.vue', 'salesInvoiceDetails.ts', 'creditMemos.ts', 'ErpStatusBadge.vue'],
   },
   {
+    id: 'dm-detail-actions',
+    title: 'Debit memo detail page',
+    description:
+      'New Debit memo detail page (AP-side mirror of credit memo): available debit, debit-account lines, running balance, Debit applications and Debit refund sections, and an Actions menu (Apply debit memo, Create debit memo refund, Edit, Delete). Delete is blocked with an explanation while the memo is in use.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'apply-dm-save',
+    title: 'Apply debit memo form',
+    description:
+      'New Apply debit memo form — spends one debit memo across the vendor\'s open purchase invoices with per-invoice "amount to apply", live Amount to debit / Remaining debit, and inline validation. Reachable from a purchase invoice or a debit memo.',
+    date: '2026-10-14',
+    files: ['ApplyDebitMemoPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'apply-dm-form',
+    title: 'Apply debit memo — vendor + memo selector',
+    description:
+      'Apply debit memo form: vendor is locked to the entry context, debit memo autocomplete with available debit display. Opening from a purchase invoice pre-applies the available debit to that invoice.',
+    date: '2026-10-14',
+    files: ['ApplyDebitMemoPage.vue'],
+  },
+  {
+    id: 'refund-dm-save',
+    title: 'Create debit memo refund form',
+    description:
+      'New Create debit memo refund form — deposits vendor\'s remaining debit back as cash into a bank account ("Deposit to" instead of "Pay from"), across one or more debit memos, with live Total refund and inline validation.',
+    date: '2026-10-14',
+    files: ['CreateDebitMemoRefundPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'refund-dm-form',
+    title: 'Debit memo refund — Deposit to field',
+    description:
+      'The refund direction is inverted vs credit memo: "Deposit to" (cash IN from vendor) replaces "Pay from" (cash OUT to customer). The rest of the form mirrors credit memo refund.',
+    date: '2026-10-14',
+    files: ['CreateDebitMemoRefundPage.vue'],
+  },
+  {
+    id: 'new-dm-save',
+    title: 'Create / edit debit memo form',
+    description:
+      'Create/edit debit memo form (AP-side mirror of credit memo): vendor, date, debit-account lines, memo, attachments. Editing cannot reduce the memo below debit already used or change vendor once used.',
+    date: '2026-10-14',
+    files: ['NewDebitMemoPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'new-dm-form',
+    title: 'Debit memo form — vendor selector',
+    description:
+      'Vendor autocomplete on the new debit memo form. Pre-fills from ?vendor= query param when navigating from a vendor detail page.',
+    date: '2026-10-14',
+    files: ['NewDebitMemoPage.vue'],
+  },
+  {
+    id: 'dm-detail-jump',
+    title: 'Debit memo — jump to another memo',
+    description:
+      'DetailJumpTo on debit memo detail page lets you switch between debit memos without going back to the list.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'dm-detail-journal',
+    title: 'Debit memo — view journal entry',
+    description:
+      'View journal entry link on debit memo detail page opens a drawer showing the AP-side journal: Dr AP, Cr each line account.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'dm-detail-activity',
+    title: 'Debit memo — activity log',
+    description:
+      'Last updated link opens the activity log modal for the debit memo.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'pinv-less-debit-memo',
+    title: 'Purchase invoice — Less: Debit Memo totals line',
+    description:
+      'Purchase invoice detail page now shows "Less: Debit Memo" in the totals section when a debit memo has been applied, mirroring the sales invoice "Less: Credit Memo" pattern. Also shows Amount paid, Balance due.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue', 'purchaseInvoiceDetails.ts'],
+  },
+  {
+    id: 'pinv-payments-tab',
+    title: 'Purchase invoice — Payments tab',
+    description:
+      'Purchase invoice detail page now has a Payments tab showing cash payments and debit memo applications. Debit memo applied rows link to their detail page.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue', 'purchaseInvoiceDetails.ts'],
+  },
+  {
+    id: 'pinv-apply-debit-memo',
+    title: 'Purchase invoice — Apply debit memo action',
+    description:
+      'Purchase invoice Actions menu now includes "Apply debit memo" when the vendor has available debit and the invoice has a remaining balance.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue'],
+  },
+  {
     id: 'cm-detail-actions',
     title: 'Credit memo detail page',
     description:

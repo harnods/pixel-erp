@@ -80,6 +80,8 @@ export interface PurchaseInvoice {
   date: string
   dueDate: string
   amount: number
+  total: number
+  balance: number
   status: InvoiceStatus
   itemCount: number
   hasAttachment?: boolean
