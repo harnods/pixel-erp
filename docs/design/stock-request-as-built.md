@@ -170,6 +170,11 @@ S-4.
   `STATUS_RANK`, so a request whose own demand is settled and whose extra line the
   stockist declined derives `rejected` by itself; one whose demand is still open
   derives the lower status and stays in Awaiting, where the work is.
+- **Columns** — both views lead with identity, then Status · Destination
+  warehouse, then the qty block in one order: Available · Required · Reserved ·
+  Remaining · Unit. By transaction sums each figure across the request's lines;
+  its Unit is blank when the lines disagree, since no one unit is true then.
+  Neither view carries Request type.
 - **W-1…W-10** — both views; product rows are one per SKU **per destination
   warehouse** so availability is never summed across warehouses; W-2's column set
   behind a column menu; derived statuses incl. Rejected and Canceled; overdue;

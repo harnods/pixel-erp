@@ -15,7 +15,7 @@
  */
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpBadge, MpTooltip, MpSegmentedControl, MpDatePicker, toast, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpSegmentedControl, MpDatePicker, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -32,10 +32,10 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
-  requestRequiredQty, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
+  requestRequiredQty, requestCoveredQty, lineCovered, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
   reserveStock, reserveRequestProducts, rejectRequestLine, canReject, canRejectLine,
   isLineOverdue,
-  type StockRequest, type StockRequestLine, type StockRequestLineTag,
+  type StockRequest, type StockRequestLine,
   type SkuDemandGroup, type SkuDemandEntry,
 } from '~/data/stockRequests'
 
@@ -96,13 +96,19 @@ const woColumns: TableColumn[] = [
   // is a field on it, not its name.
   { key: 'number',              label: t('Stock request no.'),     kind: 'number', sortable: true, sortType: 'text' },
   { key: 'workOrderNumber',     label: t('Work order number'),     kind: 'number', sortable: true, sortType: 'text' },
-  // W-7 — the line tags get a column of their own rather than stacking under the
-  // number, where they pushed the row to three lines and read as part of it.
-  { key: 'lineTags',            label: t('Request type'),          kind: 'tags' },
-  { key: 'qty',                 label: t('Required qty'),                          sortable: true, sortType: 'number', align: 'right' },
-  { key: 'requiredDate',        label: t('Required date'),         kind: 'date',   sortable: true, sortType: 'date' },
+  // What the request IS, then where it is wanted — the same pair, in the same
+  // place, as the By product table, so switching views does not move them.
   { key: 'status',              label: t('Status'),                kind: 'status',                 sortType: 'text' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name',  sortable: true, sortType: 'text' },
+  { key: 'requiredDate',        label: t('Required date'),         kind: 'date',   sortable: true, sortType: 'date' },
+  // The qty block reads across in the By product order: available → required →
+  // reserved → remaining → unit. Each figure sums the request's lines, as
+  // Required qty already did.
+  { key: 'available',           label: t('Available qty'),                         sortable: true, sortType: 'number', align: 'right' },
+  { key: 'qty',                 label: t('Required qty'),                          sortable: true, sortType: 'number', align: 'right' },
+  { key: 'reserved',            label: t('Reserved qty'),                          sortable: true, sortType: 'number', align: 'right' },
+  { key: 'remaining',           label: t('Remaining qty'),                         sortable: true, sortType: 'number', align: 'right' },
+  { key: 'unit',                label: t('Unit'),                  kind: 'unit' },
 ]
 /**
  * By product — PRD v0.5 W-2, kept at one row per SKU PER DESTINATION WAREHOUSE.
@@ -197,6 +203,9 @@ function matchesDateRange(iso: string, range: Date[] | null): boolean {
 // only under All, with no actions.
 type WoRow = StockRequest & {
   status: string; qty: number; overdue: boolean
+  /** The request's own qty block — each figure sums its lines, as `qty` does.
+      `unit` is empty when the lines disagree, since no one unit is true then. */
+  reserved: number; remaining: number; available: number; unit: string
   /** Earliest required date across the request's lines — the column the overdue
       note belongs under, because that is the date being missed. */
   requiredDate: string
@@ -240,6 +249,14 @@ const woRows = computed<WoRow[]>(() =>
         // looked like a filter bug.
         status: (isTerminalTab.value ? stockRequestStatus(r) : (w?.status ?? stockRequestStatus(r))) as string,
         qty: requestRequiredQty(r),
+        reserved: r.lines.reduce((n, l) => n + l.reserved, 0),
+        // W-2 — Remaining = Required − Reserved − Consumed; consumption draws the
+        // reservation down, so issued qty still counts as covered.
+        remaining: Math.max(0, requestRequiredQty(r) - requestCoveredQty(r)),
+        available: r.lines.reduce((n, l) => n + l.destAvailable, 0),
+        // A request can hold lines in different units, and there is no honest way
+        // to add Sack to Kg — so the column names the unit only when they agree.
+        unit: [...new Set(r.lines.map(l => l.unit))].length === 1 ? (r.lines[0]?.unit ?? '') : '',
         overdue: isOverdue(r, TODAY_ISO),
         requiredDate: [...r.lines].map(l => l.requiredDate).sort()[0] ?? r.requestDate,
         woStartDate: w?.planStartDate ?? r.requestDate,
@@ -429,11 +446,6 @@ function reject(req: StockRequest) {
 function sku(row: unknown): SkuDemandGroup { return row as SkuDemandGroup }
 function wo(row: unknown): WoRow { return row as WoRow }
 
-/** The distinct tags a request's LINES carry (W-7) — its "Request type" column. */
-function lineTags(row: WoRow): StockRequestLineTag[] {
-  return [...new Set(row.lines.map(l => l.tag).filter(Boolean))] as StockRequestLineTag[]
-}
-
 function selectedSkuIds(sel: Set<number>): string[] {
   return [...sel].map(i => skuPaginated.value[i]?.productId).filter(Boolean) as string[]
 }
@@ -566,9 +578,7 @@ const exportColumns = computed(() => {
         <span class="sr-component-main">
           <span class="sr-component-name" :title="sku(row).product">{{ sku(row).product }}</span>
           <span class="sr-expand" :class="{ 'sr-expand--open': expanded[sku(row).key] }" aria-hidden="true">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+            <MpIcon name="chevrons-down" size="sm" />
           </span>
         </span>
       </span>
@@ -595,8 +605,12 @@ const exportColumns = computed(() => {
     </template>
     <template #cell-openWorkOrders="{ row }">{{ sku(row).openWorkOrders }}</template>
     <template #cell-required="{ row }">{{ sku(row).required }}</template>
-    <template #cell-reserved="{ row }">{{ sku(row).reserved }}</template>
-    <template #cell-unit="{ row }">{{ sku(row).unit }}</template>
+    <template #cell-reserved="{ row }">{{ view === 'product' ? sku(row).reserved : wo(row).reserved }}</template>
+    <!-- A request holding lines in two units cannot name one, so it names none. -->
+    <template #cell-unit="{ row }">
+      <template v-if="view === 'product'">{{ sku(row).unit }}</template>
+      <span v-else :class="{ 'sr-muted': !wo(row).unit }">{{ wo(row).unit || '—' }}</span>
+    </template>
     <template #cell-consumed="{ row }">
       {{ sku(row).consumed > 0 ? sku(row).consumed : '—' }}
     </template>
@@ -604,14 +618,18 @@ const exportColumns = computed(() => {
     <!-- Remaining = Required − Reserved − Consumed (W-2). Consumed counts as
          covered, so a partly issued line never reads as under-reserved. -->
     <template #cell-remaining="{ row }">
-      <span :class="{ 'sr-short': sku(row).remaining > 0 }">
+      <span v-if="view === 'product'" :class="{ 'sr-short': sku(row).remaining > 0 }">
         {{ sku(row).remaining > 0 ? sku(row).remaining : '—' }}
+      </span>
+      <span v-else :class="{ 'sr-short': wo(row).remaining > 0 }">
+        {{ wo(row).remaining > 0 ? wo(row).remaining : '—' }}
       </span>
     </template>
 
     <!-- Available — minus and red once a backdated transaction pushed it under zero (W-6) -->
     <template #cell-available="{ row }">
-      <span :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }}</span>
+      <span v-if="view === 'product'" :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }}</span>
+      <span v-else>{{ wo(row).available }}</span>
     </template>
 
     <!-- Expanded rows. Product view lists the work orders behind this SKU at this
@@ -672,17 +690,17 @@ const exportColumns = computed(() => {
               <span class="sr-child-sku-name">{{ line.product }}</span>
               <span class="sr-child-sku-code">{{ line.sku }}</span>
             </span>
-            <!-- Each cell now means on a line what its header means on the request
-                 above it: the line's own tag, qty, required date, readiness and
+            <!-- Each cell means on a line what its header means on the request
+                 above it: the line's own qty, required date, readiness and
                  destination. No borrowed columns, so no component quantity sitting
                  under a date header. -->
-            <span v-else-if="col.key === 'lineTags'">
-              <MpBadge v-if="line.tag" for="tableStatus" :type="line.tag === 'additional' ? 'warning' : 'information'">
-                {{ line.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
-              </MpBadge>
-              <span v-else>—</span>
+            <span v-else-if="col.key === 'qty'" class="cell-text">{{ line.qty }}</span>
+            <span v-else-if="col.key === 'reserved'" class="cell-text">{{ lineCovered(line) }}</span>
+            <span v-else-if="col.key === 'available'" class="cell-text">{{ line.destAvailable }}</span>
+            <span v-else-if="col.key === 'unit'" class="cell-text">{{ line.unit }}</span>
+            <span v-else-if="col.key === 'remaining'" :class="{ 'sr-short': line.qty - lineCovered(line) > 0 }">
+              {{ line.qty - lineCovered(line) > 0 ? line.qty - lineCovered(line) : '—' }}
             </span>
-            <span v-else-if="col.key === 'qty'" class="cell-text">{{ line.qty }} {{ line.unit }}</span>
             <span v-else-if="col.key === 'requiredDate'" class="cell-text">
               {{ formatDate(line.requiredDate) }}
               <span v-if="isLineOverdue(line, TODAY_ISO)" class="sr-note">{{ t('Overdue') }}</span>
@@ -701,13 +719,17 @@ const exportColumns = computed(() => {
 
     <!-- Transaction — the originating work order plus its request tag (W-7) -->
     <!-- The request's own number leads the row, and carries the accordion. -->
+    <!-- The number leads and the chevron holds the right edge of the cell, as the
+         product name does in the other view, so the toggle sits at one x down the
+         whole column instead of drifting with the length of the number. -->
     <template #cell-number="{ row }">
-      <span class="sr-txn">
-        <span class="sr-expand" :class="{ 'sr-expand--open': expanded[wo(row).id] }" role="button"
-              :aria-label="expanded[wo(row).id] ? t('Collapse') : t('Expand')" @click.stop="toggleExpand(wo(row).id)">
+      <span class="sr-component-main sr-txn" role="button"
+            :aria-expanded="!!expanded[wo(row).id]"
+            @click.stop="toggleExpand(wo(row).id)">
+        <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ wo(row).number }}</span>
+        <span class="sr-expand" :class="{ 'sr-expand--open': expanded[wo(row).id] }" aria-hidden="true">
           <MpIcon name="chevrons-down" size="sm" />
         </span>
-        <span class="cell-link cell-text" @click.stop="viewDetails(wo(row).id)">{{ wo(row).number }}</span>
       </span>
     </template>
 
@@ -715,14 +737,6 @@ const exportColumns = computed(() => {
          alone — repeating "Work order" on every row only ate the column. -->
     <template #cell-workOrderNumber="{ row }">
       <span class="cell-text">{{ wo(row).workOrderNumber }}</span>
-    </template>
-
-    <!-- W-7 — a tag is a property of a LINE, never of the request or the product
-         above it. The parent row leaves this column empty and each breakdown row
-         shows its own; chips on the parent only ever summarised what the rows
-         underneath already say, two lines taller. -->
-    <template #cell-lineTags>
-      <span class="sr-muted" data-devchange="sr-request-type">—</span>
     </template>
 
     <template #cell-woStartDate="{ row }">{{ formatDate(wo(row).woStartDate) }}</template>

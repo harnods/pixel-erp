@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-by-transaction-columns',
+    title: 'Stock requests: the By transaction table carries its own qty block',
+    description:
+      'The two views now read the same way. The chevron moved to the right edge of the stock request number, where the product name already keeps it, so the toggle sits at one x down the whole column. Status and Destination warehouse follow the work order number, and the request gained Available, Reserved and Remaining qty beside Required, in the By product order, with the unit split into its own column. Each figure sums the request lines, as Required qty already did — except the unit, which stays blank when a request holds lines in two different units, because no single unit is true then. Request type is gone from this view too.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue'],
+  },
+  {
     id: 'sr-closed-tab-filters',
     title: 'Stock requests: Closed tab, and a Product / Destination warehouse filter bar',
     description:
