@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-closed-tab-filters',
+    title: 'Stock requests: Closed tab, and a Product / Destination warehouse filter bar',
+    description:
+      'The Rejected / canceled tab is now Closed. The Status pill is gone — Awaiting and Closed already are the status split, so it could only narrow a tab to part of itself — and in its place the bar leads with Product (multi-select) and Destination warehouse: what the stockist is sourcing, and where it is wanted. Multi-select is a new mode on ErpFilterSelect rather than a second component, so the pill still matches its neighbours and any filter bar can have one.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue', 'ErpFilterSelect.vue', '[...slug].vue'],
+  },
+  {
+    id: 'sr-by-product-breakdown',
+    title: 'Stock requests: one breakdown row per request, and reserve moves onto it',
+    description:
+      'A request holding two lines for the same component showed the same SR number twice, which read as a duplicate rather than as two kinds of demand; its lines are now summed into one row, dated by the earliest and statused by the lowest. Request type and the requestor came off with them. Reserve stock moved from the product row to the breakdown row, because the request is the unit stock is reserved against — settling every transaction at once hid which ones actually moved. Reject is gone from the product row; it stays on the transaction view, where a request can be declined.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue', 'stockRequests.ts'],
+  },
+  {
     id: 'sr-by-product-columns',
     title: 'Stock requests: grid lines, and the By product columns re-ordered',
     description:

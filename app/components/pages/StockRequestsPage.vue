@@ -33,9 +33,10 @@ import { TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   requestRequiredQty, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
-  reserveStock, reserveProductEverywhere, rejectRequestLine, canReject, canRejectLine,
+  reserveStock, reserveRequestProducts, rejectRequestLine, canReject, canRejectLine,
   isLineOverdue,
-  type StockRequest, type StockRequestLine, type StockRequestLineTag, type SkuDemandGroup,
+  type StockRequest, type StockRequestLine, type StockRequestLineTag,
+  type SkuDemandGroup, type SkuDemandEntry,
 } from '~/data/stockRequests'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -48,13 +49,13 @@ const router = useRouter()
 //
 //   • **Awaiting** (default) — demand the warehouse still has to fulfil: anything
 //     not fully reserved, on a request that is neither rejected nor canceled.
-//   • **Rejected / canceled** — the two TERMINAL states (W-3). A declined line and a
+//   • **Closed** — the two TERMINAL states (W-3). A declined line and a
 //     cancelled job's request are still records worth finding, but they are not
 //     work, so they do not sit in a tab the stockist works down.
 //
 // Because the two tabs now carry the terminal states, those states are not also
 // offered in the Status filter — see `statusFilterOptions`. ───────────────────
-const isTerminalTab = computed(() => route.query.tab === 'Rejected / canceled')
+const isTerminalTab = computed(() => route.query.tab === 'Closed')
 
 // ─── Group by (W-1) — By product is the default.
 //
@@ -120,9 +121,6 @@ const woColumns: TableColumn[] = [
 const skuColumns: TableColumn[] = [
   { key: 'product',     label: t('Product name'),        kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',         label: t('SKU'),                 kind: 'number', sortable: true, sortType: 'text' },
-  // W-7 — a tag belongs to a LINE, so it reads on the breakdown rows, in its own
-  // column rather than tucked beside the work order number.
-  { key: 'lineTags',    label: t('Request type'),        kind: 'tags' },
   { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
   // Status sits beside the date it depends on — a row is late or not against its
@@ -207,6 +205,26 @@ type WoRow = StockRequest & {
       request can name several people; searched and displayed as one list. */
   requestors: string
 }
+/**
+ * Product (multi) and Destination warehouse are the two axes the stockist works
+ * along: "what am I sourcing" and "where is it wanted". Status is NOT a filter
+ * here — Awaiting and Closed already ARE the status split, so a status pill could
+ * only narrow a tab to part of itself.
+ */
+const productFilter = ref<string[]>([])
+const warehouseFilter = ref('')
+
+const productOptions = computed(() => {
+  const byId = new Map<string, string>()
+  for (const r of sourceRequests.value) for (const l of r.lines) byId.set(l.productId, l.product)
+  return [...byId].map(([value, label]) => ({ value, label })).sort((x, y) => x.label.localeCompare(y.label))
+})
+const warehouseOptions = computed(() => {
+  const byId = new Map<string, string>()
+  for (const r of sourceRequests.value) for (const l of r.lines) byId.set(l.destinationWarehouseId, l.destinationWarehouse)
+  return [...byId].map(([value, label]) => ({ value, label })).sort((x, y) => x.label.localeCompare(y.label))
+})
+
 const woRows = computed<WoRow[]>(() =>
   sourceRequests.value
     .filter(isOnDashboard)
@@ -217,7 +235,7 @@ const woRows = computed<WoRow[]>(() =>
         ...r,
         // The dashboard shows the WORK ORDER's status, not the readiness rollup —
         // except on the terminal tab, where what put the row there is the REQUEST's
-        // own status. A row sitting under "Rejected / canceled" while its badge
+        // own status. A row sitting under "Closed" while its badge
         // read "In progress" (the job runs on; its extra demand was declined)
         // looked like a filter bug.
         status: (isTerminalTab.value ? stockRequestStatus(r) : (w?.status ?? stockRequestStatus(r))) as string,
@@ -248,6 +266,10 @@ function matchesWoRow(row: WoRow, s: string, status: string): boolean {
     || row.lines.some(l => l.product.toLowerCase().includes(s) || l.sku.toLowerCase().includes(s))
   const matchesStatus = !status || row.status === status
   const matchesQuickDate = matchesDateRange(row.requestDate, dateFilter.value)
+  const matchesProduct = productFilter.value.length === 0
+    || row.lines.some(l => productFilter.value.includes(l.productId))
+  const matchesWarehouse = !warehouseFilter.value
+    || row.lines.some(l => l.destinationWarehouseId === warehouseFilter.value)
 
   const f = appliedFilters
   const kw = f.keyword.toLowerCase().trim()
@@ -258,7 +280,7 @@ function matchesWoRow(row: WoRow, s: string, status: string): boolean {
   const matchesDrawerStatus = f.status.length === 0 || f.status.includes(row.status)
   const matchesDrawerDate = matchesDateRange(row.requestDate, f.requestDate)
 
-  return matchesSearch && matchesStatus && matchesQuickDate
+  return matchesSearch && matchesStatus && matchesQuickDate && matchesProduct && matchesWarehouse
     && matchesKeyword && matchesDrawerStatus && matchesDrawerDate
 }
 
@@ -279,7 +301,8 @@ const skuRows = computed<SkuDemandGroup[]>(() => {
     .filter(g => !s || `${g.product} ${g.sku}`.toLowerCase().includes(s)
       || g.entries.some(e => e.workOrderNumber.toLowerCase().includes(s)))
     .filter(g => !kw || `${g.product} ${g.sku}`.toLowerCase().includes(kw))
-    .filter(g => !statusFilter.value || g.status === statusFilter.value)
+    .filter(g => productFilter.value.length === 0 || productFilter.value.includes(g.productId))
+    .filter(g => !warehouseFilter.value || g.destinationWarehouseId === warehouseFilter.value)
     .filter(g => appliedFilters.status.length === 0 || appliedFilters.status.includes(g.status))
 })
 
@@ -298,7 +321,7 @@ watch(skuTotal, () => {
 
 // ─── Filter state shared by both views ─────────────────────────────────────────
 watch(appliedFilters, () => setPage(1))
-watch([dateFilter, view, isTerminalTab], () => { setPage(1); skuPage.value = 1 })
+watch([dateFilter, view, isTerminalTab, productFilter, warehouseFilter], () => { setPage(1); skuPage.value = 1 })
 
 const activeFilterCount = computed(() => {
   const f = appliedFilters
@@ -310,11 +333,13 @@ const activeFilterCount = computed(() => {
 })
 const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
 const hasActiveFilter = computed(() =>
-  !!search.value || !!statusFilter.value || !!dateFilter.value?.length || isDrawerFilterActive.value)
+  !!search.value || productFilter.value.length > 0 || !!warehouseFilter.value
+  || !!dateFilter.value?.length || isDrawerFilterActive.value)
 
 function clearFilters() {
   search.value = ''
-  statusFilter.value = ''
+  productFilter.value = []
+  warehouseFilter.value = ''
   dateFilter.value = null
   Object.assign(appliedFilters, emptyStockRequestFilters())
 }
@@ -324,7 +349,6 @@ function clearFilters() {
 // see is a filter nobody can undo.
 watch(isTerminalTab, (terminal) => {
   if (!terminal) return
-  statusFilter.value = ''
   Object.assign(appliedFilters, emptyStockRequestFilters())
 })
 
@@ -361,13 +385,14 @@ function createPurchaseRequest(query: Record<string, string>) {
 const byRequest = (requestId: string) => ({ fromStockRequest: requestId })
 
 /**
- * W-1 — reserve one COMPONENT across every open transaction that needs it, which
- * is the action the by-product view is for: the stockist is settling a component's
- * demand, not one job's. Each line takes what its destination can give.
+ * Reserve this component on ONE request — the action a breakdown row owns, since
+ * the row is a request. The product row no longer offers reserve: settling every
+ * transaction at once hid which ones actually moved, and the stockist works a
+ * request at a time.
  */
-function reserveComponent(group: SkuDemandGroup) {
-  const r = reserveProductEverywhere(group.productId)
-  if (r.qty === 0) {
+function reserveEntry(group: SkuDemandGroup, entry: SkuDemandEntry) {
+  const r = reserveRequestProducts(entry.requestId, [group.productId], { source: 'stock-request' })
+  if (r.reservedQty === 0) {
     toast.notify({
       variant: 'error',
       title: t('Failed to reserve. No stock at the destination warehouse'),
@@ -375,33 +400,13 @@ function reserveComponent(group: SkuDemandGroup) {
     })
     return
   }
-  const parts = [`${r.qty} ${t('unit reserved for')} ${r.transactions} ${r.transactions === 1 ? t('transaction') : t('transactions')}`]
-  if (r.skipped > 0) parts.push(`${r.skipped} ${t('line still short')}`)
-  toast.notify({ variant: 'success', title: parts.join(' · '), maxWidth: 'max-content' })
-}
-
-/**
- * W-7 from a product row — decline the tagged lines this component has across the
- * open transactions. Original component lines are never rejectable, so a row with
- * no tagged line offers nothing.
- */
-const rejectableEntries = (group: SkuDemandGroup) =>
-  group.entries.filter(e => e.tag && !e.rejected)
-
-function rejectComponent(group: SkuDemandGroup) {
-  let count = 0
-  for (const entry of rejectableEntries(group)) {
-    const req = stockRequests.find(r => r.id === entry.requestId)
-    const line = req?.lines.find(l => l.productId === group.productId && l.tag === entry.tag && !l.rejected)
-    if (req && line && rejectRequestLine(req.id, line)) count++
-  }
-  if (count === 0) return
   toast.notify({
     variant: 'success',
-    title: `${count} ${count === 1 ? t('line rejected') : t('lines rejected')} — ${group.product}`,
+    title: `${r.reservedQty} ${t('unit reserved for')} ${entry.requestNumber}`,
     maxWidth: 'max-content',
   })
 }
+
 const byComponent = (productIds: string[]) => ({ fromComponent: productIds.join(',') })
 /**
  * W-7 — rejection is per LINE: only Additional stock and Adjustment lines can be
@@ -487,13 +492,16 @@ const exportColumns = computed(() => {
     <!-- ── Filter bar ── -->
     <template #filters>
       <div class="filter-left">
-        <!-- The Rejected / canceled tab IS a status filter, and the All-filters
-             drawer only adds status and keyword on top of it. Both are hidden
-             there rather than disabled: a control that can only narrow a list to
-             itself is one to take away, not to grey out. -->
+        <!-- Product first: the stockist arrives knowing what they are sourcing,
+             and everything else narrows that. Multi-select, because a transfer or
+             a purchase request is usually raised for several components at once. -->
         <ErpFilterSelect
-          v-if="!isTerminalTab" id="sr-status" v-model="statusFilter"
-          :placeholder="t('Status')" :options="stockRequestStatusOptions"
+          id="sr-product" v-model="productFilter" multiple
+          :placeholder="t('Product')" :options="productOptions" width="200px"
+        />
+        <ErpFilterSelect
+          id="sr-warehouse" v-model="warehouseFilter"
+          :placeholder="t('Destination warehouse')" :options="warehouseOptions" width="200px"
         />
         <div class="sr-daterange">
           <MpDatePicker
@@ -612,7 +620,7 @@ const exportColumns = computed(() => {
       <template v-if="view === 'product'">
         <tr
           v-for="entry in (expanded[sku(row).key] ? sku(row).entries : [])"
-          :key="`${sku(row).key}-${entry.workOrderId}`"
+          :key="`${sku(row).key}-${entry.requestId}`"
           class="sr-child"
         >
           <td v-for="col in cols" :key="col.key" class="sr-child-td" :class="{ 'sr-child-td--right': col.align === 'right' }">
@@ -621,13 +629,6 @@ const exportColumns = computed(() => {
             <span v-if="col.key === 'product'" class="sr-child-sku">
               <span class="cell-link cell-text" @click="viewDetails(entry.requestId)">{{ entry.requestNumber }}</span>
               <span class="sr-child-sku-code">{{ entry.workOrderNumber }}</span>
-            </span>
-            <!-- Requestor: who last CHANGED this line's demand (OPEN-17). -->
-            <span v-else-if="col.key === 'sku'" class="cell-text" :title="entry.requestor">{{ entry.requestor }}</span>
-            <!-- W-7 — the line's own tag, under the Request type column. -->
-            <span v-else-if="col.key === 'lineTags'">
-              <MpBadge v-if="entry.tag" for="tableStatus" :type="entry.tag === 'additional' ? 'warning' : 'information'">{{ entry.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}</MpBadge>
-              <span v-else class="sr-muted">—</span>
             </span>
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
             <template v-else-if="col.key === 'required'">{{ entry.qty }}</template>
@@ -639,7 +640,21 @@ const exportColumns = computed(() => {
             </template>
           </td>
           <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
-          <td class="sr-child-td sr-child-td--actions" />
+          <!-- The request is the unit stock is reserved against, so the action
+               lives on the breakdown row rather than on the product above it. -->
+          <td class="sr-child-td sr-child-td--actions">
+            <MpPopover :id="`sr-entry-actions-${entry.requestId}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+              <MpPopoverTrigger>
+                <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                <MpPopoverList>
+                  <MpPopoverListItem @click="viewDetails(entry.requestId)">{{ t('View details') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="entry.qty > entry.covered" @click="reserveEntry(sku(row), entry)">{{ t('Reserve stock') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </td>
         </tr>
       </template>
 
@@ -763,17 +778,10 @@ const exportColumns = computed(() => {
           <!-- SKU row — raise one document for this component, or open its work orders -->
           <template v-if="view === 'product'">
             <MpPopoverList data-devchange="sr-product-actions">
-              <MpPopoverListItem v-if="sku(row).remaining > 0" @click="reserveComponent(sku(row))">{{ t('Reserve stock') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createPurchaseRequest(byComponent([sku(row).productId]))">{{ t('Create purchase request') }}</MpPopoverListItem>
               <MpPopoverListItem @click="createWarehouseTransfer(byComponent([sku(row).productId]))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
               <MpPopoverListItem @click="toggleExpand(sku(row).key)">{{ expanded[sku(row).key] ? t('Hide transactions') : t('Show transactions') }}</MpPopoverListItem>
             </MpPopoverList>
-            <template v-if="rejectableEntries(sku(row)).length">
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="rejectComponent(sku(row))">{{ t('Reject added lines') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </template>
           </template>
 
           <!-- Work order row -->

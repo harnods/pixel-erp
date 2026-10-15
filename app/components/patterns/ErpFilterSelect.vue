@@ -1,16 +1,23 @@
 <script setup lang="ts">
 /**
- * ErpFilterSelect — the sanctioned single-select dropdown for the ERP, rendered as
+ * ErpFilterSelect — the sanctioned select dropdown for the ERP, rendered as
  * a searchable combobox: the trigger IS the input, so clicking it lets you type
  * immediately to filter the options. Its menu is a Pixel `MpPopover` (never the
  * native OS dropdown, which clips inside scroll containers), and it's clearable
  * (× on hover). Use for any filter-bar select or in-form select; never a raw
  * <select> or MpSelect. See docs/patterns/pixel-enterprise-overrides.md › Dropdowns.
+ *
+ * `multiple` turns it into a multi-select: the same pill, chevron and clear, with
+ * a checkbox per option and an "N selected" trigger. The menu stays open while
+ * you tick, since picking several is the point. `modelValue` is then a string[].
  */
 import { computed, ref, nextTick } from 'vue'
 import {
-  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css,
+  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpButton, MpCheckbox, css,
 } from '@mekari/pixel3'
+
+const { t } = useLocale()
 
 /** A menu option. `description` is optional — when present the menu renders it
  *  under the label (settings selects whose choices need explaining, e.g.
@@ -20,21 +27,38 @@ type Opt = { value: string; label: string; description?: string }
 
 const props = withDefaults(defineProps<{
   id: string
-  modelValue: string
+  /** string in single mode; string[] when `multiple` */
+  modelValue: string | string[]
   placeholder: string
   options: (string | Opt)[]
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
   disabled?: boolean
-}>(), { width: '176px', isClearable: true, disabled: false })
+  /** Tick several options; `modelValue` becomes a string[]. */
+  multiple?: boolean
+}>(), { width: '176px', isClearable: true, disabled: false, multiple: false })
 
-const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
+const emit = defineEmits<{ (e: 'update:modelValue', v: string | string[]): void }>()
+
+/** The selection, always as an array, whichever mode we're in. */
+const selected = computed<string[]>(() => {
+  if (Array.isArray(props.modelValue)) return props.modelValue
+  return props.modelValue ? [props.modelValue] : []
+})
+const hasSelection = computed(() => selected.value.length > 0)
 
 const normalized = computed<Opt[]>(() =>
   props.options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o)),
 )
-const selectedLabel = computed(() => normalized.value.find((o) => o.value === props.modelValue)?.label ?? '')
+const labelOf = (v: string) => normalized.value.find((o) => o.value === v)?.label ?? v
+// One pick reads as itself; several read as a count, because a pill is too narrow
+// to list them and a truncated list tells you less than the number does.
+const selectedLabel = computed(() => {
+  if (!hasSelection.value) return ''
+  if (selected.value.length === 1) return labelOf(selected.value[0]!)
+  return `${selected.value.length} ${t('selected')}`
+})
 
 // Combobox state: the trigger input is typeable while open.
 const open = ref(false)
@@ -49,14 +73,27 @@ function focusOpen() { if (props.disabled || open.value) return; open.value = tr
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
-function pick(v: string) { emit('update:modelValue', v); open.value = false; query.value = ''; inputEl.value?.blur() }
+function pick(v: string) {
+  if (props.multiple) {
+    // Ticking stays open: the menu is a set to build, not a single choice.
+    const next = selected.value.includes(v) ? selected.value.filter((x) => x !== v) : [...selected.value, v]
+    emit('update:modelValue', next)
+    query.value = ''
+    return
+  }
+  emit('update:modelValue', v); open.value = false; query.value = ''; inputEl.value?.blur()
+}
+function clearAll() {
+  emit('update:modelValue', props.multiple ? [] : '')
+  open.value = false
+}
 function enter() { if (filtered.value.length) pick(filtered.value[0]!.value) }
 
 const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'auto' })
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open && !disabled, 'efs--disabled': disabled }" :style="{ '--efs-w': width }">
+  <div class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !disabled, 'efs--disabled': disabled }" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -65,7 +102,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             class="efs-input"
             type="text"
             :value="open ? query : selectedLabel"
-            :placeholder="modelValue ? selectedLabel : placeholder"
+            :placeholder="hasSelection ? selectedLabel : placeholder"
             :disabled="disabled"
             :readonly="disabled"
             :tabindex="disabled ? -1 : undefined"
@@ -82,11 +119,15 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
         <MpPopoverList>
           <MpPopoverListItem
             v-for="o in filtered" :key="o.value"
-            :is-active="o.value === modelValue"
+            :is-active="!multiple && o.value === modelValue"
             @mousedown.prevent
             @click="pick(o.value)"
           >
-            <span v-if="o.description" class="efs-opt">
+            <span v-if="multiple" class="efs-check">
+              <MpCheckbox :id="`${id}-${o.value}`" :is-checked="selected.includes(o.value)" @change="() => pick(o.value)" />
+              <span class="efs-check-label">{{ o.label }}</span>
+            </span>
+            <span v-else-if="o.description" class="efs-opt">
               <span class="efs-opt-label">{{ o.label }}</span>
               <span class="efs-opt-desc">{{ o.description }}</span>
             </span>
@@ -97,7 +138,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
       </MpPopoverContent>
     </MpPopover>
 
-    <MpButton v-if="modelValue && isClearable && !open && !disabled" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
+    <MpButton v-if="hasSelection && isClearable && !open && !disabled" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="clearAll">
       <MpIcon name="close" size="sm" />
     </MpButton>
   </div>
@@ -105,6 +146,10 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 
 <style scoped>
 /* Option with an explainer line (optional `description` on the option). */
+/* Multi-select option — checkbox then label, on one line. */
+.efs-check { display: flex; align-items: center; gap: var(--mp-spacing-2); white-space: nowrap; }
+.efs-check-label { color: var(--mp-colors-text-default, #080d0e); }
+
 .efs-opt { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); white-space: normal; }
 .efs-opt-label { color: var(--mp-colors-text-default, #080d0e); }
 .efs-opt-desc { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-colors-text-secondary, #3a4749); }

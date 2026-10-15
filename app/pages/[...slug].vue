@@ -1008,8 +1008,8 @@ const pageTabs: Record<string, string[]> = {
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   // Stock requests (PRD W-4): Awaiting = demand still to fulfil (default),
-  // Rejected / canceled = the two terminal states, which are not work any more.
-  'Stock requests':    ['Awaiting', 'Rejected / canceled'],
+  // Closed = the two terminal states, which are not work any more.
+  'Stock requests':    ['Awaiting', 'Closed'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
@@ -1305,7 +1305,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   // "Awaiting" (demand still to fulfil, W-4) and the terminal states.
   'Stock requests': {
     'Awaiting': StockRequestsPage,
-    'Rejected / canceled': StockRequestsPage,
+    'Closed': StockRequestsPage,
   },
   // One shared component drives all three tabs; the tab is passed as a prop.
   'Production request': {

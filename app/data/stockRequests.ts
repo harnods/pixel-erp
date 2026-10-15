@@ -340,7 +340,7 @@ const SEED: Seed[] = [
     { reservedPct: 1, consumedPct: 0, destAvailable: 7, requiredOffset: -6 },
   ] },
 
-  // ── Rejected / canceled tab ────────────────────────────────────────────────
+  // ── Closed tab ────────────────────────────────────────────────
   // Two canceled work orders (seed indexes 20 and 21). UC-09: cancelling a work
   // order releases its reservation but LEAVES its request listed, as Canceled —
   // a request that disappears reads like one that was never raised.
@@ -424,7 +424,7 @@ function buildSeed(): StockRequest[] {
  * seed is deterministic demo data, so dropping the stale snapshot costs nothing
  * and is honest — reconstructing it would be guesswork presented as history.
  *
- * v3 adds the seeds behind the Rejected / canceled tab. A snapshot written before
+ * v3 adds the seeds behind the Closed tab. A snapshot written before
  * them is readable, but it would leave that tab permanently empty on every
  * machine that has one — which is exactly what the tab is being demoed for.
  */
@@ -508,7 +508,7 @@ export function isAwaitingTab(req: StockRequest): boolean {
 }
 
 /**
- * The **Rejected / canceled** tab — the two TERMINAL statuses (W-3).
+ * The **Closed** tab — the two TERMINAL statuses (W-3).
  *
  * `rejected` and `canceled` are the states where nothing further will happen:
  * the stockist declined the demand, or the raising work order went away. They
@@ -534,22 +534,28 @@ export const stockRequestOpenCount = (): number =>
 // ── SKU aggregation (W-1, W-2, W-8) ────────────────────────────────────────────
 
 /** One work order's share of a SKU row — the expandable per-WO breakdown. */
+/**
+ * One breakdown row under a component: ONE STOCK REQUEST, not one line. A request
+ * can hold several lines for the same component at the same warehouse — an
+ * original plus an Additional stock or Adjustment delta — and they are summed
+ * here, because the breakdown is read as "who is asking for this component", and
+ * the same request number appearing twice reads as a duplicate rather than as two
+ * kinds of demand. The request is also the unit the row's actions operate on.
+ */
 export interface SkuDemandEntry {
   requestId: string
   /** The request's own number (W-9) — what a breakdown row is identified by. */
   requestNumber: string
   workOrderId: string
   workOrderNumber: string
-  /** Who last changed THIS line's demand (OPEN-17) — per line, not per request. */
-  requestor: string
-  /** W-7 tag, when this entry is Additional stock or an Adjustment delta. */
-  tag?: StockRequestLineTag
-  /** Declined by the stockist (W-7) — only ever true on a tagged entry. */
-  rejected?: boolean
+  /** Summed across the request's lines for this component. */
   qty: number
+  /** Summed across the request's lines for this component. */
   covered: number
+  /** The earliest required date among the lines merged here. */
   requiredDate: string
   destAvailable: number
+  /** The LOWEST status among the lines merged here, as a request's own status is. */
   status: StockRequestStatus
 }
 
@@ -620,20 +626,32 @@ export function skuDemandGroups(
 
   return [...byProduct.values()].map((bucket) => {
     const first = bucket[0]!.line
-    const entries: SkuDemandEntry[] = bucket.map(({ line, req }) => ({
-      requestId: req.id,
-      requestNumber: req.number,
-      workOrderId: req.workOrderId,
-      workOrderNumber: req.workOrderNumber,
-      requestor: line.requestor,
-      ...(line.tag ? { tag: line.tag } : {}),
-      ...(line.rejected ? { rejected: true } : {}),
-      qty: line.qty,
-      covered: lineCovered(line),
-      requiredDate: line.requiredDate,
-      destAvailable: line.destAvailable,
-      status: stockRequestLineStatus(line),
-    }))
+    // One entry per REQUEST: a request's several lines for this component are
+    // summed, dated by the earliest of them and statused by the lowest.
+    const byRequest = new Map<string, SkuDemandEntry>()
+    for (const { line, req } of bucket) {
+      const seen = byRequest.get(req.id)
+      const status = stockRequestLineStatus(line)
+      if (!seen) {
+        byRequest.set(req.id, {
+          requestId: req.id,
+          requestNumber: req.number,
+          workOrderId: req.workOrderId,
+          workOrderNumber: req.workOrderNumber,
+          qty: line.qty,
+          covered: lineCovered(line),
+          requiredDate: line.requiredDate,
+          destAvailable: line.destAvailable,
+          status,
+        })
+        continue
+      }
+      seen.qty += line.qty
+      seen.covered += lineCovered(line)
+      if (line.requiredDate < seen.requiredDate) seen.requiredDate = line.requiredDate
+      if (STATUS_RANK[status] < STATUS_RANK[seen.status]) seen.status = status
+    }
+    const entries: SkuDemandEntry[] = [...byRequest.values()]
     const required = entries.reduce((s, e) => s + e.qty, 0)
     const reserved = bucket.reduce((s, { line }) => s + line.reserved, 0)
     const consumed = bucket.reduce((s, { line }) => s + line.consumed, 0)

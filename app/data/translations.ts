@@ -236,6 +236,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'New activated users only get access to their own records.': 'User baru yang diaktifkan hanya mendapat akses ke data miliknya sendiri.',
   'Full access to CRM data and settings (Administrator)': 'Akses penuh ke data dan pengaturan CRM (Administrator)',
   'Access to CRM, scoped to their own records': 'Akses ke CRM, terbatas pada data milik mereka sendiri',
+  'selected': 'dipilih',
   'permission selected': 'izin dipilih',
   'permissions selected': 'izin dipilih',
   'Team Admin': 'Team admin',
@@ -3814,7 +3815,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'A work order can start only once every component is reserved in full.': 'Perintah kerja baru bisa dimulai setelah semua komponen direservasi penuh.',
   'Start with limited stock': 'Mulai dengan stok terbatas',
   // Stock requests index — tabs, columns, states (uxw-mekari-erp audit, 5 Oct)
-  'Rejected / canceled': 'Ditolak / dibatalkan',
   'Stock request not found': 'Permintaan stok tidak ditemukan',
   'Stock request no.': 'No. permintaan stok',
   'Switch stock request': 'Ganti permintaan stok',

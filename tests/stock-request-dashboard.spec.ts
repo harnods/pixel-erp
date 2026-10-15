@@ -216,11 +216,11 @@ describe('W-4 — the Awaiting tab', () => {
 })
 
 /**
- * The Rejected / canceled tab — the two terminal statuses (W-3). They are not
+ * The Closed tab — the two terminal statuses (W-3). They are not
  * work, so they sit apart from the tab the stockist works down, and they are no
  * longer offered in the Status filter either.
  */
-describe('The Rejected / canceled tab', () => {
+describe('The Closed tab', () => {
   const canceledWorkOrderId = workOrders.find(w => w.status === 'canceled')?.id
   const activeWorkOrderId = workOrders.find(w => w.status === 'not started')!.id
 

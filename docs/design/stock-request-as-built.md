@@ -26,7 +26,7 @@ Sources this was built from:
 
 | Surface | Route / component | Notes |
 | --- | --- | --- |
-| Stock requests index | `/stock-requests` | Tabs **Awaiting** (default) / **Rejected / canceled**; views By product / By transaction, as a segmented control |
+| Stock requests index | `/stock-requests` | Tabs **Awaiting** (default) / **Closed**; views By product / By transaction, as a segmented control |
 | Stock request detail | `/stock-requests/:requestId` | Exactly one detail page, grouped by destination warehouse |
 | Production settings | `/production-settings` | Settings › Production |
 | WO detail | `/work-orders/:id` | Reservation menu, readiness badge, Reserved/Consumed columns |
@@ -156,10 +156,15 @@ S-4.
   completion with leftover (automatic, unapproved), cancel/delete, manual
   unreserve. Partial completion leaves the remaining reserve reserved.
 - **Tabs** — **Awaiting** (W-4: not fully reserved, on a request that is neither
-  rejected nor canceled) and **Rejected / canceled** (the terminal states of W-3).
-  The terminal tab hides the Status filter and the All-filters drawer, and clears
-  anything already set through them: the tab IS a status filter, and the drawer
-  only adds status and keyword on top of it.
+  rejected nor canceled) and **Closed** (the terminal states of W-3).
+  The terminal tab hides the All-filters drawer and clears anything already set
+  through it: the tab IS a status filter, and the drawer only adds status and
+  keyword on top of it.
+- **Filter bar** — Product (multi-select) · Destination warehouse · Request date ·
+  All filters. The two axes a stockist works along are what they are sourcing and
+  where it is wanted. There is no Status pill: Awaiting and Closed already are the
+  status split, so one could only narrow a tab to part of itself. Multi-select is
+  `ErpFilterSelect`'s own `multiple` mode, not a second component.
 
   Membership is derived status alone. `rejected` outranks the fulfilled states in
   `STATUS_RANK`, so a request whose own demand is settled and whose extra line the
