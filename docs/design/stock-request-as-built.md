@@ -34,7 +34,7 @@ Sources this was built from:
 | Adjust work order | `AdjustWorkOrderModal.vue` | UC-06, In progress only |
 | Edit work order materials | `EditWorkOrderMaterialsModal.vue` | UC-06, Not started only |
 | Request additional stock | `RequestAdditionalStockModal.vue` | D-7, from the WO Actions menu |
-| Cancel work order | `CancelWorkOrderModal.vue` | UC-09, once started |
+| Cancel/close work order | `WoTransactionModal.vue` (approval branch) | UC-09; approval-aware; releases the reservation via `cancelWorkOrder()` |
 | Activity log | `ActivityLogModal.vue` | On both detail pages, from the provenance line |
 
 ---
@@ -79,6 +79,24 @@ back ON, the default, with the method they had); the removed S-4 field
 **None of substance.** The three divergences this document used to carry (D0,
 D-S4, D1) were resolved on 2 Oct 2026 **in the PRD's favour** — the code changed,
 the PRD stands. They are recorded here only so the history is readable.
+
+### Merged 15 Oct — feature/work-order-approval
+
+The approval branch was built without stock requests, and both branches had built
+their own Adjust and Cancel. Product owner's calls on merging them:
+
+| Area | Result |
+| --- | --- |
+| **Adjust** | Both kept as separate actions: approval's **Adjust work order** (planned output qty, approval-aware) and material-reserve's UC-06 Adjust, renamed **Adjust materials**. Both hide while an approval request is pending |
+| **Cancel** | Approval's **Cancel/close work order** is the only cancel. It now releases the stock-request reservation and logs it (UC-15 trigger b) through `cancelWorkOrder()` in `woApproval.ts` — on the page when not gated, and at final approval when it is. The R-6 "qty released / restored" confirmation and `CancelWorkOrderModal` are retired |
+| **Start** | The reservation gate (UC-04) runs FIRST; only a work order that may start goes to the approval transaction |
+| **Completion** | An approved completion also returns leftover reservation to available stock (R-3), same as a direct one |
+| **Delete** | UC-09: Not started or Completed; refused In progress; Canceled shows Print only |
+| **Reservation timing** | Both kept: One-step still auto-reserves stock-request lines at creation (C-3); the WO's own batch/serial picks wait in approval's `reservationPlan` until start. Worth reconciling in the two PRDs |
+
+Translation duplicates from the approval branch (`Planned qty`, `Request no.`,
+`Work order canceled`, and three identical ones) were dropped so the existing
+values stay; the three that differed are a copy decision still open.
 
 ### Resolved 14 Oct — the PRD revision of 12 Oct
 
@@ -251,7 +269,6 @@ app/components/patterns/UnreserveMaterialsModal.vue    D-6
 app/components/patterns/AdjustWorkOrderModal.vue       UC-06 (In progress)
 app/components/patterns/EditWorkOrderMaterialsModal.vue UC-06 (Not started)
 app/components/patterns/RequestAdditionalStockModal.vue D-7
-app/components/patterns/CancelWorkOrderModal.vue       UC-09 / R-6
 app/components/patterns/StockRequestFiltersDrawer.vue  all-filters
 app/components/pages/WorkOrderDetailsPage.vue      reservation, gate, adjust, cancel
 app/components/pages/CreateWorkOrderPage.vue       C-3 / C-4 on save

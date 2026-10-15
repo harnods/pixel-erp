@@ -9,10 +9,12 @@ import {
 import {
   getApprovalWorkflowById, addApprovalWorkflow, updateApprovalWorkflow,
   TRANSACTION_TYPE_OPTIONS, PROJECT_ACTION_OPTIONS, projects, getProjectById, findProjectByName,
-  amountFieldVisible, amountFieldLabel, projectScopeFieldVisible,
-  type ApprovalTransactionType, type ApprovalWorkflowInput, type ApprovalAppliesTo, type ProjectAction,
+  amountFieldVisible, amountFieldLabel, projectScopeFieldVisible, WO_TRANSACTION_TYPE_OPTIONS, woTypesTakenByOthers,
+  type ApprovalTransactionType, type WoTransactionType, type ApprovalWorkflowInput, type ApprovalAppliesTo, type ProjectAction,
 } from '~/data/approvalWorkflows'
 import { users, getUserById, findUserByName } from '~/data/users'
+import { hasWorkOrderAccess } from '~/data/woApproval'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
 // id from the catch-all route: 'new' → create, an existing rule id → edit.
 const props = defineProps<{ orderId?: string }>()
@@ -44,9 +46,47 @@ const minAmount = ref<number | null>(0)
 
 // Field visibility/label per spec §3 — depends on appliesTo + (for Project Action) which
 // action is selected. Transaction path is unchanged; each Project action shows its own set.
-const showAmountField = computed(() => amountFieldVisible(appliesTo.value, projectAction.value))
+// Work order rules (PRD Work Order Approval Rev 2) have no amount / project condition —
+// their criteria are production transaction types instead (empty = all six).
+const isWorkOrder = computed(() => appliesTo.value === 'transaction' && transactionType.value === 'work-order')
+const showAmountField = computed(() => !isWorkOrder.value && amountFieldVisible(appliesTo.value, projectAction.value))
 const amountLabel = computed(() => t(amountFieldLabel(appliesTo.value, projectAction.value)))
-const showProjectScopeField = computed(() => projectScopeFieldVisible(appliesTo.value, projectAction.value))
+const showProjectScopeField = computed(() => !isWorkOrder.value && projectScopeFieldVisible(appliesTo.value, projectAction.value))
+
+// ── Work order — the work order transaction this workflow gates ──────────────────
+// Choosing transaction type "Work order" shows a second dropdown under it. A workflow
+// gates exactly ONE work order transaction type, and a type can belong to only one
+// active workflow — types another active Work order workflow already has aren't offered.
+const woType = ref('')
+const woTypeError = ref('')
+// Only ACTIVE workflows block a type. Editing an inactive workflow isn't blocked —
+// turning it on later asks to turn the overlapping active one off.
+const editingInactive = computed(() => isEdit.value && getApprovalWorkflowById(props.orderId!)?.isActive === false)
+const takenByOthers = computed(() => editingInactive.value
+  ? new Map<WoTransactionType, string>()
+  : woTypesTakenByOthers(isEdit.value ? props.orderId : undefined))
+const woTypeOptions = computed(() => WO_TRANSACTION_TYPE_OPTIONS
+  .filter(o => !takenByOthers.value.has(o.value) || o.value === woType.value)
+  .map(o => ({ value: o.value, label: t(o.label) })))
+const takenSummary = computed(() => [...takenByOthers.value]
+  .map(([type, rule]) => `${t(WO_TRANSACTION_TYPE_OPTIONS.find(o => o.value === type)?.label ?? type)} (${rule})`)
+  .join(', '))
+// Requester self-approval, off by default.
+const allowSelfApproval = ref(false)
+function validateWoType(): boolean {
+  woTypeError.value = ''
+  if (!isWorkOrder.value) return true
+  if (!woType.value) {
+    woTypeError.value = takenByOthers.value.size >= WO_TRANSACTION_TYPE_OPTIONS.length
+      ? t('All work order transaction types are already covered by other workflows')
+      : t('You must select work order transaction type')
+  } else if (takenByOthers.value.has(woType.value as WoTransactionType)) {
+    woTypeError.value = t('A transaction type can only be in one workflow')
+  }
+  return !woTypeError.value
+}
+const MAX_WO_LEVELS = 4
+const maxLevelsReached = ref(false)
 const createdByScope = ref<'all' | 'some'>('all')
 const createdByUsers = ref<DataInterface[]>([])
 const applyToDraft = ref(true)
@@ -55,6 +95,8 @@ type LevelDraft = { matchType: 'any' | 'all'; approvers: DataInterface[] }
 const levels = ref<LevelDraft[]>([{ matchType: 'any', approvers: [] }])
 
 const userSuggestions = users.map((u) => u.name)
+// Work order approvers are limited to users with Work order access.
+const approverSuggestions = computed(() => (isWorkOrder.value ? users.filter(u => hasWorkOrderAccess(u.id)) : users).map(u => u.name))
 
 function idsToTagData(ids: string[]): DataInterface[] {
   return ids
@@ -90,6 +132,7 @@ const TRANSACTION_TYPE_LABELS: Record<ApprovalTransactionType, string> = {
   'bill': t('Bill'),
   'stock-adjustment': t('Stock adjustment'),
   'warehouse-transfer': t('Warehouse transfer'),
+  'work-order': t('Work order'),
 }
 
 const PROJECT_ACTION_LABELS: Record<ProjectAction, string> = {
@@ -114,6 +157,8 @@ onMounted(() => {
   createdByScope.value = rule.createdByScope
   createdByUsers.value = idsToTagData(rule.createdByUserIds)
   applyToDraft.value = rule.applyToDraft
+  woType.value = rule.woCriteria?.[0] ?? ''
+  allowSelfApproval.value = !!rule.allowSelfApproval
   levels.value = rule.levels.map((l) => ({ matchType: l.matchType, approvers: idsToTagData(l.approverIds) }))
 })
 
@@ -126,6 +171,7 @@ function handleLevelApproversChange(idx: number, data: DataInterface[]) {
   if (data.length > 0) levelErrors.value[idx] = false
 }
 function addLevel() {
+  if (isWorkOrder.value && levels.value.length >= MAX_WO_LEVELS) { maxLevelsReached.value = true; return }
   levels.value.push({ matchType: 'any', approvers: [] })
   levelErrors.value.push(false)
 }
@@ -133,6 +179,7 @@ function removeLevel(idx: number) {
   if (levels.value.length <= 1) return
   levels.value.splice(idx, 1)
   levelErrors.value.splice(idx, 1)
+  maxLevelsReached.value = false
 }
 
 function goBack() {
@@ -162,7 +209,8 @@ function validate(): boolean {
   }
   projectsError.value = showProjectScopeField.value && projectScope.value === 'some' && someProjects.value.length === 0
   levelErrors.value = levels.value.map((l) => l.approvers.length === 0)
-  return !nameError.value && !transactionTypeError.value && !projectActionError.value && !projectsError.value
+  const criteriaOk = validateWoType()
+  return criteriaOk && !nameError.value && !transactionTypeError.value && !projectActionError.value && !projectsError.value
     && !createdByError.value && !levelErrors.value.some(Boolean)
 }
 
@@ -182,6 +230,8 @@ async function save() {
     minAmount: showAmountField.value ? minAmount.value : null,
     createdByScope: appliesTo.value === 'transaction' ? createdByScope.value : 'all',
     createdByUserIds: appliesTo.value === 'transaction' && createdByScope.value === 'some' ? tagDataToIds(createdByUsers.value) : [],
+    woCriteria: isWorkOrder.value ? [woType.value as WoTransactionType] : undefined,
+    allowSelfApproval: isWorkOrder.value ? allowSelfApproval.value : undefined,
     levels: levels.value.map((l) => ({ matchType: l.matchType, approverIds: tagDataToIds(l.approvers) })),
     applyToDraft: applyToDraft.value,
   }
@@ -254,7 +304,7 @@ async function save() {
               </div>
             </MpFormControl>
 
-            <MpFormControl v-if="appliesTo === 'transaction'" id="awf-transaction-type" class="caw-field-half" is-required :is-invalid="!!transactionTypeError">
+            <MpFormControl v-if="appliesTo === 'transaction'" id="awf-transaction-type" class="caw-field-half" is-required :is-invalid="!!transactionTypeError || !!woTypeError">
               <MpFormLabel>{{ t('Transaction type') }}</MpFormLabel>
               <MpSelect
                 id="awf-transaction-type-input"
@@ -267,7 +317,23 @@ async function save() {
                   {{ TRANSACTION_TYPE_LABELS[opt.value] }}
                 </option>
               </MpSelect>
-              <MpFormErrorMessage>{{ transactionTypeError }}</MpFormErrorMessage>
+              <!-- Work order — which work order transaction this workflow gates (one type per
+                   workflow; types another workflow already has aren't offered). -->
+              <div v-if="isWorkOrder" class="caw-wo-type" data-devchange="wo-approval-rules">
+                <ErpFilterSelect
+                  id="awf-wo-type-input"
+                  v-model="woType"
+                  :placeholder="t('Select transaction type')"
+                  :options="woTypeOptions"
+                  :is-clearable="false"
+                  width="100%"
+                  @update:model-value="woTypeError = ''"
+                />
+                <p v-if="!woTypeError && takenByOthers.size" class="caw-criteria-helper">
+                  {{ t('Already in another workflow: {types}').replace('{types}', takenSummary) }}
+                </p>
+              </div>
+              <MpFormErrorMessage>{{ transactionTypeError || woTypeError }}</MpFormErrorMessage>
             </MpFormControl>
 
             <template v-else>
@@ -409,7 +475,7 @@ async function save() {
                 <MpInputTag
                   :id="`awf-level-approvers-input-${idx}`"
                   :data="level.approvers"
-                  :suggestions="userSuggestions"
+                  :suggestions="approverSuggestions"
                   :is-show-suggestions="true"
                   :is-enable-create-new-tag="false"
                   :is-show-icon-chevron-down="true"
@@ -418,6 +484,7 @@ async function save() {
                   @change="(data: DataInterface[]) => handleLevelApproversChange(idx, data)"
                 />
                 <MpFormErrorMessage v-if="levelErrors[idx]">{{ t('You must select at least one approver') }}</MpFormErrorMessage>
+                <MpFormHelpText v-else-if="isWorkOrder">{{ t('Only users with access to Work order are listed') }}</MpFormHelpText>
               </MpFormControl>
             </div>
           </div>
@@ -428,6 +495,15 @@ async function save() {
             </svg>
             {{ t('Add approver level') }}
           </MpButton>
+          <p v-if="maxLevelsReached" class="caw-criteria-helper" data-devchange="wo-approval-rules">{{ t('You can add up to 4 approval levels') }}</p>
+
+          <!-- Work order — requester self-approval (Rev 3: off by default) -->
+          <div v-if="isWorkOrder" class="caw-toggle-row caw-self-approval" data-devchange="wo-approval-rev3">
+            <MpToggle id="awf-allow-self-approval" :is-checked="allowSelfApproval" @update:is-checked="(v: boolean) => allowSelfApproval = v">
+              {{ t('Allow requester to approve own request') }}
+            </MpToggle>
+            <p class="caw-criteria-helper">{{ t('When off, requesters never see or approve their own requests') }}</p>
+          </div>
         </div>
 
         <div class="caw-divider" />
@@ -462,6 +538,11 @@ async function save() {
 </template>
 
 <style scoped>
+/* ── Work order approval criteria ── */
+.caw-self-approval { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); margin-top: var(--mp-spacing-5); }
+.caw-wo-type { display: flex; flex-direction: column; gap: var(--mp-spacing-1); margin-top: var(--mp-spacing-2); }
+.caw-criteria-helper { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
 /* ── Page shell ── */
 .caw-page {
   display: flex;

@@ -7,9 +7,10 @@ import {
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import {
-  approvalWorkflows, setApprovalWorkflowActive, deleteApprovalWorkflow,
-  transactionTypeLabel, projectActionLabel, type ApprovalWorkflowRule,
+  approvalWorkflows, setApprovalWorkflowActive, deleteApprovalWorkflow, activeWoConflicts,
+  transactionTypeLabel, projectActionLabel, woTransactionTypeLabel, type ApprovalWorkflowRule,
 } from '~/data/approvalWorkflows'
 import { formatIDR } from '~/utils/currency'
 
@@ -37,6 +38,14 @@ const columns: TableColumn[] = [
 function appliesToText(row: ApprovalWorkflowRule) {
   if (row.appliesTo === 'project') return `${t('Project Action')} — ${t(projectActionLabel(row.projectAction))}`
   return t(transactionTypeLabel(row.transactionType))
+}
+// Work order rules — "Applies to: <types>" under the type, or all six when criteria is empty.
+function woCriteriaText(row: ApprovalWorkflowRule): string {
+  if (row.transactionType !== 'work-order') return ''
+  const types = row.woCriteria ?? []
+  return types.length
+    ? t('Applies to: {types}').replace('{types}', types.map(c => t(woTransactionTypeLabel(c)).toLowerCase()).join(', '))
+    : t('Applies to: all work order transactions')
 }
 function amountText(row: ApprovalWorkflowRule) {
   return row.minAmount == null ? '—' : formatIDR(row.minAmount)
@@ -109,7 +118,23 @@ const turnOffModalOpen = ref(false)
 const ruleToTurnOff = ref<ApprovalWorkflowRule | null>(null)
 function handleToggleActive(row: ApprovalWorkflowRule) {
   if (row.isActive) { ruleToTurnOff.value = row; turnOffModalOpen.value = true; return }
+  // Work order — a type can have only one ACTIVE workflow: turning this one on would
+  // overlap another active one, so confirm turning that one off instead.
+  const conflicts = activeWoConflicts(row.id)
+  if (conflicts.length) { ruleToTurnOn.value = row; replaceConflicts.value = conflicts; replaceModalOpen.value = true; return }
   toggleActive(row)
+}
+
+const replaceModalOpen = ref(false)
+const ruleToTurnOn = ref<ApprovalWorkflowRule | null>(null)
+const replaceConflicts = ref<ApprovalWorkflowRule[]>([])
+const replaceDescription = computed(() => t('{type} already has an active workflow, "{name}". Turning this one on turns that one off.')
+  .replace('{type}', (ruleToTurnOn.value?.woCriteria ?? []).map(c => t(woTransactionTypeLabel(c))).join(', '))
+  .replace('{name}', replaceConflicts.value.map(r => r.name).join(', ')))
+function confirmReplace() {
+  for (const r of replaceConflicts.value) setApprovalWorkflowActive(r.id, false)
+  if (ruleToTurnOn.value) toggleActive(ruleToTurnOn.value)
+  replaceModalOpen.value = false
 }
 function closeTurnOffModal() { turnOffModalOpen.value = false; ruleToTurnOff.value = null }
 function confirmTurnOff() {
@@ -196,6 +221,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Cell: Transaction type ── -->
     <template #cell-appliesTo="{ row }">
       <span class="cell-truncate">{{ appliesToText(row as unknown as ApprovalWorkflowRule) }}</span>
+      <span v-if="woCriteriaText(row as unknown as ApprovalWorkflowRule)" class="awf-wo-criteria" data-devchange="wo-approval-rules">
+        {{ woCriteriaText(row as unknown as ApprovalWorkflowRule) }}
+      </span>
     </template>
 
     <!-- ── Cell: Amount higher than ── -->
@@ -265,6 +293,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
   </ErpTablePage>
+
+  <!-- ── Work order — a type can have one active workflow: turning this on replaces the other ── -->
+  <ConfirmModal
+    v-model:is-open="replaceModalOpen"
+    data-devchange="wo-approval-rules"
+    :title="t('Turn on this workflow?')"
+    :description="replaceDescription"
+    :confirm-label="t('Turn on')"
+    :cancel-label="t('Cancel')"
+    :is-danger="false"
+    @confirm="confirmReplace"
+  />
 
   <!-- ── Delete confirmation modal ── -->
   <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
@@ -342,6 +382,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+.awf-wo-criteria { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
 .empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-10, 40px) 0; }
 .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
 .empty-full-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
