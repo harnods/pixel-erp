@@ -1,5 +1,5 @@
 /**
- * Stock requests dashboard — PRD v0.5 UC-11 (W-1 … W-8).
+ * Stock requests dashboard — PRD v0.5 stock requests dashboard (W-1 … W-8).
  *
  * The rules under test are the ones a stockist reads numbers off:
  *   • W-2 — Remaining = Required − Reserved − Consumed, and availability is shown

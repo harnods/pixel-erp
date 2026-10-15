@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Cancel work order — PRD v0.5 UC-09, UC-15 R-6.
+ * Cancel work order — PRD v0.5 UC-09, UC-11 R-6.
  *
  * Cancelling is available once a work order has STARTED (before that it is
  * deleted, not cancelled) and takes a mandatory reason. Cancelling releases the

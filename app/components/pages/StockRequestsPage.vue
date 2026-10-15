@@ -3,7 +3,8 @@
  * Warehouses › Stock requests — the warehouse/PPIC dashboard.
  *
  * Built to the PRD "Work Order Material Reservation, Stock Request & Project
- * Stock" › UC-11; requirement IDs (W-1…W-8) are cited on the code they drive.
+ * Stock" › stock requests dashboard; requirement IDs (W-1…W-8) are cited on
+ * the code they drive.
  *
  * A stock request is never created by hand — saving a work order raises one
  * (PRD C-4). That is why the title bar has no "+ New" action and the full empty

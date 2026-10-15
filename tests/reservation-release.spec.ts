@@ -1,5 +1,5 @@
 /**
- * Release of reservation — PRD v0.5 UC-15.
+ * Release of reservation — PRD v0.5 UC-11.
  *
  * Release is the Reserved → Available transition. Three events produce it and
  * only three: work order completion with leftover reserve, cancellation or
@@ -76,7 +76,7 @@ beforeEach(() => {
   seedRequest([line('p1', 10, 6, { destAvailable: 4 }), line('p2', 5, 5, { destAvailable: 0 })])
 })
 
-describe('UC-15 — the transition itself', () => {
+describe('UC-11 — the transition itself', () => {
   it('moves qty from reserved to available, leaving on-hand unchanged', () => {
     const req = stockRequests.find(r => r.id === REQ_ID)!
     const l = req.lines[0]!
@@ -109,7 +109,7 @@ describe('UC-15 — the transition itself', () => {
   })
 })
 
-describe('UC-15 R-8 / L-8 — no partial release', () => {
+describe('UC-11 R-8 / L-8 — no partial release', () => {
   it('releases a component\'s FULL remaining reserved qty', () => {
     seedRequest([line('p1', 10, 7, { destAvailable: 1 })])
     const result = releaseReservation(REQ_ID, ['p1'])
@@ -141,7 +141,7 @@ describe('UC-03 — disposition', () => {
   })
 })
 
-describe('UC-15 R-1 / R-7 — all three triggers, one entry shape', () => {
+describe('UC-11 R-1 / R-7 — all three triggers, one entry shape', () => {
   it('completion releases what is left over and names its trigger', () => {
     const result = releaseOnCompletion(WO_ID)
     expect(result.qty).toBe(11)

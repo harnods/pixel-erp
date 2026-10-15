@@ -3749,7 +3749,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Close a work order in batches, before the full planned quantity is produced.': 'Tutup perintah kerja secara bertahap, sebelum seluruh jumlah rencana diproduksi.',
   'When off, a work order can only start once every component is reserved.': 'Saat nonaktif, perintah kerja hanya bisa dimulai setelah semua komponen direservasi.',
 
-  // ── Warehouses › Stock request detail (PRD UC-11 + prototype detail screen) ──
+  // ── Warehouses › Stock request detail (PRD stock request dashboard + prototype detail screen) ──
   'Request info': 'Info permintaan',
   'Components': 'Komponen',
   'components fully reserved': 'komponen direservasi penuh',
@@ -3982,7 +3982,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Work order canceled': 'Perintah kerja dibatalkan',
   'Work order deleted': 'Perintah kerja dihapus',
 
-  // Release & activity log (UC-15)
+  // Release & activity log (UC-11)
   'Reserved material': 'Material direservasi',
   'Released reservation': 'Reservasi dilepas',
   'Qty reserved': 'Kuantitas direservasi',

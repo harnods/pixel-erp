@@ -76,7 +76,7 @@ const statusConfig: Record<string, StatusConfig> = {
   medium:     { type: 'warning',      label: 'Medium'     },
   recommended:{ type: 'warning',      label: 'Recommended'},
   // Warehouses › Stock requests — raised from a work order, nothing reserved yet.
-  // PRD UC-11 W-3/W-5 wording: "Requested" (was "To reserve" in the early mockup).
+  // PRD W-3/W-5 wording: "Requested" (was "To reserve" in the early mockup).
   requested:  { type: 'warning',      label: 'Requested'  },
   // Settings › Users & roles — invitation sent, account not yet accepted.
   invited:    { type: 'warning',      label: 'Invited'    },

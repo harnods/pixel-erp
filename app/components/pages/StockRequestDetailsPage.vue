@@ -13,7 +13,7 @@
  * index is an aggregate across requests, not a record, so it has no detail of its
  * own — its rows drill into the transactions underneath instead.
  *
- * PRD "Work Order Material Reservation, Stock Request & Project Stock" › UC-11.
+ * PRD "Work Order: Material Reservation" › stock requests dashboard.
  * Reservation is always available here regardless of the Production reservation
  * method — under Two-step this page is the only place it happens (S-2).
  */

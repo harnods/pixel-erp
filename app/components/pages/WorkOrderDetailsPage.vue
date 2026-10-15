@@ -156,7 +156,7 @@ function onActionSelect(item: string) {
 
 /**
  * UC-09 — Delete, allowed Not started or Completed. Reservations are released
- * automatically (UC-15 trigger b); the request stays on the dashboard as Canceled.
+ * automatically (UC-11 trigger b); the request stays on the dashboard as Canceled.
  */
 function deleteWorkOrder() {
   const w = wo.value
@@ -633,7 +633,7 @@ function completeWorkOrder() {
   wo.value.endDate = new Date().toISOString().slice(0, 10)
   persistWorkOrders()
 
-  // UC-15 R-3 — trigger (a). Whatever is still reserved when a work order
+  // UC-11 R-3 — trigger (a). Whatever is still reserved when a work order
   // COMPLETES is by definition unused, so it returns to available stock
   // automatically and unapproved: holding a job's last step for a decision nobody
   // is making just strands the material. (A PARTIAL completion does not come

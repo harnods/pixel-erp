@@ -10,7 +10,8 @@ import type { PartialMode } from './productionSettings'
 /**
  * Stock requests (Warehouses → Stock requests) — the warehouse/PPIC side of work
  * order material reservation. See the PRD "Work Order Material Reservation, Stock
- * Request & Project Stock" › UC-11 (requirement IDs W-1…W-8 are cited below).
+ * Request & Project Stock" › stock requests dashboard (requirement IDs
+ * W-1…W-8 are cited below).
  *
  * A request is never created by hand: saving a work order pushes one request per
  * WO carrying its component lines (PRD C-4), which is why the index has no create
@@ -1082,7 +1083,7 @@ export function setReservedSerials(requestId: string, productId: string, serials
 
 /** D-6 — where the released stock goes. Mandatory on unreserve. */
 /**
- * ── Audit trail (UC-02, UC-03, UC-15 R-1/R-7, US-8) ───────────────────────────
+ * ── Audit trail (UC-02, UC-03, UC-11 R-1/R-7, US-8) ───────────────────────────
  *
  * Reservation events are logged HERE, in the data layer, rather than by whichever
  * page triggered them. Every one of these transitions is reachable from two
@@ -1142,7 +1143,7 @@ function productNames(req: StockRequest, productIds: string[]): string {
 export type UnreserveDisposition = 'return-to-warehouse' | 'production-defect'
 
 /**
- * UC-15 R-1 — what caused a release. All three write the SAME transition, which is
+ * UC-11 R-1 — what caused a release. All three write the SAME transition, which is
  * why they share one function: a release logged differently depending on how it
  * happened is a release nobody can reconcile against the stock ledger.
  */
@@ -1161,7 +1162,7 @@ export interface ReleaseResult {
 }
 
 /**
- * UC-15 — the Reserved → Available transition, in one place.
+ * UC-11 — the Reserved → Available transition, in one place.
  *
  * Moves quantity between buckets and never moves stock physically: On Hand =
  * Available + Reserved holds before and after. Already-consumed qty is NEVER
@@ -1223,7 +1224,7 @@ export function reservedProductIds(req: StockRequest): string[] {
 }
 
 /**
- * UC-15 trigger (b) — a work order is cancelled or deleted. Its whole remaining
+ * UC-11 trigger (b) — a work order is cancelled or deleted. Its whole remaining
  * reservation goes back to available; no disposition is asked for, because the
  * cancellation reason already carries the context (R-2).
  */
@@ -1234,7 +1235,7 @@ export function releaseForCanceledWorkOrder(workOrderId: string, ctx: ActivityCo
 }
 
 /**
- * UC-15 trigger (a) — a work order COMPLETES with reserved qty above consumed.
+ * UC-11 trigger (a) — a work order COMPLETES with reserved qty above consumed.
  * Automatic and unapproved (R-2, R-3): holding a job's last step for a decision
  * nobody is making just strands the stock.
  *
