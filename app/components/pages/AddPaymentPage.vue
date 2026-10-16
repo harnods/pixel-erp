@@ -237,9 +237,9 @@ onUnmounted(() => ro?.disconnect())
     <header class="cm-bar">
       <div class="cm-bar-left">
         <nav class="cm-breadcrumb-trail">
-          <button class="cm-breadcrumb" @click="router.push('/sales-invoices')">{{ t('Sales invoices') }}</button>
+          <MpButton variant="link" class="cm-breadcrumb" @click="router.push('/sales-invoices')">{{ t('Sales invoices') }}</MpButton>
           <span class="cm-breadcrumb-sep">/</span>
-          <button class="cm-breadcrumb" @click="goBack">{{ invoiceNumber }}</button>
+          <MpButton variant="link" class="cm-breadcrumb" @click="goBack">{{ invoiceNumber }}</MpButton>
         </nav>
         <div class="cm-titlerow-left">
           <h1 class="cm-title">{{ isEdit ? t('Edit payment') : t('Add payment') }}</h1>
@@ -490,12 +490,12 @@ onUnmounted(() => ro?.disconnect())
 .rp-field-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm); margin-top: var(--mp-spacing-1); }
 .rp-attachment-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .rp-attachment-section :deep(.mp-upload__root:focus-within) {
-  border-color: #8c9596;
-  box-shadow: 0 0 0 1px #8c9596;
+  border-color: var(--mp-border-default);
+  outline: 1px solid var(--mp-border-default);
 }
 .rp-attachment-section :deep(.mp-button:focus-visible) {
-  border-color: #8c9596 !important;
-  box-shadow: 0 0 0 1px #8c9596 !important;
+  border-color: var(--mp-border-default) !important;
+  outline: 1px solid var(--mp-border-default) !important;
 }
 .rp-attachment-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rp-attachment-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-1); }

@@ -246,8 +246,8 @@ function confirmDelete() {
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--mp-spacing-6);
-  height: 72px;
-  max-height: 72px;
+  height: var(--mp-size-18);
+  max-height: var(--mp-size-18);
   background: var(--mp-background-neutral-subtle);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
