@@ -173,6 +173,40 @@ const SEED: Contact[] = [
   account('CT010', 'Coffee Cult Bali',         'PT Kultur Kopi Bali',         'buyer@coffeecult.id',            '0361-555012', 'Bali',       ['Food & Beverages'],                   80_000_000, '2026-01-09T10:20:00+07:00'),
   account('CT011', 'One Eighty Coffee',        'PT Seratus Delapan Puluh',    'supply@oneeighty.coffee',        '022-5550024', 'Bandung',    ['Food & Beverages'],                  100_000_000, '2026-01-08T12:00:00+07:00'),
   account('CT012', 'Pochi Coffee Roasters',    'PT Pochi Roastery Indonesia', 'roastery@pochicoffee.com',       '031-5550025', 'Surabaya',   ['Distributor'],                       150_000_000, '2026-01-06T09:35:00+07:00'),
+  // The one contact abroad (customer C026). A foreign contact carries a single
+  // free-form TIN instead of NPWP + NITKU, and DJP never validates it — which is
+  // why `taxStatus` stays 'not-validated' here rather than reading as a gap.
+  //
+  // It exists so the export path is reachable from seed data: "Create tax
+  // document" on its invoices defaults to a Dokumen Lain Keluaran (see
+  // CreateTaxDocumentDrawer), the way a domestic buyer defaults to a faktur.
+  {
+    ...blank(),
+    id: 'CT013',
+    types: ['customer'],
+    displayName: 'Nordic Roasters AB',
+    title: 'Mr',
+    fullName: 'Henrik Lindqvist',
+    companyName: 'Nordic Roasters AB',
+    emails: ['green@nordicroasters.se'],
+    phone: '+46-8-55500026',
+    mobile: '+46-70-5550026',
+    identityType: 'Passport',
+    identityNumber: 'SE8842190',
+    groups: ['Distributor'],
+    billingAddress: 'Sveavägen 44, 111 34 Stockholm, Sweden',
+    shippingAddress: 'Frihamnsgatan 8, 115 56 Stockholm, Sweden',
+    domicile: 'foreign',
+    npwp: '',
+    nitkuSuffix: '',
+    tin: 'SE556789012301',
+    taxStatus: 'not-validated',
+    creditLimit: 500_000_000,
+    currency: 'US Dollar ($)',
+    paymentTerms: 'Net 30',
+    memo: 'Green bean export account — FOB Tanjung Priok.',
+    updatedAt: '2026-01-05T08:10:00+07:00',
+  },
 ]
 
 // Vendors and "other" contacts share the same store — the role checkboxes on the
@@ -243,19 +277,32 @@ export function getContact(id: string): Contact | undefined {
   return contacts.find((c) => c.id === id)
 }
 
+/**
+ * The contact record behind a transaction's customer/vendor, matched on the
+ * display name — transactions reference `customers.ts` (C001…), a leaner FK
+ * table than this one (CT001…), so there's no id to join on. Backs the
+ * "Cannot create tax document" drawer's link out to the buyer's tax identity.
+ */
+export function findContactByDisplayName(name: string): Contact | undefined {
+  const needle = name.trim().toLowerCase()
+  return contacts.find((c) => c.displayName.trim().toLowerCase() === needle)
+}
+
 /** Contacts carrying a given role — backs the Customers / Vendors / Other lists. */
 export function contactsOfType(type: ContactType): Contact[] {
   return contacts.filter((c) => c.types.includes(type))
 }
 
 /** Resolve a contact id from a customer/company display name (join on name, as
- *  the Transactions tab does), so a credit memo can link back to its contact. */
+ *  the Transactions tab does), so a credit memo can link back to its contact.
+ *  Overlaps with findContactByDisplayName above, which returns the record and
+ *  matches displayName only — worth collapsing into one accessor. */
 export function getContactIdByName(name: string): string | undefined {
   const n = name.trim().toLowerCase()
   return contacts.find((c) => c.displayName.toLowerCase() === n || c.companyName.toLowerCase() === n)?.id
 }
 
-/** Next free id (CT013, CT014, …). */
+/** Next free id (CT014, CT015, …). */
 function nextId(): string {
   const max = contacts.reduce((n, c) => {
     const v = Number(c.id.replace(/\D/g, ''))

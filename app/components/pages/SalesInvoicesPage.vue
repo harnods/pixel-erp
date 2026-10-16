@@ -21,7 +21,7 @@ import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesInvoices, awaitingSalesInvoices, deleteSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
-import { getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
+import { getTaxDocumentsForInvoice, currentTaxDocument, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
@@ -38,7 +38,6 @@ const { t } = useLocale()
 const columns: TableColumn[] = [
   { key: 'date',         label: t('Date'),        kind: 'date',                                   sortType: 'date'   },
   { key: 'number',       label: t('Number'),      kind: 'number', sortable: true,                 sortType: 'text'   },
-  { key: 'attachment',   label: '',            width: '40px',  noHeader: true, align: 'center' },
   { key: 'customerName', label: t('Customer'),    kind: 'name', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',      label: t('Due date'),    kind: 'date',                                   sortType: 'date'   },
   { key: 'status',       label: t('Status'),      kind: 'status',                                 sortType: 'text'   },
@@ -54,7 +53,11 @@ type Row = SalesInvoice & {
   customerName: string
   attachment: boolean
   hasTaxDocument: boolean
-  /** most recent tax document's status, or 'not-generated' when it has none. */
+  /**
+   * Status of the document that currently speaks for this invoice (see
+   * currentTaxDocument — an invoice can carry a whole lineage), or
+   * 'not-generated' when it has no tax document at all.
+   */
   djpStatus: TaxDocumentStatus | 'not-generated'
   overdueLabel: string | null
 }
@@ -79,13 +82,14 @@ const rows = computed<Row[]>(() =>
         })()
       : null
     const taxDocs = getTaxDocumentsForInvoice(inv.id)
+    const current = currentTaxDocument(inv.id)
 
     return {
       ...inv,
       customerName: inv.customer.name,
       attachment:   inv.hasAttachment ?? false,
       hasTaxDocument: taxDocs.length > 0,
-      djpStatus: taxDocs.length > 0 ? taxDocs[0]!.status : 'not-generated',
+      djpStatus: current ? current.status : 'not-generated',
       overdueLabel,
     }
   })
@@ -286,7 +290,10 @@ function submitBulkToDjp(selectedRows: Set<number>, deselectAll: () => void) {
   const selected = bulkSelectedInvoices(selectedRows)
   if (!selected.length) return
   for (const inv of selected) {
-    const doc = getTaxDocumentsForInvoice(inv.id)[0]
+    // The document the row's status refers to — NOT simply the first in the
+    // list. An invoice with a lineage can have an approved faktur sitting
+    // alongside the draft replacement that actually needs submitting.
+    const doc = currentTaxDocument(inv.id)
     if (doc) updateTaxDocumentStatus(doc.id, 'awaiting-approval')
   }
   toast.notify({ variant: 'success', title: `${selected.length} ${t(selected.length !== 1 ? 'tax documents' : 'tax document')} ${t('submitted to DJP')}` })
@@ -462,62 +469,66 @@ function confirmBulkDelete() {
     </template>
 
     <!-- ── Cell: Number ── -->
+    <!-- ── Cell: Number — the invoice link, then its document icons on the same
+         line: the e-faktur icon (opens the tax-document popover) and the
+         attachment icon, side by side. They sit here rather than in a column of
+         their own because both describe THIS document, and a separate icon
+         column reads as data about something else. ── -->
     <template #cell-number="{ row, value }">
-      <a class="cell-link cell-text cell-number" @click.stop="viewDetails((row as Row).id)">{{ t('Sales Invoice') }} #{{ value }}</a>
-    </template>
-
-    <!-- ── Cell: Attachment icon (narrow column, no header) — tax-document icon
-         stacks above it when the invoice has one or more tax documents ── -->
-    <template #cell-attachment="{ row, value }">
-      <div class="attachment-cell">
-        <MpPopover v-if="(row as Row).hasTaxDocument" :id="`si-taxdoc-${(row as Row).id}`" use-portal :is-keep-alive="false" placement="bottom-start">
-          <MpPopoverTrigger>
-            <MpButton class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
-              <MpIcon name="doc" size="sm" />
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
-            <div class="taxdoc-popover">
-              <div class="taxdoc-popover-head">
-                <h3 class="taxdoc-popover-title">{{ t('Tax Document') }}</h3>
-                <p class="taxdoc-popover-subtitle">{{ t('Sales Invoice') }} #{{ (row as Row).number }}</p>
+      <div class="number-cell">
+        <a
+          class="cell-link cell-text cell-number"
+          :title="`${t('Sales Invoice')} #${value}`"
+          @click.stop="viewDetails((row as Row).id)"
+        >{{ t('Sales Invoice') }} #{{ value }}</a>
+        <span class="number-cell-icons">
+          <MpPopover v-if="(row as Row).hasTaxDocument" :id="`si-taxdoc-${(row as Row).id}`" use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopoverTrigger>
+              <MpButton class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
+                <MpIcon name="doc" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
+              <div class="taxdoc-popover">
+                <div class="taxdoc-popover-head">
+                  <h3 class="taxdoc-popover-title">{{ t('Tax Document') }}</h3>
+                  <p class="taxdoc-popover-subtitle">{{ t('Sales Invoice') }} #{{ (row as Row).number }}</p>
+                </div>
+                <table class="taxdoc-popover-table">
+                  <colgroup>
+                    <col class="taxdoc-popover-col-label" />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>{{ t('Date') }}</th>
+                      <th>
+                        <span class="taxdoc-popover-th">
+                          {{ t('Number') }}
+                          <MpTooltip :id="`si-taxdoc-number-tt-${(row as Row).id}`" :label="t('Draft, awaiting approval, or rejected documents have no DJP number yet')" placement="top" use-portal>
+                            <MpIcon name="info" size="sm" />
+                          </MpTooltip>
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="doc in taxDocumentsFor((row as Row).id)" :key="doc.id">
+                      <td>{{ doc.date }}</td>
+                      <td>{{ formatTaxDocumentNumber(doc) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="taxdoc-popover-footer">
+                  <MpButton type="button" variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
+                    {{ t('View details') }}
+                  </MpButton>
+                </div>
               </div>
-              <table class="taxdoc-popover-table">
-                <colgroup>
-                  <col class="taxdoc-popover-col-label" />
-                  <col />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>{{ t('Date') }}</th>
-                    <th>
-                      <span class="taxdoc-popover-th">
-                        {{ t('Number') }}
-                        <MpTooltip :id="`si-taxdoc-number-tt-${(row as Row).id}`" :label="t('Draft, awaiting approval, or rejected documents have no DJP number yet')" placement="top" use-portal>
-                          <MpIcon name="info" size="sm" />
-                        </MpTooltip>
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="doc in taxDocumentsFor((row as Row).id)" :key="doc.id">
-                    <td>{{ doc.date }}</td>
-                    <td>{{ formatTaxDocumentNumber(doc) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <div class="taxdoc-popover-footer">
-                <MpButton type="button" variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
-                  {{ t('View details') }}
-                </MpButton>
-              </div>
-            </div>
-          </MpPopoverContent>
-        </MpPopover>
-        <MpIcon v-if="value" name="attachment" size="sm" class="attachment-icon" />
-        <!-- render empty placeholder so Vue never falls back to the raw boolean -->
-        <span v-if="!(row as Row).hasTaxDocument && !value" />
+            </MpPopoverContent>
+          </MpPopover>
+          <MpIcon v-if="(row as Row).attachment" name="attachment" size="sm" class="attachment-icon" />
+        </span>
       </div>
     </template>
 
@@ -547,7 +558,7 @@ function confirmBulkDelete() {
       <ErpStatusBadge
         v-if="(row as Row).hasTaxDocument"
         :status="(row as Row).djpStatus"
-        :label="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].label"
+        :label="t(DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].label)"
         :type="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].type"
       />
       <!-- em dash (not raw 'not-generated') so Vue never falls back to the raw sentinel value -->
@@ -805,11 +816,25 @@ function confirmBulkDelete() {
 }
 
 /* Attachment icon — the tax-document icon (when present) stacks above it */
-.attachment-cell {
+/* Number cell — invoice link + its document icons on one line.
+   GAP SPEC: 8px (--mp-spacing-2) between the number and the icon group, and the
+   same 8px between the two icons. 8px is the inline-gap step; the 4px below it
+   lets a 16px icon crowd the text it follows, and 12px starts reading as a
+   separate column again — which is the thing this change removes.
+   The link keeps min-width:0 so it ellipsises before the icons are pushed out:
+   the icons say whether a faktur/attachment EXISTS, which stays legible even
+   when the number itself is truncated. */
+.number-cell {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--mp-spacing-1);
+  gap: var(--mp-spacing-2);
+  min-width: 0;
+}
+.number-cell-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  flex-shrink: 0;
 }
 .attachment-icon {
   color: var(--mp-text-subtle);
@@ -818,8 +843,10 @@ function confirmBulkDelete() {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-6, 24px) !important;
-  height: var(--mp-sizes-6, 24px) !important;
+  /* 20px, matching the attachment MpIcon beside it — a 24px button next to a
+     20px glyph reads as two different things rather than one icon pair. */
+  width: var(--mp-sizes-5, 20px) !important;
+  height: var(--mp-sizes-5, 20px) !important;
   min-width: 0 !important;
   padding: 0 !important;
   border: none !important;
