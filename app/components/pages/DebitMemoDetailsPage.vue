@@ -11,6 +11,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import { getContactIdByName } from '~/data/contacts'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -109,7 +110,7 @@ function confirmDelete() {
     <div class="cm-stage">
       <section class="cm-summary">
         <div class="cm-primary">
-          <ContentList :label="t('Vendor')" :value="vendorNameOf(memo.vendorId)" />
+          <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(vendorNameOf(memo.vendorId))}`, '_blank')">{{ vendorNameOf(memo.vendorId) }}</a></ContentList>
           <div class="cm-primary-right">
             <div class="cm-primary-figure">
               <span class="cm-figure-label">{{ t('Available debit') }}</span>

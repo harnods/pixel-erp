@@ -10,6 +10,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCompletedModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
 import { salesOrderCompletionRows } from '~/data/salesOrders'
@@ -238,7 +239,9 @@ function goBack() { router.push('/sales-orders') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')" :value="order.customer.name" />
+            <ContentList :label="t('Customer')">
+              <a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(order.customer.name)}`, '_blank')">{{ order.customer.name }}</a>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">

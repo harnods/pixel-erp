@@ -427,6 +427,8 @@ const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/Budg
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
+const AddPaymentPage = asyncPage(() => import('~/components/pages/AddPaymentPage.vue'))
+const PaymentReceivedDetailsPage = asyncPage(() => import('~/components/pages/PaymentReceivedDetailsPage.vue'))
 const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
@@ -845,6 +847,18 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /sales-invoices/:id/apply-credit-memo → Apply credit memo form (precede :id)
   if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'apply-credit-memo') {
     return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  // /sales-invoices/:id/add-payment → Receive payment form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'add-payment') {
+    return { component: AddPaymentPage, id: segs[1] }
+  }
+  // /payments-received/:id/edit → Edit payment received
+  if (segs.length >= 3 && segs[0] === 'payments-received' && segs[2] === 'edit') {
+    return { component: AddPaymentPage, id: segs[1] }
+  }
+  // /payments-received/:id → Payment received detail
+  if (segs.length >= 2 && segs[0] === 'payments-received') {
+    return { component: PaymentReceivedDetailsPage, id: segs[1] }
   }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {

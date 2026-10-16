@@ -9,6 +9,7 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseDeliveryDetail } from '~/data/purchaseDeliveryDetails'
 import { purchaseDeliveries } from '~/data'
 
@@ -216,7 +217,7 @@ function goBack() { router.push('/purchase-deliveries') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')" :value="delivery.vendor.name" />
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(delivery.vendor.name)}`, '_blank')">{{ delivery.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">

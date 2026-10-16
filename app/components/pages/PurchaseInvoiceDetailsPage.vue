@@ -10,6 +10,7 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseInvoiceDetail } from '~/data/purchaseInvoiceDetails'
 import { purchaseInvoices } from '~/data/purchaseInvoices'
 import {
@@ -248,7 +249,7 @@ function goBack() { router.push('/purchase-invoices') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')" :value="invoice.vendor.name" />
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(invoice.vendor.name)}`, '_blank')">{{ invoice.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -451,6 +452,14 @@ function goBack() { router.push('/purchase-invoices') }
           <MpTabPanel v-if="hasPayments" value="payments" data-devchange="pinv-payments-tab">
             <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
+              <colgroup>
+                <col class="detail-linked-col--date" />
+                <col class="detail-linked-col--number" />
+                <col />
+                <col />
+                <col />
+                <col class="detail-linked-col--amount" />
+              </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
@@ -872,6 +881,7 @@ function goBack() { router.push('/purchase-invoices') }
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--stage  { width: 160px; }
 .detail-linked-col--actions { width: 52px; }
+.detail-linked-col--amount { width: 200px; }
 
 .row-kebab {
   display: flex !important;

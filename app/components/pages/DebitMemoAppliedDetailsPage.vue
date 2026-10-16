@@ -10,6 +10,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import { getContactIdByName } from '~/data/contacts'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -86,7 +87,7 @@ function confirmDelete() {
     <div class="cm-stage">
       <section class="cm-summary">
         <div class="cm-primary cm-primary--cols">
-          <div class="cm-col"><ContentList :label="t('Vendor')" :value="vendorNameOf(app.vendorId)" /></div>
+          <div class="cm-col"><ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(vendorNameOf(app.vendorId))}`, '_blank')">{{ vendorNameOf(app.vendorId) }}</a></ContentList></div>
           <div class="cm-col">
             <ContentList :label="t('Debit memo')">
               <a class="cm-link" @click="goMemo">{{ memo ? memoLabel(memo.number) : '—' }}</a>

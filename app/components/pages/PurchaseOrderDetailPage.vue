@@ -13,6 +13,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
+import { getContactIdByName } from '~/data/contacts'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -377,7 +378,7 @@ function goBack() { closePurchaseOrder?.() }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList label="Vendor" :value="order.vendor.name" />
+            <ContentList label="Vendor"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(order.vendor.name)}`, '_blank')">{{ order.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList label="Email">

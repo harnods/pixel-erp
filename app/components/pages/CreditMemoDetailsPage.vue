@@ -129,7 +129,7 @@ function confirmDelete() {
       <!-- Summary: Customer + Available credit + journal link -->
       <section class="cm-summary">
         <div class="cm-primary">
-          <ContentList :label="t('Customer')" :value="customerNameOf(memo.customerId)" />
+          <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(customerNameOf(memo.customerId))}`, '_blank')">{{ customerNameOf(memo.customerId) }}</a></ContentList>
           <div class="cm-primary-right">
             <div class="cm-primary-figure">
               <span class="cm-figure-label">{{ t('Available credit') }}</span>

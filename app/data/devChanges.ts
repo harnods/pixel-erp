@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'receive-payment-header',
+    title: 'Add Payment form (redesigned)',
+    description:
+      'Redesigned Add Payment form following Figma spec: read-only customer info block (name + email), Date paid / Transaction no. / Reference no. row, Account / Payment method row, invoice table with NUMBER / DUE DATE / BALANCE DUE / TOTAL / AMOUNT PAID columns, transaction count, withholding tax checkbox, memo + attachment section.',
+    date: '2026-10-15',
+    files: ['AddPaymentPage.vue', 'paymentsReceived.ts', 'salesInvoiceDetails.ts', 'creditMemos.ts'],
+  },
+  {
+    id: 'receive-payment-wht',
+    title: 'Withholding tax on payment received',
+    description:
+      'Optional withholding tax (PPh) on the Receive Payment form: checkbox reveals WHT account selector + amount field. Total = Subtotal − WHT. Journal: Dr Cash (net), Dr PPh Payable (WHT), Cr A/R (gross). Five standard WHT accounts (PPh 21/22/23/4(2)/15).',
+    date: '2026-10-15',
+    files: ['AddPaymentPage.vue', 'paymentsReceived.ts'],
+  },
+  {
+    id: 'payment-received-detail',
+    title: 'Payment Received detail page',
+    description:
+      'Read-only detail page for Payment Received records: customer, deposit-to, allocation table, WHT breakdown, memo, journal entry drawer, activity log, Edit/Delete actions. Follows CreditMemoAppliedDetailsPage pattern.',
+    date: '2026-10-15',
+    files: ['PaymentReceivedDetailsPage.vue', 'paymentsReceived.ts'],
+  },
+  {
     id: 'cd-transactions-tab',
     title: 'Customer details: Transactions tab',
     description:
