@@ -79,7 +79,6 @@ const draftReminders = reactive<ReminderSettings>({ sendBatchExpiryReminder: fal
 let nextRuleId = 1
 
 const reminderRuleSummary = computed(() => {
-  if (!committedReminders.sendBatchExpiryReminder) return t('Off')
   if (committedReminders.rules.length === 0) return t('No reminder rule yet')
   return committedReminders.rules.map(r => `${r.days} ${t('days')} ${r.timing.toLowerCase()} ${t('the expiry date')}`).join(', ')
 })
