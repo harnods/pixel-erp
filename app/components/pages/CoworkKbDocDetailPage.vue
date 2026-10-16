@@ -178,7 +178,7 @@ function goFolder() { router.push({ path: '/cowork-knowledge', query: folder.val
           <img v-else-if="isImage && imageUrl" :src="imageUrl" :alt="doc.name" class="kbd-image" />
           <pre v-else-if="fullText" class="kbd-text">{{ fullText }}</pre>
           <div v-else class="kbd-empty">
-            <MpIcon name="doc" size="lg" /><p>No extractable text for this file.</p>
+            <MpIcon name="doc" size="32px" /><p>No extractable text for this file.</p>
             <MpButton v-if="editable" is-rounded variant="secondary" @click="startEdit"><MpIcon name="edit" size="sm" /> Add content</MpButton>
           </div>
         </template>
@@ -228,7 +228,7 @@ function goFolder() { router.push({ path: '/cowork-knowledge', query: folder.val
   </template>
 
   <div v-else class="kbd-missing">
-    <MpIcon name="doc" size="lg" />
+    <MpIcon name="doc" size="32px" />
     <p>Document not found.</p>
     <MpButton is-rounded variant="secondary" @click="router.push('/cowork-knowledge')">Back to Knowledge</MpButton>
   </div>

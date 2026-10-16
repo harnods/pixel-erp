@@ -465,7 +465,7 @@ function onOpenErpCustomer() { infoToast(contact.value?.erpCustomerId ?? '') }
   </div>
 
   <div v-else class="cr-missing">
-    <MpIcon name="profile" size="lg" />
+    <MpIcon name="profile" size="32px" />
     <p>{{ t('Contact not found.') }}</p>
     <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/customers/contacts')">{{ t('Back to Contacts') }}</MpButton>
   </div>
