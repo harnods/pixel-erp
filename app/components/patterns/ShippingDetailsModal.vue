@@ -19,7 +19,7 @@ import { reactive, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton, MpInput, MpPopover, MpPopoverTrigger,
-  MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, css,
+  MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpButton, css,
 } from '@mekari/pixel3'
 import type { ShippingDetailRow } from '~/composables/usePrintShippingLabel'
 import { couriers } from '~/data/couriers'
@@ -142,8 +142,8 @@ function save() {
       </MpModalBody>
       <MpModalFooter>
         <div class="sd-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save & print') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="emit('close')">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save & print') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

@@ -212,9 +212,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <MpFormControl id="it-transno">
           <div class="ex-label-row">
             <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-            <button class="ex-label-icon" type="button" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true">
-              <MpIcon name="settings" size="sm" />
-            </button>
+            <MpButton class="ex-label-icon" type="button" left-icon="settings" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true" />
           </div>
           <MpInput id="it-transno-input" v-model="transactionNo" :placeholder="t('Auto')" is-full-width is-disabled />
         </MpFormControl>
@@ -422,7 +420,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 .ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
-.ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ex-td--input { position: relative; }
+.ex-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
 .ex-td--error :deep([class*='autocomplete']), .ex-td--error :deep([class*='input']) { background: transparent; }

@@ -123,8 +123,8 @@ function unmatch() { emit('unmatch'); close() }
           </div>
 
           <div class="mdd-footer">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="close">Cancel</button>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="unmatch">Unmatch</button>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="close">Cancel</MpButton>
+            <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="unmatch">Unmatch</MpButton>
           </div>
         </div>
       </MpDrawerBody>

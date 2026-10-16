@@ -154,7 +154,7 @@ watch(statusFilter, () => setPage(1))
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
               <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
             </div>
           </div>
         </template>

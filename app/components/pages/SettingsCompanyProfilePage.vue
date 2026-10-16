@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import {
-  MpToggle, MpIcon, MpInput, MpRadio, MpBadge, MpSpinner, toast,
+  MpButton, MpToggle, MpIcon, MpInput, MpRadio, MpBadge, MpSpinner, toast,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody,
   MpModalFooter, MpModalOverlay,
@@ -340,14 +340,15 @@ const ADVANCED_TOGGLES = [
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ t('Company info') }}</h2>
         </div>
-        <button
+        <MpButton
           v-if="!props.embedded"
+          variant="secondary"
           class="btn-enterprise btn-enterprise--secondary"
           :title="t('Edit in your Mekari account (opens in a new tab)')"
           @click="openCompanyInfoSource"
         >
           {{ t('Edit') }}
-        </button>
+        </MpButton>
       </div>
 
       <ContentList :label="t('Company logo')" class="cp-cl--logo">
@@ -391,13 +392,14 @@ const ADVANCED_TOGGLES = [
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'tax' ? t('Edit tax info') : t('Tax info') }}</h2>
         </div>
-        <button
+        <MpButton
           v-if="editing !== 'tax' && !props.embedded"
+          variant="secondary"
           class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('tax')"
         >
           {{ t('Edit') }}
-        </button>
+        </MpButton>
       </div>
 
       <!-- Read mode -->
@@ -489,15 +491,16 @@ const ADVANCED_TOGGLES = [
               </div>
               <MpFormErrorMessage>{{ errTax.nitku }}</MpFormErrorMessage>
             </MpFormControl>
-            <button
+            <MpButton
               v-if="!draftTax.npwpValidated"
+              variant="secondary"
               type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn"
-              :disabled="validatingNpwp"
+              :is-disabled="validatingNpwp"
               @click="openValidateNpwpConfirm"
             >
               <template v-if="validatingNpwp"><MpSpinner size="sm" /> {{ t('Validating') }}</template>
               <template v-else>{{ t('Validate') }}</template>
-            </button>
+            </MpButton>
           </div>
           <p v-if="taxIdentityError" class="cp-inline-error">{{ taxIdentityError }}</p>
 
@@ -532,11 +535,12 @@ const ADVANCED_TOGGLES = [
                   <span v-if="draftTax.signeeValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
                 </div>
               </MpFormControl>
-              <button
+              <MpButton
+                variant="secondary"
                 type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn"
-                :disabled="draftTax.signeeValidated"
+                :is-disabled="draftTax.signeeValidated"
                 @click="openValidateCoretax('signee')"
-              >{{ t('Validate') }}</button>
+              >{{ t('Validate') }}</MpButton>
             </div>
             <p v-if="coretaxErr.signee" class="cp-inline-error">{{ coretaxErr.signee }}</p>
             <div class="cp-validate-row">
@@ -560,18 +564,19 @@ const ADVANCED_TOGGLES = [
                   <span v-if="draftTax.picValidated" class="cp-input-check"><MpIcon name="done" variant="fill" size="sm" color="icon.inverse" /></span>
                 </div>
               </MpFormControl>
-              <button
+              <MpButton
+                variant="secondary"
                 type="button" class="btn-enterprise btn-enterprise--secondary cp-validate-btn"
-                :disabled="draftTax.picValidated"
+                :is-disabled="draftTax.picValidated"
                 @click="openValidateCoretax('pic')"
-              >{{ t('Validate') }}</button>
+              >{{ t('Validate') }}</MpButton>
             </div>
             <p v-if="coretaxErr.pic" class="cp-inline-error">{{ coretaxErr.pic }}</p>
           </template>
 
           <div class="cp-action-bar">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveTax">{{ t('Save changes') }}</button>
+            <MpButton variant="ghost" type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="saveTax">{{ t('Save changes') }}</MpButton>
           </div>
         </div>
       </template>
@@ -585,13 +590,14 @@ const ADVANCED_TOGGLES = [
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'payment' ? t('Edit payment info') : t('Payment info') }}</h2>
         </div>
-        <button
+        <MpButton
           v-if="editing !== 'payment' && !props.embedded"
+          variant="secondary"
           class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('payment')"
         >
           {{ t('Edit') }}
-        </button>
+        </MpButton>
       </div>
 
       <!-- Read mode -->
@@ -638,8 +644,8 @@ const ADVANCED_TOGGLES = [
           </MpFormControl>
         </div>
         <div class="cp-action-bar">
-          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
-          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="savePayment">{{ t('Save changes') }}</button>
+          <MpButton variant="ghost" type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="savePayment">{{ t('Save changes') }}</MpButton>
         </div>
       </div>
     </section>
@@ -652,13 +658,14 @@ const ADVANCED_TOGGLES = [
         <div class="cp-section-meta">
           <h2 class="cp-section-title">{{ editing === 'advanced' ? t('Edit advanced settings') : t('Advanced settings') }}</h2>
         </div>
-        <button
+        <MpButton
           v-if="editing !== 'advanced'"
+          variant="secondary"
           class="btn-enterprise btn-enterprise--secondary"
           @click="startEdit('advanced')"
         >
           {{ t('Edit') }}
-        </button>
+        </MpButton>
       </div>
 
       <div class="cp-toggles">
@@ -715,8 +722,8 @@ const ADVANCED_TOGGLES = [
           <span class="cp-help">{{ t('e.g.') }} {{ draftAmountDisplayExample }}</span>
         </MpFormControl>
         <div class="cp-action-bar">
-          <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</button>
-          <button type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAdvanced">{{ t('Save changes') }}</button>
+          <MpButton variant="ghost" type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelEdit">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="saveAdvanced">{{ t('Save changes') }}</MpButton>
         </div>
       </div>
     </section>
@@ -758,8 +765,8 @@ const ADVANCED_TOGGLES = [
         </MpModalBody>
         <MpModalFooter>
           <div class="cp-action-bar cp-action-bar--modal">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelMultiCurrency">{{ t('Cancel') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="activateMultiCurrency">{{ t('Activate') }}</button>
+            <MpButton variant="ghost" type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelMultiCurrency">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="activateMultiCurrency">{{ t('Activate') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -778,8 +785,8 @@ const ADVANCED_TOGGLES = [
         </MpModalBody>
         <MpModalFooter>
           <div class="cp-action-bar cp-action-bar--modal">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelValidateNpwpConfirm">{{ t('Cancel') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmValidateNpwp">{{ t('Validate & create') }}</button>
+            <MpButton variant="ghost" type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelValidateNpwpConfirm">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmValidateNpwp">{{ t('Validate & create') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -806,21 +813,21 @@ const ADVANCED_TOGGLES = [
                 :type="coretaxPassphraseVisible ? 'text' : 'password'"
                 @update:model-value="coretaxPassphraseError = ''"
               />
-              <button
+              <MpButton
+                variant="ghost"
                 type="button" class="cp-passphrase-toggle"
                 :aria-label="coretaxPassphraseVisible ? t('Hide passphrase') : t('Show passphrase')"
+                :left-icon="coretaxPassphraseVisible ? 'show' : 'hide'"
                 @click="coretaxPassphraseVisible = !coretaxPassphraseVisible"
-              >
-                <MpIcon :name="coretaxPassphraseVisible ? 'show' : 'hide'" size="sm" />
-              </button>
+              />
             </div>
             <MpFormErrorMessage>{{ coretaxPassphraseError }}</MpFormErrorMessage>
           </MpFormControl>
         </MpModalBody>
         <MpModalFooter>
           <div class="cp-action-bar cp-action-bar--modal">
-            <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelValidateCoretax">{{ t('Cancel') }}</button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmValidateCoretax">{{ t('Validate') }}</button>
+            <MpButton variant="ghost" type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancelValidateCoretax">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmValidateCoretax">{{ t('Validate') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -831,9 +838,7 @@ const ADVANCED_TOGGLES = [
          registered in Klikpajak, to preview both Tax info onboarding states ──── -->
     <MpPopover v-if="!props.embedded" id="cp-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="demo-fab" :aria-label="t('Change scenario state')">
-          <MpIcon name="sliders" size="md" color="icon.inverse" />
-        </button>
+        <MpButton variant="ghost" class="demo-fab" :aria-label="t('Change scenario state')" left-icon="sliders" />
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
         <p class="demo-fab-heading">{{ t('Klikpajak account state') }}</p>

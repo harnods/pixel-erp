@@ -32,7 +32,7 @@
  *   sort(key)
  */
 
-import { MpCheckbox, MpSkeleton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpSkeleton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 import ErpPagination from './ErpPagination.vue'
 import { columnWidth, type ColumnKind } from './columnWidths'
 
@@ -583,15 +583,15 @@ const bulkCountLabel = computed(() => {
                   is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start"
                 >
                   <MpPopoverTrigger>
-                    <button
+                    <MpButton
                       class="erp-sort-btn"
                       :class="{ 'erp-sort-btn--active': sortKey === col.key }"
-                      aria-label="Sort column" @click.stop
+                      aria-label="Sort column" variant="ghost" @click.stop
                     >
                       <!-- Literal px, not "sm" — MpIcon's "sm" resolves to ~20px (token
                            spacing.5), which doesn't fit the 28px-fixed header row. -->
                       <MpIcon name="sort-default" size="16px" />
-                    </button>
+                    </MpButton>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
                     <MpPopoverList>
@@ -697,11 +697,12 @@ const bulkCountLabel = computed(() => {
                 v-if="hasAiChat"
                 class="erp-td erp-td--ai"
               >
-                <button
+                <MpButton
                   v-show="hoveredRowIndex === ri || activeAiRow === ri"
                   class="ai-icon-btn"
                   :class="{ 'ai-icon-btn--active': activeAiRow === ri }"
                   aria-label="Ask Airene"
+                  variant="ghost"
                   @mouseenter="onIconEnter($event)"
                   @mouseleave="onIconLeave"
                   @click.stop="onIconClick($event, ri)"
@@ -711,7 +712,7 @@ const bulkCountLabel = computed(() => {
                     <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                     <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
                   </svg>
-                </button>
+                </MpButton>
               </td>
             </tr>
           </template>
@@ -815,12 +816,12 @@ const bulkCountLabel = computed(() => {
           @keydown.enter.prevent="sendAndClose"
           @keydown.esc="closePopover"
         />
-        <button class="ai-popover__send" aria-label="Send" @click="sendAndClose">
+        <MpButton class="ai-popover__send" aria-label="Send" variant="ghost" @click="sendAndClose">
           <!-- Arrow up send icon -->
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <path d="M8 12.5V3.5M8 3.5L4 7.5M8 3.5L12 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
-        </button>
+        </MpButton>
       </div>
     </Teleport>
 

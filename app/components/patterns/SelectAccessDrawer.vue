@@ -84,7 +84,7 @@ async function save() {
         <!-- Header -->
         <header class="sad-header">
           <h2 class="sad-title">{{ title }}</h2>
-          <button class="sad-close" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></button>
+          <MpButton class="sad-close" variant="ghost" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></MpButton>
         </header>
 
         <!-- Body — two panels -->
@@ -94,25 +94,25 @@ async function save() {
             <div class="sad-search">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="leftSearch" class="sad-search-input" type="text" placeholder="Search..." />
-              <button v-if="leftSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="leftSearch = ''">
+              <MpButton v-if="leftSearch" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="leftSearch = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </div>
             <div class="sad-col-head">
               <h3 class="sad-col-title">{{ listTitle }}</h3>
-              <button class="sad-link" type="button" @click="addAll">Add all</button>
+              <MpButton class="sad-link" variant="ghost" type="button" @click="addAll">Add all</MpButton>
             </div>
             <div class="sad-list">
-              <button v-for="o in available" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="add(o.id)"><!-- pixel-police-allow -->
+              <MpButton v-for="o in available" :key="o.id" class="sad-item" variant="ghost" type="button" :data-devchange="o.devchange" @click="add(o.id)"><!-- pixel-police-allow -->
                 <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                 <span class="sad-info">
                   <span class="sad-name">{{ o.name }}</span>
                   <span v-if="o.subtitle" class="sad-sub">{{ o.subtitle }}</span>
                 </span>
                 <span class="sad-act sad-act--add"><MpIcon name="add" size="sm" /></span>
-              </button>
+              </MpButton>
               <p v-if="!available.length" class="sad-empty-text">No {{ listTitle.toLowerCase() }} found.</p>
             </div>
           </section>
@@ -125,18 +125,18 @@ async function save() {
               <div class="sad-search">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                 <input v-model="rightSearch" class="sad-search-input" type="text" placeholder="Search..." />
-                <button v-if="rightSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="rightSearch = ''">
+                <MpButton v-if="rightSearch" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="rightSearch = ''">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                   </svg>
-                </button>
+                </MpButton>
               </div>
               <div class="sad-col-head">
                 <h3 class="sad-col-title">Selected {{ listTitle.toLowerCase() }} ({{ selectedCount }})</h3>
-                <button class="sad-link" type="button" @click="removeAll">Remove all</button>
+                <MpButton class="sad-link" variant="ghost" type="button" @click="removeAll">Remove all</MpButton>
               </div>
               <div class="sad-list">
-                <button v-for="o in selected" :key="o.id" class="sad-item" type="button" :data-devchange="o.devchange" @click="remove(o.id)"><!-- pixel-police-allow -->
+                <MpButton v-for="o in selected" :key="o.id" class="sad-item" variant="ghost" type="button" :data-devchange="o.devchange" @click="remove(o.id)"><!-- pixel-police-allow -->
                   <MpIcon v-if="o.icon" :name="o.icon" size="sm" class="sad-icon" />
                   <span class="sad-info">
                     <span class="sad-name">{{ o.name }}</span>
@@ -145,7 +145,7 @@ async function save() {
                   <MpTooltip :id="`sad-rm-${o.id}`" label="Remove" placement="top" use-portal class="sad-remove-tip">
                     <span class="sad-act sad-act--remove"><MpIcon name="minus-circular" size="sm" /></span>
                   </MpTooltip>
-                </button>
+                </MpButton>
                 <p v-if="!selected.length" class="sad-empty-text">No {{ listTitle.toLowerCase() }} found.</p>
               </div>
             </template>

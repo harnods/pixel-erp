@@ -10,6 +10,20 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+
+// jsPDF can't render under happy-dom, so the real generator never resolves and
+// `pdfOpen` never flips — the preview this test is about would never appear.
+// Same stub as tests/package-shipping-details.spec.ts, which covers the other
+// half of this flow: what's under test is the print → preview → navigate
+// sequence, not the PDF bytes.
+// The preview modal renders the doc via doc.output('blob'), so the stub has to
+// answer that much — the PDF's contents are not what this test is about.
+vi.mock('~/utils/shippingLabelPdf', () => ({
+  generateShippingLabelPdf: vi.fn(async (entries: unknown[]) => ({
+    entries,
+    output: (kind: string) => (kind === 'blob' ? new Blob(['%PDF-1.4'], { type: 'application/pdf' }) : ''),
+  })),
+}))
 import PackItemsPage from '~/components/pages/PackItemsPage.vue'
 import { addOutgoing, type OutgoingOrder } from '~/data/outgoing'
 import { addPickingTask, getPickingTask } from '~/data/pickingTasks'
@@ -57,6 +71,18 @@ function modalButton(modalId: string, text: string): HTMLElement {
   return btn as HTMLElement
 }
 
+/** Dismiss a modal via its × — since 92cddfaf ("every modal and drawer closes
+ *  ONLY via its × button") the PDF preview has no Cancel in its footer, just
+ *  "Open template settings" and "Print PDF". The × is the header's text-less
+ *  ghost button. */
+function closeModal(modalId: string): HTMLElement {
+  const modal = document.querySelector(`#modal-${modalId}`)
+  if (!modal) throw new Error(`Modal #modal-${modalId} not found`)
+  const btn = Array.from(modal.querySelectorAll('button')).find((b) => !b.textContent?.trim())
+  if (!btn) throw new Error(`No × button in #modal-${modalId}`)
+  return btn as HTMLElement
+}
+
 // Scan (not manual qty entry) so this works regardless of the warehouse's scan
 // threshold — same technique as tests/pack-items-unsaved-changes-guard.spec.ts.
 async function scan(wrapper: ReturnType<typeof mount>, value: string) {
@@ -89,8 +115,8 @@ describe('PackItemsPage — Finish packing prints the shipping label (D4 AC#5)',
     expect(document.querySelector('#modal-pdf-preview-modal')?.textContent).toContain('Shipping label preview')
     expect(push).not.toHaveBeenCalled() // still on this page, previewing the label
 
-    // Dismiss the preview (Cancel) → now it leaves.
-    modalButton('pdf-preview-modal', 'Cancel').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    // Dismiss the preview (×) → now it leaves.
+    closeModal('pdf-preview-modal').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
     expect(push).toHaveBeenCalledWith(`/packing/${pk.id}`)
     wrapper.unmount()

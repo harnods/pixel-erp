@@ -12,7 +12,7 @@ import {
   type MappingEntry, type ErpTargetField, type EntryEval, type ConversionConfig,
 } from '~/data/crmConversion'
 import {
-  crmModules, getCrmModule, moduleStores, serviceDeals,
+  crmModules, getCrmModule, moduleStores,
   DEFAULT_PROPERTIES, DEFAULT_PROPERTY_IDS, defaultDealProperties,
   type CrmModule, type CrmModuleField, type DealProperty, type DealPropertyType,
 } from '~/data/crm'
@@ -263,33 +263,27 @@ describe('compatibleCrmTypes', () => {
 
 // ── erpTargetFields ─────────────────────────────────────────────────────────
 describe('erpTargetFields', () => {
-  it('sales-order returns COMMON_ERP_FIELDS without expiryDate', () => {
-    const fields = erpTargetFields('sales-order')
-    expect(fields.find((f) => f.key === 'expiryDate')).toBeUndefined()
-    expect(fields.find((f) => f.key === 'customer')).toBeDefined()
-    expect(fields.find((f) => f.key === 'productLines')).toBeDefined()
+  it('sales-order and sales-quote return the same fields', () => {
+    const soFields = erpTargetFields('sales-order')
+    const sqFields = erpTargetFields('sales-quote')
+    expect(soFields.map((f) => f.key)).toEqual(sqFields.map((f) => f.key))
+    expect(soFields.find((f) => f.key === 'customer')).toBeDefined()
+    expect(soFields.find((f) => f.key === 'productLines')).toBeDefined()
   })
 
-  it('sales-quote includes expiryDate after dueDate', () => {
-    const fields = erpTargetFields('sales-quote')
-    const expiryIdx = fields.findIndex((f) => f.key === 'expiryDate')
-    const dueDateIdx = fields.findIndex((f) => f.key === 'dueDate')
-    expect(expiryIdx).toBeGreaterThan(-1)
-    expect(expiryIdx).toBe(dueDateIdx + 1)
+  it('sales-quote has the same number of fields as sales-order', () => {
+    expect(erpTargetFields('sales-quote').length).toBe(erpTargetFields('sales-order').length)
   })
 
-  it('sales-quote has one more field than sales-order', () => {
-    expect(erpTargetFields('sales-quote').length).toBe(erpTargetFields('sales-order').length + 1)
-  })
-
-  it('required fields include customer, txDate, dueDate, productLines, currency', () => {
+  it('required fields include customer, total, txDate, dueDate, txNumber, productLines', () => {
     const required = erpTargetFields('sales-order').filter((f) => f.requirement === 'required')
     const keys = required.map((f) => f.key)
     expect(keys).toContain('customer')
+    expect(keys).toContain('total')
     expect(keys).toContain('txDate')
     expect(keys).toContain('dueDate')
+    expect(keys).toContain('txNumber')
     expect(keys).toContain('productLines')
-    expect(keys).toContain('currency')
   })
 })
 
@@ -322,23 +316,11 @@ describe('DEFAULT_PROPERTIES completeness', () => {
 })
 
 // ── Service deals seed — draft module must be empty ─────────────────────────
-describe('Service deals — draft module empty state', () => {
-  it('service deals seed is empty', () => {
-    expect(serviceDeals.length).toBe(0)
-  })
-
-  it('services module has recordCount 0', () => {
-    const svc = getCrmModule('services')
-    expect(svc).toBeDefined()
-    expect(svc!.recordCount).toBe(0)
-  })
-
-  it('services module is in draft status', () => {
-    const svc = getCrmModule('services')
-    expect(svc).toBeDefined()
-    expect(svc!.status).toBe('draft')
-  })
-})
+// The Service deals module was deleted in beb3b507 ("only Deals remains as the
+// system default") — its pages, stores, types and seed all went with it, so
+// `serviceDeals` is no longer exported and getCrmModule('services') is
+// undefined. These three tests asserted that module's empty state and were left
+// behind; there is nothing left for them to guard.
 
 // ── eligibleModules — only published modules ────────────────────────────────
 describe('eligibleModules — only published', () => {

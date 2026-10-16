@@ -18,7 +18,7 @@ import {
 } from '~/data/crmConversion'
 import type { CrmModule, DealProperty } from '~/data/crm'
 
-const props = defineProps<{ field: ErpTargetField; entry: MappingEntry; mod: CrmModule; properties?: DealProperty[] }>()
+const props = withDefaults(defineProps<{ field: ErpTargetField; entry: MappingEntry; mod: CrmModule; properties?: DealProperty[]; showErrors?: boolean }>(), { showErrors: false })
 const emit = defineEmits<{ 'update:entry': [MappingEntry] }>()
 const { t } = useLocale()
 
@@ -45,7 +45,7 @@ const fieldOptions = computed(() => {
 
 const SYSTEM_VALUES: SystemValueKey[] = [
   'conversion-date', 'base-currency', 'erp-customer-id', 'record-id',
-  'primary-name', 'current-company', 'acting-user', 'rate-one',
+  'primary-name', 'current-company', 'acting-user', 'rate-one', 'calculated-total',
 ]
 const systemOptions = computed(() => SYSTEM_VALUES.map((v) => ({ value: v, label: t(SYSTEM_VALUE_LABEL[v]) })))
 
@@ -80,56 +80,47 @@ function onStrategy(v: string) {
 
       <!-- Source (strategy) -->
       <div class="map-cell">
-        <span v-if="entry.protected" class="map-readonly">{{ t(SOURCE_STRATEGY_LABEL[entry.strategy]) }}</span>
         <ErpFilterSelect
-          v-else
           :id="`map-strategy-${field.key}`"
           :model-value="entry.strategy"
           placeholder="Source"
           :options="strategyOptions"
+          :disabled="!!entry.protected"
           @update:model-value="onStrategy"
         />
       </div>
 
       <!-- CRM field / resolved value -->
       <div class="map-cell">
-        <span v-if="entry.protected" class="map-readonly">{{ protectedValue }}</span>
-        <template v-else>
-          <ErpFilterSelect
-            v-if="entry.strategy === 'crm-field'"
-            :id="`map-field-${field.key}`"
-            :model-value="entry.sourceFieldId ?? ''"
-            placeholder="Select CRM field"
-            :options="fieldOptions"
-            @update:model-value="(v: string) => patch({ sourceFieldId: v })"
-          />
-          <ErpFilterSelect
-            v-else-if="entry.strategy === 'system'"
-            :id="`map-sys-${field.key}`"
-            :model-value="entry.systemValue ?? ''"
-            placeholder="Select value"
-            :options="systemOptions"
-            @update:model-value="(v: string) => patch({ systemValue: v as SystemValueKey })"
-          />
-          <MpInput
-            v-else-if="entry.strategy === 'fixed'"
-            :id="`map-fixed-${field.key}`"
-            :model-value="entry.fixedLabel ?? ''"
-            :placeholder="t('Enter a fixed value')"
-            @update:model-value="(v: string) => patch({ fixedLabel: v })"
-          />
-          <span v-else-if="entry.strategy === 'erp-default'" class="map-readonly">{{ t('Default') }} {{ t(field.label) }}</span>
-          <span v-else class="map-readonly map-readonly--muted">—</span>
-        </template>
+        <ErpFilterSelect
+          v-if="entry.strategy === 'crm-field'"
+          :id="`map-field-${field.key}`"
+          :model-value="entry.sourceFieldId ?? ''"
+          placeholder="Select CRM field"
+          :options="fieldOptions"
+          :disabled="!!entry.protected"
+          @update:model-value="(v: string) => patch({ sourceFieldId: v })"
+        />
+        <span v-else-if="entry.strategy === 'system'" class="map-readonly">{{ entry.systemValue ? t(SYSTEM_VALUE_LABEL[entry.systemValue]) : '—' }}</span>
+        <MpInput
+          v-else-if="entry.strategy === 'fixed'"
+          :id="`map-fixed-${field.key}`"
+          :model-value="entry.fixedLabel ?? ''"
+          :placeholder="t('Enter a fixed value')"
+          :disabled="!!entry.protected"
+          @update:model-value="(v: string) => patch({ fixedLabel: v })"
+        />
+        <span v-else-if="entry.strategy === 'erp-default'" class="map-readonly">{{ entry.fixedLabel ? t(entry.fixedLabel) : `${t('Default')} ${t(field.label)}` }}</span>
+        <span v-else class="map-readonly map-readonly--muted">—</span>
       </div>
     </div>
-    <p v-if="evalResult.message && !entry.protected" class="map-inline-error">{{ evalResult.message }}</p>
+    <p v-if="evalResult.message && !entry.protected && showErrors" class="map-inline-error">{{ evalResult.message }}</p>
   </div>
 </template>
 
 <style scoped>
 /* 8px top/bottom padding + a divider; the parent list strips the last row's border. */
-.map-row { padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle, #e6e8eb); }
+.map-row { padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default, #c8cdd0); }
 .map-grid { display: grid; grid-template-columns: minmax(220px, 1.2fr) 200px minmax(220px, 1.4fr); gap: var(--mp-spacing-4); align-items: center; }
 .map-target { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5, 2px); min-width: 0; }
 .map-target-label { font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-medium, 500); color: var(--mp-text-default); }

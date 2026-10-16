@@ -9,6 +9,7 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getSalesQuoteDetail } from '~/data/salesQuoteDetails'
 import { salesQuotes } from '~/data'
 
@@ -167,15 +168,16 @@ function goBack() { router.push('/sales-quotes') }
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="o in jumpResults"
                     :key="o.id"
+                    variant="ghost"
                     class="detail-jump-item"
                     @click="jumpTo(o.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Sales Quote') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -214,7 +216,7 @@ function goBack() { router.push('/sales-quotes') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')" :value="quote.customer.name" />
+            <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(quote.customer.name)}`, '_blank')">{{ quote.customer.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -408,10 +410,9 @@ function goBack() { router.push('/sales-quotes') }
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" right-icon="chevrons-down">
               {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -430,10 +431,9 @@ function goBack() { router.push('/sales-quotes') }
         <!-- Actions (primary dropdown) -->
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" right-icon="chevrons-down">
               {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
+            </MpButton>
           </MpPopoverTrigger>
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
@@ -755,8 +755,8 @@ function goBack() { router.push('/sales-quotes') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

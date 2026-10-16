@@ -23,7 +23,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
-  MpIcon, MpToggle, MpCheckbox, toast,
+  MpIcon, MpToggle, MpCheckbox, MpButton, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
@@ -220,19 +220,15 @@ function save() {
 </script>
 
 <template>
-  <Transition name="dfd">
-    <div v-if="isOpen" class="dfd-overlay">
-      <div class="dfd-panel" role="dialog" :aria-label="mode === 'create' ? t('New dimension') : t('Edit dimension')">
-        <header class="dfd-header">
-          <span class="dfd-title">{{ mode === 'create' ? t('New dimension') : t('Edit dimension') }}</span>
-          <button
-            v-if="context === 'transaction'"
-            class="dfd-close" type="button" :aria-label="t('View in Settings')" @click="viewInSettings"
-          ><MpIcon name="newtab" size="md" /></button>
-          <button v-else class="dfd-close" type="button" :aria-label="t('Close')" @click="close"><MpIcon name="close" size="md" /></button>
-        </header>
+  <ErpDrawer :is-open="isOpen" :title="mode === 'create' ? t('New dimension') : t('Edit dimension')" width="480px" @close="close">
+    <template v-if="context === 'transaction'" #title>
+      {{ mode === 'create' ? t('New dimension') : t('Edit dimension') }}
+      <MpButton class="dfd-settings-link" variant="ghost" type="button" :aria-label="t('View in Settings')" @click="viewInSettings">
+        <MpIcon name="newtab" size="sm" />
+      </MpButton>
+    </template>
 
-        <div class="dfd-body">
+    <template #body>
           <!-- Dimension name -->
           <div class="dfd-field">
             <div class="dfd-label-row">
@@ -265,9 +261,9 @@ function save() {
             <ul v-if="selectedTypesOrdered.length && !allTypesSelected" class="dfd-type-list">
               <li v-for="opt in selectedTypesOrdered" :key="opt.value" class="dfd-type-item">
                 <span>{{ t(opt.label) }}</span>
-                <button class="dfd-icon-btn" type="button" :aria-label="`${t('Remove')} ${t(opt.label)}`" @click="removeType(opt.label)">
+                <MpButton class="dfd-icon-btn" variant="ghost" type="button" :aria-label="`${t('Remove')} ${t(opt.label)}`" @click="removeType(opt.label)">
                   <MpIcon name="minus-circular" size="sm" />
-                </button>
+                </MpButton>
               </li>
             </ul>
           </div>
@@ -305,10 +301,10 @@ function save() {
                        BillsIndexPage's bulk bar (#bulk-actions). -->
                   <MpPopover id="dfd-values-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                     <MpPopoverTrigger>
-                      <button class="btn-enterprise btn-enterprise--primary btn-enterprise--xs btn-enterprise--icon-after" type="button">
+                      <MpButton class="btn-enterprise btn-enterprise--primary btn-enterprise--xs btn-enterprise--icon-after" variant="primary" type="button">
                         {{ t('Actions') }}
                         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                       <MpPopoverList>
@@ -350,13 +346,13 @@ function save() {
                   <span class="dfd-values-access-text">{{ userAccessText(v.userIds) }}</span>
                   <a class="dfd-values-access-link" @click="openUserAccess(v.name)">{{ t('Select users') }}</a>
                 </span>
-                <button
+                <MpButton
                   v-tooltip="{ label: t('Remove'), placement: 'top' }"
-                  class="dfd-icon-btn dfd-icon-btn--delete" type="button" :aria-label="`${t('Remove')} ${v.name}`"
+                  class="dfd-icon-btn dfd-icon-btn--delete" variant="ghost" type="button" :aria-label="`${t('Remove')} ${v.name}`"
                   @click="removeValue(v.name)"
                 >
                   <MpIcon name="minus-circular" size="sm" />
-                </button>
+                </MpButton>
               </div>
             </div>
             <p v-else-if="draft.values.length" class="dfd-values-none">{{ t('No values match your search.') }}</p>
@@ -384,15 +380,14 @@ function save() {
               </div>
             </div>
           </div>
-        </div>
 
-        <footer class="dfd-footer">
-          <button class="dfd-btn dfd-btn--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="dfd-btn dfd-btn--primary" type="button" @click="save">{{ mode === 'create' ? t('Save') : t('Save changes') }}</button>
-        </footer>
-      </div>
-    </div>
-  </Transition>
+    </template>
+
+    <template #footer>
+      <MpButton class="dfd-btn dfd-btn--ghost" variant="ghost" type="button" @click="close">{{ t('Cancel') }}</MpButton>
+      <MpButton class="dfd-btn dfd-btn--primary" variant="ghost" type="button" @click="save">{{ mode === 'create' ? t('Save') : t('Save changes') }}</MpButton>
+    </template>
+  </ErpDrawer>
 
   <!-- ── Select users (per value) — existing Cash Account picker pattern. ── -->
   <SelectAccessDrawer
@@ -437,8 +432,8 @@ function save() {
       </MpModalBody>
       <MpModalFooter>
         <div class="dfd-transfer-footer-btns">
-          <button class="dfd-btn dfd-btn--ghost" type="button" @click="transferOpen = false">{{ t('Cancel') }}</button>
-          <button class="dfd-btn dfd-btn--primary" type="button" @click="confirmTransfer">{{ t('Transfer') }}</button>
+          <MpButton class="dfd-btn dfd-btn--ghost" variant="ghost" type="button" @click="transferOpen = false">{{ t('Cancel') }}</MpButton>
+          <MpButton class="dfd-btn dfd-btn--primary" variant="ghost" type="button" @click="confirmTransfer">{{ t('Transfer') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -447,19 +442,9 @@ function save() {
 </template>
 
 <style scoped>
-.dfd-enter-active, .dfd-leave-active { transition: background-color 250ms ease; }
-.dfd-enter-from, .dfd-leave-to { background-color: transparent; }
-.dfd-enter-active .dfd-panel { transition: transform 350ms ease-out; }
-.dfd-leave-active .dfd-panel { transition: transform 250ms ease-in; }
-.dfd-enter-from .dfd-panel, .dfd-leave-to .dfd-panel { transform: translateX(calc(100% + 12px)); }
-
-.dfd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.dfd-panel { margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-
-.dfd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
-.dfd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.dfd-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); padding: 0; }
-.dfd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+/* "View in Settings" shortcut next to the title (transaction context). */
+.dfd-settings-link { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: var(--mp-spacing-2); border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-icon-default); padding: 0; vertical-align: middle; }
+.dfd-settings-link:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* macOS overlay scrollbars auto-hide, which makes a drawer with a handful of
    values (short enough that the inner values box doesn't scroll on its own,
@@ -565,7 +550,6 @@ function save() {
 .dfd-toggle-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .dfd-toggle-caption { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
-.dfd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .dfd-btn { height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); cursor: pointer; border: 1px solid transparent; }
 .dfd-btn--ghost { background: transparent; color: var(--mp-text-secondary); }
 .dfd-btn--ghost:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }

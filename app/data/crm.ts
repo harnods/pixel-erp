@@ -1401,6 +1401,7 @@ export interface DetailLayoutSection {
   columns: 1 | 2 | 3 | 4         // number of columns (=== cols.length)
   cols: string[][]               // per-column ordered refs into dealProperties (by id)
   conditions?: Record<string, PropertyCondition>  // per-property conditional-logic rules (keyed by property id)
+  mandatory?: Record<string, boolean>            // per-property mandatory flag (keyed by property id)
   kind?: 'products'              // system block (products table + totals) — non-property, locked
   system?: boolean              // locked section (can't delete / add props)
 }
@@ -1437,11 +1438,10 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
     {
       id: 'tab-details', key: 'details', label: 'Deal details', editable: true, visible: true,
       sections: [
-        { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company', 'billing-address'], ['contact', 'email', 'phone'], ['deal-value', 'record-owner', 'status']] },
-        { id: 'sec-transaction', name: 'Transaction', columns: 4, cols: distributeCols(['transaction-date', 'due-date', 'transaction-number', 'external-reference-id', 'payment-term'], 4) },
+        { id: 'sec-overview', name: 'Overview', columns: 3, cols: [['record-name', 'company', 'billing-address'], ['contact', 'email', 'phone'], ['deal-value', 'record-owner', 'source', 'status']] },
+        { id: 'sec-transaction', name: 'Transaction', columns: 3, cols: [['transaction-date', 'transaction-number', 'due-date'], ['external-reference-id', 'payment-term'], ['tags']] },
         { id: 'sec-products', name: 'Products', columns: 1, cols: [['product-list']], kind: 'products', system: true },
-        { id: 'sec-additional', name: 'Additional info', columns: 3, cols: [['tags', 'source'], ['shipping-address'], []] },
-        { id: 'sec-memo-attachment', name: 'Memo & Attachment', columns: 2, cols: [['notes', 'attachments'], []] },
+        { id: 'sec-additional', name: 'Additional info', columns: 3, cols: [['notes', 'attachments'], [], []] },
       ],
     },
     { id: 'tab-notes', key: 'notes', label: 'Notes', editable: false, visible: true },
@@ -1451,10 +1451,10 @@ const DEAL_DETAIL_LAYOUT_SEED: DealDetailLayout = {
   ],
 }
 export const dealDetailLayout = reactive<DealDetailLayout>(
-  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v9')?.[0]
+  loadSnapshot<DealDetailLayout>('crm-deal-detail-layout-v11')?.[0]
     ?? JSON.parse(JSON.stringify(DEAL_DETAIL_LAYOUT_SEED)),
 )
-export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v9', [dealDetailLayout]) }
+export function persistDealDetailLayout() { saveSnapshot('crm-deal-detail-layout-v11', [dealDetailLayout]) }
 
 // ── Deals module PROPERTIES (the Properties tab) ─────────────────────────────
 // The module's field catalogue. Field types mirror the standard CRM property
@@ -1605,7 +1605,7 @@ export const DEFAULT_PROPERTIES: DefaultProperty[] = [
   { id: 'product-list', name: 'Product List', fieldType: 'product_list', variableName: 'product_list', description: 'Line items (products) on the record.', dataSource: { label: 'Product catalog', origin: 'catalog' } },
   { id: 'website', name: 'Website', fieldType: 'url', variableName: 'website', description: 'Website URL.', existInDeals: false },
   { id: 'billing-address', name: 'Billing Address', fieldType: 'multiple_line_text', variableName: 'billing_address', description: 'Billing address.' },
-  { id: 'shipping-address', name: 'Shipping Address', fieldType: 'multiple_line_text', variableName: 'shipping_address', description: 'Generic shipping address.' },
+  { id: 'shipping-address', name: 'Shipping Address', fieldType: 'multiple_line_text', variableName: 'shipping_address', description: 'Generic shipping address.', existInDeals: false },
   { id: 'payment-term', name: 'Payment Terms', fieldType: 'pick_list', variableName: 'payment_term', description: 'Administrator defines applicable payment terms.', editable: true, editableScope: 'add-delete-rename', dataSource: { label: 'Payment terms', origin: 'erp' } },
   { id: 'deal-value', name: 'Deal Value', fieldType: 'number', variableName: 'deal_value', description: 'Generic total deal value; adopts the basic currency from Module set up upon display.' },
   { id: 'currency-code', name: 'Currency', fieldType: 'pick_list', variableName: 'currency_code', description: 'Transaction currency code.', existInDeals: false, dataSource: { label: 'Currencies', origin: 'erp' } },
@@ -1722,6 +1722,11 @@ function propId(name: string): string { return name.toLowerCase().replace(/[^a-z
 export function toVariableName(name: string): string {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
+/** Deal-specific property list: only properties with existInDeals !== false. */
+function dealDefaultProperties(): DealProperty[] {
+  const existInDealsIds = new Set(DEFAULT_PROPERTIES.filter((p) => !p.hidden && p.existInDeals !== false).map((p) => p.id))
+  return defaultDealProperties().filter((p) => existInDealsIds.has(p.id))
+}
 // All shared properties now live in DEFAULT_PROPERTIES. This array is kept empty
 // so withDefaultProperties() still works; Deals adds no module-specific extras.
 const DEAL_PROPERTIES_RAW: [string, DealPropertyType][] = []
@@ -1733,11 +1738,7 @@ function withDefaultProperties(extras: DealProperty[]): DealProperty[] {
   for (const e of extras) if (!seen.has(e.id)) { out.push(e); seen.add(e.id) }
   return out
 }
-const DEAL_PROPERTIES_SEED: DealProperty[] = withDefaultProperties(
-  DEAL_PROPERTIES_RAW.map(([name, type]) => ({
-    id: propId(name), name, variableName: toVariableName(name), type, system: true, fillRate: 0,
-  })),
-)
+const DEAL_PROPERTIES_SEED: DealProperty[] = dealDefaultProperties()
 const PROPERTY_ID_MIGRATION: Record<string, string> = {
   customer: 'company', 'primary-contact': 'contact', products: 'product-list',
   'contact-person': 'contact', 'product-lines': 'product-list',
@@ -1759,9 +1760,9 @@ function normalizeDealProperties(list: DealProperty[]): DealProperty[] {
     return p
   })
 }
-export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v15', DEAL_PROPERTIES_SEED)))
+export const dealProperties = reactive<DealProperty[]>(normalizeDealProperties(load('crm-deal-properties-v17', DEAL_PROPERTIES_SEED)))
 backfillDefaultPropertyOptions(dealProperties)
-export function persistDealProperties() { saveSnapshot('crm-deal-properties-v15', dealProperties) }
+export function persistDealProperties() { saveSnapshot('crm-deal-properties-v17', dealProperties) }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GENERIC custom modules — any module created via "+ New module" (Settings ▸
@@ -1901,6 +1902,12 @@ export interface GenericModuleRecord {
     description?: string
     memo?: string
   }
+  products?: DealLineItem[]
+  orderDiscountType?: AdjustmentType
+  orderDiscount?: number
+  tax?: number
+  taxType?: AdjustmentType
+  shippingFee?: number
   createdAt: string
 }
 const genericModuleRecords = reactive<Record<string, GenericModuleRecord[]>>(
@@ -2014,6 +2021,101 @@ export function moveGenericRecordStage(moduleId: string, id: string, stage: stri
   addActivityEntry('Update', mod?.name ?? moduleId, [
     { label: 'Stage', from: oldStage, to: stage },
   ], { recordLabel: `${mod?.name ?? moduleId} ${r.id}` })
+}
+
+export function deleteGenericRecord(moduleId: string, id: string): boolean {
+  const list = genericModuleRecords[moduleId]
+  if (!list) return false
+  const idx = list.findIndex((r) => r.id === id)
+  if (idx === -1) return false
+  list.splice(idx, 1)
+  persistGenericModuleRecords()
+  return true
+}
+
+export function setGenericRecordProducts(moduleId: string, id: string, p: DealProductsPayload): boolean {
+  const rec = getGenericRecord(moduleId, id)
+  if (!rec) return false
+  rec.products = p.items.map((it) => {
+    const cat = CATALOG.find((c) => c.sku === it.sku)
+    return {
+      productId: cat?.id ?? it.sku,
+      productName: it.product,
+      sku: it.sku || undefined,
+      description: it.description || undefined,
+      image: cat?.img,
+      unit: it.unit,
+      quantity: it.qty,
+      originalPrice: it.unitPrice,
+      discountType: it.discountPct ? 'percentage' as const : 'none' as const,
+      discount: it.discountPct,
+    }
+  })
+  rec.orderDiscountType = p.globalDiscountType === 'Rp' ? 'fixed' : 'percentage'
+  rec.orderDiscount = p.globalDiscountValue
+  rec.shippingFee = p.shippingFee
+  if (rec.products.length && rec.tax == null) { rec.taxType = 'percentage'; rec.tax = 11 }
+  persistGenericModuleRecords()
+  return true
+}
+
+export function genericRecordTotals(rec: GenericModuleRecord) {
+  const lines = rec.products ?? []
+  const subtotal = lines.reduce((n, li) => n + li.quantity * li.originalPrice, 0)
+  const afterLine = lines.reduce((n, li) => n + lineSubtotal(li), 0)
+  const discountPerLine = subtotal - afterLine
+  const globalDiscount = rec.orderDiscount
+    ? (rec.orderDiscountType === 'percentage' ? Math.round(afterLine * (rec.orderDiscount / 100)) : rec.orderDiscount)
+    : 0
+  const taxBase = Math.max(0, afterLine - globalDiscount)
+  const taxAmount = rec.tax ? (rec.taxType === 'percentage' ? Math.round(taxBase * (rec.tax / 100)) : rec.tax) : 0
+  const taxLabel = rec.tax ? (rec.taxType === 'percentage' ? `PPN ${rec.tax}%` : 'Tax') : ''
+  const shippingFee = rec.shippingFee ?? 0
+  const total = Math.max(0, taxBase + taxAmount + shippingFee)
+  return { subtotal, discountPerLine, globalDiscount, taxAmount, taxLabel, shippingFee, total }
+}
+
+export function genericRecordActivityLog(moduleId: string, rec: GenericModuleRecord): DealActivityEntry[] {
+  const mod = getCrmModule(moduleId)
+  const moduleName = mod?.name ?? moduleId
+  const stages = genericModuleStages(moduleId)
+  const events: DealActivityEntry[] = []
+  const created = rec.owner || 'System'
+
+  const detailFields: DealActivityDetail[] = [
+    { label: 'Record name', value: rec.name },
+    { label: 'Owner', value: rec.owner || '—' },
+  ]
+  if (rec.stage) detailFields.push({ label: 'Stage', value: rec.stage })
+  const vals = rec.values as Record<string, unknown>
+  for (const [k, v] of Object.entries(vals)) {
+    if (v != null && v !== '') detailFields.push({ label: k.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()), value: String(v) })
+  }
+
+  events.push({
+    date: isoAt(rec.createdAt, 0, 9), user: created, activity: `Created ${moduleName.toLowerCase()} record`,
+    details: detailFields,
+  })
+
+  if (stages.length > 1 && rec.stage) {
+    const curIdx = stages.findIndex((s) => s.name === rec.stage)
+    for (let i = 1; i <= curIdx && i < stages.length; i++) {
+      events.push({
+        date: isoAt(rec.createdAt, i, 11), user: rec.owner, activity: 'Stage updated',
+        details: [{ label: 'Stage', value: `${stages[i - 1]!.name} → ${stages[i]!.name}` }],
+      })
+    }
+  }
+
+  if (rec.products?.length) {
+    const dayOffset = stages.length > 1 ? Math.min(stages.findIndex((s) => s.name === rec.stage) + 1, stages.length) : 1
+    events.push({
+      date: isoAt(rec.createdAt, dayOffset, 14), user: rec.owner, activity: 'Products updated',
+      details: rec.products.map((p) => ({ label: p.productName, value: `${p.quantity} ${p.unit} × ${formatMoney(p.originalPrice, vals.currency as string ?? 'IDR')}` })),
+    })
+  }
+
+  return events.sort((a, b) => b.date.localeCompare(a.date))
 }
 
 // ── Custom module creation ("+ New module", Settings ▸ Modules) ──────────────────

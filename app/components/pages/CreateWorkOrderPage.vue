@@ -449,7 +449,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+          <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New work order') }}</h1>
@@ -571,7 +571,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <li v-for="f in attachedFiles" :key="f.name" class="wo-file-item">
                 <MpIcon name="document" size="sm" />
                 <span class="wo-file-name">{{ f.name }}</span>
-                <button class="wo-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="minus-circular" size="sm" /></button>
+                <MpButton class="wo-file-remove" variant="ghost" type="button" left-icon="minus-circular" @click="removeFile(f.name)" />
               </li>
             </ul>
           </div>
@@ -635,7 +635,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.productId && (!hasBom || bomAllowsAdjustment)" class="wo-del-btn" type="button" @click="removeRow(rawRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.productId && (!hasBom || bomAllowsAdjustment)" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(rawRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -680,7 +680,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input"><MpInput v-if="row.account" :id="`cost-mult-${row.id}`" v-model="row.multiplier" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.account">{{ formatIDR(costAmount(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.account" class="wo-del-btn" type="button" @click="removeRow(costRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.account" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(costRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -724,7 +724,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   </td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.process" :id="`route-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.process" class="wo-del-btn" type="button" @click="removeRow(routeRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.process" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(routeRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -820,7 +820,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input"><MpInput v-if="row.productId" :id="`other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`other-cost-${row.id}`" v-model="row.estCost" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.productId" class="wo-del-btn" type="button" @click="removeRow(otherRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.productId" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(otherRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -862,7 +862,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input"><MpInput v-if="row.accountMapping" :id="`waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.accountMapping" :id="`waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--del">
-                    <button v-if="row.accountMapping" class="wo-del-btn" type="button" @click="removeRow(wasteRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.accountMapping" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" @click="removeRow(wasteRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -918,7 +918,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Demo flow scenario switcher ── -->
     <MpPopover id="wo-flow-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="wo-flow-fab" :aria-label="t('Change creation flow')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <MpButton class="wo-flow-fab" variant="ghost" :aria-label="t('Change creation flow')" left-icon="sliders" />
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content' })">
         <p class="wo-flow-fab-heading">{{ t('Creation flow') }}</p>
@@ -1122,7 +1122,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-td--input :deep([class*='input']),
 .wo-td--input :deep([class*='autocomplete']),
 .wo-td--input :deep(.mp-datepicker__root) { border-radius: 0; border-color: transparent; }
-.wo-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); z-index: 1; }
+.wo-td--input { position: relative; }
+.wo-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .wo-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .wo-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .wo-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
