@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'settings-inventory-page',
+    title: 'Settings > Inventory page',
+    description:
+      'New Inventory settings page following the Sales settings pattern: Product settings with hover Edit → inline edit (costing method, stock-info / barcode / variant / serial / batch toggles) and Batch reminders (expiry email toggle). Inventory costing method is locked (disabled field + hint) once inventory transactions exist, since changing it would alter COGS on posted documents.',
+    date: '2026-10-16',
+    files: ['SettingsInventoryPage.vue'],
+  },
+  {
     id: 'settings-purchase-page',
     title: 'Settings > Purchases page',
     description:
