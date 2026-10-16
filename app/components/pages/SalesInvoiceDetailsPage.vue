@@ -12,6 +12,7 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import CreateTaxDocumentDrawer from '~/components/patterns/CreateTaxDocumentDrawer.vue'
 import CannotCreateTaxDocumentDrawer from '~/components/patterns/CannotCreateTaxDocumentDrawer.vue'
 import TaxDocumentDetailDrawer from '~/components/patterns/TaxDocumentDetailDrawer.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { canGenerateTaxDocument } from '~/data/salesInvoiceLineItems'
 import { salesInvoices } from '~/data'
@@ -20,6 +21,9 @@ import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.v
 import {
   customerAvailableCredit, applicationsForInvoice, applicationLabel,
 } from '~/data/creditMemos'
+import {
+  paymentsForInvoice, paymentLabel as prLabel,
+} from '~/data/paymentsReceived'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
@@ -101,11 +105,14 @@ const hasLinkedTransactions = computed(() => invoice.value.linkedTransactions.le
 const hasPayments = computed(() => paymentRows.value.length > 0)
 // Payment rows = cash payments + credit-memo applications. The credit rows carry a
 // link to their "Credit memo applied" record (Figma: a "VIEW DETAILS" hover chip).
-interface PaymentRow { date: string; number: string; applicationId?: string; method: string; account: string; reference: string; amount: number }
+interface PaymentRow { date: string; number: string; linkTo?: string; method: string; account: string; reference: string; amount: number }
 const paymentRows = computed<PaymentRow[]>(() => {
-  const cash: PaymentRow[] = invoice.value.payments.map(p => ({ date: p.date, number: '—', method: p.method, account: '—', reference: p.reference, amount: p.amount }))
+  const cash: PaymentRow[] = paymentsForInvoice(invoice.value.id).map(({ payment, amount }) => ({
+    date: payment.date, number: prLabel(payment.number), linkTo: `/payments-received/${payment.id}`,
+    method: t('Payment received'), account: '—', reference: '—', amount,
+  }))
   const credit: PaymentRow[] = creditApplications.value.map(({ application, amount }) => ({
-    date: application.date, number: applicationLabel(application.number), applicationId: application.id,
+    date: application.date, number: applicationLabel(application.number), linkTo: `/credit-memo-applications/${application.id}`,
     method: t('Credit memo'), account: '—', reference: '—', amount,
   }))
   return [...credit, ...cash].sort((a, b) => b.date.localeCompare(a.date))
@@ -357,7 +364,7 @@ function attachmentIcon(name: string): string {
 }
 
 function goBack() { router.push('/sales-invoices') }
-function receivePayment() { router.push('/sales-invoices') }
+function receivePayment() { router.push(`/sales-invoices/${invoice.value.id}/add-payment`) }
 function editInvoice() { router.push(`/sales-invoices/${invoice.value.id}/edit`) }
 
 // Saving an edit that generated a tax document draft lands here with
@@ -439,7 +446,6 @@ function onSalesReturnConfirm() {
   })
   showTaxDocumentTab()
 }
-
 // ── Credit memo ────────────────────────────────────────────────────────────────
 // Credit the customer has left to apply, and whether this invoice already carries
 // any — drives the "Apply credit memo" affordance and the totals/payment rows.
@@ -540,7 +546,9 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')" :value="invoice.customer.name" />
+            <ContentList :label="t('Customer')">
+              <a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(invoice.customer.name)}`, '_blank')">{{ invoice.customer.name }}</a>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -754,6 +762,14 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
           <MpTabPanel v-if="hasPayments" value="payments">
             <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
+              <colgroup>
+                <col class="detail-linked-col--date" />
+                <col class="detail-linked-col--number" />
+                <col />
+                <col />
+                <col />
+                <col class="detail-linked-col--amount" />
+              </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
@@ -768,8 +784,8 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
                 <tr v-for="(p, i) in paymentRows" :key="i" class="detail-item-row payment-row">
                   <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
                   <td class="detail-td">
-                    <span v-if="!p.applicationId" class="detail-td--muted">{{ p.number }}</span>
-                    <a v-else class="cell-link cell-text" @click="router.push(`/credit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
+                    <span v-if="!p.linkTo" class="detail-td--muted">{{ p.number }}</span>
+                    <a v-else class="cell-link cell-text" @click="router.push(p.linkTo)">{{ p.number }}</a>
                   </td>
                   <td class="detail-td">{{ p.method }}</td>
                   <td class="detail-td detail-td--muted">{{ p.account }}</td>
@@ -1440,7 +1456,7 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-subtle);
   margin-top: var(--mp-spacing-0\.5);
-}
+}.detail-linked-col--amount { width: 200px; }
 
 .row-kebab {
   display: flex !important;

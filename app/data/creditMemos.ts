@@ -6,6 +6,9 @@ import { cashAccounts } from './cashAccounts'
 import { SIM_TODAY_ISO, daysUntil } from './simClock'
 import type { SalesInvoice, InvoiceStatus } from './types'
 
+let invoiceCashReceivedFn: (invoiceId: string) => number = () => 0
+export function _setCashReceivedFn(fn: (invoiceId: string) => number) { invoiceCashReceivedFn = fn }
+
 /**
  * Credit memo (Sales › Sales invoices › Credit memo) — the mini-DB for the three
  * documents in the Figma "Sales / Sales Invoices → Credit Memo" flow:
@@ -310,17 +313,15 @@ export function invoiceCreditApplied(invoiceId: string, excludeApplicationId?: s
   }
   return sum
 }
-/** Cash collected on an invoice (seed payments), i.e. settlements that are NOT credit. */
+/** Cash collected on an invoice — derived from Payment Received records. */
 export function invoiceCashPaid(invoiceId: string): number {
-  const inv = invoiceById(invoiceId)
-  if (!inv) return 0
-  return inv.total - baseOf(inv).balance
+  return invoiceCashReceivedFn(invoiceId)
 }
 /** Balance due, optionally as if one application did not exist (edit mode). */
 export function invoiceBalance(invoiceId: string, excludeApplicationId?: string): number {
   const inv = invoiceById(invoiceId)
   if (!inv) return 0
-  return Math.max(0, baseOf(inv).balance - invoiceCreditApplied(invoiceId, excludeApplicationId))
+  return Math.max(0, baseOf(inv).balance - invoiceCashPaid(invoiceId) - invoiceCreditApplied(invoiceId, excludeApplicationId))
 }
 
 /**
@@ -340,11 +341,13 @@ export function syncInvoiceBalances(): void {
   for (const inv of salesInvoices) {
     const base = baseOf(inv)
     const credit = invoiceCreditApplied(inv.id)
-    if (credit === 0) {
+    const cash = invoiceCashPaid(inv.id)
+    const totalSettled = credit + cash
+    if (totalSettled === 0) {
       inv.balance = base.balance
       inv.status = base.status
     } else {
-      inv.balance = Math.max(0, base.balance - credit)
+      inv.balance = Math.max(0, base.balance - totalSettled)
       inv.status = deriveInvoiceStatus(inv, inv.balance)
     }
   }

@@ -402,6 +402,12 @@ const CreditMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/
 const CreditMemoRefundDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoRefundDetailsPage.vue'))
 const CreateCreditMemoRefundPage = asyncPage(() => import('~/components/pages/CreateCreditMemoRefundPage.vue'))
 const NewCreditMemoPage = asyncPage(() => import('~/components/pages/NewCreditMemoPage.vue'))
+const ApplyDebitMemoPage = asyncPage(() => import('~/components/pages/ApplyDebitMemoPage.vue'))
+const DebitMemoDetailsPage = asyncPage(() => import('~/components/pages/DebitMemoDetailsPage.vue'))
+const DebitMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/DebitMemoAppliedDetailsPage.vue'))
+const DebitMemoRefundDetailsPage = asyncPage(() => import('~/components/pages/DebitMemoRefundDetailsPage.vue'))
+const CreateDebitMemoRefundPage = asyncPage(() => import('~/components/pages/CreateDebitMemoRefundPage.vue'))
+const NewDebitMemoPage = asyncPage(() => import('~/components/pages/NewDebitMemoPage.vue'))
 const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
 const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
@@ -421,6 +427,8 @@ const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/Budg
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
+const AddPaymentPage = asyncPage(() => import('~/components/pages/AddPaymentPage.vue'))
+const PaymentReceivedDetailsPage = asyncPage(() => import('~/components/pages/PaymentReceivedDetailsPage.vue'))
 const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
@@ -801,6 +809,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
     return { component: PurchaseRequestDetailsPage, id: segs[1] }
   }
+  // /purchase-invoices/:id/apply-debit-memo → Apply debit memo form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'apply-debit-memo') {
+    return { component: ApplyDebitMemoPage, id: segs[1] }
+  }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'
       && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
@@ -840,6 +852,18 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'apply-credit-memo') {
     return { component: ApplyCreditMemoPage, id: segs[1] }
   }
+  // /sales-invoices/:id/add-payment → Receive payment form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'add-payment') {
+    return { component: AddPaymentPage, id: segs[1] }
+  }
+  // /payments-received/:id/edit → Edit payment received
+  if (segs.length >= 3 && segs[0] === 'payments-received' && segs[2] === 'edit') {
+    return { component: AddPaymentPage, id: segs[1] }
+  }
+  // /payments-received/:id → Payment received detail
+  if (segs.length >= 2 && segs[0] === 'payments-received') {
+    return { component: PaymentReceivedDetailsPage, id: segs[1] }
+  }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {
     return { component: SalesInvoiceDetailsPage, id: segs[1] }
@@ -876,6 +900,39 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'credit-memo-refunds') {
     return { component: CreditMemoRefundDetailsPage, id: segs[1] }
+  }
+  // ── Debit memo flow ────────────────────────────────────────────────────────
+  // /debit-memos/new → create · /debit-memos/:id/edit → edit ·
+  // /debit-memos/:id/apply → apply form · /debit-memos/:id/refund → refund form ·
+  // /debit-memos/:id → detail
+  if (segs.length >= 2 && segs[0] === 'debit-memos' && segs[1] === 'new') {
+    return { component: NewDebitMemoPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'debit-memos' && segs[2] === 'edit') {
+    return { component: NewDebitMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'debit-memos' && segs[2] === 'apply') {
+    return { component: ApplyDebitMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'debit-memos' && segs[2] === 'refund') {
+    return { component: CreateDebitMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'debit-memos') {
+    return { component: DebitMemoDetailsPage, id: segs[1] }
+  }
+  // /debit-memo-applications/:id/edit → edit · /debit-memo-applications/:id → detail
+  if (segs.length >= 3 && segs[0] === 'debit-memo-applications' && segs[2] === 'edit') {
+    return { component: ApplyDebitMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'debit-memo-applications') {
+    return { component: DebitMemoAppliedDetailsPage, id: segs[1] }
+  }
+  // /debit-memo-refunds/:id/edit → edit · /debit-memo-refunds/:id → detail
+  if (segs.length >= 3 && segs[0] === 'debit-memo-refunds' && segs[2] === 'edit') {
+    return { component: CreateDebitMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'debit-memo-refunds') {
+    return { component: DebitMemoRefundDetailsPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }

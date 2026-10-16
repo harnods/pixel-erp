@@ -18,6 +18,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
@@ -117,6 +118,7 @@ function confirmDelete() {
         </nav>
         <div class="cm-titlerow-left">
           <h1 class="cm-title">{{ memoLabel(memo.number) }}</h1>
+          <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
           <DetailJumpTo id="cmd-jump" :items="jumpItems" :aria-label="t('Switch credit memo')" :placeholder="t('Search...')" :empty-text="t('No credit memos found')" data-devchange="cm-detail-jump" @select="jumpTo" />
         </div>
       </div>
@@ -127,7 +129,7 @@ function confirmDelete() {
       <!-- Summary: Customer + Available credit + journal link -->
       <section class="cm-summary">
         <div class="cm-primary">
-          <ContentList :label="t('Customer')" :value="customerNameOf(memo.customerId)" />
+          <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(customerNameOf(memo.customerId))}`, '_blank')">{{ customerNameOf(memo.customerId) }}</a></ContentList>
           <div class="cm-primary-right">
             <div class="cm-primary-figure">
               <span class="cm-figure-label">{{ t('Available credit') }}</span>
