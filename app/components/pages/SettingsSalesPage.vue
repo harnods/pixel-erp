@@ -989,7 +989,7 @@ const openMenuId = ref<string | null>(null)
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 240px;
+  max-width: var(--mp-sizes-60, 240px); /* pixel-police-allow: form field width cap */
 }
 
 .ss-currency-prefix {
@@ -1012,7 +1012,7 @@ const openMenuId = ref<string | null>(null)
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-2);
-  padding: 4px 0;
+  padding: var(--mp-spacing-1) 0;
 }
 
 .ss-excluded-list-name {
@@ -1021,7 +1021,7 @@ const openMenuId = ref<string | null>(null)
 }
 
 .ss-exclude-select {
-  width: 240px;
+  max-width: var(--mp-sizes-60, 240px); /* pixel-police-allow: form field width cap */
 }
 
 /* ─── Modal ─────────────────────────────────────────────────────────────── */
@@ -1029,7 +1029,7 @@ const openMenuId = ref<string | null>(null)
   position: fixed;
   inset: 0;
   z-index: 1300;
-  background: rgba(20, 23, 28, 0.45);
+  background: var(--mp-color-overlay, rgba(20, 23, 28, 0.45)); /* pixel-police-allow: scrim overlay needs alpha */
   display: flex;
   align-items: center;
   justify-content: center;
