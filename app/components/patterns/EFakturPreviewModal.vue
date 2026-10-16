@@ -244,20 +244,28 @@ function downloadPdf() {
    Plain black-on-white, NOT Pixel tokens: this is a reproduction of the printed
    DJP form, so it must not inherit app theming. 794px is A4 width at 96dpi. */
 .fk-sheet {
+  --fk-w: 794px;
+  --fk-p: 32px 28px;
+  --fk-cell-p: 7px 9px;
+  --fk-c-no-w: 44px;
+  --fk-c-code-w: 88px;
+  --fk-c-amount-w: 176px;
+  --fk-stamp-opacity: 0.22;
+
   position: relative;   /* anchors the DIGANTI / BATAL cap */
-  width: 794px; /* pixel-police-allow: A4 width at 96 dpi for DJP form */
+  width: var(--fk-w);
   max-width: 100%;
   margin: 0 auto;
-  background: #fff; /* pixel-police-allow: DJP form must not inherit app theme */
-  color: #000; /* pixel-police-allow: DJP form must not inherit app theme */
+  background: var(--mp-background-neutral, #fff);
+  color: var(--mp-text-default, #000);
   font-family: Arial, Helvetica, sans-serif;
   font-size: 13px;
   line-height: 1.45;
-  padding: 32px 28px; /* pixel-police-allow: DJP form fixed layout */
+  padding: var(--fk-p);
   box-sizing: border-box;
 }
 .fk-title {
-  margin: 0 0 20px;
+  margin: 0 0 var(--mp-spacing-5);
   font-size: 22px;
   font-weight: 700;
   text-align: center;
@@ -265,7 +273,7 @@ function downloadPdf() {
 /* Seller block sits in the right half, left-aligned within it */
 .fk-seller {
   width: 50%;
-  margin: 0 0 18px auto;
+  margin: 0 0 var(--mp-spacing-4\.5) auto;
 }
 
 .fk-form {
@@ -275,8 +283,8 @@ function downloadPdf() {
 }
 .fk-form td,
 .fk-form th {
-  border: 1px solid #000;
-  padding: 7px 9px; /* pixel-police-allow: DJP form fixed layout */
+  border: 1px solid var(--mp-text-default, #000);
+  padding: var(--fk-cell-p);
   vertical-align: top;
   text-align: left;
   font-weight: 400;
@@ -287,9 +295,9 @@ function downloadPdf() {
   text-align: center;
   vertical-align: middle;
 }
-.fk-c-no     { width: 44px; }
-.fk-c-code   { width: 88px; }
-.fk-c-amount { width: 176px; }
+.fk-c-no     { width: var(--fk-c-no-w); }
+.fk-c-code   { width: var(--fk-c-code-w); }
+.fk-c-amount { width: var(--fk-c-amount-w); }
 .fk-center { text-align: center; }
 .fk-num    { text-align: right; white-space: nowrap; }
 /* The form leaves a blank line before NPWP in each identity block */
@@ -311,13 +319,14 @@ function downloadPdf() {
   font-weight: 400;
   letter-spacing: 0.36em;
   /* Light enough to read the fields underneath, dark enough to be unmissable. */
-  color: rgba(0, 0, 0, 0.22); /* pixel-police-allow: DJP stamp watermark opacity */
+  color: var(--mp-text-default);
+  opacity: var(--fk-stamp-opacity);
   text-transform: uppercase;
   white-space: nowrap;
 }
 
 .fk-notice {
-  margin: 8px 0 0;
+  margin: var(--mp-spacing-2) 0 0;
   font-size: 11px;
   line-height: 1.35;
 }
