@@ -1170,7 +1170,7 @@ const openMenuId = ref<string | null>(null)
 /* ─── Divider ────────────────────────────────────────────────────────────── */
 .ss-divider {
   grid-column: 1 / -1;
-  height: 1px;
+  height: var(--mp-sizes-px, 1px); /* pixel-police-allow: divider thickness */
   background: var(--mp-border-default, #e3e7e9);
 }
 </style>
