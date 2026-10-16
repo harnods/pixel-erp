@@ -14,12 +14,13 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpButton, MpTextlink, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -104,6 +105,18 @@ function confirmDelete() {
   successToast(t('Credit memo deleted'))
   goCustomers()
 }
+
+const cmActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview' },
+    { label: 'Apply credit memo', show: remaining.value > 0, onClick: applyCredit },
+    { label: 'Create credit memo refund', show: remaining.value > 0, onClick: createRefund },
+  ],
+  [
+    { label: 'Edit', onClick: edit },
+    { label: 'Delete', onClick: askDelete },
+  ],
+])
 </script>
 
 <template>
@@ -273,23 +286,7 @@ function confirmDelete() {
     <footer class="cm-footer">
       <PrintShareMenu id="cmd-print" />
 
-      <MpPopover id="cmd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <MpButton variant="primary" is-rounded right-icon="chevrons-down" data-devchange="cm-detail-actions">{{ t('Actions') }}</MpButton>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="remaining > 0" @click="applyCredit">{{ t('Apply credit memo') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="remaining > 0" @click="createRefund">{{ t('Create credit memo refund') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem @click="edit">{{ t('Edit') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="askDelete">{{ t('Delete') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <DetailActionsMenu id="cmd-actions" :groups="cmActionGroups" data-devchange="cm-detail-actions" />
     </footer>
     </div>
 

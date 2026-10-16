@@ -29,6 +29,7 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
 import {
   getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus,
   taxDocMenuItemDefs, DJP_STATUS_CONFIG, type TaxDocument,
@@ -163,9 +164,17 @@ function taxDocTooltipId(doc: TaxDocument, item: TaxDocMenuItem): string {
 // ("Refresh DJP status").
 const taxDocMenuWidth = '200px'
 
+const previewOpen = ref(false)
+const pdfUrl = ref('')
+const PDF_B64 = 'JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNDIwIDI2MF0vQ29udGVudHMgNCAwIFIvUmVzb3VyY2VzPDwvRm9udDw8L0YxIDUgMCBSPj4+Pj4+ZW5kb2JqCjQgMCBvYmo8PC9MZW5ndGggMTIwPj5zdHJlYW0KQlQgL0YxIDIyIFRmIDQwIDIwMCBUZCAoU2FtcGxlIGludm9pY2UgUERGKSBUaiBFVApCVCAvRjEgMTMgVGYgNDAgMTY1IFRkIChQcmV2aWV3IHJlbmRlcmVkIGluIGFuIGlmcmFtZS4pIFRqIEVUCmVuZHN0cmVhbSBlbmRvYmoKNSAwIG9iajw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+ZW5kb2JqCnRyYWlsZXI8PC9Sb290IDEgMCBSPj4='
+if (import.meta.client) {
+  const bytes = Uint8Array.from(atob(PDF_B64), (c) => c.charCodeAt(0))
+  pdfUrl.value = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
 const siPaidActionGroups = computed<ActionItem[][]>(() => [
   [
-    { label: 'Preview' },
+    { label: 'Preview', onClick: () => { previewOpen.value = true } },
     { label: 'Set as recurring' },
     { label: 'Create sales return' },
     { label: 'Create tax document', onClick: openCreateTaxDocument, show: invoice.value.hasPpn },
@@ -720,7 +729,7 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="previewOpen = true">{{ t('Preview') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create join invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
@@ -801,6 +810,8 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
       </MpModalContent>
       <MpModalOverlay />
     </MpModal>
+
+    <FilePreviewModal :open="previewOpen" :src="pdfUrl" :filename="`sales-invoice-${invoice.number}.pdf`" @close="previewOpen = false" />
   </div>
 
   <!-- Not-found reachable state: the id didn't resolve to an invoice -->

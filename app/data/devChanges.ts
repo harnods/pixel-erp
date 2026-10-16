@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'settings-sales-page',
+    title: 'Settings > Sales page',
+    description:
+      'New Sales settings page with general toggles (shipping, discounts, deposit, price rules, etc.), invoice reminders, email/WhatsApp templates with kebab menus, and document layout & branding section.',
+    date: '2026-10-16',
+    files: ['SettingsSalesPage.vue'],
+  },
+  {
     id: 'purchase-payment-form',
     title: 'Add Purchase Payment form',
     description:

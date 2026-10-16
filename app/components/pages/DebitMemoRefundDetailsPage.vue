@@ -8,11 +8,12 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpButton, MpIcon, MpTextlink, css,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import { getContactIdByName } from '~/data/contacts'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -63,6 +64,13 @@ function confirmDelete() {
   if (firstMemoId.value) router.push(`/debit-memos/${firstMemoId.value}`)
   else router.push('/purchase-invoices')
 }
+
+const dmrActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Edit', onClick: edit },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 </script>
 
 <template>
@@ -139,17 +147,7 @@ function confirmDelete() {
     <footer class="cm-footer">
       <PrintShareMenu id="dmrd-print" />
 
-      <MpPopover id="dmrd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem @click="edit">{{ t('Edit') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <DetailActionsMenu id="dmrd-actions" :groups="dmrActionGroups" />
     </footer>
     </div>
 
