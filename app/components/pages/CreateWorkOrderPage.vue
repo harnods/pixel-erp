@@ -33,6 +33,7 @@ import {
 } from '~/data/subcon'
 import { formatDate, formatDateLong } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
+import { productionSettings } from '~/data/productionSettings'
 import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
@@ -61,6 +62,9 @@ const CATEGORY_OPTIONS = [
   // outside, so the work order also has to raise the documents that get it there.
   { id: 'Subcontracting', name: 'Subcontracting' },
 ]
+/** Subcontracting is offered only while it is on in Production settings. */
+const categoryOptions = computed(() => CATEGORY_OPTIONS
+  .filter(o => o.id !== 'Subcontracting' || productionSettings.subcontracting))
 const WO_TYPE_OPTIONS = [
   { id: 'Assembly', name: 'Assembly' },
   { id: 'Disassembly', name: 'Disassembly' },
@@ -79,6 +83,8 @@ const WO_TYPE_OPTIONS = [
  */
 const BOM_OPTIONS = computed(() => billOfMaterials
   .filter((b) => {
+    // With subcontracting off, a subcon BOM can no longer start a new order.
+    if (!productionSettings.subcontracting && b.category === 'Subcontracting') return false
     if (!category.value) return true
     return category.value === 'Subcontracting'
       ? b.category === 'Subcontracting'
@@ -314,7 +320,8 @@ onUnmounted(() => { if (bomTimer) clearTimeout(bomTimer) })
 // use — the Production Request bulk modal and the BOM detail page's own
 // "Create work order" button both arrive via ?bomId=<real BOM id>.
 const presetBomId = route.query.bomId as string | undefined
-if (presetBomId && findBom(presetBomId)) {
+if (presetBomId && findBom(presetBomId)
+  && (productionSettings.subcontracting || findBom(presetBomId)!.category !== 'Subcontracting')) {
   // A Subcontracting BOM opens a Subcontracting work order: the category decides
   // which sections the form shows, so defaulting to Standard hid the subcon
   // configuration and the subcon cost the BOM was chosen for.
@@ -854,7 +861,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormControl id="wo-category" data-devchange="wo-prefill-from-bom" is-required :is-invalid="categoryError">
               <MpFormLabel>{{ t('Category') }}</MpFormLabel>
               <MpAutocomplete
-                id="wo-category-ac" v-model="category" :data="CATEGORY_OPTIONS"
+                id="wo-category-ac" v-model="category" :data="categoryOptions"
                 label-prop="name" value-prop="id" :placeholder="t('Select category')"
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
                 @update:model-value="categoryError = false"

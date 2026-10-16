@@ -27,7 +27,7 @@ const isEditing = ref(false)
 const isSaving = ref(false)
 const discardOpen = ref(false)
 
-type ToggleKey = 'allowBackdatedEntries' | 'partialProduction' | 'partialConsumption' | 'salesOrderToWorkOrder'
+type ToggleKey = 'allowBackdatedEntries' | 'partialProduction' | 'partialConsumption' | 'subcontracting' | 'salesOrderToWorkOrder'
 
 const PLAN_PERIOD_OPTIONS = computed(() => [
   { id: 'required', name: t('Required') },
@@ -83,6 +83,13 @@ const SECTIONS = computed<{ title: string; desc: string; rows: { key: ToggleKey 
     ],
   },
   {
+    title: t('Subcontracting'),
+    desc: t('Configure production work that is done by an outside vendor.'),
+    rows: [
+      { key: 'subcontracting', title: t('Allow subcontracting'), desc: t('Users can create subcontracting bills of materials and work orders. Existing ones stay available when this is off.') },
+    ],
+  },
+  {
     title: t('Integration'),
     desc: t('Connect the Production module with other modules in Mekari ERP.'),
     rows: [
@@ -105,7 +112,10 @@ const SECTIONS = computed<{ title: string; desc: string; rows: { key: ToggleKey 
       {{ t('Edit') }}
     </MpButton>
 
-    <section v-for="section in SECTIONS" :key="section.title" class="ps-section">
+    <section
+      v-for="section in SECTIONS" :key="section.title" class="ps-section"
+      :data-devchange="section.rows.some(r => r.key === 'subcontracting') ? 'production-settings-subcon-toggle' : undefined"
+    >
       <h2 class="ps-section-title">{{ section.title }}</h2>
       <p class="ps-section-desc">{{ section.desc }}</p>
 

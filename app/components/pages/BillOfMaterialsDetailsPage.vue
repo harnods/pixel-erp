@@ -16,8 +16,9 @@ import { ref, reactive, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpButton, css, toast,
+  MpIcon, MpButton, MpTooltip, css, toast,
 } from '@mekari/pixel3'
+import { productionSettings } from '~/data/productionSettings'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { billOfMaterials, catalogProduct, persistBillOfMaterials, type BillOfMaterials, type BomProductionCost } from '~/data/billOfMaterials'
@@ -99,6 +100,8 @@ const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amou
 // the vendor's charges (non-track service products) rather than in-house
 // production cost + routing.
 const isSubconBom = computed(() => bom.value?.category === 'Subcontracting')
+/** A subcon BOM cannot start a new work order while subcontracting is off. */
+const createWoBlocked = computed(() => isSubconBom.value && !productionSettings.subcontracting)
 const subconCostLines = computed(() => bom.value?.subconCost ?? [])
 const subconCostSubtotal = computed(() => subconCostLines.value.reduce((s, l) => s + l.amount, 0))
 
@@ -145,7 +148,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           </MpPopoverContent>
         </MpPopover>
 
-        <MpButton class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
+        <MpTooltip v-if="createWoBlocked" id="tt-bom-create-wo-off" :label="t('Cannot create work order. Subcontracting is turned off in Production settings.')" placement="bottom" use-portal>
+          <MpButton class="detail-btn" variant="primary" is-disabled data-devchange="subcon-setting-off-entry">{{ t('Create work order') }}</MpButton>
+        </MpTooltip>
+        <MpButton v-else class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
       </div>
     </header>
 

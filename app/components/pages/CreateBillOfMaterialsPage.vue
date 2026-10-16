@@ -31,6 +31,7 @@ import {
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
   type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
 } from '~/data/billOfMaterials'
+import { productionSettings } from '~/data/productionSettings'
 import { updateBillOfMaterialsSafe } from '~/data/integrityGuards'
 
 const { t } = useLocale()
@@ -53,6 +54,9 @@ const CATEGORY_OPTIONS = [
   // names the process — the vendor and supply method are decided per work order.
   { id: 'Subcontracting', name: 'Subcontracting' },
 ]
+/** Subcontracting is offered only while it is on in Production settings. */
+const categoryOptions = computed(() => CATEGORY_OPTIONS
+  .filter(o => o.id !== 'Subcontracting' || productionSettings.subcontracting))
 const COSTING_OPTIONS = [
   { id: 'Actual cost', name: 'Actual cost' },
   { id: 'Standard cost', name: 'Standard cost' },
@@ -412,6 +416,8 @@ if (editingId) {
 } else if (duplicateFromId) {
   const src = billOfMaterials.find(b => b.id === duplicateFromId)
   if (src) prefillFrom(src)
+  // A copy is a new record: with subcontracting off it cannot stay a subcon BOM.
+  if (!productionSettings.subcontracting && category.value === 'Subcontracting') category.value = ''
 }
 
 // Build the persisted BOM record from the form's line-item rows — every product
@@ -599,7 +605,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               />
               <MpAutocomplete
                 v-else
-                id="bf-category-ac" v-model="category" :data="CATEGORY_OPTIONS"
+                id="bf-category-ac" v-model="category" :data="categoryOptions"
                 label-prop="name" value-prop="id" :placeholder="t('Select category')"
                 is-clearable use-portal is-full-width :is-invalid="categoryError"
                 @update:model-value="categoryError = false"

@@ -173,6 +173,14 @@ ticked) reads as if there's no checkbox at all. Fixed globally in `erp.css` ›
 `.mp-checkbox__root[aria-disabled="true"] .mp-checkbox__control` to use
 `border.default` (`#e3e7e9`) — visible but still clearly muted/inactive.
 
+## 10. MpPopoverListItem — disabled item
+
+The popover-list restore in `erp.css` gives every item `text.default` and a
+pointer cursor, so an `is-disabled` menu item (e.g. a kebab action that is
+blocked, explained by its tooltip) rendered exactly like an enabled one. Fixed
+globally in `erp.css` › `.mp-popover-list-item:is(:disabled, …)`: `text.disabled`
+(`#8c9596`), no hover fill, `cursor: not-allowed`.
+
 ---
 
 ## Rule of thumb

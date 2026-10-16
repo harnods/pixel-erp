@@ -14,6 +14,7 @@ import {
 import { formatDate } from '~/utils/date'
 import type { PrProduct, PrSource } from '~/data/productionRequests'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import { productionSettings } from '~/data/productionSettings'
 
 const props = defineProps<{ open: boolean; product: PrProduct | null; sources: PrSource[] | null }>()
 const emit = defineEmits<{ close: [] }>()
@@ -31,8 +32,10 @@ const allRequests = computed(() => shownSources.value.flatMap(s => s.requests))
 // dead-ends — the user picks whichever BOM is the closest fit.
 const bomOptions = computed(() => {
   const sku = props.product?.sku
-  const matching = sku ? billOfMaterials.filter(b => catalogProduct(b.finishedGoodId)?.sku === sku) : []
-  return (matching.length ? matching : billOfMaterials).map(b => ({ id: b.id, name: b.name }))
+  // With subcontracting off, subcon BOMs cannot start a new work order.
+  const usable = billOfMaterials.filter(b => productionSettings.subcontracting || b.category !== 'Subcontracting')
+  const matching = sku ? usable.filter(b => catalogProduct(b.finishedGoodId)?.sku === sku) : []
+  return (matching.length ? matching : usable).map(b => ({ id: b.id, name: b.name }))
 })
 const bom = ref('')
 const bomLabel = computed(() => bomOptions.value.find(o => o.id === bom.value)?.name ?? '')

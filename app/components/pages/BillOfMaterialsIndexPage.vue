@@ -12,6 +12,7 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import BillOfMaterialsFiltersDrawer, { type BomFiltersValue } from '~/components/patterns/BillOfMaterialsFiltersDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { billOfMaterials, catalogProduct, persistBillOfMaterials, type BillOfMaterials } from '~/data/billOfMaterials'
+import { productionSettings } from '~/data/productionSettings'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -301,7 +302,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as BillOfMaterials)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem data-devchange="bom-list-create-wo" @click="createWorkOrder(row as unknown as BillOfMaterials)">{{ t('Create work order') }}</MpPopoverListItem>
+            <MpTooltip
+              v-if="(row as unknown as BillOfMaterials).category === 'Subcontracting' && !productionSettings.subcontracting"
+              :id="`tt-bom-wo-off-${(row as unknown as BillOfMaterials).id}`" :label="t('Cannot create work order. Subcontracting is turned off in Production settings.')" placement="left" use-portal
+            >
+              <MpPopoverListItem is-disabled data-devchange="subcon-setting-off-entry">{{ t('Create work order') }}</MpPopoverListItem>
+            </MpTooltip>
+            <MpPopoverListItem v-else data-devchange="bom-list-create-wo" @click="createWorkOrder(row as unknown as BillOfMaterials)">{{ t('Create work order') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicateBom(row as unknown as BillOfMaterials)">{{ t('Duplicate') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openDeleteModal(row as unknown as BillOfMaterials)">{{ t('Archive') }}</MpPopoverListItem>
           </MpPopoverList>

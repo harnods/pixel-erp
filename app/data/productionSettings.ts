@@ -19,6 +19,12 @@ export interface ProductionSettings {
    * Start when off (R3, R4).
    */
   partialProduction: boolean
+  /**
+   * Whether new subcontracting BOMs and work orders can be created. Off hides
+   * the Subcontracting category on both forms and blocks Create work order from
+   * a subcon BOM; existing subcon records stay viewable and keep working.
+   */
+  subcontracting: boolean
   /*
    * The four below are stored and editable but not yet read by any screen —
    * agreed scope for the settings page (2026-10-16). Wire each into its
@@ -37,6 +43,7 @@ export interface ProductionSettings {
 const SNAPSHOT_KEY = 'production-settings-v1'
 const DEFAULTS: ProductionSettings = {
   partialProduction: true,
+  subcontracting: true,
   requirePlanPeriod: true,
   allowBackdatedEntries: true,
   partialConsumption: true,

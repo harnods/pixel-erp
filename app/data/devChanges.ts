@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'production-settings-subcon-toggle',
+    title: "Production settings: Allow subcontracting",
+    description:
+      "New Subcontracting section with one toggle. When off, the Subcontracting category disappears from the BOM and work order forms and subcon BOMs cannot start a new work order. Existing subcon BOMs and work orders stay viewable and keep working.",
+    date: '2026-10-16',
+    files: ['SettingsProductionPage.vue', 'productionSettings.ts', 'CreateBillOfMaterialsPage.vue', 'CreateWorkOrderPage.vue', 'CreateWorkOrderModal.vue'],
+  },
+  {
+    id: 'subcon-setting-off-entry',
+    title: "Create work order blocked on a subcon BOM while subcontracting is off",
+    description:
+      "On the BOM detail page and the BOM list kebab, Create work order is disabled for a subcon BOM with a tooltip pointing to Production settings.",
+    date: '2026-10-16',
+    files: ['BillOfMaterialsDetailsPage.vue', 'BillOfMaterialsIndexPage.vue'],
+  },
+  {
     id: 'production-settings-layout',
     title: "Production settings: three sections, value column",
     description:

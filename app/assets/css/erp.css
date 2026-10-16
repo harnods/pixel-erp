@@ -447,6 +447,14 @@
 .mp-popover-list-item[data-active="true"] {
   background: var(--mp-background-neutral-hovered);
 }
+/* Disabled items: the restore above sets text.default + pointer on every item,
+   so `is-disabled` items rendered exactly like enabled ones. */
+.mp-popover-list-item:is(:disabled, [disabled], [aria-disabled="true"]),
+.mp-popover-list-item:is(:disabled, [disabled], [aria-disabled="true"]):hover {
+  color: var(--mp-colors-text-disabled, #8c9596);
+  background: transparent;
+  cursor: not-allowed;
+}
 /* inner label/value wrapper (label + trailing selected-check) — the atomic
    `mp-d_flex mp-ai_center mp-jc_space-between mp-w_full` utilities may be absent. */
 .mp-popover-list-item > div {

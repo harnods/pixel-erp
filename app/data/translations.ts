@@ -4273,4 +4273,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Connect the Production module with other modules in Mekari ERP.": "Hubungkan modul Produksi dengan modul lain di Mekari ERP.",
   "Sales order to work order": "Pesanan penjualan ke perintah kerja",
   "Request a work order directly from a sales order without opening the Production module.": "Ajukan perintah kerja langsung dari pesanan penjualan tanpa membuka modul Produksi.",
+  "Configure production work that is done by an outside vendor.": "Atur pekerjaan produksi yang dikerjakan oleh vendor luar.",
+  "Allow subcontracting": "Izinkan subkontrak",
+  "Users can create subcontracting bills of materials and work orders. Existing ones stay available when this is off.": "Pengguna dapat membuat bill of materials dan perintah kerja subkontrak. Data yang sudah ada tetap tersedia saat ini dinonaktifkan.",
+  "Cannot create work order. Subcontracting is turned off in Production settings.": "Tidak dapat membuat perintah kerja. Subkontrak dinonaktifkan di pengaturan Produksi.",
 }
