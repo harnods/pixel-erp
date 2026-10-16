@@ -245,15 +245,15 @@ function downloadPdf() {
    DJP form, so it must not inherit app theming. 794px is A4 width at 96dpi. */
 .fk-sheet {
   position: relative;   /* anchors the DIGANTI / BATAL cap */
-  width: 794px;
+  width: 794px; /* pixel-police-allow: A4 width at 96 dpi for DJP form */
   max-width: 100%;
   margin: 0 auto;
-  background: #fff;
-  color: #000;
+  background: #fff; /* pixel-police-allow: DJP form must not inherit app theme */
+  color: #000; /* pixel-police-allow: DJP form must not inherit app theme */
   font-family: Arial, Helvetica, sans-serif;
   font-size: 13px;
   line-height: 1.45;
-  padding: 32px 28px;
+  padding: 32px 28px; /* pixel-police-allow: DJP form fixed layout */
   box-sizing: border-box;
 }
 .fk-title {
@@ -276,7 +276,7 @@ function downloadPdf() {
 .fk-form td,
 .fk-form th {
   border: 1px solid #000;
-  padding: 7px 9px;
+  padding: 7px 9px; /* pixel-police-allow: DJP form fixed layout */
   vertical-align: top;
   text-align: left;
   font-weight: 400;
@@ -311,7 +311,7 @@ function downloadPdf() {
   font-weight: 400;
   letter-spacing: 0.36em;
   /* Light enough to read the fields underneath, dark enough to be unmissable. */
-  color: rgba(0, 0, 0, 0.22);
+  color: rgba(0, 0, 0, 0.22); /* pixel-police-allow: DJP stamp watermark opacity */
   text-transform: uppercase;
   white-space: nowrap;
 }
