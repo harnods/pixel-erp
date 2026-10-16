@@ -153,6 +153,7 @@ const addPropOptions = computed(() => {
   return props.properties
     .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
     .map((p) => ({ id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 })
 // Reconcile the drawer's picked set into the section's columns: drop de-selected
 // ids from every column, append newly-picked ids to the shortest column (keeps
@@ -482,7 +483,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                 </div>
               </TransitionGroup>
             </div>
-            <p v-if="!section.cols.some((c) => c.length)" class="dlb-empty">{{ t('No properties yet. Add one from the section menu.') }}</p>
+            <div v-if="!section.cols.some((c) => c.length)" class="dlb-empty">
+              <p class="dlb-empty-text">{{ t('No properties yet.') }}</p>
+              <MpButton variant="secondary" is-rounded left-icon="add" @click="openAddProperty(section)">{{ t('Add property') }}</MpButton>
+            </div>
           </section>
         </TransitionGroup>
 
@@ -1066,7 +1070,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlb-mandatory { color: var(--mp-colors-text-danger, #c81e1e); margin-left: 2px; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dlb-empty { grid-column: 1 / -1; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; padding: var(--mp-spacing-2) 0; }
+.dlb-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-6) 0; }
+.dlb-empty-text { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; }
 
 .dlb-add-section { padding-top: var(--mp-spacing-2); }
 

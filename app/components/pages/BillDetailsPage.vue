@@ -15,6 +15,7 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import MatchedDetailsDrawer from '~/components/patterns/MatchedDetailsDrawer.vue'
 import JournalEntryDrawer, { type JournalEntryRow } from '~/components/patterns/JournalEntryDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { bills, deleteBills } from '~/data/bills'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import { formatDate, formatDateLong } from '~/utils/date'
@@ -271,7 +272,7 @@ function goExpenses() {
 
       <!-- Beneficiary + Total — separated section, inline together -->
       <section class="bd-primary">
-        <ContentList :label="t('Beneficiary')" :value="bill.beneficiary.name" />
+        <ContentList :label="t('Beneficiary')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(bill.beneficiary.name)}`, '_blank')">{{ bill.beneficiary.name }}</a></ContentList>
         <div class="detail-primary-total">
           <span class="detail-total-amount">
             <span class="detail-total-label">{{ t(hasLess ? 'Balance due' : 'Total') }}</span> {{ formatIDR(hasLess ? balanceDue : groupTotal) }}

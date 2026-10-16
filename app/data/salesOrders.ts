@@ -1,6 +1,6 @@
 import type { SalesOrder, SalesOrderItem, SalesOrderStatus } from './types'
 import { CATALOG } from './catalog'
-import { customers } from './customers'
+import { customers, EXPORT_CUSTOMER_ID } from './customers'
 
 /**
  * Mock sales orders for a wholesale + retail coffee business
@@ -15,7 +15,11 @@ import { customers } from './customers'
 /** Customers come from the shared master (`customers.ts`) — same ids the WMS
  *  outbound module uses, so a sales order and its dispatch resolve to one
  *  company. Sales orders only need id + name here. */
-const CUSTOMERS: { id: string; name: string }[] = customers.map((c) => ({ id: c.id, name: c.name }))
+// Positional assignment, same as salesInvoices.ts — the export customer stays
+// out so adding it never shifts an existing order's buyer.
+const CUSTOMERS: { id: string; name: string }[] = customers
+  .filter((c) => c.id !== EXPORT_CUSTOMER_ID)
+  .map((c) => ({ id: c.id, name: c.name }))
 
 const STATUSES: SalesOrderStatus[] = ['open', 'partially processed', 'closed', 'voided']
 

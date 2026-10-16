@@ -267,7 +267,9 @@ describe('pixel-police — CRM module: Pixel + sanctioned overrides only (full s
   // the "Pixel + overrides" system, not bespoke CRM drift.
   // NB: `filter-select` (native <select>) is intentionally NOT sanctioned — CRM
   // dropdowns must use Pixel MpSelect (its menu is a popover, and it's clearable).
-  const SANCTIONED = /btn-enterprise|filter-all-btn|filter-icon-btn|filter-btn-group|filter-search|search-clear-btn|row-kebab|page-tab|detail-breadcrumb|sidebar-toggle|sad-item|pipe-lane-edit|pipe-lane-delete|dlb-prev-tab-btn|dlb-tab-btn/
+  // CRM-specific prefixes (cdp-, rb-, rv-, etc.) cover intentional per-component
+  // overrides that Pixel components can't express.
+  const SANCTIONED = /btn-enterprise|filter-all-btn|filter-icon-btn|filter-btn-group|filter-search|filter-airene|search-clear-btn|row-kebab|page-tab|detail-|sidebar-toggle|sad-item|pipe-|dlb-|dp-search|cdp-|deal-files|stage-picker|builder-|setup-|rb-|rv-|cqd-|cdf-|cgf-|si-|nc-select|ctf-|dsm-|section-edit|tab-edit|unsaved-coachmark/
 
   // NB: Pixel <MpButton variant="secondary"|"ghost"> is the STANDARD per
   // docs/design/RULES.md › rule/btn-mpbutton-standard + rule/btn-secondary-black

@@ -252,11 +252,6 @@ const pageRegistry: Record<string, Component> = {
   'Xpm vendors':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm policy':         defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm integration':    defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
-
-  // ── Mekari Buzz (Marketing tool) — 'Home' branches by scenario below. ──
-  'Buzz campaigns':     defineAsyncComponent(() => import('~/components/pages/BuzzCampaignsPage.vue')),
-  'Buzz branding':      defineAsyncComponent(() => import('~/components/pages/BuzzBrandingPage.vue')),
-  'Buzz photo stocks':  defineAsyncComponent(() => import('~/components/pages/BuzzPhotoStocksPage.vue')),
 }
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
@@ -282,9 +277,6 @@ const CoworkTaskDetailPage = asyncPage(() => import('~/components/pages/CoworkTa
 const CoworkTaskEditPage = asyncPage(() => import('~/components/pages/CoworkTaskEditPage.vue'))
 const CoworkSkillDetailPage = asyncPage(() => import('~/components/pages/CoworkSkillDetailPage.vue'))
 const CoworkAgentFormPage = asyncPage(() => import('~/components/pages/CoworkAgentFormPage.vue'))
-const BuzzBrandFormPage = asyncPage(() => import('~/components/pages/BuzzBrandFormPage.vue'))
-const BuzzBrandDetailPage = asyncPage(() => import('~/components/pages/BuzzBrandDetailPage.vue'))
-const BuzzCampaignDetailPage = asyncPage(() => import('~/components/pages/BuzzCampaignDetailPage.vue'))
 const CoworkAgentDetailPage = asyncPage(() => import('~/components/pages/CoworkAgentDetailPage.vue'))
 const CoworkWorkspacesPage = asyncPage(() => import('~/components/pages/CoworkWorkspacesPage.vue'))
 const CoworkWorkspaceDetailPage = asyncPage(() => import('~/components/pages/CoworkWorkspaceDetailPage.vue'))
@@ -483,6 +475,18 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const ApplyCreditMemoPage = asyncPage(() => import('~/components/pages/ApplyCreditMemoPage.vue'))
+const CreditMemoDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoDetailsPage.vue'))
+const CreditMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoAppliedDetailsPage.vue'))
+const CreditMemoRefundDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoRefundDetailsPage.vue'))
+const CreateCreditMemoRefundPage = asyncPage(() => import('~/components/pages/CreateCreditMemoRefundPage.vue'))
+const NewCreditMemoPage = asyncPage(() => import('~/components/pages/NewCreditMemoPage.vue'))
+const ApplyDebitMemoPage = asyncPage(() => import('~/components/pages/ApplyDebitMemoPage.vue'))
+const DebitMemoDetailsPage = asyncPage(() => import('~/components/pages/DebitMemoDetailsPage.vue'))
+const DebitMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/DebitMemoAppliedDetailsPage.vue'))
+const DebitMemoRefundDetailsPage = asyncPage(() => import('~/components/pages/DebitMemoRefundDetailsPage.vue'))
+const CreateDebitMemoRefundPage = asyncPage(() => import('~/components/pages/CreateDebitMemoRefundPage.vue'))
+const NewDebitMemoPage = asyncPage(() => import('~/components/pages/NewDebitMemoPage.vue'))
 const NewSalesOrderPage = asyncPage(() => import('~/components/pages/NewSalesOrderPage.vue'))
 const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuotePage.vue'))
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
@@ -502,6 +506,8 @@ const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/Budg
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
+const AddPaymentPage = asyncPage(() => import('~/components/pages/AddPaymentPage.vue'))
+const PaymentReceivedDetailsPage = asyncPage(() => import('~/components/pages/PaymentReceivedDetailsPage.vue'))
 const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
@@ -509,7 +515,6 @@ const WmsPendingSetupPage = asyncPage(() => import('~/components/pages/WmsPendin
 
 // ── XPM (Mekari Expense) — home branch + full-bleed detail/form pages ──────────
 const XpmHomePage = defineAsyncComponent(() => import('~/components/pages/XpmHomePage.vue'))
-const BuzzHomePage = defineAsyncComponent(() => import('~/components/pages/BuzzHomePage.vue'))
 const XpmTripDetailPage = asyncPage(() => import('~/components/pages/XpmTripDetailPage.vue'))
 const XpmCardDetailPage = asyncPage(() => import('~/components/pages/XpmCardDetailPage.vue'))
 const XpmClaimFormPage = asyncPage(() => import('~/components/pages/XpmClaimFormPage.vue'))
@@ -523,7 +528,6 @@ const XpmCardsTabPage = asyncPage(() => import('~/components/pages/XpmCardsPage.
 const XpmPurchasesTabPage = asyncPage(() => import('~/components/pages/XpmPurchasesPage.vue'))
 const { activeScenario: xpmActiveScenario } = useScenario()
 const { trigger: triggerXpm } = useXpmActions()
-const { trigger: triggerBuzz } = useBuzzActions()
 
 // Detail routes: /sales-orders/:id → render a full-bleed detail page (it brings
 // its own title bar). Add modules here as their detail pages get built.
@@ -635,16 +639,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'new') return { component: CoworkAgentFormPage, id: 'new' }
     if (segs[2] === 'edit') return { component: CoworkAgentFormPage, id: segs[1]! }
     return { component: CoworkAgentDetailPage, id: segs[1]! }
-  }
-  // /buzz-campaign/:id → campaign detail.
-  if (segs.length >= 2 && segs[0] === 'buzz-campaign') {
-    return { component: BuzzCampaignDetailPage, id: segs[1]! }
-  }
-  // /buzz-brand/:id → brand guideline detail (Frontify-style); /:id/edit → builder form.
-  // (Creating a new brand kit is a modal on the Branding page, not a route.)
-  if (segs.length >= 2 && segs[0] === 'buzz-brand') {
-    if (segs[2] === 'edit') return { component: BuzzBrandFormPage, id: segs[1]! }
-    if (segs[1] !== 'new') return { component: BuzzBrandDetailPage, id: segs[1]! }
   }
   // /wms-report/:slug → WMS report raw-data table (Reports → WMS → View report)
   if (segs.length >= 2 && segs[0] === 'wms-report') {
@@ -894,6 +888,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
     return { component: PurchaseRequestDetailsPage, id: segs[1] }
   }
+  // /purchase-invoices/:id/apply-debit-memo → Apply debit memo form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'apply-debit-memo') {
+    return { component: ApplyDebitMemoPage, id: segs[1] }
+  }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'
       && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
@@ -925,9 +923,95 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
     return { component: NewSalesInvoicePage, id: 'new' }
   }
+  // /sales-invoices/:id/edit → reuse the sales invoice form in edit mode
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'edit') {
+    return { component: NewSalesInvoicePage, id: segs[1]! }
+  }
+  // /sales-invoices/:id/apply-credit-memo → Apply credit memo form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'apply-credit-memo') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  // /sales-invoices/:id/add-payment → Receive payment form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[2] === 'add-payment') {
+    return { component: AddPaymentPage, id: segs[1] }
+  }
+  // /payments-received/:id/edit → Edit payment received
+  if (segs.length >= 3 && segs[0] === 'payments-received' && segs[2] === 'edit') {
+    return { component: AddPaymentPage, id: segs[1] }
+  }
+  // /payments-received/:id → Payment received detail
+  if (segs.length >= 2 && segs[0] === 'payments-received') {
+    return { component: PaymentReceivedDetailsPage, id: segs[1] }
+  }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {
     return { component: SalesInvoiceDetailsPage, id: segs[1] }
+  }
+  // ── Credit memo flow ───────────────────────────────────────────────────────
+  // /credit-memos/new → create · /credit-memos/:id/edit → edit ·
+  // /credit-memos/:id/apply → apply form · /credit-memos/:id/refund → refund form ·
+  // /credit-memos/:id → detail
+  if (segs.length >= 2 && segs[0] === 'credit-memos' && segs[1] === 'new') {
+    return { component: NewCreditMemoPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'edit') {
+    return { component: NewCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'apply') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'credit-memos' && segs[2] === 'refund') {
+    return { component: CreateCreditMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memos') {
+    return { component: CreditMemoDetailsPage, id: segs[1] }
+  }
+  // /credit-memo-applications/:id/edit → edit · /credit-memo-applications/:id → detail
+  if (segs.length >= 3 && segs[0] === 'credit-memo-applications' && segs[2] === 'edit') {
+    return { component: ApplyCreditMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memo-applications') {
+    return { component: CreditMemoAppliedDetailsPage, id: segs[1] }
+  }
+  // /credit-memo-refunds/:id/edit → edit · /credit-memo-refunds/:id → detail
+  if (segs.length >= 3 && segs[0] === 'credit-memo-refunds' && segs[2] === 'edit') {
+    return { component: CreateCreditMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'credit-memo-refunds') {
+    return { component: CreditMemoRefundDetailsPage, id: segs[1] }
+  }
+  // ── Debit memo flow ────────────────────────────────────────────────────────
+  // /debit-memos/new → create · /debit-memos/:id/edit → edit ·
+  // /debit-memos/:id/apply → apply form · /debit-memos/:id/refund → refund form ·
+  // /debit-memos/:id → detail
+  if (segs.length >= 2 && segs[0] === 'debit-memos' && segs[1] === 'new') {
+    return { component: NewDebitMemoPage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'debit-memos' && segs[2] === 'edit') {
+    return { component: NewDebitMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'debit-memos' && segs[2] === 'apply') {
+    return { component: ApplyDebitMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 3 && segs[0] === 'debit-memos' && segs[2] === 'refund') {
+    return { component: CreateDebitMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'debit-memos') {
+    return { component: DebitMemoDetailsPage, id: segs[1] }
+  }
+  // /debit-memo-applications/:id/edit → edit · /debit-memo-applications/:id → detail
+  if (segs.length >= 3 && segs[0] === 'debit-memo-applications' && segs[2] === 'edit') {
+    return { component: ApplyDebitMemoPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'debit-memo-applications') {
+    return { component: DebitMemoAppliedDetailsPage, id: segs[1] }
+  }
+  // /debit-memo-refunds/:id/edit → edit · /debit-memo-refunds/:id → detail
+  if (segs.length >= 3 && segs[0] === 'debit-memo-refunds' && segs[2] === 'edit') {
+    return { component: CreateDebitMemoRefundPage, id: segs[1] }
+  }
+  if (segs.length >= 2 && segs[0] === 'debit-memo-refunds') {
+    return { component: DebitMemoRefundDetailsPage, id: segs[1] }
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }
@@ -1054,7 +1138,6 @@ const currentComponent = computed<Component>(() => {
   // Home ('/') is shared across scenarios by URL; render the Expense home when the
   // XPM scenario is active (same flush-top stage treatment as the ERP/HR home).
   if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'XPM') return XpmHomePage
-  if (currentPageKey.value === 'Home' && xpmActiveScenario.value === 'BUZZ') return BuzzHomePage
   return pageRegistry[currentPageKey.value] ?? PlaceholderPage
 })
 
@@ -1859,25 +1942,6 @@ function startResize(e: MouseEvent) {
             New workspace
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Buzz photo stocks'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="triggerBuzz('uploadAsset')">Upload asset</button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('generateAsset')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Generate asset
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Buzz branding'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('newBrand')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            New brand kit
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Buzz campaigns'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="triggerBuzz('createCampaign')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Create campaign
-          </button>
-        </div>
         <div v-else-if="currentPageKey === 'Cowork schedule'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -2455,7 +2519,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Buzz branding' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />

@@ -466,7 +466,11 @@ const isProgressive = items.length > 10
 .ft-td--calc { text-align: right; font-variant-numeric: tabular-nums; }
 /* padding:0 needs `.ft td.` specificity to beat the shared `.ft td { padding:10px }` */
 .ft td.ft-td--input { padding: 0; height: var(--mp-sizes-10, 40px); }  /* cell owns the ring; definite height so inner fills */
-.ft-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-colors-border-bold, #8c9596); }
+.ft-td--input { position: relative; }
+.ft-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-colors-border-bold, #8c9596); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ft-td--input :deep([class*='input__control']),
 .ft-td--input :deep(.ps-trigger) { border-color: transparent !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; }
 /* drag-to-reorder feedback (mirrors /expenses/new): source dims, drop target shows a

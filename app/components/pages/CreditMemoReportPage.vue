@@ -244,7 +244,8 @@ function exportExcel() {
 // ── Status badge (Active / Sebagian / Habis) ──────────────────────────────────
 function statusClass(s: CmStatus) { return s === 'Active' ? 'cmr-badge cmr-badge--active' : s === 'Sebagian' ? 'cmr-badge cmr-badge--partial' : 'cmr-badge cmr-badge--used' }
 function typeClass(t: CmMutationType) { return t === 'Issued' || t === 'Reversal' ? 'cmr-type cmr-type--pos' : 'cmr-type cmr-type--neg' }
-function openTxn(no: string) { infoToast(`Opening ${no}`) }
+// Deep-link to the source document (Credit memo / Applied / Refund pages).
+function openTxn(no: string, href?: string) { if (href && href !== '#') router.push(href); else infoToast(`Opening ${no}`) }
 </script>
 
 <template>
@@ -426,7 +427,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
                         <span>{{ formatDate(cm.issueDate) }}</span>
                       </span>
                     </td>
-                    <td v-if="show('number')" class="cmr-td">{{ cm.cmNumber }}</td>
+                    <td v-if="show('number')" class="cmr-td"><a class="cmr-txn-link" data-devchange="cm-report-links" @click.stop="router.push(`/credit-memos/${cm.id}`)">{{ cm.cmNumber }}</a></td>
                     <td v-if="show('description')" class="cmr-td cmr-muted">Original {{ formatIDR(cm.originalAmount) }}</td>
                     <td v-if="show('status')" class="cmr-td"><span :class="statusClass(statusOf(cm))">{{ STATUS_LABELS[statusOf(cm)] }}</span></td>
                     <td v-if="show('movement')" class="cmr-td cmr-td--right" />
@@ -441,7 +442,7 @@ function openTxn(no: string) { infoToast(`Opening ${no}`) }
                         <template v-if="r.type === 'Saldo Awal'"><span class="cmr-saldo-awal">Beginning balance</span></template>
                         <template v-else>
                           <span :class="typeClass(r.type as CmMutationType)">{{ r.type }}</span>
-                          <a class="cmr-txn-link" @click.stop="openTxn(r.transactionNo!)">{{ r.transactionNo }}</a>
+                          <a class="cmr-txn-link" @click.stop="openTxn(r.transactionNo!, r.transactionHref)">{{ r.transactionNo }}</a>
                         </template>
                       </td>
                       <td v-if="show('description')" class="cmr-td cmr-muted">{{ r.description }}</td>

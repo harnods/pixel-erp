@@ -1128,7 +1128,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 /* ── Product cell ─────────────────────────────────────────────────────────────── */
 /* ── Qty to handle input ─────────────────────────────────────────────────────── */
 .pi-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
-.pi-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pi-td--input { position: relative; }
+.pi-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pi-qty-input {
   display: block; width: 100%; box-sizing: border-box;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);
@@ -1140,7 +1144,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 /* ── Storage location cell (popover picker) ──────────────────────────────────── */
 .pi-td--location { padding: 0; background: var(--mp-background-neutral, #fff); }
-.pi-td--location:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pi-td--location { position: relative; }
+.pi-td--location:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pi-loc-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text; }
 .pi-loc-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
 .pi-loc-input::placeholder { color: var(--mp-text-placeholder); }
