@@ -964,6 +964,7 @@ const SECTION_PARENT: Record<string, string> = {
   'Matching rules': 'Tax report',
   'Unmatched and discrepancies': 'Tax report',
   'Payments received': 'Sales invoices',
+  'Purchase payments': 'Purchase invoices',
 }
 
 watch([currentPageKey, activeSectionOverride, () => route.path, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {

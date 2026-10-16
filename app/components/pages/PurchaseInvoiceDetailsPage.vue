@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
@@ -9,6 +9,9 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseInvoiceDetail } from '~/data/purchaseInvoiceDetails'
@@ -16,6 +19,10 @@ import { purchaseInvoices } from '~/data/purchaseInvoices'
 import {
   vendorAvailableDebit, applicationsForInvoice, applicationLabel,
 } from '~/data/debitMemos'
+import {
+  paymentsForInvoice as purchasePaymentsForInvoice, paymentLabel as purchasePaymentLabel,
+  cashAccountLabel as ppCashAccountLabel,
+} from '~/data/purchasePayments'
 
 // `orderId` is the shared detail-route prop name — [...slug].vue binds :order-id
 // for every detail page, whatever the module.
@@ -44,10 +51,15 @@ function confirmDelete() {
 const hasLinkedTransactions = computed(() => invoice.value.linkedTransactions.length > 0)
 
 // Payment rows = cash payments + debit-memo applications.
-interface PaymentRow { date: string; number: string; applicationId?: string; method: string; account: string; reference: string; amount: number }
+interface PaymentRow { date: string; number: string; applicationId?: string; paymentId?: string; method: string; account: string; reference: string; amount: number }
 const debitApplications = computed(() => applicationsForInvoice(invoice.value.id))
+const purchasePaymentRows = computed(() => purchasePaymentsForInvoice(invoice.value.id))
 const paymentRows = computed<PaymentRow[]>(() => {
-  const cash: PaymentRow[] = invoice.value.payments.map(p => ({ date: p.date, number: '—', method: p.method, account: '—', reference: p.reference, amount: p.amount }))
+  const cash: PaymentRow[] = purchasePaymentRows.value.map(({ payment, amount }) => ({
+    date: payment.date, number: purchasePaymentLabel(payment.number), paymentId: payment.id,
+    method: payment.paymentMethod, account: ppCashAccountLabel(payment.depositToAccountId),
+    reference: payment.referenceNo || '—', amount,
+  }))
   const debit: PaymentRow[] = debitApplications.value.map(({ application, amount }) => ({
     date: application.date, number: applicationLabel(application.number), applicationId: application.id,
     method: t('Debit memo'), account: '—', reference: '—', amount,
@@ -60,6 +72,8 @@ const hasDebitApplied = computed(() => invoice.value.debitApplied > 0)
 // Debit memo: available debit and apply action
 const availableDebit = computed(() => vendorAvailableDebit(invoice.value.vendor.id))
 const canApplyDebit = computed(() => invoice.value.balance > 0 && availableDebit.value > 0)
+const canAddPayment = computed(() => invoice.value.balance > 0)
+function goToAddPayment() { router.push(`/purchase-invoices/${invoice.value.id}/add-payment`) }
 const applyDebitModalOpen = ref(false)
 function goToApplyDebitForm() {
   applyDebitModalOpen.value = false
@@ -67,6 +81,18 @@ function goToApplyDebitForm() {
 }
 onMounted(() => { if (invoice.value && canApplyDebit.value) applyDebitModalOpen.value = true })
 
+const piActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Edit' },
+    { label: 'Duplicate' },
+    { label: 'Add payment', show: canAddPayment.value, onClick: goToAddPayment },
+    { label: 'Apply debit memo', show: canApplyDebit.value, onClick: goToApplyDebitForm },
+  ],
+  [
+    { label: 'Void' },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: invoice.value.lastUpdatedAt,
   user: invoice.value.lastUpdatedBy,
@@ -474,8 +500,9 @@ function goBack() { router.push('/purchase-invoices') }
                 <tr v-for="(p, i) in paymentRows" :key="i" class="detail-item-row">
                   <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
                   <td class="detail-td">
-                    <span v-if="!p.applicationId" class="detail-td--muted">{{ p.number }}</span>
-                    <a v-else class="cell-link cell-text" @click="router.push(`/debit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
+                    <a v-if="p.paymentId" class="cell-link cell-text" @click="router.push(`/purchase-payments/${p.paymentId}`)">{{ p.number }}</a>
+                    <a v-else-if="p.applicationId" class="cell-link cell-text" @click="router.push(`/debit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
+                    <span v-else class="detail-td--muted">{{ p.number }}</span>
                   </td>
                   <td class="detail-td">{{ p.method }}</td>
                   <td class="detail-td detail-td--muted">{{ p.account }}</td>
@@ -490,48 +517,8 @@ function goBack() { router.push('/purchase-invoices') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" right-icon="chevrons-down">
-              {{ t('Print & share') }}
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Actions primary dropdown — a purchase invoice is money we OWE a vendor,
-             so the action set is kept simple (no receive-payment / tax-document flows). -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" right-icon="chevrons-down">
-              {{ t('Actions') }}
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="canApplyDebit" data-devchange="pinv-apply-debit-memo" @click="goToApplyDebitForm">{{ t('Apply debit memo') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="pi-print" />
+        <DetailActionsMenu id="pi-actions" :groups="piActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->

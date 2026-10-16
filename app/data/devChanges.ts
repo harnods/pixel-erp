@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'settings-sales-page',
+    title: 'Settings > Sales page',
+    description:
+      'New Sales settings page with general toggles (shipping, discounts, deposit, price rules, etc.), invoice reminders, email/WhatsApp templates with kebab menus, and document layout & branding section.',
+    date: '2026-10-16',
+    files: ['SettingsSalesPage.vue'],
+  },
+  {
+    id: 'purchase-payment-form',
+    title: 'Add Purchase Payment form',
+    description:
+      'Add Payment form for Purchase module — exact mirror of Receive Payment. Vendor info, date/txn/ref fields, deposit-to account, payment method, invoice allocation table with balance/amount columns, withholding tax, memo + attachment. Navigates from purchase invoice detail.',
+    date: '2026-10-16',
+    files: ['AddPurchasePaymentPage.vue', 'purchasePayments.ts', 'debitMemos.ts'],
+  },
+  {
+    id: 'purchase-payment-detail',
+    title: 'Purchase Payment detail page',
+    description:
+      'Read-only detail page for Purchase Payment records: vendor, deposit-to, allocation table, WHT breakdown, memo, journal entry drawer, activity log, Edit/Delete actions. Mirror of PaymentReceivedDetailsPage.',
+    date: '2026-10-16',
+    files: ['PurchasePaymentDetailsPage.vue', 'purchasePayments.ts'],
+  },
+  {
     id: 'receive-payment-header',
     title: 'Add Payment form (redesigned)',
     description:

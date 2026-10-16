@@ -3,10 +3,11 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpButton, MpIcon, MpTextlink, css,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
@@ -74,6 +75,16 @@ function confirmDelete() {
   if (firstInvoiceId.value) router.push(`/sales-invoices/${firstInvoiceId.value}`)
   else goInvoices()
 }
+
+const prActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview' },
+  ],
+  [
+    { label: 'Edit', onClick: edit },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 </script>
 
 <template>
@@ -200,21 +211,7 @@ function confirmDelete() {
 
     <footer class="detail-footer">
       <PrintShareMenu id="pr-print" />
-      <MpPopover id="pr-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-        <MpPopoverTrigger>
-          <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem @click="edit">{{ t('Edit') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <DetailActionsMenu id="pr-actions" :groups="prActionGroups" />
     </footer>
 
     <JournalEntryDrawer v-model:is-open="journalOpen" :heading="paymentLabel(payment.number)" :rows="journalRows" />
@@ -242,23 +239,27 @@ function confirmDelete() {
 /* ── Title bar ── */
 .detail-bar {
   flex-shrink: 0;
+  height: var(--mp-sizes-18, 72px);
+  box-sizing: border-box;
+  background: var(--mp-background-neutral-subtle);
+  padding: 0 var(--mp-spacing-6);
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--mp-spacing-6);
-  height: var(--mp-size-18);
-  max-height: var(--mp-size-18);
-  background: var(--mp-background-neutral-subtle);
+  gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb-trail { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .detail-breadcrumb-sep { color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-md); }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .detail-title {
-  font-size: var(--mp-font-sizes-2xl, 24px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
   margin: 0;
+  font-size: var(--mp-font-sizes-2xl);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: 32px;
+  letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
+  color: var(--mp-text-default);
   white-space: nowrap;
 }
 

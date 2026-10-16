@@ -6,6 +6,9 @@ import { cashAccounts } from './cashAccounts'
 import { SIM_TODAY_ISO, daysUntil } from './simClock'
 import type { PurchaseInvoice, InvoiceStatus } from './types'
 
+let invoiceCashPaidFn: (invoiceId: string, excludePaymentId?: string) => number = () => 0
+export function _setCashPaidFn(fn: (invoiceId: string, excludePaymentId?: string) => number) { invoiceCashPaidFn = fn }
+
 /**
  * Debit memo (Purchase › Purchase invoices › Debit memo) — the AP-side mirror
  * of creditMemos.ts. Three documents:
@@ -291,15 +294,14 @@ export function invoiceDebitApplied(invoiceId: string, excludeApplicationId?: st
   }
   return sum
 }
+/** Cash paid on a purchase invoice — derived from Purchase Payment records. */
 export function invoiceCashPaid(invoiceId: string): number {
-  const inv = purchaseInvoiceById(invoiceId)
-  if (!inv) return 0
-  return inv.total - baseOf(inv).balance
+  return invoiceCashPaidFn(invoiceId)
 }
 export function invoiceBalance(invoiceId: string, excludeApplicationId?: string): number {
   const inv = purchaseInvoiceById(invoiceId)
   if (!inv) return 0
-  return Math.max(0, baseOf(inv).balance - invoiceDebitApplied(invoiceId, excludeApplicationId))
+  return Math.max(0, baseOf(inv).balance - invoiceCashPaid(invoiceId) - invoiceDebitApplied(invoiceId, excludeApplicationId))
 }
 
 export function deriveInvoiceStatus(inv: Pick<PurchaseInvoice, 'total' | 'dueDate'>, balance: number): InvoiceStatus {
@@ -313,11 +315,13 @@ export function syncPurchaseInvoiceBalances(): void {
   for (const inv of purchaseInvoices) {
     const base = baseOf(inv)
     const debit = invoiceDebitApplied(inv.id)
-    if (debit === 0) {
+    const cash = invoiceCashPaid(inv.id)
+    const totalSettled = debit + cash
+    if (totalSettled === 0) {
       inv.balance = base.balance
       inv.status = base.status
     } else {
-      inv.balance = Math.max(0, base.balance - debit)
+      inv.balance = Math.max(0, base.balance - totalSettled)
       inv.status = deriveInvoiceStatus(inv, inv.balance)
     }
   }
