@@ -433,7 +433,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
 <style scoped>
 /* Custom spacing tokens (pixel-police compliant). */
-:scope { --vp-icon-sz: 64px; --vp-search-w: 248px; }
+:scope { --vp-icon-sz: 64px; --vp-search-w: 248px; --vp-clear-sz: 18px; }
 
 /* First-run gate — centred, one action, no table chrome behind it. */
 .vp-setup-gate {
@@ -636,8 +636,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: var(--vp-clear-sz);
+  height: var(--vp-clear-sz);
   padding: 0;
   border: none;
   background: none;

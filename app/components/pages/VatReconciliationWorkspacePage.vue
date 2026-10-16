@@ -611,6 +611,12 @@ function reviewWithAirene() {
   --vr-search-w: 248px;
   --vr-search-h: 36px;
   --vr-status-w: 160px;
+  --vr-chevron-sz: 20px;
+  --vr-col-icon-sz: 28px;
+  --vr-connector-gap: 2px;
+  --vr-delta-gap: 2px;
+  --vr-dot-sz: 32px;
+  --vr-tag-p: 1px var(--mp-spacing-2);
   display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 0;
 }
 
@@ -644,7 +650,7 @@ function reviewWithAirene() {
 .vr-kpi-sub { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 .vr-kpi.is-clear .vr-kpi-sub, .vr-kpi.is-gap .vr-kpi-sub { color: inherit; }
 .vr-delta {
-  display: inline-flex; align-items: center; gap: 2px;
+  display: inline-flex; align-items: center; gap: var(--vr-delta-gap);
   padding: var(--vr-badge-p); border-radius: var(--mp-radii-full);
   background: var(--mp-colors-red-100); color: var(--mp-colors-red-800);
   font-size: 10px; font-weight: var(--mp-font-weights-bold);
@@ -707,7 +713,7 @@ function reviewWithAirene() {
 .filter-select-chevron {
   position: absolute; right: var(--mp-spacing-2);
   pointer-events: none; color: var(--mp-text-default);
-  width: 20px; height: 20px;
+  width: var(--vr-chevron-sz); height: var(--vr-chevron-sz);
 }
 
 /* ── Workspace card ── */
@@ -729,7 +735,7 @@ function reviewWithAirene() {
 }
 .vr-col-head--right { justify-content: flex-end; }
 .vr-col-icon {
-  width: 28px; height: 28px; border-radius: var(--mp-radii-sm);
+  width: var(--vr-col-icon-sz); height: var(--vr-col-icon-sz); border-radius: var(--mp-radii-sm);
   background: var(--mp-background-surface); border: 1px solid var(--mp-border-default);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   color: var(--mp-text-secondary);
@@ -815,12 +821,12 @@ function reviewWithAirene() {
 /* ── Connector ── */
 .vr-connector {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 2px;
+  gap: var(--vr-connector-gap);
   border-left: 1px dashed var(--mp-border-default);
   border-right: 1px dashed var(--mp-border-default);
 }
 .vr-connector-dot {
-  width: 32px; height: 32px; border-radius: var(--mp-radii-full);
+  width: var(--vr-dot-sz); height: var(--vr-dot-sz); border-radius: var(--mp-radii-full);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .vr-connector-dot.is-outline {
@@ -832,7 +838,7 @@ function reviewWithAirene() {
    loud enough that a column of matched rows shows which ones a person judged. */
 .vr-manual-tag {
   margin-top: var(--mp-spacing-1);
-  padding: 1px var(--mp-spacing-2);
+  padding: var(--vr-tag-p);
   border-radius: var(--mp-radii-full);
   background: var(--mp-colors-neutral-100);
   color: var(--mp-text-subtle);

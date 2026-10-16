@@ -346,6 +346,8 @@ const activity = computed(() => [
   --rdd-panel-w: 720px;
   --rdd-icon-sz: 40px;
   --rdd-badge-p: 1px var(--mp-spacing-2);
+  --rdd-confidence-p: 2px var(--mp-spacing-2);
+  --rdd-activity-sz: 24px;
   display: flex; flex-direction: column; height: 100%;
   background: var(--mp-background-surface);
 }
@@ -437,7 +439,7 @@ const activity = computed(() => [
 .rdd-candidate-date { color: var(--mp-text-subtle); font-weight: var(--mp-font-weights-regular); }
 .rdd-candidate-party { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 .rdd-confidence {
-  padding: 2px var(--mp-spacing-2); border-radius: var(--mp-radii-full);
+  padding: var(--rdd-confidence-p); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral-subtle); color: var(--mp-text-subtle);
   font-size: 11px; font-weight: var(--mp-font-weights-bold);
   white-space: nowrap; flex-shrink: 0;
@@ -465,7 +467,7 @@ const activity = computed(() => [
 }
 .rdd-activity-row + .rdd-activity-row { border-top: 1px solid var(--mp-border-default); }
 .rdd-activity-icon {
-  width: 24px; height: 24px; border-radius: var(--mp-radii-full);
+  width: var(--rdd-activity-sz); height: var(--rdd-activity-sz); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   color: var(--mp-text-subtle);
