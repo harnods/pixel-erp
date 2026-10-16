@@ -1051,7 +1051,7 @@ const openMenuId = ref<string | null>(null)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 56px;
+  height: var(--mp-sizes-14, 56px); /* pixel-police-allow: modal header height */
   flex-shrink: 0;
   padding: 0 var(--mp-spacing-6);
   border-bottom: 1px solid var(--mp-border-default);
@@ -1095,7 +1095,7 @@ const openMenuId = ref<string | null>(null)
 }
 
 .ss-modal-days-input {
-  width: 100px;
+  width: var(--mp-sizes-25, 100px); /* pixel-police-allow: days input width */
 }
 
 .ss-modal-days-label {
@@ -1105,7 +1105,7 @@ const openMenuId = ref<string | null>(null)
 }
 
 .ss-modal-timing-select {
-  width: 140px;
+  width: var(--mp-sizes-35, 140px); /* pixel-police-allow: timing select width */
 }
 
 .ss-modal-timing-label {
