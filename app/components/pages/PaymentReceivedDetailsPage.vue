@@ -242,23 +242,27 @@ function confirmDelete() {
 /* ── Title bar ── */
 .detail-bar {
   flex-shrink: 0;
+  height: var(--mp-sizes-18, 72px);
+  box-sizing: border-box;
+  background: var(--mp-background-neutral-subtle);
+  padding: 0 var(--mp-spacing-6);
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--mp-spacing-6);
-  height: var(--mp-size-18);
-  max-height: var(--mp-size-18);
-  background: var(--mp-background-neutral-subtle);
+  gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
 .detail-breadcrumb-trail { display: flex; align-items: center; gap: var(--mp-spacing-1); }
 .detail-breadcrumb-sep { color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-md); }
 .detail-titlerow-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .detail-title {
-  font-size: var(--mp-font-sizes-2xl, 24px);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
   margin: 0;
+  font-size: var(--mp-font-sizes-2xl);
+  font-weight: var(--mp-font-weights-semi-bold);
+  line-height: 32px;
+  letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
+  color: var(--mp-text-default);
   white-space: nowrap;
 }
 

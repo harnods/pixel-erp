@@ -3970,4 +3970,11 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "This record may have been deleted or the link is invalid.": "Catatan ini mungkin sudah dihapus atau tautannya tidak valid.",
   "Back to Sales Invoices": "Kembali ke Faktur Penjualan",
   "Invoice not found.": "Faktur tidak ditemukan.",
+
+  // ── Purchase payments (Purchase › Purchase invoices › Add payment) ───────────
+  "Purchase payments": "Pembayaran pembelian",
+  "Purchase payment deleted": "Pembayaran pembelian dihapus",
+  "Delete purchase payment": "Hapus pembayaran pembelian",
+  "Purchase payment not found": "Pembayaran pembelian tidak ditemukan",
+  "Back to purchase invoices": "Kembali ke faktur pembelian",
 }

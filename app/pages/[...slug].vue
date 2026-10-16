@@ -429,6 +429,8 @@ const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeD
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
 const AddPaymentPage = asyncPage(() => import('~/components/pages/AddPaymentPage.vue'))
 const PaymentReceivedDetailsPage = asyncPage(() => import('~/components/pages/PaymentReceivedDetailsPage.vue'))
+const AddPurchasePaymentPage = asyncPage(() => import('~/components/pages/AddPurchasePaymentPage.vue'))
+const PurchasePaymentDetailsPage = asyncPage(() => import('~/components/pages/PurchasePaymentDetailsPage.vue'))
 const WmsCutoverChartOfAccountsPage = asyncPage(() => import('~/components/pages/WmsCutoverChartOfAccountsPage.vue'))
 const WmsCutoverProductsPage = asyncPage(() => import('~/components/pages/WmsCutoverProductsPage.vue'))
 const WmsCutoverOpeningBalancePage = asyncPage(() => import('~/components/pages/WmsCutoverOpeningBalancePage.vue'))
@@ -808,6 +810,18 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'purchase-requests' && segs[1] !== 'awaiting-approval') {
     return { component: PurchaseRequestDetailsPage, id: segs[1] }
+  }
+  // /purchase-invoices/:id/add-payment → Add purchase payment form (precede :id)
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'add-payment') {
+    return { component: AddPurchasePaymentPage, id: segs[1] }
+  }
+  // /purchase-payments/:id/edit → Edit purchase payment
+  if (segs.length >= 3 && segs[0] === 'purchase-payments' && segs[2] === 'edit') {
+    return { component: AddPurchasePaymentPage, id: segs[1] }
+  }
+  // /purchase-payments/:id → Purchase payment detail
+  if (segs.length >= 2 && segs[0] === 'purchase-payments') {
+    return { component: PurchasePaymentDetailsPage, id: segs[1] }
   }
   // /purchase-invoices/:id/apply-debit-memo → Apply debit memo form (precede :id)
   if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'apply-debit-memo') {

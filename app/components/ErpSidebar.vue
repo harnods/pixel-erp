@@ -946,6 +946,7 @@ const SECTION_PARENT: Record<string, string> = {
   Receiving: 'Inbound delivery',
   'Put away': 'Inbound delivery',
   'Payments received': 'Sales invoices',
+  'Purchase payments': 'Purchase invoices',
 }
 
 watch([currentPageKey, activeSectionOverride, () => route.path, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {
