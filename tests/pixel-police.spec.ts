@@ -56,7 +56,7 @@ const GRANDFATHERED = new Set([
 ])
 const isGrandfathered = (f: string) => GRANDFATHERED.has(rel(f))
 
-function violations(files: string[], re: RegExp, opts: { skipComments?: boolean } = {}): string[] {
+function violations(files: string[], re: RegExp, opts: { skipComments?: boolean; exempt?: RegExp } = {}): string[] {
   const hits: string[] = []
   for (const f of files) {
     // `skipComments` is opt-in and changes nothing for the rules that don't ask
@@ -67,7 +67,13 @@ function violations(files: string[], re: RegExp, opts: { skipComments?: boolean 
     const scan = opts.skipComments ? blankComments(src) : src
     const shown = src.split('\n')
     scan.split('\n').forEach((line, i) => {
-      if (re.test(line)) hits.push(`${rel(f)}:${i + 1}  ${shown[i]!.trim().slice(0, 200)}`)
+      if (!re.test(line)) return
+      // `exempt` is tested against the FULL line, before the 200-char display
+      // truncation below — a valid `pixel-police-allow-*` comment past char 200
+      // must still exempt the line (otherwise long one-liners slip through the
+      // guard purely because their allow-comment got sliced off the hit string).
+      if (opts.exempt && opts.exempt.test(line)) return
+      hits.push(`${rel(f)}:${i + 1}  ${shown[i]!.trim().slice(0, 200)}`)
     })
   }
   return hits
@@ -309,9 +315,9 @@ describe('pixel-police — CRM module: Pixel + sanctioned overrides only (full s
   })
 
   it('no drop-shadow on surfaces (Enterprise surfaces use a 1px border; inset rings are fine)', () => {
-    const hits = violations(crmFiles, /box-shadow|--mp-shadows-/).filter(
-      (h) => !/inset|pixel-police-allow-shadow/.test(h),
-    )
+    const hits = violations(crmFiles, /box-shadow|--mp-shadows-/, {
+      exempt: /inset|pixel-police-allow-shadow/,
+    })
     expect(hits, `Drop-shadow on a surface — use a 1px border, not box-shadow:\n${hits.join('\n')}`).toEqual([])
   })
 })
