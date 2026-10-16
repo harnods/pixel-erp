@@ -93,6 +93,8 @@ const hasReminderChanges = computed(() =>
 type Section = 'product' | 'reminders'
 const editingSection = ref<Section | null>(null)
 const discardOpen = ref(false)
+// Inline validation: reminders can't be enabled without at least one rule.
+const reminderError = ref('')
 
 const currentHasChanges = computed(() =>
   editingSection.value === 'product'   ? hasProductChanges.value :
@@ -106,6 +108,7 @@ function startEdit(section: Section) {
     draftReminders.sendBatchExpiryReminder = committedReminders.sendBatchExpiryReminder
     draftReminders.rules = committedReminders.rules.map(r => ({ ...r }))
   }
+  reminderError.value = ''
   editingSection.value = section
 }
 
@@ -131,6 +134,11 @@ function saveEdit() {
     Object.assign(committedProduct, draftProduct)
     toast.notify({ variant: 'success', title: t('Product settings changes saved'), maxWidth: 'max-content' })
   } else if (editingSection.value === 'reminders') {
+    // Enabling reminders with no rule would send nothing — require one.
+    if (draftReminders.sendBatchExpiryReminder && draftReminders.rules.length === 0) {
+      reminderError.value = t('Add at least one reminder rule to enable email reminders.')
+      return
+    }
     committedReminders.sendBatchExpiryReminder = draftReminders.sendBatchExpiryReminder
     committedReminders.rules = draftReminders.rules.map(r => ({ ...r }))
     toast.notify({ variant: 'success', title: t('Batch reminders changes saved'), maxWidth: 'max-content' })
@@ -216,6 +224,7 @@ function saveReminderRule() {
       sendCopy: modalForm.sendCopy,
     })
   }
+  reminderError.value = ''
   reminderModalOpen.value = false
 }
 
@@ -331,7 +340,7 @@ function insertPlaceholder(value: string) {
             :is-checked="editingSection === 'reminders' ? draftReminders.sendBatchExpiryReminder : committedReminders.sendBatchExpiryReminder"
             :is-disabled="editingSection !== 'reminders'"
             :aria-label="t('Send batch expiry reminder email')"
-            @update:is-checked="(v: boolean) => { draftReminders.sendBatchExpiryReminder = v }"
+            @update:is-checked="(v: boolean) => { draftReminders.sendBatchExpiryReminder = v; reminderError = '' }"
           />
         </div>
 
@@ -343,7 +352,8 @@ function insertPlaceholder(value: string) {
           </div>
 
           <template v-if="editingSection === 'reminders' && draftReminders.sendBatchExpiryReminder">
-            <div v-if="draftReminders.rules.length > 0" class="is-reminder-list">
+            <p v-if="draftReminders.rules.length === 0" class="is-reminder-empty">{{ t('No reminder rule yet.') }}</p>
+            <div v-else class="is-reminder-list">
               <span class="is-reminder-list-label">{{ t('Send reminder:') }}</span>
               <div v-for="rule in draftReminders.rules" :key="rule.id" class="is-reminder-item">
                 <MpCheckbox :id="`is-rule-${rule.id}`" :is-checked="true" :aria-label="`${rule.days} days ${rule.timing.toLowerCase()} the expiry date`" />
@@ -368,6 +378,7 @@ function insertPlaceholder(value: string) {
             >
               {{ t('Add reminder rule') }}
             </MpButton>
+            <p v-if="reminderError" class="is-inline-error">{{ reminderError }}</p>
           </template>
           <span v-else class="is-row-value">{{ reminderRuleSummary }}</span>
         </div>
@@ -641,6 +652,18 @@ function insertPlaceholder(value: string) {
 .is-add-rule-btn {
   align-self: flex-start;
   margin-top: var(--mp-spacing-2);
+}
+
+.is-reminder-empty {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-subtle);
+}
+
+.is-inline-error {
+  margin: var(--mp-spacing-1) 0 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-danger, #c0362c);
 }
 
 /* ─── Checkbox row ──────────────────────────────────────────────────────── */
