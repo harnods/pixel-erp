@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'settings-purchase-page',
+    title: 'Settings > Purchases page',
+    description:
+      'New Purchases settings page mirroring the Sales settings pattern: General settings with hover Edit → inline edit (default payment term, vendor-in-PR / shipping / discounts / deposit toggles, default message), Email templates with kebab (…) → Edit template modal, and a Document layout & branding section with Customize design.',
+    date: '2026-10-16',
+    files: ['SettingsPurchasePage.vue'],
+  },
+  {
     id: 'settings-sales-page',
     title: 'Settings > Sales page',
     description:
