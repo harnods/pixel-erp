@@ -217,6 +217,8 @@ const fixedRules = [
 
 <style scoped>
 .vm-page {
+  --vr-icon-sz: 36px;
+  --vr-badge-py: 1px;
   display: grid;
   grid-template-columns: minmax(0, 760px) minmax(0, 1fr);
   gap: var(--mp-spacing-6);
@@ -238,7 +240,7 @@ const fixedRules = [
 }
 .vm-card-head { display: flex; align-items: flex-start; gap: var(--mp-spacing-3); }
 .vm-card-icon {
-  width: 36px; height: 36px; border-radius: var(--mp-radii-md);
+  width: var(--vr-icon-sz); height: var(--vr-icon-sz); border-radius: var(--mp-radii-md);
   background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   color: var(--mp-text-secondary);
@@ -267,7 +269,7 @@ const fixedRules = [
 }
 .vm-rule-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .vm-weight {
-  padding: 1px var(--mp-spacing-2); border-radius: var(--mp-radii-full);
+  padding: var(--vr-badge-py) var(--mp-spacing-2); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary);
   font-size: 10px; font-weight: var(--mp-font-weights-bold);
   white-space: nowrap;

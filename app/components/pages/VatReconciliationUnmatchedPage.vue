@@ -282,7 +282,8 @@ function sourceLabel(side: ReconSide) {
 .vu-tile.is-warning { background: var(--mp-colors-orange-100); border-color: var(--mp-colors-orange-200); color: var(--mp-colors-orange-800); }
 .vu-tile.is-critical { background: var(--mp-colors-red-100); border-color: var(--mp-colors-red-200); color: var(--mp-colors-red-800); }
 .vu-tile-icon {
-  width: 36px; height: 36px; border-radius: var(--mp-radii-md);
+  --vu-icon-sz: 36px;
+  width: var(--vu-icon-sz); height: var(--vu-icon-sz); border-radius: var(--mp-radii-md);
   background: var(--mp-background-surface);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   color: inherit;

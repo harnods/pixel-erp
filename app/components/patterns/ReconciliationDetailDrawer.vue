@@ -343,11 +343,14 @@ const activity = computed(() => [
 
 <style scoped>
 .rdd-card {
+  --rdd-panel-w: 720px;
+  --rdd-icon-sz: 40px;
+  --rdd-badge-p: 1px var(--mp-spacing-2);
   display: flex; flex-direction: column; height: 100%;
   background: var(--mp-background-surface);
 }
 :deep([data-pixel-component="MpDrawerContent"]) {
-  width: 720px !important;
+  width: var(--rdd-panel-w) !important;
   max-width: 92vw !important;
 }
 
@@ -359,7 +362,7 @@ const activity = computed(() => [
 }
 .rdd-header-main { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .rdd-state-icon {
-  width: 40px; height: 40px; border-radius: var(--mp-radii-md);
+  width: var(--rdd-icon-sz); height: var(--rdd-icon-sz); border-radius: var(--mp-radii-md);
   border: 1px solid transparent;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
@@ -415,7 +418,7 @@ const activity = computed(() => [
 .rdd-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .rdd-section-head { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .rdd-count {
-  padding: 1px var(--mp-spacing-2); border-radius: var(--mp-radii-full);
+  padding: var(--rdd-badge-p); border-radius: var(--mp-radii-full);
   background: var(--mp-background-neutral-subtle); color: var(--mp-text-subtle);
   font-size: 11px; font-weight: var(--mp-font-weights-bold);
 }

@@ -1888,7 +1888,7 @@ function startResize(e: MouseEvent) {
         <!-- Off-nav module pages get a breadcrumb (their only way back) plus the
              masa they're scoped to. Every other page keeps the bare h1 it had. -->
         <div v-if="titleBreadcrumb" class="page-title-lead">
-          <button class="page-breadcrumb" type="button" @click="router.push(titleBreadcrumb.to)">
+          <button class="btn-enterprise page-breadcrumb" type="button" @click="router.push(titleBreadcrumb.to)">
             {{ t(titleBreadcrumb.label) }}
           </button>
           <div class="page-title-row">

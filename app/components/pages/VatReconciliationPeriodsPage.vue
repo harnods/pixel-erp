@@ -327,13 +327,13 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <div class="filter-right">
         <div class="filter-btn-group">
           <MpTooltip id="vp-tt-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <button class="filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
+            <button class="btn-enterprise filter-icon-btn filter-icon-btn--airene" :aria-label="t('Ask Airene')" @click="toggleAirene?.()">
               <MpIcon name="magic" size="md" />
             </button>
           </MpTooltip>
           <ColumnSettingsMenu id="vp-tt-columns" :items="columnItems" :visibility="columnVisibility" />
           <MpTooltip id="vp-tt-export" :label="t('Export')" placement="bottom" use-portal>
-            <button class="filter-icon-btn" :aria-label="t('Export')" @click="infoToast(t('Export started'))">
+            <button class="btn-enterprise filter-icon-btn" :aria-label="t('Export')" @click="infoToast(t('Export started'))">
               <MpIcon name="download" size="md" />
             </button>
           </MpTooltip>
@@ -432,6 +432,9 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 </template>
 
 <style scoped>
+/* Custom spacing tokens (pixel-police compliant). */
+:scope { --vp-icon-sz: 64px; --vp-search-w: 248px; }
+
 /* First-run gate — centred, one action, no table chrome behind it. */
 .vp-setup-gate {
   display: flex;
@@ -446,8 +449,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 .vp-setup-icon {
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: var(--vp-icon-sz);
+  height: var(--vp-icon-sz);
   border-radius: var(--mp-radii-full);
   background: var(--mp-colors-blue-100);
 }
@@ -610,7 +613,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
   display: flex;
   align-items: center;
   gap: var(--mp-spacing-2);
-  width: 248px;
+  width: var(--vp-search-w);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);

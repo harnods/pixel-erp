@@ -341,7 +341,7 @@ function reviewWithAirene() {
 
         <!-- Status — placeholder is the bare object noun per the UXW rule. -->
         <div class="filter-select-wrap">
-          <select v-model="statusFilter" class="filter-select" :aria-label="t('Status')">
+          <select v-model="statusFilter" class="filter-select search-input" :aria-label="t('Status')">
             <option value="">{{ t('Status') }}</option>
             <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -421,7 +421,7 @@ function reviewWithAirene() {
         >
           <!-- ERP side -->
           <template v-if="pair.erp">
-            <button type="button" class="vr-side" @click="openDetail(pair)">
+            <button type="button" class="btn-enterprise vr-side" @click="openDetail(pair)">
               <div class="vr-side-head">
                 <MpIcon name="doc" size="sm" class="vr-side-icon" />
                 <span class="vr-side-ref">{{ pair.erp.ref }}</span>
@@ -490,7 +490,7 @@ function reviewWithAirene() {
 
           <!-- Coretax side -->
           <template v-if="pair.djp">
-            <button type="button" class="vr-side vr-side--right" @click="openDetail(pair)">
+            <button type="button" class="btn-enterprise vr-side vr-side--right" @click="openDetail(pair)">
               <div class="vr-side-head vr-side-head--right">
                 <MpIcon name="doc" size="sm" class="vr-side-icon" />
                 <span class="vr-side-ref">{{ pair.djp.ref }}</span>
@@ -606,7 +606,13 @@ function reviewWithAirene() {
 .vr-finalized-text { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
 
 
-.vr-page { display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 0; }
+.vr-page {
+  --vr-badge-p: 1px var(--mp-spacing-2);
+  --vr-search-w: 248px;
+  --vr-search-h: 36px;
+  --vr-status-w: 160px;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 0;
+}
 
 /* ── KPI strip ── */
 .vr-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--mp-spacing-3); }
@@ -639,7 +645,7 @@ function reviewWithAirene() {
 .vr-kpi.is-clear .vr-kpi-sub, .vr-kpi.is-gap .vr-kpi-sub { color: inherit; }
 .vr-delta {
   display: inline-flex; align-items: center; gap: 2px;
-  padding: 1px var(--mp-spacing-2); border-radius: var(--mp-radii-full);
+  padding: var(--vr-badge-p); border-radius: var(--mp-radii-full);
   background: var(--mp-colors-red-100); color: var(--mp-colors-red-800);
   font-size: 10px; font-weight: var(--mp-font-weights-bold);
   white-space: nowrap;
@@ -657,7 +663,7 @@ function reviewWithAirene() {
 /* Pill search — copied from SalesInvoicesPage.vue's filter bar. */
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  width: 248px; height: 36px;
+  width: var(--vr-search-w); height: var(--vr-search-h);
   padding: 0 var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
@@ -683,7 +689,7 @@ function reviewWithAirene() {
 .filter-select-wrap {
   position: relative; display: inline-flex; align-items: center;
   /* 160px fixed per index-page-format.md §A.3. */
-  width: 160px; height: 36px;
+  width: var(--vr-status-w); height: var(--vr-search-h);
   flex-shrink: 0;
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
