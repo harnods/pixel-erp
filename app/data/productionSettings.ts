@@ -19,10 +19,29 @@ export interface ProductionSettings {
    * Start when off (R3, R4).
    */
   partialProduction: boolean
+  /*
+   * The four below are stored and editable but not yet read by any screen —
+   * agreed scope for the settings page (2026-10-16). Wire each into its
+   * screen before relying on it.
+   */
+  /** Whether a production plan must carry a plan period. */
+  requirePlanPeriod: boolean
+  /** Whether production entries may be dated before today. */
+  allowBackdatedEntries: boolean
+  /** Whether material consumption can be recorded in stages. */
+  partialConsumption: boolean
+  /** Whether a work order can be requested straight from a sales order. */
+  salesOrderToWorkOrder: boolean
 }
 
 const SNAPSHOT_KEY = 'production-settings-v1'
-const DEFAULTS: ProductionSettings = { partialProduction: true }
+const DEFAULTS: ProductionSettings = {
+  partialProduction: true,
+  requirePlanPeriod: true,
+  allowBackdatedEntries: true,
+  partialConsumption: true,
+  salesOrderToWorkOrder: true,
+}
 
 /** Reactive, so a screen reading a flag updates the moment it is saved. */
 export const productionSettings = reactive<ProductionSettings>({

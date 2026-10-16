@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'production-settings-layout',
+    title: "Production settings: three sections, value column",
+    description:
+      "Matches the Production settings design: General settings, Production readiness and Integration, each row a label + description with its value on the right. Four new settings (plan period, backdated entries, partial consumption, sales order to work order) are saved but not yet enforced anywhere.",
+    date: '2026-10-16',
+    files: ['SettingsProductionPage.vue', 'productionSettings.ts'],
+  },
+  {
+    id: 'production-settings-hover-edit',
+    title: "Production settings: Edit appears on hover",
+    description:
+      "The Edit button shows only while the pointer is over the settings area, or while keyboard focus is inside it.",
+    date: '2026-10-16',
+    files: ['SettingsProductionPage.vue'],
+  },
+  {
     id: 'subcon-view-transfer',
     title: "Subcon WO: View warehouse transfer",
     description:
