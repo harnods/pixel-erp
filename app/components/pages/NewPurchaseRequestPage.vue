@@ -615,7 +615,11 @@ function onSave() {
   border: none; border-radius: 0;
   box-shadow: var(--mp-shadows-none, none); /* pixel-police-allow-shadow: removing the default shadow */
 }
-.si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.si-td--input { position: relative; }
+.si-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
 .si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }
 

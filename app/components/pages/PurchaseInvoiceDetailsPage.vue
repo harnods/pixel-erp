@@ -2,6 +2,7 @@
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -9,8 +10,12 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseInvoiceDetail } from '~/data/purchaseInvoiceDetails'
 import { purchaseInvoices } from '~/data/purchaseInvoices'
+import {
+  vendorAvailableDebit, applicationsForInvoice, applicationLabel,
+} from '~/data/debitMemos'
 
 // `orderId` is the shared detail-route prop name — [...slug].vue binds :order-id
 // for every detail page, whatever the module.
@@ -37,6 +42,30 @@ function confirmDelete() {
 
 // Tabs only appear once they have something to show.
 const hasLinkedTransactions = computed(() => invoice.value.linkedTransactions.length > 0)
+
+// Payment rows = cash payments + debit-memo applications.
+interface PaymentRow { date: string; number: string; applicationId?: string; method: string; account: string; reference: string; amount: number }
+const debitApplications = computed(() => applicationsForInvoice(invoice.value.id))
+const paymentRows = computed<PaymentRow[]>(() => {
+  const cash: PaymentRow[] = invoice.value.payments.map(p => ({ date: p.date, number: '—', method: p.method, account: '—', reference: p.reference, amount: p.amount }))
+  const debit: PaymentRow[] = debitApplications.value.map(({ application, amount }) => ({
+    date: application.date, number: applicationLabel(application.number), applicationId: application.id,
+    method: t('Debit memo'), account: '—', reference: '—', amount,
+  }))
+  return [...debit, ...cash].sort((a, b) => b.date.localeCompare(a.date))
+})
+const hasPayments = computed(() => paymentRows.value.length > 0)
+const hasDebitApplied = computed(() => invoice.value.debitApplied > 0)
+
+// Debit memo: available debit and apply action
+const availableDebit = computed(() => vendorAvailableDebit(invoice.value.vendor.id))
+const canApplyDebit = computed(() => invoice.value.balance > 0 && availableDebit.value > 0)
+const applyDebitModalOpen = ref(false)
+function goToApplyDebitForm() {
+  applyDebitModalOpen.value = false
+  router.push(`/purchase-invoices/${invoice.value.id}/apply-debit-memo`)
+}
+onMounted(() => { if (invoice.value && canApplyDebit.value) applyDebitModalOpen.value = true })
 
 const activityEntries = computed(() => [{
   date: invoice.value.lastUpdatedAt,
@@ -220,7 +249,7 @@ function goBack() { router.push('/purchase-invoices') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')" :value="invoice.vendor.name" />
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(invoice.vendor.name)}`, '_blank')">{{ invoice.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -357,6 +386,23 @@ function goBack() { router.push('/purchase-invoices') }
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.amount) }}</span>
           </div>
+          <div v-if="invoice.cashPaid > 0" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.cashPaid) }}</span>
+          </div>
+          <div v-if="hasDebitApplied" class="detail-total-row" data-devchange="pinv-less-debit-memo">
+            <span class="detail-total-row-label">{{ t('Less: Debit Memo') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.debitApplied) }}</span>
+          </div>
+          <div v-if="invoice.cashPaid === 0 && !hasDebitApplied" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(0) }}</span>
+          </div>
+          <div class="detail-total-rule" />
+          <div class="detail-total-row">
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Balance due') }}</span>
+            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.balance) }}</span>
+          </div>
         </div>
       </section>
 
@@ -365,11 +411,12 @@ function goBack() { router.push('/purchase-invoices') }
 
       <!-- ── Tabs — only the ones with content to show ── -->
       <MpTabs
-        v-if="hasLinkedTransactions"
+        v-if="hasLinkedTransactions || hasPayments"
         :key="invoice.id" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs"
       >
         <MpTabList>
           <MpTab v-if="hasLinkedTransactions" id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
+          <MpTab v-if="hasPayments" id="detail-tab-payments" value="payments">{{ t('Payments') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
           <MpTabPanel v-if="hasLinkedTransactions" value="linked">
@@ -401,6 +448,43 @@ function goBack() { router.push('/purchase-invoices') }
               </tbody>
             </table>
           </MpTabPanel>
+
+          <MpTabPanel v-if="hasPayments" value="payments" data-devchange="pinv-payments-tab">
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
+            <table class="detail-linked">
+              <colgroup>
+                <col class="detail-linked-col--date" />
+                <col class="detail-linked-col--number" />
+                <col />
+                <col />
+                <col />
+                <col class="detail-linked-col--amount" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Payment method') }}</th>
+                  <th class="detail-th">{{ t('Account') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(p, i) in paymentRows" :key="i" class="detail-item-row">
+                  <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
+                  <td class="detail-td">
+                    <span v-if="!p.applicationId" class="detail-td--muted">{{ p.number }}</span>
+                    <a v-else class="cell-link cell-text" @click="router.push(`/debit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
+                  </td>
+                  <td class="detail-td">{{ p.method }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.account }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.reference }}</td>
+                  <td class="detail-td detail-td--num">{{ formatIDR(p.amount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
 
@@ -409,7 +493,7 @@ function goBack() { router.push('/purchase-invoices') }
         <!-- Print & share (secondary dropdown) -->
         <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" left-icon="chevrons-down">
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" right-icon="chevrons-down">
               {{ t('Print & share') }}
             </MpButton>
           </MpPopoverTrigger>
@@ -431,7 +515,7 @@ function goBack() { router.push('/purchase-invoices') }
              so the action set is kept simple (no receive-payment / tax-document flows). -->
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" left-icon="chevrons-down">
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" right-icon="chevrons-down">
               {{ t('Actions') }}
             </MpButton>
           </MpPopoverTrigger>
@@ -439,6 +523,7 @@ function goBack() { router.push('/purchase-invoices') }
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canApplyDebit" data-devchange="pinv-apply-debit-memo" @click="goToApplyDebitForm">{{ t('Apply debit memo') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
@@ -459,6 +544,22 @@ function goBack() { router.push('/purchase-invoices') }
       :entries="activityEntries"
       @close="activityOpen = false"
     />
+
+    <!-- Apply debit memo proactive prompt (mirrors credit memo on SalesInvoiceDetailsPage) -->
+    <MpModal
+      id="apply-debit-confirm" :is-open="applyDebitModalOpen" size="md" :is-centered="false" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="applyDebitModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Apply debit memo?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>{{ t('The vendor has') }} {{ formatIDR(availableDebit) }} {{ t('in available debit.') }}</MpModalBody>
+        <MpModalFooter>
+          <MpButton variant="ghost" is-rounded @click="applyDebitModalOpen = false">{{ t('Not now') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="goToApplyDebitForm">{{ t('Apply debit memo') }}</MpButton>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
     <ConfirmModal
       v-model:is-open="deleteOpen"
@@ -774,12 +875,13 @@ function goBack() { router.push('/purchase-invoices') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--stage  { width: 160px; }
 .detail-linked-col--actions { width: 52px; }
+.detail-linked-col--amount { width: 200px; }
 
 .row-kebab {
   display: flex !important;

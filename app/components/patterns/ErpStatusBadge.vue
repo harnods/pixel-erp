@@ -60,6 +60,9 @@ const statusConfig: Record<string, StatusConfig> = {
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
   unpaid:     { type: 'warning',      label: 'Unpaid'     },
+  'partially-paid': { type: 'warning', label: 'Partially paid' },
+  'partially-used': { type: 'information', label: 'Partially used' },
+  'used-up':  { type: 'announcement', label: 'Used up'    },
   pending:    { type: 'warning',      label: 'Pending'    },
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },

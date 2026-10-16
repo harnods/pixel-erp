@@ -1,5 +1,7 @@
 import { computeTotals, type SalesOrderTotals } from './salesOrders'
 import { salesInvoices } from './salesInvoices'
+import { invoiceCreditApplied } from './creditMemos'
+import { invoiceCashReceived, paymentsForInvoice, paymentLabel, cashAccountLabel } from './paymentsReceived'
 import { CATALOG } from './catalog'
 import type { SalesInvoice, SalesOrderItem, SILineItem } from './types'
 
@@ -61,7 +63,12 @@ export interface SalesInvoiceDetail extends SalesInvoice {
   memo: string
   attachments: SIAttachment[]
   totals: SalesOrderTotals
+  /** Every settlement = cash + credit memo applied (amountPaid + balance === total). */
   amountPaid: number
+  /** Cash collected (seed payments). */
+  cashPaid: number
+  /** Credit memo applied to this invoice (Credit Memo Applied docs). */
+  creditApplied: number
   payments: SIPayment[]
   lastUpdatedBy: string
   lastUpdatedAt: string
@@ -187,8 +194,8 @@ function buildLinked(inv: SalesInvoice, idx: number): SILinkedTxn[] {
     { date: addDays(inv.date, -4), type: 'Sales Order',    number: `#${10090 + idx}`, status: 'closed'    },
     { date: addDays(inv.date, -1), type: 'Sales Delivery', number: `#${30000 + idx}`, status: 'delivered' },
   ]
-  if (inv.balance === 0) {
-    linked.push({ date: addDays(inv.dueDate, -2), type: 'Payment Receipt', number: `#${50000 + idx}`, status: 'paid' })
+  for (const { payment } of paymentsForInvoice(inv.id)) {
+    linked.push({ date: payment.date, type: 'Payment Received', number: `#${payment.number}`, status: 'paid' })
   }
   return linked
 }
@@ -203,16 +210,18 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
   // order-level discount, which lands the tax base exactly on targetBase
   const globalDiscount = items.reduce((s, it) => s + it.amount, 0) - targetBase
   const totals = computeTotals(items, globalDiscount, 0, base.hasPpn ? undefined : 0)
-  const amountPaid = base.total - base.balance
+  const creditApplied = invoiceCreditApplied(base.id)
+  const actualCash = invoiceCashReceived(base.id)
+  const impliedSettlement = Math.max(0, base.total - base.balance - creditApplied)
+  const cashPaid = Math.max(actualCash, impliedSettlement)
+  const amountPaid = cashPaid + creditApplied
 
-  const payments: SIPayment[] = amountPaid > 0
-    ? [{
-        date: addDays(base.dueDate, -2),
-        method: pick(PAYMENT_METHODS, idx),
-        reference: `TRF-${String(700000 + idx * 13)}`,
-        amount: amountPaid,
-      }]
-    : []
+  const payments: SIPayment[] = paymentsForInvoice(base.id).map(({ payment, amount }) => ({
+    date: payment.date,
+    method: 'Bank transfer',
+    reference: paymentLabel(payment.number),
+    amount,
+  }))
 
   return {
     ...base,
@@ -228,6 +237,8 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
     attachments: [{ name: `${base.number}-Signed.pdf`, sizeKB: 78 }],
     totals,
     amountPaid,
+    cashPaid,
+    creditApplied,
     payments,
     lastUpdatedBy: 'Rizal Candra',
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,

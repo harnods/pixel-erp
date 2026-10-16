@@ -1165,7 +1165,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* Strip the Pixel control's own border + focus ring so it doesn't double up with the
    cell ring — single gray focus border (same grey as the search input), full row height. */
 .wtf-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; box-shadow: none !important; }
-.wtf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.wtf-td--input { position: relative; }
+.wtf-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 
 /* Transfer qty (batch) — qty value + Manage batch stacked as 2 lines in one cell,
    same right-aligned column pattern as .wtf-avail above. */
@@ -1298,9 +1302,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wtf-loc-tr .wtf-loc-td { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .wtf-loc-tr:last-child .wtf-loc-td { border-bottom: none; }
 .wtf-loc-td { background: var(--mp-background-neutral, #fff); padding: 0; vertical-align: top; }
-.wtf-loc-td--sel:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.wtf-loc-td--sel { position: relative; }
+.wtf-loc-td--sel:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .wtf-loc-td--qty { text-align: right; }
-.wtf-loc-td--qty:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.wtf-loc-td--qty { position: relative; }
+.wtf-loc-td--qty:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .wtf-loc-td--del { text-align: center; }
 .wtf-loc-trigger { display: flex; align-items: center; height: 40px; padding: 0 var(--mp-spacing-2); gap: var(--mp-spacing-1); }
 .wtf-loc-picker-input {

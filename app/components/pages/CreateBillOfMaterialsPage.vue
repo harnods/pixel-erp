@@ -1277,7 +1277,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-td--pct { padding: 0; background: var(--mp-background-neutral, #fff); }
 .bf-td--input :deep([class*='input']),
 .bf-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
-.bf-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); z-index: 1; }
+.bf-td--input { position: relative; }
+.bf-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .bf-del-btn {
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);

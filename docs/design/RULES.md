@@ -66,12 +66,15 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | `size="sm"` on primary/danger/ghost | drop it (sm = secondary, bulk-bar only) | `rule/btn-sm-secondary-only` |
 | An icon on a danger button | text-only danger | `rule/btn-danger-no-icon` |
 | `left-icon` on any button that isn't `+ New <noun>` | text-only (icon only on create) | `rule/btn-icon-add-only` |
+| Dark/default icon color on a header icon button | white `icon.inverse` via `<MpIcon>` | `rule/header-icon-inverse` |
+| `background.surface.bold.*` token or a visible border on a header icon button's hover | `rgba(255,255,255,.12)` veil, `border:none` | `rule/header-icon-veil-no-border` |
 | A leading icon on a menu item (incl. bulk actions) | text-only menu item | `rule/popover-no-icons` |
 | `left-icon` on a sm button | right-icon dropdown only | `rule/btn-sm-dropdown-only` |
 | `is-full-width` on a button | button hugs content | `rule/btn-no-full-width` |
 | Shipping only the populated success case | design every reachable state | `reachable-states.md` |
 | Placeholder text in an input/textarea | no placeholder; label the field | `rule/input-no-placeholder` |
 | `size="sm"` on a form field | md only (the default) | `rule/form-size-md-only` |
+| Hand-rolled Transaction no. field (or one with no settings gear) | `TransactionNoField` | `rule/form-transaction-no-field` |
 | Extra padding around a checkbox + its label | none; 12px gap is built in | `rule/checkbox-gap-12` |
 | A separate column just for a row checkbox | put it in the first data cell | `rule/table-checkbox-first-cell` |
 | Green/brand active segment, square segmented | pill + `#E2E8F0`/`#165082` active | `rule/segmented-control-pill` |
@@ -245,6 +248,28 @@ is the point: they *feel* normal, which is exactly why they slip through.
   signal "not ready" (loading/duplicate-submit lock is the only allowed disable).
   **Why:** disabled buttons hide *why* and give no feedback. **Lint:** review.
 
+## Global header bar — source: `docs/patterns/global-header-bar.md`
+
+The dark 56px app header (`ErpHeader`) on `background.header` (`#142D26`) —
+distinct from the light page title bar. Everything on it reads white.
+
+- **`rule/header-icon-inverse`** — *Do:* a header quick-action icon button renders
+  its glyph **white** via `<MpIcon :name="icon" color="icon.inverse" />` as the
+  button child, and the glyph **stays white** on hover/active. *Don't:* rely on
+  `:left-icon` on a ghost `MpButton` — the icon inherits the button's **dark**
+  currentColor and disappears on the dark header. **Why:** contrast on
+  `background.header`. **Standard = the shared `IconButton`**
+  (`app/components/IconButton.vue`); the quick-create `+` (`ErpQuickCreateMenu`)
+  uses the same pattern. **Lint:** review.
+- **`rule/header-icon-veil-no-border`** — *Do:* a header icon button's hover fill is
+  a **literal translucent white** `rgba(255,255,255,0.12)` (active/pressed
+  `rgba(255,255,255,0.2)`) and it has **`border: none`**. *Don't:* use the Panda
+  `background.surface.bold.hovered/pressed` tokens (they resolve to an **opaque
+  near-white `#f8f9f9`** here — a light box that washes out the white icon), and
+  don't leave the ghost `MpButton`'s 1px border (it shows as an outlined box on
+  hover). **Why:** only the subtle fill should change on the dark header, never a
+  light box or a border. **Lint:** review.
+
 ## Forms & modals — source: `docs/patterns/Form.md`, `docs/patterns/Modal.md`
 
 - **`rule/form-actions-always-present`** — *Do:* footer **Cancel + primary** are
@@ -257,6 +282,13 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/form-edit-save-changes`** — *Do:* edit-form primary = **"Save changes"**;
   create-form primary = **"Save"**. **Why:** verb matches the operation. **Lint:**
   review.
+- **`rule/form-transaction-no-field`** — *Do:* render every form's auto-generated
+  **Transaction no.** field with the shared **`TransactionNoField`** component (its
+  label carries a settings gear that opens `NumberFormatSettingsModal`). *Don't:*
+  hand-roll an `MpFormControl` + label + gear + modal, and don't ship a plain
+  disabled "Auto" input with **no** gear. **Why:** one consistent auto-numbering
+  affordance across all transaction forms; see `docs/patterns/Form.md` →
+  "Transaction no. field". **Lint:** review.
 - **`rule/modal-use-mpmodal`** — *Do:* every modal uses Pixel **`MpModal`** (size
   `md`, ghost Cancel + pill confirm) **where it renders**; otherwise use the
   hand-rolled Teleport overlay shell (copy **`CompleteWorkOrderModal.vue`**) with

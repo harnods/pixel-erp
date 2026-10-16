@@ -830,14 +830,22 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .sio-td--del { border-right: none; text-align: center; padding: 0; background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .sio-td--loc { padding: 0; }
 .sio-td--loc { padding: 0; }
-.sio-td--loc:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.sio-td--loc { position: relative; }
+.sio-td--loc:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .sio-loc-trigger { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 100%; min-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); cursor: text; }
 .sio-loc-input { flex: 1; min-width: 0; border: none; outline: none; background: none; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sio-loc-input::placeholder { color: var(--mp-text-placeholder); }
 .sio-loc-chevron { flex-shrink: 0; color: var(--mp-icon-default); }
 .sio-loc-none { margin: 0; padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); text-align: center; }
 .sio-td--input { padding: 0; }
-.sio-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.sio-td--input { position: relative; }
+.sio-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .sio-td--add-loc { padding: 0; }
 .sio-qty-input { width: 100%; text-align: right; height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); border: none; background: transparent; color: var(--mp-text-default); font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; outline: none; }
 .sio-qty-input::placeholder { color: var(--mp-text-placeholder); }

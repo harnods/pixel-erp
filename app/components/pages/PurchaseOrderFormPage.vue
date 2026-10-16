@@ -1254,7 +1254,11 @@ function onSendToFulfillment() {
   border-radius: 0; border-color: transparent; background: transparent;
   box-shadow: var(--mp-shadows-none, none) !important; /* pixel-police-allow-shadow: strip inner control chrome so the cell owns the ring */
 }
-.pit-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pit-td--input { position: relative; }
+.pit-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pit-td--dimensions { padding: 0; }
 .pit-num-input :deep(input) { text-align: right; }
 

@@ -66,6 +66,8 @@ export default defineNuxtConfig({
     "@/assets/css/erp.css",
     // Shared chrome for the full-bleed CRM list pages (title bar/filter/table/tags).
     "@/assets/css/crm-page.css",
+    // Shared shell for the Credit memo flow detail + form pages.
+    "@/assets/css/credit-memo.css",
   ],
   postcss: {
     plugins: {

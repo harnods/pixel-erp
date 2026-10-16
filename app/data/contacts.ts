@@ -180,6 +180,55 @@ const SEED: Contact[] = [
 SEED[6]!.types = ['customer', 'vendor']
 SEED[8]!.types = ['other']
 
+function vendor(
+  id: string, displayName: string, companyName: string, email: string, phone: string,
+  city: string, groups: string[], creditLimit: number, updatedAt: string,
+): Contact {
+  return {
+    ...blank(), id, displayName, companyName, groups,
+    types: ['vendor'],
+    emails: [email], phone, mobile: '',
+    billingAddress: `${city}, Indonesia`, shippingAddress: `${city}, Indonesia`,
+    creditLimit, updatedAt,
+    banks: [],
+  }
+}
+
+const VENDOR_SEED: Contact[] = [
+  vendor('CT013', 'Klasik Beans Cooperative',    'Klasik Beans Cooperative',    'sales@klasikbeans.coop',         '022-5560001',  'Bandung',    [],              0, '2026-01-20T08:00:00+07:00'),
+  vendor('CT014', 'Sagaleh Coffee Supply',       'Sagaleh Coffee Supply',       'order@sagaleh.co.id',            '0751-556002',  'Padang',     [],              0, '2026-01-19T09:30:00+07:00'),
+  vendor('CT015', 'Gayo Highland Exporters',     'Gayo Highland Exporters',     'export@gayohighland.com',        '0643-556003',  'Takengon',   [],              0, '2026-01-18T10:00:00+07:00'),
+  vendor('CT016', 'Toraja Sapan Estate',         'Toraja Sapan Estate',         'estate@torajasapan.co.id',       '0423-556004',  'Toraja',     [],              0, '2026-01-17T11:00:00+07:00'),
+  vendor('CT017', 'Lampung Robusta Traders',     'Lampung Robusta Traders',     'trade@lampungrobusta.com',       '0721-556005',  'Lampung',    [],              0, '2026-01-16T08:45:00+07:00'),
+  vendor('CT018', 'PT Kemasan Prima Nusantara',  'PT Kemasan Prima Nusantara',  'sales@kemasanprima.co.id',       '021-5560006',  'Tangerang',  [],              0, '2026-01-15T14:20:00+07:00'),
+  vendor('CT019', 'Roast Machinery Indonesia',   'Roast Machinery Indonesia',   'info@roastmachinery.id',         '021-5560007',  'Jakarta',    [],              0, '2026-01-14T09:10:00+07:00'),
+  vendor('CT020', 'CV Logistik Antar Pulau',     'CV Logistik Antar Pulau',     'ops@logistikantarpulau.co.id',   '031-5560008',  'Surabaya',   [],              0, '2026-01-13T10:30:00+07:00'),
+  vendor('CT021', 'PLN (Persero)',               'PLN (Persero)',               'corporate@pln.co.id',            '123',          'Jakarta',    [],              0, '2026-01-12T08:00:00+07:00'),
+  vendor('CT022', 'Telkom Indonesia',            'Telkom Indonesia',            'corporate@telkom.co.id',         '147',          'Jakarta',    [],              0, '2026-01-11T09:00:00+07:00'),
+  vendor('CT023', 'PT Properti Sentosa',         'PT Properti Sentosa',         'lease@propertisentosa.co.id',    '021-5560011',  'Jakarta',    [],              0, '2026-01-10T13:00:00+07:00'),
+  vendor('CT024', 'Cloud & Software Partners',   'Cloud & Software Partners',   'billing@cloudsw.id',             '021-5560012',  'Jakarta',    [],              0, '2026-01-09T11:15:00+07:00'),
+  vendor('CT025', 'Flores Manggarai Arabica',    'Flores Manggarai Arabica',    'sales@floresmanggarai.co.id',    '0385-556013',  'Ruteng',     [],              0, '2026-01-08T08:30:00+07:00'),
+  vendor('CT026', 'Kintamani Bali Coffee',       'Kintamani Bali Coffee',       'order@kintamanicoffee.com',      '0366-556014',  'Bangli',     [],              0, '2026-01-07T10:00:00+07:00'),
+  vendor('CT027', 'Wamena Papua Highlands',      'Wamena Papua Highlands',      'highland@wamenacoffee.co.id',    '0969-556015',  'Wamena',     [],              0, '2026-01-06T09:00:00+07:00'),
+  vendor('CT028', 'Bajawa Ngada Cooperative',    'Bajawa Ngada Cooperative',    'coop@bajawangada.org',           '0384-556016',  'Bajawa',     [],              0, '2026-01-05T14:00:00+07:00'),
+  vendor('CT029', 'Temanggung Java Estate',      'Temanggung Java Estate',      'estate@temanggung.co.id',        '0293-556017',  'Temanggung', [],              0, '2026-01-04T11:30:00+07:00'),
+  vendor('CT030', 'Enrekang Kalosi Traders',     'Enrekang Kalosi Traders',     'trade@kalositraders.co.id',      '0420-556018',  'Enrekang',   [],              0, '2026-01-03T09:45:00+07:00'),
+  vendor('CT031', 'Simalungun Sidikalang Mill',  'Simalungun Sidikalang Mill',  'mill@sidikalangcoffee.com',      '0631-556019',  'Sidikalang', [],              0, '2026-01-02T10:15:00+07:00'),
+  vendor('CT032', 'Bengkulu Rejang Lebong',      'Bengkulu Rejang Lebong',      'farm@rejanglebong.co.id',        '0732-556020',  'Bengkulu',   [],              0, '2026-01-01T08:00:00+07:00'),
+  vendor('CT033', 'PT Pallet & Crate Indonesia', 'PT Pallet & Crate Indonesia', 'sales@palletcrate.co.id',        '021-5560021',  'Bekasi',     [],              0, '2025-12-30T14:20:00+07:00'),
+  vendor('CT034', 'Jaya Label & Sticker',        'Jaya Label & Sticker',        'info@jayalabel.co.id',           '021-5560022',  'Jakarta',    [],              0, '2025-12-29T10:00:00+07:00'),
+  vendor('CT035', 'CV Alat Ukur Presisi',        'CV Alat Ukur Presisi',        'order@alatukur.co.id',           '031-5560023',  'Surabaya',   [],              0, '2025-12-28T09:30:00+07:00'),
+  vendor('CT036', 'Nusantara Freight Services',  'Nusantara Freight Services',  'booking@nusfreight.co.id',       '021-5560024',  'Jakarta',    [],              0, '2025-12-27T11:00:00+07:00'),
+  vendor('CT037', 'PT Fumigasi Mandiri',         'PT Fumigasi Mandiri',         'service@fumigasi.co.id',         '021-5560025',  'Tangerang',  [],              0, '2025-12-26T08:45:00+07:00'),
+  vendor('CT038', 'Indo Water Treatment',        'Indo Water Treatment',        'sales@indowater.co.id',          '021-5560026',  'Jakarta',    [],              0, '2025-12-25T13:00:00+07:00'),
+  vendor('CT039', 'Sampoerna Cleaning Supply',   'Sampoerna Cleaning Supply',   'order@sampoernaclean.co.id',     '031-5560027',  'Surabaya',   [],              0, '2025-12-24T10:30:00+07:00'),
+  vendor('CT040', 'Budi Jaya Safety Equipment',  'Budi Jaya Safety Equipment',  'budi@jayasafety.co.id',          '021-5560028',  'Jakarta',    [],              0, '2025-12-23T09:00:00+07:00'),
+  vendor('CT041', 'Ibu Ratna Catering',          'Ibu Ratna Catering',          'ratna.catering@gmail.com',       '0812-5560029', 'Bandung',    [],              0, '2025-12-22T15:00:00+07:00'),
+  vendor('CT042', 'Dian Pest Control',           'Dian Pest Control',           'dian.pestcontrol@gmail.com',     '0813-5560030', 'Bogor',      [],              0, '2025-12-21T08:30:00+07:00'),
+]
+
+SEED.push(...VENDOR_SEED)
+
 const STORE_KEY = 'contacts-v1'
 
 export const contacts = reactive<Contact[]>(
@@ -197,6 +246,13 @@ export function getContact(id: string): Contact | undefined {
 /** Contacts carrying a given role — backs the Customers / Vendors / Other lists. */
 export function contactsOfType(type: ContactType): Contact[] {
   return contacts.filter((c) => c.types.includes(type))
+}
+
+/** Resolve a contact id from a customer/company display name (join on name, as
+ *  the Transactions tab does), so a credit memo can link back to its contact. */
+export function getContactIdByName(name: string): string | undefined {
+  const n = name.trim().toLowerCase()
+  return contacts.find((c) => c.displayName.toLowerCase() === n || c.companyName.toLowerCase() === n)?.id
 }
 
 /** Next free id (CT013, CT014, …). */

@@ -646,8 +646,8 @@ function goBack() { router.push('/purchase-requests') }
   margin-top: var(--mp-spacing-0\.5);
 }
 
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

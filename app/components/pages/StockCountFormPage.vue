@@ -1302,7 +1302,11 @@ onMounted(() => {
 .scf-swap-search input { width: 100%; border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md); padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); outline: none; }
 .scf-swap-sku { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .scf-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
-.scf-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); }
+.scf-td--input { position: relative; }
+.scf-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold, #8c9596); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .scf-batch-total { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
 .scf-batch-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 /* Counted cell for batch/serial-tracked rows — value/input on top, "Manage…" link stacked below.

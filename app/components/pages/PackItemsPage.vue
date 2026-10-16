@@ -708,7 +708,11 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pak-td:last-child { border-right: none; }
 .pak-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); white-space: nowrap; }
 .pak-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
-.pak-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pak-td--input { position: relative; }
+.pak-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pak-td--input--error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .pak-qty-tooltip-wrap { display: block; width: 100%; }
 .pak-qty-input { display: block; width: 100%; box-sizing: border-box; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); text-align: right; font-variant-numeric: tabular-nums; line-height: var(--mp-line-heights-md); }
