@@ -67,6 +67,10 @@ export interface CostEntry {
 }
 
 export interface Milestone {
+  /** Set when verified: date, who verified, supporting document. */
+  verifiedAt?: string | null
+  verifiedBy?: string | null
+  document?: string | null
   id: string
   label: string
   pct: number
@@ -99,6 +103,9 @@ export interface ProjectInvoice {
 export type AddendumStatus = 'Pending' | 'Approved' | 'Rejected'
 
 export interface Addendum {
+  /** Set on rejection: who rejected and the required reason. */
+  rejectedBy?: string | null
+  rejectReason?: string | null
   id: string
   date: string
   reason: string
@@ -159,7 +166,39 @@ export interface Engagement {
   closedAt: string | null
   /** output only — a distinct addendum owes the contract its own milestone. */
   scopePending: { voId: string; added: number } | null
+  /** Open approval requests raised by Settings › Approval workflows rules. Decided
+   *  requests leave this list (their outcome is written to the record they gate). */
+  approvals?: PendingApproval[]
+  /** Who closed / reopened the project, for the audit line on Project health. */
+  closedBy?: string | null
+  reopenLog?: { date: string; by: string; reason: string }[]
 }
+
+// ── Approval contract (shared by engine, detail page, forms, settings) ─────────
+export type ProjectApprovalAction = 'project-creation' | 'addendum' | 'milestone-verification'
+
+export interface PendingApproval {
+  id: string
+  action: ProjectApprovalAction
+  /** The gated record: milestone id, addendum id, or null for project creation. */
+  refId: string | null
+  ruleId: string
+  ruleName: string
+  amount: number | null
+  submittedBy: string
+  submittedAt: string
+  /** Names allowed to decide this request (from the matched rule's levels). */
+  approvers: string[]
+}
+
+export interface MilestoneVerificationInput {
+  date: string
+  verifiedBy: string
+  /** Supporting document name (BAST, progress report), optional. */
+  document: string | null
+}
+
+export type ProjectStatusKey = 'pending approval' | 'in progress' | 'closed'
 
 /**
  * The prototype's "today". Fixed rather than `new Date()` so the seed's ageing
@@ -534,6 +573,8 @@ export interface BudgetReportRow {
   adverse: boolean
   note: string
   kind: 'revenue' | 'cost' | null
+  /** Display tone owned by the engine: 'adverse' only for a real overrun. */
+  tone?: 'adverse' | 'default' | 'positive'
 }
 
 /**
@@ -965,4 +1006,95 @@ export function portfolioTotals() {
     outstanding: engagements.reduce((a, e) => a + e.invoices.filter(i => i.status === 'unpaid').reduce((b, i) => b + i.amount, 0), 0),
     pendingAddenda: engagements.reduce((a, e) => a + pendingVos(e).length, 0),
   }
+}
+
+
+// ── Contract stubs (engine agent replaces the bodies; signatures are fixed) ────
+
+export function projectStatusKey(e: Engagement): ProjectStatusKey {
+  if ((e.approvals ?? []).some(a => a.action === 'project-creation')) return 'pending approval'
+  return e.closedAt ? 'closed' : 'in progress'
+}
+
+export function projectStatusLabel(e: Engagement): string {
+  return { 'pending approval': 'Pending approval', 'in progress': 'In progress', closed: 'Closed' }[projectStatusKey(e)]
+}
+
+/** Approval request gating a record, if one is open. */
+export function approvalFor(e: Engagement, action: ProjectApprovalAction, refId: string | null): PendingApproval | undefined {
+  return (e.approvals ?? []).find(a => a.action === action && a.refId === refId)
+}
+
+/** Can `user` decide this request? Blocks self-approval and non-approvers. */
+export function canDecide(a: PendingApproval, user: string): { ok: boolean; reason: string } {
+  if (a.submittedBy === user) return { ok: false, reason: 'You submitted this request, so another approver must decide it.' }
+  if (!a.approvers.includes(user)) return { ok: false, reason: 'Only the approvers on this rule can decide it.' }
+  return { ok: true, reason: '' }
+}
+
+/** Verify a milestone, or open an approval request when a rule matches. */
+export function submitMilestoneVerification(id: string, mid: string, info: MilestoneVerificationInput, submittedBy: string):
+  { status: 'verified'; amount: number } | { status: 'pending'; approval: PendingApproval } | { status: 'blocked' } {
+  void submittedBy
+  const amount = verifyMilestone(id, mid)
+  const m = findEngagement(id)?.milestones?.find(x => x.id === mid)
+  if (!amount || !m) return { status: 'blocked' }
+  m.verifiedAt = info.date; m.verifiedBy = info.verifiedBy; m.document = info.document
+  persist()
+  return { status: 'verified', amount }
+}
+
+/** Approve an open request and apply what it gated. */
+export function approveRequest(id: string, approvalId: string, approver: string): boolean {
+  void id; void approvalId; void approver
+  return false
+}
+
+/** Reject an open request; reason is required. */
+export function rejectRequest(id: string, approvalId: string, approver: string, reason: string): boolean {
+  void id; void approvalId; void approver; void reason
+  return false
+}
+
+/** Final figures shown in the close confirmation. */
+export function closeSummary(e: Engagement): { revenue: number; cost: number; margin: number; marginPct: number | null } {
+  const r = revenue(e)
+  const c = actualCost(e)
+  return { revenue: r, cost: c, margin: r - c, marginPct: r > 0 ? ((r - c) / r) * 100 : null }
+}
+
+/** Reopen a closed project (audit-logged). */
+export function reopenEngagement(id: string, by: string, reason: string): boolean {
+  void id; void by; void reason
+  return false
+}
+
+/** Projected margin at completion; null when there is no budget to project from. */
+export function projectedMargin(e: Engagement): { value: number | null; pct: number | null } {
+  void e
+  return { value: null, pct: null }
+}
+
+/** Billing schedule status taken only from linked invoices. */
+export function billingStatusOf(e: Engagement, b: BillingMilestone): BillingStatus {
+  const inv = b.invId ? e.invoices.find(i => i.id === b.invId) : undefined
+  if (!inv) return 'notdue'
+  return inv.status === 'paid' ? 'paid' : 'invoiced'
+}
+
+/** Settings rule that would gate creating a project of this value, for the form hint. */
+export function creationApprovalPreview(value: number): { ruleName: string; approvers: string[] } | null {
+  void value
+  return null
+}
+
+/** Contract (or fee estimate) value not yet invoiced; never negative. */
+export function remainingToBill(e: Engagement): number {
+  return Math.max(0, (e.method === 'tm' ? e.feeEstimate : e.contractValue) - billed(e))
+}
+
+/** A milestone can be invoiced only once verified and not already invoiced. */
+export function milestoneBillable(e: Engagement, mid: string): boolean {
+  const m = e.milestones?.find(x => x.id === mid)
+  return !!m && m.verified && !m.invId
 }
