@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'srd-warehouse-tables',
+    title: 'Stock request detail: the warehouse tables share one column grid',
+    description:
+      'Each destination warehouse renders its own table, and each was sizing to its own content — so the headers stepped sideways down the page and no two groups could be read against each other. They now share a fixed column template, so every group lines up. Status moved to sit after Required date, Requestor moved last (it is provenance, not something acted on), and the dashed rule between groups is gone — the heading and its spacing already separate them.',
+    date: '2026-10-19',
+    files: ['StockRequestDetailsPage.vue'],
+  },
+  {
     id: 'sr-backdate-tooltip',
     title: 'Stock requests: the backdate warning moves onto Available qty',
     description:

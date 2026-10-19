@@ -412,7 +412,24 @@ function saveSerials(serials: string[]) {
         </div>
 
         <div class="wod-table-scroll">
+          <!-- Every warehouse group renders its own <table>, so without a shared
+               column template each one sized to its own content and the headers
+               stepped sideways down the page. The colgroup + `table-layout: fixed`
+               give them all one grid. -->
           <table class="wod-table">
+            <colgroup>
+              <col class="wod-col-product">
+              <col class="wod-col-qty">
+              <col class="wod-col-qty">
+              <col class="wod-col-qty">
+              <col class="wod-col-qty">
+              <col class="wod-col-qty">
+              <col class="wod-col-date">
+              <col class="wod-col-status">
+              <col class="wod-col-tracking">
+              <col class="wod-col-requestor">
+              <col class="wod-col-actions">
+            </colgroup>
             <thead>
               <tr>
                 <th class="wod-th">{{ t('Product') }}</th>
@@ -422,10 +439,11 @@ function saveSerials(serials: string[]) {
                 <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
                 <th class="wod-th wod-th--num">{{ t('Qty to transfer') }}</th>
                 <th class="wod-th">{{ t('Required date') }}</th>
-                <!-- W-9 — each line names who last changed ITS demand (OPEN-17). -->
-                <th class="wod-th">{{ t('Requestor') }}</th>
-                <th class="wod-th">{{ t('Batch / SN') }}</th>
                 <th class="wod-th">{{ t('Status') }}</th>
+                <th class="wod-th">{{ t('Batch / SN') }}</th>
+                <!-- W-9 — each line names who last changed ITS demand (OPEN-17).
+                     It sits last: it is provenance, not something acted on. -->
+                <th class="wod-th">{{ t('Requestor') }}</th>
                 <th class="wod-th wod-th--actions" />
               </tr>
             </thead>
@@ -454,7 +472,9 @@ function saveSerials(serials: string[]) {
                   {{ lineToTransfer(l) > 0 ? `${lineToTransfer(l)} ${l.unit}` : '—' }}
                 </td>
                 <td class="wod-td">{{ formatDate(l.requiredDate) }}</td>
-                <td class="wod-td">{{ l.requestor }}</td>
+                <td class="wod-td">
+                  <ErpStatusBadge :status="lineStatus(l)" :label="t(READINESS_LABEL[lineStatus(l)] ?? '')" />
+                </td>
                 <!-- Tracked components carry the work order's pick; PPIC may reserve
                      other units, and the work order detail is told when they do. -->
                 <td class="wod-td wod-td--wrap">
@@ -464,9 +484,7 @@ function saveSerials(serials: string[]) {
                     <span v-if="isChanged(l)" class="srd-tracking-changed">{{ t('changed') }}</span>
                   </span>
                 </td>
-                <td class="wod-td">
-                  <ErpStatusBadge :status="lineStatus(l)" :label="t(READINESS_LABEL[lineStatus(l)] ?? '')" />
-                </td>
+                <td class="wod-td">{{ l.requestor }}</td>
                 <!-- W-7 — reject is offered ONLY on a tagged line; the components
                      the work order itself committed to are not the warehouse's to
                      refuse, so there is no button to explain away on those rows. -->
@@ -585,9 +603,8 @@ function saveSerials(serials: string[]) {
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage, #ffffff);
 }
 
-.wod-section { padding: var(--mp-spacing-8) 0; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9); }
+.wod-section { padding: var(--mp-spacing-8) 0; }
 .wod-section:first-child { padding-top: 0; }
-.wod-section--last { border-bottom: none; }
 .wod-section-head-static { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); width: 100%; margin-bottom: var(--mp-spacing-5); flex-wrap: wrap; }
 .wod-section-title {
   display: flex; align-items: center; gap: var(--mp-spacing-2); margin: 0;
@@ -597,7 +614,17 @@ function saveSerials(serials: string[]) {
 .wod-section > .wod-section-title { margin-bottom: var(--mp-spacing-5); }
 
 .wod-table-scroll { overflow-x: auto; border-top: 1px solid var(--mp-border-default, #e3e7e9); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
-.wod-table { width: 100%; border-collapse: collapse; table-layout: auto; min-width: max-content; }
+/* Fixed layout + the colgroup above: the widths come from the template, not from
+   each table's own content, which is what makes the groups align. The min-width is
+   the sum of the columns, so a narrow stage scrolls rather than squashing them. */
+.wod-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 1380px; }
+.wod-col-product   { width: 240px; }
+.wod-col-qty       { width: 128px; }
+.wod-col-date      { width: 128px; }
+.wod-col-status    { width: 140px; }
+.wod-col-tracking  { width: 128px; }
+.wod-col-requestor { width: 144px; }
+.wod-col-actions   { width: 100px; }
 .wod-th {
   height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
