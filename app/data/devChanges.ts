@@ -196,6 +196,270 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['StockRequestsPage.vue', 'stockRequests.ts'],
   },
   {
+    id: 'settings-purchase-page',
+    title: 'Settings > Purchases page',
+    description:
+      'New Purchases settings page mirroring the Sales settings pattern: General settings with hover Edit → inline edit (default payment term, vendor-in-PR / shipping / discounts / deposit toggles, default message), Email templates with kebab (…) → Edit template modal, and a Document layout & branding section with Customize design.',
+    date: '2026-10-16',
+    files: ['SettingsPurchasePage.vue'],
+  },
+  {
+    id: 'settings-sales-page',
+    title: 'Settings > Sales page',
+    description:
+      'New Sales settings page with general toggles (shipping, discounts, deposit, price rules, etc.), invoice reminders, email/WhatsApp templates with kebab menus, and document layout & branding section.',
+    date: '2026-10-16',
+    files: ['SettingsSalesPage.vue'],
+  },
+  {
+    id: 'purchase-payment-form',
+    title: 'Add Purchase Payment form',
+    description:
+      'Add Payment form for Purchase module — exact mirror of Receive Payment. Vendor info, date/txn/ref fields, deposit-to account, payment method, invoice allocation table with balance/amount columns, withholding tax, memo + attachment. Navigates from purchase invoice detail.',
+    date: '2026-10-16',
+    files: ['AddPurchasePaymentPage.vue', 'purchasePayments.ts', 'debitMemos.ts'],
+  },
+  {
+    id: 'purchase-payment-detail',
+    title: 'Purchase Payment detail page',
+    description:
+      'Read-only detail page for Purchase Payment records: vendor, deposit-to, allocation table, WHT breakdown, memo, journal entry drawer, activity log, Edit/Delete actions. Mirror of PaymentReceivedDetailsPage.',
+    date: '2026-10-16',
+    files: ['PurchasePaymentDetailsPage.vue', 'purchasePayments.ts'],
+  },
+  {
+    id: 'receive-payment-header',
+    title: 'Add Payment form (redesigned)',
+    description:
+      'Redesigned Add Payment form following Figma spec: read-only customer info block (name + email), Date paid / Transaction no. / Reference no. row, Account / Payment method row, invoice table with NUMBER / DUE DATE / BALANCE DUE / TOTAL / AMOUNT PAID columns, transaction count, withholding tax checkbox, memo + attachment section.',
+    date: '2026-10-15',
+    files: ['AddPaymentPage.vue', 'paymentsReceived.ts', 'salesInvoiceDetails.ts', 'creditMemos.ts'],
+  },
+  {
+    id: 'receive-payment-wht',
+    title: 'Withholding tax on payment received',
+    description:
+      'Optional withholding tax (PPh) on the Receive Payment form: checkbox reveals WHT account selector + amount field. Total = Subtotal − WHT. Journal: Dr Cash (net), Dr PPh Payable (WHT), Cr A/R (gross). Five standard WHT accounts (PPh 21/22/23/4(2)/15).',
+    date: '2026-10-15',
+    files: ['AddPaymentPage.vue', 'paymentsReceived.ts'],
+  },
+  {
+    id: 'payment-received-detail',
+    title: 'Payment Received detail page',
+    description:
+      'Read-only detail page for Payment Received records: customer, deposit-to, allocation table, WHT breakdown, memo, journal entry drawer, activity log, Edit/Delete actions. Follows CreditMemoAppliedDetailsPage pattern.',
+    date: '2026-10-15',
+    files: ['PaymentReceivedDetailsPage.vue', 'paymentsReceived.ts'],
+  },
+  {
+    id: 'cd-transactions-tab',
+    title: 'Customer details: Transactions tab',
+    description:
+      'The customer (contact) details Transactions tab is now a full ErpTablePage over the customer’s unified documents — sales invoices, orders, quotes and credit memos — with four KPI tiles (Overdue / Unpaid invoices, Payment received, Open credits), Transaction + Status filters, search, and pagination. Credit memo is also a new entry point in the "Create transaction" menu. Built entirely from existing Pixel/ERP components (Figma: Contacts › Transactions).',
+    date: '2026-10-14',
+    files: ['ContactDetailsPage.vue', 'customerTransactions.ts'],
+  },
+  {
+    id: 'print-share-menu',
+    title: 'Shared Print & share menu + detail refinements',
+    description:
+      'The "Print & share" dropdown is now a single reusable component (PrintShareMenu) instead of a hand-rolled MpPopover per page; used on the credit memo detail / applied / refund pages. On the Credit Memo Applied detail, the header now aligns "Credit memo" vertically with "Transaction no." below it. Table-cell "View details" chips were replaced by the row-number textlink.',
+    date: '2026-10-14',
+    files: ['PrintShareMenu.vue', 'CreditMemoAppliedDetailsPage.vue', 'CreditMemoDetailsPage.vue', 'CreditMemoRefundDetailsPage.vue'],
+  },
+  {
+    id: 'txno-settings-gear',
+    title: 'Transaction no. — reusable settings-gear field',
+    description:
+      'The "Transaction no." form field is now a single reusable component (TransactionNoField) whose label carries a settings gear opening the auto-numbering modal — matching New sales invoice. Added to the credit memo Apply / Refund / New forms (previously a plain disabled "Auto" input) and codified as the pattern in docs/patterns/Form.md + rule/form-transaction-no-field.',
+    date: '2026-10-14',
+    files: ['TransactionNoField.vue', 'ApplyCreditMemoPage.vue', 'CreateCreditMemoRefundPage.vue', 'NewCreditMemoPage.vue', 'Form.md'],
+  },
+  {
+    id: 'header-icon-white',
+    title: 'Header icons: white glyph on dark header',
+    description:
+      'The header quick-action icons (help, inbox, upload) now render white (icon.inverse) instead of the dark ghost-button default, and stay white on hover — only the background fill changes. Matches the quick-create "+" icon.',
+    date: '2026-10-14',
+    files: ['IconButton.vue', 'ErpHeader.vue', 'pixel-enterprise-overrides.md'],
+  },
+  {
+    id: 'invoice-apply-credit-memo',
+    title: 'Sales invoice: Apply credit memo',
+    description:
+      'Opening an invoice whose customer has available credit (and the invoice has a balance) now proactively shows the "Apply credit memo?" prompt — Apply credit memo opens the form, Not now (or ×) dismisses it. The Add payment split menu also lists Apply credit memo (same condition); choosing it opens the form directly, with no second prompt.',
+    date: '2026-10-14',
+    files: ['SalesInvoiceDetailsPage.vue', 'ApplyCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'invoice-less-credit-memo',
+    title: 'Sales invoice: credit shown in totals & payments',
+    description:
+      'When a credit memo is applied, the totals block shows a "Less: Credit Memo" line and the Balance due drops accordingly; the Payments tab lists each Credit Memo Applied with a View details link. Invoice status becomes "Partially paid" when only partly settled.',
+    date: '2026-10-14',
+    files: ['SalesInvoiceDetailsPage.vue', 'salesInvoiceDetails.ts', 'creditMemos.ts', 'ErpStatusBadge.vue'],
+  },
+  {
+    id: 'dm-detail-actions',
+    title: 'Debit memo detail page',
+    description:
+      'New Debit memo detail page (AP-side mirror of credit memo): available debit, debit-account lines, running balance, Debit applications and Debit refund sections, and an Actions menu (Apply debit memo, Create debit memo refund, Edit, Delete). Delete is blocked with an explanation while the memo is in use.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'apply-dm-save',
+    title: 'Apply debit memo form',
+    description:
+      'New Apply debit memo form — spends one debit memo across the vendor\'s open purchase invoices with per-invoice "amount to apply", live Amount to debit / Remaining debit, and inline validation. Reachable from a purchase invoice or a debit memo.',
+    date: '2026-10-14',
+    files: ['ApplyDebitMemoPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'apply-dm-form',
+    title: 'Apply debit memo — vendor + memo selector',
+    description:
+      'Apply debit memo form: vendor is locked to the entry context, debit memo autocomplete with available debit display. Opening from a purchase invoice pre-applies the available debit to that invoice.',
+    date: '2026-10-14',
+    files: ['ApplyDebitMemoPage.vue'],
+  },
+  {
+    id: 'refund-dm-save',
+    title: 'Create debit memo refund form',
+    description:
+      'New Create debit memo refund form — deposits vendor\'s remaining debit back as cash into a bank account ("Deposit to" instead of "Pay from"), across one or more debit memos, with live Total refund and inline validation.',
+    date: '2026-10-14',
+    files: ['CreateDebitMemoRefundPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'refund-dm-form',
+    title: 'Debit memo refund — Deposit to field',
+    description:
+      'The refund direction is inverted vs credit memo: "Deposit to" (cash IN from vendor) replaces "Pay from" (cash OUT to customer). The rest of the form mirrors credit memo refund.',
+    date: '2026-10-14',
+    files: ['CreateDebitMemoRefundPage.vue'],
+  },
+  {
+    id: 'new-dm-save',
+    title: 'Create / edit debit memo form',
+    description:
+      'Create/edit debit memo form (AP-side mirror of credit memo): vendor, date, debit-account lines, memo, attachments. Editing cannot reduce the memo below debit already used or change vendor once used.',
+    date: '2026-10-14',
+    files: ['NewDebitMemoPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'new-dm-form',
+    title: 'Debit memo form — vendor selector',
+    description:
+      'Vendor autocomplete on the new debit memo form. Pre-fills from ?vendor= query param when navigating from a vendor detail page.',
+    date: '2026-10-14',
+    files: ['NewDebitMemoPage.vue'],
+  },
+  {
+    id: 'dm-detail-jump',
+    title: 'Debit memo — jump to another memo',
+    description:
+      'DetailJumpTo on debit memo detail page lets you switch between debit memos without going back to the list.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'dm-detail-journal',
+    title: 'Debit memo — view journal entry',
+    description:
+      'View journal entry link on debit memo detail page opens a drawer showing the AP-side journal: Dr AP, Cr each line account.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'dm-detail-activity',
+    title: 'Debit memo — activity log',
+    description:
+      'Last updated link opens the activity log modal for the debit memo.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'pinv-less-debit-memo',
+    title: 'Purchase invoice — Less: Debit Memo totals line',
+    description:
+      'Purchase invoice detail page now shows "Less: Debit Memo" in the totals section when a debit memo has been applied, mirroring the sales invoice "Less: Credit Memo" pattern. Also shows Amount paid, Balance due.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue', 'purchaseInvoiceDetails.ts'],
+  },
+  {
+    id: 'pinv-payments-tab',
+    title: 'Purchase invoice — Payments tab',
+    description:
+      'Purchase invoice detail page now has a Payments tab showing cash payments and debit memo applications. Debit memo applied rows link to their detail page.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue', 'purchaseInvoiceDetails.ts'],
+  },
+  {
+    id: 'pinv-apply-debit-memo',
+    title: 'Purchase invoice — Apply debit memo action',
+    description:
+      'Purchase invoice Actions menu now includes "Apply debit memo" when the vendor has available debit and the invoice has a remaining balance.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue'],
+  },
+  {
+    id: 'cm-detail-actions',
+    title: 'Credit memo detail page',
+    description:
+      'New Credit memo detail page: available credit, credit-account lines, running balance, Credit applications and Credit refund sections, and an Actions menu (Apply credit memo, Create credit memo refund, Edit, Delete). Delete is blocked with an explanation while the memo is in use.',
+    date: '2026-10-14',
+    files: ['CreditMemoDetailsPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'apply-cm-save',
+    title: 'Apply credit memo form',
+    description:
+      'New Apply credit memo form — spends one credit memo across the customer’s open invoices with per-invoice "amount to apply", live Amount to credit / Remaining credit, and inline validation (over balance, over available, date rules). Reachable from an invoice or a credit memo.',
+    date: '2026-10-14',
+    files: ['ApplyCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'form-table-focus-ring',
+    title: 'Form-table focus ring no longer clipped',
+    description:
+      'Every editable form-table cell now draws its focus/active (and error) ring as an ::after overlay above the collapsed column borders, so the ring’s left/right edges are no longer clipped or overpainted. Applied repo-wide (~45 cells across 38 form tables); codified in docs/patterns/FormTable.md.',
+    date: '2026-10-14',
+    files: ['FormTable.md', 'credit-memo.css', 'NewSalesInvoicePage.vue', 'CreateReceiptPage.vue', 'ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'apply-cm-form',
+    title: 'Apply credit memo — Figma design pass',
+    description:
+      'Apply credit memo form aligned to Figma: white form-table header (not gray), the "Amount to apply" cell now fills the cell with no floating inner border and a left-aligned value, a subtle dashed divider between Amount to credit and Remaining credit, and the Attachment dropzone narrowed to match the Customer/Transaction date field width. Opening the form from an invoice now pre-applies the available credit to that invoice (capped by its balance).',
+    date: '2026-10-14',
+    files: ['ApplyCreditMemoPage.vue', 'credit-memo.css'],
+  },
+  {
+    id: 'refund-cm-save',
+    title: 'Create credit memo refund form',
+    description:
+      'New Create credit memo refund form — pays a customer’s remaining credit back in cash from a bank/cash account across one or more credit memos, with a live Total refund and inline validation.',
+    date: '2026-10-14',
+    files: ['CreateCreditMemoRefundPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'new-cm-save',
+    title: 'Create / edit credit memo form',
+    description:
+      'Inferred create/edit credit memo form (no explicit Figma frame — flagged as a design gap). Customer, date, credit-account lines, memo, attachments. Editing cannot reduce the memo below credit already used or move it to another customer once used.',
+    date: '2026-10-14',
+    files: ['NewCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'cm-report-links',
+    title: 'Credit memo report wired to the documents',
+    description:
+      'The Credit Memo report is now derived from the credit memo mini-DB (not a separate seed), so creating/editing/deleting a credit memo, application or refund updates the report immediately. Memo numbers and mutation rows deep-link to their detail pages.',
+    date: '2026-10-14',
+    files: ['creditMemoReport.ts', 'CreditMemoReportPage.vue', 'creditMemos.ts'],
+  },
+  {
     id: 'crm-generic-actions-column',
     title: 'Custom module: actions column with kebab menu',
     description:

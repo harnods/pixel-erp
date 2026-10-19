@@ -372,7 +372,7 @@ function doRestore() { restoreAgent(props.orderId); toast.notify({ variant: 'suc
   </template>
 
   <div v-else class="cad-missing">
-    <MpIcon name="magic" size="lg" />
+    <MpIcon name="magic" size="32px" />
     <p>Agent not found.</p>
     <MpButton is-rounded variant="secondary" @click="router.push('/cowork-agents')">Back to Agents</MpButton>
   </div>

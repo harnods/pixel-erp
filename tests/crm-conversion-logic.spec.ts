@@ -315,6 +315,13 @@ describe('DEFAULT_PROPERTIES completeness', () => {
   })
 })
 
+// ── Service deals seed — draft module must be empty ─────────────────────────
+// The Service deals module was deleted in beb3b507 ("only Deals remains as the
+// system default") — its pages, stores, types and seed all went with it, so
+// `serviceDeals` is no longer exported and getCrmModule('services') is
+// undefined. These three tests asserted that module's empty state and were left
+// behind; there is nothing left for them to guard.
+
 // ── eligibleModules — only published modules ────────────────────────────────
 describe('eligibleModules — only published', () => {
   it('does not include draft modules', () => {

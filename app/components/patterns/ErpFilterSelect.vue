@@ -34,6 +34,8 @@ const props = withDefaults(defineProps<{
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
+  /** Read-only: the menu never opens and the × is withheld. Also used for a
+   *  value forced by another field — a cascade's auto-filled level. */
   disabled?: boolean
   /** Tick several options; `modelValue` becomes a string[]. */
   multiple?: boolean
@@ -93,7 +95,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !disabled, 'efs--disabled': disabled }" :style="{ '--efs-w': width }">
+  <div class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !disabled, 'efs--disabled': disabled, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -155,6 +157,11 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 .efs-opt-desc { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-colors-text-secondary, #3a4749); }
 
 .efs { position: relative; display: inline-flex; }
+/* width="100%" means "fill the form field". The wrapper is inline-flex, so it
+   sizes to its content and the trigger's own width:100% resolves against that
+   — the field ends up narrower than its label and clips the option text. Making
+   the wrapper block-level is what actually lets 100% reach the FormControl. */
+.efs--full { display: flex; width: 100%; }
 .efs-trigger {
   /* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
      38px tall (--mp-sizes-9.5), border = --mp-colors-border-form (#1d1f2429).

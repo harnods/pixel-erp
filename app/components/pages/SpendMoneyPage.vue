@@ -560,7 +560,11 @@ function handleSave() {
 .ex-tr:last-child .ex-td { border-bottom: none; }
 .ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
-.ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ex-td--input { position: relative; }
+.ex-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ex-td--del { padding: 0; text-align: center; }
 .ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 /* The Dimensions column can make a row taller than the standard row height —

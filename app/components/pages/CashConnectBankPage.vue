@@ -501,7 +501,7 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
 
         <!-- ═══ Application under review ═══ -->
         <div v-else-if="stage === 'review'" class="cnb-wait">
-          <MpIcon name="time" size="xl" class="cnb-wait-icon" />
+          <MpIcon name="time" size="40px" class="cnb-wait-icon" />
           <div class="cnb-wait-body">
             <h2 class="cnb-wait-title">{{ t('Application under review') }}</h2>
             <p class="cnb-wait-text">{{ t('We will send your activation credentials to your registered email within 2 business days. Follow the instructions in the email to complete the process, then return here to activate.') }}</p>
@@ -574,7 +574,7 @@ function goBack() { router.push(`/cash-management/${props.orderId}`) }
 
         <!-- ═══ Activation in progress ═══ -->
         <div v-else-if="stage === 'activating'" class="cnb-wait">
-          <MpIcon name="time" size="xl" class="cnb-wait-icon" />
+          <MpIcon name="time" size="40px" class="cnb-wait-icon" />
           <div class="cnb-wait-body">
             <h2 class="cnb-wait-title">{{ t('Activation in progress') }}</h2>
             <p class="cnb-wait-text">{{ t('Activation may take up to 30 working days. We will send a confirmation email to your registered address once it is complete.') }}</p>

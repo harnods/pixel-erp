@@ -268,7 +268,11 @@ function handleContinue() {
 /* Editable column (Qty to produce) — white cell + in-cell focus ring, borderless
    full-cell input (mirrors the put-away "qty to store" pattern) */
 .cwo-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
-.cwo-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.cwo-td--input { position: relative; }
+.cwo-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .cwo-td--input-disabled { background: var(--mp-background-neutral-hovered); }
 .cwo-qty-input {
   display: block; width: 100%; box-sizing: border-box; height: var(--mp-sizes-10, 40px);
