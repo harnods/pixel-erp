@@ -413,7 +413,7 @@ async function save() {
 
         <div class="pi-foot">
           <div class="pi-foot-left">
-            <MpButton variant="textLink" size="sm" left-icon="add" @click="addLine">{{ t('Add line') }}</MpButton>
+            <MpButton variant="secondary" is-rounded left-icon="add" @click="addLine">{{ t('Add line') }}</MpButton>
           </div>
           <div class="pi-totals">
             <div class="pi-total-row">

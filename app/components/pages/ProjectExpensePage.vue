@@ -279,7 +279,7 @@ function cancel() {
 
         <div class="px-foot">
           <div class="px-foot-left">
-            <MpButton variant="textLink" size="sm" left-icon="add" @click="addLine">{{ t('Add line') }}</MpButton>
+            <MpButton variant="secondary" is-rounded left-icon="add" @click="addLine">{{ t('Add line') }}</MpButton>
             <MpFormControl id="px-memo" class="px-memo">
               <MpFormLabel>{{ t('Memo') }}</MpFormLabel>
               <MpTextarea id="px-memo-input" v-model="memo" is-full-width />
