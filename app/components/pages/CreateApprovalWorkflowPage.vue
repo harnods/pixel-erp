@@ -219,7 +219,7 @@ async function save() {
             <MpFormLabel>{{ t('Workflow name') }}</MpFormLabel>
             <span class="caw-counter">{{ name.length }} / {{ NAME_MAX }}</span>
           </div>
-          <MpInput id="awf-name-input" v-model="name" :maxlength="NAME_MAX" :placeholder="t('Example: Sales Invoice Rule 001')" is-full-width @update:model-value="nameError = ''" />
+          <MpInput id="awf-name-input" v-model="name" :maxlength="NAME_MAX" is-full-width @update:model-value="nameError = ''" />
           <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
         </MpFormControl>
 
@@ -228,7 +228,7 @@ async function save() {
             <MpFormLabel>{{ t('Description') }}</MpFormLabel>
             <span class="caw-counter">{{ description.length }} / {{ DESC_MAX }}</span>
           </div>
-          <MpTextarea id="awf-description-input" v-model="description" :maxlength="DESC_MAX" :placeholder="t('Optional')" is-full-width />
+          <MpTextarea id="awf-description-input" v-model="description" :maxlength="DESC_MAX" is-full-width />
         </MpFormControl>
 
         <div class="caw-divider" />
