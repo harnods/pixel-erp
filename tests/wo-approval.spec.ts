@@ -3,9 +3,9 @@
  * Rev 3, MVP scope of 2026-10-08): Start work order, adjustment, completion and
  * cancel/close are gated; creation, material consume / return and partial completion are not.
  *
- * Seeded Work order workflows — exactly one work order transaction type each:
- *   awf-007 start (active) · awf-009 adjustment · awf-010 completion · awf-011 cancel/close
- *           (inactive) — level 1 Budi Santoso, level 2 Sari Indah or Dewi Rahayu (any).
+ * Seeded Work order workflows — exactly one work order transaction type each, all ACTIVE:
+ *   awf-007 start · awf-009 adjustment · awf-010 completion · awf-011 cancel/close
+ *   — level 1 Budi Santoso, level 2 Sari Indah or Dewi Rahayu (any).
  * Only ACTIVE workflows gate a transaction or block a type.
  *
  * Grooming 2026-10-09: status stays as-is; a pending request freezes the work order;
@@ -17,10 +17,10 @@ import {
   woApprovalRequests, queueFor, allPending, pendingCount, canApprove, approveRequest, rejectRequest,
   submitRequest, findGatingRule, preSubmitApprovers, guardMessage, pendingForWorkOrder,
   approvedConsumedQty, joinNames, approvalLogFor, workOrderApprovalStatus, latestRejectedRequest,
-  consumableQty, plannedMaterialQty, completionSummary, startWorkOrder, displayStatus,
+  consumableQty, plannedMaterialQty, completionSummary, startWorkOrder,
   isFrozen, canCancelRequest, cancelRequest, rejectedNotices, dismissRejection, dismissedRejections,
   approvalHistoryForWorkOrder, recordActionReason, ruleLevelsPreview,
-  LEVEL_1, LEVEL_2, PPIC, LINE_LEADER,
+  LEVEL_1, LEVEL_2, PPIC, LINE_LEADER, SYSTEM_ACTOR,
 } from '~/data/woApproval'
 import { workOrders } from '~/data/workOrders'
 import { approvalWorkflows, woTypesTakenByOthers, woRuleTypes, activeWoConflicts, updateApprovalWorkflow } from '~/data/approvalWorkflows'
@@ -81,9 +81,7 @@ describe('rule matching — MVP scope', () => {
   it('gates each type through its own active workflow', () => {
     expect(findGatingRule('start', PPIC)?.id).toBe('awf-007')
     expect(findGatingRule('partial' as never, PPIC)).toBeUndefined()
-    // seeded inactive → not gated until turned on
-    expect(findGatingRule('adjustment', PPIC)).toBeUndefined()
-    for (const id of ['awf-009', 'awf-010', 'awf-011']) rule(id).isActive = true
+    // every MVP type is seeded with an active workflow of its own
     expect(findGatingRule('adjustment', PPIC)?.id).toBe('awf-009')
     expect(findGatingRule('completion', PPIC)?.id).toBe('awf-010')
     expect(findGatingRule('cancel', PPIC)?.id).toBe('awf-011')
@@ -105,17 +103,18 @@ describe('rule matching — MVP scope', () => {
 
 describe('one workflow per Work order type', () => {
   it('reports the types other workflows already cover', () => {
-    // Only ACTIVE workflows block a type — adjustment, completion and cancel/close are seeded inactive.
+    // Every seeded workflow is active, so each type but the excluded rule's own is taken.
     const taken = woTypesTakenByOthers('awf-009')
-    expect([...taken.keys()]).toEqual(['start'])
+    expect([...taken.keys()]).toEqual(['start', 'completion', 'cancel'])
     expect(taken.get('start')).toBe('Start work order approval')
     expect(approvalWorkflows.filter(r => r.transactionType === 'work-order').every(r => r.woCriteria?.length === 1)).toBe(true)
-    expect([...woTypesTakenByOthers().keys()]).toEqual(['start'])
+    expect([...woTypesTakenByOthers().keys()]).toEqual(['start', 'adjustment', 'completion', 'cancel'])
   })
 
   it('turning on a workflow whose type already has an active one reports the conflict', () => {
     approvalWorkflows.push({ ...rule('awf-007'), id: 'awf-x', name: 'Second start rule', isActive: false })
     expect(activeWoConflicts('awf-x').map(r => r.id)).toEqual(['awf-007'])
+    // awf-009 is the only active workflow for adjustment — it conflicts with nothing.
     expect(activeWoConflicts('awf-009')).toEqual([])
   })
 
@@ -183,9 +182,31 @@ describe('approve / reject — level by level', () => {
   })
 })
 
+describe('dates are the local calendar day', () => {
+  it('a seeded request is dated the same day its log says it was submitted', () => {
+    for (const r of woApprovalRequests) {
+      const submitted = r.log.find(e => e.event === 'submitted')!
+      const localDay = new Date(submitted.at)
+      const expected = `${localDay.getFullYear()}-${String(localDay.getMonth() + 1).padStart(2, '0')}-${String(localDay.getDate()).padStart(2, '0')}`
+      expect(r.transactionDate).toBe(expected)
+    }
+  })
+
+  it('a new request is dated today, not the UTC day', () => {
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const r = submitRequest({ workOrderId: 'wo-5', type: 'start', requester: LINE_LEADER, payload: {} })!
+    expect(r.transactionDate).toBe(today)
+  })
+})
+
 describe('guards and quantities', () => {
   it('any pending request freezes the work order (only Print / Cancel approval request stay)', () => {
-    for (const id of ['wo-6', 'wo-7', 'wo-8', 'wo-25']) expect(guardMessage(id)).toMatch(/Only Print is available/)
+    // The refusal doesn't name the actions left: the requester also keeps Cancel approval request.
+    for (const id of ['wo-6', 'wo-7', 'wo-8', 'wo-25']) {
+      expect(guardMessage(id)).toMatch(/locked until its request is decided/)
+      expect(guardMessage(id)).not.toMatch(/Only Print/)
+    }
     expect(guardMessage('wo-3')).toBeNull()
     expect(isFrozen('wo-26')).toBe(false)
   })
@@ -198,14 +219,14 @@ describe('guards and quantities', () => {
 
 describe('derived list state and log', () => {
   it('the status stays as-is while a request is pending', () => {
-    expect(displayStatus(wo('wo-25'))).toBe('not started')
-    expect(displayStatus(wo('wo-6'))).toBe('in progress')
-    expect(displayStatus(wo('wo-7'))).toBe(wo('wo-7').status)
+    // No Draft / Waiting approval display status — the badge reads wo.status as-is.
+    expect(wo('wo-25').status).toBe('not started')
+    expect(wo('wo-6').status).toBe('in progress')
     approveRequest('wor-001', SARI)
-    expect(displayStatus(wo('wo-25'))).toBe('in progress')
+    expect(wo('wo-25').status).toBe('in progress')
     approveRequest('wor-005', LEVEL_1)
     approveRequest('wor-005', SARI)
-    expect(displayStatus(wo('wo-6'))).toBe('in progress')
+    expect(wo('wo-6').status).toBe('in progress')
   })
 
   it('a rejection notice stays until it is dismissed', () => {
@@ -295,6 +316,8 @@ describe('grooming 2026-10-09', () => {
   })
 
   it('not gated → VAL says so', async () => {
+    // Every MVP type is seeded with an active workflow — turn one off to be ungated.
+    rule('awf-009').isActive = false
     const val = useValApprovalRule()
     expect(await val.load({ module: 'work-order', transactionType: 'adjustment', requester: PPIC })).toMatchObject({ gated: false })
   })
@@ -326,6 +349,22 @@ describe('pending requests follow the approval rule live', () => {
     expect(req('wor-001').status).toBe('executed')
     expect(wo('wo-25').status).toBe('in progress')
     expect(req('wor-002').status).toBe('pending') // still needs level 1
+  })
+
+  it('says in the log WHY a request applied without that level being approved', () => {
+    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [{ matchType: 'any', approverIds: [id(LEVEL_1)] }]))
+    const event = req('wor-001').log.find(e => e.event === 'rule-changed')!
+    expect(event).toBeDefined()
+    expect(event.level).toBe(2)
+    expect(event.user).toBe(SYSTEM_ACTOR)
+    expect(event.reason).toContain('Approval level 2 was removed')
+    // The history must not read as if the level-1 approver had passed it.
+    const row = approvalHistoryForWorkOrder('wo-25').find(r => r.id === 'wor-001')!
+    expect(row.status).toBe('executed')
+    expect(row.lastAction).toContain('Applied automatically')
+    expect(row.lastAction).not.toContain(`Approved by ${LEVEL_1}`)
+    // …and the approval log shows the removed level rather than silently dropping it.
+    expect(approvalLogFor(req('wor-001')).stages.some(st => st.skipped?.includes('was removed'))).toBe(true)
   })
 
   it('decided requests keep the levels they were decided under', () => {

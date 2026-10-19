@@ -44,8 +44,13 @@ const toggleAirene = inject<() => void>('toggleAirene')
  * Transaction type values in this table — UXW ERP: transaction types are noun terms, and
  * "Work order" is dropped (the whole table is work orders). Needs UXW sign-off: first use.
  */
+/**
+ * Short names for the dense queue — the same shorthand the detail notice uses
+ * (WoApprovalNotice › SHORT_TYPE). "Cancel/close" is the term the whole module uses for
+ * this action; "Cancellation" appeared nowhere else.
+ */
 const TYPE_LABEL: Record<WoApprovalRequest['type'], string> = {
-  start: 'Start', adjustment: 'Adjustment', completion: 'Completion', cancel: 'Cancellation',
+  start: 'Start', adjustment: 'Adjustment', completion: 'Completion', cancel: 'Cancel/close',
 }
 
 interface QueueRow {
@@ -71,10 +76,10 @@ interface QueueRow {
 const columns: TableColumn[] = [
   { key: 'date',        label: 'Date',             kind: 'date',   sortable: true, sortType: 'date' },
   { key: 'number',      label: 'Number',           kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'type',        label: 'Transaction type', kind: 'name',   sortable: true, sortType: 'text' },
+  { key: 'type',        label: 'Request type',     kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'warehouse',   label: 'Warehouse',        kind: 'name',   sortable: true, sortType: 'text' },
-  { key: 'requestedBy', label: 'Requester',        kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'status',      label: 'Status',           kind: 'status' },
+  { key: 'requestedBy', label: 'Requester',        kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'waitingFor',  label: 'Approver',         kind: 'name' },
 ]
 // Column show/hide — first column always on (same as the other approval queues)
@@ -312,7 +317,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   >
     <template #filters>
       <div class="filter-left">
-        <ErpFilterSelect id="woaa-type-filter" v-model="typeFilter" :placeholder="t('Transaction type')" :options="typeOptions" width="208px" />
+        <ErpFilterSelect id="woaa-type-filter" v-model="typeFilter" data-devchange="wo-approval-queue-columns" :placeholder="t('Request type')" :options="typeOptions" width="208px" />
         <ErpFilterSelect id="woaa-warehouse-filter" v-model="warehouseFilter" :placeholder="t('Warehouse')" :options="warehouseOptions" />
       </div>
       <div class="filter-right">

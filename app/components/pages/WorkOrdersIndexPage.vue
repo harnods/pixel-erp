@@ -19,7 +19,7 @@ import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { workOrderApprovalStatus, displayStatus, isFrozen } from '~/data/woApproval'
+import { workOrderApprovalStatus, isFrozen } from '~/data/woApproval'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -119,7 +119,7 @@ const {
       || row.bomName.toLowerCase().includes(s)
       || (row.parentNumber?.toLowerCase().includes(s) ?? false)
     const matchesType = !typeFilter.value || row.type === typeFilter.value
-    const matchesStatus = !statusFilter.value || displayStatus(row) === statusFilter.value
+    const matchesStatus = !statusFilter.value || row.status === statusFilter.value
     const matchesApproval = !approvalStatusFilter.value || workOrderApprovalStatus(row) === approvalStatusFilter.value
     const startFilterDate = parseDMY(startDateFilter.value)
     const matchesStart = !startFilterDate
@@ -301,8 +301,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
            under the badge says it's awaiting approval (rule/type-14-default: 12px = caption) -->
       <span class="wo-status-cell">
         <ErpStatusBadge
-          :status="displayStatus(row as unknown as WorkOrder)"
-          :label="displayStatus(row as unknown as WorkOrder) === 'in progress' ? t('In progress') : undefined"
+          :status="(row as unknown as WorkOrder).status"
+          :label="(row as unknown as WorkOrder).status === 'in progress' ? t('In progress') : undefined"
           data-devchange="wo-approval-status"
         />
         <span v-if="isFrozen((row as unknown as WorkOrder).id)" class="wo-approval-caption" data-devchange="wo-approval-list-indicator">{{ t('Awaiting approval') }}</span>

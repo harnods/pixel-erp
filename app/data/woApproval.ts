@@ -3,7 +3,7 @@
  * with the MVP scope decided on 2026-10-05.
  *
  * Work order is a transaction type on the existing approval engine (Settings › Approval
- * workflows, `transactionType: 'work-order'`). MVP gates five production events: start
+ * workflows, `transactionType: 'work-order'`). MVP gates four production events: start
  * work order, adjustment, completion and cancel/close. Work order
  * creation and material consume / return are NOT gated — they execute immediately.
  * A gated event is saved as a REQUEST and nothing it would move or post is executed
@@ -20,7 +20,8 @@
  * FE/BE grooming (2026-10-09):
  *   • the work order status stays as-is — no Draft / Waiting approval display status;
  *   • while ANY request is pending the work order is FROZEN: every action refuses
- *     (inline) except Print and the requester's Cancel approval request;
+ *     (inline) except Print and the requester's Cancel approval request — so the notice
+ *     says the work order is locked rather than naming the one action left;
  *   • an adjustment shows its new data right away (it's written to the work order at
  *     submission and reverted if the request is rejected or canceled);
  *   • the requester can cancel a request until the first approver approves it;
@@ -33,7 +34,7 @@ import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderActionReas
 import { billOfMaterials } from './billOfMaterials'
 import { recordsForWorkOrder } from './materialConsumeReturn'
 import { formatIDR } from '~/utils/currency'
-import { formatDateLong } from '~/utils/date'
+import { formatDateLong, localDate } from '~/utils/date'
 import { warehouses } from './warehouses'
 import { users, getUserById, findUserByName } from './users'
 import {
@@ -65,8 +66,13 @@ export interface WoRequestPayload {
 }
 
 export interface WoApprovalEvent {
-  /** 'skipped' — the level's only possible approver is the requester (no self-approval) */
-  event: 'submitted' | 'resubmitted' | 'approved' | 'rejected' | 'skipped' | 'canceled'
+  /**
+   * 'skipped'      — the level's only possible approver is the requester (no self-approval)
+   * 'rule-changed' — the level the request was waiting at was removed from the workflow,
+   *                  so nothing was left to decide and the request applied. Nobody
+   *                  approved that level, so the log has to say why it went through.
+   */
+  event: 'submitted' | 'resubmitted' | 'approved' | 'rejected' | 'skipped' | 'canceled' | 'rule-changed'
   /** 1-based approval level (approved / rejected only) */
   level?: number
   user: string
@@ -117,9 +123,19 @@ function at(dayOffset: number, hhmm: string): string {
   d.setHours(h!, m!, 0, 0)
   return d.toISOString()
 }
+/**
+ * The seeded day as a LOCAL date — `at()` returns a UTC instant, so slicing its ISO
+ * string east of UTC would land on the day before (00:00 WIB = 17:00Z yesterday) and a
+ * request would show a transaction date a day earlier than its own log timestamps.
+ */
 function dateOnly(dayOffset: number): string {
-  return at(dayOffset, '00:00').slice(0, 10)
+  const d = new Date(TODAY)
+  d.setDate(d.getDate() + dayOffset)
+  return localDate(d)
 }
+
+/** Author of log entries nobody made by hand (an approval-rule change applying a request). */
+export const SYSTEM_ACTOR = 'System'
 
 export const LEVEL_1 = 'Budi Santoso'
 export const LEVEL_2 = ['Sari Indah', 'Dewi Rahayu']
@@ -213,8 +229,9 @@ const SEED_COMMENTS: WoComment[] = [
   { id: 'woc-3', requestId: 'wor-005', author: PPIC, timestamp: at(0, '06:42'), text: 'Maintenance ticket MT-221 is attached to the work order.' },
 ]
 
-// v5 — grooming 2026-10-09 (adjustments carry previousPlannedQty; canceled requests).
-const REQ_KEY = 'wo-approval-requests-v5'
+// v6 — review fixes 2026-10-19: transaction dates are the LOCAL day, so a snapshot taken
+// under v5 holds dates a day before their own log timestamps and has to be re-seeded.
+const REQ_KEY = 'wo-approval-requests-v6'
 const COMMENT_KEY = 'wo-approval-comments-v2'
 const DISMISSED_KEY = 'wo-approval-dismissed-v1'
 
@@ -411,7 +428,18 @@ export function syncPendingWithRules(): void {
     if (JSON.stringify(levels) !== JSON.stringify(req.levels)) { req.levels = levels; changed = true }
     while (req.status === 'pending' && req.currentLevel != null) {
       const level: number = req.currentLevel
-      if (level > req.levels.length) { finalize(req); changed = true; break }
+      // The level it was waiting at is gone from the rule — nothing is left to decide, so
+      // it applies. Nobody approved that level: log WHY, or the history reads as if the
+      // last approver had passed it (rule/detail-approval-header — the log is the record).
+      if (level > req.levels.length) {
+        req.log.push({
+          event: 'rule-changed', level, user: SYSTEM_ACTOR, at: new Date().toISOString(),
+          reason: `Approval level ${level} was removed from "${rule.name}"`,
+        })
+        finalize(req)
+        changed = true
+        break
+      }
       if (!eligibleApprovers(req, level).length) { advanceSkippedLevels(req); changed = true; continue }
       if (!approvalsAtLevel(req, level).length || !levelSatisfied(req, level)) break
       if (level >= req.levels.length) finalize(req)
@@ -533,15 +561,10 @@ export function consumableQty(woId: string, productId: string): number {
   return Math.max(0, plannedMaterialQty(woId, productId) - approvedConsumedQty(woId, productId))
 }
 
-/**
- * Status the work order shows (list + detail badge). Grooming 2026-10-09: the work order
- * status stays as-is while a request is pending — there's no Draft / Waiting approval
- * status; the freeze notice and the Approval status filter carry the signal instead.
- */
-export type WoDisplayStatus = WorkOrder['status']
-export function displayStatus(wo: WorkOrder): WoDisplayStatus {
-  return wo.status
-}
+// Grooming 2026-10-09: the work order status stays as-is while a request is pending —
+// there's no Draft / Waiting approval display status, so the list and the detail badge
+// read `wo.status` directly. The freeze notice and the Approval status filter carry the
+// "waiting" signal instead.
 
 // ── Freeze (F-3) ────────────────────────────────────────────────────────────
 
@@ -550,17 +573,18 @@ export function isFrozen(woId: string): boolean {
   return pendingForWorkOrder(woId).length > 0
 }
 
-/** Actions that stay available on a frozen work order. */
-export const FREEZE_EXEMPT_ACTIONS = ['Print', 'Cancel approval request'] as const
-
 /**
  * Inline refusal for any action on a frozen work order (Start, Adjust, Complete, Cancel,
  * Edit, Delete, Replace attachment, material consume / return …), or null when it may
  * proceed. Buttons stay enabled (rule: never disabled) and explain themselves.
+ *
+ * The copy doesn't list what's left: Print is always there, and the requester also keeps
+ * Cancel approval request, so "Only Print is available" was wrong for the person most
+ * likely to read it.
  */
 export function guardMessage(woId: string): string | null {
   if (!isFrozen(woId)) return null
-  return 'This work order is locked until its request is decided. Only Print is available.'
+  return 'This work order is locked until its request is decided.'
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────
@@ -601,7 +625,7 @@ export function submitRequest(input: {
     ref: nextRef(input.type),
     requester: input.requester,
     ruleId: rule.id,
-    transactionDate: input.transactionDate ?? now.slice(0, 10),
+    transactionDate: input.transactionDate ?? localDate(),
     payload: input.payload,
     status: 'pending',
     currentLevel: 1,
@@ -642,7 +666,7 @@ function revert(req: WoApprovalRequest): void {
  */
 export function startWorkOrder(wo: WorkOrder): void {
   wo.status = 'in progress'
-  wo.startDate = new Date().toISOString().slice(0, 10)
+  wo.startDate = localDate()
   if (wo.reservationPlan) {
     wo.materialReservations = wo.reservationPlan
     wo.reservationPlan = undefined
@@ -654,7 +678,7 @@ export function startWorkOrder(wo: WorkOrder): void {
 function execute(req: WoApprovalRequest) {
   const wo = workOrderOf(req)
   if (!wo) return
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDate()
   switch (req.type) {
     case 'start':
       startWorkOrder(wo)
@@ -777,6 +801,18 @@ function stagesFor(req: WoApprovalRequest): ApprovalStage[] {
       skipped: skipped ? `Skipped — ${req.requester} requested this and is the only approver` : undefined,
     })
   })
+  // The level it was waiting at was removed from the rule — it's no longer in `levels`,
+  // so it gets its own entry: without it the log would show an approval nobody gave.
+  const ruleChanged = req.log.find(e => e.event === 'rule-changed')
+  if (ruleChanged) {
+    stages.push({
+      title: `Approval level ${ruleChanged.level}`,
+      rule: 'anyone',
+      approvers: [],
+      approvals: [],
+      skipped: ruleChanged.reason ?? 'The approval workflow changed',
+    })
+  }
   return stages
 }
 
@@ -874,11 +910,12 @@ export interface WoApprovalHistoryRow {
 
 function lastActionText(req: WoApprovalRequest): string {
   if (req.status === 'pending') return `Waiting for ${waitingForText(req)} (approval level ${req.currentLevel})`
-  const last = [...req.log].reverse().find(e => e.event === 'approved' || e.event === 'rejected' || e.event === 'canceled' || e.event === 'skipped')
+  const last = [...req.log].reverse().find(e => e.event === 'approved' || e.event === 'rejected' || e.event === 'canceled' || e.event === 'skipped' || e.event === 'rule-changed')
   if (!last) return ''
   if (last.event === 'rejected') return `Rejected by ${last.user}: ${last.reason ?? ''}`
   if (last.event === 'canceled') return `Canceled by ${last.user}`
   if (last.event === 'skipped') return 'Approved automatically (requester is the only approver)'
+  if (last.event === 'rule-changed') return `Applied automatically — ${last.reason ?? 'the approval workflow changed'}`
   return `Approved by ${last.user}`
 }
 

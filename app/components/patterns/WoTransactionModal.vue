@@ -11,9 +11,11 @@
  *     notice on the detail page after submit;
  *   • when VAL says every level would be skipped (the requester is the only approver),
  *     the banner says so and the action is approved automatically on submit;
- *   • a non-gated action applies immediately, exactly as before;
- *   • `prefill` ("Create again" / "Submit again") re-opens a rejected request with its
- *     data and the rejection reason.
+ *   • a non-gated action applies immediately, exactly as before.
+ *
+ * A rejected request is NOT re-opened here: the rejection notice carries no action
+ * (wo-approval-reject-banner), so the user starts the transaction again from the header
+ * or the Actions menu and fills the form fresh.
  *
  * STAND-IN: the prototype had no adjust form, so this minimal modal covers it. The
  * adjustable field is the planned output qty — never the BOM.
@@ -21,15 +23,14 @@
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpFormHelpText, MpFormErrorMessage, MpInput, MpTextarea, MpButton, MpButtonGroup, MpDatePicker,
-  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpSpinner,
+  MpBanner, MpBannerIcon, MpBannerDescription, MpBannerLink, MpSpinner,
 } from '@mekari/pixel3'
 import { persistWorkOrders, type WorkOrder } from '~/data/workOrders'
 import {
-  submitRequest, guardMessage, joinNames, rejectionOf, recordActionReason, dismissRejection,
+  submitRequest, guardMessage, joinNames, recordActionReason,
   type WoApprovalRequest,
 } from '~/data/woApproval'
 import { useValApprovalRule } from '~/data/valApprovalRule'
-import { formatDateTimeLong } from '~/utils/date'
 
 export type WoTransactionMode = 'start' | 'adjustment' | 'completion' | 'cancel'
 /** 'submitted' = held for approval · 'applied' = executed now · 'auto-approved' = every level skipped */
@@ -40,8 +41,6 @@ const props = defineProps<{
   mode: WoTransactionMode
   workOrder: WorkOrder
   requester: string
-  /** Rejected request to pre-fill from ("Create again"). */
-  prefill?: WoApprovalRequest | null
 }>()
 const emit = defineEmits<{
   'update:isOpen': [v: boolean]
@@ -93,12 +92,11 @@ watch(() => props.isOpen, (open) => {
   noteError.value = ''
   dateError.value = ''
   formError.value = ''
-  const p = props.prefill?.payload
-  // "Create again" keeps the original transaction date (still editable).
-  adjustmentDate.value = toDMY(p?.adjustmentDate ?? props.prefill?.transactionDate ?? new Date().toISOString())
-  if (props.mode === 'adjustment') { qty.value = String(p?.plannedQty ?? props.workOrder.plannedQty); note.value = p?.note ?? '' }
-  if (props.mode === 'cancel') { qty.value = ''; note.value = p?.note ?? '' }
-  if (props.mode === 'completion') { qty.value = String(p?.producedQty ?? props.workOrder.plannedQty); note.value = '' }
+  adjustmentDate.value = toDMY(new Date().toISOString())
+  note.value = ''
+  if (props.mode === 'adjustment') qty.value = String(props.workOrder.plannedQty)
+  if (props.mode === 'cancel') qty.value = ''
+  if (props.mode === 'completion') qty.value = String(props.workOrder.plannedQty)
   loadRule()
 }, { immediate: true })
 
@@ -114,7 +112,6 @@ const bannerText = computed(() => {
     : t('This transaction needs approval from level {n}: {names}.').replace('{n}', String(first.level)).replace('{names}', joinNames(first.approvers))
 })
 
-const rejection = computed(() => (props.prefill ? rejectionOf(props.prefill) : undefined))
 const qtyLabel = computed(() => props.mode === 'adjustment' ? t('Planned qty') : t('Final produced qty'))
 const noteRequired = computed(() => props.mode === 'adjustment' || props.mode === 'cancel')
 
@@ -122,8 +119,6 @@ function close() { emit('update:isOpen', false) }
 
 function finish(req: WoApprovalRequest | null): boolean {
   if (!req) return false
-  // Acting on a rejection ("Create again") clears its notice.
-  if (props.prefill) dismissRejection(props.prefill.id)
   if (noteRequired.value) {
     recordActionReason(props.workOrder, { type: props.mode as 'adjustment' | 'cancel', reason: note.value.trim(), by: props.requester, requestId: req.id })
   }
@@ -167,7 +162,6 @@ function submit() {
   }
 
   // Normal flow — no rule gates it, so it executes now exactly as today.
-  if (props.prefill) dismissRejection(props.prefill.id)
   if (props.mode === 'start') { close(); emit('startNow'); return }
   if (props.mode === 'completion') { close(); emit('completeNow'); return }
   if (props.mode === 'cancel') {
@@ -195,15 +189,6 @@ function submit() {
       </MpModalHeader>
       <MpModalBody>
         <div class="wtm-body" data-devchange="wo-approval-forms">
-          <MpBanner v-if="rejection" variant="danger">
-            <MpBannerIcon />
-            <MpBannerTitle>{{ t('Request rejected') }}</MpBannerTitle>
-            <MpBannerDescription>
-              {{ t('{name} rejected this on {timestamp}. Reason: {reason}. Fix the details and submit again.')
-                .replace('{name}', rejection.user).replace('{timestamp}', formatDateTimeLong(rejection.at)).replace('{reason}', rejection.reason ?? '') }}
-            </MpBannerDescription>
-          </MpBanner>
-
           <!-- Approval rule from VAL — loading / error / gated / auto-approved -->
           <MpBanner v-if="val.loading.value" variant="info" role="status" data-devchange="wo-approval-val">
             <MpSpinner size="sm" />

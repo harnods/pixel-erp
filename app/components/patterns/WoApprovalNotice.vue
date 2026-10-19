@@ -39,7 +39,7 @@ function shortTitle(req: WoApprovalRequest): string {
 
 <template>
   <div class="wan" data-devchange="wo-approval-detail">
-    <MpBanner v-if="notice.kind === 'guard'" variant="danger" is-inline data-devchange="wo-approval-freeze">
+    <MpBanner v-if="notice.kind === 'guard'" variant="danger" is-inline data-devchange="wo-approval-fixes">
       <MpBannerIcon />
       <MpBannerDescription>{{ t(guardText ?? '') }}</MpBannerDescription>
       <MpBannerCloseButton @click="emit('clearGuard')" />
@@ -48,7 +48,7 @@ function shortTitle(req: WoApprovalRequest): string {
       <MpBannerIcon />
       <MpBannerDescription>
         <span data-devchange="wo-approval-status">
-          {{ t('{action} is waiting for approval from {names} (level {n}). Only Print is available until then.')
+          {{ t('{action} is waiting for approval from {names} (level {n}). The work order is locked until then.')
             .replace('{action}', shortTitle(notice.request)).replace('{names}', waitingForText(notice.request)).replace('{n}', String(notice.request.currentLevel)) }}
         </span>
         <span v-if="notice.request.payload.note && notice.request.type !== 'start'" class="wan-line" data-devchange="wo-approval-reason-banner">

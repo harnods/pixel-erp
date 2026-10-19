@@ -179,7 +179,7 @@ export interface ApprovalWorkflowRule {
    *  entirely, not shown-disabled. Stays at its default ('all' / []) for those rules. */
   createdByScope: 'all' | 'some'
   createdByUserIds: string[]
-  /** Work order rules only — gated transaction types; [] = all seven. */
+  /** Work order rules only — gated transaction types; [] = all four. */
   woCriteria?: WoTransactionType[]
   /** Work order rules only — may a requester who is also an approver approve their own
    *  request? Off by default (PRD Rev 3). */
@@ -202,10 +202,14 @@ function projIdOf(name: string): string {
 }
 
 /**
- * One seeded Work order workflow per work order transaction type. Start is active;
- * Adjustment, Completion and Cancel/close are seeded inactive, so a new workflow can still
- * pick those types (only ACTIVE workflows block a type). Partial completion and material
- * consume / return are out of MVP scope — not gated.
+ * One seeded Work order workflow per work order transaction type, all ACTIVE: the seed
+ * also carries pending Adjustment, Completion and Cancel/close requests, so leaving those
+ * three workflows off made the demo contradict itself — the queue showed requests of a
+ * type that, on the work order, saved straight through with no approval.
+ *
+ * A type can belong to one active workflow, so creating a new workflow for one of these
+ * means turning the seeded one off first (the conflict is reported on save). Partial
+ * completion and material consume / return are out of MVP scope — not gated.
  */
 function woSeedRule(id: string, name: string, description: string, type: WoTransactionType, levelNames: string[][], updatedAt: string, isActive = true): ApprovalWorkflowRule {
   return {
@@ -221,9 +225,9 @@ function woSeedRule(id: string, name: string, description: string, type: WoTrans
 const SUPERVISOR_THEN_MANAGER = [['Budi Santoso'], ['Sari Indah', 'Dewi Rahayu']]
 const WO_SEED_RULES: ApprovalWorkflowRule[] = [
   woSeedRule('awf-007', 'Start work order approval', 'Supervisor then production manager approve starting a work order', 'start', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:00:00'),
-  woSeedRule('awf-009', 'Work order adjustment approval', 'Corrections to a run are reviewed before they change the work order', 'adjustment', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:10:00', false),
-  woSeedRule('awf-010', 'Work order completion approval', 'Output is reviewed before the work order closes', 'completion', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:20:00', false),
-  woSeedRule('awf-011', 'Work order cancel/close approval', 'Remaining WIP is never written off unreviewed', 'cancel', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:30:00', false),
+  woSeedRule('awf-009', 'Work order adjustment approval', 'Corrections to a run are reviewed before they change the work order', 'adjustment', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:10:00'),
+  woSeedRule('awf-010', 'Work order completion approval', 'Output is reviewed before the work order closes', 'completion', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:20:00'),
+  woSeedRule('awf-011', 'Work order cancel/close approval', 'Remaining WIP is never written off unreviewed', 'cancel', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:30:00'),
 ]
 
 const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
@@ -354,9 +358,10 @@ const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v3'
 const snapshot = loadSnapshot<ApprovalWorkflowRule>(APPROVAL_WORKFLOWS_KEY)
 export const approvalWorkflows = reactive<ApprovalWorkflowRule[]>(snapshot ?? [...SEED_APPROVAL_WORKFLOWS])
 
-// Snapshots saved before one-type-per-workflow (2026-10-08) carry the older seeded Work
-// order rules — replace them with the current seeds once (flagged, so later edits stick).
-const WO_RULE_SEEDED_FLAG = 'approval-workflows-wo-seeded-v5'
+// Snapshots saved before one-type-per-workflow (2026-10-08), or before Adjustment /
+// Completion / Cancel-close were seeded active (2026-10-19), carry older seeded Work order
+// rules — replace them with the current seeds once (flagged, so later edits stick).
+const WO_RULE_SEEDED_FLAG = 'approval-workflows-wo-seeded-v6'
 if (snapshot && !loadFlag(WO_RULE_SEEDED_FLAG)) {
   // Partial completion left MVP scope — drop its seeded workflow.
   const partialIdx = approvalWorkflows.findIndex((r) => r.id === 'awf-008')

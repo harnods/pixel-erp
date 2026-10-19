@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-approval-queue-columns',
+    title: 'Awaiting approval: Request type column',
+    description:
+      'Copy audit: the column was "Transaction type", which in ERP means the document type — in Settings › Approval workflows, Work order IS the transaction type. Every row here is a work order, so the column now reads Request type (Tipe pengajuan) and says which request is waiting. The cancel type reads "Cancel/close" like the rest of the module instead of "Cancellation". Status and Requester swapped places.',
+    date: '2026-10-19',
+    files: ['WorkOrdersAwaitingApprovalPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'wo-approval-fixes',
+    title: 'Work order approval — review fixes',
+    description:
+      'Review pass: the freeze notice no longer claims "Only Print is available" (the requester can also cancel the request) and just says the work order is locked; transaction dates are the local calendar day, so a request no longer shows a date a day before its own log; a request that applies because its approval level was removed from the workflow now says so in the log instead of looking approved; Adjustment, Completion and Cancel/close workflows are seeded ACTIVE, so those actions really do ask for approval like the queue implies.',
+    date: '2026-10-19',
+    files: ['woApproval.ts', 'approvalWorkflows.ts', 'WoApprovalNotice.vue', 'WoTransactionModal.vue', 'date.ts'],
+  },
+  {
     id: 'wo-approval-status',
     title: 'Work order status while approval is pending',
     description:
@@ -55,7 +71,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-queue',
     title: 'Work orders: Awaiting approval tab',
     description:
-      'Approver queue (PRD "Require approval" tab, named Awaiting approval like other modules) with Approval log, Comments, Approve and Reject (reason required), plus bulk Approve / Reject. Switch "View as" in the scenario FAB to check level 1, level 2 and requester views. Table styled like the other approval queues (Purchase requests / Bills): "Work order #n" number link, Awaiting approval status badge, plain cells, Airene / Column settings / Export tools, inline Approve + quiet icon buttons. UXW copy: columns Date · Number · Transaction type · Warehouse · Requester · Status · Approver; types Start / Adjustment / Completion / Cancellation; search "Search...".',
+      'Approver queue (PRD "Require approval" tab, named Awaiting approval like other modules) with Approval log, Comments, Approve and Reject (reason required), plus bulk Approve / Reject. Switch "View as" in the scenario FAB to check level 1, level 2 and requester views. Table styled like the other approval queues (Purchase requests / Bills): "Work order #n" number link, Awaiting approval status badge, plain cells, Airene / Column settings / Export tools, inline Approve + quiet icon buttons. UXW copy: columns Date · Number · Request type · Warehouse · Status · Requester · Approver; types Start / Adjustment / Completion / Cancel/close; search "Search...".',
     date: '2026-10-14',
     files: ['WorkOrdersAwaitingApprovalPage.vue', 'woApproval.ts', 'ApprovalLogModal.vue'],
   },
@@ -79,17 +95,9 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wo-approval-forms',
     title: 'Gated transactions: pre-submit notice and Submit for approval',
     description:
-      'Start work order, Adjust work order, Partial completion, Complete and Cancel/close show "This transaction needs approval from level 1: …" when a Work order workflow gates them, and save a request instead of executing. Adjust and Partial completion are stand-in modals (no form existed before). Material consume / return post immediately but are refused while an adjustment, completion or cancel/close is pending, and consume is capped at the planned qty.',
+      'Start work order, Adjust work order, Complete and Cancel/close show "This transaction needs approval from level 1: …" when a Work order workflow gates them, and save a request instead of executing. Adjust is a stand-in modal (no form existed before). Material consume / return post immediately but are refused while an adjustment, completion or cancel/close is pending, and consume is capped at the planned qty. A rejected request is not re-opened pre-filled — the user starts the action again from the header or Actions menu.',
     date: '2026-10-02',
     files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WoTransactionModal.vue'],
-  },
-  {
-    id: 'wo-approval-resubmit',
-    title: 'Resubmit a rejected request',
-    description:
-      'A rejected request shows a notice on the work order with Submit again (start) or Create again (other types), which reopens the form pre-filled with the original data and date.',
-    date: '2026-10-02',
-    files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WorkOrderDetailsPage.vue'],
   },
   {
     id: 'wo-approval-freeze',

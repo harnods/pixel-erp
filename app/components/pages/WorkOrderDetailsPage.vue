@@ -33,7 +33,7 @@ import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover
 import {
   pendingForWorkOrder, rejectedNotices, rejectionOf, dismissRejection, guardMessage, startWorkOrder,
   approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest,
-  approveRequest, displayStatus, typeLabel, requestTitle, requestById,
+  approveRequest, typeLabel, requestTitle, requestById,
   canCancelRequest, cancelRequest, requestsForWorkOrder, commentsFor, addComment,
   type WoApprovalRequest,
 } from '~/data/woApproval'
@@ -370,10 +370,8 @@ function openApprovalLog(requestId = '') {
 // Start / Adjust / gated Complete / Cancel-close — WoTransactionModal.
 const transactionOpen = ref(false)
 const transactionMode = ref<WoTransactionMode>('adjustment')
-const transactionPrefill = ref<WoApprovalRequest | null>(null)
-function openTransaction(mode: WoTransactionMode, prefill: WoApprovalRequest | null = null) {
+function openTransaction(mode: WoTransactionMode) {
   transactionMode.value = mode
-  transactionPrefill.value = prefill
   transactionOpen.value = true
 }
 function onTransactionDone(result: WoTransactionResult, mode: WoTransactionMode) {
@@ -614,8 +612,8 @@ function suppressFabClick(e: MouseEvent) {
           <h1 class="detail-title">{{ t('Work order') }} #{{ wo.number.split('-').pop() }}</h1>
           <!-- Work order status as-is — a pending request doesn't change it (grooming 2026-10-09) -->
           <ErpStatusBadge
-            :status="displayStatus(wo)"
-            :label="displayStatus(wo) === 'in progress' ? t('In progress') : undefined"
+            :status="wo.status"
+            :label="wo.status === 'in progress' ? t('In progress') : undefined"
             badge-for="additionalInformation" size="md"
             data-devchange="wo-approval-status"
           />
@@ -659,8 +657,8 @@ function suppressFabClick(e: MouseEvent) {
 
         <!-- Approver view — when a request on this work order awaits the viewer's level,
              the primary action becomes Approve (the work order can't move on until it's
-             decided anyway); the chevron segment offers Reject. The Approval log icon sits
-             left of Actions (rule/detail-approval-header); no Comments icon on the WO. -->
+             decided anyway); the chevron segment offers Reject. The Approval log and
+             Comments icons sit left of Actions (rule/detail-approval-header). -->
         <div v-if="myRequest" class="detail-split-btn" data-devchange="wo-approval-detail">
           <MpButton variant="primary" is-rounded class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="approveHere">{{ t('Approve') }}</MpButton>
           <MpPopover id="wod-approve-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -1191,7 +1189,6 @@ function suppressFabClick(e: MouseEvent) {
       :mode="transactionMode"
       :work-order="wo"
       :requester="actor"
-      :prefill="transactionPrefill"
       @done="onTransactionDone"
       @complete-now="runCompletion"
       @cancel-now="cancelNow"
