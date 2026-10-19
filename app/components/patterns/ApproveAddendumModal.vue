@@ -1,15 +1,18 @@
 <script setup lang="ts">
 /**
- * ApproveAddendumModal — the Finance/Controller gate on a contract addendum.
+ * ApproveAddendumModal — the approver's gate on a contract addendum.
  *
- * Approving is a separate act from raising: it moves the contract value and, in
- * some cases, trues up revenue already recognised. The dialog therefore states the
- * before/after, the stated reason, and the accounting effect BEFORE the click —
- * it cannot be undone from here, only reversed by a further addendum.
- *
- * A custom Teleport overlay, matching ConfirmModal (MpModal renders with no
- * structural CSS in this Pixel3 build).
+ * Approving moves the contract value and may true up revenue already recognized,
+ * so the dialog states the before/after, the reason and the plain-language effect
+ * before the click. It cannot be undone here, only reversed by another addendum.
+ * Chrome matches ConfirmModal: MpModal md, ghost Cancel + pill confirm, explicit
+ * close only.
  */
+import {
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpButton, MpButtonGroup, MpText,
+} from '@mekari/pixel3'
+import ContentList from '~/components/patterns/ContentList.vue'
 import { formatIdr } from '~/data/projectAccounting'
 
 const props = defineProps<{
@@ -17,10 +20,10 @@ const props = defineProps<{
   oldValue: number
   newValue: number
   reason: string
-  /** Plain-language description of what approving does to recognised revenue. */
+  /** Plain-language description of what approving does to recognized revenue. */
   effect: string
   raisedBy: string
-  /** Logged-in approver shown in the dialog (overlays agent renders these). */
+  /** The current user approving (from View as). Omitted → no approver line. */
   approverName?: string
   approverRole?: string
 }>()
@@ -32,86 +35,62 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 
+let _seq = 0
+const modalId = `approve-addendum-modal-${(_seq += 1)}-${Math.floor(performance.now())}`
+
 const delta = computed(() => props.newValue - props.oldValue)
 const deltaLabel = computed(() => `${delta.value >= 0 ? '+' : '−'}${formatIdr(Math.abs(delta.value))}`)
+const approverLine = computed(() =>
+  [props.approverName, props.approverRole].filter((s) => !!s && String(s).trim()).join(' · '))
 
 function close() { emit('update:isOpen', false) }
 function confirm() { emit('confirm'); close() }
 </script>
 
 <template>
-  <Transition name="aam">
-    <div v-if="isOpen" class="aam-overlay" @click.self="close">
-      <div class="aam-panel" role="alertdialog" aria-modal="true" :aria-label="t('Approve addendum?')">
-        <p class="aam-title">{{ t('Approve addendum?') }}</p>
-        <p class="aam-desc">
-          {{ t('The contract value will change. To reverse it, submit another addendum.') }}
-        </p>
+  <MpModal :id="modalId" :is-open="isOpen" size="md" :is-keep-alive="false"
+    :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="close">
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Approve addendum?') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <div class="aam-body">
+          <MpText>{{ t('The contract value will change. To reverse it, submit another addendum.') }}</MpText>
 
-        <div class="aam-box">
-          <div class="aam-row">
-            <span class="aam-key">{{ t('Current contract value') }}</span>
-            <b class="aam-num">{{ formatIdr(oldValue) }}</b>
+          <div class="aam-figures">
+            <ContentList horizontal :label="t('Current contract value')">
+              <span class="aam-num">{{ formatIdr(oldValue) }}</span>
+            </ContentList>
+            <ContentList horizontal :label="t('New contract value')">
+              <span class="aam-num">{{ formatIdr(newValue) }}</span>
+            </ContentList>
+            <ContentList horizontal :label="t('Change')">
+              <span class="aam-num aam-num--strong">{{ deltaLabel }}</span>
+            </ContentList>
+            <ContentList horizontal :label="t('Reason')" :value="reason || '—'" />
+            <ContentList horizontal :label="t('Submitted by')" :value="raisedBy || '—'" />
+            <ContentList v-if="approverLine" horizontal :label="t('Approving as')" :value="approverLine" />
           </div>
-          <div class="aam-row">
-            <span class="aam-key">{{ t('New contract value') }}</span>
-            <b class="aam-num">{{ formatIdr(newValue) }}</b>
-          </div>
-          <div class="aam-row aam-row--total">
-            <span class="aam-key">{{ t('Change') }}</span>
-            <b class="aam-num aam-num--delta">{{ deltaLabel }}</b>
-          </div>
+
+          <MpText v-if="effect">{{ effect }}</MpText>
         </div>
-
-        <p class="aam-reason"><b>{{ t('Reason') }}:</b> {{ reason }}</p>
-        <p class="aam-effect">{{ effect }}</p>
-        <p class="aam-approver">
-          {{ t('Submitted by') }} {{ raisedBy }}. {{ t('Approving as') }} Anggun Prakoso · {{ t('Finance Controller') }}
-        </p>
-
-        <div class="aam-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="confirm">{{ t('Approve addendum') }}</button>
-        </div>
-      </div>
-    </div>
-  </Transition>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirm">{{ t('Approve addendum') }}</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
 </template>
 
 <style scoped>
-.aam-enter-active, .aam-leave-active { transition: opacity 200ms ease; }
-.aam-enter-from, .aam-leave-to { opacity: 0; }
-.aam-enter-active .aam-panel, .aam-leave-active .aam-panel { transition: transform 200ms ease, opacity 200ms ease; }
-.aam-enter-from .aam-panel, .aam-leave-to .aam-panel { transform: scale(0.96); opacity: 0; }
-
-.aam-overlay {
-  position: fixed; inset: 0; z-index: 1400;
-  background: var(--mp-colors-background-overlay);
-  display: flex; align-items: center; justify-content: center; padding: var(--mp-spacing-6);
-}
-/* A modal is a genuinely floating overlay, so it keeps its elevation shadow. */
-.aam-panel {
-  width: min(520px, 100%); max-height: 100%; overflow-y: auto;
-  background: var(--mp-background-stage, #fff); border-radius: var(--mp-radii-lg, 12px);
-  padding: var(--mp-spacing-5);
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2), 0 4px 6px -2px rgba(0,0,0,0.1); /* pixel-police-allow-shadow */
-}
-.aam-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.aam-desc { margin: var(--mp-spacing-2) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-lg, 20px); }
-
-.aam-box { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); padding: var(--mp-spacing-3) var(--mp-spacing-4); }
-.aam-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1) 0; }
-.aam-row--total { border-top: 1px solid var(--mp-border-default); margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-2); }
-.aam-key { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.aam-num { font-size: var(--mp-font-sizes-md); font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
-.aam-num--delta { color: var(--mp-text-link); }
-
-.aam-reason { margin: var(--mp-spacing-4) 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
-.aam-effect {
-  margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
-  background: var(--mp-background-warning-subtle, #fdf9c4); border-radius: var(--mp-radii-md, 6px);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); line-height: var(--mp-line-heights-lg, 20px);
-}
-.aam-approver { margin: 0; font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); }
-.aam-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-5); }
+.aam-body { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.aam-figures { border-top: 1px solid var(--mp-border-default); border-bottom: 1px solid var(--mp-border-default); }
+.aam-num { font-variant-numeric: tabular-nums; }
+.aam-num--strong { font-weight: var(--mp-font-weights-semi-bold); }
 </style>

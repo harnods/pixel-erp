@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  MpIcon, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import {
   approvalWorkflows, setApprovalWorkflowActive, deleteApprovalWorkflow,
   transactionTypeLabel, projectActionLabel, type ApprovalWorkflowRule,
@@ -16,6 +17,16 @@ import { formatIDR } from '~/utils/currency'
 const { t } = useLocale()
 const router = useRouter()
 const { projectAccountingEnabled, setProjectAccountingEnabled } = useApprovalWorkflowScenario()
+
+// Prototype-only scenario control (shared ScenarioFab) mapped onto the billing-component flag.
+const paScenarios = [
+  { label: t('Project accounting: on'), value: 'on' },
+  { label: t('Project accounting: off'), value: 'off' },
+]
+const paScenario = computed<string>({
+  get: () => (projectAccountingEnabled.value ? 'on' : 'off'),
+  set: (v) => setProjectAccountingEnabled(v === 'on'),
+})
 
 function goEdit(id: string) { router.push(`/approval-workflows/${id}/edit`) }
 
@@ -28,21 +39,21 @@ const columns: TableColumn[] = [
   { key: 'description',     label: 'Description',       kind: 'address' },
   { key: 'appliesTo',       label: 'Applies to',        sortType: 'text' },
   { key: 'minAmount',       label: 'Amount higher than', kind: 'amount', align: 'right', sortType: 'number' },
-  { key: 'levels',          label: 'Approval levels'  },
-  { key: 'createdBy',       label: 'Transaction created by' },
+  { key: 'levels',          label: 'Approval levels',   kind: 'unit' },
+  { key: 'createdBy',       label: 'Transaction created by', kind: 'default' },
   { key: 'status',          label: 'Status',            kind: 'status', sortType: 'text' },
   { key: 'lastUpdated',     label: 'Last updated',      kind: 'date' },
 ]
 
 function appliesToText(row: ApprovalWorkflowRule) {
-  if (row.appliesTo === 'project') return `${t('Project Action')} — ${t(projectActionLabel(row.projectAction))}`
+  if (row.appliesTo === 'project') return `${t('Project action')} · ${t(projectActionLabel(row.projectAction))}`
   return t(transactionTypeLabel(row.transactionType))
 }
 function amountText(row: ApprovalWorkflowRule) {
   return row.minAmount == null ? '—' : formatIDR(row.minAmount)
 }
 function createdByText(row: ApprovalWorkflowRule) {
-  // "Transaction created by" is omitted from the Project Action form entirely, so those rows
+  // "Transaction created by" is omitted from the Project action form entirely, so those rows
   // stay at the field's default (createdByScope: 'all') — show that default rather than a dash.
   if (row.createdByScope === 'all') return t('All users')
   const n = row.createdByUserIds.length
@@ -319,26 +330,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalOverlay />
   </MpModal>
 
-  <!-- ── Demo scenario FAB — switch whether this tenant has the Project Accounting
-       billing component, to preview the Approval workflows form both ways ──── -->
-  <MpPopover id="awf-demo-fab" is-close-on-select use-portal placement="top-end">
-    <MpPopoverTrigger>
-      <button class="demo-fab btn-enterprise" :aria-label="t('Change scenario state')">
-        <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </button>
-    </MpPopoverTrigger>
-    <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
-      <p class="demo-fab-heading">{{ t('Project Accounting billing component') }}</p>
-      <MpPopoverList>
-        <MpPopoverListItem :is-active="projectAccountingEnabled" @click="setProjectAccountingEnabled(true)">
-          {{ t('Component exists') }}
-        </MpPopoverListItem>
-        <MpPopoverListItem :is-active="!projectAccountingEnabled" @click="setProjectAccountingEnabled(false)">
-          {{ t('Component does not exist') }}
-        </MpPopoverListItem>
-      </MpPopoverList>
-    </MpPopoverContent>
-  </MpPopover>
+  <!-- ── Prototype scenario: whether this tenant has the Project accounting billing
+       component (shows or hides the Project action condition and PA roles). ── -->
+  <ScenarioFab v-model="paScenario" :scenarios="paScenarios" :aria-label="t('Project accounting billing component')" />
 </template>
 
 <style scoped>
@@ -410,20 +404,4 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); }
 
 .modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
-
-/* Demo scenario FAB — matches SettingsCompanyProfilePage.vue's convention exactly. */
-.demo-fab {
-  /* padding:0 overrides .btn-enterprise's base padding — width/height are fixed here, so
-     unset padding would inflate the box beyond 48x48 under content-box sizing. */
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
-  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
-  padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: var(--mp-text-inverse);
-  cursor: pointer; z-index: 1200;
-  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2); /* pixel-police-allow-shadow: floating FAB, not a surface/card */
-}
-.demo-fab:hover { opacity: 0.9; }
-.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>

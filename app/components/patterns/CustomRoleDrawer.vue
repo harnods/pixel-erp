@@ -45,7 +45,7 @@ const { t } = useLocale()
 
 const isEdit = computed(() => !!props.roleId)
 const { projectAccountingEnabled } = useApprovalWorkflowScenario()
-/** Project Accounting rows only exist for tenants that bought the component —
+/** Project accounting rows only exist for tenants that bought the component —
  *  dropped, not disabled (see authorityFeaturesFor). */
 const features = computed(() => authorityFeaturesFor(projectAccountingEnabled.value))
 

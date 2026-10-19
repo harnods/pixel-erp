@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
-  MpInput, MpInputTag, MpSelect, MpRadio, MpToggle, MpTextarea, MpText, MpButton, MpTooltip,
+  MpInput, MpInputTag, MpAutocomplete, MpRadio, MpToggle, MpTextarea, MpText, MpButton, MpTooltip, MpTextlink,
   MpInputGroup, MpInputLeftAddon, toast, type DataInterface,
 } from '@mekari/pixel3'
 import {
@@ -29,9 +29,9 @@ const name = ref('')
 const description = ref('')
 const appliesTo = ref<ApprovalAppliesTo>('transaction')
 
-// Demo FAB toggle (Settings > Approval workflows) — when Project Accounting billing doesn't
+// Scenario FAB (Settings > Approval workflows) — when Project accounting billing doesn't
 // exist for this tenant, the "Applies to" condition is dropped entirely and the form behaves
-// like the pre-Project-Action version (transaction type only). Force back to 'transaction' if
+// like the pre-Project-action version (transaction type only). Force back to 'transaction' if
 // the flag flips off mid-edit so a hidden 'project' selection can't be silently submitted.
 watch(projectAccountingEnabled, (enabled) => {
   if (!enabled) appliesTo.value = 'transaction'
@@ -92,11 +92,11 @@ const TRANSACTION_TYPE_LABELS: Record<ApprovalTransactionType, string> = {
   'warehouse-transfer': t('Warehouse transfer'),
 }
 
-const PROJECT_ACTION_LABELS: Record<ProjectAction, string> = {
-  'project-creation': t('Project creation'),
-  'variation-order': t('Variation order'),
-  'milestone-verification': t('Milestone verification'),
-}
+// Labels come from the data layer (approvalWorkflows.ts owns the wording: "Addendum").
+const transactionTypeOptions = computed(() =>
+  TRANSACTION_TYPE_OPTIONS.map((o) => ({ value: o.value, label: TRANSACTION_TYPE_LABELS[o.value] })))
+const projectActionOptions = computed(() =>
+  PROJECT_ACTION_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) })))
 
 // Edit mode — prefill the form from the existing rule.
 onMounted(() => {
@@ -155,7 +155,7 @@ function validate(): boolean {
     projectActionError.value = ''
     createdByError.value = createdByScope.value === 'some' && createdByUsers.value.length === 0
   } else {
-    // "Transaction created by" is omitted entirely for Project Action rules — nothing to validate.
+    // "Transaction created by" is omitted entirely for Project action rules — nothing to validate.
     transactionTypeError.value = ''
     projectActionError.value = projectAction.value ? '' : t('You must select action type')
     createdByError.value = false
@@ -204,7 +204,7 @@ async function save() {
     <!-- ── Page title bar (neutral-subtle bg, 72px, breadcrumb + title) ── -->
     <div class="caw-titlebar">
       <div class="caw-titlebar-left">
-        <button class="caw-breadcrumb btn-enterprise" @click="goBack">{{ t('Approval workflows') }}</button>
+        <MpTextlink id="awf-breadcrumb" as="a" class="caw-breadcrumb" @click.prevent="goBack">{{ t('Approval workflows') }}</MpTextlink>
         <h1 class="caw-title">{{ isEdit ? t('Edit approval workflow') : t('New approval workflow') }}</h1>
       </div>
     </div>
@@ -236,12 +236,12 @@ async function save() {
         <!-- ── Section: Conditions ── -->
         <div class="caw-section">
           <h2 class="caw-section-title">{{ t('Conditions') }}</h2>
-          <p class="caw-section-desc">{{ t('Define transaction conditions that require approval.') }}</p>
+          <p class="caw-section-desc">{{ t('Define the conditions that require approval.') }}</p>
 
           <div class="caw-fields">
             <!-- Only shown when the Project Accounting billing component exists for this
                  tenant (Settings > Approval workflows demo FAB) — otherwise the form behaves
-                 like the pre-Project-Action version (Transaction type only, no selector). -->
+                 like the pre-Project-action version (Transaction type only, no selector). -->
             <MpFormControl v-if="projectAccountingEnabled" id="awf-applies-to">
               <MpFormLabel>{{ t('Applies to') }}</MpFormLabel>
               <div class="caw-radio-group caw-radio-group--inline">
@@ -249,46 +249,48 @@ async function save() {
                   {{ t('Transaction') }}
                 </MpRadio>
                 <MpRadio id="awf-applies-to-project" name="awf-applies-to" value="project" v-model="appliesTo">
-                  {{ t('Project Action') }}
+                  {{ t('Project action') }}
                 </MpRadio>
               </div>
             </MpFormControl>
 
             <MpFormControl v-if="appliesTo === 'transaction'" id="awf-transaction-type" class="caw-field-half" is-required :is-invalid="!!transactionTypeError">
               <MpFormLabel>{{ t('Transaction type') }}</MpFormLabel>
-              <MpSelect
+              <MpAutocomplete
                 id="awf-transaction-type-input"
-                :model-value="transactionType"
-                :placeholder="transactionType ? undefined : t('Select transaction type')"
+                :model-value="transactionType || undefined"
+                :data="transactionTypeOptions"
+                label-prop="label"
+                value-prop="value"
+                :placeholder="t('Select transaction type')"
+                use-portal
                 is-full-width
-                @change="(_e: Event, v: string) => { transactionType = v as ApprovalTransactionType; transactionTypeError = '' }"
-              >
-                <option v-for="opt in TRANSACTION_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ TRANSACTION_TYPE_LABELS[opt.value] }}
-                </option>
-              </MpSelect>
+                :is-invalid="!!transactionTypeError"
+                @update:model-value="(v: unknown) => { transactionType = (v ?? '') as ApprovalTransactionType | ''; transactionTypeError = '' }"
+              />
               <MpFormErrorMessage>{{ transactionTypeError }}</MpFormErrorMessage>
             </MpFormControl>
 
             <template v-else>
               <MpFormControl id="awf-project-action" class="caw-field-half" is-required :is-invalid="!!projectActionError">
                 <MpFormLabel>{{ t('Action type') }}</MpFormLabel>
-                <MpSelect
+                <MpAutocomplete
                   id="awf-project-action-input"
-                  :model-value="projectAction"
-                  :placeholder="projectAction ? undefined : t('Select action type')"
+                  :model-value="projectAction || undefined"
+                  :data="projectActionOptions"
+                  label-prop="label"
+                  value-prop="value"
+                  :placeholder="t('Select action type')"
+                  use-portal
                   is-full-width
-                  @change="(_e: Event, v: string) => { projectAction = v as ProjectAction; projectActionError = '' }"
-                >
-                  <option v-for="opt in PROJECT_ACTION_OPTIONS" :key="opt.value" :value="opt.value">
-                    {{ PROJECT_ACTION_LABELS[opt.value] }}
-                  </option>
-                </MpSelect>
+                  :is-invalid="!!projectActionError"
+                  @update:model-value="(v: unknown) => { projectAction = (v ?? '') as ProjectAction | ''; projectActionError = '' }"
+                />
                 <MpFormErrorMessage>{{ projectActionError }}</MpFormErrorMessage>
               </MpFormControl>
             </template>
 
-            <!-- Amount / Contract value / Variation delta — same control, label + presence
+            <!-- Amount / Contract value / Addendum value change — same control, label + presence
                  depend on appliesTo + the selected Project action. Never shown for milestone
                  verification (no amount condition for that action). -->
             <MpFormControl v-if="showAmountField" id="awf-min-amount" class="caw-field-half">
@@ -309,8 +311,8 @@ async function save() {
               </MpFormHelpText>
             </MpFormControl>
 
-            <!-- "Applies to projects" — shown for the Transaction path, and for Project Action
-                 variation-order/milestone-verification; project-creation has no project yet at
+            <!-- "Applies to projects" — shown for the Transaction path, and for Project action
+                 addendum/milestone-verification; project-creation has no project yet at
                  submission time, so it's omitted entirely (not shown-disabled). -->
             <MpFormControl v-if="showProjectScopeField" id="awf-project-scope" :is-invalid="projectsError">
               <MpFormLabel>{{ t('Applies to projects') }}</MpFormLabel>
@@ -340,7 +342,7 @@ async function save() {
             </MpFormControl>
 
             <!-- "Transaction created by" — Transaction path only; omitted entirely (not
-                 shown-disabled) for every Project Action rule. -->
+                 shown-disabled) for every Project action rule. -->
             <MpFormControl v-if="appliesTo === 'transaction'" id="awf-created-by" :is-invalid="createdByError">
               <MpFormLabel>{{ t('Transaction created by') }}</MpFormLabel>
               <div class="caw-radio-group">
@@ -393,7 +395,7 @@ async function save() {
               </div>
 
               <MpFormControl :id="`awf-level-match-${idx}`">
-                <MpFormLabel>{{ t('Transaction require approval from') }}</MpFormLabel>
+                <MpFormLabel>{{ t('Transaction requires approval from') }}</MpFormLabel>
                 <div class="caw-radio-group caw-radio-group--inline">
                   <MpRadio :id="`awf-level-match-${idx}-any`" :name="`awf-level-match-${idx}`" value="any" v-model="level.matchType">
                     {{ t('Any') }}
@@ -488,15 +490,11 @@ async function save() {
   gap: 0;
 }
 .caw-breadcrumb {
-  background: none;
-  border: none;
+  align-self: flex-start;
   cursor: pointer;
-  padding: 0;
-  font-size: 12px;
-  font-weight: var(--mp-font-weights-regular);
-  line-height: var(--mp-line-heights-md);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm, 16px);
   color: var(--mp-text-link);
-  font-family: inherit;
   white-space: nowrap;
 }
 .caw-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
