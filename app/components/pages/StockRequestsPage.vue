@@ -651,10 +651,14 @@ const exportColumns = computed(() => {
     <template #cell-available="{ row }">
       <span v-if="view === 'product'" class="sr-available">
         <span :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }}</span>
+        <!-- Portalled: rendered inside the cell it inherits the column's
+             `text-align: right`, which set the tooltip's own copy ragged-right,
+             and it would clip against the table's horizontal scroll. -->
         <MpTooltip
           v-if="sku(row).backdate"
           :label="`${t('Stock minus after recalculation')} — ${sku(row).backdate!.transaction}`"
           placement="top"
+          use-portal
         >
           <MpIcon class="sr-available-warning" name="warning-triangle" size="sm" />
         </MpTooltip>
