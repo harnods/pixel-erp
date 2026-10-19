@@ -2324,15 +2324,8 @@ function startResize(e: MouseEvent) {
           >{{ t('Invite user') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Project accounting'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/project-accounting/expense/new')">
-            {{ t('New expense') }}
-          </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/project-accounting/new')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ t('New project') }}
-          </button>
+          <MpButton variant="secondary" is-rounded @click="router.push('/project-accounting/expense/new')">{{ t('New expense') }}</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/project-accounting/new')">{{ t('New project') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
