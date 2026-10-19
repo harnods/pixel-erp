@@ -1723,13 +1723,13 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-progress-fill[data-tone='ok'] { background: var(--mp-colors-emerald-700, #029861); }
 
 .pa-bucket { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1) 0; }
-.pa-bucket-label { width: var(--mp-sizes-24); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
+.pa-bucket-label { width: calc(var(--mp-sizes-12) * 2); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
 .pa-bucket-track { flex: 1; height: var(--mp-sizes-2); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); overflow: hidden; }
 .pa-bucket-fill { display: block; height: 100%; border-radius: var(--mp-radii-full, 999px); }
 .pa-bucket-fill[data-tone='ok'] { background: var(--mp-colors-emerald-700, #029861); }
 .pa-bucket-fill[data-tone='near'] { background: var(--mp-colors-orange-600, #e46910); }
 .pa-bucket-fill[data-tone='over'] { background: var(--mp-colors-red-700, #a8352d); }
-.pa-bucket-amount { width: var(--mp-sizes-40); text-align: right; font-size: var(--mp-font-sizes-sm); }
+.pa-bucket-amount { width: calc(var(--mp-sizes-20) * 2); text-align: right; font-size: var(--mp-font-sizes-sm); }
 
 /* ── Ageing / summaries ───────────────────────────────────────────────────── */
 .pa-age { font-weight: var(--mp-font-weights-semi-bold); font-size: var(--mp-font-sizes-sm); }
@@ -1747,7 +1747,7 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-box-title { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pa-choices { display: flex; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 .pa-choice {
-  flex: 1; min-width: var(--mp-sizes-64); text-align: left; cursor: pointer;
+  flex: 1; min-width: calc(var(--mp-sizes-16) * 4); text-align: left; cursor: pointer;
   display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px);
   background: var(--mp-background-neutral); padding: var(--mp-spacing-3) var(--mp-spacing-4);
@@ -1764,7 +1764,7 @@ watch(reviewChip, () => { setReviewPage(1) })
 /* ── Weight editor ────────────────────────────────────────────────────────── */
 .pa-weight-row { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2); }
 .pa-weight-label { flex: 1; font-size: var(--mp-font-sizes-md); }
-.pa-weight-input { width: var(--mp-sizes-36); flex-shrink: 0; }
+.pa-weight-input { width: calc(var(--mp-sizes-12) * 3); flex-shrink: 0; }
 
 /* ── Misc ─────────────────────────────────────────────────────────────────── */
 .pa-chips { display: flex; gap: var(--mp-spacing-2); flex-wrap: wrap; margin-bottom: var(--mp-spacing-2); }
@@ -1780,11 +1780,25 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-statusline--plain { margin-top: var(--mp-spacing-4); }
 .pa-statusline-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* Health figures use the shared stats band (caption above the figure). */
+/* Health figures use the shared stats band (caption above the figure) — same rules as BillsIndexPage. */
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.stat-amount { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
 .pa-health-stats { margin: 0; }
 
 /* ErpTablePage inside a card: no extra outer chrome. */
 .pa-erp-table { margin-top: var(--mp-spacing-3); }
+.filter-left, .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: var(--mp-sizes-4\.5, 18px); height: var(--mp-sizes-4\.5, 18px); padding: 0;
+  border: none; background: none; cursor: pointer; color: var(--mp-text-secondary);
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
 .pa-filter-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pa-cellstack { display: flex; flex-direction: column; min-width: 0; }
 .pa-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1794,7 +1808,7 @@ watch(reviewChip, () => { setReviewPage(1) })
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
 }
 .detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
-.pa-inline-field { flex: 1; min-width: var(--mp-sizes-64); }
+.pa-inline-field { flex: 1; min-width: calc(var(--mp-sizes-16) * 4); }
 
 .pa-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-2); height: 100%; }
 </style>
