@@ -17,7 +17,7 @@ import {
 } from './projectAccounting'
 
 /** The module's snapshot key, with persist.ts's prefix. */
-const SNAPSHOT_KEY = 'erp-db:project-accounting-v1'
+const SNAPSHOT_KEY = 'erp-db:project-accounting-v2'
 
 let n = 0
 function cost(
@@ -47,30 +47,30 @@ export function sampleEngagements(): Engagement[] {
       id: 'e1', name: 'Financial Statement Audit 2025', client: 'PT Sinar Abadi Textile', pm: 'Rina Wulandari',
       method: 'tm', markupPct: 20, stage: 'recognition', feeEstimate: 185_000_000, budget: 96_000_000,
       entries: [
-        cost('Labour', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-07-05', 5_700_000, 'Expense', 'EXP-1102', 20, null, false, 15),
-        cost('Labour', 'Yoga Prasetyo — tax position review', 'Internal payroll', '2026-06-28', 1_500_000, 'Expense', 'EXP-1088', 20, null, false, 6),
-        cost('Labour', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-06-15', 3_040_000, 'Expense', 'EXP-1071', 20, null, false, 8),
-        cost('Labour', 'Rina Wulandari — opening balance testing', 'Internal payroll', '2026-05-10', 4_560_000, 'Expense', 'EXP-1024', 20, null, false, 12),
-        cost('Labour', 'Made Ardika — schedule preparation', 'Internal payroll', '2026-04-20', 2_000_000, 'Expense', 'EXP-0991', 20, null, false, 10),
+        cost('Labor', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-07-05', 5_700_000, 'Expense', 'EXP-1102', 20, null, false, 15),
+        cost('Labor', 'Yoga Prasetyo — tax position review', 'Internal payroll', '2026-06-28', 1_500_000, 'Expense', 'EXP-1088', 20, null, false, 6),
+        cost('Labor', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-06-15', 3_040_000, 'Expense', 'EXP-1071', 20, null, false, 8),
+        cost('Labor', 'Rina Wulandari — opening balance testing', 'Internal payroll', '2026-05-10', 4_560_000, 'Expense', 'EXP-1024', 20, null, false, 12),
+        cost('Labor', 'Made Ardika — schedule preparation', 'Internal payroll', '2026-04-20', 2_000_000, 'Expense', 'EXP-0991', 20, null, false, 10),
       ],
     }),
     eng({
       id: 'e2', name: 'Annual Tax Consulting', client: 'CV Makmur Jaya', pm: 'Yoga Prasetyo',
       method: 'tm', markupPct: 20, stage: 'execution', feeEstimate: 60_000_000, budget: 28_000_000,
       entries: [
-        cost('Labour', 'Yoga Prasetyo — annual return preparation', 'Internal payroll', '2026-07-22', 2_250_000, 'Expense', 'EXP-1178', 20, null, false, 9),
-        cost('Labour', 'Yoga Prasetyo — tax reconciliation', 'Internal payroll', '2026-06-30', 2_750_000, 'Expense', 'EXP-1090', 20, null, false, 11),
-        cost('Labour', 'Dewi Kusuma — document collation', 'Internal payroll', '2026-06-10', 1_050_000, 'Expense', 'EXP-1065', 20, null, false, 7),
+        cost('Labor', 'Yoga Prasetyo — annual return preparation', 'Internal payroll', '2026-07-22', 2_250_000, 'Expense', 'EXP-1178', 20, null, false, 9),
+        cost('Labor', 'Yoga Prasetyo — tax reconciliation', 'Internal payroll', '2026-06-30', 2_750_000, 'Expense', 'EXP-1090', 20, null, false, 11),
+        cost('Labor', 'Dewi Kusuma — document collation', 'Internal payroll', '2026-06-10', 1_050_000, 'Expense', 'EXP-1065', 20, null, false, 7),
       ],
     }),
     eng({
       id: 'e3', name: 'Monthly Retainer', client: 'PT Global Teknindo', pm: 'Made Ardika',
       method: 'tm', markupPct: 20, stage: 'billing', feeEstimate: 25_000_000, budget: null,
       entries: [
-        cost('Labour', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-05', 4_000_000, 'Expense', 'EXP-1105', 20, 'bill', true, 20),
-        cost('Labour', 'Dewi Kusuma — payroll processing', 'Internal payroll', '2026-07-10', 1_800_000, 'Expense', 'EXP-1112', 20, 'bill', true, 12),
-        cost('Labour', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-26', 1_200_000, 'Expense', 'EXP-1190', 20, null, false, 6),
-        cost('Labour', 'Dewi Kusuma — VAT filing', 'Internal payroll', '2026-07-18', 750_000, 'Expense', 'EXP-1175', 20, null, false, 5),
+        cost('Labor', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-05', 4_000_000, 'Expense', 'EXP-1105', 20, 'bill', true, 20),
+        cost('Labor', 'Dewi Kusuma — payroll processing', 'Internal payroll', '2026-07-10', 1_800_000, 'Expense', 'EXP-1112', 20, 'bill', true, 12),
+        cost('Labor', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-26', 1_200_000, 'Expense', 'EXP-1190', 20, null, false, 6),
+        cost('Labor', 'Dewi Kusuma — VAT filing', 'Internal payroll', '2026-07-18', 750_000, 'Expense', 'EXP-1175', 20, null, false, 5),
       ],
       invoices: [{ id: 'INV-2198', label: 'Progress billing', amount: 6_960_000, date: '2026-07-12', status: 'unpaid', paidDate: null }],
     }),
@@ -95,7 +95,7 @@ export function sampleEngagements(): Engagement[] {
         cost('Subcontractor', 'Catering 300 pax', 'Bunda Ratu Catering', '2026-07-15', 45_000_000, 'Purchase', 'PO-0455'),
         cost('Subcontractor', 'Venue & decoration rental', 'Grand Ballroom Hotel', '2026-07-18', 38_000_000, 'Expense', 'EXP-1201'),
         cost('Subcontractor', 'Sound system & MC', 'Harmoni Production', '2026-07-20', 12_000_000, 'Expense', 'EXP-1205'),
-        cost('Labour', 'Dewi Kusuma — event coordination', 'Internal payroll', '2026-07-01', 2_400_000, 'Expense', 'EXP-1150', 0, null, false, 16),
+        cost('Labor', 'Dewi Kusuma — event coordination', 'Internal payroll', '2026-07-01', 2_400_000, 'Expense', 'EXP-1150', 0, null, false, 16),
       ],
       invoices: [{ id: 'INV-2205', label: 'Down payment', amount: 36_000_000, date: '2026-06-05', status: 'paid', paidDate: '2026-06-08' }],
       milestones: [{ id: 'm1', label: 'Event delivered (single deliverable)', pct: 100, verified: false, invId: null, recognized: 0 }],

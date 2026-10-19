@@ -235,9 +235,9 @@ const pa2: TourStep[] = [
 const TERRACE_REASON = 'Terrace enlarged from 25 m² to 35 m²'
 const OFFICE_REASON = 'Two-storey office block beside the warehouse'
 function raiseTerraceAddendum() { addAddendum(TERRACE, 54_000_000, TERRACE_REASON, false); tourCtx.voId = lastVo(TERRACE) }
-function approveTerraceAddendum() { if (tourCtx.voId) approveAddendum(TERRACE, tourCtx.voId) }
+function approveTerraceAddendum() { if (tourCtx.voId) approveAddendum(TERRACE, tourCtx.voId, 'Rizal Candra') }
 function raiseWarehouseAddendum() { addAddendum(WAREHOUSE, 3_000_000_000, OFFICE_REASON, true); tourCtx.voId = lastVo(WAREHOUSE) }
-function approveWarehouseAddendum() { if (tourCtx.voId) approveAddendum(WAREHOUSE, tourCtx.voId) }
+function approveWarehouseAddendum() { if (tourCtx.voId) approveAddendum(WAREHOUSE, tourCtx.voId, 'Rizal Candra') }
 function addOfficeMilestone() { addScopeMilestone(WAREHOUSE, 'Office block handed over') }
 
 const pa3: TourStep[] = [

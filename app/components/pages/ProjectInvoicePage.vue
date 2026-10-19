@@ -15,7 +15,7 @@
  * verified, and the form warns when the amount differs from the milestone or
  * schedule amount or exceeds what is left to bill on the contract.
  *
- * Service lines default to PPN 11%. The invoice posts its pre-tax amount against
+ * Lines start with no tax; the user picks it. The invoice posts its pre-tax amount against
  * the project, so billed-to-date compares like for like with recognized revenue.
  *
  * The line table copies NewExpensePage's `ex-*` markup (docs/patterns/FormTable.md).
@@ -51,8 +51,8 @@ const milestoneId = route.query.milestone ? String(route.query.milestone) : null
 
 const engagement = computed(() => findEngagement(engId))
 
-/** Default tax for a service line (decision for this round: PPN 11%). */
-const DEFAULT_TAX = 'PPN 11%'
+/** No default tax: the user picks it per line (user decision). */
+const DEFAULT_TAX = 'No tax'
 
 function line(product: string, description: string, unitPrice: number, project: string): InvoiceDraftLine {
   return { ...newInvoiceLine(product, description, unitPrice, project), tax: DEFAULT_TAX }
@@ -196,15 +196,16 @@ const contextStats = computed<ProjectStat[]>(() => {
   ]
 })
 
-const amountWarnings = computed<string[]>(() => {
+/** Blocking: billing more than the milestone / schedule row, or more than is left on the contract. */
+const amountErrors = computed<string[]>(() => {
   const e = contextProject.value
   const out: string[] = []
   if (!e || thisDoc.value <= 0) return out
   const exp = e.id === engId ? expectedAmount.value : null
-  if (exp !== null && thisDoc.value !== exp) {
+  if (exp !== null && thisDoc.value > exp) {
     out.push((outputMilestone.value
-      ? t('This invoice is {amount}, but the milestone is {expected}.')
-      : t('This invoice is {amount}, but the billing schedule row is {expected}.'))
+      ? t('This invoice is {amount}, more than the milestone amount of {expected}.')
+      : t('This invoice is {amount}, more than the billing schedule amount of {expected}.'))
       .replace('{amount}', formatIdr(thisDoc.value)).replace('{expected}', formatIdr(exp)))
   }
   // A cost plus margin fee is an estimate, not a cap, so only contracts are checked.
@@ -214,6 +215,20 @@ const amountWarnings = computed<string[]>(() => {
   }
   return out
 })
+
+/** Non-blocking: billing less than the milestone / schedule row (a partial bill). */
+const amountWarnings = computed<string[]>(() => {
+  const e = contextProject.value
+  if (!e || thisDoc.value <= 0) return []
+  const exp = e.id === engId ? expectedAmount.value : null
+  if (exp === null || thisDoc.value >= exp) return []
+  return [(outputMilestone.value
+    ? t('This invoice is {amount}, less than the milestone amount of {expected}.')
+    : t('This invoice is {amount}, less than the billing schedule amount of {expected}.'))
+    .replace('{amount}', formatIdr(thisDoc.value)).replace('{expected}', formatIdr(exp))]
+})
+
+const showAmountErrors = ref(false)
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 // Every error shows inline; toasts only report success.
@@ -230,7 +245,8 @@ async function save() {
   if (milestoneBlock.value) return
   customerError.value = !customer.value.trim()
   linesError.value = subtotal.value <= 0
-  if (customerError.value || linesError.value) return
+  showAmountErrors.value = amountErrors.value.length > 0
+  if (customerError.value || linesError.value || showAmountErrors.value) return
   isSaving.value = true
   await new Promise(r => setTimeout(r, 300))
   const inv = saveInvoice({
@@ -404,6 +420,12 @@ async function save() {
           </table>
         </div>
         <p v-if="linesError" class="pi-error">{{ t('Enter a quantity and unit price on at least one line') }}</p>
+        <div v-if="amountErrors.length" class="pi-warnings">
+          <p v-for="w in amountErrors" :key="w" class="pi-error pi-error--amount">
+            <MpIcon name="error" size="sm" class="pi-warning-icon" />
+            <span>{{ w }}</span>
+          </p>
+        </div>
         <div v-if="amountWarnings.length" class="pi-warnings">
           <p v-for="w in amountWarnings" :key="w" class="pi-warning">
             <MpIcon name="warning-circular" size="sm" class="pi-warning-icon" />
@@ -557,10 +579,11 @@ async function save() {
 .ex-del-btn:hover { color: var(--mp-text-danger); }
 .pi-num { font-variant-numeric: tabular-nums; }
 
-.pi-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.pi-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-danger); }
 .pi-warnings { display: flex; flex-direction: column; gap: var(--mp-spacing-1); margin-top: var(--mp-spacing-2); }
 .pi-warning { display: flex; align-items: center; gap: var(--mp-spacing-2); margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning); }
 .pi-warning-icon { flex-shrink: 0; }
+.pi-error--amount { display: flex; align-items: center; gap: var(--mp-spacing-2); margin: 0; }
 
 /* ── Foot ─────────────────────────────────────────────────────────────────── */
 .pi-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--mp-spacing-6); margin-top: var(--mp-spacing-3); flex-wrap: wrap; }

@@ -38,6 +38,8 @@
       <BudgetViewAsSwitcher v-if="isBudgetScreen" />
       <!-- Payroll to Ledger prototype: simulated roles on the payroll screens. -->
       <PayrollViewAsSwitcher v-if="isPayrollScreen" />
+      <!-- Project accounting prototype: who submits (PM) and who approves. -->
+      <ProjectViewAsSwitcher v-if="isProjectScreen" />
       <!-- Demo layer (app/tours), not a product requirement. One Guided tours
            menu for every module, always in this spot (ERP screens, not WMS). -->
       <TourLauncher v-if="!isWms" />
@@ -102,6 +104,9 @@ const PAYROLL_SCREENS = new Set([
 ]);
 const isPayrollScreen = computed(
   () => PAYROLL_SCREENS.has(currentPageKey.value) || /^\/payroll-/.test(route.path),
+);
+const isProjectScreen = computed(
+  () => currentPageKey.value === 'Project accounting' || route.path.startsWith('/project-accounting'),
 );
 function goToInbox() {
   setActiveMenuLabel("Notifications");

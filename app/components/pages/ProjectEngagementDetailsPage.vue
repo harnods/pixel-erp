@@ -30,11 +30,10 @@ import CloseProjectModal from '~/components/patterns/CloseProjectModal.vue'
 import ReopenProjectModal from '~/components/patterns/ReopenProjectModal.vue'
 import VerifyMilestoneModal from '~/components/patterns/VerifyMilestoneModal.vue'
 import RejectRequestModal from '~/components/patterns/RejectRequestModal.vue'
-import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { useTableState } from '~/composables/useTableState'
-import { useProjectViewAs, type ProjectViewAs } from '~/composables/useProjectViewAs'
+import { useProjectViewAs } from '~/composables/useProjectViewAs'
 import { formatDate, formatDateLong } from '~/utils/date'
 import {
   engagements, findEngagement, STAGES, stageIndex, methodLabel, TODAY,
@@ -45,7 +44,7 @@ import {
   addScopeMilestone, unverifyMilestone, recordPayment, closeEngagement,
   projectStatusKey, projectStatusLabel, approvalFor, canDecide, submitMilestoneVerification,
   approveRequest, rejectRequest, closeSummary, reopenEngagement, projectedMargin, billingStatusOf,
-  verificationApprovalPreview,
+  verificationApprovalPreview, canReopen,
   formatIdr, formatIdrShort, formatIdrSigned,
   type Engagement, type EngagementStage, type CostEntry, type CostDecision, type Addendum,
   type PendingApproval, type MilestoneVerificationInput, type BudgetReportRow, type BillingStatus,
@@ -63,16 +62,7 @@ const { t } = useLocale()
 const engagement = computed<Engagement | undefined>(() => findEngagement(props.orderId))
 
 // ── View as (prototype-only) ──────────────────────────────────────────────────
-const { viewAs, setViewAs, currentUser } = useProjectViewAs()
-const viewAsModel = computed<string>({
-  get: () => viewAs.value,
-  set: (v: string) => { if (v === 'pm' || v === 'approver') setViewAs(v as ProjectViewAs) },
-})
-const viewAsScenarios = computed(() => [
-  { label: `${t('View as Project manager')} (Rina Wulandari)`, value: 'pm' },
-  { label: `${t('View as Approver')} (Rizal Candra, Owner)`, value: 'approver' },
-])
-
+const { currentUser } = useProjectViewAs()
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 // The URL is the durable source of truth (?tab=), so a refresh keeps the stage.
 const tabKeys = STAGES.map(s => s.key)
@@ -803,6 +793,7 @@ const overBudgetLine = computed(() => {
 const closable = computed(() => (engagement.value ? canClose(engagement.value) : false))
 const closeOpen = ref(false)
 const reopenOpen = ref(false)
+const mayReopen = computed(() => canReopen(currentUser.value.name))
 const closeSum = computed(() => engagement.value ? closeSummary(engagement.value) : { revenue: 0, cost: 0, margin: 0, marginPct: null })
 
 function doClose() {
@@ -813,6 +804,11 @@ function doClose() {
     return
   }
   toast.notify({ variant: 'success', title: t('Project closed') })
+}
+
+function editAndResubmit() {
+  const e = engagement.value
+  if (e) router.push({ path: '/project-accounting/new', query: { resubmit: e.id } })
 }
 
 function doReopen(reason: string) {
@@ -903,15 +899,23 @@ watch(reviewChip, () => { setReviewPage(1) })
     </header>
 
     <div class="detail-stage">
-      <!-- Project creation awaiting approval: a status line, not a banner. -->
+      <!-- Project creation awaiting approval (or rejected): a status line, not a banner. -->
       <div v-if="creationApproval" class="pa-statusline" data-tour="pa-creation-approval">
-        <ErpStatusBadge status="pending" :label="t('Pending approval')" />
-        <span class="pa-statusline-text">{{ creationApproval.ruleName }} · {{ t('Submitted by') }} {{ creationApproval.submittedBy }} {{ t('on') }} {{ formatDateLong(creationApproval.submittedAt) }}</span>
-        <template v-if="decision(creationApproval).ok">
-          <MpButton is-rounded variant="secondary" size="sm" @click="approvePending(creationApproval)">{{ t('Approve') }}</MpButton>
-          <MpButton is-rounded variant="secondary" size="sm" @click="rejectTarget = { kind: 'approval', approval: creationApproval, label: engagement.name }">{{ t('Reject') }}</MpButton>
+        <template v-if="creationApproval.rejectedBy">
+          <ErpStatusBadge status="rejected" :label="t('Rejected')" />
+          <span class="pa-statusline-text">{{ t('Rejected by') }} {{ creationApproval.rejectedBy }} · {{ creationApproval.rejectReason }}</span>
+          <MpButton v-if="creationApproval.submittedBy === currentUser.name" is-rounded variant="secondary" size="sm" @click="editAndResubmit">{{ t('Edit and resubmit') }}</MpButton>
+          <span v-else class="pa-statusline-text">{{ t('Waiting for') }} {{ creationApproval.submittedBy }} {{ t('to edit and resubmit') }}</span>
         </template>
-        <span v-else class="pa-statusline-text">{{ decision(creationApproval).reason }}</span>
+        <template v-else>
+          <ErpStatusBadge status="pending" :label="t('Pending approval')" />
+          <span class="pa-statusline-text">{{ creationApproval.ruleName }} · {{ t('Submitted by') }} {{ creationApproval.submittedBy }} {{ t('on') }} {{ formatDateLong(creationApproval.submittedAt) }}</span>
+          <template v-if="decision(creationApproval).ok">
+            <MpButton is-rounded variant="secondary" size="sm" @click="approvePending(creationApproval)">{{ t('Approve') }}</MpButton>
+            <MpButton is-rounded variant="secondary" size="sm" @click="rejectTarget = { kind: 'approval', approval: creationApproval, label: engagement.name }">{{ t('Reject') }}</MpButton>
+          </template>
+          <span v-else class="pa-statusline-text">{{ decision(creationApproval).reason }}</span>
+        </template>
       </div>
 
       <ProjectStatCards :stats="stats" data-tour="pa-stats" />
@@ -1171,7 +1175,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                   <thead>
                     <tr>
                       <th class="pa-th">{{ t('Account') }}</th>
-                      <th class="pa-th pa-th--num">{{ t('Budget to date') }}</th>
+                      <th class="pa-th pa-th--num">{{ t('Budget') }}</th>
                       <th class="pa-th pa-th--num">{{ t('Actual') }}</th>
                       <th class="pa-th pa-th--num">{{ t('Variance') }}</th>
                       <th class="pa-th pa-th--num">{{ t('Variance %') }}</th>
@@ -1183,13 +1187,13 @@ watch(reviewChip, () => { setReviewPage(1) })
                       <template v-if="!r.header">
                         <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }">
                           {{ r.budget === null ? t('No budget') : formatIdrSigned(r.budget) }}
-                          <div v-if="r.lifetimeBudget != null && r.lifetimeBudget !== r.budget" class="pa-tiny">{{ t('Lifetime') }} {{ formatIdr(r.lifetimeBudget) }}</div>
+                          <div v-if="r.lifetimeBudget != null && r.lifetimeBudget !== r.budget" class="pa-tiny">{{ t('For work done so far') }} · {{ t('Full project') }} {{ formatIdr(r.lifetimeBudget) }}</div>
                         </td>
                         <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }">{{ formatIdrSigned(r.actual) }}</td>
                         <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }" :data-tone="toneOf(r)">{{ r.variance === null ? '—' : formatIdrSigned(r.variance) }}</td>
                         <td class="pa-td pa-td--num" :data-tone="toneOf(r)">
                           {{ r.pct === null ? '—' : `${r.pct.toFixed(0)}%` }}
-                          <div v-if="r.tone === 'adverse' && r.note" class="pa-tiny">{{ r.note }}</div>
+                          <div v-if="r.note" class="pa-tiny">{{ t(r.note) }}</div>
                         </td>
                       </template>
                       <td v-else class="pa-td" colspan="4" />
@@ -1526,7 +1530,8 @@ watch(reviewChip, () => { setReviewPage(1) })
                 <h2 class="pa-card-title">{{ t('Project closed') }}</h2>
                 <p class="pa-card-desc">{{ closedLine }}</p>
               </div>
-              <MpButton is-rounded variant="secondary" @click="reopenOpen = true">{{ t('Reopen project') }}</MpButton>
+              <MpButton v-if="mayReopen" is-rounded variant="secondary" @click="reopenOpen = true">{{ t('Reopen project') }}</MpButton>
+              <span v-else class="pa-card-desc">{{ t('Only an approver can reopen this project.') }}</span>
             </section>
 
             <section v-else class="pa-card" data-tour="pa-close-gate">
@@ -1605,8 +1610,6 @@ watch(reviewChip, () => { setReviewPage(1) })
       @close="activityOpen = false"
     />
 
-    <!-- Prototype-only: who you are for submit/approve. Simulated for this prototype. -->
-    <ScenarioFab v-model="viewAsModel" :scenarios="viewAsScenarios" :aria-label="t('View as (simulated for this prototype)')" />
   </div>
 
   <!-- Not found -->

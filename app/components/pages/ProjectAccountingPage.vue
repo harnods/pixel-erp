@@ -26,11 +26,11 @@ import {
   type Engagement, type RecognitionMethod, type ProjectStatusKey,
 } from '~/data/projectAccounting'
 import { successToast } from '~/utils/toasts'
-import { useProjectViewAs, PROJECT_VIEW_AS_USERS, type ProjectViewAs } from '~/composables/useProjectViewAs'
+import { useProjectViewAs } from '~/composables/useProjectViewAs'
 
 const router = useRouter()
 const { t } = useLocale()
-const { viewAs, setViewAs, currentUser } = useProjectViewAs()
+const { currentUser } = useProjectViewAs()
 
 // ── Prototype controls ────────────────────────────────────────────────────────
 // First-load skeleton (rule/index-first-load-skeleton).
@@ -39,22 +39,14 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 500) })
 
 // ScenarioFab: Default / Empty state, then the simulated "View as" personas.
 const previewMode = ref<'data' | 'empty'>('data')
-const VIEW_AS_ROLE: Record<ProjectViewAs, string> = { pm: 'Project manager', approver: 'Approver' }
 const scenarios = computed(() => [
   { value: 'data', label: t('Default') },
   { value: 'empty', label: t('Empty state') },
-  { value: '__view-as', label: `${t('View as')} · ${t('Simulated for this prototype')}` },
-  ...(Object.keys(PROJECT_VIEW_AS_USERS) as ProjectViewAs[]).map((k) => {
-    const u = PROJECT_VIEW_AS_USERS[k]
-    const role = k === 'approver' ? `${t(VIEW_AS_ROLE[k])}, ${u.role}` : t(VIEW_AS_ROLE[k])
-    return { value: `as-${k}`, label: `${viewAs.value === k ? '✓' : '   '} ${u.name} (${role})` }
-  }),
 ])
 const scenario = computed({
   get: () => previewMode.value as string,
   set: (v: string) => {
-    if (v.startsWith('as-')) setViewAs(v.slice(3) as ProjectViewAs)
-    else if (v === 'data' || v === 'empty') previewMode.value = v
+    if (v === 'data' || v === 'empty') previewMode.value = v
   },
 })
 
@@ -148,7 +140,8 @@ const allRows = computed<Row[]>(() => engagements.map((e: Engagement) => {
 const rows = computed<Row[]>(() => (previewMode.value === 'empty' ? [] : allRows.value))
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
-const totals = computed(() => portfolioTotals())
+// The Empty state preview shows a brand-new tenant, so its figures are zero too.
+const totals = computed(() => (previewMode.value === 'empty' ? { revenue: 0, cost: 0, outstanding: 0, pendingAddenda: 0 } : portfolioTotals()))
 const unpaidProjects = computed(() => allRows.value.filter(r => r.unpaidCount > 0).length)
 const addendaProjects = computed(() => allRows.value.filter(r => r.pendingAddenda > 0).length)
 /** Addendum requests the current (simulated) user can decide. */
@@ -307,7 +300,8 @@ function billingTone(r: Row): 'neutral' | 'info' | 'late' {
   if (r.billingKey === 'unbilled' && (r.unbilledAge ?? 0) > UNBILLED_AGE_LIMIT) return 'late'
   return 'neutral'
 }
-function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' {
+function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | 'critical' {
+  if (r.statusKey === 'rejected') return 'critical'
   return r.statusKey === 'pending approval' ? 'warning' : r.statusKey === 'closed' ? 'announcement' : 'information'
 }
 </script>

@@ -3,13 +3,15 @@
  * Not a Jurnal feature: it lets a reviewer play the person who submits (the
  * project manager) and the person who approves. Persisted like useApprovalViewAs.
  */
+import { ref, computed } from 'vue'
+
 export type ProjectViewAs = 'pm' | 'approver'
 
 export interface ProjectUser { name: string; role: string }
 
 export const PROJECT_VIEW_AS_USERS: Record<ProjectViewAs, ProjectUser> = {
-  pm: { name: 'Rina Wulandari', role: 'Project Manager' },
-  approver: { name: 'Rizal Candra', role: 'Owner' },
+  pm: { name: 'Rina Wulandari', role: 'Project manager' },
+  approver: { name: 'Rizal Candra', role: 'Owner · Approver' },
 }
 
 const STORAGE_KEY = 'erp-project-view-as'

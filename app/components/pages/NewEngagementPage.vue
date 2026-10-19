@@ -18,6 +18,7 @@ import {
 import SelectAccessDrawer, { type AccessOption } from '~/components/patterns/SelectAccessDrawer.vue'
 import {
   createEngagement, draftWeightSum, methodLabel, creationApprovalPreview, projectStatusKey,
+  findEngagement, draftFromEngagement, resubmitEngagement,
   COST_ACCOUNTS, REVENUE_ACCOUNT,
   type Engagement, type EngagementDraft, type RecognitionMethod,
 } from '~/data/projectAccounting'
@@ -26,6 +27,7 @@ import { budget, BUDGET_YEAR, lineById, lineTitle, lineTotal, isSavingLine } fro
 import { accessUsers, projectLeadUsers } from '~/data/accessControl'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
 const { currentUser } = useProjectViewAs()
 
@@ -57,6 +59,15 @@ const draft = reactive<EngagementDraft>({
 // The method is irreversible, so nothing is picked until the user picks it.
 // `draft.method` only receives the choice at save time.
 const method = ref<RecognitionMethod | ''>('')
+
+// ?resubmit=<id>: a rejected project comes back here pre-filled, and Save sends it
+// for approval again instead of creating a second project.
+const resubmitId = typeof route.query.resubmit === 'string' ? route.query.resubmit : ''
+const resubmitOf = resubmitId ? findEngagement(resubmitId) : undefined
+if (resubmitOf) {
+  Object.assign(draft, draftFromEngagement(resubmitOf))
+  method.value = resubmitOf.method
+}
 
 const METHOD_CHOICES: { key: RecognitionMethod; desc: string }[] = [
   { key: 'tm', desc: 'Revenue is each reviewed cost line plus the agreed margin.' },
@@ -143,8 +154,6 @@ const valueError = ref(false)
 const weightsError = ref(false)
 const isSaving = ref(false)
 
-// The engine gains an optional `submittedBy` in this round; typed locally so the
-// call compiles against either signature.
 const createProject = createEngagement
 
 async function save() {
@@ -158,12 +167,18 @@ async function save() {
   draft.method = method.value as RecognitionMethod
   isSaving.value = true
   await new Promise(r => setTimeout(r, 300))
-  const created = createProject(draft, currentUser.value.name)
+  const created = resubmitOf
+    ? resubmitEngagement(resubmitOf.id, draft, currentUser.value.name)
+    : createProject(draft, currentUser.value.name)
   isSaving.value = false
+  if (!created) {
+    toast.notify({ variant: 'error', title: t('Only the person who submitted this project can resubmit it'), maxWidth: 'max-content' })
+    return
+  }
   const pending = projectStatusKey(created) === 'pending approval'
   toast.notify({
     variant: 'success',
-    title: pending ? t('Project submitted for approval') : t('Project created'),
+    title: pending ? (resubmitOf ? t('Project resubmitted for approval') : t('Project submitted for approval')) : t('Project created'),
     maxWidth: 'max-content',
   })
   router.push(`/project-accounting/${created.id}`)
@@ -178,7 +193,7 @@ function cancel() { router.push('/project-accounting') }
     <header class="detail-bar">
       <div class="detail-bar-left">
         <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Project accounting') }}</MpTextlink>
-        <h1 class="detail-title">{{ t('New project') }}</h1>
+        <h1 class="detail-title">{{ resubmitOf ? t('Edit and resubmit project') : t('New project') }}</h1>
       </div>
     </header>
 

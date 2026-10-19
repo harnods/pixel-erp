@@ -224,7 +224,7 @@ export interface MilestoneVerificationInput {
   document: string | null
 }
 
-export type ProjectStatusKey = 'pending approval' | 'in progress' | 'closed'
+export type ProjectStatusKey = 'pending approval' | 'rejected' | 'in progress' | 'closed'
 
 /**
  * The prototype's "today". Fixed rather than `new Date()` so the seed's aging
@@ -575,9 +575,12 @@ export function canClose(e: Engagement): boolean {
   if (e.closedAt) return false
   if (pendingVos(e).length || (e.approvals ?? []).length) return false
   const invoicesOk = e.invoices.length > 0 && e.invoices.every(i => i.status === 'paid')
-  if (e.method === 'tm') return e.entries.every(x => x.decision) && readyToInvoice(e).length === 0 && invoicesOk
-  if (e.method === 'input') return pocPct(e) >= 100 && invoicesOk && (e.billing ?? []).every(m => billingStatusOf(e, m) === 'paid')
-  return (e.milestones ?? []).every(m => m.verified) && invoicesOk
+  // Every method: what was earned is exactly what was billed (nothing unbilled, nothing
+  // billed in advance), and every invoice is paid.
+  const settled = invoicesOk && Math.abs(wipNet(e)) < 1
+  if (e.method === 'tm') return e.entries.every(x => x.decision) && readyToInvoice(e).length === 0 && settled
+  if (e.method === 'input') return pocPct(e) >= 100 && settled && (e.billing ?? []).every(m => billingStatusOf(e, m) === 'paid')
+  return (e.milestones ?? []).every(m => m.verified && m.invId) && settled
 }
 
 export function closeHint(e: Engagement): string {
@@ -586,7 +589,10 @@ export function closeHint(e: Engagement): string {
   if (canClose(e)) return 'Ready to close. Revenue is final, every invoice is paid and no addendum is pending.'
   if (e.method === 'tm') return 'To close, review and invoice every cost line, then record payment for every invoice.'
   if (e.method === 'input') return 'To close, the project must be 100% complete and every billing milestone paid.'
-  return 'To close, verify every milestone and record payment for every invoice.'
+  if (e.method === 'output' && (e.milestones ?? []).every(m => m.verified) && wipNet(e) > 0) {
+    return `To close, invoice the ${formatIdr(wipNet(e))} of recognized revenue not yet billed, then record payment.`
+  }
+  return 'To close, verify and invoice every milestone, then record payment for every invoice.'
 }
 
 /** Cost lines awaiting review, by age ("Awaiting review"). Keys are the bucket labels. */
@@ -647,99 +653,96 @@ export function budgetProgress(e: Engagement): number | null {
   return null
 }
 
-/** Over-run tolerance on budget to date before a cost line reads as adverse. */
-const TO_DATE_TOLERANCE = 0.10
+/**
+ * Share of the work done, measured one way for every method: cost to date over
+ * budgeted cost (capped at 100%). null when there is no budget to measure against.
+ */
+export function workDoneShare(e: Engagement): number | null {
+  if (!e.budget) return null
+  return Math.min(actualCost(e) / e.budget, 1)
+}
 
 /**
- * Budget variance, compared TO DATE — same shape as the Financials budget-variance
- * report, scoped to one project.
- *   Revenue budget to date: input/output = lifetime × progress; tm = cost to date
- *   × (1 + markup), the revenue the work done so far should earn.
- *   Cost budget to date: input/output = lifetime × progress; tm = lifetime.
- * Tone is 'adverse' only for a real overrun on cost: actual above the lifetime
- * budget, or (once progress is measurable) more than 10% over budget to date.
- * Revenue below plan is reported but never red: it is timing, not loss.
+ * Budget variance — same shape as the Financials budget-variance report, scoped to
+ * one project. One rule for every method:
+ *   - Cost is compared with the lifetime budget (the whole job's cost plan).
+ *   - Revenue and margin are compared with what the work done so far should have
+ *     earned: lifetime plan × workDoneShare. A gap there is timing (not yet
+ *     reviewed, verified or billed), so it is reported but never red.
+ *   - Red (tone 'adverse') only for a real loss: a cost line or the total over its
+ *     lifetime budget, or a projected loss at completion on the margin row.
+ * No budget: nothing can be measured, every row shows actuals only.
  */
 export function budgetReport(e: Engagement): BudgetReportRow[] {
   const b = budgetOf(e)
   const hasBudget = e.budget !== null
   const recognized = revenue(e)
-  const progress = budgetProgress(e)
-  const costToDate = actualCost(e)
+  const share = workDoneShare(e)
   const revLifetimeTotal = b.revenue.reduce((a, l) => a + l.amount, 0)
   const rows: BudgetReportRow[] = []
 
-  const revToDateTotal = e.method === 'tm'
-    ? Math.round(costToDate * (1 + (e.markupPct || 0) / 100))
-    : Math.round(revLifetimeTotal * (progress ?? 0))
-  const scaleRev = (lifetime: number): number => revLifetimeTotal > 0 ? Math.round(revToDateTotal * (lifetime / revLifetimeTotal)) : 0
-  const scaleCost = (lifetime: number): number => progress === null ? lifetime : Math.round(lifetime * progress)
+  const none = (label: string, act: number, kind: BudgetReportRow['kind'], total = false): BudgetReportRow =>
+    ({ label, budget: null, lifetimeBudget: null, actual: act, variance: null, pct: null, adverse: false, note: '', kind, tone: 'default', ...(total ? { total } : {}) })
+  const header = (label: string): BudgetReportRow => ({ ...none(label, 0, null), header: true })
 
-  // The to-date test runs on the total only: per-account mix legitimately runs ahead of
-  // overall progress (materials are bought before labor), so lines are judged on lifetime.
-  const mk = (label: string, lifetime: number, toDate: number, act: number, kind: 'revenue' | 'cost', isTotal = false): BudgetReportRow => {
-    const measurable = hasBudget || kind === 'revenue'
-    if (!measurable) {
-      return { label, budget: null, lifetimeBudget: null, actual: act, variance: null, pct: null, adverse: false, note: '', kind, tone: 'default' }
-    }
-    const variance = kind === 'cost' ? toDate - act : act - toDate
-    let tone: BudgetReportRow['tone'] = variance > 0 ? 'positive' : 'default'
-    let note = ''
-    if (kind === 'cost') {
-      const overLifetime = act > lifetime
-      const overToDate = isTotal && progress !== null && progress > 0 && act > toDate * (1 + TO_DATE_TOLERANCE)
-      if (overLifetime || overToDate) { tone = 'adverse'; note = overLifetime ? 'Over budget' : 'Ahead of progress' }
-    } else if (variance < 0) {
-      note = 'Below plan'
-    }
+  const revRow = (label: string, lifetime: number, act: number, total = false): BudgetReportRow => {
+    if (!hasBudget || share === null) return none(label, act, 'revenue', total)
+    const toDate = Math.round(lifetime * share)
+    const variance = act - toDate
     return {
-      label,
-      budget: toDate,
-      lifetimeBudget: lifetime,
-      actual: act,
-      variance,
-      pct: toDate > 0 ? (variance / toDate) * 100 : null,
-      adverse: tone === 'adverse',
-      note,
-      kind,
-      tone,
+      label, budget: toDate, lifetimeBudget: lifetime, actual: act, variance,
+      pct: toDate > 0 ? (variance / toDate) * 100 : null, adverse: false,
+      note: variance < 0 ? 'Not yet recognized' : '', kind: 'revenue',
+      tone: variance > 0 ? 'positive' : 'default', ...(total ? { total } : {}),
+    }
+  }
+  const costRow = (label: string, lifetime: number, act: number, total = false): BudgetReportRow => {
+    if (!hasBudget) return none(label, act, 'cost', total)
+    const variance = lifetime - act
+    const over = act > lifetime
+    return {
+      label, budget: lifetime, lifetimeBudget: lifetime, actual: act, variance,
+      pct: lifetime > 0 ? (variance / lifetime) * 100 : null, adverse: over,
+      note: over ? 'Over budget' : '', kind: 'cost',
+      tone: over ? 'adverse' : 'default', ...(total ? { total } : {}),
     }
   }
 
-  const header = (label: string): BudgetReportRow => ({ label, header: true, budget: null, lifetimeBudget: null, actual: 0, variance: null, pct: null, adverse: false, note: '', kind: null, tone: 'default' })
-
   rows.push(header('Revenue'))
   b.revenue.forEach((l, i) => {
-    const share = revLifetimeTotal > 0 ? l.amount / revLifetimeTotal : (i === 0 ? 1 : 0)
-    rows.push(mk(l.account, l.amount, scaleRev(l.amount), Math.round(recognized * share), 'revenue'))
+    const part = revLifetimeTotal > 0 ? l.amount / revLifetimeTotal : (i === 0 ? 1 : 0)
+    rows.push(revRow(l.account, l.amount, Math.round(recognized * part)))
   })
-  rows.push({ ...mk('Total revenue', revLifetimeTotal, revToDateTotal, recognized, 'revenue'), total: true })
+  rows.push(revRow('Total revenue', revLifetimeTotal, recognized, true))
 
   rows.push(header('Project cost'))
-  let costActualTotal = 0
-  let costToDateTotal = 0
+  // Every cost line lands on a plan row; a category the plan does not carry still
+  // counts in the total so the report always ties to Cost incurred.
+  const planned = new Set(b.cost.map(l => l.account))
   b.cost.forEach((l) => {
     const act = e.entries.filter(x => accountForEntry(x) === l.account).reduce((a, x) => a + x.amount, 0)
-    costActualTotal += act
-    const toDate = scaleCost(l.amount)
-    costToDateTotal += toDate
-    rows.push(mk(l.account, l.amount, toDate, act, 'cost'))
+    rows.push(costRow(l.account, l.amount, act))
   })
+  const unplanned = e.entries.filter(x => !planned.has(accountForEntry(x))).reduce((a, x) => a + x.amount, 0)
+  if (unplanned > 0) rows.push(costRow('Not in the cost plan', 0, unplanned))
   const costLifetimeTotal = b.cost.reduce((a, l) => a + l.amount, 0)
-  rows.push({ ...mk('Total project cost', costLifetimeTotal, costToDateTotal, costActualTotal, 'cost', true), total: true })
+  const costActualTotal = actualCost(e)
+  rows.push(costRow('Total project cost', costLifetimeTotal, costActualTotal, true))
 
   const gpActual = recognized - costActualTotal
-  if (hasBudget) {
-    const gpToDate = revToDateTotal - costToDateTotal
+  if (hasBudget && share !== null) {
     const gpLifetime = revLifetimeTotal - costLifetimeTotal
+    const gpToDate = Math.round(revLifetimeTotal * share) - costActualTotal
     const variance = gpActual - gpToDate
+    const projectedLoss = (projectedMargin(e).value ?? 0) < 0
     rows.push({
       label: 'Gross margin', total: true, budget: gpToDate, lifetimeBudget: gpLifetime, actual: gpActual, variance,
-      pct: gpToDate !== 0 ? (variance / Math.abs(gpToDate)) * 100 : null, adverse: false,
-      note: variance < 0 ? 'Below plan' : '', kind: 'revenue', tone: variance > 0 ? 'positive' : 'default',
+      pct: gpToDate !== 0 ? (variance / Math.abs(gpToDate)) * 100 : null, adverse: projectedLoss,
+      note: projectedLoss ? 'Loss at completion' : variance < 0 ? 'Not yet recognized' : '',
+      kind: 'revenue', tone: projectedLoss ? 'adverse' : variance > 0 ? 'positive' : 'default',
     })
   } else {
-    rows.push({ label: 'Gross margin', budget: null, lifetimeBudget: null, actual: gpActual, variance: null, pct: null, adverse: false, note: '', kind: null, total: true, tone: 'default' })
+    rows.push(none('Gross margin', gpActual, null, true))
   }
 
   return rows
@@ -799,7 +802,7 @@ export function createEngagement(d: EngagementDraft, submittedBy?: string): Enga
     id,
     name: d.name.trim(),
     client: d.client.trim(),
-    pm: d.pm.trim() || 'Unassigned',
+    pm: d.pm.trim() || submittedBy?.trim() || 'Unassigned',
     method: d.method,
     stage: 'execution',
     feeEstimate: d.method === 'tm' ? Number(d.value) || 0 : 0,
@@ -1228,12 +1231,13 @@ function syncBilling(e: Engagement): void {
 
 /** Pending approval while a project-creation request is open (or was rejected); then In progress / Closed. */
 export function projectStatusKey(e: Engagement): ProjectStatusKey {
-  if ((e.approvals ?? []).some(a => a.action === 'project-creation')) return 'pending approval'
+  const creation = (e.approvals ?? []).find(a => a.action === 'project-creation')
+  if (creation) return creation.rejectedBy ? 'rejected' : 'pending approval'
   return e.closedAt ? 'closed' : 'in progress'
 }
 
 export function projectStatusLabel(e: Engagement): string {
-  return { 'pending approval': 'Pending approval', 'in progress': 'In progress', closed: 'Closed' }[projectStatusKey(e)]
+  return { 'pending approval': 'Pending approval', rejected: 'Rejected', 'in progress': 'In progress', closed: 'Closed' }[projectStatusKey(e)]
 }
 
 /** Approval request gating a record, if one is open. */
@@ -1347,11 +1351,20 @@ export function closeSummary(e: Engagement): { revenue: number; cost: number; ma
   return { revenue: r, cost: c, margin: r - c, marginPct: r > 0 ? ((r - c) / r) * 100 : null }
 }
 
+/** Who may reopen a closed project: approvers only (Owner / Finance). */
+export function canReopen(user: string): boolean {
+  const names = new Set<string>()
+  approvalWorkflows
+    .filter(r => r.isActive && r.appliesTo === 'project')
+    .forEach(r => r.levels.forEach(l => l.approverIds.forEach((id) => { const n = userName(id); if (n) names.add(n) })))
+  return names.has(user)
+}
+
 /** Reopen a closed project (audit-logged). Reason is required; the project returns to Invoices & payments. */
 export function reopenEngagement(id: string, by: string, reason: string): boolean {
   const e = findEngagement(id)
   const why = reason.trim()
-  if (!e || !e.closedAt || !why) return false
+  if (!e || !e.closedAt || !why || !canReopen(by)) return false
   e.reopenLog = [...(e.reopenLog ?? []), { date: TODAY, by: by.trim() || 'Unknown user', reason: why }]
   e.stage = 'billing'
   e.closedAt = null
@@ -1409,4 +1422,46 @@ export function remainingToBill(e: Engagement): number {
 export function milestoneBillable(e: Engagement, mid: string): boolean {
   const m = e.milestones?.find(x => x.id === mid)
   return !!m && m.verified && !m.invId
+}
+
+/**
+ * Edit a rejected (or still pending) project and send it for approval again. The
+ * old request is replaced; if the new value no longer matches a rule, the project
+ * starts straight away. Only the person who submitted it may resubmit.
+ */
+export function resubmitEngagement(id: string, d: EngagementDraft, by: string): Engagement | null {
+  const e = findEngagement(id)
+  const old = e?.approvals?.find(a => a.action === 'project-creation')
+  if (!e || !old || old.submittedBy !== by) return null
+  const fresh = createEngagement(d, by)
+  // createEngagement pushed a new record; fold it back into the original id.
+  engagements.splice(engagements.indexOf(fresh), 1)
+  const keep = { id: e.id, entries: e.entries, invoices: e.invoices, vos: e.vos, approvalLog: e.approvalLog ?? [] }
+  // The new request (or none, under the threshold) replaces the rejected one.
+  Object.assign(e, fresh, keep, { approvals: fresh.approvals ?? [] })
+  persist()
+  return e
+}
+
+/** Draft pre-filled from an existing project, for the resubmit form. */
+export function draftFromEngagement(e: Engagement): EngagementDraft {
+  const value = e.method === 'tm' ? e.feeEstimate : e.contractValue
+  return {
+    name: e.name, client: e.client, pm: e.pm, method: e.method,
+    value: value ? String(value) : '', budget: e.budget === null ? '' : String(e.budget),
+    budgetLineId: e.budgetLineId ?? '', team: [...e.team],
+    markup: String(e.markupPct || 20),
+    milestones: (e.milestones ?? []).map(m => ({ id: m.id, label: m.label, pct: String(m.pct) })),
+    budgetLines: {
+      revenue: (e.budgetLines?.revenue ?? [{ id: 'br1', account: REVENUE_ACCOUNT, amount: 0 }]).map(l => ({ id: l.id, account: l.account, amount: l.amount ? String(l.amount) : '' })),
+      cost: (e.budgetLines?.cost ?? COST_ACCOUNTS.map((a, i) => ({ id: `bc${i}`, account: a, amount: 0 }))).map(l => ({ id: l.id, account: l.account, amount: l.amount ? String(l.amount) : '' })),
+    },
+  }
+}
+
+/** Put the sample projects back (prototype "Reset sample data"). */
+export function resetProjectAccounting(): void {
+  engagements.splice(0, engagements.length, ...seed())
+  engagements.forEach(syncBilling)
+  persist()
 }
