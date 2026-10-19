@@ -176,11 +176,11 @@ const stats = computed<ProjectStat[]>(() => {
 const allCols: TableColumn[] = [
   { key: 'name', label: t('Project'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'methodName', label: t('Method'), kind: 'default', sortable: true, sortType: 'text' },
+  { key: 'statusLabel', label: t('Status'), kind: 'status', sortable: true, sortType: 'text' },
   { key: 'revenueValue', label: t('Revenue recognized'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'spendPct', label: t('Budget spent'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'billedValue', label: t('Billed'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'wip', label: t('Billing position'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'statusLabel', label: t('Status'), kind: 'status', sortable: true, sortType: 'text' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'billedValue'])))
 // Six columns at their `kind` minimums need ~1010px; a 1280 stage gives 988. Below
