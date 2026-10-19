@@ -189,7 +189,7 @@ const contextStats = computed<ProjectStat[]>(() => {
   const e = contextProject.value
   if (!e) return []
   return [
-    { key: 'cv', label: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), value: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
+    { key: 'cv', label: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), value: e.method === 'tm' && e.budget === null ? t('No budget') : formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
     { key: 'rec', label: t('Revenue recognized'), value: formatIdr(revenue(e)) },
     { key: 'billed', label: t('Billed to date'), value: formatIdr(billed(e)) },
     { key: 'doc', label: t('This invoice'), value: formatIdr(thisDoc.value) },

@@ -133,7 +133,7 @@ const stats = computed<ProjectStat[]>(() => {
 
   if (activeStage.value === 'setup' || activeStage.value === 'execution') {
     return [
-      { key: 'value', label: valueLabel, value: formatIdr(valueAmt), sub: e.vos.some(v => v.status === 'Approved') ? t('Revised by addendum') : '' },
+      { key: 'value', label: valueLabel, value: e.method === 'tm' && budget === null ? t('No budget') : formatIdr(valueAmt), sub: e.vos.some(v => v.status === 'Approved') ? t('Revised by addendum') : e.method === 'tm' ? `${t('Budgeted cost')} + ${e.markupPct}%` : '', tone: e.method === 'tm' && budget === null ? 'muted' : 'default' },
       { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('No budget') : formatIdr(budget), sub: t('From the budget plan'), tone: budget === null ? 'muted' : 'default' },
       { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), sub: costLinesLabel(e.entries.length), tone: budget !== null && cost > budget ? 'adverse' : 'default' },
       { key: 'variance', label: t('Remaining budget'), value: budget === null ? t('No budget') : formatIdrSigned(budget - cost), sub: budget === null ? '' : t('Lifetime budget less cost incurred'), tone: budget === null ? 'muted' : (budget - cost < 0 ? 'adverse' : 'default') },
@@ -199,7 +199,7 @@ const contractRows = computed(() => {
   if (!e) return []
   return [
     { k: t('Method'), v: methodLabel(e.method) },
-    { k: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), v: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
+    { k: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), v: e.method === 'tm' && e.budget === null ? t('No budget') : formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
     { k: t('Budgeted cost'), v: e.budget === null ? t('No budget') : formatIdr(e.budget) },
     { k: t('Customer'), v: e.client },
     { k: t('Project manager'), v: e.pm },
@@ -1513,7 +1513,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                 <div class="stat-card">
                   <p class="stat-title">{{ t('Projected margin at completion') }}</p>
                   <p class="stat-period">
-                    {{ projected.value === null ? t('No budget to project from') : projected.pct === null ? t('Contract value less expected cost') : `${projected.pct.toFixed(0)}% ${t('of contract value')}` }}
+                    {{ projected.value === null ? t('No budget to project from') : projected.pct === null ? t('Contract value less expected cost') : `${projected.pct.toFixed(0)}% ${engagement.method === 'tm' ? t('of projected revenue') : t('of contract value')}` }}
                   </p>
                   <p class="stat-amount pa-num">{{ projected.value === null ? '—' : formatIdrSigned(projected.value) }}</p>
                 </div>

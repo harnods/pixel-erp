@@ -294,6 +294,15 @@ const SERVICE_PLAN: [string, number][] = [
   ['6-10002 Site expense', 0.15],
 ]
 
+/**
+ * Cost plus margin has no fixed contract: revenue is reviewed cost × (1 + markup).
+ * The fee estimate is therefore derived, never typed: budgeted cost × (1 + markup).
+ * null when there is no budgeted cost to estimate from.
+ */
+export function feeEstimateOf(budget: number | null, markupPct: number): number | null {
+  return budget === null ? null : Math.round(budget * (1 + (markupPct || 0) / 100))
+}
+
 export function defaultBudgetLines(value: number, budget: number | null, method: RecognitionMethod): BudgetLines {
   const plan = method === 'tm' ? SERVICE_PLAN : BUILD_PLAN
   return {
@@ -337,7 +346,7 @@ function seed(): Engagement[] {
   return withPlan([
     baseEngagement({
       id: 'e1', name: 'Financial Statement Audit 2025', client: 'PT Sinar Abadi Textile', pm: 'Rina Wulandari',
-      method: 'tm', markupPct: 20, stage: 'recognition', feeEstimate: 185_000_000, budget: 96_000_000,
+      method: 'tm', markupPct: 20, stage: 'recognition', feeEstimate: 115_200_000, budget: 96_000_000,
       entries: [
         cost('Labor', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-07-05', 5_700_000, 'Expense', 'EXP-1102', 20, null, false, 15),
         cost('Labor', 'Yoga Prasetyo — tax position review', 'Internal payroll', '2026-06-28', 1_500_000, 'Expense', 'EXP-1088', 20, null, false, 6),
@@ -348,7 +357,7 @@ function seed(): Engagement[] {
     }),
     baseEngagement({
       id: 'e2', name: 'Annual Tax Consulting', client: 'CV Makmur Jaya', pm: 'Yoga Prasetyo',
-      method: 'tm', markupPct: 20, stage: 'execution', feeEstimate: 60_000_000, budget: 28_000_000,
+      method: 'tm', markupPct: 20, stage: 'execution', feeEstimate: 33_600_000, budget: 28_000_000,
       entries: [
         cost('Labor', 'Yoga Prasetyo — annual return preparation', 'Internal payroll', '2026-07-22', 2_250_000, 'Expense', 'EXP-1178', 20, null, false, 9),
         cost('Labor', 'Yoga Prasetyo — tax reconciliation', 'Internal payroll', '2026-06-30', 2_750_000, 'Expense', 'EXP-1090', 20, null, false, 11),
@@ -357,7 +366,7 @@ function seed(): Engagement[] {
     }),
     baseEngagement({
       id: 'e3', name: 'Monthly Retainer', client: 'PT Global Teknindo', pm: 'Made Ardika',
-      method: 'tm', markupPct: 20, stage: 'billing', feeEstimate: 25_000_000, budget: null,
+      method: 'tm', markupPct: 20, stage: 'billing', feeEstimate: 0, budget: null,
       entries: [
         cost('Labor', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-05', 4_000_000, 'Expense', 'EXP-1105', 20, 'bill', true, 20),
         cost('Labor', 'Dewi Kusuma — payroll processing', 'Internal payroll', '2026-07-10', 1_800_000, 'Expense', 'EXP-1112', 20, 'bill', true, 12),
@@ -805,7 +814,7 @@ export function createEngagement(d: EngagementDraft, submittedBy?: string): Enga
     pm: d.pm.trim() || submittedBy?.trim() || 'Unassigned',
     method: d.method,
     stage: 'execution',
-    feeEstimate: d.method === 'tm' ? Number(d.value) || 0 : 0,
+    feeEstimate: 0,
     contractValue: d.method === 'tm' ? 0 : Number(d.value) || 0,
     markupPct: d.method === 'tm' ? (d.markup === '' ? 20 : Number(d.markup) || 0) : 0,
     // An itemised cost plan wins over the single estimated-cost figure.
@@ -823,6 +832,11 @@ export function createEngagement(d: EngagementDraft, submittedBy?: string): Enga
         ]
       : null,
   })
+  if (e.method === 'tm') {
+    e.feeEstimate = feeEstimateOf(e.budget, e.markupPct) ?? 0
+    // The revenue plan line is the derived fee, so the budget plan always ties.
+    if (e.budgetLines) e.budgetLines.revenue = [{ id: 'br1', account: REVENUE_ACCOUNT, amount: e.feeEstimate }]
+  }
   const value = e.method === 'tm' ? e.feeEstimate : e.contractValue
   const rule = matchRule('project-creation', value, null)
   if (rule) e.approvals = [newApproval('project-creation', null, rule, value, submittedBy?.trim() || e.pm)]
@@ -929,8 +943,23 @@ function applyAddendum(e: Engagement, vo: Addendum, approvedBy: string | null): 
     }
   }
 
-  if (e.method === 'tm') e.feeEstimate = vo.newValue
-  else e.contractValue = vo.newValue
+  if (e.method === 'tm') {
+    // Fee estimate stays derived: the addendum's new fee sets the budgeted cost it
+    // implies at the agreed markup, and the cost plan scales with it.
+    const newBudget = Math.round(vo.newValue / (1 + (e.markupPct || 0) / 100))
+    const oldBudget = e.budget
+    e.budget = newBudget
+    e.feeEstimate = feeEstimateOf(newBudget, e.markupPct) ?? 0
+    if (e.budgetLines && oldBudget) {
+      const k = newBudget / oldBudget
+      e.budgetLines.cost = e.budgetLines.cost.map(l => ({ ...l, amount: Math.round(l.amount * k) }))
+      const drift = newBudget - e.budgetLines.cost.reduce((a, l) => a + l.amount, 0)
+      if (e.budgetLines.cost[0]) e.budgetLines.cost[0].amount += drift
+    } else {
+      e.budgetLines = defaultBudgetLines(e.feeEstimate, newBudget, 'tm')
+    }
+    e.budgetLines.revenue = [{ id: 'br1', account: REVENUE_ACCOUNT, amount: e.feeEstimate }]
+  } else e.contractValue = vo.newValue
 
   const after = revenue(e)
   vo.status = 'Approved'
@@ -1379,9 +1408,15 @@ export function reopenEngagement(id: string, by: string, reason: string): boolea
  */
 export function projectedMargin(e: Engagement): { value: number | null; pct: number | null } {
   if (e.budget === null) return { value: null, pct: null }
-  const contract = e.method === 'tm' ? e.feeEstimate : e.contractValue
-  const value = contract - Math.max(e.budget, actualCost(e))
-  return { value, pct: contract > 0 ? (value / contract) * 100 : null }
+  const finalCost = Math.max(e.budget, actualCost(e))
+  if (e.method === 'tm') {
+    // Cost plus margin earns the markup on every rupiah of cost, so it cannot lose.
+    const rev = Math.round(finalCost * (1 + (e.markupPct || 0) / 100))
+    const value = rev - finalCost
+    return { value, pct: rev > 0 ? (value / rev) * 100 : null }
+  }
+  const value = e.contractValue - finalCost
+  return { value, pct: e.contractValue > 0 ? (value / e.contractValue) * 100 : null }
 }
 
 /** Billing schedule status taken only from linked invoices. */

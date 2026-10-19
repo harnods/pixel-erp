@@ -18,7 +18,7 @@ import {
 import SelectAccessDrawer, { type AccessOption } from '~/components/patterns/SelectAccessDrawer.vue'
 import {
   createEngagement, draftWeightSum, methodLabel, creationApprovalPreview, projectStatusKey,
-  findEngagement, draftFromEngagement, resubmitEngagement,
+  findEngagement, draftFromEngagement, resubmitEngagement, feeEstimateOf, formatIdr,
   COST_ACCOUNTS, REVENUE_ACCOUNT,
   type Engagement, type EngagementDraft, type RecognitionMethod,
 } from '~/data/projectAccounting'
@@ -85,11 +85,17 @@ const isOutput = computed(() => method.value === 'output')
 /** Percentage of completion and Milestones both run on the contract value. */
 const valueRequired = computed(() => method.value === 'input' || method.value === 'output')
 const valueLabel = computed(() => (isCostPlus.value ? t('Fee estimate') : t('Contract value')))
+/** Cost plus margin: the fee is derived from budgeted cost and markup, never typed. */
+const derivedFee = computed(() => {
+  const b = draft.budget === '' ? null : Number(draft.budget) || 0
+  return feeEstimateOf(b, Number(draft.markup) || 0)
+})
+const derivedFeeText = computed(() => (derivedFee.value === null ? '' : formatIdr(derivedFee.value)))
 
 // ── Approval preview ──────────────────────────────────────────────────────────
 // A Settings › Approval workflows rule on project creation sends the new project
 // to Pending approval. Name the approvers before the user saves.
-const approvalRule = computed(() => creationApprovalPreview(Number(draft.value) || 0))
+const approvalRule = computed(() => creationApprovalPreview(isCostPlus.value ? (derivedFee.value ?? 0) : (Number(draft.value) || 0)))
 const approvalNames = computed(() => (approvalRule.value?.approvers ?? []).join(', '))
 
 // ── Customer ──────────────────────────────────────────────────────────────────
@@ -259,7 +265,12 @@ function cancel() { router.push('/project-accounting') }
         <!-- ── Commercials ── -->
         <section class="ne-section">
           <div class="ne-grid ne-grid--3">
-            <MpFormControl id="ne-value" :is-required="valueRequired" :is-invalid="valueError">
+            <MpFormControl v-if="isCostPlus" id="ne-value">
+              <MpFormLabel>{{ valueLabel }}</MpFormLabel>
+              <MpInput id="ne-value-input" :model-value="derivedFeeText" is-read-only is-full-width :placeholder="t('Enter budgeted cost')" />
+              <p class="ne-hint">{{ t('Budgeted cost plus the agreed margin. A forecast, not a limit.') }}</p>
+            </MpFormControl>
+            <MpFormControl v-else id="ne-value" :is-required="valueRequired" :is-invalid="valueError">
               <MpFormLabel>{{ valueLabel }}</MpFormLabel>
               <MpInputGroup id="ne-value-group" is-full-width>
                 <MpInputLeftAddon>Rp</MpInputLeftAddon>
@@ -317,7 +328,7 @@ function cancel() { router.push('/project-accounting') }
                 <MpInputRightAddon>%</MpInputRightAddon>
               </MpInputGroup>
             </MpFormControl>
-            <p class="ne-hint">{{ t('Maximum margin charged on a cost line. Reviewers can waive it per line.') }}</p>
+            <p class="ne-hint">{{ t('Charged on every reviewed cost line. Reviewers can waive it per line.') }}</p>
           </div>
         </section>
 
