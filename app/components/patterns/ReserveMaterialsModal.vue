@@ -10,10 +10,8 @@
  * reserved. Only a row with NO stock at all (or nothing outstanding) can't be
  * ticked — there is nothing for it to reserve.
  */
-import {
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpCheckbox, MpBadge,
-} from '@mekari/pixel3'
+import { MpCheckbox, MpBadge } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import type { StockRequestLine, LineReadiness } from '~/data/stockRequests'
 import { lineCovered, lineReadiness } from '~/data/stockRequests'
 
@@ -109,84 +107,79 @@ function submit() {
 </script>
 
 <template>
-  <MpModal
-    :id="id" :is-open="isOpen" size="lg" :is-keep-alive="false"
-    :is-close-on-esc="false" :is-close-on-overlay-click="false"
+  <ErpDrawer
+    :is-open="isOpen"
+    :title="`${t('Reserve materials')} — ${workOrderNumber}`"
+    width="720px"
     @close="emit('close')"
   >
-    <MpModalContent>
-      <MpModalHeader>
-        {{ t('Reserve materials') }} — {{ workOrderNumber }}
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        <p class="rm-lead">
-          {{ t('Each component reserves what the warehouse can give. Where stock falls short it reserves what it can and the rest stays outstanding.') }}
-        </p>
+    <template #body>
+      <p class="rm-lead">
+        {{ t('Each component reserves what the warehouse can give. Where stock falls short it reserves what it can and the rest stays outstanding.') }}
+      </p>
 
-        <div class="rm-table-wrap">
-          <table class="rm-table">
-            <thead>
-              <tr>
-                <th class="rm-th rm-th--check">
-                  <MpCheckbox :id="`${id}-all`" :is-checked="allSelected" @change="toggleAll" />
-                </th>
-                <th class="rm-th">{{ t('Product') }}</th>
-                <th class="rm-th rm-th--num">{{ t('Needed') }}</th>
-                <th class="rm-th rm-th--num">{{ t('Available') }}</th>
-                <th class="rm-th rm-th--num">{{ t('To reserve') }}</th>
-                <th class="rm-th">{{ t('Readiness') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in rows" :key="r.productId" class="rm-tr" :class="{ 'rm-tr--disabled': !r.selectable }">
-                <td class="rm-td rm-td--check">
-                  <MpCheckbox
-                    :id="`${id}-${r.productId}`"
-                    :is-checked="selected.has(r.productId)"
-                    :is-disabled="!r.selectable"
-                    @change="() => toggle(r.productId)"
-                  />
-                </td>
-                <td class="rm-td">
-                  <span class="rm-product">{{ r.product }}</span>
-                  <span class="rm-sku">{{ r.sku }}</span>
-                </td>
-                <td class="rm-td rm-td--num">{{ r.needed }} {{ r.unit }}</td>
-                <td class="rm-td rm-td--num">{{ r.available }} {{ r.unit }}</td>
-                <td class="rm-td rm-td--num">
-                  <template v-if="r.toReserve > 0">
-                    {{ r.toReserve }} {{ r.unit }}
-                    <span v-if="r.toReserve < r.outstanding" class="rm-short">{{ t('of') }} {{ r.outstanding }}</span>
-                  </template>
-                  <template v-else>—</template>
-                </td>
-                <td class="rm-td">
-                  <MpBadge for="tableStatus" :type="READINESS[r.readiness].type" size="sm">
-                    {{ t(READINESS[r.readiness].label) }}
-                  </MpBadge>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <div class="rm-table-wrap">
+        <table class="rm-table">
+          <thead>
+            <tr>
+              <th class="rm-th rm-th--check">
+                <MpCheckbox :id="`${id}-all`" :is-checked="allSelected" @change="toggleAll" />
+              </th>
+              <th class="rm-th">{{ t('Product') }}</th>
+              <th class="rm-th rm-th--num">{{ t('Needed') }}</th>
+              <th class="rm-th rm-th--num">{{ t('Available') }}</th>
+              <th class="rm-th rm-th--num">{{ t('To reserve') }}</th>
+              <th class="rm-th">{{ t('Readiness') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in rows" :key="r.productId" class="rm-tr" :class="{ 'rm-tr--disabled': !r.selectable }">
+              <td class="rm-td rm-td--check">
+                <MpCheckbox
+                  :id="`${id}-${r.productId}`"
+                  :is-checked="selected.has(r.productId)"
+                  :is-disabled="!r.selectable"
+                  @change="() => toggle(r.productId)"
+                />
+              </td>
+              <td class="rm-td">
+                <span class="rm-product">{{ r.product }}</span>
+                <span class="rm-sku">{{ r.sku }}</span>
+              </td>
+              <td class="rm-td rm-td--num">{{ r.needed }} {{ r.unit }}</td>
+              <td class="rm-td rm-td--num">{{ r.available }} {{ r.unit }}</td>
+              <td class="rm-td rm-td--num">
+                <template v-if="r.toReserve > 0">
+                  {{ r.toReserve }} {{ r.unit }}
+                  <span v-if="r.toReserve < r.outstanding" class="rm-short">{{ t('of') }} {{ r.outstanding }}</span>
+                </template>
+                <template v-else>—</template>
+              </td>
+              <td class="rm-td">
+                <MpBadge for="tableStatus" :type="READINESS[r.readiness].type" size="sm">
+                  {{ t(READINESS[r.readiness].label) }}
+                </MpBadge>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-        <p v-if="error" class="rm-error">{{ error }}</p>
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="rm-footer">
-          <span class="rm-summary">
-            {{ selected.size }} {{ selected.size === 1 ? t('component') : t('components') }} · {{ selectedQty }} {{ t('unit to reserve') }}
-          </span>
-          <div class="rm-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submit">{{ t('Reserve') }}</button>
-          </div>
+      <p v-if="error" class="rm-error">{{ error }}</p>
+    </template>
+
+    <template #footer>
+      <div class="rm-footer">
+        <span class="rm-summary">
+          {{ selected.size }} {{ selected.size === 1 ? t('component') : t('components') }} · {{ selectedQty }} {{ t('unit to reserve') }}
+        </span>
+        <div class="rm-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submit">{{ t('Reserve') }}</button>
         </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>

@@ -907,22 +907,6 @@ function suppressFabClick(e: MouseEvent) {
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- D-4 — ONE Reservation action opening Reserve / Unreserve; separate
-             buttons are deliberately not used. S-2 — hidden entirely (not
-             disabled) when the method is Two-step. -->
-        <MpPopover v-if="showReservationMenu" id="wod-reservation" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">{{ t('Reservation') }}</button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="reserveOpen = true">{{ t('Reserve') }}</MpPopoverListItem>
-              <!-- D-6 — unreserve exists only while the work order has not started -->
-              <MpPopoverListItem v-if="notStarted && hasReservation" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
         <MpButton v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
       </div>
     </header>
@@ -1020,6 +1004,29 @@ function suppressFabClick(e: MouseEvent) {
             <MpIcon name="information" size="sm" />
             {{ t('Reservation via Stock requests only (PPIC / stockist)') }}
           </p>
+          <!-- D-4 — ONE Material reservation action opening Reserve / Unreserve;
+               separate buttons are deliberately not used. It sits directly above
+               the table because the components it acts on are the rows beneath it,
+               not the work order as a whole. S-2 — hidden entirely (not disabled)
+               when the method is Two-step. -->
+          <div v-if="showReservationMenu" class="wod-reserve-actions">
+            <MpPopover id="wod-reservation" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+              <MpPopoverTrigger>
+                <button class="btn-enterprise btn-enterprise--secondary wod-reserve-btn" data-devchange="wod-material-reservation">
+                  {{ t('Material reservation') }}
+                  <MpIcon name="chevrons-down" size="sm" />
+                </button>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+                <MpPopoverList>
+                  <MpPopoverListItem @click="reserveOpen = true">{{ t('Reserve') }}</MpPopoverListItem>
+                  <!-- D-6 — unreserve exists only while the work order has not started -->
+                  <MpPopoverListItem v-if="notStarted && hasReservation" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
+
           <div class="wod-table-scroll">
             <table class="wod-table">
               <thead>
@@ -1554,6 +1561,9 @@ function suppressFabClick(e: MouseEvent) {
 
 /* Material readiness note + badge (PRD UC-00 S-2, UC-02) */
 .wod-section-title { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+/* Material reservation — its own row above the table it acts on. */
+.wod-reserve-actions { display: flex; margin-bottom: var(--mp-spacing-4); }
+.wod-reserve-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .wod-reserve-note {
   display: flex; align-items: center; gap: var(--mp-spacing-1);
   margin: 0 0 var(--mp-spacing-3);

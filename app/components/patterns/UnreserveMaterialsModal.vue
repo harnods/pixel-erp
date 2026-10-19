@@ -10,10 +10,9 @@
  * which the info note states.
  */
 import {
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpCheckbox, MpRadio, MpTextarea,
-  MpBanner, MpBannerIcon, MpBannerDescription,
+  MpCheckbox, MpRadio, MpTextarea, MpBanner, MpBannerIcon, MpBannerDescription,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import type { StockRequestLine, UnreserveDisposition } from '~/data/stockRequests'
 
 const props = defineProps<{
@@ -82,96 +81,94 @@ function submit() {
 </script>
 
 <template>
-  <MpModal
-    :id="id" :is-open="isOpen" size="lg" :is-keep-alive="false"
-    :is-close-on-esc="false" :is-close-on-overlay-click="false"
+  <ErpDrawer
+    :is-open="isOpen"
+    :title="`${t('Unreserve materials')} — ${workOrderNumber}`"
+    width="640px"
     @close="emit('close')"
   >
-    <MpModalContent>
-      <MpModalHeader>
-        {{ t('Unreserve materials') }} — {{ workOrderNumber }}
-        <MpModalCloseButton />
-      </MpModalHeader>
-      <MpModalBody>
-        <p class="um-lead">
-          {{ t('The full reserved quantity of each selected component is released. Unreserving is only possible while the work order has not started.') }}
-        </p>
+    <template #body>
+      <!-- The approval note leads: it qualifies everything below it — that the
+           release happens now, without anyone signing it off — so it has to be
+           read before the components are picked, not after. -->
+      <MpBanner id="um-approval-note" variant="info" class="um-banner">
+        <MpBannerIcon />
+        <MpBannerDescription>
+          {{ t('Approval (Supervisor → Production manager) is planned but not active yet — this takes effect immediately and is recorded in the activity log.') }}
+        </MpBannerDescription>
+      </MpBanner>
 
-        <div class="um-table-wrap">
-          <table class="um-table">
-            <thead>
-              <tr>
-                <th class="um-th um-th--check">
-                  <MpCheckbox :id="`${id}-all`" :is-checked="allSelected" @change="toggleAll" />
-                </th>
-                <th class="um-th">{{ t('Product') }}</th>
-                <th class="um-th um-th--num">{{ t('Reserved') }}</th>
-                <th class="um-th um-th--num">{{ t('To release') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in rows" :key="r.productId" class="um-tr">
-                <td class="um-td um-td--check">
-                  <MpCheckbox
-                    :id="`${id}-${r.productId}`"
-                    :is-checked="selected.has(r.productId)"
-                    @change="() => toggle(r.productId)"
-                  />
-                </td>
-                <td class="um-td">
-                  <span class="um-product">{{ r.product }}</span>
-                  <span class="um-sku">{{ r.sku }}</span>
-                </td>
-                <td class="um-td um-td--num">{{ r.reserved }} {{ r.unit }}</td>
-                <td class="um-td um-td--num">{{ selected.has(r.productId) ? `${r.reserved} ${r.unit}` : '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
+      <p class="um-lead">
+        {{ t('The full reserved quantity of each selected component is released. Unreserving is only possible while the work order has not started.') }}
+      </p>
+
+      <div class="um-table-wrap">
+        <table class="um-table">
+          <thead>
+            <tr>
+              <th class="um-th um-th--check">
+                <MpCheckbox :id="`${id}-all`" :is-checked="allSelected" @change="toggleAll" />
+              </th>
+              <th class="um-th">{{ t('Product') }}</th>
+              <th class="um-th um-th--num">{{ t('Reserved') }}</th>
+              <th class="um-th um-th--num">{{ t('To release') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in rows" :key="r.productId" class="um-tr">
+              <td class="um-td um-td--check">
+                <MpCheckbox
+                  :id="`${id}-${r.productId}`"
+                  :is-checked="selected.has(r.productId)"
+                  @change="() => toggle(r.productId)"
+                />
+              </td>
+              <td class="um-td">
+                <span class="um-product">{{ r.product }}</span>
+                <span class="um-sku">{{ r.sku }}</span>
+              </td>
+              <td class="um-td um-td--num">{{ r.reserved }} {{ r.unit }}</td>
+              <td class="um-td um-td--num">{{ selected.has(r.productId) ? `${r.reserved} ${r.unit}` : '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Disposition — mandatory (D-6) -->
+      <fieldset class="um-field">
+        <legend class="um-label">{{ t('Disposition') }}</legend>
+        <div class="um-radios">
+          <MpRadio :id="`${id}-disp-return`" v-model="disposition" name="um-disposition" value="return-to-warehouse">
+            {{ t('Return to warehouse') }}
+            <template #description>{{ t('The released quantity goes back to available warehouse stock.') }}</template>
+          </MpRadio>
+          <MpRadio :id="`${id}-disp-defect`" v-model="disposition" name="um-disposition" value="production-defect">
+            {{ t('Production defect') }}
+            <template #description>{{ t('Charged to production cost (HPP). The stock does not return to the warehouse.') }}</template>
+          </MpRadio>
         </div>
+      </fieldset>
 
-        <!-- Disposition — mandatory (D-6) -->
-        <fieldset class="um-field">
-          <legend class="um-label">{{ t('Disposition') }}</legend>
-          <div class="um-radios">
-            <MpRadio :id="`${id}-disp-return`" v-model="disposition" name="um-disposition" value="return-to-warehouse">
-              {{ t('Return to warehouse') }}
-              <template #description>{{ t('The released quantity goes back to available warehouse stock.') }}</template>
-            </MpRadio>
-            <MpRadio :id="`${id}-disp-defect`" v-model="disposition" name="um-disposition" value="production-defect">
-              {{ t('Production defect') }}
-              <template #description>{{ t('Charged to production cost (HPP). The stock does not return to the warehouse.') }}</template>
-            </MpRadio>
-          </div>
-        </fieldset>
+      <div class="um-field">
+        <label class="um-label" :for="`${id}-reason`">{{ t('Reason') }} <span class="um-optional">({{ t('optional') }})</span></label>
+        <MpTextarea :id="`${id}-reason`" v-model="reason" :placeholder="t('Why is this being unreserved?')" rows="2" is-full-width />
+      </div>
 
-        <div class="um-field">
-          <label class="um-label" :for="`${id}-reason`">{{ t('Reason') }} <span class="um-optional">({{ t('optional') }})</span></label>
-          <MpTextarea :id="`${id}-reason`" v-model="reason" :placeholder="t('Why is this being unreserved?')" rows="2" is-full-width />
+      <p v-if="error" class="um-error">{{ error }}</p>
+    </template>
+
+    <template #footer>
+      <div class="um-footer">
+        <span class="um-summary">
+          {{ selected.size }} {{ selected.size === 1 ? t('component') : t('components') }} · {{ releasedQty }} {{ t('unit to release') }}
+        </span>
+        <div class="um-footer-btns">
+          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
+          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submit">{{ t('Unreserve') }}</button>
         </div>
-
-        <MpBanner id="um-approval-note" variant="info" class="um-banner">
-          <MpBannerIcon />
-          <MpBannerDescription>
-            {{ t('Approval (Supervisor → Production manager) is planned but not active yet — this takes effect immediately and is recorded in the activity log.') }}
-          </MpBannerDescription>
-        </MpBanner>
-
-        <p v-if="error" class="um-error">{{ error }}</p>
-      </MpModalBody>
-      <MpModalFooter>
-        <div class="um-footer">
-          <span class="um-summary">
-            {{ selected.size }} {{ selected.size === 1 ? t('component') : t('components') }} · {{ releasedQty }} {{ t('unit to release') }}
-          </span>
-          <div class="um-footer-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="emit('close')">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="submit">{{ t('Unreserve') }}</button>
-          </div>
-        </div>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>

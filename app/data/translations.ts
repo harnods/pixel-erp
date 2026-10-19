@@ -3709,6 +3709,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Not enough stock to reserve any line in full': 'Stok tidak cukup untuk mereservasi baris mana pun secara penuh',
 
   // ── Production › Work order material reservation (PRD UC-00 … UC-04) ────────
+  'Material reservation': 'Reservasi material',
   'Reservation': 'Reservasi',
   'Reserve': 'Reservasi',
   'Unreserve': 'Batalkan reservasi',

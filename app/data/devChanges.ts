@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wod-material-reservation',
+    title: 'Work order: Material reservation moves onto the materials it acts on',
+    description:
+      'The Reservation button has left the title bar for a row directly above the Raw materials table — the components it reserves are the rows beneath it, not the work order as a whole. It is now labelled Material reservation and carries a chevron, so it reads as the dropdown it always was. Reserve and Unreserve open as drawers rather than modals, and the approval note in Unreserve leads the content: it qualifies everything below it — that the release happens immediately, unapproved — so it has to be read before the components are picked.',
+    date: '2026-10-19',
+    files: ['WorkOrderDetailsPage.vue', 'ReserveMaterialsModal.vue', 'UnreserveMaterialsModal.vue'],
+  },
+  {
+    id: 'erp-drawer-width',
+    title: 'ErpDrawer: the width prop actually applies now',
+    description:
+      'Every drawer in the app was rendering at the flex fallback width instead of the one its caller asked for. The panel width was built into a Panda CSS class from a prop, and Panda extracts classes statically at build time — so the class landed on the element with no rule behind it, and not one mp-w_min(...) rule existed in the built stylesheet. The width is an inline style now, so all ~20 drawers take the width they were written with.',
+    date: '2026-10-19',
+    files: ['ErpDrawer.vue'],
+  },
+  {
     id: 'srd-warehouse-tables',
     title: 'Stock request detail: the warehouse tables share one column grid',
     description:
