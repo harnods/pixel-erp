@@ -605,11 +605,6 @@ const exportColumns = computed(() => {
           </span>
         </span>
       </span>
-      <!-- W-6 — stock went minus after a backdated transaction -->
-      <span v-if="sku(row).backdate" class="sr-note">
-        <MpIcon name="warning" size="sm" />
-        {{ t('Stock minus after recalculation') }} — {{ sku(row).backdate!.transaction }}
-      </span>
     </template>
 
     <template #cell-sku="{ row }">
@@ -649,9 +644,21 @@ const exportColumns = computed(() => {
       </span>
     </template>
 
-    <!-- Available — minus and red once a backdated transaction pushed it under zero (W-6) -->
+    <!-- Available — minus and red once a backdated transaction pushed it under zero
+         (W-6). The reason sits on a warning icon beside the figure rather than as a
+         note under the product name: spelled out there it wrapped to six lines and
+         set the height of the whole row, and it explains THIS number. -->
     <template #cell-available="{ row }">
-      <span v-if="view === 'product'" :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }}</span>
+      <span v-if="view === 'product'" class="sr-available">
+        <span :class="{ 'sr-short': sku(row).available < 0 }">{{ sku(row).available }}</span>
+        <MpTooltip
+          v-if="sku(row).backdate"
+          :label="`${t('Stock minus after recalculation')} — ${sku(row).backdate!.transaction}`"
+          placement="top"
+        >
+          <MpIcon class="sr-available-warning" name="warning-triangle" size="sm" />
+        </MpTooltip>
+      </span>
       <span v-else>{{ wo(row).available }}</span>
     </template>
 
@@ -898,6 +905,11 @@ const exportColumns = computed(() => {
   white-space: normal; overflow-wrap: anywhere;
 }
 .sr-note :deep(svg) { flex-shrink: 0; }
+
+/* Available — the W-6 warning icon follows the figure, so the eye reads the number
+   first and the flag second, and the icon is the thing nearest the row's actions. */
+.sr-available { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); }
+.sr-available-warning { color: var(--mp-text-critical, #a8352d); cursor: help; flex-shrink: 0; }
 
 /* An empty cell still needs a mark, or the column reads as broken rather than blank. */
 .sr-muted { color: var(--mp-text-secondary, #3a4749); }

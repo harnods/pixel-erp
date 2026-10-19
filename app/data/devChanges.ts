@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-backdate-tooltip',
+    title: 'Stock requests: the backdate warning moves onto Available qty',
+    description:
+      'W-6 explains why a component shows negative availability. Spelled out under the product name it wrapped to six lines and set the height of the entire row — 153px against the 46px of its neighbours — while sitting in a column it says nothing about. It is now a warning-triangle after the Available figure it explains, with the reason and the transaction on hover.',
+    date: '2026-10-19',
+    files: ['StockRequestsPage.vue'],
+  },
+  {
     id: 'sr-view-default-transaction',
     title: 'Stock requests: By transaction leads, and is the default view',
     description:
