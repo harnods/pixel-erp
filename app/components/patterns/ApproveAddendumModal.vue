@@ -20,6 +20,9 @@ const props = defineProps<{
   /** Plain-language description of what approving does to recognised revenue. */
   effect: string
   raisedBy: string
+  /** Logged-in approver shown in the dialog (overlays agent renders these). */
+  approverName?: string
+  approverRole?: string
 }>()
 
 const emit = defineEmits<{
