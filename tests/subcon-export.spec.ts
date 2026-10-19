@@ -32,3 +32,29 @@ describe('buildSubconExportRows', () => {
     expect(row['Promised date']).toMatch(/^\d{2}\/\d{2}\/\d{4}$/)
   })
 })
+
+// Subcon order report (Reports › Production) — the screen and the file read the
+// same rows, so a filtered table downloads exactly what it shows.
+import { subconReportRows, toSubconExportRows } from '../app/data/subconExport'
+
+describe('Subcon order report rows', () => {
+  const subcon = workOrders.filter(w => w.category === 'Subcontracting')
+
+  it('the download is the on-screen rows, formatted', () => {
+    expect(toSubconExportRows(subconReportRows(workOrders))).toEqual(buildSubconExportRows(workOrders))
+  })
+
+  it('downloads only the rows passed in — a filtered table exports its subset', () => {
+    const shown = subconReportRows(workOrders).slice(0, 1)
+    expect(toSubconExportRows(shown).map(r => r['WO number'])).toEqual([subcon[0]!.number])
+  })
+
+  it('keeps typed values for sorting and filtering on screen', () => {
+    const row = subconReportRows(workOrders)[0]!
+    const wo = subcon[0]!
+    expect(row.id).toBe(wo.id)
+    expect(row.vendorId).toBe(wo.subcon!.vendorId)
+    expect(row.plannedQty).toBe(wo.plannedQty)
+    expect(row.planStartDate).toBe(wo.planStartDate)
+  })
+})

@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-order-report',
+    title: "Reports › Production: Subcon order report",
+    description:
+      "New Production reports index with a Subcon order report: one row per subcon work order (WO number, product, BOM, vendor, method, scope, qty, received, promised date, status), filtered by plan start period, vendor, method and status.",
+    date: '2026-10-19',
+    files: ['ProductionReportsIndexPage.vue', 'SubconOrderReportPage.vue', 'subconExport.ts'],
+  },
+  {
+    id: 'subcon-order-report-export',
+    title: "Subcon order report: Excel download",
+    description:
+      "Downloads exactly the rows on screen — after period, filters and search — as an .xlsx file.",
+    date: '2026-10-19',
+    files: ['SubconOrderReportPage.vue', 'subconExport.ts'],
+  },
+  {
     id: 'production-settings-subcon-toggle',
     title: "Production settings: Allow subcontracting",
     description:

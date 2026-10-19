@@ -149,6 +149,9 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
+  // Reports → Production index (report cards). The Subcon order report itself
+  // resolves via detailMatch (/production-report/subcon-order).
+  'Production report':  defineAsyncComponent(() => import('~/components/pages/ProductionReportsIndexPage.vue')),
   // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid as
   // Sales). No report detail pages yet — every card shows the coming-soon toast.
   'Purchase report':    defineAsyncComponent(() => import('~/components/pages/PurchaseReportsIndexPage.vue')),
@@ -434,6 +437,7 @@ const UnclassifiedReviewPage = asyncPage(() => import('~/components/pages/Unclas
 const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPage.vue'))
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
+const SubconOrderReportPage = asyncPage(() => import('~/components/pages/SubconOrderReportPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
 const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
 const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
@@ -596,6 +600,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // Inventory reports index rather than rendering the wrong report.
   if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'dual-unit') {
     return { component: DualUnitInventoryReportPage, id: segs[1]! }
+  }
+  // /production-report/subcon-order → Subcon order report (Reports → Production →
+  // View report). Any other slug falls through to the Production reports index.
+  if (segs.length >= 2 && segs[0] === 'production-report' && segs[1] === 'subcon-order') {
+    return { component: SubconOrderReportPage, id: segs[1]! }
   }
   // /data-migration/wms-cutover/:step → the WMS→Jurnal cutover setup screens.
   // Full-bleed form pages (own title bar + stage); the bare index falls through
@@ -2331,7 +2340,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Inventory report' || currentPageKey === 'Production report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />

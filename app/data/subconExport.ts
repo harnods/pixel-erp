@@ -5,8 +5,9 @@
  * work order, built from the work orders themselves, with exactly the R19 columns.
  * Status is the work order's own status (R22).
  *
- * OPEN (Product, UX): where the export lives. Default implemented: the Work orders
- * index, exporting only while the list is filtered to Subcontracting.
+ * Lives as the Subcon order report under Reports › Production
+ * (SubconOrderReportPage.vue), which shows the rows on screen and downloads them.
+ * The Work orders index keeps its export while filtered to Subcontracting.
  */
 import type { WorkOrder, WorkOrderStatus } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
@@ -34,30 +35,76 @@ export const WORK_ORDER_STATUS_LABEL: Record<WorkOrderStatus, string> = {
 }
 
 /**
- * One row per subcon work order, in the order given. Non-subcon orders are left
- * out, so the caller can pass the list exactly as it is filtered on screen.
+ * One subcon work order as the report shows it — typed values, so the screen can
+ * sort and filter. The Excel rows are formatted from these, so screen and file
+ * never disagree.
  */
-export function buildSubconExportRows(orders: readonly WorkOrder[]): SubconExportRow[] {
+export interface SubconReportRow {
+  id: string
+  number: string
+  product: string
+  bomNumber: string
+  vendorId: string
+  vendor: string
+  method: string
+  scope: string
+  plannedQty: number
+  receivedQty: number
+  unit: string
+  planStartDate: string
+  promisedDate: string
+  status: WorkOrderStatus
+}
+
+/** Subcon work orders only, in the order given — non-subcon orders are left out. */
+export function subconReportRows(orders: readonly WorkOrder[]): SubconReportRow[] {
   return orders
     .filter(wo => wo.category === 'Subcontracting' && !!wo.subcon)
     .map((wo) => {
       const c = wo.subcon!
       const bom = billOfMaterials.find(b => b.id === wo.bomId)
       const product = bom ? catalogProduct(bom.finishedGoodId) : undefined
-      const unit = bom?.finishedGoodUnit ?? product?.unit ?? ''
       return {
-        'WO number': wo.number,
-        'Product': product?.name ?? wo.bomName,
-        'BOM': bom?.number ?? '',
-        'Subcon vendor': c.vendorName,
-        'Method': SUBCON_METHOD_LABEL[c.method],
-        'Scope': SUBCON_SCOPE_LABEL[c.scope],
-        'Qty': `${wo.plannedQty} ${unit}`.trim(),
-        'Received': `${wo.producedQty}/${wo.plannedQty}`,
-        'Promised date': formatDate(c.promisedDate),
-        'Status': WORK_ORDER_STATUS_LABEL[wo.status] ?? wo.status,
+        id: wo.id,
+        number: wo.number,
+        product: product?.name ?? wo.bomName,
+        bomNumber: bom?.number ?? '',
+        vendorId: c.vendorId,
+        vendor: c.vendorName,
+        method: SUBCON_METHOD_LABEL[c.method],
+        scope: SUBCON_SCOPE_LABEL[c.scope],
+        plannedQty: wo.plannedQty,
+        receivedQty: wo.producedQty,
+        unit: bom?.finishedGoodUnit ?? product?.unit ?? '',
+        planStartDate: wo.planStartDate,
+        promisedDate: c.promisedDate,
+        status: wo.status,
       }
     })
+}
+
+/** The Excel cells for report rows, under the R19 headings. */
+export function toSubconExportRows(rows: readonly SubconReportRow[]): SubconExportRow[] {
+  return rows.map(r => ({
+    'WO number': r.number,
+    'Product': r.product,
+    'BOM': r.bomNumber,
+    'Subcon vendor': r.vendor,
+    'Method': r.method,
+    'Scope': r.scope,
+    'Qty': `${r.plannedQty} ${r.unit}`.trim(),
+    'Received': `${r.receivedQty}/${r.plannedQty}`,
+    'Promised date': formatDate(r.promisedDate),
+    'Status': WORK_ORDER_STATUS_LABEL[r.status] ?? r.status,
+  }))
+}
+
+/**
+ * One row per subcon work order, in the order given. Non-subcon orders are left
+ * out, so the caller can pass the list exactly as it is filtered on screen.
+ */
+export function buildSubconExportRows(orders: readonly WorkOrder[]): SubconExportRow[] {
+  return toSubconExportRows(subconReportRows(orders))
 }
 
 /** Download the rows as an .xlsx file, named for today. */

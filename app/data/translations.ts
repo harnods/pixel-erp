@@ -4277,4 +4277,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Allow subcontracting": "Izinkan subkontrak",
   "Users can create subcontracting bills of materials and work orders. Existing ones stay available when this is off.": "Pengguna dapat membuat bill of materials dan perintah kerja subkontrak. Data yang sudah ada tetap tersedia saat ini dinonaktifkan.",
   "Cannot create work order. Subcontracting is turned off in Production settings.": "Tidak dapat membuat perintah kerja. Subkontrak dinonaktifkan di pengaturan Produksi.",
+  "Subcon order report": "Laporan pesanan subkon",
+  "Every subcontracting work order with its vendor, supply method, quantity received and promised return date.": "Setiap perintah kerja subkontrak beserta vendor, metode pasokan, qty diterima, dan tanggal pengembalian dijanjikan.",
+  "WO number": "Nomor perintah kerja",
+  "Search WO number, product or vendor": "Cari nomor perintah kerja, produk, atau vendor",
+  "No subcon order": "Belum ada pesanan subkon",
+  "Subcon orders will appear here.": "Pesanan subkon akan muncul di sini.",
 }
