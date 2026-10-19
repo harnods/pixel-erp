@@ -1,15 +1,21 @@
 /**
- * Project accounting — the three recognition engines and the contract-addendum
- * rules (app/data/projectAccounting.ts).
+ * Project accounting — the three recognition methods, the contract-addendum
+ * rules and the Settings › Approval workflows gates (app/data/projectAccounting.ts).
  *
  * These are the numbers a controller would sign off on, so they are asserted
  * exactly as the source computes them:
  *
- *   tm     revenue = Σ entryFinal(x) over REVIEWED lines only
+ *   tm     (Cost plus margin)          revenue = Σ entryFinal(x) over REVIEWED lines only
  *                    entryFinal: bill → cost×(1+margin), atcost → cost, absorb → 0
- *   input  revenue = recognizedBase + max(0, poc − pctAtVO)/100 × contractValue
+ *   input  (Percentage of completion)  revenue = recognizedBase + max(0, poc − pctAtVO)/100 × contractValue
  *                    poc = min(actualCost ÷ budget × 100, 100)
- *   output revenue = Σ recognized over VERIFIED milestones (frozen at verification)
+ *   output (Milestones)                revenue = Σ recognized over VERIFIED milestones (frozen at verification)
+ *
+ * Approvals come from the seeded Settings rules (app/data/approvalWorkflows.ts):
+ *   Project creation  contract value above Rp500.000.000      → Rizal Candra or Budi Santoso
+ *   Addendum          value change above Rp25.000.000         → Rizal Candra
+ *   Milestone verification on Cikarang (e7), any amount       → Rizal Candra
+ * The submitter can never decide their own request.
  *
  * The addendum cases encode PSAK 72's distinct test, which is the part most likely
  * to regress silently: whether added scope is distinct — not how the project earns —
@@ -20,18 +26,24 @@ import {
   engagements, findEngagement, createEngagement,
   revenue, actualCost, pocPct, billed, collected, wipNet,
   entryAmount, entryFinal, openEntries, readyToInvoice, canClose, closeHint,
-  ageBuckets, daysAgo, budgetReport, budgetOf, accountForEntry,
+  ageBuckets, daysAgo, budgetReport, budgetOf, accountForEntry, workDoneShare, projectedMargin,
   decideEntries, addAddendum, approveAddendum, rejectAddendum, confirmWeights,
   addScopeMilestone, verifyMilestone, unverifyMilestone, saveInvoice, recordPayment,
   closeEngagement, saveExpense, projectOptions, portfolioTotals,
-  invoiceLineAmount, invoiceLineTax, draftWeightSum,
+  invoiceLineAmount, invoiceLineTax, draftWeightSum, methodLabel,
+  approveRequest, rejectRequest, approvalFor, pendingVos, submitMilestoneVerification,
+  projectStatusLabel, projectStatusKey, resubmitEngagement, draftFromEngagement,
+  reopenEngagement, canReopen, billingStatusOf,
   TODAY, type EngagementDraft, type RecognitionMethod,
 } from '~/data/projectAccounting'
+
+const APPROVER = 'Rizal Candra'
+const PM = 'Rina Wulandari'
 
 // A minimal draft; each test overrides just what it cares about.
 function draft(over: Partial<EngagementDraft> = {}): EngagementDraft {
   return {
-    name: 'Test engagement',
+    name: 'Test project',
     client: 'PT Test',
     pm: 'Tester',
     method: 'input',
@@ -44,7 +56,15 @@ function draft(over: Partial<EngagementDraft> = {}): EngagementDraft {
   }
 }
 
-/** Build an engagement of a given method with a known contract value and budget. */
+/** Raise an addendum and, when a rule gated it, have the approver decide it. */
+function raiseAndApprove(id: string, newValue: number, reason: string, distinct: boolean) {
+  const res = addAddendum(id, newValue, reason, distinct)!
+  expect(res.status).toBe('pending')
+  expect(approveRequest(id, res.approval!.id, APPROVER)).toBe(true)
+  return res
+}
+
+/** Build a project of a given method with a known contract value and budget. */
 function make(method: RecognitionMethod, over: Partial<EngagementDraft> = {}) {
   const e = createEngagement(draft({ method, ...over }))
   return findEngagement(e.id)!
@@ -81,10 +101,40 @@ describe('seed figures — the three engines side by side', () => {
     expect(revenue(e)).toBe(0)
     expect(actualCost(e)).toBe(815_000_000)
   })
+
+  it('method labels', () => {
+    expect([methodLabel('tm'), methodLabel('input'), methodLabel('output')]).toEqual(['Cost plus margin', 'Percentage of completion', 'Milestones'])
+  })
+
+  it('Home Terrace has its down payment as a real paid invoice on schedule row b1', () => {
+    const e = findEngagement('e5')!
+    expect(e.invoices).toEqual([{ id: 'INV-2190', label: 'Down payment (30%)', amount: 13_500_000, date: '2026-07-06', status: 'paid', paidDate: '2026-07-10' }])
+    const b1 = e.billing!.find(b => b.id === 'b1')!
+    expect(b1.invId).toBe('INV-2190')
+    expect(billingStatusOf(e, b1)).toBe('paid')
+    expect(b1.pct / 100 * e.contractValue).toBe(13_500_000)
+    expect([billed(e), collected(e)]).toEqual([13_500_000, 13_500_000])
+    // 27.750.000 recognized against 13.500.000 billed: 14.250.000 unbilled.
+    expect(wipNet(e)).toBe(14_250_000)
+  })
+
+  it('Cikarang carries one addendum waiting on the Addendum rule, so it cannot close', () => {
+    const e = findEngagement('e7')!
+    expect(pendingVos(e).map(v => [v.id, v.oldValue, v.newValue, v.distinct, v.raisedBy])).toEqual([['v-e7-1', 2_400_000_000, 2_520_000_000, true, PM]])
+    const a = approvalFor(e, 'addendum', 'v-e7-1')!
+    expect([a.ruleName, a.amount, a.submittedBy, a.approvers]).toEqual(['Addendum Rule 001', 120_000_000, PM, [APPROVER]])
+    expect(e.contractValue).toBe(2_400_000_000)
+    expect(canClose(e)).toBe(false)
+    expect(portfolioTotals().pendingAddenda).toBe(1)
+  })
+
+  it('every seeded project reads In progress', () => {
+    expect(engagements.map(projectStatusLabel)).toEqual(Array(6).fill('In progress'))
+  })
 })
 
-describe('entryFinal — what the client is actually charged', () => {
-  const line = { id: 'x', category: 'Labour', description: 'd', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense' as const, docNo: 'EXP-1', decision: null, invoiced: false, hours: null }
+describe('entryFinal — what the customer is actually charged', () => {
+  const line = { id: 'x', category: 'Labor', description: 'd', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense' as const, docNo: 'EXP-1', decision: null, invoiced: false, hours: null }
 
   it('bill charges cost plus the margin', () => {
     expect(entryFinal({ ...line, decision: 'bill' })).toBe(1_200_000)
@@ -95,7 +145,7 @@ describe('entryFinal — what the client is actually charged', () => {
     expect(entryFinal({ ...line, decision: 'atcost' })).toBe(1_000_000)
   })
 
-  it('absorb charges the client nothing', () => {
+  it('absorb charges the customer nothing', () => {
     expect(entryFinal({ ...line, decision: 'absorb' })).toBe(0)
   })
 })
@@ -122,18 +172,33 @@ describe('createEngagement', () => {
       budget: '999',
       budgetLines: {
         revenue: [{ id: 'br1', account: '4-10000 Project revenue', amount: '100000000' }],
-        cost: [{ id: 'bc0', account: '5-10000 Cost of materials', amount: '40000000' }, { id: 'bc1', account: '6-10001 Direct labour', amount: '20000000' }],
+        cost: [{ id: 'bc0', account: '5-10000 Cost of materials', amount: '40000000' }, { id: 'bc1', account: '6-10001 Direct labor', amount: '20000000' }],
       },
     })
     expect(e.budget).toBe(60_000_000)
     expect(budgetOf(e).cost).toHaveLength(2)
   })
 
-  it('tm keeps the fee estimate (not contract value) and defaults the margin to 20%', () => {
-    const e = make('tm', { value: '75000000', markup: '' })
-    expect(e.feeEstimate).toBe(75_000_000)
-    expect(e.contractValue).toBe(0)
+  it('tm derives the fee estimate from budget × (1 + margin), ignores a typed value, and defaults the margin to 20%', () => {
+    const e = make('tm', { value: '75000000', budget: '50000000', markup: '' })
     expect(e.markupPct).toBe(20)
+    expect(e.feeEstimate).toBe(60_000_000)              // 50.000.000 × 1,2 — the typed 75.000.000 is ignored
+    expect(e.contractValue).toBe(0)
+
+    const m = make('tm', { budget: '50000000', markup: '25' })
+    expect(m.feeEstimate).toBe(62_500_000)
+  })
+
+  it('tm with no budget has no fee estimate', () => {
+    const e = make('tm', { value: '75000000', budget: '', budgetLines: { revenue: [], cost: [] } })
+    expect(e.budget).toBeNull()
+    expect(e.feeEstimate).toBe(0)
+  })
+
+  it('tm seed fees are derived the same way', () => {
+    expect([findEngagement('e1')!.feeEstimate, findEngagement('e2')!.feeEstimate, findEngagement('e3')!.feeEstimate]).toEqual([115_200_000, 33_600_000, 0])
+    expect(findEngagement('e3')!.budget).toBeNull()
+    expect(budgetOf(findEngagement('e1')!).revenue.map(l => l.amount)).toEqual([115_200_000])
   })
 
   it('input gets a 30/70 billing schedule; output gets its milestones', () => {
@@ -151,6 +216,65 @@ describe('createEngagement', () => {
   })
 })
 
+describe('project creation approval — above Rp500.000.000', () => {
+  it('at or under the threshold the project starts at once', () => {
+    const e = createEngagement(draft({ value: '500000000' }), PM)
+    expect(e.approvals ?? []).toEqual([])
+    expect(projectStatusLabel(e)).toBe('In progress')
+  })
+
+  it('above it the project waits as Pending approval until an approver other than the submitter approves', () => {
+    const e = createEngagement(draft({ name: 'Big build', value: '750000000' }), PM)
+    const a = approvalFor(e, 'project-creation', null)!
+    expect([a.ruleName, a.amount, a.submittedBy, a.approvers]).toEqual(['Project Creation Rule 001', 750_000_000, PM, ['Rizal Candra', 'Budi Santoso']])
+    expect(projectStatusKey(e)).toBe('pending approval')
+    expect(projectStatusLabel(e)).toBe('Pending approval')
+
+    expect(approveRequest(e.id, a.id, PM)).toBe(false)              // the submitter
+    expect(approveRequest(e.id, a.id, 'Made Ardika')).toBe(false)    // not an approver
+    expect(projectStatusLabel(e)).toBe('Pending approval')
+
+    expect(approveRequest(e.id, a.id, APPROVER)).toBe(true)
+    expect(projectStatusLabel(e)).toBe('In progress')
+    expect(e.approvalLog!.at(-1)).toMatchObject({ action: 'project-creation', decision: 'approved', by: APPROVER, submittedBy: PM })
+  })
+
+  it('a rejected project reads Rejected, and resubmitting keeps the same id', () => {
+    const e = createEngagement(draft({ name: 'Rejected build', value: '900000000' }), PM)
+    const id = e.id
+    const count = engagements.length
+    const a = approvalFor(e, 'project-creation', null)!
+
+    expect(rejectRequest(id, a.id, APPROVER, '')).toBe(false)         // reason required
+    expect(rejectRequest(id, a.id, APPROVER, 'Scope not signed')).toBe(true)
+    expect(projectStatusKey(e)).toBe('rejected')
+    expect(projectStatusLabel(e)).toBe('Rejected')
+    expect(approveRequest(id, a.id, APPROVER)).toBe(false)            // a rejected request cannot be approved
+
+    // Only the submitter may resubmit.
+    expect(resubmitEngagement(id, { ...draftFromEngagement(e), value: '450000000' }, APPROVER)).toBeNull()
+
+    // Under the threshold the resubmitted project starts at once, on the same id.
+    const again = resubmitEngagement(id, { ...draftFromEngagement(e), value: '450000000' }, PM)!
+    expect(again.id).toBe(id)
+    expect(engagements.length).toBe(count)
+    expect(findEngagement(id)!.contractValue).toBe(450_000_000)
+    expect(projectStatusLabel(findEngagement(id)!)).toBe('In progress')
+  })
+
+  it('resubmitting above the threshold opens a fresh request on the same id', () => {
+    const e = createEngagement(draft({ name: 'Resubmit big', value: '900000000' }), PM)
+    const first = approvalFor(e, 'project-creation', null)!
+    rejectRequest(e.id, first.id, APPROVER, 'Price too high')
+    const again = resubmitEngagement(e.id, { ...draftFromEngagement(e), value: '800000000' }, PM)!
+    expect(again.id).toBe(e.id)
+    const next = approvalFor(again, 'project-creation', null)!
+    expect(next.id).not.toBe(first.id)
+    expect([next.amount, next.rejectedBy]).toEqual([800_000_000, null])
+    expect(projectStatusLabel(again)).toBe('Pending approval')
+  })
+})
+
 describe('draftWeightSum', () => {
   it('sums the typed weights', () => {
     expect(draftWeightSum(draft({ milestones: [{ id: 'a', label: '', pct: '40' }, { id: 'b', label: '', pct: '30' }] }))).toBe(70)
@@ -161,8 +285,8 @@ describe('decideEntries', () => {
   it('marks the selected lines and returns what they are worth to the client', () => {
     const e = make('tm', { value: '50000000' })
     e.entries.push(
-      { id: 'k1', category: 'Labour', description: 'a', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E1', decision: null, invoiced: false, hours: null },
-      { id: 'k2', category: 'Labour', description: 'b', vendor: 'v', date: TODAY, amount: 2_000_000, markupPct: 20, src: 'Expense', docNo: 'E2', decision: null, invoiced: false, hours: null },
+      { id: 'k1', category: 'Labor', description: 'a', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E1', decision: null, invoiced: false, hours: null },
+      { id: 'k2', category: 'Labor', description: 'b', vendor: 'v', date: TODAY, amount: 2_000_000, markupPct: 20, src: 'Expense', docNo: 'E2', decision: null, invoiced: false, hours: null },
     )
     const total = decideEntries(e.id, ['k1', 'k2'], 'bill')
     expect(total).toBe(3_600_000)
@@ -173,7 +297,7 @@ describe('decideEntries', () => {
 
   it('absorbed lines are reviewed but never become billable', () => {
     const e = make('tm', { value: '50000000' })
-    e.entries.push({ id: 'k3', category: 'Labour', description: 'c', vendor: 'v', date: TODAY, amount: 5_000_000, markupPct: 20, src: 'Expense', docNo: 'E3', decision: null, invoiced: false, hours: null })
+    e.entries.push({ id: 'k3', category: 'Labor', description: 'c', vendor: 'v', date: TODAY, amount: 5_000_000, markupPct: 20, src: 'Expense', docNo: 'E3', decision: null, invoiced: false, hours: null })
     decideEntries(e.id, ['k3'], 'absorb')
     expect(revenue(e)).toBe(0)
     expect(openEntries(e)).toHaveLength(0)
@@ -181,24 +305,56 @@ describe('decideEntries', () => {
   })
 })
 
-describe('addenda — the contract is append-only', () => {
-  it('a raised addendum is Pending and does NOT move the contract value', () => {
+describe('addenda — the contract is append-only, gated by the Addendum rule', () => {
+  it('a change above Rp25.000.000 waits as Pending and does NOT move the contract value', () => {
     const e = make('input', { value: '100000000' })
-    addAddendum(e.id, 150_000_000, 'Extra scope requested', false)
+    const res = addAddendum(e.id, 150_000_000, 'Extra scope requested', false)!
+    expect(res.status).toBe('pending')
     expect(e.vos).toHaveLength(1)
+    expect(e.vos[0]!.id).toBe(res.voId)
     expect(e.vos[0]!.status).toBe('Pending')
     expect(e.vos[0]!.oldValue).toBe(100_000_000)
     expect(e.contractValue).toBe(100_000_000)
-    expect(e.vos[0]!.raisedBy).toContain('Project Manager')
+    // No submitter given: the project manager raised it.
+    expect(e.vos[0]!.raisedBy).toBe('Tester')
+    expect([res.approval!.ruleName, res.approval!.amount, res.approval!.submittedBy, res.approval!.approvers])
+      .toEqual(['Addendum Rule 001', 50_000_000, 'Tester', [APPROVER]])
+  })
+
+  it('a change of Rp25.000.000 or less is applied at once, with no approval', () => {
+    const e = make('input', { value: '100000000' })
+    const res = addAddendum(e.id, 125_000_000, 'Small change', false, PM)!
+    expect(res.status).toBe('approved')
+    expect(res.approval).toBeUndefined()
+    expect(e.vos[0]!.status).toBe('Approved')
+    expect(e.vos[0]!.raisedBy).toBe(PM)
+    expect(e.contractValue).toBe(125_000_000)
+    expect(e.approvals ?? []).toEqual([])
+  })
+
+  it('only an approver who is not the submitter can decide it', () => {
+    const e = make('input', { value: '100000000' })
+    const res = addAddendum(e.id, 150_000_000, 'Extra scope requested', false, APPROVER)!
+    // The approver submitted it himself, so nobody on the rule can approve it.
+    expect(approveRequest(e.id, res.approval!.id, APPROVER)).toBe(false)
+    expect(approveAddendum(e.id, res.voId, APPROVER)).toBe(false)
+    expect(approveAddendum(e.id, res.voId)).toBe(false)               // no approver named
+    expect(approveRequest(e.id, res.approval!.id, PM)).toBe(false)    // not on the rule
+    expect(e.vos[0]!.status).toBe('Pending')
+    expect(e.contractValue).toBe(100_000_000)
   })
 
   it('rejecting keeps the addendum on the record — the refusal is part of the trail', () => {
     const e = make('input', { value: '100000000' })
-    addAddendum(e.id, 150_000_000, 'Extra scope requested', false)
-    rejectAddendum(e.id, e.vos[0]!.id)
+    const res = addAddendum(e.id, 150_000_000, 'Extra scope requested', false, PM)!
+    expect(rejectAddendum(e.id, res.voId, APPROVER)).toBe(false)      // a reason is required
+    expect(rejectAddendum(e.id, res.voId, PM, 'Not mine to decide')).toBe(false)
+    expect(rejectAddendum(e.id, res.voId, APPROVER, 'Customer has not signed')).toBe(true)
     expect(e.vos).toHaveLength(1)
-    expect(e.vos[0]!.status).toBe('Rejected')
+    expect([e.vos[0]!.status, e.vos[0]!.rejectedBy, e.vos[0]!.rejectReason]).toEqual(['Rejected', APPROVER, 'Customer has not signed'])
     expect(e.contractValue).toBe(100_000_000)
+    expect(approvalFor(e, 'addendum', res.voId)).toBeUndefined()
+    expect(e.approvalLog!.at(-1)).toMatchObject({ action: 'addendum', refId: res.voId, decision: 'rejected', by: APPROVER, reason: 'Customer has not signed' })
   })
 
   it('input + NOT distinct → one-time cumulative catch-up on the new value', () => {
@@ -207,22 +363,22 @@ describe('addenda — the contract is append-only', () => {
     expect(pocPct(e)).toBe(50)
     expect(revenue(e)).toBe(50_000_000)
 
-    addAddendum(e.id, 200_000_000, 'Same obligation, larger build', false)
-    approveAddendum(e.id, e.vos[0]!.id)
+    const res = addAddendum(e.id, 200_000_000, 'Same obligation, larger build', false)!
+    expect(revenue(e)).toBe(50_000_000)                                // nothing moves while Pending
+    expect(approveAddendum(e.id, res.voId, APPROVER)).toBe(true)
 
     // Whole thing remeasured: 50% of the NEW value.
     expect(e.contractValue).toBe(200_000_000)
     expect(revenue(e)).toBe(100_000_000)
     expect(e.vos[0]!.adjustment).toBe(50_000_000)
-    expect(e.vos[0]!.approvedBy).toContain('Finance Controller')
+    expect(e.vos[0]!.approvedBy).toBe(APPROVER)
   })
 
   it('input + distinct → prospective: what is already earned is frozen', () => {
     const e = make('input', { value: '100000000', budget: '50000000' })
     e.entries.push({ id: 'a2', category: 'Material', description: 'm', vendor: 'v', date: TODAY, amount: 25_000_000, markupPct: 0, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
 
-    addAddendum(e.id, 200_000_000, 'Separate structure as well', true)
-    approveAddendum(e.id, e.vos[0]!.id)
+    raiseAndApprove(e.id, 200_000_000, 'Separate structure as well', true)
 
     // Nothing already recognized moves.
     expect(revenue(e)).toBe(50_000_000)
@@ -241,8 +397,7 @@ describe('addenda — the contract is append-only', () => {
     verifyMilestone(e.id, 'd1')
     expect(revenue(e)).toBe(50_000_000)
 
-    addAddendum(e.id, 200_000_000, 'Extended the same building', false)
-    approveAddendum(e.id, e.vos[0]!.id)
+    raiseAndApprove(e.id, 200_000_000, 'Extended the same building', false)
 
     expect(e.weightsNeedConfirm).toBe(true)
     // The verified milestone keeps exactly what it recognized.
@@ -261,8 +416,11 @@ describe('addenda — the contract is append-only', () => {
   it('output + distinct → existing milestones keep their money; the addition gets its own', () => {
     const e = make('output', { value: '100000000', milestones: [{ id: 'd1', label: 'A', pct: '50' }, { id: 'd2', label: 'B', pct: '50' }] })
 
-    addAddendum(e.id, 250_000_000, 'Also build a separate guard house', true)
-    approveAddendum(e.id, e.vos[0]!.id)
+    const res = addAddendum(e.id, 250_000_000, 'Also build a separate guard house', true)!
+    // While Pending nothing is restated.
+    expect(e.milestones!.find(m => m.id === 'd1')!.pct).toBe(50)
+    expect(e.scopePending).toBeNull()
+    expect(approveRequest(e.id, res.approval!.id, APPROVER)).toBe(true)
 
     // Weights restate against the larger contract so the amounts are unchanged.
     const m1 = e.milestones!.find(m => m.id === 'd1')!
@@ -280,17 +438,30 @@ describe('addenda — the contract is append-only', () => {
     expect((e.contractValue * e.milestones![2]!.pct) / 100).toBeCloseTo(150_000_000, 6)
   })
 
-  it('tm → the fee estimate is replaced; reviewed work is not restated', () => {
-    const e = make('tm', { value: '50000000' })
-    e.entries.push({ id: 'a4', category: 'Labour', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: 'bill', invoiced: false, hours: null })
+  it('tm → the fee estimate stays derived: the new fee sets the budget it implies; reviewed work is not restated', () => {
+    const e = make('tm', { budget: '50000000' })                    // fee 60.000.000 at 20%
+    expect(e.feeEstimate).toBe(60_000_000)
+    e.entries.push({ id: 'a4', category: 'Labor', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: 'bill', invoiced: false, hours: null })
     expect(revenue(e)).toBe(1_200_000)
 
-    addAddendum(e.id, 80_000_000, 'Extended engagement letter', false)
-    approveAddendum(e.id, e.vos[0]!.id)
+    // A 6.000.000 change is under the Addendum rule, so it applies at once.
+    const res = addAddendum(e.id, 66_000_000, 'Extended engagement letter', false)!
+    expect(res.status).toBe('approved')
 
-    expect(e.feeEstimate).toBe(80_000_000)
+    expect(e.budget).toBe(55_000_000)                                // 66.000.000 ÷ 1,2
+    expect(e.feeEstimate).toBe(66_000_000)
+    expect(budgetOf(e).revenue.map(l => l.amount)).toEqual([66_000_000])
     expect(revenue(e)).toBe(1_200_000)
     expect(e.vos[0]!.adjustment).toBe(0)
+  })
+
+  it('tm above the threshold waits for the approver before the budget moves', () => {
+    const e = make('tm', { budget: '50000000' })
+    const res = addAddendum(e.id, 96_000_000, 'Second year of the retainer', false)!
+    expect(res.status).toBe('pending')
+    expect([e.budget, e.feeEstimate]).toEqual([50_000_000, 60_000_000])
+    expect(approveRequest(e.id, res.approval!.id, APPROVER)).toBe(true)
+    expect([e.budget, e.feeEstimate]).toEqual([80_000_000, 96_000_000])
   })
 })
 
@@ -299,7 +470,7 @@ describe('milestones', () => {
     const e = make('output', { value: '100000000', milestones: [{ id: 'd1', label: 'A', pct: '40' }, { id: 'd2', label: 'B', pct: '60' }] })
     expect(verifyMilestone(e.id, 'd1')).toBe(40_000_000)
     expect(e.milestones!.find(m => m.id === 'd1')!.recognized).toBe(40_000_000)
-    // Verifying moves the engagement on to billing.
+    // Verifying moves the project on to billing.
     expect(e.stage).toBe('billing')
   })
 
@@ -314,12 +485,52 @@ describe('milestones', () => {
     expect(unverifyMilestone(e.id, 'd1')).toBe(false)
     expect(e.milestones![0]!.verified).toBe(true)
   })
+
+  it('with no matching rule, submitMilestoneVerification verifies at once and keeps the details', () => {
+    const e = make('output', { value: '100000000', milestones: [{ id: 'd1', label: 'A', pct: '100' }] })
+    const res = submitMilestoneVerification(e.id, 'd1', { date: '2026-08-01', verifiedBy: 'Site inspector', document: 'BAST-1.pdf' }, PM)
+    expect(res).toEqual({ status: 'verified', amount: 100_000_000 })
+    expect(e.milestones![0]).toMatchObject({ verified: true, recognized: 100_000_000, verifiedAt: '2026-08-01', verifiedBy: 'Site inspector', document: 'BAST-1.pdf' })
+  })
+})
+
+describe('milestone verification approval — Cikarang (e7)', () => {
+  it('verification waits for Rizal Candra; the submitter cannot approve it; approval recognizes with the stored details', () => {
+    const e = findEngagement('e7')!
+    const before = revenue(e)
+    const res = submitMilestoneVerification('e7', 'm2', { date: '2026-08-02', verifiedBy: 'Site inspector', document: 'BAST-014.pdf' }, PM)
+    expect(res.status).toBe('pending')
+    if (res.status !== 'pending') return
+    expect([res.approval.ruleName, res.approval.amount, res.approval.submittedBy, res.approval.approvers])
+      .toEqual(['Milestone Verification Rule 001', 720_000_000, PM, [APPROVER]])
+    expect(revenue(e)).toBe(before)
+    // While the request is open the milestone cannot be verified another way, nor resubmitted.
+    expect(verifyMilestone('e7', 'm2')).toBe(0)
+    expect(submitMilestoneVerification('e7', 'm2', { date: TODAY, verifiedBy: 'x', document: null }, PM).status).toBe('blocked')
+
+    expect(approveRequest('e7', res.approval.id, PM)).toBe(false)
+    expect(approveRequest('e7', res.approval.id, APPROVER)).toBe(true)
+    expect(revenue(e) - before).toBe(720_000_000)
+    expect(e.milestones!.find(m => m.id === 'm2')).toMatchObject({ verified: true, recognized: 720_000_000, verifiedAt: '2026-08-02', verifiedBy: 'Site inspector', document: 'BAST-014.pdf' })
+    unverifyMilestone('e7', 'm2')
+    expect(revenue(e)).toBe(before)
+  })
+
+  it('a rejected verification leaves the milestone unverified, with the reason on the log', () => {
+    const e = findEngagement('e7')!
+    const res = submitMilestoneVerification('e7', 'm3', { date: TODAY, verifiedBy: 'Site inspector', document: null }, PM)
+    if (res.status !== 'pending') throw new Error('expected a pending verification')
+    expect(rejectRequest('e7', res.approval.id, APPROVER, 'BAST not signed')).toBe(true)
+    expect(e.milestones!.find(m => m.id === 'm3')!.verified).toBe(false)
+    expect(approvalFor(e, 'milestone-verification', 'm3')).toBeUndefined()
+    expect(e.approvalLog!.at(-1)).toMatchObject({ refId: 'm3', decision: 'rejected', by: APPROVER, reason: 'BAST not signed' })
+  })
 })
 
 describe('invoicing and collection', () => {
   it('a tm invoice marks its source lines invoiced and lands unpaid', () => {
     const e = make('tm', { value: '50000000' })
-    e.entries.push({ id: 'i1', category: 'Labour', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: 'bill', invoiced: false, hours: null })
+    e.entries.push({ id: 'i1', category: 'Labor', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: 'bill', invoiced: false, hours: null })
     const inv = saveInvoice({ engId: e.id, kind: 'tm', label: 'Progress billing', milestoneId: null, entryIds: ['i1'], date: TODAY, amount: 1_200_000 })!
 
     expect(inv.id).toMatch(/^INV-\d+$/)
@@ -361,7 +572,7 @@ describe('invoicing and collection', () => {
 describe('closure gate', () => {
   it('tm cannot close with an unreviewed line, an uninvoiced one, or an unpaid invoice', () => {
     const e = make('tm', { value: '50000000' })
-    e.entries.push({ id: 'z1', category: 'Labour', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
+    e.entries.push({ id: 'z1', category: 'Labor', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
 
     expect(canClose(e)).toBe(false)
     expect(closeHint(e)).toMatch(/review and invoice every cost line/)
@@ -386,19 +597,97 @@ describe('closure gate', () => {
     recordPayment(e.id, inv.id)
     expect(canClose(e)).toBe(true)
 
-    addAddendum(e.id, 120_000_000, 'Late change request', false)
+    // 30.000.000 is above the Addendum rule, so it stays Pending.
+    expect(addAddendum(e.id, 130_000_000, 'Late change request', false)!.status).toBe('pending')
     expect(canClose(e)).toBe(false)
     expect(closeHint(e)).toMatch(/Approve or reject every pending addendum/)
     expect(closeEngagement(e.id)).toBe(false)
   })
+
+  it('the seeded pending addendum keeps Cikarang open', () => {
+    const e = findEngagement('e7')!
+    expect(canClose(e)).toBe(false)
+    expect(closeHint(e)).toMatch(/Approve or reject every pending addendum/)
+  })
+
+  it('milestones: billed must equal revenue — a short invoice blocks closing until the rest is billed', () => {
+    const e = make('output', { value: '100000000', milestones: [{ id: 'd1', label: 'A', pct: '100' }] })
+    verifyMilestone(e.id, 'd1')
+    const part = saveInvoice({ engId: e.id, kind: 'output', label: 'A', milestoneId: 'd1', entryIds: null, date: TODAY, amount: 60_000_000 })!
+    recordPayment(e.id, part.id)
+    expect(wipNet(e)).toBe(40_000_000)
+    expect(canClose(e)).toBe(false)
+    expect(closeHint(e)).toBe('To close, invoice the Rp40.000.000,00 of recognized revenue not yet billed, then record payment.')
+
+    const rest = saveInvoice({ engId: e.id, kind: 'adhoc', label: 'Balance', milestoneId: null, entryIds: null, date: TODAY, amount: 40_000_000 })!
+    expect(canClose(e)).toBe(false)                          // invoiced but not collected
+    recordPayment(e.id, rest.id)
+    expect(wipNet(e)).toBe(0)
+    expect(canClose(e)).toBe(true)
+  })
+
+  it('milestones: billing ahead of revenue blocks closing too', () => {
+    const e = make('output', { value: '100000000', milestones: [{ id: 'd1', label: 'A', pct: '100' }] })
+    verifyMilestone(e.id, 'd1')
+    const inv = saveInvoice({ engId: e.id, kind: 'output', label: 'A', milestoneId: 'd1', entryIds: null, date: TODAY, amount: 110_000_000 })!
+    recordPayment(e.id, inv.id)
+    expect(wipNet(e)).toBe(-10_000_000)
+    expect(canClose(e)).toBe(false)
+  })
+
+  it('milestones: every milestone must be invoiced, even when the money already ties', () => {
+    const e = make('output', { value: '100000000', milestones: [{ id: 'd1', label: 'A', pct: '50' }, { id: 'd2', label: 'B', pct: '50' }] })
+    verifyMilestone(e.id, 'd1')
+    verifyMilestone(e.id, 'd2')
+    const inv = saveInvoice({ engId: e.id, kind: 'adhoc', label: 'Everything', milestoneId: null, entryIds: null, date: TODAY, amount: 100_000_000 })!
+    recordPayment(e.id, inv.id)
+    expect(wipNet(e)).toBe(0)
+    expect(canClose(e)).toBe(false)
+    expect(e.milestones!.every(m => m.invId)).toBe(false)
+  })
+
+  it('percentage of completion: 100% complete, every schedule row paid, billed = revenue', () => {
+    const e = make('input', { value: '100000000', budget: '50000000' })
+    e.entries.push({ id: 'p1', category: 'Material', description: 'm', vendor: 'v', date: TODAY, amount: 50_000_000, markupPct: 0, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
+    const dp = saveInvoice({ engId: e.id, kind: 'billing', label: 'Down payment (30%)', milestoneId: 'b1', entryIds: null, date: TODAY, amount: 30_000_000 })!
+    recordPayment(e.id, dp.id)
+    expect(canClose(e)).toBe(false)
+    const fin = saveInvoice({ engId: e.id, kind: 'billing', label: 'Final payment (70%)', milestoneId: 'b2', entryIds: null, date: TODAY, amount: 70_000_000 })!
+    recordPayment(e.id, fin.id)
+    expect([revenue(e), billed(e), wipNet(e)]).toEqual([100_000_000, 100_000_000, 0])
+    expect(canClose(e)).toBe(true)
+  })
 })
 
-describe('cost ageing', () => {
+describe('reopen — approvers only', () => {
+  it('only Rizal Candra or Budi Santoso may reopen, with a reason, and it is logged', () => {
+    const e = make('tm', { budget: '10000000' })
+    e.entries.push({ id: 'r1', category: 'Labor', description: 'l', vendor: 'v', date: TODAY, amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: 'bill', invoiced: false, hours: null })
+    const inv = saveInvoice({ engId: e.id, kind: 'tm', label: 'Final', milestoneId: null, entryIds: ['r1'], date: TODAY, amount: 1_200_000 })!
+    recordPayment(e.id, inv.id)
+    expect(closeEngagement(e.id, PM)).toBe(true)
+    expect([e.closedAt, e.closedBy, projectStatusLabel(e)]).toEqual([TODAY, PM, 'Closed'])
+
+    expect(canReopen(PM)).toBe(false)
+    expect(canReopen(APPROVER)).toBe(true)
+    expect(canReopen('Budi Santoso')).toBe(true)
+    expect(reopenEngagement(e.id, PM, 'Late cost arrived')).toBe(false)
+    expect(reopenEngagement(e.id, APPROVER, '  ')).toBe(false)
+    expect(e.closedAt).toBe(TODAY)
+
+    expect(reopenEngagement(e.id, APPROVER, 'Late cost arrived')).toBe(true)
+    expect([e.stage, e.closedAt, e.closedBy, projectStatusLabel(e)]).toEqual(['billing', null, null, 'In progress'])
+    expect(e.reopenLog).toEqual([{ date: TODAY, by: APPROVER, reason: 'Late cost arrived' }])
+    expect(reopenEngagement(e.id, APPROVER, 'Again')).toBe(false)   // it is not closed any more
+  })
+})
+
+describe('cost aging', () => {
   it('buckets unreviewed value by age at cost + margin', () => {
     const e = make('tm', { value: '50000000' })
     e.entries.push(
-      { id: 'g1', category: 'Labour', description: 'recent', vendor: 'v', date: '2026-07-20', amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null },
-      { id: 'g2', category: 'Labour', description: 'old', vendor: 'v', date: '2026-04-01', amount: 2_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null },
+      { id: 'g1', category: 'Labor', description: 'recent', vendor: 'v', date: '2026-07-20', amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null },
+      { id: 'g2', category: 'Labor', description: 'old', vendor: 'v', date: '2026-04-01', amount: 2_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null },
     )
     const b = ageBuckets(e)
     expect(daysAgo('2026-07-20')).toBe(14)
@@ -407,9 +696,9 @@ describe('cost ageing', () => {
     expect(b['31–60 days']).toBe(0)
   })
 
-  it('a reviewed line leaves the ageing report entirely', () => {
+  it('a reviewed line leaves the aging report entirely', () => {
     const e = make('tm', { value: '50000000' })
-    e.entries.push({ id: 'g3', category: 'Labour', description: 'x', vendor: 'v', date: '2026-07-20', amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
+    e.entries.push({ id: 'g3', category: 'Labor', description: 'x', vendor: 'v', date: '2026-07-20', amount: 1_000_000, markupPct: 20, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
     expect(ageBuckets(e)['0–30 days']).toBe(1_200_000)
     decideEntries(e.id, ['g3'], 'bill')
     expect(ageBuckets(e)['0–30 days']).toBe(0)
@@ -417,48 +706,94 @@ describe('cost ageing', () => {
 })
 
 describe('budgetReport', () => {
-  it('cost variance is favourable when budget exceeds actual, revenue the other way', () => {
-    const e = make('input', {
-      value: '100000000',
-      budgetLines: {
-        revenue: [{ id: 'br1', account: '4-10000 Project revenue', amount: '100000000' }],
-        cost: [{ id: 'bc0', account: '5-10000 Cost of materials', amount: '40000000' }],
-      },
-    })
-    e.entries.push({ id: 'b1', category: 'Material', description: 'm', vendor: 'v', date: TODAY, amount: 50_000_000, markupPct: 0, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
+  const plan = (value: string, cost: string) => ({
+    value,
+    budgetLines: {
+      revenue: [{ id: 'br1', account: '4-10000 Project revenue', amount: value }],
+      cost: [{ id: 'bc0', account: '5-10000 Cost of materials', amount: cost }],
+    },
+  })
+  const spend = (amount: number) => ({ id: `bx-${amount}`, category: 'Material', description: 'm', vendor: 'v', date: TODAY, amount, markupPct: 0, src: 'Expense' as const, docNo: 'E', decision: null, invoiced: false, hours: null })
+
+  it('cost is compared with the LIFETIME budget; over it is adverse', () => {
+    const e = make('input', plan('100000000', '40000000'))
+    e.entries.push(spend(50_000_000))
 
     const rows = budgetReport(e)
     const cost = rows.find(r => r.label === '5-10000 Cost of materials')!
-    expect(cost.actual).toBe(50_000_000)
-    expect(cost.variance).toBe(-10_000_000)      // 40m budget − 50m actual
+    expect([cost.budget, cost.lifetimeBudget, cost.actual, cost.variance]).toEqual([40_000_000, 40_000_000, 50_000_000, -10_000_000])
     expect(cost.adverse).toBe(true)
+    expect(cost.tone).toBe('adverse')
     expect(cost.note).toBe('Over budget')
+    const total = rows.find(r => r.label === 'Total project cost')!
+    expect([total.budget, total.variance, total.tone]).toEqual([40_000_000, -10_000_000, 'adverse'])
 
     // The overrun pushed % complete onto its 100 cap, so revenue lands exactly on
     // plan even though cost blew through it — the two variances move independently.
     const totalRev = rows.find(r => r.label === 'Total revenue')!
     expect(pocPct(e)).toBe(100)
-    expect(totalRev.actual).toBe(100_000_000)
-    expect(totalRev.variance).toBe(0)
+    expect(workDoneShare(e)).toBe(1)
+    expect([totalRev.budget, totalRev.actual, totalRev.variance]).toEqual([100_000_000, 100_000_000, 0])
     expect(totalRev.adverse).toBe(false)
   })
 
-  it('flags revenue below plan when progress is genuinely part-way', () => {
-    const e = make('input', {
-      value: '100000000',
-      budgetLines: {
-        revenue: [{ id: 'br1', account: '4-10000 Project revenue', amount: '100000000' }],
-        cost: [{ id: 'bc0', account: '5-10000 Cost of materials', amount: '40000000' }],
-      },
-    })
-    e.entries.push({ id: 'b3', category: 'Material', description: 'm', vendor: 'v', date: TODAY, amount: 10_000_000, markupPct: 0, src: 'Expense', docNo: 'E', decision: null, invoiced: false, hours: null })
+  it('cost part-way through is under its lifetime budget, never against a to-date slice', () => {
+    const e = make('input', plan('100000000', '40000000'))
+    e.entries.push(spend(10_000_000))
+    const cost = budgetReport(e).find(r => r.label === '5-10000 Cost of materials')!
+    expect([cost.budget, cost.actual, cost.variance, cost.pct]).toEqual([40_000_000, 10_000_000, 30_000_000, 75])
+    expect([cost.adverse, cost.tone, cost.note]).toEqual([false, 'default', ''])
+  })
+
+  it('revenue is compared with lifetime × work done (cost to date ÷ budget): on plan when progress tracks cost', () => {
+    const e = make('input', plan('100000000', '40000000'))
+    e.entries.push(spend(10_000_000))
 
     const totalRev = budgetReport(e).find(r => r.label === 'Total revenue')!
     expect(pocPct(e)).toBe(25)
-    expect(totalRev.actual).toBe(25_000_000)
-    expect(totalRev.variance).toBe(-75_000_000)
-    expect(totalRev.adverse).toBe(true)          // below plan
-    expect(totalRev.note).toBe('Below plan')
+    expect(workDoneShare(e)).toBe(0.25)
+    expect([totalRev.budget, totalRev.lifetimeBudget, totalRev.actual, totalRev.variance]).toEqual([25_000_000, 100_000_000, 25_000_000, 0])
+    expect([totalRev.adverse, totalRev.note]).toEqual([false, ''])
+  })
+
+  it('revenue behind the work done is timing: reported as Not yet recognized, never adverse', () => {
+    const e = make('output', { ...plan('100000000', '40000000'), milestones: [{ id: 'd1', label: 'A', pct: '50' }, { id: 'd2', label: 'B', pct: '50' }] })
+    e.entries.push(spend(10_000_000))
+
+    let rows = budgetReport(e)
+    let rev = rows.find(r => r.label === 'Total revenue')!
+    expect([rev.budget, rev.actual, rev.variance, rev.pct]).toEqual([25_000_000, 0, -25_000_000, -100])
+    expect([rev.adverse, rev.tone, rev.note]).toEqual([false, 'default', 'Not yet recognized'])
+    let gm = rows.find(r => r.label === 'Gross margin')!
+    // Margin to date: plan 25.000.000 − 10.000.000 cost = 15.000.000; actual 0 − 10.000.000.
+    expect([gm.budget, gm.lifetimeBudget, gm.actual, gm.variance]).toEqual([15_000_000, 60_000_000, -10_000_000, -25_000_000])
+    expect([gm.adverse, gm.tone, gm.note]).toEqual([false, 'default', 'Not yet recognized'])
+
+    // Verifying the first milestone puts revenue ahead of the work done.
+    verifyMilestone(e.id, 'd1')
+    rows = budgetReport(e)
+    rev = rows.find(r => r.label === 'Total revenue')!
+    expect([rev.actual, rev.variance, rev.tone, rev.note]).toEqual([50_000_000, 25_000_000, 'positive', ''])
+    gm = rows.find(r => r.label === 'Gross margin')!
+    expect([gm.actual, gm.variance, gm.tone]).toEqual([40_000_000, 25_000_000, 'positive'])
+  })
+
+  it('a projected loss at completion turns the margin row adverse', () => {
+    const e = make('input', plan('30000000', '40000000'))
+    e.entries.push(spend(10_000_000))
+    expect(projectedMargin(e).value).toBe(-10_000_000)
+    const rows = budgetReport(e)
+    const gm = rows.find(r => r.label === 'Gross margin')!
+    expect([gm.adverse, gm.tone, gm.note]).toEqual([true, 'adverse', 'Loss at completion'])
+    // Cost itself is still inside its budget, so its row is not red.
+    expect(rows.find(r => r.label === 'Total project cost')!.adverse).toBe(false)
+  })
+
+  it('projected margin: contract less the larger of budget and cost; cost plus margin earns its markup on that cost', () => {
+    expect(projectedMargin(findEngagement('e1')!).value).toBe(19_200_000)    // 96.000.000 × 20%
+    expect(projectedMargin(findEngagement('e2')!).value).toBe(5_600_000)     // 28.000.000 × 20%
+    expect(projectedMargin(findEngagement('e3')!).value).toBeNull()          // no budget
+    expect(projectedMargin(findEngagement('e5')!).value).toBe(15_000_000)    // 45.000.000 − 30.000.000
   })
 
   it('with no budget set, cost rows are unmeasurable but actuals still post', () => {
@@ -475,7 +810,9 @@ describe('budgetReport', () => {
 
   it('routes each cost line to its account', () => {
     const at = (category: string) => accountForEntry({ id: 'x', category, description: '', vendor: '', date: TODAY, amount: 0, markupPct: 0, src: 'Expense', docNo: '', decision: null, invoiced: false, hours: null })
-    expect(at('Labour')).toBe('6-10001 Direct labour')
+    expect(at('Labor')).toBe('6-10001 Direct labor')
+    // Records written before the US-spelling pass still route to the same account.
+    expect(at('Labour')).toBe('6-10001 Direct labor')
     expect(at('Material')).toBe('5-10000 Cost of materials')
     expect(at('Subcontractor')).toBe('5-10001 Subcontractor expense')
     expect(at('Expense')).toBe('6-10002 Site expense')
@@ -512,15 +849,15 @@ describe('saveExpense — project is tagged per line', () => {
     expect(b.entries.at(-1)!.amount).toBe(3_000_000)
   })
 
-  it('inherits the engagement margin so the line is chargeable at cost + margin', () => {
-    const e = make('tm', { name: 'Margin carrier', value: '50000000', markup: '25' })
+  it('inherits the project margin so the line is chargeable at cost + margin', () => {
+    const e = make('tm', { name: 'Margin carrier', markup: '25' })
     saveExpense({ beneficiary: 'V', date: TODAY, lines: [{ id: 'm1', account: 'Professional fees', description: 'Work', project: e.id, hours: '', tax: 'No tax', amount: '4000000' }] })
     expect(entryAmount(e.entries.at(-1)!)).toBe(5_000_000)
   })
 })
 
 describe('projectOptions', () => {
-  it('offers "No project" first and hides closed engagements', () => {
+  it('offers "No project" first and hides closed projects', () => {
     const e = make('input', { name: 'Closable' })
     const opts = projectOptions()
     expect(opts[0]).toEqual({ id: '', name: 'No project' })

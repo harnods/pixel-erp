@@ -45,7 +45,7 @@ export function sampleEngagements(): Engagement[] {
   return [
     eng({
       id: 'e1', name: 'Financial Statement Audit 2025', client: 'PT Sinar Abadi Textile', pm: 'Rina Wulandari',
-      method: 'tm', markupPct: 20, stage: 'recognition', feeEstimate: 185_000_000, budget: 96_000_000,
+      method: 'tm', markupPct: 20, stage: 'recognition', feeEstimate: 115_200_000, budget: 96_000_000,
       entries: [
         cost('Labor', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-07-05', 5_700_000, 'Expense', 'EXP-1102', 20, null, false, 15),
         cost('Labor', 'Yoga Prasetyo — tax position review', 'Internal payroll', '2026-06-28', 1_500_000, 'Expense', 'EXP-1088', 20, null, false, 6),
@@ -56,7 +56,7 @@ export function sampleEngagements(): Engagement[] {
     }),
     eng({
       id: 'e2', name: 'Annual Tax Consulting', client: 'CV Makmur Jaya', pm: 'Yoga Prasetyo',
-      method: 'tm', markupPct: 20, stage: 'execution', feeEstimate: 60_000_000, budget: 28_000_000,
+      method: 'tm', markupPct: 20, stage: 'execution', feeEstimate: 33_600_000, budget: 28_000_000,
       entries: [
         cost('Labor', 'Yoga Prasetyo — annual return preparation', 'Internal payroll', '2026-07-22', 2_250_000, 'Expense', 'EXP-1178', 20, null, false, 9),
         cost('Labor', 'Yoga Prasetyo — tax reconciliation', 'Internal payroll', '2026-06-30', 2_750_000, 'Expense', 'EXP-1090', 20, null, false, 11),
@@ -65,7 +65,7 @@ export function sampleEngagements(): Engagement[] {
     }),
     eng({
       id: 'e3', name: 'Monthly Retainer', client: 'PT Global Teknindo', pm: 'Made Ardika',
-      method: 'tm', markupPct: 20, stage: 'billing', feeEstimate: 25_000_000, budget: null,
+      method: 'tm', markupPct: 20, stage: 'billing', feeEstimate: 0, budget: null,
       entries: [
         cost('Labor', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-05', 4_000_000, 'Expense', 'EXP-1105', 20, 'bill', true, 20),
         cost('Labor', 'Dewi Kusuma — payroll processing', 'Internal payroll', '2026-07-10', 1_800_000, 'Expense', 'EXP-1112', 20, 'bill', true, 12),
@@ -83,8 +83,9 @@ export function sampleEngagements(): Engagement[] {
         cost('Subcontractor', 'Builders — 6 days', 'Slamet (foreman)', '2026-07-20', 6_000_000, 'Purchase', 'PO-0442'),
         cost('Material', 'Exterior paint & finishing', 'UD Sejahtera Paints', '2026-07-25', 1_800_000, 'Expense', 'EXP-1192'),
       ],
+      invoices: [{ id: 'INV-2190', label: 'Down payment (30%)', amount: 13_500_000, date: '2026-07-06', status: 'paid', paidDate: '2026-07-10' }],
       billing: [
-        { id: 'b1', label: 'Down payment (30%)', pct: 30, status: 'paid', invId: null, paidDate: '2026-07-10' },
+        { id: 'b1', label: 'Down payment (30%)', pct: 30, status: 'paid', invId: 'INV-2190', paidDate: '2026-07-10' },
         { id: 'b2', label: 'Final payment (70%)', pct: 70, status: 'notdue', invId: null, paidDate: null },
       ],
     }),
@@ -113,6 +114,15 @@ export function sampleEngagements(): Engagement[] {
         { id: 'm2', label: 'Delivery to site', pct: 30, verified: false, invId: null, recognized: 0 },
         { id: 'm3', label: 'Installation & commissioning', pct: 30, verified: false, invId: null, recognized: 0 },
       ],
+      vos: [{
+        id: 'v-e7-1', date: '2026-08-01', reason: 'Two additional loading dock bays on the east wall',
+        oldValue: 2_400_000_000, newValue: 2_520_000_000, status: 'Pending', distinct: true,
+        raisedBy: 'Rina Wulandari', approvedBy: null, adjustment: 0, rejectedBy: null, rejectReason: null,
+      }],
+      approvals: [{
+        id: 'apr-e7-1', action: 'addendum', refId: 'v-e7-1', ruleId: 'awf-006', ruleName: 'Addendum Rule 001',
+        amount: 120_000_000, submittedBy: 'Rina Wulandari', submittedAt: '2026-08-01', approvers: ['Rizal Candra'],
+      }],
     }),
   ]
 }
