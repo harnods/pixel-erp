@@ -13,6 +13,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
+import { getContactIdByName } from '~/data/contacts'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -377,7 +378,7 @@ function goBack() { closePurchaseOrder?.() }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList label="Vendor" :value="order.vendor.name" />
+            <ContentList label="Vendor"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(order.vendor.name)}`, '_blank')">{{ order.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList label="Email">
@@ -574,7 +575,7 @@ function goBack() { closePurchaseOrder?.() }
         <!-- Print & share (secondary dropdown) — not eligible once rejected -->
         <MpPopover v-if="!isRejected" id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" left-icon="chevrons-down">
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" right-icon="chevrons-down">
               Print &amp; share
             </MpButton>
           </MpPopoverTrigger>
@@ -595,7 +596,7 @@ function goBack() { closePurchaseOrder?.() }
         <!-- Actions (secondary dropdown) -->
         <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" left-icon="chevrons-down">
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" right-icon="chevrons-down">
               Actions
             </MpButton>
           </MpPopoverTrigger>

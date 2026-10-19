@@ -889,9 +889,17 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 /* Qty input — fills full cell; white bg always, gray inset border on focus */
 .ri-td--input { background: var(--mp-background-neutral, #fff); }
-.ri-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.ri-td--input { position: relative; }
+.ri-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ri-td--input--error { background: var(--mp-background-danger-subtle, #fef2f2); }
-.ri-td--input--error:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-danger, #dc2626); }
+.ri-td--input--error { position: relative; }
+.ri-td--input--error:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-danger, #dc2626); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ri-qty-input {
   display: block; width: 100%; box-sizing: border-box;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);

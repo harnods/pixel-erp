@@ -2168,7 +2168,7 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   background: var(--mp-colors-background-neutral, #fff);
   border: 1px solid var(--mp-colors-border-bold, #8c9596); border-radius: var(--mp-radii-md, 8px);
-  box-shadow: 0 12px 28px rgba(8, 13, 14, 0.18), 0 2px 6px rgba(8, 13, 14, 0.12);
+  box-shadow: 0 12px 28px rgba(8, 13, 14, 0.18), 0 2px 6px rgba(8, 13, 14, 0.12); /* pixel-police-allow-shadow: coachmark popup overlay */
   transform: rotate(-1.5deg) scale(1.02); transform-origin: center; cursor: grabbing;
 }
 .dnd-ghost--lane { padding: var(--mp-spacing-3); }

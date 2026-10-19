@@ -996,7 +996,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .stage-picker-lost { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 .stage-picker-lost-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .stage-picker-textarea { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; resize: vertical; min-height: 56px; font-family: inherit; }
-.stage-picker-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
+.stage-picker-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); } /* pixel-police-allow-shadow: focus ring */
 .stage-picker-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c9372c); }
 .stage-picker-lost-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 

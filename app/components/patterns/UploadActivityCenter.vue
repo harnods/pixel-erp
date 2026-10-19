@@ -66,7 +66,7 @@ function viewAll() {
                   transform="rotate(-90 12 12)"
                 />
               </svg>
-              <MpIcon v-else name="done" size="lg" class="ac-ring__done" />
+              <MpIcon v-else name="done" size="32px" class="ac-ring__done" />
             </span>
             <div class="ac-row__col">
               <p class="ac-row__title">{{ b.label }} ({{ batchTotal(b) }})</p>

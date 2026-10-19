@@ -50,6 +50,34 @@ the white text automatically, but icons that carry their own fill (e.g.
 whites out fill + stroke of any icon inside a primary button.
 (`erp.css` › `.btn-enterprise--primary :is(.mp-icon, svg)`.)
 
+## 3b. Header icon buttons — icon is always white (`icon.inverse`)
+
+> Full spec: **[global-header-bar.md](global-header-bar.md)** (the whole
+> `ErpHeader` pattern). Rules: `rule/header-icon-inverse`,
+> `rule/header-icon-veil-no-border`.
+
+
+The quick-action icon buttons in the global header (`ErpHeader` — help, inbox,
+upload/`desktop`, and the quick-create `+`) sit on the **dark** header
+(`background.header`, `#142D26`). A Pixel ghost `MpButton` renders its icon in the
+default **dark** icon color, which is invisible/wrong on the dark header, and it
+stays dark on hover (only the bg fill lightens). So these buttons must render the
+glyph with an **explicit `icon.inverse` (white)** color that does **not** change on
+hover/active — only the background fill changes.
+
+- Don't rely on `:left-icon` on a ghost `MpButton` here — the icon inherits the
+  button's dark currentColor.
+- Do render `<MpIcon :name="icon" color="icon.inverse" />` as the button child.
+- **Hover/active fill is a literal translucent white** (`rgba(255,255,255,0.12)`
+  hover, `rgba(255,255,255,0.2)` active/pressed) — a subtle veil over the dark
+  header. Do **not** use the Panda `background.surface.bold.hovered/pressed`
+  tokens here: in this build they resolve to an **opaque near-white** (`#f8f9f9`),
+  which paints a light box on the dark header and washes out the white icon.
+
+The shared `IconButton` (`app/components/IconButton.vue`) already does this, so use
+it for any new header action; the quick-create `+` (`ErpQuickCreateMenu`) uses the
+same `<MpIcon color="icon.inverse" />` pattern.
+
 ## 4. MpSelect — focus / active state
 
 Pixel's default focus/open state is a faint ~16%-alpha hairline. Override: a
