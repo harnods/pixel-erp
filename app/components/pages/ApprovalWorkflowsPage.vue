@@ -32,17 +32,17 @@ const paScenario = computed<string>({
 function goEdit(id: string) { router.push(`/approval-workflows/${id}/edit`) }
 
 // ─── Column definitions ────────────────────────────────────────────────────
-// Widths are sized to fit each column's longest real content (see appliesToText /
-// amountText below) plus truncation on the cell itself, so a long value never
-// bleeds into the next column.
+// Description rides under the workflow name (secondary line) so the eight facts fit
+// a 1440 stage without horizontal scroll.
 const columns: TableColumn[] = [
   { key: 'name',            label: 'Workflow name',     kind: 'name', sortType: 'text' },
-  { key: 'description',     label: 'Description',       kind: 'address' },
-  { key: 'appliesTo',       label: 'Applies to',        sortType: 'text' },
+  { key: 'appliesTo',       label: 'Applies to',        width: '144px', sortType: 'text' },
   { key: 'minAmount',       label: 'Amount higher than', kind: 'amount', align: 'right', sortType: 'number' },
-  { key: 'levels',          label: 'Approval levels',   kind: 'unit' },
-  { key: 'createdBy',       label: 'Transaction created by', kind: 'default' },
-  { key: 'status',          label: 'Status',            kind: 'status', sortType: 'text' },
+  { key: 'levels',          label: 'Levels',            width: '96px' },
+  // Identity + status get fixed widths sized to their header/badge so neither truncates
+  // ("Transaction created by" needs 190px; the Inactive badge ~88px).
+  { key: 'createdBy',       label: 'Transaction created by', width: '192px' },
+  { key: 'status',          label: 'Status',            width: '104px', sortType: 'text' },
   { key: 'lastUpdated',     label: 'Last updated',      kind: 'date' },
 ]
 
@@ -167,11 +167,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Cell: Workflow name ── -->
     <template #cell-name="{ value, row }">
       <a class="cell-link" @click.stop="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ value }}</a>
-    </template>
-
-    <!-- ── Cell: Description ── -->
-    <template #cell-description="{ row }">
-      <span class="cell-truncate">{{ (row as unknown as ApprovalWorkflowRule).description || '—' }}</span>
+      <span v-if="(row as unknown as ApprovalWorkflowRule).description" class="cell-sub">{{ (row as unknown as ApprovalWorkflowRule).description }}</span>
     </template>
 
     <!-- ── Cell: Transaction type ── -->
@@ -339,6 +335,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cell-sub {
+  display: block;
+  margin-top: var(--mp-spacing-0\.5);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-secondary);
+  white-space: normal;
+  word-break: break-word;
+}
 .cell-truncate {
   display: block;
   white-space: normal;
