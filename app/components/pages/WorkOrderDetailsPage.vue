@@ -1012,10 +1012,10 @@ function suppressFabClick(e: MouseEvent) {
           <div v-if="showReservationMenu" class="wod-reserve-actions">
             <MpPopover id="wod-reservation" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
               <MpPopoverTrigger>
-                <button class="btn-enterprise btn-enterprise--secondary wod-reserve-btn" data-devchange="wod-material-reservation">
-                  {{ t('Material reservation') }}
-                  <MpIcon name="chevrons-down" size="sm" />
-                </button>
+                <MpButton
+                  variant="tertiary" is-rounded right-icon="chevrons-down"
+                  data-devchange="wod-material-reservation"
+                >{{ t('Material reservation') }}</MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
@@ -1561,9 +1561,10 @@ function suppressFabClick(e: MouseEvent) {
 
 /* Material readiness note + badge (PRD UC-00 S-2, UC-02) */
 .wod-section-title { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-/* Material reservation — its own row above the table it acts on. */
+/* Material reservation — its own row above the table it acts on. A section-toolbar
+   action, so it is the black tertiary button (rule/filter-bar-action-tertiary);
+   the green primary belongs to the page title bar. */
 .wod-reserve-actions { display: flex; margin-bottom: var(--mp-spacing-4); }
-.wod-reserve-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .wod-reserve-note {
   display: flex; align-items: center; gap: var(--mp-spacing-1);
   margin: 0 0 var(--mp-spacing-3);

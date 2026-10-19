@@ -31,7 +31,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'wod-material-reservation',
     title: 'Work order: Material reservation moves onto the materials it acts on',
     description:
-      'The Reservation button has left the title bar for a row directly above the Raw materials table — the components it reserves are the rows beneath it, not the work order as a whole. It is now labelled Material reservation and carries a chevron, so it reads as the dropdown it always was. Reserve and Unreserve open as drawers rather than modals, and the approval note in Unreserve leads the content: it qualifies everything below it — that the release happens immediately, unapproved — so it has to be read before the components are picked.',
+      'The Reservation button has left the title bar for a row directly above the Raw materials table — the components it reserves are the rows beneath it, not the work order as a whole. It is now labelled Material reservation, is the black tertiary button that search-adjacent and section-toolbar actions use (rule/filter-bar-action-tertiary), and carries a chevron so it reads as the dropdown it always was. Reserve and Unreserve open as drawers rather than modals, and the approval note in Unreserve leads the content: it qualifies everything below it — that the release happens immediately, unapproved — so it has to be read before the components are picked.',
     date: '2026-10-19',
     files: ['WorkOrderDetailsPage.vue', 'ReserveMaterialsModal.vue', 'UnreserveMaterialsModal.vue'],
   },
