@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-filters-complete',
+    title: 'Stock requests: the drawer holds every filter, and the bar stops wrapping',
+    description:
+      'All filters now repeats Product, Destination warehouse and Request date alongside its own Keywords and Status, bound to the same state as the pills so the two can never disagree, and its badge counts every filter rather than only its own. The Request date in the drawer used to filter by a line\'s REQUIRED date despite its label; it now means what the pill means. The date field is sized to the range it prints instead of 288px, and when the bar runs out of room the left group wraps rather than the right, which used to detach the icon tools above the search.',
+    date: '2026-10-19',
+    files: ['StockRequestsPage.vue', 'StockRequestFiltersDrawer.vue'],
+  },
+  {
+    id: 'erp-table-empty-pinned',
+    title: 'Tables: the filtered-empty state stays put when the table scrolls sideways',
+    description:
+      'A table wide enough to scroll put its "nothing matches your filters" block across the full width of every column, so scrolling right carried the illustration and its Clear all filters link off screen. The block is now pinned to the visible area and sized to it, so it stays centred in view at any scroll position. ErpTablePage owns this, so every table gets it.',
+    date: '2026-10-19',
+    files: ['ErpTablePage.vue'],
+  },
+  {
     id: 'sr-by-transaction-columns',
     title: 'Stock requests: the By transaction table carries its own qty block',
     description:

@@ -161,7 +161,11 @@ S-4.
   through it: the tab IS a status filter, and the drawer only adds status and
   keyword on top of it.
 - **Filter bar** — Product (multi-select) · Destination warehouse · Request date ·
-  All filters. The two axes a stockist works along are what they are sourcing and
+  All filters. The drawer repeats all three next to its own Keywords and Status,
+  bound to the same state, so the two surfaces cannot disagree; its badge counts
+  every filter. When the bar runs out of width the LEFT group wraps — when the
+  right group wrapped, the icon tools detached above the search and read as a
+  bug. The two axes a stockist works along are what they are sourcing and
   where it is wanted. There is no Status pill: Awaiting and Closed already are the
   status split, so one could only narrow a tab to part of itself. Multi-select is
   `ErpFilterSelect`'s own `multiple` mode, not a second component.

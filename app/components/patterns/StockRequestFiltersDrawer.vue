@@ -8,12 +8,17 @@ export interface StockRequestFiltersValue {
   keyword: string
   /** selected stock-request statuses; empty = every status */
   status: string[]
-  /** AdvancedDateRangePicker range — null = not applied. */
+  /** product ids; empty = every product. Same state as the bar's Product pill. */
+  product: string[]
+  /** destination warehouse id; empty = every warehouse. Same state as its pill. */
+  warehouse: string
+  /** AdvancedDateRangePicker range — null = not applied. Same state as the bar's
+   *  Request date, so the drawer and the pill can never disagree. */
   requestDate: Date[] | null
 }
 
 export function emptyStockRequestFilters(): StockRequestFiltersValue {
-  return { keyword: '', status: [], requestDate: null }
+  return { keyword: '', status: [], product: [], warehouse: '', requestDate: null }
 }
 </script>
 
@@ -30,12 +35,16 @@ export function emptyStockRequestFilters(): StockRequestFiltersValue {
  */
 import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
 const props = defineProps<{
   id: string
   isOpen: boolean
   modelValue: StockRequestFiltersValue
   statusOptions: { value: string; label: string }[]
+  /** The same option lists the filter-bar pills offer. */
+  productOptions: { value: string; label: string }[]
+  warehouseOptions: { value: string; label: string }[]
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
@@ -83,6 +92,27 @@ function toggleStatus(value: string) {
               >
             </div>
           </MpFormControl>
+
+          <!-- The bar's own filters repeat here, bound to the same state, so the
+               drawer is a complete view of what is filtering the table rather
+               than a second, partial one. -->
+          <div class="srf-field">
+            <span class="srf-field-label">{{ t('Product') }}</span>
+            <ErpFilterSelect
+              :id="`${id}-product`" :model-value="draft.product" multiple width="100%"
+              :placeholder="t('Product')" :options="productOptions"
+              @update:model-value="draft.product = ($event as string[])"
+            />
+          </div>
+
+          <div class="srf-field">
+            <span class="srf-field-label">{{ t('Destination warehouse') }}</span>
+            <ErpFilterSelect
+              :id="`${id}-warehouse`" :model-value="draft.warehouse" width="100%"
+              :placeholder="t('Destination warehouse')" :options="warehouseOptions"
+              @update:model-value="draft.warehouse = ($event as string)"
+            />
+          </div>
 
           <div class="srf-field">
             <span class="srf-field-label">{{ t('Status') }}</span>

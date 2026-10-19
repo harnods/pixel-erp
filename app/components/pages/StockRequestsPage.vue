@@ -187,7 +187,26 @@ const dateFilter = ref<Date[] | null>(null)
 // toolbar's own Status select, Request date and search. ───────────────────────
 const filtersOpen = ref(false)
 const appliedFilters = reactive<StockRequestFiltersValue>(emptyStockRequestFilters())
-function applyDrawerFilters(v: StockRequestFiltersValue) { Object.assign(appliedFilters, v) }
+
+/**
+ * The drawer shows every filter the bar does, so the two must be one state and
+ * not two that can disagree. The bar's pills stay the source of truth for
+ * product, warehouse and date; the drawer is handed their current values on
+ * open and writes them back on Apply, keeping only keyword and status of its own.
+ */
+const drawerValue = computed<StockRequestFiltersValue>(() => ({
+  ...appliedFilters,
+  product: productFilter.value,
+  warehouse: warehouseFilter.value,
+  requestDate: dateFilter.value,
+}))
+function applyDrawerFilters(v: StockRequestFiltersValue) {
+  productFilter.value = v.product
+  warehouseFilter.value = v.warehouse
+  dateFilter.value = v.requestDate
+  appliedFilters.keyword = v.keyword
+  appliedFilters.status = v.status
+}
 
 function dayStart(d: Date) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
 // AdvancedDateRangePicker emits a [start, end] Date pair (or null = not applied).
@@ -312,9 +331,8 @@ const skuRows = computed<SkuDemandGroup[]>(() => {
     .filter(isOnDashboard)
     .filter(r => isTerminalTab.value ? isTerminalRequest(r) : isAwaitingTab(r))
     .filter(r => matchesDateRange(r.requestDate, dateFilter.value))
-  const lineFilter = (line: StockRequestLine) => matchesDateRange(line.requiredDate, appliedFilters.requestDate)
 
-  return skuDemandGroups(inScope, lineFilter)
+  return skuDemandGroups(inScope)
     .filter(g => !s || `${g.product} ${g.sku}`.toLowerCase().includes(s)
       || g.entries.some(e => e.workOrderNumber.toLowerCase().includes(s)))
     .filter(g => !kw || `${g.product} ${g.sku}`.toLowerCase().includes(kw))
@@ -340,18 +358,19 @@ watch(skuTotal, () => {
 watch(appliedFilters, () => setPage(1))
 watch([dateFilter, view, isTerminalTab, productFilter, warehouseFilter], () => { setPage(1); skuPage.value = 1 })
 
+// The drawer now holds every filter, so its badge counts every filter — a count
+// that ignored the pills would under-report what is narrowing the table.
 const activeFilterCount = computed(() => {
-  const f = appliedFilters
   let n = 0
-  if (f.keyword) n++
-  if (f.status.length > 0) n++
-  if (f.requestDate) n++
+  if (appliedFilters.keyword) n++
+  if (appliedFilters.status.length > 0) n++
+  if (productFilter.value.length > 0) n++
+  if (warehouseFilter.value) n++
+  if (dateFilter.value?.length) n++
   return n
 })
 const isDrawerFilterActive = computed(() => activeFilterCount.value > 0)
-const hasActiveFilter = computed(() =>
-  !!search.value || productFilter.value.length > 0 || !!warehouseFilter.value
-  || !!dateFilter.value?.length || isDrawerFilterActive.value)
+const hasActiveFilter = computed(() => !!search.value || isDrawerFilterActive.value)
 
 function clearFilters() {
   search.value = ''
@@ -509,11 +528,11 @@ const exportColumns = computed(() => {
              a purchase request is usually raised for several components at once. -->
         <ErpFilterSelect
           id="sr-product" v-model="productFilter" multiple
-          :placeholder="t('Product')" :options="productOptions" width="200px"
+          :placeholder="t('Product')" :options="productOptions"
         />
         <ErpFilterSelect
           id="sr-warehouse" v-model="warehouseFilter"
-          :placeholder="t('Destination warehouse')" :options="warehouseOptions" width="200px"
+          :placeholder="t('Destination warehouse')" :options="warehouseOptions"
         />
         <div class="sr-daterange">
           <MpDatePicker
@@ -823,8 +842,10 @@ const exportColumns = computed(() => {
   <StockRequestFiltersDrawer
     id="sr-allfilters"
     :is-open="filtersOpen"
-    :model-value="appliedFilters"
+    :model-value="drawerValue"
     :status-options="stockRequestStatusOptions"
+    :product-options="productOptions"
+    :warehouse-options="warehouseOptions"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
   />
@@ -941,7 +962,10 @@ const exportColumns = computed(() => {
 /* MpDatePicker fills its container, which in a flex filter bar means it claims a
    whole row. Pinned to the width a "dd/mm/yyyy - dd/mm/yyyy" range needs so the
    bar keeps its single line. */
-.sr-daterange { flex: 0 0 auto; width: var(--mp-sizes-72, 288px); }
+/* Sized to the range it prints — "05/10/2026 - 22/10/2026" plus the calendar
+   icon — not to a round number. At 288px the bar ran out of room and the search
+   wrapped below the icon group. */
+.sr-daterange { flex: 0 0 auto; width: var(--mp-sizes-56, 224px); }
 
 /* ── View switch ──────────────────────────────────────────────────────────
    Sits in ErpTablePage's #stats slot, which is the band above the filter bar.
@@ -957,13 +981,18 @@ const exportColumns = computed(() => {
 /* 8px between controls, matching the Production request filter bar. `flex: 0 0 auto`
    keeps the left group from wrapping while the right still has width to give — the
    search shrinks first, and only once it hits its floor do the groups wrap. */
+/* Four controls on the left and a search + icon group on the right do not fit
+   one row on a narrow screen, and something has to give. It is the LEFT group:
+   it takes the leftover width and wraps a whole pill onto a second row, which
+   reads as a filter bar. The right group keeps its width, because when IT wrapped
+   the icon tools detached above the search and the bar read as broken. */
 .filter-left {
-  display: flex; align-items: center; flex-wrap: wrap; flex: 0 0 auto;
+  display: flex; align-items: center; flex-wrap: wrap; flex: 1 1 auto; min-width: 0;
   column-gap: var(--mp-spacing-2); row-gap: var(--mp-spacing-2);
 }
 .filter-right {
-  display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end;
-  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; flex-wrap: nowrap; justify-content: flex-end;
+  flex: 0 0 auto;
   column-gap: var(--mp-spacing-2); row-gap: var(--mp-spacing-2);
 }
 .filter-divider {

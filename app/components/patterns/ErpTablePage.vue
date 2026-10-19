@@ -368,10 +368,17 @@ const isOverflowing = ref(false)
 const tallRows = ref<Set<number>>(new Set())
 let resizeObserver: ResizeObserver | null = null
 
+/** The visible width of the scroll container, published as a CSS var so the
+ *  filtered-empty block can size itself to the viewport rather than to the table.
+ *  Without it the empty state is as wide as every column put together and drifts
+ *  off-screen the moment the table is scrolled sideways. */
+const viewportWidth = ref(0)
+
 function checkOverflow() {
   const w = tableWrapperEl.value
   if (!w) return
   isOverflowing.value = w.scrollWidth > w.clientWidth + 1
+  viewportWidth.value = w.clientWidth
 }
 
 // A row is "tall" when its height exceeds the single-line baseline (40px) by more
@@ -507,7 +514,10 @@ const bulkCountLabel = computed(() => {
       ref="tableWrapperEl"
       class="erp-table-wrapper"
       :class="{ 'has-ai': hasAiChat, 'is-overflowing': isOverflowing, 'actions-align-top': actionsAlignTop }"
-      :style="actionsWidth ? { '--erp-actions-width': actionsWidth } : undefined"
+      :style="{
+        ...(viewportWidth ? { '--erp-viewport-w': `${viewportWidth}px` } : {}),
+        ...(actionsWidth ? { '--erp-actions-width': actionsWidth } : {}),
+      }"
     >
       <table ref="tableEl" class="erp-table" :class="{ 'erp-table--empty': isFullEmpty, 'erp-table--align-top': alignTop, 'erp-table--grid': gridLines }">
 
@@ -1356,6 +1366,22 @@ const bulkCountLabel = computed(() => {
   padding: var(--mp-spacing-6) var(--mp-spacing-4) !important;
   height: auto;
   white-space: normal;
+}
+
+/* The filtered-empty block stays put while the header scrolls sideways: sticky to
+   the container's left edge and sized to the visible width, not to the table's.
+   Otherwise it is as wide as every column together and scrolls out of view. */
+.erp-td--empty > .empty-inline,
+.erp-td--empty > .empty-default {
+  position: sticky;
+  /* Pinned at the cell's own left padding, which is where it rests unscrolled —
+     any other value and the block jumps sideways the moment you scroll. */
+  left: var(--mp-spacing-4, 16px);
+  /* Exactly the visible width less the cell's own padding, and flush to the
+     cell's left edge — so at every scroll position it fills the viewport and
+     nothing more. A centred block would start out in the middle of the table. */
+  width: calc(var(--erp-viewport-w, 100%) - (2 * var(--mp-spacing-4, 16px)));
+  margin-inline: 0;
 }
 
 .empty-default {
