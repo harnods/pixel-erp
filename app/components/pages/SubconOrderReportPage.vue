@@ -268,7 +268,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  width: 280px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  width: var(--mp-sizes-72, 288px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
