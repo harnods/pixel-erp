@@ -81,7 +81,7 @@ function toggle(key: ProjectFilterKey, value: string) {
       <div class="pfd-panel" role="dialog" :aria-label="t('All filters')">
         <header class="pfd-header">
           <span class="pfd-title">{{ t('All filters') }}</span>
-          <MpButton class="pfd-close" variant="ghost" :aria-label="t('Close')" @click="close">
+          <MpButton class="pfd-close" variant="ghost" is-rounded :aria-label="t('Close')" @click="close">
             <MpIcon name="close" size="md" />
           </MpButton>
         </header>

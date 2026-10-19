@@ -190,6 +190,10 @@ const allCols: TableColumn[] = [
   { key: 'statusLabel', label: t('Status'), kind: 'status', sortable: true, sortType: 'text' },
 ]
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.map(c => [c.key, c.key !== 'billedValue'])))
+// Six columns at their `kind` minimums need ~1010px; a 1280 stage gives 988. Below
+// 1400px the Method column starts hidden (still in column settings, still in
+// All filters), so the figures never scroll off.
+onMounted(() => { if (window.innerWidth < 1400) columnVisibility.methodName = false })
 const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
 const visibleColumns = computed<TableColumn[]>(() => allCols.filter(c => columnVisibility[c.key]))
 function hideColumn(key: string) { columnVisibility[key] = false }
@@ -293,7 +297,8 @@ function exportSelected(selectedRows: Set<number>, deselectAll: () => void) {
 // ── Cell helpers ──────────────────────────────────────────────────────────────
 function asRow(r: unknown): Row { return r as Row }
 function spendCaption(r: Row): string {
-  if (r.budget === null) return `${formatIdr(r.costValue)} ${t('spent')} · ${t('No budget')}`
+  // Non-breaking spaces keep "spent" with its figure and "· No budget" together.
+  if (r.budget === null) return `${formatIdr(r.costValue)}\u00A0${t('spent')} ·\u00A0${t('No budget').replace(/ /g, '\u00A0')}`
   return `${formatIdr(r.costValue)} ${t('of')} ${formatIdr(r.budget)}`
 }
 /** Neutral by default; billed in advance is info; red only past the age limit. */
@@ -339,7 +344,7 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' {
       <!-- ── Bulk actions ── -->
       <template #bulk-actions="{ selectedRows, deselectAll }">
         <MpButton
-          size="sm" variant="secondary" is-rounded left-icon="download"
+          size="sm" variant="secondary" is-rounded
           @click="exportSelected(selectedRows as Set<number>, deselectAll as () => void)"
         >{{ t('Export') }}</MpButton>
       </template>
@@ -398,14 +403,13 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' {
       <!-- ── Budget spent ── -->
       <template #cell-spendPct="{ row }">
         <div class="pa-spend">
-          <span class="pa-spend-pct" :data-tone="asRow(row).budgetKey">
-            <template v-if="asRow(row).budget === null">{{ t('No budget') }}</template>
-            <template v-else>{{ Math.round(asRow(row).spendPct) }}%<template v-if="asRow(row).budgetKey === 'over'"> · {{ t('Over budget') }}</template></template>
+          <span v-if="asRow(row).budget !== null" class="pa-spend-pct" :data-tone="asRow(row).budgetKey">
+            {{ Math.round(asRow(row).spendPct) }}%<template v-if="asRow(row).budgetKey === 'over'"> · {{ t('Over budget') }}</template>
           </span>
           <div v-if="asRow(row).budget !== null" class="pa-bar">
             <div class="pa-bar-fill" :data-tone="asRow(row).budgetKey" :style="{ width: `${Math.min(100, asRow(row).spendPct)}%` }" />
           </div>
-          <div class="pa-sub pa-num pa-trunc" :title="spendCaption(asRow(row))">{{ spendCaption(asRow(row)) }}</div>
+          <div class="pa-sub pa-num pa-spend-cap">{{ spendCaption(asRow(row)) }}</div>
         </div>
       </template>
 
@@ -465,6 +469,8 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' {
 .pa-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-0\.5); }
 .pa-trunc { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pa-num { font-variant-numeric: tabular-nums; }
+/* Wraps at "of" rather than clipping the budget figure. */
+.pa-spend-cap { text-align: right; white-space: normal; }
 
 .pa-spend { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-1); min-width: 0; }
 .pa-spend-pct { font-weight: var(--mp-font-weights-semi-bold); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -474,7 +480,7 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' {
 .pa-spend-pct[data-tone='none'] { color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-regular); }
 
 /* 6px rail: bar heights have no token (accepted no-token exception). */
-.pa-bar { flex: none; width: 100%; max-width: var(--mp-sizes-32); height: 6px; border-radius: var(--mp-radii-full); background: var(--mp-background-neutral-subtle); overflow: hidden; }
+.pa-bar { flex: none; width: 100%; height: 6px; border-radius: var(--mp-radii-full); background: var(--mp-background-neutral-subtle); overflow: hidden; }
 .pa-bar-fill { height: 100%; border-radius: var(--mp-radii-full); }
 .pa-bar-fill[data-tone='ok'] { background: var(--mp-colors-background-success-bold); }
 .pa-bar-fill[data-tone='near'] { background: var(--mp-colors-orange-600); }
