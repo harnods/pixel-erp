@@ -1,29 +1,32 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { approvalWorkflows, check_approval_required, syncApprovalProjects, type ProjectActionType } from './approvalWorkflows'
+import { users } from './users'
 
 /**
- * Project accounting — engagements that earn revenue over time.
+ * Project accounting — projects that earn revenue over time (typed `Engagement` in code).
  *
  * Ported from the "Project Accounting" Claude Design prototype. The whole module
  * hangs off one idea: an engagement declares HOW it earns, and that choice picks
  * the recognition engine used for the rest of its life.
  *
- *   tm     — Input by Simplified Cost. Revenue = allowed cost × (1 + agreed margin).
+ *   tm     — Cost plus margin. Revenue = allowed cost × (1 + agreed margin).
  *            No percentage of progress; the client reimburses cost and pays a margin.
  *            (What accountants call cost-plus.) Consulting, audit, retainers.
- *   input  — Input by Cost. Progress = cost spent ÷ cost planned; revenue = that
+ *   input  — Percentage of completion. Progress = cost spent ÷ cost planned; revenue = that
  *            percentage × contract value. Billing runs on its own schedule, and the
  *            gap is reported as unbilled revenue or billed in advance.
- *   output — Output by Milestone. Revenue arrives only when a weighted milestone is
+ *   output — Milestones. Revenue arrives only when a weighted milestone is
  *            physically verified. Verifying earns AND queues its invoice.
  *
  * Two rules drive most of the surprising behaviour here:
  *
  *   1. The contract is FROZEN at creation. It is never edited in place — a revised
- *      value is an append-only, dated addendum that Finance approves separately from
- *      the PM who raised it. Rejected addenda stay on the list on purpose.
+ *      value is an append-only, dated addendum. When a Settings › Approval workflows
+ *      rule matches, an approver other than the submitter decides it; otherwise it
+ *      applies at once. Rejected addenda stay on the list on purpose.
  *   2. Whether added scope is DISTINCT (PSAK 72) — not how the project earns —
- *      decides whether revenue already recognised is trued up. The system cannot
+ *      decides whether revenue already recognized is trued up. The system cannot
  *      infer it; someone has to say which it is. See approveAddendum().
  *
  * Money is a plain number of rupiah; pages format with Intl.NumberFormat('id-ID', …)
@@ -172,6 +175,8 @@ export interface Engagement {
   /** Who closed / reopened the project, for the audit line on Project health. */
   closedBy?: string | null
   reopenLog?: { date: string; by: string; reason: string }[]
+  /** Decided approval requests, for the audit line on each gated record. */
+  approvalLog?: ApprovalDecisionLog[]
 }
 
 // ── Approval contract (shared by engine, detail page, forms, settings) ─────────
@@ -189,6 +194,27 @@ export interface PendingApproval {
   submittedAt: string
   /** Names allowed to decide this request (from the matched rule's levels). */
   approvers: string[]
+  /** milestone-verification only: the verification details applied on approval. */
+  verification?: MilestoneVerificationInput | null
+  /**
+   * project-creation only: a rejected creation request stays on the project (status
+   * stays Pending approval) with who rejected it and why. canDecide() refuses it.
+   */
+  rejectedBy?: string | null
+  rejectReason?: string | null
+  rejectedAt?: string | null
+}
+
+/** Audit trail of decided approval requests (approved or rejected), newest last. */
+export interface ApprovalDecisionLog {
+  approvalId: string
+  action: ProjectApprovalAction
+  refId: string | null
+  decision: 'approved' | 'rejected'
+  by: string
+  date: string
+  submittedBy: string
+  reason: string | null
 }
 
 export interface MilestoneVerificationInput {
@@ -201,7 +227,7 @@ export interface MilestoneVerificationInput {
 export type ProjectStatusKey = 'pending approval' | 'in progress' | 'closed'
 
 /**
- * The prototype's "today". Fixed rather than `new Date()` so the seed's ageing
+ * The prototype's "today". Fixed rather than `new Date()` so the seed's aging
  * buckets (0–30 / 31–60 / 61–90 / 90+ days) and every test stay deterministic —
  * a drifting clock would silently reshuffle which lines look overdue.
  */
@@ -210,7 +236,7 @@ export const TODAY = '2026-08-03'
 export const COST_ACCOUNTS = [
   '5-10000 Cost of materials',
   '5-10001 Subcontractor expense',
-  '6-10001 Direct labour',
+  '6-10001 Direct labor',
   '6-10002 Site expense',
 ]
 
@@ -254,17 +280,17 @@ function cost(
 
 /**
  * Cost plans differ by work type: construction buys materials, a service
- * engagement buys hours. The plan is frozen at Setup — it is a baseline, so a
+ * project buys hours. The plan is frozen at Setup — it is a baseline, so a
  * later addendum never restates it.
  */
 const BUILD_PLAN: [string, number][] = [
   ['5-10000 Cost of materials', 0.45],
   ['5-10001 Subcontractor expense', 0.30],
-  ['6-10001 Direct labour', 0.15],
+  ['6-10001 Direct labor', 0.15],
   ['6-10002 Site expense', 0.10],
 ]
 const SERVICE_PLAN: [string, number][] = [
-  ['6-10001 Direct labour', 0.85],
+  ['6-10001 Direct labor', 0.85],
   ['6-10002 Site expense', 0.15],
 ]
 
@@ -313,30 +339,30 @@ function seed(): Engagement[] {
       id: 'e1', name: 'Financial Statement Audit 2025', client: 'PT Sinar Abadi Textile', pm: 'Rina Wulandari',
       method: 'tm', markupPct: 20, stage: 'recognition', feeEstimate: 185_000_000, budget: 96_000_000,
       entries: [
-        cost('Labour', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-07-05', 5_700_000, 'Expense', 'EXP-1102', 20, null, false, 15),
-        cost('Labour', 'Yoga Prasetyo — tax position review', 'Internal payroll', '2026-06-28', 1_500_000, 'Expense', 'EXP-1088', 20, null, false, 6),
-        cost('Labour', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-06-15', 3_040_000, 'Expense', 'EXP-1071', 20, null, false, 8),
-        cost('Labour', 'Rina Wulandari — opening balance testing', 'Internal payroll', '2026-05-10', 4_560_000, 'Expense', 'EXP-1024', 20, null, false, 12),
-        cost('Labour', 'Made Ardika — schedule preparation', 'Internal payroll', '2026-04-20', 2_000_000, 'Expense', 'EXP-0991', 20, null, false, 10),
+        cost('Labor', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-07-05', 5_700_000, 'Expense', 'EXP-1102', 20, null, false, 15),
+        cost('Labor', 'Yoga Prasetyo — tax position review', 'Internal payroll', '2026-06-28', 1_500_000, 'Expense', 'EXP-1088', 20, null, false, 6),
+        cost('Labor', 'Rina Wulandari — audit fieldwork', 'Internal payroll', '2026-06-15', 3_040_000, 'Expense', 'EXP-1071', 20, null, false, 8),
+        cost('Labor', 'Rina Wulandari — opening balance testing', 'Internal payroll', '2026-05-10', 4_560_000, 'Expense', 'EXP-1024', 20, null, false, 12),
+        cost('Labor', 'Made Ardika — schedule preparation', 'Internal payroll', '2026-04-20', 2_000_000, 'Expense', 'EXP-0991', 20, null, false, 10),
       ],
     }),
     baseEngagement({
       id: 'e2', name: 'Annual Tax Consulting', client: 'CV Makmur Jaya', pm: 'Yoga Prasetyo',
       method: 'tm', markupPct: 20, stage: 'execution', feeEstimate: 60_000_000, budget: 28_000_000,
       entries: [
-        cost('Labour', 'Yoga Prasetyo — annual return preparation', 'Internal payroll', '2026-07-22', 2_250_000, 'Expense', 'EXP-1178', 20, null, false, 9),
-        cost('Labour', 'Yoga Prasetyo — tax reconciliation', 'Internal payroll', '2026-06-30', 2_750_000, 'Expense', 'EXP-1090', 20, null, false, 11),
-        cost('Labour', 'Dewi Kusuma — document collation', 'Internal payroll', '2026-06-10', 1_050_000, 'Expense', 'EXP-1065', 20, null, false, 7),
+        cost('Labor', 'Yoga Prasetyo — annual return preparation', 'Internal payroll', '2026-07-22', 2_250_000, 'Expense', 'EXP-1178', 20, null, false, 9),
+        cost('Labor', 'Yoga Prasetyo — tax reconciliation', 'Internal payroll', '2026-06-30', 2_750_000, 'Expense', 'EXP-1090', 20, null, false, 11),
+        cost('Labor', 'Dewi Kusuma — document collation', 'Internal payroll', '2026-06-10', 1_050_000, 'Expense', 'EXP-1065', 20, null, false, 7),
       ],
     }),
     baseEngagement({
       id: 'e3', name: 'Monthly Retainer', client: 'PT Global Teknindo', pm: 'Made Ardika',
       method: 'tm', markupPct: 20, stage: 'billing', feeEstimate: 25_000_000, budget: null,
       entries: [
-        cost('Labour', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-05', 4_000_000, 'Expense', 'EXP-1105', 20, 'bill', true, 20),
-        cost('Labour', 'Dewi Kusuma — payroll processing', 'Internal payroll', '2026-07-10', 1_800_000, 'Expense', 'EXP-1112', 20, 'bill', true, 12),
-        cost('Labour', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-26', 1_200_000, 'Expense', 'EXP-1190', 20, null, false, 6),
-        cost('Labour', 'Dewi Kusuma — VAT filing', 'Internal payroll', '2026-07-18', 750_000, 'Expense', 'EXP-1175', 20, null, false, 5),
+        cost('Labor', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-05', 4_000_000, 'Expense', 'EXP-1105', 20, 'bill', true, 20),
+        cost('Labor', 'Dewi Kusuma — payroll processing', 'Internal payroll', '2026-07-10', 1_800_000, 'Expense', 'EXP-1112', 20, 'bill', true, 12),
+        cost('Labor', 'Made Ardika — monthly bookkeeping', 'Internal payroll', '2026-07-26', 1_200_000, 'Expense', 'EXP-1190', 20, null, false, 6),
+        cost('Labor', 'Dewi Kusuma — VAT filing', 'Internal payroll', '2026-07-18', 750_000, 'Expense', 'EXP-1175', 20, null, false, 5),
       ],
       invoices: [{ id: 'INV-2198', label: 'Progress billing', amount: 6_960_000, date: '2026-07-12', status: 'unpaid', paidDate: null }],
     }),
@@ -349,8 +375,11 @@ function seed(): Engagement[] {
         cost('Subcontractor', 'Builders — 6 days', 'Slamet (foreman)', '2026-07-20', 6_000_000, 'Purchase', 'PO-0442'),
         cost('Material', 'Exterior paint & finishing', 'UD Sejahtera Paints', '2026-07-25', 1_800_000, 'Expense', 'EXP-1192'),
       ],
+      // The paid down payment is a real invoice, so the schedule row, billed and
+      // collected all tell the same story (billingStatusOf reads the invoice).
+      invoices: [{ id: 'INV-2190', label: 'Down payment (30%)', amount: 13_500_000, date: '2026-07-06', status: 'paid', paidDate: '2026-07-10' }],
       billing: [
-        { id: 'b1', label: 'Down payment (30%)', pct: 30, status: 'paid', invId: null, paidDate: '2026-07-10' },
+        { id: 'b1', label: 'Down payment (30%)', pct: 30, status: 'paid', invId: 'INV-2190', paidDate: '2026-07-10' },
         { id: 'b2', label: 'Final payment (70%)', pct: 70, status: 'notdue', invId: null, paidDate: null },
       ],
     }),
@@ -361,7 +390,7 @@ function seed(): Engagement[] {
         cost('Subcontractor', 'Catering 300 pax', 'Bunda Ratu Catering', '2026-07-15', 45_000_000, 'Purchase', 'PO-0455'),
         cost('Subcontractor', 'Venue & decoration rental', 'Grand Ballroom Hotel', '2026-07-18', 38_000_000, 'Expense', 'EXP-1201'),
         cost('Subcontractor', 'Sound system & MC', 'Harmoni Production', '2026-07-20', 12_000_000, 'Expense', 'EXP-1205'),
-        cost('Labour', 'Dewi Kusuma — event coordination', 'Internal payroll', '2026-07-01', 2_400_000, 'Expense', 'EXP-1150', 0, null, false, 16),
+        cost('Labor', 'Dewi Kusuma — event coordination', 'Internal payroll', '2026-07-01', 2_400_000, 'Expense', 'EXP-1150', 0, null, false, 16),
       ],
       invoices: [{ id: 'INV-2205', label: 'Down payment', amount: 36_000_000, date: '2026-06-05', status: 'paid', paidDate: '2026-06-08' }],
       milestones: [{ id: 'm1', label: 'Event delivered (single deliverable)', pct: 100, verified: false, invId: null, recognized: 0 }],
@@ -379,15 +408,34 @@ function seed(): Engagement[] {
         { id: 'm2', label: 'Delivery to site', pct: 30, verified: false, invId: null, recognized: 0 },
         { id: 'm3', label: 'Installation & commissioning', pct: 30, verified: false, invId: null, recognized: 0 },
       ],
+      // One open approval so the flow is visible on load: Rina raised it, the
+      // Addendum rule (change above Rp25.000.000) routes it to Rizal Candra.
+      vos: [{
+        id: 'v-e7-1', date: '2026-08-01', reason: 'Two additional loading dock bays on the east wall',
+        oldValue: 2_400_000_000, newValue: 2_520_000_000, status: 'Pending', distinct: true,
+        raisedBy: 'Rina Wulandari', approvedBy: null, adjustment: 0, rejectedBy: null, rejectReason: null,
+      }],
+      approvals: [{
+        id: 'apr-e7-1', action: 'addendum', refId: 'v-e7-1', ruleId: 'awf-006', ruleName: 'Addendum Rule 001',
+        amount: 120_000_000, submittedBy: 'Rina Wulandari', submittedAt: '2026-08-01', approvers: ['Rizal Candra'],
+      }],
     }),
   ])
 }
 
-const KEY = 'project-accounting-v1'
+const KEY = 'project-accounting-v2'
 const snap = loadSnapshot<Engagement>(KEY)
 export const engagements = reactive<Engagement[]>(snap ?? seed())
 
-function persist(): void { saveSnapshot(KEY, engagements) }
+function persist(): void {
+  saveSnapshot(KEY, engagements)
+  syncApprovalProjects(engagements)
+}
+
+// Stored schedule statuses are a cache of the linked invoice; re-derive them on
+// load so an older snapshot can never show a Paid row without a paid invoice.
+engagements.forEach(syncBilling)
+syncApprovalProjects(engagements)
 
 let invoiceCounter = engagements.reduce((max, e) => {
   const local = e.invoices.reduce((m, i) => Math.max(m, Number(i.id.replace('INV-', '')) || 0), 0)
@@ -420,14 +468,14 @@ export function formatIdrSigned(n: number): string {
 // ── Derived figures ──────────────────────────────────────────────────────────
 
 export function methodLabel(m: RecognitionMethod): string {
-  return { tm: 'Input by Simplified Cost', input: 'Input by Cost', output: 'Output by Milestone' }[m]
+  return { tm: 'Cost plus margin', input: 'Percentage of completion', output: 'Milestones' }[m]
 }
 
 export function methodFormal(m: RecognitionMethod): string {
   return {
-    tm: 'Cost plus agreed margin',
-    input: 'Share of budgeted cost spent',
-    output: 'Weighted milestones, as verified',
+    tm: 'Reviewed cost plus the agreed margin',
+    input: 'Progress measured by cost spent',
+    output: 'Earned as milestones are verified',
   }[m]
 }
 
@@ -444,8 +492,8 @@ export function stageIndex(k: EngagementStage): number {
 }
 
 /**
- * Lifecycle status is deliberately separate from the tab labels — renaming a tab
- * must not rename a status.
+ * Stage-based label, kept for old callers only. Screens show projectStatusLabel().
+ * @deprecated use projectStatusLabel(e)
  */
 export function lifecycleLabel(k: EngagementStage): string {
   return { setup: 'Setup', execution: 'In progress', recognition: 'In progress', billing: 'Billing', closed: 'Closed' }[k]
@@ -455,12 +503,12 @@ export function daysAgo(date: string, today: string = TODAY): number {
   return Math.round((new Date(today).getTime() - new Date(date).getTime()) / 86_400_000)
 }
 
-/** Cost + the agreed margin — what the client could be charged if the line is allowed. */
+/** Cost + the agreed margin — what the customer could be charged if the line is allowed. */
 export function entryAmount(e: CostEntry): number {
   return Math.round(e.amount * (1 + (e.markupPct || 0) / 100))
 }
 
-/** What the client is actually charged, once reviewed. */
+/** What the customer is actually charged, once reviewed. */
 export function entryFinal(e: CostEntry): number {
   if (e.decision === 'atcost') return e.amount
   if (e.decision === 'absorb') return 0
@@ -482,7 +530,7 @@ export function pocPct(e: Engagement): number {
 }
 
 /**
- * Revenue recognised to date. One function, three engines — this is the single
+ * Revenue recognized to date. One function, three engines — this is the single
  * place the recognition method actually changes the numbers.
  */
 export function revenue(e: Engagement): number {
@@ -524,22 +572,24 @@ export function wipNet(e: Engagement): number {
 }
 
 export function canClose(e: Engagement): boolean {
-  if (pendingVos(e).length) return false
+  if (e.closedAt) return false
+  if (pendingVos(e).length || (e.approvals ?? []).length) return false
   const invoicesOk = e.invoices.length > 0 && e.invoices.every(i => i.status === 'paid')
   if (e.method === 'tm') return e.entries.every(x => x.decision) && readyToInvoice(e).length === 0 && invoicesOk
-  if (e.method === 'input') return pocPct(e) >= 100 && invoicesOk && (e.billing ?? []).every(m => m.status === 'paid')
+  if (e.method === 'input') return pocPct(e) >= 100 && invoicesOk && (e.billing ?? []).every(m => billingStatusOf(e, m) === 'paid')
   return (e.milestones ?? []).every(m => m.verified) && invoicesOk
 }
 
 export function closeHint(e: Engagement): string {
   if (pendingVos(e).length) return 'Approve or reject every pending addendum before closing.'
+  if ((e.approvals ?? []).length) return 'Decide every pending approval before closing.'
   if (canClose(e)) return 'Ready to close. Revenue is final, every invoice is paid and no addendum is pending.'
   if (e.method === 'tm') return 'To close, review and invoice every cost line, then record payment for every invoice.'
   if (e.method === 'input') return 'To close, the project must be 100% complete and every billing milestone paid.'
   return 'To close, verify every milestone and record payment for every invoice.'
 }
 
-/** Unbilled worked value by age — a collection risk, not a recognition question. */
+/** Cost lines awaiting review, by age ("Awaiting review"). Keys are the bucket labels. */
 export function ageBuckets(e: Engagement, today: string = TODAY): Record<string, number> {
   const buckets: Record<string, number> = { '0–30 days': 0, '31–60 days': 0, '61–90 days': 0, '90+ days': 0 }
   openEntries(e).forEach((x) => {
@@ -551,7 +601,8 @@ export function ageBuckets(e: Engagement, today: string = TODAY): Record<string,
 }
 
 export function accountForEntry(x: CostEntry): string {
-  if (x.category === 'Labour') return '6-10001 Direct labour'
+  // 'Labour' kept for records written before the US-spelling pass.
+  if (x.category === 'Labor' || x.category === 'Labour') return '6-10001 Direct labor'
   if (x.category === 'Material') return '5-10000 Cost of materials'
   if (x.category === 'Subcontractor') return '5-10001 Subcontractor expense'
   return '6-10002 Site expense'
@@ -565,11 +616,14 @@ export interface BudgetReportRow {
   label: string
   header?: boolean
   total?: boolean
+  /** Budget TO DATE: the lifetime budget scaled to progress (see budgetReport). */
   budget: number | null
+  /** The whole-of-project budget the to-date figure is scaled from. */
+  lifetimeBudget?: number | null
   actual: number
   variance: number | null
   pct: number | null
-  /** true when the variance is unfavourable (over budget / below plan). */
+  /** Kept for old callers: equals tone === 'adverse'. */
   adverse: boolean
   note: string
   kind: 'revenue' | 'cost' | null
@@ -578,58 +632,115 @@ export interface BudgetReportRow {
 }
 
 /**
- * Budget variance — same shape as the Financials budget-variance report, scoped to
- * one project. Cost variance is favourable when budget exceeds actual; revenue
- * variance is favourable the other way round.
+ * How far through the project it is, 0–1, for scaling the lifetime budget to date.
+ *   input  — percentage of completion (cost-to-cost)
+ *   output — verified milestone weight ÷ total weight
+ *   tm     — null: cost IS the progress measure, so cost is judged against lifetime
+ */
+export function budgetProgress(e: Engagement): number | null {
+  if (e.method === 'input') return pocPct(e) / 100
+  if (e.method === 'output') {
+    const ms = e.milestones ?? []
+    const total = ms.reduce((a, m) => a + m.pct, 0)
+    return total > 0 ? ms.filter(m => m.verified).reduce((a, m) => a + m.pct, 0) / total : 0
+  }
+  return null
+}
+
+/** Over-run tolerance on budget to date before a cost line reads as adverse. */
+const TO_DATE_TOLERANCE = 0.10
+
+/**
+ * Budget variance, compared TO DATE — same shape as the Financials budget-variance
+ * report, scoped to one project.
+ *   Revenue budget to date: input/output = lifetime × progress; tm = cost to date
+ *   × (1 + markup), the revenue the work done so far should earn.
+ *   Cost budget to date: input/output = lifetime × progress; tm = lifetime.
+ * Tone is 'adverse' only for a real overrun on cost: actual above the lifetime
+ * budget, or (once progress is measurable) more than 10% over budget to date.
+ * Revenue below plan is reported but never red: it is timing, not loss.
  */
 export function budgetReport(e: Engagement): BudgetReportRow[] {
   const b = budgetOf(e)
   const hasBudget = e.budget !== null
   const recognized = revenue(e)
-  const revTotalBudget = b.revenue.reduce((a, l) => a + l.amount, 0)
+  const progress = budgetProgress(e)
+  const costToDate = actualCost(e)
+  const revLifetimeTotal = b.revenue.reduce((a, l) => a + l.amount, 0)
   const rows: BudgetReportRow[] = []
 
-  const mk = (label: string, bud: number, act: number, kind: 'revenue' | 'cost'): BudgetReportRow => {
+  const revToDateTotal = e.method === 'tm'
+    ? Math.round(costToDate * (1 + (e.markupPct || 0) / 100))
+    : Math.round(revLifetimeTotal * (progress ?? 0))
+  const scaleRev = (lifetime: number): number => revLifetimeTotal > 0 ? Math.round(revToDateTotal * (lifetime / revLifetimeTotal)) : 0
+  const scaleCost = (lifetime: number): number => progress === null ? lifetime : Math.round(lifetime * progress)
+
+  // The to-date test runs on the total only: per-account mix legitimately runs ahead of
+  // overall progress (materials are bought before labor), so lines are judged on lifetime.
+  const mk = (label: string, lifetime: number, toDate: number, act: number, kind: 'revenue' | 'cost', isTotal = false): BudgetReportRow => {
     const measurable = hasBudget || kind === 'revenue'
     if (!measurable) {
-      return { label, budget: null, actual: act, variance: null, pct: null, adverse: false, note: '', kind }
+      return { label, budget: null, lifetimeBudget: null, actual: act, variance: null, pct: null, adverse: false, note: '', kind, tone: 'default' }
     }
-    const variance = kind === 'cost' ? bud - act : act - bud
+    const variance = kind === 'cost' ? toDate - act : act - toDate
+    let tone: BudgetReportRow['tone'] = variance > 0 ? 'positive' : 'default'
+    let note = ''
+    if (kind === 'cost') {
+      const overLifetime = act > lifetime
+      const overToDate = isTotal && progress !== null && progress > 0 && act > toDate * (1 + TO_DATE_TOLERANCE)
+      if (overLifetime || overToDate) { tone = 'adverse'; note = overLifetime ? 'Over budget' : 'Ahead of progress' }
+    } else if (variance < 0) {
+      note = 'Below plan'
+    }
     return {
       label,
-      budget: bud,
+      budget: toDate,
+      lifetimeBudget: lifetime,
       actual: act,
       variance,
-      pct: bud > 0 ? (variance / bud) * 100 : null,
-      adverse: variance < 0,
-      note: variance < 0 ? (kind === 'cost' ? 'Over budget' : 'Below plan') : '',
+      pct: toDate > 0 ? (variance / toDate) * 100 : null,
+      adverse: tone === 'adverse',
+      note,
       kind,
+      tone,
     }
   }
 
-  rows.push({ label: 'Revenue', header: true, budget: null, actual: 0, variance: null, pct: null, adverse: false, note: '', kind: null })
-  b.revenue.forEach((l, i) => {
-    const share = revTotalBudget > 0 ? l.amount / revTotalBudget : (i === 0 ? 1 : 0)
-    rows.push(mk(l.account, l.amount, Math.round(recognized * share), 'revenue'))
-  })
-  rows.push({ ...mk('Total revenue', revTotalBudget, recognized, 'revenue'), total: true })
+  const header = (label: string): BudgetReportRow => ({ label, header: true, budget: null, lifetimeBudget: null, actual: 0, variance: null, pct: null, adverse: false, note: '', kind: null, tone: 'default' })
 
-  rows.push({ label: 'Project cost', header: true, budget: null, actual: 0, variance: null, pct: null, adverse: false, note: '', kind: null })
+  rows.push(header('Revenue'))
+  b.revenue.forEach((l, i) => {
+    const share = revLifetimeTotal > 0 ? l.amount / revLifetimeTotal : (i === 0 ? 1 : 0)
+    rows.push(mk(l.account, l.amount, scaleRev(l.amount), Math.round(recognized * share), 'revenue'))
+  })
+  rows.push({ ...mk('Total revenue', revLifetimeTotal, revToDateTotal, recognized, 'revenue'), total: true })
+
+  rows.push(header('Project cost'))
   let costActualTotal = 0
+  let costToDateTotal = 0
   b.cost.forEach((l) => {
     const act = e.entries.filter(x => accountForEntry(x) === l.account).reduce((a, x) => a + x.amount, 0)
     costActualTotal += act
-    rows.push(mk(l.account, l.amount, act, 'cost'))
+    const toDate = scaleCost(l.amount)
+    costToDateTotal += toDate
+    rows.push(mk(l.account, l.amount, toDate, act, 'cost'))
   })
-  const costBudgetTotal = b.cost.reduce((a, l) => a + l.amount, 0)
-  rows.push({ ...mk('Total project cost', costBudgetTotal, costActualTotal, 'cost'), total: true })
+  const costLifetimeTotal = b.cost.reduce((a, l) => a + l.amount, 0)
+  rows.push({ ...mk('Total project cost', costLifetimeTotal, costToDateTotal, costActualTotal, 'cost', true), total: true })
 
-  const gpBudget = revTotalBudget - costBudgetTotal
   const gpActual = recognized - costActualTotal
-  const gp: BudgetReportRow = hasBudget
-    ? { ...mk('Gross margin', gpBudget, gpActual, 'revenue'), total: true }
-    : { label: 'Gross margin', budget: null, actual: gpActual, variance: null, pct: null, adverse: false, note: '', kind: null, total: true }
-  rows.push(gp)
+  if (hasBudget) {
+    const gpToDate = revToDateTotal - costToDateTotal
+    const gpLifetime = revLifetimeTotal - costLifetimeTotal
+    const variance = gpActual - gpToDate
+    rows.push({
+      label: 'Gross margin', total: true, budget: gpToDate, lifetimeBudget: gpLifetime, actual: gpActual, variance,
+      pct: gpToDate !== 0 ? (variance / Math.abs(gpToDate)) * 100 : null, adverse: false,
+      note: variance < 0 ? 'Below plan' : '', kind: 'revenue', tone: variance > 0 ? 'positive' : 'default',
+    })
+  } else {
+    rows.push({ label: 'Gross margin', budget: null, lifetimeBudget: null, actual: gpActual, variance: null, pct: null, adverse: false, note: '', kind: null, total: true, tone: 'default' })
+  }
 
   return rows
 }
@@ -670,7 +781,12 @@ export function draftWeightSum(d: EngagementDraft): number {
   return d.milestones.reduce((s, m) => s + (Number(m.pct) || 0), 0)
 }
 
-export function createEngagement(d: EngagementDraft): Engagement {
+/**
+ * Create a project. When a Project creation rule matches the contract value (or fee
+ * estimate), the project is created with an open approval and reads Pending approval
+ * until an approver other than the submitter approves it.
+ */
+export function createEngagement(d: EngagementDraft, submittedBy?: string): Engagement {
   const id = uid('e')
   const lines: BudgetLines = {
     revenue: d.budgetLines.revenue.map(l => ({ id: l.id, account: l.account, amount: Number(l.amount) || 0 })),
@@ -704,6 +820,9 @@ export function createEngagement(d: EngagementDraft): Engagement {
         ]
       : null,
   })
+  const value = e.method === 'tm' ? e.feeEstimate : e.contractValue
+  const rule = matchRule('project-creation', value, null)
+  if (rule) e.approvals = [newApproval('project-creation', null, rule, value, submittedBy?.trim() || e.pm)]
   engagements.push(e)
   persist()
   return e
@@ -723,11 +842,18 @@ export function decideEntries(id: string, entryIds: string[], decision: Exclude<
   return total
 }
 
-export function addAddendum(id: string, newValue: number, reason: string, distinct: boolean): void {
+/**
+ * Raise an addendum. A matching Addendum rule (value change above its threshold)
+ * opens an approval and the addendum waits as Pending; with no matching rule it is
+ * applied at once. Returns the new addendum id and what happened to it.
+ */
+export function addAddendum(id: string, newValue: number, reason: string, distinct: boolean, submittedBy?: string):
+  { voId: string; status: 'approved' | 'pending'; approval?: PendingApproval } | null {
   const e = findEngagement(id)
-  if (!e) return
+  if (!e) return null
+  const by = submittedBy?.trim() || e.pm
   const oldValue = e.method === 'tm' ? e.feeEstimate : e.contractValue
-  e.vos.push({
+  const vo: Addendum = {
     id: uid('v'),
     date: TODAY,
     reason: reason.trim(),
@@ -735,11 +861,24 @@ export function addAddendum(id: string, newValue: number, reason: string, distin
     newValue,
     status: 'Pending',
     distinct,
-    raisedBy: `${e.pm} · Project Manager`,
+    raisedBy: by,
     approvedBy: null,
     adjustment: 0,
-  })
+    rejectedBy: null,
+    rejectReason: null,
+  }
+  e.vos.push(vo)
+  const change = Math.abs(newValue - oldValue)
+  const rule = matchRule('addendum', change, e.id)
+  if (rule) {
+    const approval = newApproval('addendum', vo.id, rule, change, by)
+    e.approvals = [...(e.approvals ?? []), approval]
+    persist()
+    return { voId: vo.id, status: 'pending', approval }
+  }
+  applyAddendum(e, vo, null)
   persist()
+  return { voId: vo.id, status: 'approved' }
 }
 
 /**
@@ -760,12 +899,21 @@ export function addAddendum(id: string, newValue: number, reason: string, distin
  *   tm                    → the fee estimate is replaced; reviewed/billed work is
  *                           never restated.
  */
-export function approveAddendum(id: string, voId: string): void {
+export function approveAddendum(id: string, voId: string, approver?: string): boolean {
   const e = findEngagement(id)
-  if (!e) return
-  const vo = e.vos.find(v => v.id === voId)
-  if (!vo) return
+  const vo = e?.vos.find(v => v.id === voId)
+  if (!e || !vo || vo.status !== 'Pending') return false
+  const gate = approvalFor(e, 'addendum', voId)
+  // A rule-gated addendum is decided only by one of its approvers, never the submitter.
+  if (gate) return approveRequest(id, gate.id, approver ?? '')
+  applyAddendum(e, vo, approver?.trim() || null)
+  persist()
+  return true
+}
 
+/** Apply an addendum's value change. `approvedBy` is the deciding user (null when no rule gated it). */
+function applyAddendum(e: Engagement, vo: Addendum, approvedBy: string | null): void {
+  const voId = vo.id
   const before = revenue(e)
 
   if (e.method === 'input') {
@@ -783,7 +931,7 @@ export function approveAddendum(id: string, voId: string): void {
 
   const after = revenue(e)
   vo.status = 'Approved'
-  vo.approvedBy = 'Anggun Prakoso · Finance Controller'
+  vo.approvedBy = approvedBy
   vo.adjustment = Math.round(after - before)
 
   if (e.method === 'output' && e.milestones) {
@@ -797,15 +945,23 @@ export function approveAddendum(id: string, voId: string): void {
       e.weightsNeedConfirm = true
     }
   }
-  persist()
 }
 
-export function rejectAddendum(id: string, voId: string): void {
+/**
+ * Reject an addendum. A rule-gated one goes through rejectRequest (approver must be
+ * allowed to decide, reason required). It stays on the list as Rejected.
+ */
+export function rejectAddendum(id: string, voId: string, approver?: string, reason?: string): boolean {
   const e = findEngagement(id)
   const vo = e?.vos.find(v => v.id === voId)
-  if (!vo) return
+  if (!e || !vo || vo.status !== 'Pending') return false
+  const gate = approvalFor(e, 'addendum', voId)
+  if (gate) return rejectRequest(id, gate.id, approver ?? '', reason ?? '')
   vo.status = 'Rejected'
+  vo.rejectedBy = approver?.trim() || null
+  vo.rejectReason = reason?.trim() || null
   persist()
+  return true
 }
 
 /** The added distinct scope claims whatever weight the restatement left over. */
@@ -841,6 +997,8 @@ export function verifyMilestone(id: string, mid: string): number {
   if (!e || !e.milestones || e.weightsNeedConfirm) return 0
   const m = e.milestones.find(x => x.id === mid)
   if (!m || m.verified) return 0
+  // An open approval request owns this milestone until it is decided.
+  if (approvalFor(e, 'milestone-verification', mid)) return 0
   const amount = Math.round((e.contractValue * m.pct) / 100)
   m.verified = true
   m.recognized = amount
@@ -856,6 +1014,9 @@ export function unverifyMilestone(id: string, mid: string): boolean {
   if (!e || !m || m.invId) return false
   m.verified = false
   m.recognized = 0
+  m.verifiedAt = null
+  m.verifiedBy = null
+  m.document = null
   persist()
   return true
 }
@@ -915,7 +1076,8 @@ export function saveInvoice(input: SaveInvoiceInput): ProjectInvoice | null {
   }
   if (input.kind === 'billing' && input.milestoneId && e.billing) {
     const m = e.billing.find(x => x.id === input.milestoneId)
-    if (m) { m.status = 'invoiced'; m.invId = inv.id }
+    if (m) m.invId = inv.id
+    syncBilling(e)
   }
   if (input.kind === 'output' && input.milestoneId && e.milestones) {
     const m = e.milestones.find(x => x.id === input.milestoneId)
@@ -931,17 +1093,16 @@ export function recordPayment(id: string, invId: string): void {
   if (!e) return
   const inv = e.invoices.find(i => i.id === invId)
   if (inv) { inv.status = 'paid'; inv.paidDate = TODAY }
-  e.billing?.forEach((m) => {
-    if (m.invId === invId) { m.status = 'paid'; m.paidDate = TODAY }
-  })
+  syncBilling(e)
   persist()
 }
 
-export function closeEngagement(id: string): boolean {
+export function closeEngagement(id: string, by?: string): boolean {
   const e = findEngagement(id)
   if (!e || !canClose(e)) return false
   e.stage = 'closed'
   e.closedAt = TODAY
+  e.closedBy = by?.trim() || null
   persist()
   return true
 }
@@ -959,7 +1120,7 @@ export interface ExpenseDraftLine {
 /**
  * Post an expense. Project is tagged PER LINE — one document can split cost across
  * several projects, and a line with no project posts normally with no project
- * association. Returns which engagements were touched.
+ * association. Returns which projects were touched.
  */
 export function saveExpense(input: { beneficiary: string; date: string; lines: ExpenseDraftLine[] }): { docNo: string; taggedIds: string[]; untagged: number } {
   const valid = input.lines.filter(l => Number(l.amount) > 0)
@@ -992,7 +1153,7 @@ export function saveExpense(input: { beneficiary: string; date: string; lines: E
   return { docNo, taggedIds, untagged: valid.length - tagged.length }
 }
 
-/** Projects selectable on a transaction line — closed engagements are not taggable. */
+/** Projects selectable on a transaction line — closed projects are not taggable. */
 export function projectOptions(): { id: string; name: string }[] {
   return [{ id: '', name: 'No project' }, ...engagements.filter(e => e.stage !== 'closed').map(e => ({ id: e.id, name: e.name }))]
 }
@@ -1009,8 +1170,63 @@ export function portfolioTotals() {
 }
 
 
-// ── Contract stubs (engine agent replaces the bodies; signatures are fixed) ────
+// ── Approvals, status, close/reopen ─────────────────────────────────────────
 
+/** Engine action → the wire action_type check_approval_required expects. */
+const ACTION_TYPE: Record<ProjectApprovalAction, ProjectActionType> = {
+  'project-creation': 'project.creation',
+  addendum: 'project.variation_order',
+  'milestone-verification': 'project.milestone_verification',
+}
+
+interface MatchedRule { ruleId: string; ruleName: string; approvers: string[] }
+
+function userName(id: string): string | null {
+  return users.find(u => u.id === id)?.name ?? null
+}
+
+/** The Settings › Approval workflows rule that gates this action, with approver names. */
+function matchRule(action: ProjectApprovalAction, amount: number | null, projectId: string | null): MatchedRule | null {
+  const res = check_approval_required(ACTION_TYPE[action], amount, projectId)
+  if (!res.approval_required || !res.rule_id) return null
+  const rule = approvalWorkflows.find(r => r.id === res.rule_id)
+  const names: string[] = []
+  res.approval_levels.forEach(l => l.approver_ids.forEach((uid) => {
+    const n = userName(uid)
+    if (n && !names.includes(n)) names.push(n)
+  }))
+  return { ruleId: res.rule_id, ruleName: rule?.name ?? res.rule_id, approvers: names }
+}
+
+function newApproval(action: ProjectApprovalAction, refId: string | null, rule: MatchedRule, amount: number | null, submittedBy: string,
+  verification: MilestoneVerificationInput | null = null): PendingApproval {
+  return {
+    id: uid('apr'), action, refId, ruleId: rule.ruleId, ruleName: rule.ruleName, amount,
+    submittedBy, submittedAt: TODAY, approvers: rule.approvers, verification,
+    rejectedBy: null, rejectReason: null, rejectedAt: null,
+  }
+}
+
+function logDecision(e: Engagement, a: PendingApproval, decision: 'approved' | 'rejected', by: string, reason: string | null): void {
+  e.approvalLog = [...(e.approvalLog ?? []), {
+    approvalId: a.id, action: a.action, refId: a.refId, decision, by, date: TODAY, submittedBy: a.submittedBy, reason,
+  }]
+}
+
+function dropApproval(e: Engagement, approvalId: string): void {
+  e.approvals = (e.approvals ?? []).filter(x => x.id !== approvalId)
+}
+
+/** Re-derive every billing-schedule row from its linked invoice (billingStatusOf is the truth). */
+function syncBilling(e: Engagement): void {
+  e.billing?.forEach((b) => {
+    const inv = b.invId ? e.invoices.find(i => i.id === b.invId) : undefined
+    b.status = billingStatusOf(e, b)
+    b.paidDate = inv?.status === 'paid' ? inv.paidDate : null
+  })
+}
+
+/** Pending approval while a project-creation request is open (or was rejected); then In progress / Closed. */
 export function projectStatusKey(e: Engagement): ProjectStatusKey {
   if ((e.approvals ?? []).some(a => a.action === 'project-creation')) return 'pending approval'
   return e.closedAt ? 'closed' : 'in progress'
@@ -1025,35 +1241,103 @@ export function approvalFor(e: Engagement, action: ProjectApprovalAction, refId:
   return (e.approvals ?? []).find(a => a.action === action && a.refId === refId)
 }
 
-/** Can `user` decide this request? Blocks self-approval and non-approvers. */
+/** Can `user` decide this request? Blocks self-approval, non-approvers and already-rejected requests. */
 export function canDecide(a: PendingApproval, user: string): { ok: boolean; reason: string } {
-  if (a.submittedBy === user) return { ok: false, reason: 'You submitted this request, so another approver must decide it.' }
-  if (!a.approvers.includes(user)) return { ok: false, reason: 'Only the approvers on this rule can decide it.' }
+  if (a.rejectedBy) return { ok: false, reason: `Rejected by ${a.rejectedBy}` }
+  if (a.submittedBy === user) {
+    const others = a.approvers.filter(n => n !== user)
+    return { ok: false, reason: others.length ? `Waiting for ${others.join(', ')}` : 'You submitted this request, so another approver must decide it.' }
+  }
+  if (!a.approvers.includes(user)) return { ok: false, reason: `Waiting for ${a.approvers.join(', ') || 'an approver'}` }
   return { ok: true, reason: '' }
 }
 
-/** Verify a milestone, or open an approval request when a rule matches. */
+/** The most recent decision on a gated record (e.g. a rejected milestone verification and its reason). */
+export function lastDecision(e: Engagement, action: ProjectApprovalAction, refId: string | null): ApprovalDecisionLog | undefined {
+  return [...(e.approvalLog ?? [])].reverse().find(l => l.action === action && l.refId === refId)
+}
+
+function applyVerification(e: Engagement, mid: string, info: MilestoneVerificationInput): number {
+  const amount = verifyMilestone(e.id, mid)
+  const m = e.milestones?.find(x => x.id === mid)
+  if (!amount || !m) return 0
+  m.verifiedAt = info.date
+  m.verifiedBy = info.verifiedBy.trim() || null
+  m.document = info.document?.trim() || null
+  return amount
+}
+
+/** Verify a milestone, or open an approval request when a Milestone verification rule matches. */
 export function submitMilestoneVerification(id: string, mid: string, info: MilestoneVerificationInput, submittedBy: string):
   { status: 'verified'; amount: number } | { status: 'pending'; approval: PendingApproval } | { status: 'blocked' } {
-  void submittedBy
-  const amount = verifyMilestone(id, mid)
-  const m = findEngagement(id)?.milestones?.find(x => x.id === mid)
-  if (!amount || !m) return { status: 'blocked' }
-  m.verifiedAt = info.date; m.verifiedBy = info.verifiedBy; m.document = info.document
+  const e = findEngagement(id)
+  const m = e?.milestones?.find(x => x.id === mid)
+  if (!e || !m || m.verified || e.weightsNeedConfirm || e.closedAt) return { status: 'blocked' }
+  if (approvalFor(e, 'milestone-verification', mid)) return { status: 'blocked' }
+  const amount = Math.round((e.contractValue * m.pct) / 100)
+  const rule = matchRule('milestone-verification', amount, e.id)
+  if (rule) {
+    const approval = newApproval('milestone-verification', mid, rule, amount, submittedBy.trim() || e.pm, {
+      date: info.date, verifiedBy: info.verifiedBy.trim(), document: info.document?.trim() || null,
+    })
+    e.approvals = [...(e.approvals ?? []), approval]
+    persist()
+    return { status: 'pending', approval }
+  }
+  const done = applyVerification(e, mid, info)
   persist()
-  return { status: 'verified', amount }
+  return done ? { status: 'verified', amount: done } : { status: 'blocked' }
 }
 
-/** Approve an open request and apply what it gated. */
+/**
+ * Approve an open request and apply what it gated: verify the milestone with the
+ * stored details, apply the addendum (approvedBy = approver), or start the project.
+ * Refused (false) for the submitter, a non-approver, or an already-rejected request.
+ */
 export function approveRequest(id: string, approvalId: string, approver: string): boolean {
-  void id; void approvalId; void approver
-  return false
+  const e = findEngagement(id)
+  const a = e?.approvals?.find(x => x.id === approvalId)
+  if (!e || !a || !canDecide(a, approver).ok) return false
+  dropApproval(e, a.id)
+  if (a.action === 'milestone-verification' && a.refId) {
+    const info = a.verification ?? { date: TODAY, verifiedBy: a.submittedBy, document: null }
+    if (!applyVerification(e, a.refId, info)) { e.approvals = [...(e.approvals ?? []), a]; return false }
+  } else if (a.action === 'addendum' && a.refId) {
+    const vo = e.vos.find(v => v.id === a.refId)
+    if (!vo || vo.status !== 'Pending') { e.approvals = [...(e.approvals ?? []), a]; return false }
+    applyAddendum(e, vo, approver)
+  }
+  // project-creation: removing the request is the approval; status becomes In progress.
+  logDecision(e, a, 'approved', approver, null)
+  persist()
+  return true
 }
 
-/** Reject an open request; reason is required. */
+/**
+ * Reject an open request; reason is required. Addendum → Rejected with reason and
+ * rejecter; milestone → stays unverified (reason kept in approvalLog, see lastDecision);
+ * project creation → the project stays Pending approval with the rejection recorded on
+ * the request (simpler than deleting a record the user may be looking at).
+ */
 export function rejectRequest(id: string, approvalId: string, approver: string, reason: string): boolean {
-  void id; void approvalId; void approver; void reason
-  return false
+  const e = findEngagement(id)
+  const a = e?.approvals?.find(x => x.id === approvalId)
+  const why = reason.trim()
+  if (!e || !a || !why || !canDecide(a, approver).ok) return false
+  if (a.action === 'project-creation') {
+    a.rejectedBy = approver
+    a.rejectReason = why
+    a.rejectedAt = TODAY
+  } else {
+    dropApproval(e, a.id)
+    if (a.action === 'addendum') {
+      const vo = e.vos.find(v => v.id === a.refId)
+      if (vo) { vo.status = 'Rejected'; vo.rejectedBy = approver; vo.rejectReason = why }
+    }
+  }
+  logDecision(e, a, 'rejected', approver, why)
+  persist()
+  return true
 }
 
 /** Final figures shown in the close confirmation. */
@@ -1063,16 +1347,28 @@ export function closeSummary(e: Engagement): { revenue: number; cost: number; ma
   return { revenue: r, cost: c, margin: r - c, marginPct: r > 0 ? ((r - c) / r) * 100 : null }
 }
 
-/** Reopen a closed project (audit-logged). */
+/** Reopen a closed project (audit-logged). Reason is required; the project returns to Invoices & payments. */
 export function reopenEngagement(id: string, by: string, reason: string): boolean {
-  void id; void by; void reason
-  return false
+  const e = findEngagement(id)
+  const why = reason.trim()
+  if (!e || !e.closedAt || !why) return false
+  e.reopenLog = [...(e.reopenLog ?? []), { date: TODAY, by: by.trim() || 'Unknown user', reason: why }]
+  e.stage = 'billing'
+  e.closedAt = null
+  e.closedBy = null
+  persist()
+  return true
 }
 
-/** Projected margin at completion; null when there is no budget to project from. */
+/**
+ * Projected margin at completion = contract value (fee estimate for Cost plus margin)
+ * − the larger of budget and cost to date. null when there is no budget to project from.
+ */
 export function projectedMargin(e: Engagement): { value: number | null; pct: number | null } {
-  void e
-  return { value: null, pct: null }
+  if (e.budget === null) return { value: null, pct: null }
+  const contract = e.method === 'tm' ? e.feeEstimate : e.contractValue
+  const value = contract - Math.max(e.budget, actualCost(e))
+  return { value, pct: contract > 0 ? (value / contract) * 100 : null }
 }
 
 /** Billing schedule status taken only from linked invoices. */
@@ -1084,8 +1380,24 @@ export function billingStatusOf(e: Engagement, b: BillingMilestone): BillingStat
 
 /** Settings rule that would gate creating a project of this value, for the form hint. */
 export function creationApprovalPreview(value: number): { ruleName: string; approvers: string[] } | null {
-  void value
-  return null
+  if (!(value > 0)) return null
+  const rule = matchRule('project-creation', value, null)
+  return rule ? { ruleName: rule.ruleName, approvers: rule.approvers } : null
+}
+
+/** Settings rule that would gate verifying this milestone (for VerifyMilestoneModal needsApproval/approverNames). */
+export function verificationApprovalPreview(e: Engagement, mid: string): { ruleName: string; approvers: string[] } | null {
+  const m = e.milestones?.find(x => x.id === mid)
+  if (!m) return null
+  const rule = matchRule('milestone-verification', Math.round((e.contractValue * m.pct) / 100), e.id)
+  return rule ? { ruleName: rule.ruleName, approvers: rule.approvers } : null
+}
+
+/** Settings rule that would gate an addendum to this value, for the addendum form hint. */
+export function addendumApprovalPreview(e: Engagement, newValue: number): { ruleName: string; approvers: string[] } | null {
+  const oldValue = e.method === 'tm' ? e.feeEstimate : e.contractValue
+  const rule = matchRule('addendum', Math.abs(newValue - oldValue), e.id)
+  return rule ? { ruleName: rule.ruleName, approvers: rule.approvers } : null
 }
 
 /** Contract (or fee estimate) value not yet invoiced; never negative. */

@@ -3,7 +3,7 @@
  * account form (/cash-management/new). Used by the Select users / Select roles
  * drawers. Each user carries their assigned roles, shown as a subtitle.
  *
- * Also backs the Project assignment section of the New engagement form
+ * Also backs the Project assignment section of the New project form
  * (/project-accounting/new): the Project manager picker is scoped to
  * PROJECT_LEAD_ROLES, the Team member drawer offers everyone.
  */
@@ -31,7 +31,7 @@ export const accessUsers: AccessUser[] = [
   { id: 'U13', name: 'Indah Permata',       roles: ['Cash management'] },
   { id: 'U14', name: 'Jessie Tan',          roles: ['Stockist', 'Production', 'Ultimate'] },
   { id: 'U15', name: 'Joko',                roles: ['Stockist'] },
-  // Project Managers. The names match the PMs already on the seeded engagements
+  // Project Managers. The names match the PMs already on the seeded projects
   // in projectAccounting.ts, so picking one here lines up with the existing data.
   { id: 'U16', name: 'Rina Wulandari',      roles: ['Project Manager'] },
   { id: 'U17', name: 'Yoga Prasetyo',       roles: ['Project Manager'] },
@@ -55,7 +55,7 @@ export const accessRoles: string[] = [
 
 /**
  * Roles entitled to lead a project. The Project manager picker on the New
- * engagement form lists only users holding one of these — a team member is
+ * project form lists only users holding one of these — a team member is
  * assigned separately and carries no such restriction.
  */
 export const PROJECT_LEAD_ROLES = ['Owner', 'Ultimate', 'Project Manager']
