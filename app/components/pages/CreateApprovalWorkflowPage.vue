@@ -424,12 +424,7 @@ async function save() {
             </div>
           </div>
 
-          <button type="button" class="caw-add-level-btn btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="addLevel">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ t('Add approver level') }}
-          </button>
+          <MpButton class="caw-add-level-btn" variant="secondary" left-icon="add" is-rounded @click="addLevel">{{ t('Add approver level') }}</MpButton>
         </div>
 
         <div class="caw-divider" />
@@ -450,10 +445,10 @@ async function save() {
         <!-- ── Action group ── -->
         <div class="caw-action-group">
           <div class="caw-action-right">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary caw-btn-save" :disabled="isSaving" @click="save">
-              {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
-            </button>
+            <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded :is-loading="isSaving" @click="save">
+              {{ isEdit ? t('Save changes') : t('Save') }}
+            </MpButton>
           </div>
         </div>
 
@@ -622,7 +617,4 @@ async function save() {
   gap: var(--mp-spacing-3);
   margin-left: auto;
 }
-/* Cancel/Save reuse the global .btn-enterprise / --ghost / --primary classes (erp.css) —
-   only the disabled state is specific to this form. */
-.caw-btn-save:disabled { opacity: 0.6; cursor: default; }
 </style>

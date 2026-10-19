@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import {
   approvalWorkflows, setApprovalWorkflowActive, deleteApprovalWorkflow,
@@ -83,9 +84,6 @@ const statusOptions = [
   { label: t('Active'),   value: 'active'   },
   { label: t('Inactive'), value: 'inactive' },
 ]
-const statusLabel = computed(
-  () => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '',
-)
 
 function formatUpdatedAt(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -154,35 +152,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar (Status select + search) ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover id="awf-status-filter" is-close-on-select>
-          <!-- placeholder = filter name ("Status"); is-clearable shows (x) when a
-               value is picked → @clear resets to show-all. -->
-          <MpPopoverTrigger>
-            <MpSelect
-              id="awf-status-select"
-              :placeholder="t('Status')"
-              :model-value="statusFilter"
-              is-clearable
-              :class="css({ width: '160px' })"
-              @mousedown.prevent
-              @clear="statusFilter = ''"
-            >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions"
-                :key="opt.value"
-                :is-active="opt.value === statusFilter"
-                @click="statusFilter = opt.value"
-              >
-                {{ opt.label }}
-              </MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <ErpFilterSelect id="awf-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
       </div>
       <div class="filter-right">
         <div class="filter-search">
@@ -241,13 +211,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`awf-actions-${(row as unknown as ApprovalWorkflowRule).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab btn-enterprise" :aria-label="t('More actions')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </button>
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -256,7 +220,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               {{ (row as unknown as ApprovalWorkflowRule).isActive ? t('Turn off') : t('Turn on') }}
             </MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+              :class="css({ color: 'var(--mp-text-danger)' })"
               @click="openDeleteModal(row as unknown as ApprovalWorkflowRule)"
             >
               {{ t('Delete') }}
@@ -294,10 +258,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         {{ t('Deleted approval workflow cannot be restored.') }}
       </MpModalBody>
       <MpModalFooter>
-        <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</button>
-        </div>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="closeDeleteModal">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="danger" is-rounded @click="confirmDelete">{{ t('Delete') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -321,10 +285,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         {{ t('This workflow will no longer apply to new transactions. You can turn it on again anytime.') }}
       </MpModalBody>
       <MpModalFooter>
-        <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="closeTurnOffModal">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmTurnOff">{{ t('Turn off') }}</button>
-        </div>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="closeTurnOffModal">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmTurnOff">{{ t('Turn off') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -385,23 +349,4 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-last-updated__date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .cell-last-updated__by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 
-.row-kebab {
-  /* Overrides every .btn-enterprise base property that would otherwise leak through
-     (padding especially — width/height are fixed here, so unset padding would inflate
-     the box beyond 32x32 under content-box sizing). */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-8, 32px);
-  height: var(--mp-sizes-8, 32px);
-  padding: 0;
-  border: none;
-  background: none;
-  border-radius: var(--mp-radii-md);
-  cursor: pointer;
-  color: var(--mp-text-secondary);
-}
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
-
-.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>
