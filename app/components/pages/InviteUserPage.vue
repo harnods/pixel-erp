@@ -39,7 +39,7 @@ const { t } = useLocale()
 
 // Project Manager is a billing-component role — a tenant without Project
 // Accounting never sees it in the picker (same gate as the matching authority
-// feature and the Approval workflows "Applies to: Project Action" condition).
+// feature and the Approval workflows "Applies to: Project action" condition).
 const { projectAccountingEnabled } = useApprovalWorkflowScenario()
 const existingRoles = computed(() => systemRolesFor(projectAccountingEnabled.value))
 
