@@ -4,17 +4,18 @@
  *
  * Exercised against the seeded rules in app/data/approvalWorkflows.ts:
  *   - awf-004 Milestone Verification Rule 001 — project.milestone_verification, scoped to
- *     "Some projects" (Menara Sudirman Renovation, Gudang Bekasi Expansion), no amount condition.
+ *     "Some projects" (Cikarang Warehouse Construction), no amount condition.
  *   - awf-005 Project Creation Rule 001 — project.creation, all projects, contract value > 500jt,
- *     2-approver "All" level (multi-approver Any/All coverage).
- *   - awf-006 Variation Order Rule 001 — project.variation_order, all projects, delta > 25jt.
+ *     2 approvers, "Any" level (the Project accounting simulation decides each request once).
+ *   - awf-006 Addendum Rule 001 — project.variation_order (wire id kept), all projects, delta > 25jt.
  */
 import { describe, it, expect } from 'vitest'
 import { check_approval_required, projects, getProjectById } from '~/data/approvalWorkflows'
 
 const projectId = (name: string) => projects.find((p) => p.name === name)!.id
-const IN_SCOPE_PROJECT = projectId('Menara Sudirman Renovation')
-const OUT_OF_SCOPE_PROJECT = projectId('ERP Rollout Phase 2')
+// The rule list's projects are the Project accounting engagements.
+const IN_SCOPE_PROJECT = projectId('Cikarang Warehouse Construction')
+const OUT_OF_SCOPE_PROJECT = projectId('Annual Tax Consulting')
 
 describe('check_approval_required', () => {
   it('no rule configured / amount below threshold → approval not required', () => {
@@ -37,12 +38,12 @@ describe('check_approval_required', () => {
     expect(result.approval_required).toBe(false)
   })
 
-  it('project creation: contract value above threshold → required, multi-approver "All" level intact', () => {
+  it('project creation: contract value above threshold → required, two approvers on one Any level', () => {
     const result = check_approval_required('project.creation', 600_000_000, null)
     expect(result.approval_required).toBe(true)
     expect(result.rule_id).toBe('awf-005')
     expect(result.approval_levels).toHaveLength(1)
-    expect(result.approval_levels[0]!.requires).toBe('all')
+    expect(result.approval_levels[0]!.requires).toBe('any')
     expect(result.approval_levels[0]!.approver_ids.length).toBe(2)
   })
 
@@ -79,7 +80,7 @@ describe('check_approval_required', () => {
   })
 
   it('resolved project ids are real projects (sanity check on test fixtures)', () => {
-    expect(getProjectById(IN_SCOPE_PROJECT)?.name).toBe('Menara Sudirman Renovation')
-    expect(getProjectById(OUT_OF_SCOPE_PROJECT)?.name).toBe('ERP Rollout Phase 2')
+    expect(getProjectById(IN_SCOPE_PROJECT)?.name).toBe('Cikarang Warehouse Construction')
+    expect(getProjectById(OUT_OF_SCOPE_PROJECT)?.name).toBe('Annual Tax Consulting')
   })
 })

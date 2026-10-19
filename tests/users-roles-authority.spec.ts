@@ -43,7 +43,7 @@ describe('Project Accounting is gated on the billing component', () => {
       'Project setup',
       'Cost tracking',
       'Recognition and billing',
-      'Change management',
+      'Addenda',
       'Project health',
     ])
   })
