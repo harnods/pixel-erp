@@ -294,7 +294,7 @@ function spendTone(pct: number | null): string {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            {{ t('New engagement') }}
+            {{ t('New project') }}
           </button>
         </div>
       </template>
