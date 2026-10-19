@@ -1,38 +1,63 @@
 <script setup lang="ts">
 /**
- * Engagement detail — the five stages of a project's life, as in-page tabs.
+ * Project detail — the five stages of a project's life, as in-page tabs.
  *
  *   Setup & contract    the frozen contract, the baseline budget plan, and the
- *                       append-only addendum trail (raised by PM, approved by Finance)
- *   Costs               read-only rollup of every transaction line tagged here
- *   Revenue recognition changes shape with the method — this is the whole point
- *   Invoices & payments what was sent to the client, and what was collected
- *   Project health      budget variance, margin, and the closure gate
+ *                       append-only addendum trail (submitted, then decided by an approver)
+ *   Costs               every transaction line tagged here, plus budget variance to date
+ *   Revenue recognition changes shape with the method
+ *   Invoices & payments what was sent to the customer, and what was collected
+ *   Project health      margin, projected margin, the close gate and reopen
+ *
+ * Approvals are simulated: a matching Settings › Approval workflows rule sends the
+ * action to Pending approval, and the approver decides it here. Who "you" are comes
+ * from the prototype-only View as control (useProjectViewAs).
  *
  * A `detailMatch` route: this page owns its 72px title bar and its own stage
  * padding (DESIGN.md → Layout). In-page detail tabs use MpTabs (docs/patterns/tabs.md).
  */
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpCheckbox, MpTextarea, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
-  MpFormControl, MpFormLabel, MpBadge, toast, MpTextlink,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpButton, MpRadio,
+  MpTextarea, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpBadge, toast, MpTextlink,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
-import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ProjectStatCards, { type ProjectStat } from '~/components/patterns/ProjectStatCards.vue'
 import ApproveAddendumModal from '~/components/patterns/ApproveAddendumModal.vue'
+import CloseProjectModal from '~/components/patterns/CloseProjectModal.vue'
+import ReopenProjectModal from '~/components/patterns/ReopenProjectModal.vue'
+import VerifyMilestoneModal from '~/components/patterns/VerifyMilestoneModal.vue'
+import RejectRequestModal from '~/components/patterns/RejectRequestModal.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
+import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
+import { useTableState } from '~/composables/useTableState'
+import { useProjectViewAs, type ProjectViewAs } from '~/composables/useProjectViewAs'
 import { formatDate, formatDateLong } from '~/utils/date'
+import { check_approval_required } from '~/data/approvalWorkflows'
+import { getUserById } from '~/data/users'
 import {
-  findEngagement, STAGES, stageIndex, lifecycleLabel, methodLabel,
+  engagements, findEngagement, STAGES, stageIndex, methodLabel, TODAY,
   revenue, actualCost, pocPct, billed, collected, wipNet, openEntries, readyToInvoice,
   entryAmount, entryFinal, entryLabel, daysAgo, ageBuckets, budgetOf, budgetReport,
-  canClose, closeHint, pendingVos, advanceStage,
+  canClose, closeHint, advanceStage,
   decideEntries, addAddendum, approveAddendum, rejectAddendum, confirmWeights,
-  addScopeMilestone, verifyMilestone, unverifyMilestone, recordPayment, closeEngagement,
+  addScopeMilestone, unverifyMilestone, recordPayment, closeEngagement,
+  projectStatusKey, projectStatusLabel, approvalFor, canDecide, submitMilestoneVerification,
+  approveRequest, rejectRequest, closeSummary, reopenEngagement, projectedMargin, billingStatusOf,
   formatIdr, formatIdrShort, formatIdrSigned,
   type Engagement, type EngagementStage, type CostEntry, type CostDecision, type Addendum,
+  type PendingApproval, type MilestoneVerificationInput, type BudgetReportRow, type BillingStatus,
 } from '~/data/projectAccounting'
+
+// The engine adds these optional trailing params in the same round (COMMON.md shared
+// contract). Typed here with them so the calls compile on either side of the merge.
+const addAddendumAs = addAddendum as (id: string, newValue: number, reason: string, distinct: boolean, submittedBy?: string) => void
+const approveAddendumAs = approveAddendum as (id: string, voId: string, approver?: string) => void
+const rejectAddendumAs = rejectAddendum as (id: string, voId: string, approver?: string, reason?: string) => void
+const closeEngagementAs = closeEngagement as (id: string, by?: string) => boolean
 
 const props = defineProps<{ orderId: string }>()
 
@@ -41,6 +66,17 @@ const route = useRoute()
 const { t } = useLocale()
 
 const engagement = computed<Engagement | undefined>(() => findEngagement(props.orderId))
+
+// ── View as (prototype-only) ──────────────────────────────────────────────────
+const { viewAs, setViewAs, currentUser } = useProjectViewAs()
+const viewAsModel = computed<string>({
+  get: () => viewAs.value,
+  set: (v: string) => { if (v === 'pm' || v === 'approver') setViewAs(v as ProjectViewAs) },
+})
+const viewAsScenarios = computed(() => [
+  { label: `${t('View as Project manager')} (Rina Wulandari)`, value: 'pm' },
+  { label: `${t('View as Approver')} (Rizal Candra, Owner)`, value: 'approver' },
+])
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 // The URL is the durable source of truth (?tab=), so a refresh keeps the stage.
@@ -71,6 +107,34 @@ function continueTo(key: EngagementStage) {
 
 function goList() { router.push('/project-accounting') }
 
+const isClosed = computed(() => engagement.value ? projectStatusKey(engagement.value) === 'closed' : false)
+
+// ── Title bar: status, jump-to, approval line ────────────────────────────────
+const statusBadgeKey = computed(() => {
+  const e = engagement.value
+  if (!e) return 'in progress'
+  const k = projectStatusKey(e)
+  return k === 'pending approval' ? 'pending' : k
+})
+
+const jumpItems = computed<JumpItem[]>(() => engagements.map(e => ({ id: e.id, primary: e.name, secondary: e.client })))
+function jumpTo(id: string) { router.push(`/project-accounting/${id}`) }
+
+const creationApproval = computed(() => engagement.value ? approvalFor(engagement.value, 'project-creation', null) : undefined)
+
+function waitingFor(a: PendingApproval): string {
+  const names = a.approvers.filter(n => n !== a.submittedBy)
+  return names.length ? `${t('Waiting for')} ${names.join(', ')}` : t('Waiting for an approver')
+}
+/** Decision check: the engine's rule, from the current View as user's seat. */
+function decision(a: PendingApproval | undefined) {
+  if (!a) return { ok: false, reason: '' }
+  const d = canDecide(a, currentUser.value.name)
+  // A non-approver just sees who it is waiting on; the submitter sees why they can't decide.
+  if (!d.ok) return { ok: false, reason: a.submittedBy === currentUser.value.name ? `${waitingFor(a)} · ${t('You submitted this request')}` : waitingFor(a) }
+  return d
+}
+
 // ── Stats, per tab ────────────────────────────────────────────────────────────
 function costLinesLabel(n: number) { return `${n} ${n === 1 ? t('cost line') : t('cost lines')}` }
 
@@ -85,9 +149,9 @@ const stats = computed<ProjectStat[]>(() => {
   if (activeStage.value === 'setup' || activeStage.value === 'execution') {
     return [
       { key: 'value', label: valueLabel, value: formatIdr(valueAmt), sub: e.vos.some(v => v.status === 'Approved') ? t('Revised by addendum') : '' },
-      { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('Not set') : formatIdr(budget), sub: t('From the budget plan'), tone: budget === null ? 'muted' : 'default' },
+      { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('No budget') : formatIdr(budget), sub: t('From the budget plan'), tone: budget === null ? 'muted' : 'default' },
       { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), sub: costLinesLabel(e.entries.length), tone: budget !== null && cost > budget ? 'adverse' : 'default' },
-      { key: 'variance', label: t('Budget variance'), value: budget === null ? t('Not set') : formatIdrSigned(budget - cost), sub: t('Budgeted cost minus cost incurred'), tone: budget === null ? 'muted' : (budget - cost < 0 ? 'adverse' : 'positive') },
+      { key: 'variance', label: t('Remaining budget'), value: budget === null ? t('No budget') : formatIdrSigned(budget - cost), sub: budget === null ? '' : t('Lifetime budget less cost incurred'), tone: budget === null ? 'muted' : (budget - cost < 0 ? 'adverse' : 'default') },
     ]
   }
 
@@ -98,24 +162,24 @@ const stats = computed<ProjectStat[]>(() => {
       const risk = open.filter(x => daysAgo(x.date) > 60).reduce((a, x) => a + entryAmount(x), 0)
       return [
         { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), sub: costLinesLabel(e.entries.length) },
-        { key: 'wip', label: t('Awaiting review'), value: formatIdr(wip), sub: `${costLinesLabel(open.length)} ${t('not yet recognised')}` },
-        { key: 'risk', label: t('Older than 60 days'), value: formatIdr(risk), sub: t('Awaiting review, by line date'), tone: risk > 0 ? 'adverse' : 'default' },
-        { key: 'rev', label: t('Revenue recognised'), value: formatIdr(revenue(e)) },
+        { key: 'wip', label: t('Awaiting review'), value: formatIdr(wip), sub: `${costLinesLabel(open.length)} ${t('not yet recognized')}` },
+        { key: 'risk', label: t('Over 60 days'), value: formatIdr(risk), sub: t('Awaiting review, by line date'), tone: risk > 0 ? 'adverse' : 'default' },
+        { key: 'rev', label: t('Revenue recognized'), value: formatIdr(revenue(e)) },
       ]
     }
     if (e.method === 'input') {
       return [
         { key: 'cv', label: t('Contract value'), value: formatIdr(e.contractValue) },
-        { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('Not set') : formatIdr(budget), tone: budget === null ? 'muted' : 'default' },
+        { key: 'budget', label: t('Budgeted cost'), value: budget === null ? t('No budget') : formatIdr(budget), tone: budget === null ? 'muted' : 'default' },
         { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost), tone: budget !== null && cost > budget ? 'adverse' : 'default' },
-        { key: 'poc', label: t('Percentage complete'), value: `${pocPct(e).toFixed(0)}%`, sub: t('Cost incurred ÷ budgeted cost'), tone: 'positive' },
+        { key: 'poc', label: t('Percentage complete'), value: `${pocPct(e).toFixed(0)}%`, sub: t('Based on cost incurred') },
       ]
     }
     const verified = (e.milestones ?? []).filter(m => m.verified).length
     return [
       { key: 'cv', label: t('Contract value'), value: formatIdr(e.contractValue) },
       { key: 'ms', label: t('Milestones verified'), value: `${verified} ${t('of')} ${(e.milestones ?? []).length}` },
-      { key: 'rev', label: t('Revenue recognised'), value: formatIdr(revenue(e)), sub: t('Verified milestones only'), tone: 'positive' },
+      { key: 'rev', label: t('Revenue recognized'), value: formatIdr(revenue(e)), sub: t('Verified milestones only') },
       { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost) },
     ]
   }
@@ -123,24 +187,24 @@ const stats = computed<ProjectStat[]>(() => {
   if (activeStage.value === 'billing') {
     const net = wipNet(e)
     return [
-      { key: 'rev', label: t('Revenue recognised'), value: formatIdr(revenue(e)) },
-      { key: 'billed', label: t('Total billed'), value: formatIdr(billed(e)) },
-      { key: 'collected', label: t('Collected'), value: formatIdr(collected(e)), tone: 'positive' },
+      { key: 'rev', label: t('Revenue recognized'), value: formatIdr(revenue(e)) },
+      { key: 'billed', label: t('Billed to date'), value: formatIdr(billed(e)) },
+      { key: 'collected', label: t('Cash collected'), value: formatIdr(collected(e)) },
       {
         key: 'net',
-        label: net < 0 ? t('Billed in advance') : t('Unbilled revenue'),
+        label: net < 0 ? t('Billed in advance') : net > 0 ? t('Unbilled') : t('Up to date'),
         value: formatIdr(Math.abs(net)),
-        sub: net > 0 ? t('Recognised, not yet invoiced') : net < 0 ? t('Invoiced ahead of revenue recognised') : t('Billing matches revenue recognised'),
-        tone: net > 0 ? 'adverse' : net < 0 ? 'adverse' : 'positive',
+        sub: net > 0 ? t('Recognized, not yet invoiced') : net < 0 ? t('Invoiced ahead of revenue') : t('Billing matches revenue'),
+        tone: 'default',
       },
     ]
   }
 
   return [
-    { key: 'rev', label: t('Revenue recognised'), value: formatIdr(revenue(e)) },
+    { key: 'rev', label: t('Revenue recognized'), value: formatIdr(revenue(e)) },
     { key: 'cost', label: t('Cost incurred'), value: formatIdr(cost) },
-    { key: 'cash', label: t('Cash collected'), value: formatIdr(collected(e)), tone: 'positive' },
-    { key: 'bva', label: t('Budget variance'), value: budget === null ? t('Not set') : formatIdrSigned(budget - cost), tone: budget === null ? 'muted' : 'default' },
+    { key: 'cash', label: t('Cash collected'), value: formatIdr(collected(e)) },
+    { key: 'bva', label: t('Remaining budget'), value: budget === null ? t('No budget') : formatIdrSigned(budget - cost), tone: budget === null ? 'muted' : (budget - cost < 0 ? 'adverse' : 'default') },
   ]
 })
 
@@ -149,12 +213,12 @@ const contractRows = computed(() => {
   const e = engagement.value
   if (!e) return []
   return [
-    { k: t('Revenue recognition'), v: methodLabel(e.method) },
+    { k: t('Method'), v: methodLabel(e.method) },
     { k: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), v: formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
-    { k: t('Budgeted cost'), v: e.budget === null ? t('Not set') : formatIdr(e.budget) },
-    { k: t('Client'), v: e.client },
+    { k: t('Budgeted cost'), v: e.budget === null ? t('No budget') : formatIdr(e.budget) },
+    { k: t('Customer'), v: e.client },
     { k: t('Project manager'), v: e.pm },
-    { k: t('Status'), v: e.stage === 'closed' ? `${t('Closed')} ${formatDateLong(e.closedAt ?? '')}` : lifecycleLabel(e.stage) },
+    { k: t('Status'), v: projectStatusLabel(e) },
   ]
 })
 
@@ -169,60 +233,137 @@ const planRows = computed(() => {
 })
 
 // ── Addenda ───────────────────────────────────────────────────────────────────
+const voFormOpen = ref(false)
 const voValue = ref('')
 const voReason = ref('')
-const voDistinct = ref(false)
-const voWarn = ref('')
+/** No preselection: whether the change is separate work is a judgment the submitter must make. */
+const voDistinct = ref<boolean | null>(null)
+const voErrors = reactive({ value: '', reason: '', distinct: '' })
 const voConfirmId = ref<string | null>(null)
+const addendaCard = ref<HTMLElement | null>(null)
+
+/** Title-bar "Submit addendum": go to Setup, open the form, bring it into view. */
+function openAddendumForm() {
+  goTab('setup')
+  voFormOpen.value = true
+  nextTick(() => {
+    setTimeout(() => addendaCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  })
+}
+
+function resetVoForm() {
+  voValue.value = ''; voReason.value = ''; voDistinct.value = null
+  voErrors.value = ''; voErrors.reason = ''; voErrors.distinct = ''
+}
 
 function submitAddendum() {
   const e = engagement.value
   if (!e) return
-  if (voReason.value.trim().length < 5) { voWarn.value = t('Enter a reason of at least 5 characters'); return }
   const val = Number(voValue.value)
-  if (!val || val <= 0) { voWarn.value = t('Enter the revised contract value'); return }
-  addAddendum(e.id, val, voReason.value, voDistinct.value)
-  voValue.value = ''; voReason.value = ''; voDistinct.value = false; voWarn.value = ''
+  voErrors.value = !val || val <= 0 ? t('You must fill in the revised contract value') : ''
+  voErrors.reason = voReason.value.trim().length < 5 ? t('Enter a reason of at least 5 characters') : ''
+  voErrors.distinct = voDistinct.value === null ? t('Choose whether this is new, separately priced work') : ''
+  if (voErrors.value || voErrors.reason || voErrors.distinct) return
+  const before = e.vos.length
+  addAddendumAs(e.id, val, voReason.value, voDistinct.value === true, currentUser.value.name)
+  const added = e.vos[before]
+  const gate = added ? approvalFor(e, 'addendum', added.id) : undefined
+  resetVoForm()
+  voFormOpen.value = false
   toast.notify({
     variant: 'success',
-    title: t('Addendum submitted. Awaiting Finance approval'),
+    title: gate ? `${t('Addendum submitted.')} ${waitingFor(gate)}.` : t('Addendum submitted.'),
     maxWidth: 'max-content',
   })
 }
 
 const confirmingVo = computed<Addendum | null>(() => engagement.value?.vos.find(v => v.id === voConfirmId.value) ?? null)
 
-/** Plain-language statement of what approving does to revenue already recognised. */
+/** Plain-language statement of what approving does to revenue already recognized. */
 const voEffect = computed(() => {
   const e = engagement.value
   const vo = confirmingVo.value
   if (!e || !vo) return ''
   if (e.method === 'output') {
     return vo.distinct
-      ? `${t('Existing milestones keep their amounts. The added scope gets its own milestone of')} ${formatIdr(vo.newValue - vo.oldValue)}.`
+      ? `${t('Existing milestones keep their amounts. The added work gets its own milestone of')} ${formatIdr(vo.newValue - vo.oldValue)}.`
       : t('Verified milestones stay locked. Confirm the remaining milestone weights against the new value before verifying more.')
   }
   if (e.method === 'input') {
     return vo.distinct
-      ? `${t('Revenue recognised to date')} (${formatIdr(revenue(e))}) ${t('stays as is. The added scope is recognised from this period on.')}`
+      ? `${t('Revenue recognized to date')} (${formatIdr(revenue(e))}) ${t('stays as is. The added work is recognized from this period on.')}`
       : `${t('Revenue is recalculated at')} ${pocPct(e).toFixed(0)}% ${t('of the new contract value. A one-time catch-up adjustment of')} ${formatIdr(Math.round((pocPct(e) / 100) * vo.newValue - revenue(e)))} ${t('posts in the current period.')}`
   }
   return t('The fee estimate is replaced. Reviewed and billed work is not restated.')
 })
 
+/** Who may decide a pending addendum: the engine's approval record when a rule matched,
+ *  otherwise anyone but the person who submitted it. */
+function addendumDecision(v: Addendum) {
+  const e = engagement.value
+  if (!e) return { ok: false, reason: '' }
+  const a = approvalFor(e, 'addendum', v.id)
+  if (a) return decision(a)
+  if (v.raisedBy.startsWith(currentUser.value.name)) return { ok: false, reason: t('You submitted this addendum, so another person must decide it') }
+  return { ok: true, reason: '' }
+}
+
 function doApproveVo() {
   const e = engagement.value
   const id = voConfirmId.value
   if (!e || !id) return
-  approveAddendum(e.id, id)
+  const a = approvalFor(e, 'addendum', id)
+  const ok = a ? approveRequest(e.id, a.id, currentUser.value.name) : (approveAddendumAs(e.id, id, currentUser.value.name), true)
   voConfirmId.value = null
-  toast.notify({ variant: 'success', title: t('Addendum approved'), maxWidth: 'max-content' })
+  toast.notify(ok
+    ? { variant: 'success', title: t('Addendum approved'), maxWidth: 'max-content' }
+    : { variant: 'error', title: t('Unable to approve this addendum'), maxWidth: 'max-content' })
 }
 
-function doRejectVo(id: string) {
-  if (!engagement.value) return
-  rejectAddendum(engagement.value.id, id)
-  toast.notify({ variant: 'success', title: t('Addendum rejected') })
+// ── Reject (addendum, milestone verification, project creation) ──────────────
+type RejectTarget = { kind: 'addendum'; voId: string; label: string } | { kind: 'approval'; approval: PendingApproval; label: string }
+const rejectTarget = ref<RejectTarget | null>(null)
+const rejectTitle = computed(() => {
+  const r = rejectTarget.value
+  if (!r) return ''
+  if (r.kind === 'addendum') return t('Reject addendum')
+  return r.approval.action === 'project-creation' ? t('Reject project') : t('Reject milestone verification')
+})
+
+function startRejectVo(v: Addendum) {
+  const e = engagement.value
+  if (!e) return
+  const a = approvalFor(e, 'addendum', v.id)
+  rejectTarget.value = a
+    ? { kind: 'approval', approval: a, label: v.reason }
+    : { kind: 'addendum', voId: v.id, label: v.reason }
+}
+
+function confirmReject(reason: string) {
+  const e = engagement.value
+  const r = rejectTarget.value
+  if (!e || !r) return
+  let ok = true
+  if (r.kind === 'addendum') rejectAddendumAs(e.id, r.voId, currentUser.value.name, reason)
+  else ok = rejectRequest(e.id, r.approval.id, currentUser.value.name, reason)
+  const what = r.kind === 'approval' && r.approval.action !== 'addendum'
+    ? (r.approval.action === 'project-creation' ? t('Project rejected') : t('Verification rejected'))
+    : t('Addendum rejected')
+  rejectTarget.value = null
+  toast.notify(ok
+    ? { variant: 'success', title: what, maxWidth: 'max-content' }
+    : { variant: 'error', title: t('Unable to reject this request'), maxWidth: 'max-content' })
+}
+
+/** Approve a non-addendum request (milestone verification, project creation). */
+function approvePending(a: PendingApproval) {
+  const e = engagement.value
+  if (!e) return
+  const ok = approveRequest(e.id, a.id, currentUser.value.name)
+  const title = a.action === 'project-creation' ? t('Project approved') : t('Milestone verification approved')
+  toast.notify(ok
+    ? { variant: 'success', title, maxWidth: 'max-content' }
+    : { variant: 'error', title: t('Unable to approve this request'), maxWidth: 'max-content' })
 }
 
 const voRows = computed(() => {
@@ -235,85 +376,83 @@ const voRows = computed(() => {
     reason: t('Original contract'),
     oldValue: '—',
     newValue: formatIdr(original),
-    scope: t('Original'),
+    scope: '',
     trail: t('Locked at creation'),
+    rejectNote: '',
     adjNote: '',
-    status: 'active',
-    statusLabel: t('Active'),
-    pending: false,
+    status: 'completed',
+    statusLabel: t('Original'),
+    vo: null as Addendum | null,
+    pendingChip: '',
   }
-  return [head, ...e.vos.map(v => ({
-    id: v.id,
-    date: formatDateLong(v.date),
-    reason: v.reason,
-    oldValue: formatIdr(v.oldValue),
-    newValue: formatIdr(v.newValue),
-    scope: v.distinct ? t('Distinct scope') : t('Not distinct'),
-    trail: v.approvedBy
-      ? `${t('Submitted by')} ${v.raisedBy} · ${t('approved by')} ${v.approvedBy}`
-      : v.status === 'Rejected'
-        ? `${t('Submitted by')} ${v.raisedBy} · ${t('rejected by Finance')}`
-        : `${t('Submitted by')} ${v.raisedBy} · ${t('awaiting Finance approval')}`,
-    adjNote: v.adjustment ? `${t('Catch-up adjustment of')} ${formatIdr(v.adjustment)} ${t('in the current period')}` : '',
-    status: v.status.toLowerCase(),
-    statusLabel: v.status,
-    pending: v.status === 'Pending',
-  }))]
+  return [head, ...e.vos.map((v) => {
+    const a = approvalFor(e, 'addendum', v.id)
+    return {
+      id: v.id,
+      date: formatDateLong(v.date),
+      reason: v.reason,
+      oldValue: formatIdr(v.oldValue),
+      newValue: formatIdr(v.newValue),
+      scope: v.distinct ? t('Separate new work') : t('Extends existing work'),
+      trail: v.approvedBy
+        ? `${t('Submitted by')} ${v.raisedBy} · ${t('approved by')} ${v.approvedBy}`
+        : v.status === 'Rejected'
+          ? `${t('Submitted by')} ${v.raisedBy}${v.rejectedBy ? ` · ${t('rejected by')} ${v.rejectedBy}` : ''}`
+          : `${t('Submitted by')} ${v.raisedBy}`,
+      rejectNote: v.status === 'Rejected' && v.rejectReason ? `${t('Reason')}: ${v.rejectReason}` : '',
+      adjNote: v.adjustment ? `${t('Catch-up adjustment of')} ${formatIdr(v.adjustment)} ${t('in the current period')}` : '',
+      status: v.status === 'Pending' ? 'pending' : v.status.toLowerCase(),
+      statusLabel: v.status === 'Pending' ? t('Pending approval') : t(v.status),
+      vo: v.status === 'Pending' ? v : null,
+      pendingChip: a ? a.ruleName : '',
+    }
+  })]
 })
 
-// Distinct scope on an output engagement owes the contract its own milestone.
+// Separate new work on a milestones project owes the contract its own milestone.
 const scopeLabel = ref('')
+const scopeError = ref('')
 const scopeFormOpen = ref(false)
 function saveScopeMilestone() {
   const e = engagement.value
   if (!e) return
-  if (!scopeLabel.value.trim()) { toast.notify({ variant: 'error', title: t('Enter a milestone name') }); return }
+  if (!scopeLabel.value.trim()) { scopeError.value = t('You must fill in milestone name'); return }
   const added = addScopeMilestone(e.id, scopeLabel.value)
-  scopeLabel.value = ''; scopeFormOpen.value = false
+  scopeLabel.value = ''; scopeError.value = ''; scopeFormOpen.value = false
   toast.notify({ variant: 'success', title: `${t('Milestone added')} · ${formatIdr(added)}`, maxWidth: 'max-content' })
 }
 
-// ── Costs tab: the tagged-transaction rollup ─────────────────────────────────
-const rollSearch = ref('')
-const rollPage = ref(1)
-const rollPerPage = ref(25)
-const rollSortKey = ref<'source' | 'date' | 'cost'>('date')
-const rollSortDir = ref<'asc' | 'desc'>('desc')
-
-const rollFiltered = computed(() => {
-  const e = engagement.value
-  if (!e) return []
-  const q = rollSearch.value.trim().toLowerCase()
-  if (!q) return e.entries
-  return e.entries.filter(x => `${entryLabel(x)} ${x.vendor} ${x.docNo} ${x.src}`.toLowerCase().includes(q))
-})
-
-const rollSorted = computed(() => [...rollFiltered.value].sort((a, b) => {
-  const dir = rollSortDir.value === 'asc' ? 1 : -1
-  if (rollSortKey.value === 'cost') return (a.amount - b.amount) * dir
-  if (rollSortKey.value === 'source') return a.src.localeCompare(b.src) * dir
-  return (new Date(a.date).getTime() - new Date(b.date).getTime()) * dir
-}))
-
-const rollTotalPages = computed(() => Math.max(1, Math.ceil(rollSorted.value.length / rollPerPage.value)))
-const rollPaged = computed(() => {
-  const start = (Math.min(rollPage.value, rollTotalPages.value) - 1) * rollPerPage.value
-  return rollSorted.value.slice(start, start + rollPerPage.value)
-})
-watch([rollSearch, rollPerPage], () => { rollPage.value = 1 })
-
-function sortRoll(key: 'source' | 'date' | 'cost') {
-  if (rollSortKey.value === key) rollSortDir.value = rollSortDir.value === 'asc' ? 'desc' : 'asc'
-  else { rollSortKey.value = key; rollSortDir.value = 'asc' }
-}
-function sortMark(key: 'source' | 'date' | 'cost') {
-  return rollSortKey.value === key ? (rollSortDir.value === 'asc' ? ' ↑' : ' ↓') : ''
-}
-
-const rollFilteredTotal = computed(() => rollFiltered.value.reduce((a, x) => a + x.amount, 0))
-
+// ── Costs tab: the tagged-transaction rollup (ErpTablePage + useTableState) ──
 /** Pixel has no purple/amber badge pair for sources — map onto the semantic set. */
 const SRC_BADGE: Record<string, string> = { Expense: 'information', Purchase: 'warning', Sales: 'completed' }
+
+const costRowsAll = computed(() => (engagement.value?.entries ?? []).map(x => ({
+  id: x.id,
+  src: x.src,
+  docNo: x.docNo,
+  description: entryLabel(x),
+  vendor: x.vendor,
+  hoursNote: x.hours ? `${x.hours} h ${t('at')} ${formatIdrShort(Math.round(x.amount / x.hours))}/h` : '',
+  date: x.date,
+  cost: x.amount,
+})))
+const costTable = useTableState(costRowsAll, {
+  perPage: 25,
+  defaultSort: { key: 'date', dir: 'desc' },
+  filterFn: (r, s) => !s || `${r.description} ${r.vendor} ${r.docNo} ${r.src}`.toLowerCase().includes(s),
+})
+const { search: rollSearch } = costTable
+const rollFilteredTotal = computed(() => costRowsAll.value
+  .filter(r => !rollSearch.value.trim() || `${r.description} ${r.vendor} ${r.docNo} ${r.src}`.toLowerCase().includes(rollSearch.value.trim().toLowerCase()))
+  .reduce((a, r) => a + r.cost, 0))
+
+const costColumns: TableColumn[] = [
+  { key: 'src', label: 'Source', kind: 'status', sortType: 'text' },
+  { key: 'docNo', label: 'Document', kind: 'number' },
+  { key: 'description', label: 'Description', kind: 'name' },
+  { key: 'date', label: 'Date', kind: 'date', sortType: 'date' },
+  { key: 'cost', label: 'Cost', kind: 'amount', align: 'right', sortType: 'number' },
+]
 
 // Hours are analytical only — they never enter an amount, they only explain one.
 const hourLines = computed(() => engagement.value?.entries.filter(x => Number(x.hours) > 0) ?? [])
@@ -325,10 +464,10 @@ const hourStats = computed<ProjectStat[]>(() => {
   const h = totalHours.value
   return [
     { key: 'h', label: t('Hours logged'), value: `${h} h`, sub: `${hourLines.value.length} ${t('of')} ${costLinesLabel(e.entries.length)} ${hourLines.value.length === 1 ? t('has hours') : t('have hours')}` },
-    { key: 'cph', label: t('Cost per hour'), value: h ? formatIdr(Math.round(hourCost.value / h)) : '—', sub: t('Cost incurred ÷ hours') },
+    { key: 'cph', label: t('Cost per hour'), value: h ? formatIdr(Math.round(hourCost.value / h)) : '—', sub: `${t('Across')} ${h} ${t('logged hours')}` },
     e.method === 'tm'
-      ? { key: 'chg', label: t('Billable per hour'), value: h ? formatIdr(Math.round((hourCost.value * (1 + e.markupPct / 100)) / h)) : '—', sub: `${t('Includes')} ${e.markupPct}% ${t('margin')}`, tone: 'positive' as const }
-      : { key: 'exp', label: t('Cost with hours'), value: formatIdr(hourCost.value), sub: `${t('Of')} ${formatIdr(actualCost(e))} ${t('cost incurred')}`, tone: 'positive' as const },
+      ? { key: 'chg', label: t('Billable per hour'), value: h ? formatIdr(Math.round((hourCost.value * (1 + e.markupPct / 100)) / h)) : '—', sub: `${t('Includes')} ${e.markupPct}% ${t('margin')}` }
+      : { key: 'exp', label: t('Cost with hours'), value: formatIdr(hourCost.value), sub: `${t('Of')} ${formatIdr(actualCost(e))} ${t('cost incurred')}` },
   ]
 })
 const hourCoverage = computed(() => {
@@ -340,29 +479,50 @@ const hourCoverage = computed(() => {
     : ''
 })
 
+// ── Budget variance (Costs tab only, to date) ────────────────────────────────
+type VarianceRow = BudgetReportRow & { lifetimeBudget?: number | null }
+const budgetRows = computed<VarianceRow[]>(() => (engagement.value ? budgetReport(engagement.value) : []))
+const varianceOpen = ref(true)
+/** Colour comes only from the engine's tone: red is reserved for a real overrun. */
+function toneOf(r: VarianceRow) { return r.tone === 'adverse' ? 'adverse' : r.tone === 'positive' ? 'positive' : 'default' }
+
 // ── Revenue recognition: cost-plus review queue ──────────────────────────────
 const selected = ref<string[]>([])
 const pendingAction = ref<Exclude<CostDecision, null> | null>(null)
 const pendingReason = ref('')
 const pendingWarn = ref('')
+const reviewChip = ref<'all' | '30' | '60' | '90' | '90p'>('all')
 
 const openLines = computed(() => [...openEntries(engagement.value ?? ({ entries: [] } as unknown as Engagement))]
   .sort((a, b) => daysAgo(b.date) - daysAgo(a.date)))
 
-const allSelected = computed(() => openLines.value.length > 0 && selected.value.length === openLines.value.length)
-function toggleAll() { selected.value = allSelected.value ? [] : openLines.value.map(x => x.id) }
-function toggleOne(id: string) {
-  selected.value = selected.value.includes(id) ? selected.value.filter(x => x !== id) : [...selected.value, id]
-}
 function inBucket(lo: number, hi: number) { return openLines.value.filter(x => { const d = daysAgo(x.date); return d > lo && d <= hi }) }
+/** Disjoint age buckets, the same four the "Awaiting review, by age" card uses. */
+const BUCKETS: Record<'30' | '60' | '90' | '90p', [number, number]> = { 30: [-1, 30], 60: [30, 60], 90: [60, 90], '90p': [90, 1e9] }
 const bulkChips = computed(() => [
-  { key: 'all', label: `${t('All open')} (${openLines.value.length})`, pick: () => openLines.value },
-  { key: '90', label: `${t('90+ days')} (${inBucket(90, 1e9).length})`, pick: () => inBucket(90, 1e9) },
-  { key: '6190', label: `${t('61–90 days')} (${inBucket(60, 90).length})`, pick: () => inBucket(60, 90) },
-  { key: '60', label: `${t('Over 60 days')} (${inBucket(60, 1e9).length})`, pick: () => inBucket(60, 1e9) },
+  { key: 'all' as const, label: `${t('All open')} (${openLines.value.length})` },
+  { key: '30' as const, label: `${t('0–30 days')} (${inBucket(-1, 30).length})` },
+  { key: '60' as const, label: `${t('31–60 days')} (${inBucket(30, 60).length})` },
+  { key: '90' as const, label: `${t('61–90 days')} (${inBucket(60, 90).length})` },
+  { key: '90p' as const, label: `${t('90+ days')} (${inBucket(90, 1e9).length})` },
 ])
-function applyChip(pick: () => CostEntry[]) { selected.value = pick().map(x => x.id) }
-function clearSelection() { selected.value = []; pendingAction.value = null }
+const reviewLines = computed(() => reviewChip.value === 'all' ? openLines.value : inBucket(...BUCKETS[reviewChip.value]))
+
+function ageTone(x: CostEntry) { const d = daysAgo(x.date); return d <= 30 ? 'ok' : d <= 60 ? 'default' : d <= 90 ? 'near' : 'over' }
+const reviewRowsAll = computed(() => reviewLines.value.map(x => ({
+  id: x.id, item: entryLabel(x), date: x.date, amount: entryAmount(x), age: daysAgo(x.date), tone: ageTone(x),
+})))
+const reviewTable = useTableState(reviewRowsAll, { perPage: 25, defaultSort: { key: 'age', dir: 'desc' } })
+const reviewColumns: TableColumn[] = [
+  { key: 'item', label: 'Item', kind: 'name' },
+  { key: 'date', label: 'Date', kind: 'date' },
+  { key: 'amount', label: 'Amount', kind: 'amount', align: 'right' },
+  { key: 'age', label: 'Age', kind: 'default' },
+]
+/** ErpTablePage reports selection by row index on the current page. */
+function pickSelection(rowsSet: Set<number>) {
+  selected.value = [...rowsSet].map(i => reviewTable.paginated.value[i]?.id).filter((x): x is string => !!x)
+}
 
 const selectionTotal = computed(() => (engagement.value?.entries ?? [])
   .filter(x => selected.value.includes(x.id))
@@ -371,16 +531,17 @@ const selectionTotal = computed(() => (engagement.value?.entries ?? [])
 const pendingTitle = computed(() => {
   if (pendingAction.value === 'bill') return t('Charge cost + margin?')
   if (pendingAction.value === 'atcost') return t('Reason for charging at cost only')
-  return t('Reason for not charging the client')
+  return t('Reason for waiving the charge')
 })
 
 const pendingConfirmLabel = computed(() => {
   if (pendingAction.value === 'bill') return t('Charge cost + margin')
   if (pendingAction.value === 'atcost') return t('Charge at cost only')
-  return t("Don't charge client")
+  return t('Waive charge')
 })
 
-function startAction(type: Exclude<CostDecision, null>) {
+function startAction(type: Exclude<CostDecision, null>, rowsSet: Set<number>) {
+  pickSelection(rowsSet)
   if (!selected.value.length) return
   pendingAction.value = type
   pendingReason.value = ''
@@ -399,6 +560,7 @@ function confirmDecision() {
   selected.value = []
   pendingAction.value = null
   pendingReason.value = ''
+  pendingWarn.value = ''
   toast.notify({
     variant: 'success',
     title: `${costLinesLabel(count)} ${t('reviewed')} · ${formatIdr(total)}. ${t('Ready to invoice')}`,
@@ -415,7 +577,7 @@ const tmRows = computed(() => {
     { k: t('Cost incurred'), note: t('Cost lines tagged to this project'), val: formatIdr(actualCost(e)) },
     { k: t('Agreed margin on cost'), note: t('From the contract'), val: `+${e.markupPct}%` },
     { k: t('Value at cost + margin'), note: t('If every line is charged in full'), val: formatIdr(gross) },
-    { k: t('Revenue recognised to date'), note: t('Reviewed lines only'), val: formatIdr(revenue(e)) },
+    { k: t('Revenue recognized to date'), note: t('Reviewed lines only'), val: formatIdr(revenue(e)) },
   ]
   if (totalHours.value > 0) {
     rows.splice(1, 0, {
@@ -441,35 +603,62 @@ const bucketRows = computed(() => {
   const b = ageBuckets(e)
   const max = Math.max(1, ...Object.values(b))
   const tone: Record<string, string> = { '0–30 days': 'ok', '31–60 days': 'near', '61–90 days': 'near', '90+ days': 'over' }
-  return Object.keys(b).map(k => ({ label: k, amount: formatIdr(b[k]!), width: `${((b[k]! / max) * 100).toFixed(0)}%`, tone: tone[k]! }))
+  return Object.keys(b).map(k => ({ label: k, amount: formatIdr(b[k]!), width: `${((b[k]! / max) * 100).toFixed(0)}%`, tone: tone[k] ?? 'ok' }))
 })
 
-// ── Output milestones ─────────────────────────────────────────────────────────
+// ── Percentage of completion: cost lines (paginated) ──────────────────────────
+const inputRowsAll = computed(() => (engagement.value?.entries ?? []).map(x => ({
+  id: x.id, item: entryLabel(x), src: x.src, date: x.date, cost: x.amount,
+})))
+const inputTable = useTableState(inputRowsAll, { perPage: 25, defaultSort: { key: 'date', dir: 'desc' } })
+const inputColumns: TableColumn[] = [
+  { key: 'item', label: 'Item', kind: 'name' },
+  { key: 'src', label: 'Source', kind: 'default' },
+  { key: 'date', label: 'Date', kind: 'date', sortType: 'date' },
+  { key: 'cost', label: 'Cost', kind: 'amount', align: 'right', sortType: 'number' },
+]
+
+// ── Milestones ────────────────────────────────────────────────────────────────
 const weightSum = computed(() => (engagement.value?.milestones ?? []).reduce((a, m) => a + m.pct, 0))
 const weightsOk = computed(() => Math.round(weightSum.value) === 100)
+
+/** "12 Aug 2026 · Verified by Andi · BAST-014.pdf" — the audit line on a verified milestone. */
+function verifiedLine(m: { verifiedAt?: string | null; verifiedBy?: string | null; document?: string | null }) {
+  const parts = [
+    m.verifiedAt ? formatDateLong(m.verifiedAt) : '',
+    m.verifiedBy ? `${t('Verified by')} ${m.verifiedBy}` : '',
+    m.document ?? '',
+  ].filter(Boolean)
+  return parts.join(' · ')
+}
 
 const outputMilestones = computed(() => {
   const e = engagement.value
   if (!e?.milestones) return []
   return e.milestones.map((m) => {
     const awaitingInvoice = m.verified && !m.invId
+    const approval = approvalFor(e, 'milestone-verification', m.id)
     return {
       id: m.id,
       label: m.label,
       pct: `${Math.round(m.pct * 100) / 100}%`,
+      amountNum: m.verified ? m.recognized : Math.round((e.contractValue * m.pct) / 100),
       amount: m.verified ? formatIdr(m.recognized) : formatIdr((e.contractValue * m.pct) / 100),
-      statusLabel: m.invId ? t('Invoiced') : m.verified ? t('Awaiting invoice') : t('Not verified'),
+      statusLabel: approval ? t('Pending approval') : m.invId ? t('Invoiced') : m.verified ? t('Awaiting invoice') : t('Not verified'),
       // A real status key, so the badge stays correct even without the type override.
-      statusKey: m.invId ? 'invoiced' : m.verified ? 'pending' : 'not started',
-      note: awaitingInvoice ? t('Create the invoice in Invoices & payments') : '',
-      canVerify: !m.verified && weightsOk.value && !e.weightsNeedConfirm,
-      showUnverify: m.verified,
+      statusKey: approval ? 'pending' : m.invId ? 'invoiced' : m.verified ? 'verified' : 'not started',
+      note: approval ? '' : awaitingInvoice ? t('Create the invoice in Invoices & payments') : '',
+      verifiedLine: m.verified ? verifiedLine(m) : '',
+      approval,
+      canVerify: !approval && !m.verified && weightsOk.value && !e.weightsNeedConfirm && !isClosed.value,
+      showUnverify: m.verified && !isClosed.value,
       locked: !!m.invId,
     }
   })
 })
 
 const weightDraft = ref<{ id: string; label: string; pct: string }[]>([])
+const weightError = ref('')
 watch(() => engagement.value?.weightsNeedConfirm, (needs) => {
   if (needs && engagement.value?.milestones) {
     weightDraft.value = engagement.value.milestones.map(m => ({ id: m.id, label: m.label, pct: String(Math.round(m.pct * 100) / 100) }))
@@ -482,22 +671,39 @@ function doConfirmWeights() {
   const ok = confirmWeights(e.id, weightDraft.value)
   if (!ok) {
     const sum = weightDraft.value.reduce((a, w) => a + (Number(w.pct) || 0), 0)
-    toast.notify({ variant: 'error', title: `${t('Weights total')} ${sum}%. ${t('Adjust them to total 100%')}`, maxWidth: 'max-content' })
+    weightError.value = `${t('Weights total')} ${sum}%. ${t('Adjust them to total 100%')}`
     return
   }
+  weightError.value = ''
   toast.notify({ variant: 'success', title: t('Milestone weights confirmed'), maxWidth: 'max-content' })
 }
 
-function doVerify(mid: string) {
+// Verify milestone → VerifyMilestoneModal → submitMilestoneVerification
+const verifyMid = ref<string | null>(null)
+const verifyingMilestone = computed(() => outputMilestones.value.find(m => m.id === verifyMid.value) ?? null)
+const verifyGate = computed(() => {
   const e = engagement.value
-  if (!e) return
-  if (e.weightsNeedConfirm) {
-    toast.notify({ variant: 'error', title: t('Confirm milestone weights before verifying'), maxWidth: 'max-content' })
-    return
-  }
-  const amount = verifyMilestone(e.id, mid)
-  if (amount) {
-    toast.notify({ variant: 'success', title: `${t('Milestone verified')}. ${formatIdr(amount)} ${t('recognised')}`, maxWidth: 'max-content' })
+  const m = verifyingMilestone.value
+  if (!e || !m) return { needsApproval: false, approverNames: [] as string[] }
+  const res = check_approval_required('project.milestone_verification', m.amountNum, e.id)
+  const names = res.approval_levels.flatMap(l => l.approver_ids)
+    .map(id => getUserById(id)?.name ?? '')
+    .filter(Boolean)
+  return { needsApproval: res.approval_required, approverNames: [...new Set(names)] }
+})
+
+function doVerify(info: MilestoneVerificationInput) {
+  const e = engagement.value
+  const mid = verifyMid.value
+  if (!e || !mid) return
+  verifyMid.value = null
+  const res = submitMilestoneVerification(e.id, mid, info, currentUser.value.name)
+  if (res.status === 'verified') {
+    toast.notify({ variant: 'success', title: `${t('Milestone verified')}. ${formatIdr(res.amount)} ${t('recognized')}`, maxWidth: 'max-content' })
+  } else if (res.status === 'pending') {
+    toast.notify({ variant: 'success', title: `${t('Sent for approval.')} ${waitingFor(res.approval)}.`, maxWidth: 'max-content' })
+  } else {
+    toast.notify({ variant: 'error', title: t('Unable to verify this milestone'), maxWidth: 'max-content' })
   }
 }
 
@@ -521,34 +727,52 @@ function newInvoice(kind: string, label: string, milestoneId?: string) {
   router.push({ path: '/project-accounting/invoice/new', query: { project: e.id, kind, label, milestone: milestoneId ?? undefined } })
 }
 
+const STATUS_LABEL: Record<BillingStatus, string> = { paid: 'Paid', invoiced: 'Unpaid', notdue: 'Not invoiced' }
+const STATUS_KEY: Record<BillingStatus, string> = { paid: 'paid', invoiced: 'unpaid', notdue: 'not started' }
+
 const billingRows = computed(() => {
   const e = engagement.value
   if (!e) return []
   if (e.method === 'input') {
-    return (e.billing ?? []).map(m => ({
-      id: m.id,
-      label: m.label,
-      amount: formatIdr((e.contractValue * m.pct) / 100),
-      statusLabel: m.status === 'paid' ? t('Paid') : m.status === 'invoiced' ? t('Unpaid') : t('Not invoiced'),
-      statusKey: m.status === 'paid' ? 'paid' : m.status === 'invoiced' ? 'unpaid' : 'not started',
-      hasAction: m.status !== 'paid',
-      actionLabel: m.status === 'notdue' ? t('Create invoice') : t('Record payment'),
-      action: m.status === 'notdue'
-        ? () => newInvoice('billing', m.label, m.id)
-        : () => { if (m.invId) recordPayment(e.id, m.invId) },
-    }))
+    return (e.billing ?? []).map((m) => {
+      // Status comes only from the linked invoice — a row is never "Paid" without one.
+      const st = billingStatusOf(e, m)
+      return {
+        id: m.id,
+        label: m.label,
+        sub: '',
+        invoice: st === 'notdue' ? '' : (m.invId ?? ''),
+        amount: formatIdr((e.contractValue * m.pct) / 100),
+        statusLabel: t(STATUS_LABEL[st]),
+        statusKey: STATUS_KEY[st],
+        hasAction: st !== 'paid' && !isClosed.value,
+        actionLabel: st === 'notdue' ? t('Create invoice') : t('Record payment'),
+        action: st === 'notdue'
+          ? () => newInvoice('billing', m.label, m.id)
+          : () => { if (m.invId) doRecordPayment(m.invId) },
+      }
+    })
   }
   return (e.milestones ?? []).map((m) => {
+    const inv = m.invId ? e.invoices.find(i => i.id === m.invId) : undefined
+    const approval = approvalFor(e, 'milestone-verification', m.id)
     const awaitingInvoice = m.verified && !m.invId
+    const st: BillingStatus = inv ? (inv.status === 'paid' ? 'paid' : 'invoiced') : 'notdue'
     return {
       id: m.id,
       label: m.label,
+      sub: m.verified ? verifiedLine(m) : '',
+      invoice: inv?.id ?? '',
       amount: m.verified ? formatIdr(m.recognized) : formatIdr((e.contractValue * m.pct) / 100),
-      statusLabel: awaitingInvoice ? t('Awaiting invoice') : m.verified ? t('Invoiced') : t('Not verified'),
-      statusKey: awaitingInvoice ? 'pending' : m.verified ? 'invoiced' : 'not started',
-      hasAction: awaitingInvoice || (!m.verified && !e.weightsNeedConfirm),
-      actionLabel: awaitingInvoice ? t('Create invoice') : t('Mark physically verified'),
-      action: awaitingInvoice ? () => newInvoice('output', m.label, m.id) : () => doVerify(m.id),
+      statusLabel: approval ? t('Pending approval') : inv ? t(STATUS_LABEL[st]) : awaitingInvoice ? t('Awaiting invoice') : t('Not verified'),
+      statusKey: approval ? 'pending' : inv ? STATUS_KEY[st] : awaitingInvoice ? 'pending' : 'not started',
+      hasAction: !isClosed.value && !approval && (awaitingInvoice || (!m.verified && !e.weightsNeedConfirm && weightsOk.value) || st === 'invoiced'),
+      actionLabel: awaitingInvoice ? t('Create invoice') : st === 'invoiced' ? t('Record payment') : t('Verify milestone'),
+      action: awaitingInvoice
+        ? () => newInvoice('output', m.label, m.id)
+        : st === 'invoiced'
+          ? () => { if (inv) doRecordPayment(inv.id) }
+          : () => { verifyMid.value = m.id },
     }
   })
 })
@@ -570,22 +794,86 @@ const marginSub = computed(() => {
   const e = engagement.value
   if (!e) return ''
   const rev = revenue(e)
-  return rev > 0 ? `${((margin.value / rev) * 100).toFixed(0)}% ${t('of revenue recognised')}` : t('No revenue recognised yet')
+  return rev > 0 ? `${((margin.value / rev) * 100).toFixed(0)}% ${t('of revenue recognized')}` : t('No revenue recognized yet')
 })
+const projected = computed(() => engagement.value ? projectedMargin(engagement.value) : { value: null, pct: null })
+
+/** A real overrun gets one plain status line on Project health. */
+const overBudgetLine = computed(() => {
+  const e = engagement.value
+  if (!e || e.budget === null || e.budget <= 0) return ''
+  const cost = actualCost(e)
+  if (cost <= e.budget) return ''
+  return `${t('Cost')} ${Math.round((cost / e.budget) * 100)}% ${t('of budget')} · ${formatIdr(cost - e.budget)} ${t('over')}`
+})
+
 const closable = computed(() => (engagement.value ? canClose(engagement.value) : false))
+const closeOpen = ref(false)
+const reopenOpen = ref(false)
+const closeSum = computed(() => engagement.value ? closeSummary(engagement.value) : { revenue: 0, cost: 0, margin: 0, marginPct: null })
 
 function doClose() {
   const e = engagement.value
   if (!e) return
-  if (!closeEngagement(e.id)) {
-    toast.notify({ variant: 'error', title: closeHint(e), maxWidth: 'max-content' })
+  if (!closeEngagementAs(e.id, currentUser.value.name)) {
+    toast.notify({ variant: 'error', title: t('Unable to close this project'), maxWidth: 'max-content' })
     return
   }
-  toast.notify({ variant: 'success', title: t('Engagement closed') })
+  toast.notify({ variant: 'success', title: t('Project closed') })
 }
 
-const budgetRows = computed(() => (engagement.value ? budgetReport(engagement.value) : []))
-const showBudgetVariance = computed(() => activeStage.value !== 'setup')
+function doReopen(reason: string) {
+  const e = engagement.value
+  if (!e) return
+  if (!reopenEngagement(e.id, currentUser.value.name, reason)) {
+    toast.notify({ variant: 'error', title: t('Unable to reopen this project'), maxWidth: 'max-content' })
+    return
+  }
+  toast.notify({ variant: 'success', title: t('Project reopened') })
+}
+
+const closedLine = computed(() => {
+  const e = engagement.value
+  if (!e?.closedAt) return ''
+  return `${t('Closed on')} ${formatDateLong(e.closedAt)}${e.closedBy ? ` ${t('by')} ${e.closedBy}` : ''}`
+})
+
+// ── Activity log (built from the record) ─────────────────────────────────────
+const activityOpen = ref(false)
+const activityEntries = computed<ActivityEntry[]>(() => {
+  const e = engagement.value
+  if (!e) return []
+  const out: ActivityEntry[] = []
+  const dates = [...e.entries.map(x => x.date), ...e.invoices.map(i => i.date), ...e.vos.map(v => v.date)].sort()
+  out.push({ date: dates[0] ?? TODAY, user: e.pm, activity: t('Created project'), details: [{ label: t('Method'), value: methodLabel(e.method) }, { label: t('Customer'), value: e.client }] })
+  e.vos.forEach((v) => {
+    out.push({ date: v.date, user: v.raisedBy, activity: t('Submitted addendum'), details: [{ label: t('New value'), value: formatIdr(v.newValue) }, { label: t('Reason'), value: v.reason }] })
+    if (v.status === 'Approved') out.push({ date: v.date, user: v.approvedBy ?? '', activity: t('Approved addendum'), details: [{ label: t('New value'), value: formatIdr(v.newValue) }] })
+    if (v.status === 'Rejected') out.push({ date: v.date, user: v.rejectedBy ?? '', activity: t('Rejected addendum'), details: v.rejectReason ? [{ label: t('Reason'), value: v.rejectReason }] : [] })
+  })
+  ;(e.milestones ?? []).filter(m => m.verified).forEach((m) => {
+    out.push({ date: m.verifiedAt ?? TODAY, user: m.verifiedBy ?? '', activity: t('Verified milestone'), details: [{ label: t('Milestone'), value: m.label }, { label: t('Revenue recognized'), value: formatIdr(m.recognized) }, ...(m.document ? [{ label: t('Document'), value: m.document }] : [])] })
+  })
+  ;(e.approvals ?? []).forEach((a) => {
+    out.push({ date: a.submittedAt, user: a.submittedBy, activity: t('Sent for approval'), details: [{ label: t('Rule'), value: a.ruleName }, { label: t('Approvers'), value: a.approvers.join(', ') }] })
+  })
+  e.invoices.forEach((i) => {
+    out.push({ date: i.date, user: e.pm, activity: t('Created invoice'), details: [{ label: t('Invoice'), value: i.id }, { label: t('Amount'), value: formatIdr(i.amount) }] })
+    if (i.status === 'paid') out.push({ date: i.paidDate ?? i.date, user: e.pm, activity: t('Recorded payment'), details: [{ label: t('Invoice'), value: i.id }, { label: t('Amount'), value: formatIdr(i.amount) }] })
+  })
+  ;(e.reopenLog ?? []).forEach((r) => {
+    out.push({ date: r.date, user: r.by, activity: t('Reopened project'), details: [{ label: t('Reason'), value: r.reason }] })
+  })
+  if (e.closedAt) out.push({ date: e.closedAt, user: e.closedBy ?? '', activity: t('Closed project'), details: [] })
+  return out.sort((a, b) => b.date.localeCompare(a.date))
+})
+const lastActivity = computed(() => activityEntries.value[0])
+
+// Top-level refs so the template unwraps them.
+const { paginated: costPaged, total: costTotal, currentPage: costPage, perPage: costPerPage, sortKey: costSortKey, sortDir: costSortDir, setPage: setCostPage, setPerPage: setCostPerPage, toggleSort: toggleCostSort, setSort: setCostSort } = costTable
+const { paginated: reviewPaged, total: reviewTotal, currentPage: reviewPage, perPage: reviewPerPage, setPage: setReviewPage, setPerPage: setReviewPerPage } = reviewTable
+const { paginated: inputPaged, total: inputTotal, currentPage: inputPage, perPage: inputPerPage, sortKey: inputSortKey, sortDir: inputSortDir, setPage: setInputPage, setPerPage: setInputPerPage, toggleSort: toggleInputSort, setSort: setInputSort } = inputTable
+watch(reviewChip, () => { setReviewPage(1) })
 </script>
 
 <template>
@@ -596,11 +884,8 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
         <MpTextlink id="pa-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ t('Project accounting') }}</MpTextlink>
         <div class="detail-titlerow">
           <h1 class="detail-title">{{ engagement.name }}</h1>
-          <ErpStatusBadge
-            :status="engagement.stage === 'closed' ? 'closed' : 'active'"
-            badge-for="additionalInformation"
-            size="md"
-          />
+          <ErpStatusBadge :status="statusBadgeKey" :label="t(projectStatusLabel(engagement))" badge-for="additionalInformation" />
+          <DetailJumpTo id="pa-jump" :items="jumpItems" :aria-label="t('Switch project')" :empty-text="t('No projects found')" @select="jumpTo" />
         </div>
         <p class="detail-subtitle">
           {{ engagement.client }} · {{ methodLabel(engagement.method) }} · {{ t('Managed by') }} {{ engagement.pm }}
@@ -608,32 +893,39 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
       </div>
 
       <div class="detail-bar-actions">
-        <button
-          v-if="activeStage === 'execution'"
-          type="button"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+        <MpButton is-rounded
+          v-if="activeStage === 'execution' && !isClosed"
+          variant="secondary" left-icon="add"
           @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
         >
-          <MpIcon name="add" size="sm" />
           {{ t('New expense') }}
-        </button>
-        <button
-          v-if="activeStage === 'billing'"
-          type="button"
-          class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
-          @click="newInvoice('adhoc', t('Invoice'))"
-        >
-          <MpIcon name="add" size="sm" />
+        </MpButton>
+        <MpButton is-rounded v-if="activeStage === 'billing' && !isClosed" variant="secondary" left-icon="add" @click="newInvoice('adhoc', t('Invoice'))">
           {{ t('New invoice') }}
-        </button>
-        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="goTab('setup')">
-          {{ t('Edit contract') }}
-        </button>
+        </MpButton>
+        <MpButton is-rounded v-if="!isClosed" id="pa-submit-addendum" variant="secondary" @click="openAddendumForm">
+          {{ t('Submit addendum') }}
+        </MpButton>
       </div>
     </header>
 
     <div class="detail-stage">
+      <!-- Project creation awaiting approval: a status line, not a banner. -->
+      <div v-if="creationApproval" class="pa-statusline" data-tour="pa-creation-approval">
+        <ErpStatusBadge status="pending" :label="t('Pending approval')" />
+        <span class="pa-statusline-text">{{ creationApproval.ruleName }} · {{ t('Submitted by') }} {{ creationApproval.submittedBy }} {{ t('on') }} {{ formatDateLong(creationApproval.submittedAt) }}</span>
+        <template v-if="decision(creationApproval).ok">
+          <MpButton is-rounded variant="secondary" size="sm" @click="approvePending(creationApproval)">{{ t('Approve') }}</MpButton>
+          <MpButton is-rounded variant="secondary" size="sm" @click="rejectTarget = { kind: 'approval', approval: creationApproval, label: engagement.name }">{{ t('Reject') }}</MpButton>
+        </template>
+        <span v-else class="pa-statusline-text">{{ decision(creationApproval).reason }}</span>
+      </div>
+
       <ProjectStatCards :stats="stats" data-tour="pa-stats" />
+
+      <a v-if="lastActivity" class="detail-updated" @click.prevent="activityOpen = true">
+        {{ t('Last updated by') }} {{ lastActivity.user || engagement.pm }} {{ t('on') }} {{ formatDateLong(lastActivity.date) }}
+      </a>
 
       <MpTabs id="pa-engagement-tabs" v-model="activeIndex" is-manual variant-color="green" class="pa-tabs">
         <MpTabList>
@@ -664,26 +956,22 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               </section>
             </div>
 
-            <!-- Distinct added scope owes the contract its own milestone. -->
+            <!-- Separate new work owes the contract its own milestone. -->
             <section v-if="engagement.scopePending" class="pa-card pa-card--notice" data-tour="pa-scope-pending">
-              <h2 class="pa-card-title">{{ t('Add a milestone for the added scope') }}</h2>
+              <h2 class="pa-card-title">{{ t('Add a milestone for the added work') }}</h2>
               <p class="pa-card-desc">
-                {{ t('The approved addendum added') }} {{ formatIdr(engagement.scopePending.added) }} {{ t('of separate scope. Existing milestones keep their amounts.') }}
+                {{ t('The approved addendum added') }} {{ formatIdr(engagement.scopePending.added) }} {{ t('of separate work. Existing milestones keep their amounts.') }}
               </p>
-              <button
-                v-if="!scopeFormOpen"
-                type="button"
-                class="btn-enterprise btn-enterprise--secondary"
-                @click="scopeFormOpen = true"
-              >{{ t('Add milestone') }}</button>
+              <MpButton is-rounded v-if="!scopeFormOpen" variant="secondary" @click="scopeFormOpen = true">{{ t('Add milestone') }}</MpButton>
               <div v-else class="pa-inline-form">
-                <MpInput
-                  id="pa-scope-label" v-model="scopeLabel" is-full-width
-                  :placeholder="t('Example: Guard house handed over')"
-                />
+                <MpFormControl id="pa-scope-label" is-required :is-invalid="!!scopeError" class="pa-inline-field">
+                  <MpFormLabel>{{ t('Milestone name') }}</MpFormLabel>
+                  <MpInput id="pa-scope-label-input" v-model="scopeLabel" is-full-width />
+                  <MpFormErrorMessage>{{ scopeError }}</MpFormErrorMessage>
+                </MpFormControl>
                 <span class="pa-inline-amount">{{ formatIdr(engagement.scopePending.added) }}</span>
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveScopeMilestone">{{ t('Save milestone') }}</button>
-                <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="scopeFormOpen = false; scopeLabel = ''">{{ t('Cancel') }}</button>
+                <MpButton is-rounded variant="secondary" @click="saveScopeMilestone">{{ t('Save milestone') }}</MpButton>
+                <MpButton is-rounded variant="ghost" @click="scopeFormOpen = false; scopeLabel = ''; scopeError = ''">{{ t('Cancel') }}</MpButton>
               </div>
             </section>
 
@@ -700,63 +988,71 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="m in engagement.milestones" :key="m.id">
-                    <td class="pa-td">{{ m.label }}</td>
-                    <td class="pa-td pa-td--num">{{ Math.round(m.pct * 100) / 100 }}%</td>
-                    <td class="pa-td pa-td--num">{{ formatIdr((engagement.contractValue * m.pct) / 100) }}</td>
+                  <tr v-for="m in outputMilestones" :key="m.id">
                     <td class="pa-td">
-                      <ErpStatusBadge :status="m.verified ? 'verified' : 'not started'" :label="m.verified ? t('Verified') : t('Not verified')" />
+                      {{ m.label }}
+                      <div v-if="m.verifiedLine" class="pa-tiny">{{ m.verifiedLine }}</div>
+                    </td>
+                    <td class="pa-td pa-td--num">{{ m.pct }}</td>
+                    <td class="pa-td pa-td--num">{{ m.amount }}</td>
+                    <td class="pa-td">
+                      <ErpStatusBadge :status="m.statusKey" :label="m.statusLabel" />
                     </td>
                   </tr>
                 </tbody>
               </table>
             </section>
 
-            <!-- ── Edit contract: append-only addenda ── -->
-            <section class="pa-card" data-tour="pa-addenda">
-              <h2 class="pa-card-title pa-card-title--spaced">{{ t('Contract addenda') }}</h2>
-
-              <div class="pa-vo-form">
-                <MpFormControl id="pa-vo-value" is-required>
-                  <MpFormLabel>{{ t('Revised contract value') }}</MpFormLabel>
-                  <MpInputGroup id="pa-vo-value-group" is-full-width>
-                    <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                    <MpInput id="pa-vo-value-input" v-model="voValue" type="number" placeholder="0" is-full-width />
-                  </MpInputGroup>
-                </MpFormControl>
-                <MpFormControl id="pa-vo-reason" is-required>
-                  <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
-                  <MpInput
-                    id="pa-vo-reason-input" v-model="voReason" is-full-width
-                    :placeholder="t('Example: Additional foundation work requested by client')"
-                  />
-                </MpFormControl>
-                <button type="button" class="btn-enterprise btn-enterprise--primary pa-vo-submit" @click="submitAddendum">
-                  {{ t('Submit addendum') }}
-                </button>
+            <!-- ── Contract addenda: append-only; the form opens from "Submit addendum" ── -->
+            <section ref="addendaCard" class="pa-card" data-tour="pa-addenda">
+              <div class="pa-card-head">
+                <h2 class="pa-card-title">{{ t('Contract addenda') }}</h2>
+                <MpButton is-rounded v-if="!voFormOpen && !isClosed" variant="secondary" @click="voFormOpen = true">{{ t('Submit addendum') }}</MpButton>
               </div>
 
-              <div class="pa-box">
-                <h3 class="pa-box-title">{{ t('Is the added scope distinct?') }}</h3>
-                <p class="pa-card-desc">{{ t('Under PSAK 72, this decides whether revenue already recognised is adjusted.') }}</p>
-                <div class="pa-choices">
-                  <button
-                    type="button" class="pa-choice" :class="{ 'pa-choice--picked': !voDistinct }"
-                    :aria-pressed="!voDistinct" @click="voDistinct = false"
-                  >
-                    <span class="pa-choice-title">{{ t('Not distinct: same scope') }}</span>
-                    <span class="pa-choice-desc">{{ t('Extends the existing work, e.g. a larger foundation. Revenue to date is adjusted in the current period.') }}</span>
-                  </button>
-                  <button
-                    type="button" class="pa-choice" :class="{ 'pa-choice--picked': voDistinct }"
-                    :aria-pressed="voDistinct" @click="voDistinct = true"
-                  >
-                    <span class="pa-choice-title">{{ t('Distinct: separate scope') }}</span>
-                    <span class="pa-choice-desc">{{ t('New work priced on its own, e.g. a separate structure. Recognised from this period on, with its own milestone.') }}</span>
-                  </button>
+              <div v-if="voFormOpen" class="pa-vo">
+                <div class="pa-vo-form">
+                  <MpFormControl id="pa-vo-value" is-required :is-invalid="!!voErrors.value">
+                    <MpFormLabel>{{ t('Revised contract value') }}</MpFormLabel>
+                    <MpInputGroup id="pa-vo-value-group" is-full-width>
+                      <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                      <MpInput id="pa-vo-value-input" v-model="voValue" type="number" is-full-width />
+                    </MpInputGroup>
+                    <MpFormErrorMessage>{{ voErrors.value }}</MpFormErrorMessage>
+                  </MpFormControl>
+                  <MpFormControl id="pa-vo-reason" is-required :is-invalid="!!voErrors.reason">
+                    <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
+                    <MpInput id="pa-vo-reason-input" v-model="voReason" is-full-width />
+                    <MpFormErrorMessage>{{ voErrors.reason }}</MpFormErrorMessage>
+                  </MpFormControl>
+                </div>
+
+                <MpFormControl id="pa-vo-distinct" is-required :is-invalid="!!voErrors.distinct" class="pa-box">
+                  <MpFormLabel>{{ t('Is this new, separately priced work?') }}</MpFormLabel>
+                  <div class="pa-choices" role="radiogroup">
+                    <label class="pa-choice" :class="{ 'pa-choice--picked': voDistinct === false }">
+                      <MpRadio id="pa-vo-distinct-no" name="pa-vo-distinct" value="extends" :is-checked="voDistinct === false" @change="voDistinct = false; voErrors.distinct = ''" />
+                      <span class="pa-choice-body">
+                        <span class="pa-choice-title">{{ t('Extends existing work') }}</span>
+                        <span class="pa-choice-desc">{{ t('For example, a larger foundation. Revenue to date is adjusted in the current period.') }}</span>
+                      </span>
+                    </label>
+                    <label class="pa-choice" :class="{ 'pa-choice--picked': voDistinct === true }">
+                      <MpRadio id="pa-vo-distinct-yes" name="pa-vo-distinct" value="separate" :is-checked="voDistinct === true" @change="voDistinct = true; voErrors.distinct = ''" />
+                      <span class="pa-choice-body">
+                        <span class="pa-choice-title">{{ t('Separate new work') }}</span>
+                        <span class="pa-choice-desc">{{ t('For example, a separate structure. Recognized from this period on, with its own milestone.') }}</span>
+                      </span>
+                    </label>
+                  </div>
+                  <MpFormErrorMessage>{{ voErrors.distinct }}</MpFormErrorMessage>
+                </MpFormControl>
+
+                <div class="pa-actions pa-actions--tight">
+                  <MpButton variant="primary" is-rounded @click="submitAddendum">{{ t('Submit addendum') }}</MpButton>
+                  <MpButton is-rounded variant="ghost" @click="voFormOpen = false; resetVoForm()">{{ t('Cancel') }}</MpButton>
                 </div>
               </div>
-              <p v-if="voWarn" class="pa-warn">{{ voWarn }}</p>
 
               <table class="pa-table">
                 <thead>
@@ -772,25 +1068,28 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 <tbody>
                   <tr v-for="v in voRows" :key="v.id">
                     <td class="pa-td pa-td--muted">{{ v.date }}</td>
-                    <td class="pa-td">
+                    <td class="pa-td pa-td--wrap">
                       {{ v.reason }}
                       <div class="pa-chip-row">
-                        <MpBadge for="additionalInformation" type="announcement" size="sm">{{ v.scope }}</MpBadge>
+                        <MpBadge v-if="v.scope" for="tableStatus" type="announcement">{{ v.scope }}</MpBadge>
                         <span class="pa-tiny">{{ v.trail }}</span>
                       </div>
-                      <div v-if="v.adjNote" class="pa-tiny pa-tiny--positive">{{ v.adjNote }}</div>
+                      <div v-if="v.rejectNote" class="pa-tiny">{{ v.rejectNote }}</div>
+                      <div v-if="v.adjNote" class="pa-tiny pa-tiny--strong">{{ v.adjNote }}</div>
                     </td>
                     <td class="pa-td pa-td--num">{{ v.oldValue }}</td>
                     <td class="pa-td pa-td--num">{{ v.newValue }}</td>
-                    <td class="pa-td"><ErpStatusBadge :status="v.status" :label="v.statusLabel" /></td>
+                    <td class="pa-td">
+                      <ErpStatusBadge :status="v.status" :label="v.statusLabel" />
+                      <div v-if="v.pendingChip" class="pa-tiny">{{ v.pendingChip }}</div>
+                    </td>
                     <td class="pa-td pa-td--actions">
-                      <template v-if="v.pending">
-                        <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="voConfirmId = v.id">
-                          {{ t('Approve') }}
-                        </button>
-                        <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="doRejectVo(v.id)">
-                          {{ t('Reject') }}
-                        </button>
+                      <template v-if="v.vo">
+                        <template v-if="addendumDecision(v.vo).ok">
+                          <MpButton is-rounded variant="secondary" size="sm" @click="voConfirmId = v.id">{{ t('Approve') }}</MpButton>
+                          <MpButton is-rounded variant="secondary" size="sm" @click="startRejectVo(v.vo)">{{ t('Reject') }}</MpButton>
+                        </template>
+                        <span v-else class="pa-tiny">{{ addendumDecision(v.vo).reason }}</span>
                       </template>
                     </td>
                   </tr>
@@ -802,62 +1101,58 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
           <!-- ═══ Costs ══════════════════════════════════════════════════════ -->
           <MpTabPanel value="execution">
             <section class="pa-card" data-tour="pa-cost-lines">
-              <div class="pa-card-head">
-                <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
-                <div class="pa-card-actions">
-                  <MpInputGroup id="pa-roll-search" class="filter-search">
-                    <MpInputLeftAddon><MpIcon name="search" size="md" /></MpInputLeftAddon>
-                    <MpInput v-model="rollSearch" type="text" :placeholder="t('Search...')" />
-                  </MpInputGroup>
-                </div>
-              </div>
-
-              <table class="pa-table">
-                <thead>
-                  <tr>
-                    <th class="pa-th pa-th--sortable" @click="sortRoll('source')">{{ t('Source') }}{{ sortMark('source') }}</th>
-                    <th class="pa-th">{{ t('Document') }}</th>
-                    <th class="pa-th">{{ t('Description') }}</th>
-                    <th class="pa-th pa-th--sortable" @click="sortRoll('date')">{{ t('Date') }}{{ sortMark('date') }}</th>
-                    <th class="pa-th pa-th--num pa-th--sortable" @click="sortRoll('cost')">{{ t('Cost') }}{{ sortMark('cost') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="x in rollPaged" :key="x.id">
-                    <td class="pa-td">
-                      <MpBadge for="additionalInformation" :type="SRC_BADGE[x.src]" size="sm">{{ x.src }}</MpBadge>
-                    </td>
-                    <td class="pa-td pa-td--muted">{{ x.docNo }}</td>
-                    <td class="pa-td">
-                      {{ entryLabel(x) }}
-                      <div class="pa-tiny">
-                        {{ x.vendor }}<template v-if="x.hours"> · {{ x.hours }} h {{ t('at') }} {{ formatIdrShort(Math.round(x.amount / x.hours)) }}/h</template>
-                      </div>
-                    </td>
-                    <td class="pa-td pa-td--muted">{{ formatDate(x.date) }}</td>
-                    <td class="pa-td pa-td--num">{{ formatIdr(x.amount) }}</td>
-                  </tr>
-                  <tr class="pa-tr--total">
-                    <td class="pa-td" colspan="4">{{ t('Total cost incurred') }}</td>
-                    <td class="pa-td pa-td--num">{{ formatIdr(actualCost(engagement)) }}</td>
-                  </tr>
-                  <tr v-if="rollSearch.trim()">
-                    <td class="pa-td pa-td--muted" colspan="4">{{ t('Matching lines') }}</td>
-                    <td class="pa-td pa-td--num pa-td--muted">{{ formatIdr(rollFilteredTotal) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-if="!rollSorted.length" class="pa-note">
-                {{ rollSearch.trim() ? `"${rollSearch.trim()}" ${t('not found')}` : t('No cost lines yet. Cost lines tagged to this project will appear here.') }}
-              </p>
-
-              <ErpPagination
-                :total="rollSorted.length"
-                :current-page="rollPage"
-                :per-page="rollPerPage"
-                @page-change="rollPage = $event"
-                @per-page-change="rollPerPage = $event"
-              />
+              <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
+              <ErpTablePage
+                class="pa-erp-table"
+                :columns="costColumns"
+                :rows="costPaged"
+                :total="costTotal"
+                :current-page="costPage"
+                :per-page="costPerPage"
+                :sort-key="costSortKey"
+                :sort-dir="costSortDir"
+                :has-active-search="!!rollSearch.trim()"
+                :search="rollSearch"
+                filter-empty-label="cost line"
+                no-row-hover
+                @sort="toggleCostSort"
+                @sort-change="setCostSort"
+                @page-change="setCostPage"
+                @per-page-change="setCostPerPage"
+                @clear-search="rollSearch = ''"
+                @clear-all="rollSearch = ''"
+              >
+                <template #filters>
+                  <div class="filter-left">
+                    <span class="pa-filter-note">
+                      {{ rollSearch.trim() ? `${t('Matching lines')}: ${formatIdr(rollFilteredTotal)} ${t('of')} ${formatIdr(actualCost(engagement))}` : `${t('Total cost incurred')}: ${formatIdr(actualCost(engagement))}` }}
+                    </span>
+                  </div>
+                  <div class="filter-right">
+                    <div class="filter-search">
+                      <MpIcon name="search" size="sm" />
+                      <input v-model="rollSearch" class="filter-search-input" type="text" :placeholder="t('Search...')">
+                      <button v-if="rollSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="rollSearch = ''">
+                        <MpIcon name="close" size="sm" />
+                      </button>
+                    </div>
+                  </div>
+                </template>
+                <template #cell-src="{ row }">
+                  <MpBadge for="tableStatus" :type="SRC_BADGE[String(row.src)]">{{ row.src }}</MpBadge>
+                </template>
+                <template #cell-description="{ row }">
+                  <div class="pa-cellstack">
+                    <span class="pa-ellipsis">{{ row.description }}</span>
+                    <span class="pa-tiny pa-ellipsis">{{ row.vendor }}<template v-if="row.hoursNote"> · {{ row.hoursNote }}</template></span>
+                  </div>
+                </template>
+                <template #cell-date="{ value }">{{ formatDate(String(value)) }}</template>
+                <template #cell-cost="{ value }">{{ formatIdr(Number(value)) }}</template>
+                <template #empty>
+                  <p class="pa-note">{{ t('No cost lines yet. Cost lines tagged to this project appear here.') }}</p>
+                </template>
+              </ErpTablePage>
             </section>
 
             <section v-if="hourLines.length" class="pa-card">
@@ -866,19 +1161,62 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               <p v-if="hourCoverage" class="pa-note">{{ hourCoverage }}</p>
             </section>
 
+            <!-- ── Budget variance: once, here, to date. Red only for a real overrun. ── -->
+            <section class="pa-card" data-tour="pa-budget-variance">
+              <div class="pa-card-head">
+                <h2 class="pa-card-title">{{ t('Budget variance') }}</h2>
+                <MpButton is-rounded variant="ghost" :right-icon="varianceOpen ? 'chevrons-up' : 'chevrons-down'" @click="varianceOpen = !varianceOpen">
+                  {{ varianceOpen ? t('Hide') : t('Show') }}
+                </MpButton>
+              </div>
+              <template v-if="varianceOpen">
+                <p v-if="engagement.budget === null" class="pa-note">
+                  {{ t('No budget, so cost variance is not calculated.') }}
+                  <MpTextlink id="pa-set-budget" as="a" @click.prevent="goTab('setup')">{{ t('Set budget') }}</MpTextlink>
+                </p>
+                <table class="pa-table">
+                  <thead>
+                    <tr>
+                      <th class="pa-th">{{ t('Account') }}</th>
+                      <th class="pa-th pa-th--num">{{ t('Budget to date') }}</th>
+                      <th class="pa-th pa-th--num">{{ t('Actual') }}</th>
+                      <th class="pa-th pa-th--num">{{ t('Variance') }}</th>
+                      <th class="pa-th pa-th--num">{{ t('Variance %') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(r, i) in budgetRows" :key="`${r.label}-${i}`" :class="{ 'pa-tr--group': r.header, 'pa-tr--total': r.total }">
+                      <td class="pa-td" :class="{ 'pa-td--strong': r.header || r.total }">{{ r.label }}</td>
+                      <template v-if="!r.header">
+                        <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }">
+                          {{ r.budget === null ? t('No budget') : formatIdrSigned(r.budget) }}
+                          <div v-if="r.lifetimeBudget != null && r.lifetimeBudget !== r.budget" class="pa-tiny">{{ t('Lifetime') }} {{ formatIdr(r.lifetimeBudget) }}</div>
+                        </td>
+                        <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }">{{ formatIdrSigned(r.actual) }}</td>
+                        <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }" :data-tone="toneOf(r)">{{ r.variance === null ? '—' : formatIdrSigned(r.variance) }}</td>
+                        <td class="pa-td pa-td--num" :data-tone="toneOf(r)">
+                          {{ r.pct === null ? '—' : `${r.pct.toFixed(0)}%` }}
+                          <div v-if="r.tone === 'adverse' && r.note" class="pa-tiny">{{ r.note }}</div>
+                        </td>
+                      </template>
+                      <td v-else class="pa-td" colspan="4" />
+                    </tr>
+                  </tbody>
+                </table>
+              </template>
+            </section>
+
             <div class="pa-actions">
-              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="continueTo('recognition')">
-                {{ t('Continue to revenue recognition') }}
-              </button>
+              <MpButton is-rounded variant="secondary" @click="continueTo('recognition')">{{ t('Continue to Revenue recognition') }}</MpButton>
             </div>
           </MpTabPanel>
 
           <!-- ═══ Revenue recognition ════════════════════════════════════════ -->
           <MpTabPanel value="recognition">
-            <!-- ── Cost-plus ── -->
+            <!-- ── Cost plus margin ── -->
             <template v-if="engagement.method === 'tm'">
               <section class="pa-card" data-tour="pa-tm-summary">
-                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Input by Simplified Cost') }}</h2>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ methodLabel('tm') }}</h2>
                 <div class="pa-progress">
                   <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${tmEarnedPct.toFixed(0)}%` }" />
                 </div>
@@ -891,7 +1229,7 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 </div>
                 <p class="pa-note">
                   {{ tmOpenValue > 0
-                    ? `${formatIdr(tmOpenValue)} ${t('awaiting review, not yet recognised.')}`
+                    ? `${formatIdr(tmOpenValue)} ${t('awaiting review, not yet recognized.')}`
                     : t('All cost lines reviewed.') }}
                 </p>
               </section>
@@ -899,118 +1237,106 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
               <section class="pa-card" data-tour="pa-review-queue">
                 <h2 class="pa-card-title">{{ t('Review queue') }}</h2>
                 <div class="pa-chips">
-                  <button
-                    v-for="c in bulkChips" :key="c.key" type="button"
-                    class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                    @click="applyChip(c.pick)"
-                  >{{ c.label }}</button>
-                  <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="clearSelection">{{ t('Clear selection') }}</button>
+                  <MpButton is-rounded
+                    v-for="c in bulkChips" :key="c.key"
+                    variant="secondary" size="sm" :class="{ 'pa-chip--active': reviewChip === c.key }" :aria-pressed="reviewChip === c.key"
+                    @click="reviewChip = c.key"
+                  >{{ c.label }}</MpButton>
                 </div>
 
-                <table class="pa-table">
-                  <thead>
-                    <tr>
-                      <th class="pa-th pa-th--check">
-                        <MpCheckbox id="pa-review-all" :is-checked="allSelected" @change="toggleAll" @click.stop />
-                      </th>
-                      <th class="pa-th">{{ t('Item') }}</th>
-                      <th class="pa-th">{{ t('Date') }}</th>
-                      <th class="pa-th pa-th--num">{{ t('Amount') }}</th>
-                      <th class="pa-th">{{ t('Age') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="x in openLines" :key="x.id">
-                      <td class="pa-td pa-td--check">
-                        <MpCheckbox :id="`pa-review-${x.id}`" :is-checked="selected.includes(x.id)" @change="toggleOne(x.id)" @click.stop />
-                      </td>
-                      <td class="pa-td">{{ entryLabel(x) }}</td>
-                      <td class="pa-td pa-td--muted">{{ formatDate(x.date) }}</td>
-                      <td class="pa-td pa-td--num">{{ formatIdr(entryAmount(x)) }}</td>
-                      <td class="pa-td">
-                        <span
-                          class="pa-age"
-                          :data-tone="daysAgo(x.date) <= 30 ? 'ok' : daysAgo(x.date) <= 60 ? 'default' : daysAgo(x.date) <= 90 ? 'near' : 'over'"
-                        >{{ daysAgo(x.date) }} {{ daysAgo(x.date) === 1 ? t('day') : t('days') }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-                <p v-if="!openLines.length" class="pa-note">{{ t('No lines to review. New cost lines tagged to this project will appear here.') }}</p>
-              </section>
-
-              <section v-if="selected.length && !pendingAction" class="pa-card pa-card--bar">
-                <div>
-                  <p class="pa-bar-title">{{ selected.length }} {{ t('selected') }} · {{ formatIdr(selectionTotal) }}</p>
-                  <p class="pa-card-desc">{{ t('Charging at cost only or not charging requires a reason.') }}</p>
-                </div>
-                <div class="pa-bar-actions">
-                  <button type="button" class="btn-enterprise btn-enterprise--primary" @click="startAction('bill')">{{ t('Charge cost + margin') }}</button>
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="startAction('atcost')">{{ t('Charge at cost only') }}</button>
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="startAction('absorb')">{{ t("Don't charge client") }}</button>
-                </div>
+                <ErpTablePage
+                  class="pa-erp-table"
+                  :columns="reviewColumns"
+                  :rows="reviewPaged"
+                  :total="reviewTotal"
+                  :current-page="reviewPage"
+                  :per-page="reviewPerPage"
+                  has-checkbox
+                  bulk-label="cost line"
+                  no-row-hover
+                  @page-change="setReviewPage"
+                  @per-page-change="setReviewPerPage"
+                >
+                  <template #bulk-actions="{ selectedRows }">
+                    <MpButton is-rounded variant="secondary" size="sm" @click="startAction('bill', selectedRows)">{{ t('Charge cost + margin') }}</MpButton>
+                    <MpButton is-rounded variant="secondary" size="sm" @click="startAction('atcost', selectedRows)">{{ t('Charge at cost only') }}</MpButton>
+                    <MpButton is-rounded variant="secondary" size="sm" @click="startAction('absorb', selectedRows)">{{ t('Waive charge') }}</MpButton>
+                  </template>
+                  <template #cell-date="{ value }">{{ formatDate(String(value)) }}</template>
+                  <template #cell-amount="{ value }">{{ formatIdr(Number(value)) }}</template>
+                  <template #cell-age="{ row }">
+                    <span class="pa-age" :data-tone="row.tone">{{ row.age }} {{ row.age === 1 ? t('day') : t('days') }}</span>
+                  </template>
+                  <template #empty>
+                    <p class="pa-note">{{ t('No lines to review. New cost lines tagged to this project appear here.') }}</p>
+                  </template>
+                </ErpTablePage>
               </section>
 
               <section v-if="pendingAction" class="pa-card">
-                <h2 class="pa-card-title">{{ pendingTitle }}</h2>
-                <MpTextarea
-                  id="pa-decision-reason" v-model="pendingReason" is-full-width
-                  :placeholder="pendingAction === 'bill' ? t('Add a note (optional)') : t('Example: Scope discount agreed with client')"
-                />
-                <p v-if="pendingWarn" class="pa-warn">{{ pendingWarn }}</p>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ pendingTitle }}</h2>
+                <p class="pa-card-desc">{{ selected.length }} {{ t('selected') }} · {{ formatIdr(selectionTotal) }}</p>
+                <MpFormControl id="pa-decision-reason" :is-required="pendingAction !== 'bill'" :is-invalid="!!pendingWarn">
+                  <MpFormLabel>{{ pendingAction === 'bill' ? t('Note (optional)') : t('Reason') }}</MpFormLabel>
+                  <MpTextarea id="pa-decision-reason-input" v-model="pendingReason" is-full-width />
+                  <MpFormErrorMessage>{{ pendingWarn }}</MpFormErrorMessage>
+                </MpFormControl>
                 <div class="pa-actions">
-                  <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirmDecision">{{ pendingConfirmLabel }}</button>
-                  <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="pendingAction = null">{{ t('Cancel') }}</button>
+                  <MpButton variant="primary" is-rounded @click="confirmDecision">{{ pendingConfirmLabel }}</MpButton>
+                  <MpButton is-rounded variant="ghost" @click="pendingAction = null; pendingWarn = ''">{{ t('Cancel') }}</MpButton>
                 </div>
               </section>
             </template>
 
-            <!-- ── Cost-to-cost ── -->
+            <!-- ── Percentage of completion ── -->
             <template v-else-if="engagement.method === 'input'">
               <section class="pa-card" data-tour="pa-input-progress">
-                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Input by Cost') }}</h2>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ methodLabel('input') }}</h2>
                 <div class="pa-progress">
-                  <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${pocPct(engagement).toFixed(0)}%` }" />
+                  <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${Math.min(100, pocPct(engagement)).toFixed(0)}%` }" />
                 </div>
-                <p class="pa-lead">{{ t('Revenue recognised to date') }}: <b>{{ formatIdr(revenue(engagement)) }}</b></p>
-                <p v-if="engagement.budget === null || actualCost(engagement) > engagement.budget" class="pa-note">
-                  {{ engagement.budget === null
-                    ? t('Set a budgeted cost to calculate percentage complete.')
-                    : t('Cost incurred exceeds the budgeted cost. Review the budget or submit an addendum.') }}
+                <p class="pa-lead">{{ t('Revenue recognized to date') }}: <b>{{ formatIdr(revenue(engagement)) }}</b></p>
+                <p v-if="engagement.budget === null" class="pa-note">
+                  {{ t('No budget, so percentage complete is not calculated.') }}
+                  <MpTextlink id="pa-set-budget-poc" as="a" @click.prevent="goTab('setup')">{{ t('Set budget') }}</MpTextlink>
+                </p>
+                <p v-else-if="actualCost(engagement) > engagement.budget" class="pa-note">
+                  {{ t('Cost incurred exceeds the budgeted cost. Review the budget or submit an addendum.') }}
                 </p>
               </section>
 
               <section class="pa-card">
                 <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
-                <table class="pa-table">
-                  <thead>
-                    <tr>
-                      <th class="pa-th">{{ t('Item') }}</th>
-                      <th class="pa-th">{{ t('Source') }}</th>
-                      <th class="pa-th">{{ t('Date') }}</th>
-                      <th class="pa-th pa-th--num">{{ t('Cost') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="x in engagement.entries" :key="x.id">
-                      <td class="pa-td">{{ entryLabel(x) }}</td>
-                      <td class="pa-td pa-td--muted">{{ x.src }}</td>
-                      <td class="pa-td pa-td--muted">{{ formatDate(x.date) }}</td>
-                      <td class="pa-td pa-td--num">{{ formatIdr(x.amount) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <ErpTablePage
+                  class="pa-erp-table"
+                  :columns="inputColumns"
+                  :rows="inputPaged"
+                  :total="inputTotal"
+                  :current-page="inputPage"
+                  :per-page="inputPerPage"
+                  :sort-key="inputSortKey"
+                  :sort-dir="inputSortDir"
+                  no-row-hover
+                  @sort="toggleInputSort"
+                  @sort-change="setInputSort"
+                  @page-change="setInputPage"
+                  @per-page-change="setInputPerPage"
+                >
+                  <template #cell-date="{ value }">{{ formatDate(String(value)) }}</template>
+                  <template #cell-cost="{ value }">{{ formatIdr(Number(value)) }}</template>
+                  <template #empty>
+                    <p class="pa-note">{{ t('No cost lines yet. Cost lines tagged to this project appear here.') }}</p>
+                  </template>
+                </ErpTablePage>
               </section>
             </template>
 
-            <!-- ── Output by milestone ── -->
+            <!-- ── Milestones ── -->
             <template v-else>
               <section class="pa-card" data-tour="pa-output-milestones">
-                <h2 class="pa-card-title">{{ t('Output by Milestone') }}</h2>
-                <p class="pa-summary" :class="weightsOk ? 'pa-summary--ok' : 'pa-summary--bad'">
-                  {{ weightsOk
-                    ? t('Milestone weights sum to 100%.')
-                    : `${t('Milestone weights total')} ${Math.round(weightSum)}%. ${t('Adjust them to 100% to verify milestones.')}` }}
+                <h2 class="pa-card-title">{{ methodLabel('output') }}</h2>
+                <p v-if="!weightsOk" class="pa-summary pa-summary--bad">
+                  {{ `${t('Milestone weights total')} ${Math.round(weightSum)}%. ${t('Adjust them to 100% to verify milestones.')}` }}
                 </p>
 
                 <table class="pa-table">
@@ -1025,24 +1351,34 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                   </thead>
                   <tbody>
                     <tr v-for="m in outputMilestones" :key="m.id">
-                      <td class="pa-td">{{ m.label }}</td>
+                      <td class="pa-td pa-td--wrap">
+                        {{ m.label }}
+                        <div v-if="m.verifiedLine" class="pa-tiny">{{ m.verifiedLine }}</div>
+                      </td>
                       <td class="pa-td pa-td--num">{{ m.pct }}</td>
                       <td class="pa-td pa-td--num">{{ m.amount }}</td>
                       <td class="pa-td">
                         <ErpStatusBadge :status="m.statusKey" :label="m.statusLabel" />
+                        <div v-if="m.approval" class="pa-tiny">{{ m.approval.ruleName }} · {{ t('Submitted by') }} {{ m.approval.submittedBy }}</div>
                         <div v-if="m.note" class="pa-tiny">{{ m.note }}</div>
                       </td>
                       <td class="pa-td pa-td--actions">
-                        <button v-if="m.canVerify" type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="doVerify(m.id)">
-                          {{ t('Mark physically verified') }}
-                        </button>
-                        <button
-                          v-else-if="m.showUnverify" type="button"
-                          class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                          :disabled="m.locked" @click="doUnverify(m.id)"
+                        <template v-if="m.approval">
+                          <template v-if="decision(m.approval).ok">
+                            <MpButton is-rounded variant="secondary" size="sm" @click="approvePending(m.approval)">{{ t('Approve') }}</MpButton>
+                            <MpButton is-rounded variant="secondary" size="sm" @click="rejectTarget = { kind: 'approval', approval: m.approval, label: m.label }">{{ t('Reject') }}</MpButton>
+                          </template>
+                          <span v-else class="pa-tiny">{{ decision(m.approval).reason }}</span>
+                        </template>
+                        <MpButton is-rounded v-else-if="m.canVerify" variant="secondary" size="sm" @click="verifyMid = m.id">
+                          {{ t('Verify milestone') }}
+                        </MpButton>
+                        <MpButton is-rounded
+                          v-else-if="m.showUnverify" variant="secondary" size="sm"
+                          :is-disabled="m.locked" @click="doUnverify(m.id)"
                         >
                           {{ m.locked ? t('Invoiced') : t('Reverse verification') }}
-                        </button>
+                        </MpButton>
                       </td>
                     </tr>
                   </tbody>
@@ -1057,20 +1393,19 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 <div v-for="w in weightDraft" :key="w.id" class="pa-weight-row">
                   <span class="pa-weight-label">{{ w.label }}</span>
                   <MpInputGroup :id="`pa-w-group-${w.id}`" class="pa-weight-input">
-                    <MpInput :id="`pa-w-${w.id}`" v-model="w.pct" type="number" />
+                    <MpInput :id="`pa-w-${w.id}`" v-model="w.pct" type="number" :is-invalid="!!weightError" />
                     <MpInputRightAddon>%</MpInputRightAddon>
                   </MpInputGroup>
                 </div>
+                <p v-if="weightError" class="pa-warn">{{ weightError }}</p>
                 <div class="pa-actions">
-                  <button type="button" class="btn-enterprise btn-enterprise--primary" @click="doConfirmWeights">{{ t('Confirm weights') }}</button>
+                  <MpButton variant="primary" is-rounded @click="doConfirmWeights">{{ t('Confirm weights') }}</MpButton>
                 </div>
               </section>
             </template>
 
             <div class="pa-actions">
-              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="continueTo('billing')">
-                {{ t('Continue to invoices & payments') }}
-              </button>
+              <MpButton is-rounded variant="secondary" @click="continueTo('billing')">{{ t('Continue to Invoices & payments') }}</MpButton>
             </div>
           </MpTabPanel>
 
@@ -1084,17 +1419,15 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                     ? `${costLinesLabel(readyLines.length)} · ${formatIdr(readyAmount)}`
                     : t('No reviewed lines to invoice. Review cost lines in Revenue recognition.') }}
                 </p>
-                <button
-                  v-if="readyLines.length" type="button" class="btn-enterprise btn-enterprise--primary"
-                  @click="newInvoice('tm', t('Progress billing'))"
-                >{{ t('Create invoice') }}</button>
+                <MpButton v-if="readyLines.length && !isClosed" variant="primary" is-rounded @click="newInvoice('tm', t('Progress billing'))">
+                  {{ t('Create invoice') }}
+                </MpButton>
               </section>
 
               <section class="pa-card">
-                <h2 class="pa-card-title">{{ t('Unbilled ageing') }}</h2>
-                <p class="pa-card-desc">{{ t('Lines awaiting review, by age') }}</p>
+                <h2 class="pa-card-title pa-card-title--spaced">{{ t('Awaiting review, by age') }}</h2>
                 <div v-for="b in bucketRows" :key="b.label" class="pa-bucket">
-                  <span class="pa-bucket-label">{{ b.label }}</span>
+                  <span class="pa-bucket-label">{{ t(b.label) }}</span>
                   <span class="pa-bucket-track">
                     <span class="pa-bucket-fill" :data-tone="b.tone" :style="{ width: b.width }" />
                   </span>
@@ -1104,11 +1437,12 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
             </template>
 
             <section v-else class="pa-card" data-tour="pa-billing-schedule">
-              <h2 class="pa-card-title">{{ t('Milestone billing schedule') }}</h2>
+              <h2 class="pa-card-title">{{ t('Billing schedule') }}</h2>
               <table class="pa-table">
                 <thead>
                   <tr>
                     <th class="pa-th">{{ t('Milestone') }}</th>
+                    <th class="pa-th">{{ t('Invoice') }}</th>
                     <th class="pa-th pa-th--num">{{ t('Amount') }}</th>
                     <th class="pa-th">{{ t('Status') }}</th>
                     <th class="pa-th" />
@@ -1116,15 +1450,17 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                 </thead>
                 <tbody>
                   <tr v-for="m in billingRows" :key="m.id">
-                    <td class="pa-td">{{ m.label }}</td>
+                    <td class="pa-td pa-td--wrap">
+                      {{ m.label }}
+                      <div v-if="m.sub" class="pa-tiny">{{ m.sub }}</div>
+                    </td>
+                    <td class="pa-td pa-td--muted">{{ m.invoice || '—' }}</td>
                     <td class="pa-td pa-td--num">{{ m.amount }}</td>
                     <td class="pa-td">
                       <ErpStatusBadge :status="m.statusKey" :label="m.statusLabel" />
                     </td>
                     <td class="pa-td pa-td--actions">
-                      <button v-if="m.hasAction" type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="m.action()">
-                        {{ m.actionLabel }}
-                      </button>
+                      <MpButton is-rounded v-if="m.hasAction" variant="secondary" size="sm" @click="m.action()">{{ m.actionLabel }}</MpButton>
                     </td>
                   </tr>
                 </tbody>
@@ -1157,75 +1493,66 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
                       />
                     </td>
                     <td class="pa-td pa-td--actions">
-                      <button v-if="i.status === 'unpaid'" type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" @click="doRecordPayment(i.id)">
+                      <MpButton is-rounded v-if="i.status === 'unpaid' && !isClosed" variant="secondary" size="sm" @click="doRecordPayment(i.id)">
                         {{ t('Record payment') }}
-                      </button>
+                      </MpButton>
                     </td>
                   </tr>
                 </tbody>
               </table>
-              <p v-if="!engagement.invoices.length" class="pa-note">{{ t('No invoices yet. Invoices for this engagement will appear here.') }}</p>
+              <p v-if="!engagement.invoices.length" class="pa-note">{{ t('No invoices yet. Create one with New invoice.') }}</p>
             </section>
-
           </MpTabPanel>
 
           <!-- ═══ Project health ═════════════════════════════════════════════ -->
           <MpTabPanel value="closed">
             <section class="pa-card" data-tour="pa-margin">
-              <p class="pa-figure-label">{{ t('Margin to date') }}</p>
-              <p class="pa-figure" :data-tone="margin < 0 ? 'adverse' : 'default'">{{ formatIdrSigned(margin) }}</p>
-              <p class="pa-card-desc">{{ marginSub }}</p>
-              <p v-if="engagement.stage === 'closed'" class="pa-card-desc">
-                {{ `${t('Closed on')} ${formatDateLong(engagement.closedAt ?? '')}` }}
+              <div class="stats-section pa-health-stats">
+                <div class="stat-card stat-card--bordered">
+                  <p class="stat-title">{{ t('Margin to date') }}</p>
+                  <p class="stat-period">{{ marginSub }}</p>
+                  <p class="stat-amount pa-num">{{ formatIdrSigned(margin) }}</p>
+                </div>
+                <div class="stat-card">
+                  <p class="stat-title">{{ t('Projected margin at completion') }}</p>
+                  <p class="stat-period">
+                    {{ projected.value === null ? t('No budget to project from') : projected.pct === null ? t('Contract value less expected cost') : `${projected.pct.toFixed(0)}% ${t('of contract value')}` }}
+                  </p>
+                  <p class="stat-amount pa-num">{{ projected.value === null ? '—' : formatIdrSigned(projected.value) }}</p>
+                </div>
+              </div>
+              <p v-if="overBudgetLine" class="pa-statusline pa-statusline--plain" data-tour="pa-over-budget">
+                <ErpStatusBadge status="overdue" :label="t('Over budget')" />
+                <span class="pa-statusline-text">{{ overBudgetLine }}</span>
               </p>
             </section>
 
-            <section v-if="engagement.stage !== 'closed'" class="pa-card pa-card--bar" data-tour="pa-close-gate">
+            <!-- Closed: who closed it, and the way back. -->
+            <section v-if="isClosed" class="pa-card pa-card--bar" data-tour="pa-closed">
               <div>
-                <h2 class="pa-card-title">{{ closable ? t('Ready to close') : t('Not ready to close') }}</h2>
-                <p class="pa-card-desc">{{ closeHint(engagement) }}</p>
+                <h2 class="pa-card-title">{{ t('Project closed') }}</h2>
+                <p class="pa-card-desc">{{ closedLine }}</p>
               </div>
-              <button type="button" class="btn-enterprise btn-enterprise--primary" @click="doClose">{{ t('Close engagement') }}</button>
+              <MpButton is-rounded variant="secondary" @click="reopenOpen = true">{{ t('Reopen project') }}</MpButton>
+            </section>
+
+            <section v-else class="pa-card" data-tour="pa-close-gate">
+              <div class="pa-card-head">
+                <div>
+                  <h2 class="pa-card-title">{{ closable ? t('Ready to close') : t('Not ready to close') }}</h2>
+                  <p class="pa-card-desc">{{ closeHint(engagement) }}</p>
+                </div>
+                <MpButton is-rounded :variant="closable ? 'primary' : 'secondary'" @click="closable ? (closeOpen = true) : undefined">
+                  {{ t('Close project') }}
+                </MpButton>
+              </div>
+              <p v-if="(engagement.reopenLog ?? []).length" class="pa-note">
+                {{ t('Reopened on') }} {{ formatDateLong(engagement.reopenLog![engagement.reopenLog!.length - 1]!.date) }} {{ t('by') }} {{ engagement.reopenLog![engagement.reopenLog!.length - 1]!.by }} · {{ engagement.reopenLog![engagement.reopenLog!.length - 1]!.reason }}
+              </p>
             </section>
           </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
-
-      <!-- ── Budget variance: shown on every tab except Setup ── -->
-      <section v-if="showBudgetVariance" class="pa-card" data-tour="pa-budget-variance">
-        <h2 class="pa-card-title">{{ t('Budget variance') }}</h2>
-        <p v-if="engagement.budget === null" class="pa-warn">
-          {{ t('Set a budgeted cost to calculate cost variance.') }}
-        </p>
-        <div class="pa-table-scroll">
-          <table class="pa-table">
-            <thead>
-              <tr>
-                <th class="pa-th">{{ t('Account') }}</th>
-                <th class="pa-th pa-th--num">{{ t('Budget') }}</th>
-                <th class="pa-th pa-th--num">{{ t('Actual') }}</th>
-                <th class="pa-th pa-th--num">{{ t('Variance') }}</th>
-                <th class="pa-th pa-th--num">{{ t('Variance %') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(r, i) in budgetRows" :key="`${r.label}-${i}`" :class="{ 'pa-tr--group': r.header, 'pa-tr--total': r.total }">
-                <td class="pa-td" :class="{ 'pa-td--strong': r.header || r.total }">{{ r.label }}</td>
-                <template v-if="!r.header">
-                  <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }">{{ r.budget === null ? t('Not set') : formatIdrSigned(r.budget) }}</td>
-                  <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total }">{{ formatIdrSigned(r.actual) }}</td>
-                  <td class="pa-td pa-td--num" :class="{ 'pa-td--strong': r.total, 'pa-td--adverse': r.adverse }">{{ r.variance === null ? '—' : formatIdrSigned(r.variance) }}</td>
-                  <td class="pa-td pa-td--num" :class="{ 'pa-td--adverse': r.adverse }">
-                    {{ r.pct === null ? '—' : `${r.pct.toFixed(0)}%` }}
-                    <div v-if="r.note" class="pa-tiny">{{ r.note }}</div>
-                  </td>
-                </template>
-                <td v-else class="pa-td" colspan="4" />
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
     </div>
 
     <ApproveAddendumModal
@@ -1236,9 +1563,63 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
       :reason="confirmingVo.reason"
       :effect="voEffect"
       :raised-by="confirmingVo.raisedBy"
+      :approver-name="currentUser.name"
+      :approver-role="currentUser.role"
       @update:is-open="voConfirmId = null"
       @confirm="doApproveVo"
     />
+    <RejectRequestModal
+      v-if="rejectTarget"
+      :is-open="!!rejectTarget"
+      :title="rejectTitle"
+      :subject="rejectTarget.label"
+      @update:is-open="rejectTarget = null"
+      @confirm="confirmReject"
+    />
+    <VerifyMilestoneModal
+      v-if="verifyingMilestone"
+      :is-open="!!verifyingMilestone"
+      :milestone-label="verifyingMilestone.label"
+      :amount="verifyingMilestone.amountNum"
+      :default-verifier="currentUser.name"
+      :today="TODAY"
+      :needs-approval="verifyGate.needsApproval"
+      :approver-names="verifyGate.approverNames"
+      @update:is-open="verifyMid = null"
+      @confirm="doVerify"
+    />
+    <CloseProjectModal
+      v-if="closeOpen"
+      :is-open="closeOpen"
+      :project-name="engagement.name"
+      :summary="closeSum"
+      @update:is-open="closeOpen = $event"
+      @confirm="doClose"
+    />
+    <ReopenProjectModal
+      v-if="reopenOpen"
+      :is-open="reopenOpen"
+      :project-name="engagement.name"
+      @update:is-open="reopenOpen = $event"
+      @confirm="doReopen"
+    />
+    <ActivityLogModal
+      :is-open="activityOpen"
+      :subject="engagement.name"
+      :updated-by="lastActivity?.user || engagement.pm"
+      :updated-at="lastActivity?.date ?? ''"
+      :entries="activityEntries"
+      @close="activityOpen = false"
+    />
+
+    <!-- Prototype-only: who you are for submit/approve. Simulated for this prototype. -->
+    <ScenarioFab v-model="viewAsModel" :scenarios="viewAsScenarios" :aria-label="t('View as (simulated for this prototype)')" />
+  </div>
+
+  <!-- Not found -->
+  <div v-else class="pa-not-found">
+    <p class="pa-card-title">{{ t('Project not found') }}</p>
+    <MpTextlink id="pa-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ t('Back to Project accounting') }}</MpTextlink>
   </div>
 </template>
 
@@ -1280,8 +1661,8 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
   background: var(--mp-background-neutral); padding: var(--mp-spacing-5) var(--mp-spacing-6);
   margin-top: var(--mp-spacing-8);
 }
-.pa-card--notice { background: var(--mp-background-information-subtle, #eef0fb); border-color: var(--mp-border-information, #c9d1f5); }
-.pa-card--danger { background: var(--mp-background-danger-subtle, #fceeed); border-color: var(--mp-border-danger, #a8352d); }
+.pa-card--notice { background: var(--mp-colors-background-information); border-color: var(--mp-colors-border-information); }
+.pa-card--danger { background: var(--mp-colors-background-danger); border-color: var(--mp-colors-border-danger); }
 .pa-card--bar { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); flex-wrap: wrap; }
 .pa-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-5); flex-wrap: wrap; }
 .pa-card-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
@@ -1292,9 +1673,9 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 .pa-card-desc { margin: var(--mp-spacing-1) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 860px; }
 .pa-lead { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pa-note { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.pa-warn { margin: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #a8352d); }
-.pa-tiny { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); margin-top: 2px; }
-.pa-tiny--positive { color: var(--mp-text-success, #028454); font-weight: var(--mp-font-weights-semi-bold); }
+.pa-warn { margin: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.pa-tiny { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-0\.5); white-space: normal; }
+.pa-tiny--strong { color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 .pa-num { font-variant-numeric: tabular-nums; }
 .pa-two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mp-spacing-4); }
 
@@ -1317,66 +1698,63 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); text-transform: uppercase;
+  color: var(--mp-text-default); text-transform: uppercase; vertical-align: middle;
   border-bottom: 1px solid var(--mp-border-default);
 }
 .pa-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
-.pa-th--check { width: var(--mp-sizes-11, 44px); }
-.pa-th--sortable { cursor: pointer; }
-.pa-th--sortable:hover { color: var(--mp-text-default); }
 .pa-td {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
+  height: var(--mp-sizes-10); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
   border-bottom: 1px solid var(--mp-border-default);
 }
 .pa-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
 .pa-td--muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pa-td--strong { font-weight: var(--mp-font-weights-semi-bold); }
-.pa-td--adverse { color: var(--mp-text-danger, #a8352d); }
-.pa-td--check { padding: var(--mp-spacing-2); }
+.pa-td[data-tone='adverse'] { color: var(--mp-text-danger); }
+.pa-td--wrap { white-space: normal; }
 .pa-td--actions { text-align: right; white-space: nowrap; }
 .pa-td--actions > * + * { margin-left: var(--mp-spacing-2); }
 .pa-tr--total > .pa-td { background: var(--mp-background-neutral-subtle); font-weight: var(--mp-font-weights-semi-bold); }
 .pa-tr--group > .pa-td { background: var(--mp-background-neutral-subtle); }
 
 /* ── Progress bars ────────────────────────────────────────────────────────── */
-.pa-progress { height: 14px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
+.pa-progress { height: var(--mp-sizes-3); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
 .pa-progress-fill { height: 100%; border-radius: var(--mp-radii-full, 999px); }
 .pa-progress-fill[data-tone='ok'] { background: var(--mp-colors-emerald-700, #029861); }
 
 .pa-bucket { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1) 0; }
-.pa-bucket-label { width: 90px; flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
-.pa-bucket-track { flex: 1; height: 10px; border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); overflow: hidden; }
+.pa-bucket-label { width: var(--mp-sizes-24); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
+.pa-bucket-track { flex: 1; height: var(--mp-sizes-2); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); overflow: hidden; }
 .pa-bucket-fill { display: block; height: 100%; border-radius: var(--mp-radii-full, 999px); }
 .pa-bucket-fill[data-tone='ok'] { background: var(--mp-colors-emerald-700, #029861); }
 .pa-bucket-fill[data-tone='near'] { background: var(--mp-colors-orange-600, #e46910); }
 .pa-bucket-fill[data-tone='over'] { background: var(--mp-colors-red-700, #a8352d); }
-.pa-bucket-amount { width: 150px; text-align: right; font-size: var(--mp-font-sizes-sm); }
+.pa-bucket-amount { width: var(--mp-sizes-40); text-align: right; font-size: var(--mp-font-sizes-sm); }
 
 /* ── Ageing / summaries ───────────────────────────────────────────────────── */
 .pa-age { font-weight: var(--mp-font-weights-semi-bold); font-size: var(--mp-font-sizes-sm); }
-.pa-age[data-tone='ok'] { color: var(--mp-text-success, #028454); }
+.pa-age[data-tone='ok'] { color: var(--mp-colors-text-success); }
 .pa-age[data-tone='default'] { color: var(--mp-text-default); }
-.pa-age[data-tone='near'] { color: var(--mp-text-warning, #e46910); }
-.pa-age[data-tone='over'] { color: var(--mp-text-danger, #a8352d); }
+.pa-age[data-tone='near'] { color: var(--mp-colors-text-warning); }
+.pa-age[data-tone='over'] { color: var(--mp-text-danger); }
 .pa-summary { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
-.pa-summary--ok { color: var(--mp-text-success, #028454); }
-.pa-summary--bad { color: var(--mp-text-danger, #a8352d); }
+.pa-summary--bad { color: var(--mp-text-danger); }
 
 /* ── Addendum form ────────────────────────────────────────────────────────── */
-.pa-vo-form { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: var(--mp-spacing-3); align-items: end; margin-bottom: var(--mp-spacing-4); }
-.pa-vo-submit { align-self: end; white-space: nowrap; }
+.pa-vo { margin-top: var(--mp-spacing-4); }
+.pa-vo-form { display: grid; grid-template-columns: 1fr 1.6fr; gap: var(--mp-spacing-3); align-items: end; margin-bottom: var(--mp-spacing-4); }
 .pa-box { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); padding: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
 .pa-box-title { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pa-choices { display: flex; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 .pa-choice {
-  flex: 1; min-width: 280px; text-align: left; cursor: pointer;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
+  flex: 1; min-width: var(--mp-sizes-64); text-align: left; cursor: pointer;
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
   border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px);
   background: var(--mp-background-neutral); padding: var(--mp-spacing-3) var(--mp-spacing-4);
 }
 .pa-choice:hover { background: var(--mp-background-neutral-hovered); }
-.pa-choice--picked { border-color: var(--mp-border-selected, #029861); background: var(--mp-background-selected, #eaf6f0); }
+.pa-choice--picked { border-color: var(--mp-colors-border-selected); background: var(--mp-colors-background-success); }
+.pa-choice-body { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .pa-choice-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pa-choice-desc { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 
@@ -1386,19 +1764,37 @@ const showBudgetVariance = computed(() => activeStage.value !== 'setup')
 /* ── Weight editor ────────────────────────────────────────────────────────── */
 .pa-weight-row { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2); }
 .pa-weight-label { flex: 1; font-size: var(--mp-font-sizes-md); }
-.pa-weight-input { width: 140px; flex-shrink: 0; }
+.pa-weight-input { width: var(--mp-sizes-36); flex-shrink: 0; }
 
 /* ── Misc ─────────────────────────────────────────────────────────────────── */
 .pa-chips { display: flex; gap: var(--mp-spacing-2); flex-wrap: wrap; margin-bottom: var(--mp-spacing-2); }
+.pa-chip--active { border-color: var(--mp-colors-border-selected) !important; background: var(--mp-colors-background-success) !important; }
 .pa-chip-row { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; margin-top: var(--mp-spacing-1); }
 .pa-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); flex-wrap: wrap; }
 .pa-bar-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pa-bar-actions { display: flex; gap: var(--mp-spacing-2); flex-wrap: wrap; }
-.pa-figure-label { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase; color: var(--mp-text-secondary); }
-.pa-figure {
-  margin: var(--mp-spacing-2) 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-2xl);
-  font-weight: var(--mp-font-weights-semi-bold); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
-  font-variant-numeric: tabular-nums; color: var(--mp-text-default);
+.pa-actions--tight { margin-top: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2); }
+
+/* ── Approval / status lines (no banners) ─────────────────────────────────── */
+.pa-statusline { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; margin: 0; }
+.pa-statusline--plain { margin-top: var(--mp-spacing-4); }
+.pa-statusline-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
+/* Health figures use the shared stats band (caption above the figure). */
+.pa-health-stats { margin: 0; }
+
+/* ErpTablePage inside a card: no extra outer chrome. */
+.pa-erp-table { margin-top: var(--mp-spacing-3); }
+.pa-filter-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pa-cellstack { display: flex; flex-direction: column; min-width: 0; }
+.pa-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.detail-updated {
+  margin: calc(-1 * var(--mp-spacing-4)) 0 0; align-self: flex-start;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
 }
-.pa-figure[data-tone='adverse'] { color: var(--mp-text-danger, #a8352d); }
+.detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
+.pa-inline-field { flex: 1; min-width: var(--mp-sizes-64); }
+
+.pa-not-found { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--mp-spacing-2); height: 100%; }
 </style>
