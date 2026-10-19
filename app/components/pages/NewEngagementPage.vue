@@ -460,7 +460,7 @@ function cancel() { router.push('/project-accounting') }
 .ne-method--invalid { border-color: var(--mp-colors-border-danger); }
 .ne-method-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 /* Indented to the radio label's left edge (16px control + 12px gap). */
-.ne-method-desc { padding-left: var(--mp-spacing-7); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
+.ne-method-desc { padding-left: calc(var(--mp-sizes-4) + var(--mp-spacing-3)); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 
 /* ── Dropdown option with its own open-in-a-new-tab action ──────────────── */
 .ne-option { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); width: 100%; min-width: 0; }
@@ -487,7 +487,7 @@ function cancel() { router.push('/project-accounting') }
 
 /* ── Repeatable lines ────────────────────────────────────────────────────── */
 .ne-line { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2); }
-.ne-line-pct { width: var(--mp-sizes-30, 120px); flex-shrink: 0; }
+.ne-line-pct { width: calc(var(--mp-sizes-10) * 3); flex-shrink: 0; }
 .ne-line--head { margin-bottom: var(--mp-spacing-1); }
 .ne-line-head { flex: 1; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ne-line-head.ne-line-pct { flex: none; }

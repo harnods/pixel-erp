@@ -365,11 +365,11 @@ function cancel() {
 .ex-table-section { border-bottom: 1px solid var(--mp-border-default); }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
 /* Fits a 1280 stage without scrolling: Description takes what is left. */
-.px-col-account { width: 208px; }
-.px-col-amount { width: 184px; }
-.px-col-project { width: 216px; }
-.px-col-hours { width: 88px; }
-.px-col-tax { width: 120px; }
+.px-col-account { width: 224px; }
+.px-col-amount { width: 168px; }
+.px-col-project { width: 192px; }
+.px-col-hours { width: 80px; }
+.px-col-tax { width: 112px; }
 .px-col-del { width: var(--mp-sizes-11, 44px); }
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
@@ -391,9 +391,11 @@ function cancel() {
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .ex-td--input:focus-within::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10, 40px);
-  box-shadow: inset 0 0 0 2px var(--mp-border-focused); pointer-events: none; /* pixel-police-allow-shadow: focus ring, not a surface lift */
+  box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused); pointer-events: none; /* pixel-police-allow-shadow: focus ring, not a surface lift */
 }
 .ex-td--border { border-right: 1px solid var(--mp-border-default); }
+/* Pixel inputs carry an intrinsic min width; let them shrink to the column. */
+.ex-td--input :deep(.mp-input__root), .ex-td--input :deep(input) { min-width: 0; width: 100%; }
 .ex-td--del { text-align: center; }
 .ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
 .ex-td--error { background: var(--mp-colors-background-danger); }

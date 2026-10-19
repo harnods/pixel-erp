@@ -495,14 +495,14 @@ async function save() {
 /* ── Line table: NewExpensePage ex-* markup (FormTable.md) ───────────────── */
 .ex-table-section { border-bottom: 1px solid var(--mp-border-default); overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
-.pi-lines { min-width: 936px; }
-.pi-col-product { width: 168px; }
-.pi-col-qty { width: 64px; }
-.pi-col-price { width: 152px; }
-.pi-col-disc { width: 80px; }
-.pi-col-tax { width: 112px; }
-.pi-col-project { width: 176px; }
-.pi-col-amount { width: 144px; }
+.pi-lines { min-width: 980px; }
+.pi-col-product { width: 140px; }
+.pi-col-qty { width: 56px; }
+.pi-col-price { width: 136px; }
+.pi-col-disc { width: 64px; }
+.pi-col-tax { width: 116px; }
+.pi-col-project { width: 152px; }
+.pi-col-amount { width: 152px; }
 .pi-col-del { width: var(--mp-sizes-11, 44px); }
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
@@ -524,9 +524,11 @@ async function save() {
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
 .ex-td--input:focus-within::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10, 40px);
-  box-shadow: inset 0 0 0 2px var(--mp-border-focused); pointer-events: none; /* pixel-police-allow-shadow: focus ring, not a surface lift */
+  box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused); pointer-events: none; /* pixel-police-allow-shadow: focus ring, not a surface lift */
 }
 .ex-td--border { border-right: 1px solid var(--mp-border-default); }
+/* Pixel inputs carry an intrinsic min width; let them shrink to the column. */
+.ex-td--input :deep(.mp-input__root), .ex-td--input :deep(input) { min-width: 0; width: 100%; }
 /* Calculated cell: read-only, subtle fill, right-aligned figure. */
 .ex-td--readonly {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4);
