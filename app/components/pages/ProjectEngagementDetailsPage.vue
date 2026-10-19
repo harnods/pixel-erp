@@ -36,8 +36,6 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import { useTableState } from '~/composables/useTableState'
 import { useProjectViewAs, type ProjectViewAs } from '~/composables/useProjectViewAs'
 import { formatDate, formatDateLong } from '~/utils/date'
-import { check_approval_required } from '~/data/approvalWorkflows'
-import { getUserById } from '~/data/users'
 import {
   engagements, findEngagement, STAGES, stageIndex, methodLabel, TODAY,
   revenue, actualCost, pocPct, billed, collected, wipNet, openEntries, readyToInvoice,
@@ -47,6 +45,7 @@ import {
   addScopeMilestone, unverifyMilestone, recordPayment, closeEngagement,
   projectStatusKey, projectStatusLabel, approvalFor, canDecide, submitMilestoneVerification,
   approveRequest, rejectRequest, closeSummary, reopenEngagement, projectedMargin, billingStatusOf,
+  verificationApprovalPreview,
   formatIdr, formatIdrShort, formatIdrSigned,
   type Engagement, type EngagementStage, type CostEntry, type CostDecision, type Addendum,
   type PendingApproval, type MilestoneVerificationInput, type BudgetReportRow, type BillingStatus,
@@ -54,10 +53,6 @@ import {
 
 // The engine adds these optional trailing params in the same round (COMMON.md shared
 // contract). Typed here with them so the calls compile on either side of the merge.
-const addAddendumAs = addAddendum as (id: string, newValue: number, reason: string, distinct: boolean, submittedBy?: string) => void
-const approveAddendumAs = approveAddendum as (id: string, voId: string, approver?: string) => void
-const rejectAddendumAs = rejectAddendum as (id: string, voId: string, approver?: string, reason?: string) => void
-const closeEngagementAs = closeEngagement as (id: string, by?: string) => boolean
 
 const props = defineProps<{ orderId: string }>()
 
@@ -265,7 +260,7 @@ function submitAddendum() {
   voErrors.distinct = voDistinct.value === null ? t('Choose whether this is new, separately priced work') : ''
   if (voErrors.value || voErrors.reason || voErrors.distinct) return
   const before = e.vos.length
-  addAddendumAs(e.id, val, voReason.value, voDistinct.value === true, currentUser.value.name)
+  addAddendum(e.id, val, voReason.value, voDistinct.value === true, currentUser.value.name)
   const added = e.vos[before]
   const gate = added ? approvalFor(e, 'addendum', added.id) : undefined
   resetVoForm()
@@ -313,7 +308,7 @@ function doApproveVo() {
   const id = voConfirmId.value
   if (!e || !id) return
   const a = approvalFor(e, 'addendum', id)
-  const ok = a ? approveRequest(e.id, a.id, currentUser.value.name) : (approveAddendumAs(e.id, id, currentUser.value.name), true)
+  const ok = a ? approveRequest(e.id, a.id, currentUser.value.name) : (approveAddendum(e.id, id, currentUser.value.name), true)
   voConfirmId.value = null
   toast.notify(ok
     ? { variant: 'success', title: t('Addendum approved'), maxWidth: 'max-content' }
@@ -344,7 +339,7 @@ function confirmReject(reason: string) {
   const r = rejectTarget.value
   if (!e || !r) return
   let ok = true
-  if (r.kind === 'addendum') rejectAddendumAs(e.id, r.voId, currentUser.value.name, reason)
+  if (r.kind === 'addendum') rejectAddendum(e.id, r.voId, currentUser.value.name, reason)
   else ok = rejectRequest(e.id, r.approval.id, currentUser.value.name, reason)
   const what = r.kind === 'approval' && r.approval.action !== 'addendum'
     ? (r.approval.action === 'project-creation' ? t('Project rejected') : t('Verification rejected'))
@@ -685,11 +680,8 @@ const verifyGate = computed(() => {
   const e = engagement.value
   const m = verifyingMilestone.value
   if (!e || !m) return { needsApproval: false, approverNames: [] as string[] }
-  const res = check_approval_required('project.milestone_verification', m.amountNum, e.id)
-  const names = res.approval_levels.flatMap(l => l.approver_ids)
-    .map(id => getUserById(id)?.name ?? '')
-    .filter(Boolean)
-  return { needsApproval: res.approval_required, approverNames: [...new Set(names)] }
+  const rule = verificationApprovalPreview(e, m.id)
+  return { needsApproval: !!rule, approverNames: rule?.approvers ?? [] }
 })
 
 function doVerify(info: MilestoneVerificationInput) {
@@ -815,7 +807,7 @@ const closeSum = computed(() => engagement.value ? closeSummary(engagement.value
 function doClose() {
   const e = engagement.value
   if (!e) return
-  if (!closeEngagementAs(e.id, currentUser.value.name)) {
+  if (!closeEngagement(e.id, currentUser.value.name)) {
     toast.notify({ variant: 'error', title: t('Unable to close this project'), maxWidth: 'max-content' })
     return
   }

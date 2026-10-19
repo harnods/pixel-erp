@@ -145,7 +145,7 @@ const isSaving = ref(false)
 
 // The engine gains an optional `submittedBy` in this round; typed locally so the
 // call compiles against either signature.
-const createProject = createEngagement as (d: EngagementDraft, submittedBy?: string) => Engagement
+const createProject = createEngagement
 
 async function save() {
   nameError.value = !draft.name.trim()
