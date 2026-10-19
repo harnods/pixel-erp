@@ -287,7 +287,23 @@ type Seed = {
   dayOffset: number
   /** Who created the work order — the requestor of every untagged line. */
   staffIndex: number
-  lines: SeedLine[]
+  /** Hand-written lines, for the cases the demo has to be exact about. */
+  lines?: SeedLine[]
+  /**
+   * …or take the work order's components as plain lines and let the generator
+   * fill them in. The bulk of the seed uses this: a request's line count is its
+   * work order's component count, which runs 1–10 across the BOM catalog, and
+   * writing all of them out by hand would be ~300 lines of literal that say
+   * nothing a rule cannot.
+   */
+  generate?: {
+    /** 0 = nothing reserved, 1 = every line fully reserved. Default 0. */
+    reservedPct?: number
+    /** Shifts the required dates; negative values make the request overdue. */
+    requiredFrom?: number
+    /** Free stock at the destination, as a multiple of the line's qty. Default 1. */
+    stockFactor?: number
+  }
 }
 
 /** Destination warehouses used by the seed — real names from the warehouse master. */
@@ -360,6 +376,46 @@ const SEED: Seed[] = [
     { reservedPct: 1, consumedPct: 0, destAvailable: 3, requiredOffset: 2 },
     { reservedPct: 0, consumedPct: 0, destAvailable: 2, requiredOffset: 5, rawIndex: 0, tag: 'additional', staffIndex: 1, rejected: true },
   ] },
+
+  // ── Volume ──────────────────────────────────────────────────────────────────
+  // Enough open requests to page, sort and filter against, taking their line
+  // counts from their work orders' bills — which run 1 to 10 components — so the
+  // breakdown rows vary the same way. Every one of these is still awaiting
+  // something, or it would not be on this tab at all.
+  // Three of these land before today on their first line, so Overdue is visible
+  // without being the state of every row.
+  { woIndex: 5,  dayOffset: -1,  staffIndex: 0, generate: { requiredFrom: 5,  stockFactor: 2 } },
+  { woIndex: 7,  dayOffset: -3,  staffIndex: 1, generate: { reservedPct: 0.5, requiredFrom: 5 } },
+  { woIndex: 8,  dayOffset: -4,  staffIndex: 2, generate: { requiredFrom: 2,  stockFactor: 0 } },
+  { woIndex: 9,  dayOffset: -6,  staffIndex: 3, generate: { reservedPct: 0.25, requiredFrom: 13, stockFactor: 2 } },
+  { woIndex: 10, dayOffset: -7,  staffIndex: 4, generate: { requiredFrom: 8 } },
+  { woIndex: 11, dayOffset: -9,  staffIndex: 5, generate: { reservedPct: 0.5, requiredFrom: 5, stockFactor: 0 } },
+  { woIndex: 12, dayOffset: -10, staffIndex: 0, generate: { requiredFrom: 15, stockFactor: 3 } },
+  { woIndex: 13, dayOffset: -12, staffIndex: 1, generate: { reservedPct: 0.75, requiredFrom: 15 } },
+  { woIndex: 14, dayOffset: -13, staffIndex: 2, generate: { requiredFrom: 12, stockFactor: 2 } },
+  { woIndex: 15, dayOffset: -15, staffIndex: 3, generate: { reservedPct: 0.5, requiredFrom: 23 } },
+
+  // The six later work orders (indexes 24–29), weighted towards the blends: they
+  // are what lets a By product row expand to ten open transactions, since that
+  // number IS the count of open requests needing the component.
+  { woIndex: 24, dayOffset: -2,  staffIndex: 1, generate: { requiredFrom: 6, stockFactor: 2 } },
+  { woIndex: 25, dayOffset: -5,  staffIndex: 2, generate: { reservedPct: 0.5, requiredFrom: 9 } },
+  { woIndex: 26, dayOffset: -3,  staffIndex: 3, generate: { requiredFrom: 7, stockFactor: 0 } },
+  { woIndex: 27, dayOffset: -6,  staffIndex: 4, generate: { reservedPct: 0.25, requiredFrom: 11, stockFactor: 2 } },
+  { woIndex: 28, dayOffset: -4,  staffIndex: 5, generate: { requiredFrom: 8 } },
+  { woIndex: 29, dayOffset: -7,  staffIndex: 0, generate: { reservedPct: 0.5, requiredFrom: 10, stockFactor: 3 } },
+  { woIndex: 30, dayOffset: -1,  staffIndex: 2, generate: { requiredFrom: 5, stockFactor: 2 } },
+
+  // Two more canceled work orders, so Closed pages and sorts like a real tab
+  // rather than showing the three rows it takes to prove the status exists.
+  { woIndex: 22, dayOffset: -8,  staffIndex: 4, generate: { requiredFrom: 6 } },
+  { woIndex: 23, dayOffset: -11, staffIndex: 5, generate: { reservedPct: 0.5, requiredFrom: 12, stockFactor: 2 } },
+  { woIndex: 31, dayOffset: -7,  staffIndex: 0, generate: { requiredFrom: 4 } },
+  { woIndex: 32, dayOffset: -9,  staffIndex: 1, generate: { reservedPct: 0.5, requiredFrom: 11, stockFactor: 2 } },
+  { woIndex: 33, dayOffset: -10, staffIndex: 2, generate: { requiredFrom: 8, stockFactor: 0 } },
+  { woIndex: 34, dayOffset: -12, staffIndex: 3, generate: { reservedPct: 0.25, requiredFrom: 14 } },
+  { woIndex: 35, dayOffset: -13, staffIndex: 4, generate: { requiredFrom: 10, stockFactor: 3 } },
+  { woIndex: 36, dayOffset: -15, staffIndex: 5, generate: { reservedPct: 0.5, requiredFrom: 17, stockFactor: 2 } },
 ]
 
 function buildSeed(): StockRequest[] {
@@ -370,10 +426,27 @@ function buildSeed(): StockRequest[] {
     // then point back at one of them by `rawIndex`.
     const raws = [...new Map((bom?.rawMaterials ?? []).map(r => [r.productId, r])).values()]
     const requestDate = shiftDays(TODAY_ISO, s.dayOffset)
+    /**
+     * `generate` means "one plain line per component of this work order". The
+     * spread within a request is deterministic, not random, so the same row
+     * always carries the same numbers: required dates fan out a few days at a
+     * time, and every third line is left short of stock so each request shows a
+     * mix of covered and uncovered demand rather than one flat state.
+     */
+    const seedLines: SeedLine[] = s.lines ?? raws.map((raw, li) => {
+      const g = s.generate ?? {}
+      const short = li % 3 === 2
+      return {
+        reservedPct: g.reservedPct ?? 0,
+        consumedPct: 0,
+        destAvailable: short ? 0 : raw.needed * (g.stockFactor ?? 1),
+        requiredOffset: (g.requiredFrom ?? 2) + li * 2,
+      }
+    })
     // A seed may describe more lines than its work order's BOM actually has
     // components; those have nothing real to point at, so they are dropped rather
     // than rendered as a placeholder "Raw material" row.
-    const lines: StockRequestLine[] = s.lines.flatMap((sl, li) => {
+    const lines: StockRequestLine[] = seedLines.flatMap((sl, li) => {
       const ri = sl.rawIndex ?? li
       const raw = raws[ri]
       if (!raw) return []
@@ -427,8 +500,12 @@ function buildSeed(): StockRequest[] {
  * v3 adds the seeds behind the Closed tab. A snapshot written before
  * them is readable, but it would leave that tab permanently empty on every
  * machine that has one — which is exactly what the tab is being demoed for.
+ *
+ * v4 widens the bills of materials behind the seed (1–10 components each) and
+ * adds the requests that fill both tabs. A v3 snapshot would still load, and
+ * would quietly pin every machine that has one to the old five-row table.
  */
-const SNAPSHOT_KEY = 'stockRequests.v3'
+const SNAPSHOT_KEY = 'stockRequests.v4'
 
 const snapshot = loadSnapshot<StockRequest>(SNAPSHOT_KEY)
 export const stockRequests = reactive<StockRequest[]>(snapshot ?? buildSeed())
@@ -605,6 +682,15 @@ export interface SkuDemandGroup {
 export function skuDemandGroups(
   requests: StockRequest[],
   lineFilter?: (line: StockRequestLine, req: StockRequest) => boolean,
+  /**
+   * Include settled lines — rejected ones, and those of a cancelled job. Off for
+   * the Awaiting tab, where settled demand would inflate a rollup of work still
+   * to do. ON for the Closed tab, which is made OF settled requests: with it off
+   * that tab's By product view came back all but empty while By transaction
+   * listed eleven requests, and the two views are meant to be one data set seen
+   * two ways, not two data sets.
+   */
+  includeSettled = false,
 ): SkuDemandGroup[] {
   // One bucket per SKU + destination warehouse: the same component wanted at two
   // warehouses is two different pieces of demand, fulfilled by two transfers.
@@ -612,10 +698,9 @@ export function skuDemandGroups(
   for (const req of requests) {
     const canceled = workOrderFor(req)?.status === 'canceled'
     for (const line of req.lines) {
-      // Rejected lines and a cancelled job's lines are settled — their demand no
-      // longer stands, so they must not inflate the rollup. This is now per LINE:
-      // rejecting an Adjustment delta leaves the original demand counted.
-      if (line.rejected || canceled) continue
+      // This is per LINE: rejecting an Adjustment delta leaves the original
+      // demand counted.
+      if (!includeSettled && (line.rejected || canceled)) continue
       if (lineFilter && !lineFilter(line, req)) continue
       const key = `${line.productId}::${line.destinationWarehouseId}`
       const bucket = byProduct.get(key) ?? []

@@ -26,7 +26,7 @@ Sources this was built from:
 
 | Surface | Route / component | Notes |
 | --- | --- | --- |
-| Stock requests index | `/stock-requests` | Tabs **Awaiting** (default) / **Closed**; views By product / By transaction, as a segmented control |
+| Stock requests index | `/stock-requests` | Tabs **Awaiting** (default) / **Closed**; views **By transaction** (default) / By product, as a segmented control |
 | Stock request detail | `/stock-requests/:requestId` | Exactly one detail page, grouped by destination warehouse |
 | Production settings | `/production-settings` | Settings › Production |
 | WO detail | `/work-orders/:id` | Reservation menu, readiness badge, Reserved/Consumed columns |
@@ -179,6 +179,11 @@ S-4.
   Remaining · Unit. By transaction sums each figure across the request's lines;
   its Unit is blank when the lines disagree, since no one unit is true then.
   Neither view carries Request type.
+- **View parity** — the two views are one data set seen two ways; picking one
+  changes what a row IS, never which requests are in scope. Settled lines are
+  excluded from the product rollup so they cannot inflate Awaiting, which is
+  wrong on Closed — a tab made OF settled requests — so `skuDemandGroups` takes
+  an `includeSettled` flag that the page sets there. Held by a test.
 - **W-1…W-10** — both views; product rows are one per SKU **per destination
   warehouse** so availability is never summed across warehouses; W-2's column set
   behind a column menu; derived statuses incl. Rejected and Canceled; overdue;

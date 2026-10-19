@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-view-default-transaction',
+    title: 'Stock requests: By transaction leads, and is the default view',
+    description:
+      'The switcher now reads By transaction / By product, and opens on By transaction. A row there IS a record — it has a number, a detail page and actions. By product is the aggregate lens over the same requests: useful when sourcing one component, but a row is a rollup with no record behind it, which is a strange thing to land on first.',
+    date: '2026-10-19',
+    files: ['StockRequestsPage.vue'],
+  },
+  {
+    id: 'sr-seed-depth',
+    title: 'Stock requests: enough data to page, sort and filter against',
+    description:
+      'The seed bills of materials now carry 1 to 10 components each instead of 1 or 2, and fourteen more work orders were added — seven active, seven canceled. Awaiting holds 19 requests over 31 component rows, Closed holds 11 over 29, and the breakdown under a row varies from 1 to 10 in both views. Because a request mirrors its work order\'s bill, the depth comes from the BOMs rather than from numbers invented at the request.',
+    date: '2026-10-19',
+    files: ['billOfMaterials.ts', 'workOrders.ts', 'stockRequests.ts'],
+  },
+  {
+    id: 'sr-view-parity',
+    title: 'Stock requests: both views cover the same requests on Closed',
+    description:
+      'Settled lines are kept out of the product rollup so they cannot inflate what is still to do — but the Closed tab is made of settled requests, so that rule emptied it: 11 requests By transaction against 2 rows By product. The rollup now takes a flag, set on Closed only. The two views are one data set seen two ways, and a test holds them to it.',
+    date: '2026-10-19',
+    files: ['stockRequests.ts', 'StockRequestsPage.vue', 'stock-request-dashboard.spec.ts'],
+  },
+  {
     id: 'sr-filters-complete',
     title: 'Stock requests: the drawer holds every filter, and the bar stops wrapping',
     description:

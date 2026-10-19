@@ -65,7 +65,10 @@ const isTerminalTab = computed(() => route.query.tab === 'Closed')
 // WO-2026-0001"), so the view keeps reading correctly as more types are added
 // without renaming anything. ─────────────────────────────────────────────────
 type GroupBy = 'product' | 'transaction'
-const view = ref<GroupBy>('product')
+// By transaction leads and is the default: a row is then a record the stockist can
+// open, act on and close. By product is the aggregate lens over the same requests —
+// useful for sourcing one component, but it has no record behind a row.
+const view = ref<GroupBy>('transaction')
 /**
  * W-1 — the two views are a "which view am I on" switch, not a filter: picking one
  * changes what a row IS (a component vs a transaction), not which rows pass. So it
@@ -75,8 +78,8 @@ const view = ref<GroupBy>('product')
 // MpSegmentedControl needs an `id` per item — without one the radios don't bind
 // and the switch silently does nothing.
 const viewOptions = [
-  { id: 'sr-view-product',     label: t('By product'),     value: 'product'     },
   { id: 'sr-view-transaction', label: t('By transaction'), value: 'transaction' },
+  { id: 'sr-view-product',     label: t('By product'),     value: 'product'     },
 ]
 
 // ─── Columns — semantic `kind`s only, no pixel widths (rule/table-column-kind) ──
@@ -332,7 +335,8 @@ const skuRows = computed<SkuDemandGroup[]>(() => {
     .filter(r => isTerminalTab.value ? isTerminalRequest(r) : isAwaitingTab(r))
     .filter(r => matchesDateRange(r.requestDate, dateFilter.value))
 
-  return skuDemandGroups(inScope)
+  // On Closed, settled lines ARE the content — see skuDemandGroups' third argument.
+  return skuDemandGroups(inScope, undefined, isTerminalTab.value)
     .filter(g => !s || `${g.product} ${g.sku}`.toLowerCase().includes(s)
       || g.entries.some(e => e.workOrderNumber.toLowerCase().includes(s)))
     .filter(g => !kw || `${g.product} ${g.sku}`.toLowerCase().includes(kw))
@@ -939,7 +943,7 @@ const exportColumns = computed(() => {
 .sr-child-td:first-child { padding-left: var(--mp-spacing-8); }
 /* Breakdown rows take the table's vertical rules too (ErpTablePage `grid-lines`),
    otherwise the grid stops at the parent row and the child's numbers float. */
-.erp-table--grid .sr-child-td { border-right: 1px solid var(--mp-border-default); }
+.erp-table--grid .sr-child-td { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .erp-table--grid .sr-child-td--spacer,
 .erp-table--grid .sr-child-td--actions { border-right: none; }
 .sr-child-sku { display: flex; flex-direction: column; min-width: 0; }

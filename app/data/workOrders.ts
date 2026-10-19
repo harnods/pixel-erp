@@ -121,6 +121,30 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
   { bomIndex: 0, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 100, planStartDate: isoOffset(-5), planEndDate: isoOffset(0),  endDate: isoOffset(-3) },
   { bomIndex: 1, category: 'Standard', type: 'Disassembly', trackRouting: true, status: 'canceled', producedQty: 0, plannedQty: 60,  planStartDate: isoOffset(-4), planEndDate: isoOffset(1),  endDate: isoOffset(-2), parentNumber: 'WO-2026-0021' },
   { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 160, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  endDate: isoOffset(-1) },
+
+  // ── more open work ───────────────────────────────────────────────────────
+  // Six further ACTIVE orders, weighted towards the blends. The stock requests
+  // they raise are what give the Stock requests By product view its depth: a
+  // component row expands to the open transactions needing it, so that number
+  // can only grow by there being more open transactions that share components.
+  { bomIndex: 0, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'not started', producedQty: 0,  plannedQty: 450, planStartDate: isoOffset(4),  planEndDate: isoOffset(9) },
+  { bomIndex: 2, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'not started', producedQty: 0,  plannedQty: 90,  planStartDate: isoOffset(6),  planEndDate: isoOffset(11) },
+  { bomIndex: 3, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'in progress', producedQty: 55, plannedQty: 280, planStartDate: isoOffset(-1), planEndDate: isoOffset(6), startDate: isoOffset(-1) },
+  { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'in progress', producedQty: 12, plannedQty: 70,  planStartDate: isoOffset(-2), planEndDate: isoOffset(5), startDate: isoOffset(-2) },
+  { bomIndex: 7, category: 'Order',    type: 'Assembly',    trackRouting: true,  status: 'not started', producedQty: 0,  plannedQty: 45,  planStartDate: isoOffset(7),  planEndDate: isoOffset(12) },
+  { bomIndex: 4, category: 'Standard', type: 'Assembly',    trackRouting: false, status: 'partially produced', producedQty: 110, plannedQty: 260, planStartDate: isoOffset(-4), planEndDate: isoOffset(3), startDate: isoOffset(-4) },
+  { bomIndex: 1, category: 'Order',    type: 'Assembly',    trackRouting: true,  status: 'not started', producedQty: 0,  plannedQty: 140, planStartDate: isoOffset(5),  planEndDate: isoOffset(10) },
+
+  // ── more canceled work ───────────────────────────────────────────────────
+  // Their requests are what fills the Stock requests Closed tab: cancelling a
+  // work order leaves its request listed as Canceled (UC-09), and a tab with
+  // three rows cannot be paged, sorted or filtered against.
+  { bomIndex: 2, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'canceled', producedQty: 0, plannedQty: 220, planStartDate: isoOffset(-7),  planEndDate: isoOffset(-2), endDate: isoOffset(-5) },
+  { bomIndex: 4, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 130, planStartDate: isoOffset(-9),  planEndDate: isoOffset(-3), endDate: isoOffset(-6) },
+  { bomIndex: 6, category: 'Standard', type: 'Assembly',    trackRouting: true,  status: 'canceled', producedQty: 0, plannedQty: 75,  planStartDate: isoOffset(-10), planEndDate: isoOffset(-4), endDate: isoOffset(-7) },
+  { bomIndex: 7, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 50,  planStartDate: isoOffset(-12), planEndDate: isoOffset(-6), endDate: isoOffset(-8) },
+  { bomIndex: 3, category: 'Standard', type: 'Disassembly', trackRouting: true,  status: 'canceled', producedQty: 0, plannedQty: 180, planStartDate: isoOffset(-13), planEndDate: isoOffset(-7), endDate: isoOffset(-9) },
+  { bomIndex: 5, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 95,  planStartDate: isoOffset(-15), planEndDate: isoOffset(-8), endDate: isoOffset(-10) },
 ]
 
 function buildSeed(): WorkOrder[] {
@@ -134,12 +158,14 @@ function buildSeed(): WorkOrder[] {
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
-const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders')
+/** Versioned: a snapshot written before the six extra active orders would keep a
+ *  returning machine on the old 24, and with them the thinner stock requests. */
+const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders.v2')
 export const workOrders = reactive<WorkOrder[]>(workOrderSnapshot ?? buildSeed())
 
 /** Persist the work-order snapshot (call after any mutation). */
 export function persistWorkOrders(): void {
-  saveSnapshot('workOrders', workOrders)
+  saveSnapshot('workOrders.v2', workOrders)
 }
 
 let woAddSeq = workOrders.length
