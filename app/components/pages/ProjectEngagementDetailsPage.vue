@@ -322,7 +322,8 @@ const rejectTitle = computed(() => {
   const r = rejectTarget.value
   if (!r) return ''
   if (r.kind === 'addendum') return t('Reject addendum')
-  return r.approval.action === 'project-creation' ? t('Reject project') : t('Reject milestone verification')
+  if (r.approval.action === 'project-creation') return t('Reject project')
+  return r.approval.action === 'addendum' ? t('Reject addendum') : t('Reject milestone verification')
 })
 
 function startRejectVo(v: Addendum) {
