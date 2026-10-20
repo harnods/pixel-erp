@@ -4286,4 +4286,5 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Export subcon orders": "Ekspor pesanan subkon",
   "Waiting materials": "Menunggu bahan",
   "Ready at vendor": "Siap di vendor",
+  "Due soon": "Mendekati tenggat",
 }

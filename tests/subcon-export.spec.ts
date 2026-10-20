@@ -104,6 +104,15 @@ describe('subconStatus', () => {
   const BEFORE = '2026-06-01'
   const AFTER = '2026-12-31'
 
+  it('promised date within 3 days (D-3…D-0) → due soon, materials or not', () => {
+    const due = (promisedDate: string, sub = {}) =>
+      subconStatus(order({ status: 'in progress' }, { method: 'dropship', promisedDate, ...sub }), '2026-06-10')
+    expect(due('2026-06-13')).toBe('due soon')                          // D-3
+    expect(due('2026-06-10')).toBe('due soon')                          // D-0, today
+    expect(due('2026-06-12', { componentReceipts: all })).toBe('due soon')
+    expect(due('2026-06-14')).toBe('waiting materials')                 // D-4
+    expect(due('2026-06-09')).toBe('overdue')                           // D+1
+  })
   it('materials short, before the promised date → waiting materials', () => {
     expect(subconStatus(order({ status: 'not started' }, { method: 'dropship', promisedDate: AFTER }), BEFORE)).toBe('waiting materials')
   })

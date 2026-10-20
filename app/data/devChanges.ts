@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-order-report-due-soon',
+    title: "Subcon order report: Due soon status",
+    description:
+      "An open order whose promised return date is today or within the next 3 days reads Due soon (amber), ahead of Waiting materials / Ready at vendor. Waiting materials is now gray.",
+    date: '2026-10-20',
+    files: ['SubconOrderReportPage.vue', 'subconExport.ts'],
+  },
+  {
     id: 'subcon-order-report-status',
     title: "Subcon order report: subcon status",
     description:

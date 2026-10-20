@@ -115,17 +115,22 @@ export function toSubconExportRows(rows: readonly SubconReportRow[]): SubconExpo
  *
  *   completed         the work order is completed
  *   overdue           past the promised date and not completed
- *   ready at vendor   materials fulfilled, promised date not passed
- *   waiting materials materials short, promised date not passed
+ *   due soon          promised date is today or within the next 3 days (D-3…D-0)
+ *   ready at vendor   materials fulfilled, more than 3 days to the promised date
+ *   waiting materials materials short, more than 3 days to the promised date
  *
  * A canceled work order is none of these — it keeps `canceled` so it never reads
  * as overdue. "Today" is the app's mock timeline (TODAY_ISO), like every date rule.
  */
-export type SubconStatus = 'waiting materials' | 'ready at vendor' | 'overdue' | 'completed' | 'canceled'
+export type SubconStatus = 'waiting materials' | 'ready at vendor' | 'due soon' | 'overdue' | 'completed' | 'canceled'
+
+/** Days before the promised date at which an open order turns Due soon (D-3). */
+export const SUBCON_DUE_SOON_DAYS = 3
 
 export const SUBCON_STATUS_LABEL: Record<SubconStatus, string> = {
   'waiting materials': 'Waiting materials',
   'ready at vendor': 'Ready at vendor',
+  'due soon': 'Due soon',
   'overdue': 'Overdue',
   'completed': 'Completed',
   'canceled': 'Canceled',
@@ -133,11 +138,18 @@ export const SUBCON_STATUS_LABEL: Record<SubconStatus, string> = {
 
 /** Badge colour per subcon status (ErpStatusBadge `type`). */
 export const SUBCON_STATUS_TYPE: Record<SubconStatus, 'completed' | 'announcement' | 'information' | 'warning' | 'critical'> = {
-  'waiting materials': 'warning',
+  // Waiting is a neutral queue state; amber is kept for the date getting close.
+  'waiting materials': 'announcement',
   'ready at vendor': 'information',
+  'due soon': 'warning',
   'overdue': 'critical',
   'completed': 'completed',
   'canceled': 'announcement',
+}
+
+/** Whole days from one ISO date to another (UTC, so DST never shifts it). */
+export function daysBetween(fromIso: string, toIso: string): number {
+  return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86_400_000)
 }
 
 export function subconStatus(wo: WorkOrder, todayIso: string = TODAY_ISO): SubconStatus {
@@ -145,6 +157,7 @@ export function subconStatus(wo: WorkOrder, todayIso: string = TODAY_ISO): Subco
   if (wo.status === 'canceled') return 'canceled'
   const promised = wo.subcon?.promisedDate
   if (promised && promised < todayIso) return 'overdue'
+  if (promised && daysBetween(todayIso, promised) <= SUBCON_DUE_SOON_DAYS) return 'due soon'
   return subconMaterialsFulfilled(wo) ? 'ready at vendor' : 'waiting materials'
 }
 
