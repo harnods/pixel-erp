@@ -16,6 +16,7 @@ import {
   vendorItems, vendorItemFor, vendorItemsForSku, deactivateVendorItem, upsertVendorItem, setPreferredVendor,
 } from '~/data/vendorItems'
 import { vendors } from '~/data/vendors'
+import { lastPriceFor } from '~/data/vendorLastPrice'
 import { leadTimeForCategory } from '~/data/replenishmentConfig'
 import { isRunStale } from '~/data/replenishmentRuns'
 import { splitCsv } from '~/utils/csv'
@@ -132,6 +133,13 @@ describe('US-019 — requesting from a vendor not linked to the SKU', () => {
       expect(link, 'saving the request links the vendor to the SKU').toBeTruthy()
       expect(link!.moq).toBe(0)
       expect(link!.leadTimeDays).toBeGreaterThan(0) // never a 0-day lead time
+      // RS-015 / Rule 64: no multiplier or price yet, and it names the request.
+      expect(link!.packSize).toBe(0)
+      expect(link!.unitCost).toBe(0)
+      const pr = purchaseRequests.find((p) => p.id === result.created[0]!.id)!
+      expect(link!.linkedFrom?.purchaseRequestNumber).toBe(pr.number)
+      // Never bought from, so no invented last price.
+      expect(lastPriceFor(other.id, row.sku)).toBeNull()
     } finally {
       deletePurchaseRequests(result.created.map((c) => c.id))
       const i = vendorItems.findIndex((v) => v.sku === row.sku && v.vendorId === other.id)

@@ -38,8 +38,9 @@ import { TODAY } from '~/data/master'
 import {
   vendorItemsForSku, preferredVendorItem, preferredVendorFor, vendorNameFor,
   preferredVendorIdForWarehouse, setPreferredVendor, clearPreferredVendorForWarehouse,
-  vendorItemFor, inactivePreferredVendorFor, type VendorItem,
+  vendorItemFor, inactivePreferredVendorFor, vendorsByPriority, setVendorPriority, type VendorItem,
 } from '~/data/vendorItems'
+import { contacts } from '~/data/contacts'
 import {
   unitConversionsForSku, upsertUnitConversion, removeUnitConversion, describeQty,
 } from '~/data/productUnits'
@@ -177,10 +178,46 @@ function deleteConversion(name: string) {
 // ones the replenishment engine uses to size a suggested order.
 const vendorTick = ref(0)
 
+/** In priority order (Rule 61) — the order a fallback would follow (Rule 62). */
 const vendorRows = computed(() => {
   void vendorTick.value // re-read after the drawer saves
-  return product.value ? vendorItemsForSku(product.value.sku) : []
+  return product.value ? vendorsByPriority(product.value.sku) : []
 })
+
+// ── Edit priority (Vendor Supply Profile Rule 61) ──────────────────────────────
+// A draft ORDER of vendor ids: picking a number for a vendor swaps it with whoever
+// held that number, so priority stays 1…N and unique without a validation step.
+const priorityEditing = ref(false)
+const priorityDraft = ref<string[]>([])
+/** Rows as the table shows them: in draft order while editing. */
+const vendorRowsShown = computed(() => {
+  if (!priorityEditing.value) return vendorRows.value
+  const byId = new Map(vendorRows.value.map((v) => [v.vendorId, v]))
+  return priorityDraft.value.map((id) => byId.get(id)).filter((v): v is VendorItem => !!v)
+})
+function startEditPriority() {
+  if (!canManageReplenishment.value) return
+  priorityDraft.value = vendorRows.value.map((v) => v.vendorId)
+  expandedVendor.value = null
+  priorityEditing.value = true
+}
+function setDraftPriority(vendorId: string, rank: number) {
+  const order = [...priorityDraft.value]
+  const from = order.indexOf(vendorId)
+  const to = rank - 1
+  if (from === -1 || from === to) return
+  ;[order[from], order[to]] = [order[to]!, order[from]!]
+  priorityDraft.value = order
+}
+function cancelEditPriority() { priorityEditing.value = false }
+function savePriority() {
+  const sku = product.value?.sku
+  if (!sku) return
+  setVendorPriority(sku, priorityDraft.value)
+  invalidateReplenishmentCaches()
+  vendorTick.value++
+  priorityEditing.value = false
+}
 
 const preferredVendor = computed(() => {
   void vendorTick.value
@@ -282,6 +319,20 @@ function toggleVendor(vendorId: string) {
 function onVendorRowClick(e: MouseEvent, vendorId: string): void {
   if ((e.target as HTMLElement).closest('a, button, input, label, [role="button"]')) return
   toggleVendor(vendorId)
+}
+
+/**
+ * A vendor link a purchase request created (RS-015): never bought from, so no price,
+ * and its MOQ / multiplier are 0 until someone agrees terms. 0 reads "Not set", never
+ * as a real zero.
+ */
+function termsMissing(vi: VendorItem): boolean {
+  return vi.moq <= 0 || vi.packSize <= 0 || vi.unitCost <= 0
+}
+/** Terms are edited on the vendor's own Products tab. */
+function goToVendorTerms(vendorId: string): void {
+  const contact = contacts.find((c) => c.vendorMasterId === vendorId)
+  router.push(contact ? `/vendors/${contact.id}?tab=products` : '/vendors')
 }
 
 /** MOQ in the purchase unit, plus what that means in stock units — "4 Pallet" is
@@ -1093,7 +1144,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <template v-if="purchaseInfoVendor.kind === 'same'">
                   <span>{{ vendorNameFor(purchaseInfoVendor.vendorId) }}</span>
                   <span class="pd-vendor-note">{{ tf('Lead time: {lead}', { lead: vendorLeadLabel(purchaseInfoVendor.vendorId) }) }}</span>
-                  <span v-if="purchaseInfoVendor.item" class="pd-vendor-note">{{ tf('MOQ: {moq}', { moq: moqLabel(purchaseInfoVendor.item.moq, purchaseInfoVendor.item.purchaseUnit, purchaseInfoVendor.item.unitsPerPurchaseUnit) }) }}</span>
+                  <span v-if="purchaseInfoVendor.item" class="pd-vendor-note">{{ tf('MOQ: {moq}', { moq: purchaseInfoVendor.item.moq > 0 ? moqLabel(purchaseInfoVendor.item.moq, purchaseInfoVendor.item.purchaseUnit, purchaseInfoVendor.item.unitsPerPurchaseUnit) : t('Not set') }) }}</span>
                 </template>
                 <template v-else-if="purchaseInfoVendor.kind === 'varies'">
                   <span class="pd-vendor-name" data-devchange="product-preferred-varies-by-warehouse">{{ t('Varies by warehouse') }}</span>
@@ -1276,11 +1327,16 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                the replenishment engine sizes an order from, so a buyer can see why
                a suggested quantity came out the way it did. -->
           <MpTabPanel value="vendors">
+            <!-- Rule 61: with edit rights, the buyer sets which vendor takes over first. -->
+            <div v-if="vendorRows.length > 1 && !priorityEditing && canManageReplenishment" class="pd-filter-bar pd-filter-bar--end">
+              <MpButton id="pd-vendor-priority-edit" variant="secondary" is-rounded data-devchange="product-vendor-priority" @click="startEditPriority">{{ t('Edit priority') }}</MpButton>
+            </div>
             <div v-if="vendorRows.length" class="pd-vendor-panel">
-              <div class="pd-table-scroll">
+              <div class="pd-table-scroll" :class="{ 'pd-form-table': priorityEditing }">
                 <table class="pd-table">
                   <colgroup>
                     <col style="width: 208px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 112px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
                     <col style="width: 88px" /><!-- pixel-police-allow: table column width, not spacing -->
@@ -1292,6 +1348,18 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   <thead>
                     <tr>
                       <th class="pd-th">{{ t('Vendor') }}</th>
+                      <th class="pd-th">
+                        <span class="pd-th-info">
+                          {{ t('Priority') }}
+                          <MpTooltip
+                            id="pd-th-priority-tip"
+                            :label="t('1 is first. If a preferred vendor becomes inactive, the next vendor by priority takes over. Without a set priority, vendors are ordered by their latest invoice, then by name.')"
+                            placement="top" use-portal
+                          >
+                            <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                          </MpTooltip>
+                        </span>
+                      </th>
                       <th class="pd-th">{{ t('Preferred') }}</th>
                       <th class="pd-th pd-th--num">
                         <span class="pd-th-info">
@@ -1324,11 +1392,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="vi in vendorRows" :key="vi.id">
+                    <template v-for="(vi, rank) in vendorRowsShown" :key="vi.id">
                       <tr
                         class="pd-tr"
-                        :class="{ 'pd-tr--clickable': preferredInWarehouses(vi.vendorId).length, 'pd-tr--open': expandedVendor === vi.vendorId }"
-                        @click="onVendorRowClick($event, vi.vendorId)"
+                        :class="{ 'pd-tr--clickable': !priorityEditing && preferredInWarehouses(vi.vendorId).length, 'pd-tr--open': expandedVendor === vi.vendorId }"
+                        @click="!priorityEditing && onVendorRowClick($event, vi.vendorId)"
                       >
                         <td class="pd-td">
                           <!-- Name on the left, the disclosure chevron right-aligned so the chevrons
@@ -1339,9 +1407,23 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                               <span v-if="vi.unitsPerPurchaseUnit > 1" class="pd-vendor-note">
                                 {{ tf('1 {unit} = {n} {base}', { unit: vi.purchaseUnit, n: vi.unitsPerPurchaseUnit, base: product.unit }) }}
                               </span>
+                              <!-- RS-015: a link a purchase request created — say where it came
+                                   from and that nothing has been bought or agreed yet. -->
+                              <template v-if="vi.linkedFrom">
+                                <span class="pd-vendor-note" data-devchange="product-vendor-linked-from-pr">
+                                  {{ tf('Added from Purchase Request #{n}. No purchase yet', { n: vi.linkedFrom.purchaseRequestNumber }) }}
+                                </span>
+                              </template>
+                              <MpTextlink
+                                v-if="termsMissing(vi)"
+                                :id="`pd-vendor-set-terms-${vi.vendorId}`"
+                                as="a"
+                                class="pd-vendor-terms-link"
+                                @click.prevent.stop="goToVendorTerms(vi.vendorId)"
+                              >{{ t('Set terms') }}</MpTextlink>
                             </span>
                             <MpButton
-                              v-if="preferredInWarehouses(vi.vendorId).length"
+                              v-if="!priorityEditing && preferredInWarehouses(vi.vendorId).length"
                               :id="`pd-vendor-why-${vi.vendorId}`"
                               variant="ghost"
                               class="pd-cell-toggle"
@@ -1354,24 +1436,65 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                             </MpButton>
                           </span>
                         </td>
+                        <!-- Priority: a number; while editing, a select-like cell
+                             (FormTable.md › Select cell) whose pick swaps two vendors. -->
+                        <td class="pd-td" :class="{ 'pd-td--select': priorityEditing }">
+                          <MpPopover
+                            v-if="priorityEditing"
+                            :id="`pd-vendor-priority-${vi.vendorId}`"
+                            is-close-on-select
+                            use-portal
+                            :is-keep-alive="false"
+                            placement="bottom-start"
+                          >
+                            <MpPopoverTrigger>
+                              <div class="pd-select-trigger" role="button" tabindex="0" :aria-label="t('Priority')">
+                                <span class="pd-select-text"><span class="pd-vendor-name">{{ rank + 1 }}</span></span>
+                                <MpIcon name="chevrons-down" size="sm" class="pd-select-chevron" />
+                              </div>
+                            </MpPopoverTrigger>
+                            <MpPopoverContent :class="css({ minWidth: '96px' })">
+                              <MpPopoverList>
+                                <MpPopoverListItem
+                                  v-for="n in vendorRowsShown.length"
+                                  :key="n"
+                                  :is-active="n === rank + 1"
+                                  @click="setDraftPriority(vi.vendorId, n)"
+                                >{{ n }}</MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
+                          <template v-else>{{ rank + 1 }}</template>
+                        </td>
                         <td class="pd-td">
                           <span v-if="preferredInWarehouses(vi.vendorId).length">{{ preferredCountLabel(vi.vendorId) }}</span>
                           <span v-else class="pd-vendor-alt">—</span>
                         </td>
                         <td class="pd-td pd-td--num">{{ vendorLeadLabel(vi.vendorId) }}</td>
-                        <td class="pd-td pd-td--num">{{ vi.moq.toLocaleString('id-ID') }}</td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="vi.moq > 0">{{ vi.moq.toLocaleString('id-ID') }}</template>
+                          <span v-else class="pd-vendor-alt">{{ t('Not set') }}</span>
+                        </td>
                         <td class="pd-td">{{ vi.purchaseUnit }}</td>
                         <td class="pd-td pd-td--num">
-                          {{ (vi.moq * vi.unitsPerPurchaseUnit).toLocaleString('id-ID') }} {{ product.unit }}
+                          <template v-if="vi.moq > 0">{{ (vi.moq * vi.unitsPerPurchaseUnit).toLocaleString('id-ID') }} {{ product.unit }}</template>
+                          <template v-else>—</template>
                         </td>
-                        <td class="pd-td pd-td--num">{{ vi.packSize }} {{ vi.purchaseUnit }}</td>
-                        <td class="pd-td pd-td--num">{{ formatIDR(vi.unitCost) }}</td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="vi.packSize > 0">{{ vi.packSize }} {{ vi.purchaseUnit }}</template>
+                          <span v-else class="pd-vendor-alt">{{ t('Not set') }}</span>
+                        </td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="vi.unitCost > 0">{{ formatIDR(vi.unitCost) }}</template>
+                          <span v-else class="pd-vendor-alt">{{ t('Not set') }}</span>
+                        </td>
                       </tr>
 
                       <!-- Opened: one line per warehouse that prefers this vendor — its name under
                            Preferred, its lead time under Lead time. -->
-                      <template v-if="expandedVendor === vi.vendorId">
+                      <template v-if="!priorityEditing && expandedVendor === vi.vendorId">
                         <tr v-for="w in preferredInWarehouses(vi.vendorId)" :key="`${vi.id}-${w.warehouseId}`" class="pd-tr pd-tr--sub">
+                          <td class="pd-td" />
                           <td class="pd-td" />
                           <td class="pd-td">{{ w.warehouseName }}</td>
                           <td class="pd-td pd-td--num">
@@ -1387,6 +1510,13 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     </template>
                   </tbody>
                 </table>
+              </div>
+              <!-- Edit-mode actions (rule/btn-responsive-footer, rule/form-edit-save-changes). -->
+              <div v-if="priorityEditing" class="pd-wh-footer">
+                <MpButtonGroup class="erp-action-footer">
+                  <MpButton id="pd-vendor-priority-cancel" variant="ghost" is-rounded @click="cancelEditPriority">{{ t('Cancel') }}</MpButton>
+                  <MpButton id="pd-vendor-priority-save" variant="primary" is-rounded @click="savePriority">{{ t('Save changes') }}</MpButton>
+                </MpButtonGroup>
               </div>
             </div>
             <div v-else class="empty-full">
@@ -1914,7 +2044,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       <template v-else>
                         <span v-if="whPreferredName(s.warehouseId)" class="pd-vendor-name">{{ whPreferredName(s.warehouseId) }}</span>
                         <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
-                        <span v-if="whInactivePreferred(s.warehouseId)" class="pd-cell-sub pd-cell-sub--warning" data-devchange="product-warehouses-inactive-preferred">{{ t('Preferred vendor is inactive') }}</span>
+                        <span v-if="whInactivePreferred(s.warehouseId)" class="pd-cell-sub pd-cell-sub--warning" data-devchange="product-warehouses-inactive-preferred">{{ t('Fallback vendor. Review the preferred vendor') }}</span>
                         <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
                           {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
                           <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ whLeadInfo(s.warehouseId).basis }}</span>
@@ -2420,6 +2550,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
 }
 .pd-vendor-none { color: var(--mp-text-secondary); }
+.pd-vendor-terms-link { align-self: flex-start; margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-sm); }
 .pd-vendor-alt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 
 /* The vendor name and its unit note, stacked, left of the chevron. */

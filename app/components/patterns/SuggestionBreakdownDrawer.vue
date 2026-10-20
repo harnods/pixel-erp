@@ -228,7 +228,7 @@ function exportPurchase() {
                   {{ tf('MOQ {moq} {unit} · purchase multiplier {pack}', { moq: row.vendorItem.moq, unit: row.vendorItem.purchaseUnit, pack: row.vendorItem.packSize }) }}
                 </span>
                 <span v-if="row.inactivePreferredVendor" class="rp-bd-note rp-bd-warning">
-                  {{ t('Preferred vendor is inactive. Lead time falls back to the next listed vendor') }}
+                  {{ t('Preferred vendor is inactive. Lead time comes from the next vendor by priority. Review the preferred vendor') }}
                 </span>
                 <MpTextlink id="rp-bd-vendors" as="a" class="rp-bd-link" @click.prevent="emit('edit-vendors', row)">
                   {{ t('Vendor list') }}

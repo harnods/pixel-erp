@@ -140,17 +140,17 @@ function goToWarehouseStock() {
                   <td class="rp-vi-td"><span class="rp-vi-vendor">{{ vendorNameFor(row.vendorId) }}</span></td>
                   <td class="rp-vi-td rp-vi-td--num"><span class="rp-vi-ro">{{ leadLabel(row.vendorId) }}</span></td>
                   <td class="rp-vi-td rp-vi-td--num">
-                    <span class="rp-vi-ro">{{ row.moq }}</span>
+                    <span class="rp-vi-ro">{{ row.moq > 0 ? row.moq : t('Not set') }}</span>
                     <span v-if="moqNote(row.moq, row.packSize)" class="rp-vi-cell-sub rp-vi-cell-sub--warning">{{ moqNote(row.moq, row.packSize) }}</span>
                   </td>
                   <td class="rp-vi-td">
                     <span class="rp-vi-ro">{{ row.purchaseUnit }}</span>
                     <span class="rp-vi-cell-sub">{{ moqInStockUnits(row.moq, row.unitsPerPurchaseUnit) || t('base unit') }}</span>
                   </td>
-                  <td class="rp-vi-td rp-vi-td--num"><span class="rp-vi-ro">{{ row.packSize }}</span></td>
+                  <td class="rp-vi-td rp-vi-td--num"><span class="rp-vi-ro">{{ row.packSize > 0 ? row.packSize : t('Not set') }}</span></td>
                   <td class="rp-vi-td rp-vi-td--num">
-                    <span class="rp-vi-ro">{{ formatIDR(row.unitCost || 0) }}</span>
-                    <span v-if="costPerBase(row.unitCost, row.unitsPerPurchaseUnit)" class="rp-vi-cell-sub">{{ costPerBase(row.unitCost, row.unitsPerPurchaseUnit) }}</span>
+                    <span class="rp-vi-ro">{{ row.unitCost > 0 ? formatIDR(row.unitCost) : t('Not set') }}</span>
+                    <span v-if="row.unitCost > 0 && costPerBase(row.unitCost, row.unitsPerPurchaseUnit)" class="rp-vi-cell-sub">{{ costPerBase(row.unitCost, row.unitsPerPurchaseUnit) }}</span>
                   </td>
                 </tr>
               </tbody>

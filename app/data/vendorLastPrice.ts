@@ -27,6 +27,7 @@ import { hashStr } from './cycleCountRecommendations'
 import { productBySku } from './inventory'
 import { largestUnitFor } from './productUnits'
 import { purchaseInvoices } from './purchaseInvoices'
+import { linkedFromRequest } from './vendorItems'
 import { simDaysAgo } from './simClock'
 
 export interface VendorPriceRecord {
@@ -68,6 +69,8 @@ function invoicesForVendor(vendorId: string) {
  */
 export function lastPriceFor(vendorId: string, sku: string): VendorPriceRecord | null {
   if (manuallyAdded.has(`${vendorId}|${sku}`)) return null
+  // A link a purchase request just created has never been invoiced (RS-015).
+  if (linkedFromRequest(vendorId, sku)) return null
 
   const seed = hashStr(`${vendorId}:${sku}:lastprice`)
 
@@ -127,6 +130,7 @@ export function lastPriceFor(vendorId: string, sku: string): VendorPriceRecord |
  */
 export function hasTransactionHistory(vendorId: string, sku: string): boolean {
   if (manuallyAdded.has(`${vendorId}|${sku}`)) return false
+  if (linkedFromRequest(vendorId, sku)) return false
   return lastPriceFor(vendorId, sku) !== null
 }
 

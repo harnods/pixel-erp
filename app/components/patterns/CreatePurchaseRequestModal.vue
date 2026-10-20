@@ -392,11 +392,11 @@ function confirm() {
                     <span v-if="termsNote(line)" class="rp-po-note">{{ termsNote(line) }}</span>
                     <!-- US-019 AC-05: a vendor new to this product sizes with the category lead time. -->
                     <span v-if="line.newVendorLink" class="rp-po-note">
-                      {{ tf('New vendor for this product. Lead time is estimated at {n} days', { n: line.context.leadTimeDays }) }}
+                      {{ tf('New vendor for this product. Lead time is estimated at {n} days. Saving adds this vendor to the product with no MOQ, multiplier or price yet', { n: line.context.leadTimeDays }) }}
                     </span>
                     <!-- US-019 EH-01: the preferred vendor was deactivated. -->
                     <span v-if="rowFor(rowKeyFor(line.sku, line.warehouseId))?.inactivePreferredVendor" class="rp-po-note">
-                      {{ t('Preferred vendor is inactive. Purchasing will confirm the vendor') }}
+                      {{ t('Preferred vendor is inactive. Using the next vendor by priority. Purchasing will confirm the vendor') }}
                     </span>
                   </td>
 

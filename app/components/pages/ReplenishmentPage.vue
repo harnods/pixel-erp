@@ -1020,7 +1020,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           </a>
           <!-- US-001 EH-01: lead time fell back to the next listed vendor. -->
           <span v-if="(row as any).inactivePreferredVendor" class="rp-vendor-sub rp-vendor-sub--warning">
-            {{ t('Preferred vendor is inactive') }}
+            {{ t('Fallback vendor. Review the preferred vendor') }}
           </span>
         </div>
       </template>

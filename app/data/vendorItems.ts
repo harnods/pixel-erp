@@ -25,6 +25,7 @@ import { vendors } from './vendors'
 import { warehouses } from './warehouses'
 import { hashStr } from './cycleCountRecommendations'
 import { factorFor, largestUnitFor } from './productUnits'
+import { lastPriceFor } from './vendorLastPrice'
 
 const OVERLAY_KEY = 'erp-db:vendor-items-overlay-v1'
 
@@ -66,6 +67,20 @@ export interface VendorItem {
   /** The supplier's own item code, shown on the PO line. */
   vendorSku: string
   active: boolean
+  /**
+   * Set when a purchase request created this link because it named a vendor that did
+   * not supply the product yet (Vendor Supply Profile RS-015 / Rule 64). Such a link
+   * starts with no MOQ, no purchase multiple and no price — 0 means "not set" — until
+   * someone agrees terms with the vendor.
+   */
+  linkedFrom?: { purchaseRequestNumber: number; date: string }
+  /**
+   * Vendor priority for this product (Vendor Supply Profile Rule 61): 1 = first,
+   * unique per product, the same in every warehouse. Unset means "no explicit
+   * priority" — such vendors order by their latest invoice, then by name. It decides
+   * who takes over when the preferred vendor goes inactive (Rule 62).
+   */
+  priority?: number
 }
 
 // ── Seed rules ───────────────────────────────────────────────────────────────
@@ -302,6 +317,8 @@ function applyOverlay(seed: VendorItem[]): VendorItem[] {
       unitCost: patch.unitCost ?? 0,
       vendorSku: patch.vendorSku ?? id,
       active: patch.active ?? true,
+      ...(patch.linkedFrom ? { linkedFrom: patch.linkedFrom } : {}),
+      ...(patch.priority ? { priority: patch.priority } : {}),
     })
   }
   return merged
@@ -346,8 +363,14 @@ const PREFERRED_WH_SAMPLE_SKUS = ['1101', '2201']
 function buildPreferredWarehouseSeed(): Record<string, string> {
   const seed: Record<string, string> = {}
   const activeWh = warehouses.filter((w) => w.status === 'active').map((w) => w.id)
+  // Read the SEED links only, never the live list: a link the user (or a purchase
+  // request, RS-015) added later would otherwise slip into second place and quietly
+  // become preferred in half the warehouses on the next load.
+  const seedLinks = buildVendorItems()
   for (const sku of PREFERRED_WH_SAMPLE_SKUS) {
-    const items = vendorItemsForSku(sku)
+    const items = seedLinks
+      .filter((v) => v.sku === sku && v.active)
+      .sort((a, b) => Number(b.isPreferred) - Number(a.isPreferred) || a.leadTimeDays - b.leadTimeDays)
     const alternate = items[1]?.vendorId
     if (!alternate) continue
     // Alternate preferred in every other active warehouse; the default keeps the rest,
@@ -392,10 +415,44 @@ export function vendorItemsForSku(sku: string): VendorItem[] {
     .sort((a, b) => Number(b.isPreferred) - Number(a.isPreferred) || a.leadTimeDays - b.leadTimeDays)
 }
 
-/** The SKU-level default preferred link (ignores any per-warehouse override). */
+/**
+ * Every ACTIVE vendor link for a SKU in PRIORITY order (Rule 61): explicit priorities
+ * first (1, 2, …), then vendors with none by their most recent invoice for the pair
+ * (newest first), then by vendor name. Warehouse-agnostic.
+ */
+export function vendorsByPriority(sku: string): VendorItem[] {
+  const invoiceDate = (v: VendorItem) => lastPriceFor(v.vendorId, v.sku)?.date ?? ''
+  return vendorItems
+    .filter((v) => v.sku === sku && v.active)
+    .sort((a, b) => {
+      const pa = a.priority ?? Number.POSITIVE_INFINITY
+      const pb = b.priority ?? Number.POSITIVE_INFINITY
+      if (pa !== pb) return pa - pb
+      const da = invoiceDate(a)
+      const db = invoiceDate(b)
+      if (da !== db) return da < db ? 1 : -1
+      return vendorNameFor(a.vendorId).localeCompare(vendorNameFor(b.vendorId))
+    })
+}
+
+/**
+ * Set the priority order for a SKU's vendors (Rule 61): the ids in order become 1…N,
+ * so priority stays unique per product. Links not listed keep no explicit priority.
+ */
+export function setVendorPriority(sku: string, orderedVendorIds: string[]): void {
+  for (const v of vendorItems) {
+    if (v.sku !== sku) continue
+    const i = orderedVendorIds.indexOf(v.vendorId)
+    if (i === -1) delete v.priority
+    else v.priority = i + 1
+  }
+  persist()
+}
+
+/** The SKU-level default preferred link (ignores any per-warehouse override). With no
+ *  preferred vendor set, the first by priority stands in (Rule 61). */
 export function preferredVendorItem(sku: string): VendorItem | undefined {
-  const list = vendorItemsForSku(sku)
-  return list.find((v) => v.isPreferred) ?? list[0]
+  return vendorItemsForSku(sku).find((v) => v.isPreferred) ?? vendorsByPriority(sku)[0]
 }
 
 /**
@@ -409,6 +466,9 @@ export function preferredVendorFor(sku: string, warehouseId?: string): VendorIte
     if (vid) {
       const vi = vendorItemFor(sku, vid)
       if (vi) return vi
+      // This warehouse's own pick went inactive: it falls to the product's default
+      // preferred vendor (D23), which itself follows priority when it, too, is gone
+      // (Rule 62). Flagged via inactivePreferredVendorFor.
     }
   }
   return preferredVendorItem(sku)
@@ -511,6 +571,7 @@ export function upsertVendorItem(patch: Partial<VendorItem> & { sku: string; ven
     unitCost: clean.unitCost ?? (p?.buyPrice ?? 0) * chosenFactor,
     vendorSku: clean.vendorSku ?? `${patch.vendorId}-${patch.sku}`,
     active: clean.active ?? true,
+    ...(clean.linkedFrom ? { linkedFrom: clean.linkedFrom } : {}),
   }
   vendorItems.push(row)
   persist()
@@ -550,10 +611,20 @@ export function deactivateVendorItem(sku: string, vendorId: string): void {
   if (row.isPreferred) row.wasPreferred = true
   row.active = false
   row.isPreferred = false
-  // Promote a survivor so the SKU doesn't silently lose its default.
-  const survivors = vendorItemsForSku(sku)
+  // Rule 62: fall to the next active vendor BY PRIORITY, flagged "fallback, review
+  // preferred vendor" (wasPreferred above) until someone picks one. With no active
+  // vendor left, the preferred vendor is simply cleared.
+  const survivors = vendorsByPriority(sku)
   if (survivors.length && !survivors.some((v) => v.isPreferred)) survivors[0]!.isPreferred = true
   persist()
+}
+
+/**
+ * A link a purchase request created that has never been bought from (RS-015): no
+ * purchase yet, so no price history either.
+ */
+export function linkedFromRequest(vendorId: string, sku: string): VendorItem | undefined {
+  return vendorItems.find((v) => v.vendorId === vendorId && v.sku === sku && !!v.linkedFrom)
 }
 
 /** Vendor display name for a link (falls back to the id when unresolvable). */

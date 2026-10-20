@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'product-vendor-priority',
+    title: 'Vendors tab: vendor priority and the fallback when a preferred vendor goes inactive',
+    description:
+      'Each vendor of a product now has a priority, 1 = first, the same in every warehouse (Vendor Supply Profile RS-014 / Rule 61). The Vendors tab lists vendors in priority order with a Priority column; Edit priority turns it into a number select per vendor (picking a number swaps two vendors, so priority stays unique) with Cancel / Save changes. Without a set priority, vendors are ordered by their latest invoice, then by name. When the product\'s preferred vendor is deactivated, it falls to the next active vendor BY PRIORITY (Rule 62) — previously the next by lead time; a warehouse whose own pick is deactivated falls to the product\'s preferred vendor (D23). Either way the warehouse is flagged "Fallback vendor. Review the preferred vendor" on the worklist and Stock by warehouses until someone picks a preferred vendor. With no active vendor left, the preferred vendor is cleared ("No preferred vendor set" / "No vendor").',
+    date: '2026-10-20',
+    files: ['vendorItems.ts', 'ProductDetailsPage.vue', 'ReplenishmentPage.vue', 'SuggestionBreakdownDrawer.vue', 'CreatePurchaseRequestModal.vue'],
+  },
+  {
+    id: 'product-vendor-linked-from-pr',
+    title: 'Vendors tab: a vendor added by a purchase request',
+    description:
+      'When a purchase request names a vendor that does not supply the product yet, saving it adds that vendor to the product (Vendor Supply Profile RS-015 / Rule 64) — with no MOQ, purchase multiplier or price. The product Vendors tab now shows that row with "Added from Purchase Request #N. No purchase yet", "Not set" in the MOQ, multiplier and unit cost cells, and a Set terms link that opens the vendor\'s Products tab, where the MOQ and multiplier read "Not set" too and can be edited. Its last price is "No purchase yet" rather than an invented figure. The Request to purchase modal says this before you save.',
+    date: '2026-10-20',
+    files: ['vendorItems.ts', 'vendorLastPrice.ts', 'replenishmentPurchaseRequest.ts', 'ProductDetailsPage.vue', 'VendorProductsTab.vue', 'VendorItemDrawer.vue', 'CreatePurchaseRequestModal.vue'],
+  },
+  {
     id: 'replenishment-goods-in-transit-invoice',
     title: 'Replenishment: invoiced but not yet received (Goods-in-Transit)',
     description:

@@ -416,18 +416,20 @@ export function commitPlannedGroup(
     }
   }
   if (!lines.length) return null
-  // US-019 VR-04: requesting from a vendor that does not list this SKU creates the
-  // vendor–SKU link, with no MOQ / multiplier yet and the category lead time as
-  // its term (never a 0-day lead time feeding the next recalculation).
+  const group = { ...planned, lines }
+  const pr = createPurchaseRequestFromGroup(group, createdBy)
+  // US-019 VR-04 / RS-015 (Rule 64): requesting from a vendor that does not list this
+  // SKU creates the vendor–SKU link — no MOQ, no multiplier and no price yet (0 = not
+  // set), the category lead time as its term (never a 0-day lead time feeding the next
+  // recalculation), and a note of the request that created it.
   for (const l of lines) {
     if (!l.newVendorLink || !l.vendorId) continue
     upsertVendorItem({
-      sku: l.sku, vendorId: l.vendorId, moq: 0, packSize: 0,
+      sku: l.sku, vendorId: l.vendorId, moq: 0, packSize: 0, unitCost: 0,
       leadTimeDays: l.context.leadTimeDays, isPreferred: false,
+      linkedFrom: { purchaseRequestNumber: pr.number, date: pr.date },
     })
   }
-  const group = { ...planned, lines }
-  const pr = createPurchaseRequestFromGroup(group, createdBy)
   return {
     id: pr.id,
     number: pr.number,

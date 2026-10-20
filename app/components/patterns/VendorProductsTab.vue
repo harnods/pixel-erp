@@ -69,6 +69,11 @@ const props = defineProps<{
 const router = useRouter()
 const { t, tf } = useLocale()
 
+/** A link a purchase request created has no terms yet (RS-015): 0 reads "Not set". */
+function termLabel(n: number): string {
+  return n > 0 ? n.toLocaleString('id-ID') : t('Not set')
+}
+
 const emptyIllustration = '/illustrations/empty-folder.png'
 
 /** Rule 24 — the price is gated by its OWN permission, not by vendor read access. */
@@ -517,9 +522,9 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
               variant="ghost"
               class="vp-editable"
               @click="startEdit(row as VendorProductRow, 'moq')"
-            >{{ (row as VendorProductRow).moq.toLocaleString('id-ID') }}</MpButton>
-            <span v-else>{{ (row as VendorProductRow).moq.toLocaleString('id-ID') }}</span>
-            <span class="vp-term-unit">{{ (row as VendorProductRow).moqUnit }}</span>
+            >{{ termLabel((row as VendorProductRow).moq) }}</MpButton>
+            <span v-else>{{ termLabel((row as VendorProductRow).moq) }}</span>
+            <span v-if="(row as VendorProductRow).moq > 0" class="vp-term-unit">{{ (row as VendorProductRow).moqUnit }}</span>
           </div>
 
           <!-- Terms nobody has revisited drift away from what the vendor actually
@@ -552,9 +557,9 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
               variant="ghost"
               class="vp-editable"
               @click="startEdit(row as VendorProductRow, 'purchaseMultiple')"
-            >{{ (row as VendorProductRow).purchaseMultiple.toLocaleString('id-ID') }}</MpButton>
-            <span v-else>{{ (row as VendorProductRow).purchaseMultiple.toLocaleString('id-ID') }}</span>
-            <span class="vp-term-unit">{{ (row as VendorProductRow).multipleUnit }}</span>
+            >{{ termLabel((row as VendorProductRow).purchaseMultiple) }}</MpButton>
+            <span v-else>{{ termLabel((row as VendorProductRow).purchaseMultiple) }}</span>
+            <span v-if="(row as VendorProductRow).purchaseMultiple > 0" class="vp-term-unit">{{ (row as VendorProductRow).multipleUnit }}</span>
           </div>
 
           <!-- Inline, next to the field it belongs to — never a toast
