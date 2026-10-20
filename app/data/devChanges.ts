@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-cancel-wo',
+    title: "Cancel work order (detail Actions menu and list)",
+    description:
+      "Cancel work order is offered before production — on a subcon order until the subcon purchase order is issued, after which it is hidden. Confirmation follows the uxw Cancel pattern (Cancel work order / Keep work order).",
+    date: '2026-10-20',
+    files: ['CancelWorkOrderModal.vue', 'WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'subconCancel.ts'],
+  },
+  {
+    id: 'subcon-cancel-return',
+    title: "Cancel subcon work order: return raw materials",
+    description:
+      "When raw material is already at the vendor, cancelling lists it with the qty at the vendor and a Return to warehouse per line (defaulting to where it came from). One draft warehouse transfer is raised per chosen warehouse and listed on the work order's Transactions tab; transfers to the vendor still awaiting approval are canceled.",
+    date: '2026-10-20',
+    files: ['CancelWorkOrderModal.vue', 'subconCancel.ts'],
+  },
+  {
     id: 'subcon-report-subcon-cost',
     title: "Subcon order report: Subcon cost column",
     description:

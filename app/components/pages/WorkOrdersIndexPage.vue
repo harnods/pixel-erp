@@ -20,6 +20,8 @@ import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { buildSubconExportRows, downloadSubconExport } from '~/data/subconExport'
+import CancelWorkOrderModal from '~/components/patterns/CancelWorkOrderModal.vue'
+import { canCancelWorkOrder } from '~/data/subconCancel'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -183,6 +185,11 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 1200) })
 
 const router = useRouter()
 function viewDetails(row: WorkOrder) { router.push(`/work-orders/${row.id}`) }
+
+// Cancel — the same flow as the detail page: a subcon order with raw material at
+// the vendor asks where each line returns to (CancelWorkOrderModal).
+const cancelTarget = ref<WorkOrder | undefined>()
+function openCancel(row: WorkOrder) { cancelTarget.value = workOrders.find(w => w.id === row.id) }
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -359,8 +366,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
             <!-- Cancel — only a not-started WO can be canceled (nothing produced yet) -->
             <MpPopoverListItem
-              v-if="(row as unknown as WorkOrder).status === 'not started'"
+              v-if="canCancelWorkOrder(row as unknown as WorkOrder)"
               :class="css({ color: 'var(--mp-text-critical)' })"
+              data-devchange="subcon-cancel-wo"
+              @click="openCancel(row as unknown as WorkOrder)"
             >{{ t('Cancel') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -376,6 +385,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
     </template>
   </ErpTablePage>
+
+  <CancelWorkOrderModal :is-open="!!cancelTarget" :work-order="cancelTarget" @close="cancelTarget = undefined" />
 
   <!-- ── All filters drawer ── -->
   <WorkOrderFiltersDrawer

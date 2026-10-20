@@ -866,6 +866,11 @@ function isServiceOrderDoc(d: RaisedSubconDocument): boolean {
   return !(d.fromKind && COMPONENT_REQUEST_KINDS.includes(d.fromKind))
 }
 
+/** Whether the subcon purchase order for the vendor's work has been issued. */
+export function subconServicePoIssued(wo: WorkOrder): boolean {
+  return (wo.subcon?.raisedDocuments ?? []).some(d => d.kind === 'purchaseOrder' && isServiceOrderDoc(d))
+}
+
 /**
  * Re-derive a subcon order's status and its next action from the documents and
  * movements that exist right now, and persist if either moved.

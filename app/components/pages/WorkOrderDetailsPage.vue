@@ -32,6 +32,8 @@ import {
   SUBCON_PRICE_BASIS_SHORT, SUBCON_PRICING_SETTINGS, type SubconPriceState,
 } from '~/data/subconPricing'
 import SubconJournalModal from '~/components/patterns/SubconJournalModal.vue'
+import CancelWorkOrderModal from '~/components/patterns/CancelWorkOrderModal.vue'
+import { canCancelWorkOrder } from '~/data/subconCancel'
 import TransferOriginBreakdownDrawer, { type TransferOriginGroup } from '~/components/patterns/TransferOriginBreakdownDrawer.vue'
 import {
   buildSubconJournals, accountLabel,
@@ -203,6 +205,7 @@ function documentStatus(doc: { kind: string; id: string }): string | undefined {
       return purchaseInvoices.find(i => i.id === doc.id)?.status
     case 'transfer':
     case 'rawTransfer':
+    case 'returnTransfer':
     case 'receipt':
       return warehouseTransfers.find(tr => tr.id === doc.id)?.status
     case 'componentIssue':
@@ -256,6 +259,7 @@ const DOC_FUNCTION: Record<string, string> = {
   purchaseInvoice: 'Subcon cost',
   transfer: 'Transfer stock',
   rawTransfer: 'Transfer stock',
+  returnTransfer: 'Return raw material',
   componentIssue: 'Issue components',
   receipt: 'Receive output',
 }
@@ -275,7 +279,15 @@ const subconTransactionRows = computed(() => {
   // Stock adjustments are left out: they are the accounting movements behind the
   // run, read in full from View journal entry & stock adjustment, not documents
   // anyone raises or follows up here.
-  return subconTransactions.value
+  // Returns raised on cancel are not a planned step, so the plan never lists them.
+  const returns = (subcon.value?.raisedDocuments ?? [])
+    .filter(d => d.kind === 'returnTransfer')
+    .map(d => ({
+      key: `return-${d.id}`, kind: d.kind, tag: 'Transfer' as const,
+      type: SUBCON_DOC_TYPE_LABEL.Transfer, title: t('Return raw material'),
+      module: 'Warehouse', doc: d, status: documentStatus(d),
+    }))
+  return [...subconTransactions.value, ...returns]
     .filter(tx => !!tx.doc && tx.kind !== 'componentIssue')
     .map((tx) => {
       // An order or a delivery inherits its purpose from the request it grew out
@@ -774,11 +786,15 @@ const actionItems = computed(() => {
   // A subcon order is restated through the adjust form rather than edited: its
   // numbers have documents behind them.
   const first = subcon.value ? 'Adjust work order' : 'Edit'
-  return [first, 'Replace attachment', 'Print', 'Delete']
+  // Cancel is offered until the subcon PO for the vendor's work is issued, then hidden.
+  const cancel = wo.value && canCancelWorkOrder(wo.value) ? ['Cancel work order'] : []
+  return [first, 'Replace attachment', 'Print', ...cancel, 'Delete']
 })
 
+const cancelOpen = ref(false)
 function onActionItem(item: string) {
   if (item === 'Adjust work order') router.push(`/work-orders/${props.orderId}/adjust`)
+  if (item === 'Cancel work order') cancelOpen.value = true
 }
 
 // ── Attachments (representative) ────────────────────────────────────────────────
@@ -1905,7 +1921,8 @@ function suppressFabClick(e: MouseEvent) {
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
-                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical, var(--mp-text-danger, #a8352d))' }) : ''"
+                :class="item === 'Delete' || item === 'Cancel work order' ? css({ color: 'var(--mp-text-critical, var(--mp-text-danger, #a8352d))' }) : ''"
+                :data-devchange="item === 'Cancel work order' ? 'subcon-cancel-wo' : undefined"
                 @click="onActionItem(item)"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
@@ -2627,6 +2644,8 @@ function suppressFabClick(e: MouseEvent) {
       :destination-name="subconDestination?.name"
       @select="createTransferFromOrigin"
     />
+
+    <CancelWorkOrderModal :is-open="cancelOpen" :work-order="wo" @close="cancelOpen = false" />
 
     <SubconJournalModal
       v-if="subcon"
