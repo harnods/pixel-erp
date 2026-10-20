@@ -322,6 +322,11 @@ const {
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<SortableRow>(baseRows, { filterFn: matchesAll })
 
+// Arriving from a product's "View replenishment" (?q=<sku>) opens the worklist already
+// searched to that product.
+const routeQ = useRoute().query.q
+if (typeof routeQ === 'string' && routeQ) search.value = routeQ
+
 /**
  * Stat cards follow the warehouse scope AND every active filter (US-013 AC-01: "from
  * the filtered warehouse in the worklist index"), so the numbers above the table

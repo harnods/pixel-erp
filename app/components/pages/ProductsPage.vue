@@ -531,7 +531,8 @@ function closeExportModal() { exportModalOpen.value = false }
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as ProductIndexRow).sku)">View details</MpPopoverListItem>
-            <MpPopoverListItem @click="router.push('/replenishment')">View replenishment</MpPopoverListItem>
+            <!-- Lands on the worklist already searched to THIS product (not the whole list). -->
+            <MpPopoverListItem data-devchange="products-view-replenishment" @click="router.push({ path: '/replenishment', query: { q: (row as ProductIndexRow).sku } })">View replenishment</MpPopoverListItem>
             <MpPopoverListItem @click="router.push(`/product-list/${(row as ProductIndexRow).sku}/edit`)">Edit</MpPopoverListItem>
             <MpPopoverListItem>Duplicate</MpPopoverListItem>
             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>

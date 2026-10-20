@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'products-view-replenishment-row',
+    title: 'Products: row "View replenishment" opens the worklist for that product',
+    description:
+      'From a product row\'s menu, View replenishment now lands on the replenishment worklist already searched to that product\'s SKU, instead of the whole list you then had to search. The Low stock card\'s View replenishment link still opens the full worklist.',
+    date: '2026-10-20',
+    files: ['ProductsPage.vue', 'ReplenishmentPage.vue'],
+  },
+  {
     id: 'product-warehouses-engine-atp',
     title: 'Stock by warehouses: same Reserved / Available / In transit as the worklist',
     description:
