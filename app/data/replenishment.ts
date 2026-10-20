@@ -883,23 +883,27 @@ export function buildRow(
     : suppressedByCover ? 'above-reorder-point'
     : null
 
+  // Indonesian number format, like every other figure on screen (1,83 — not 1.83).
+  const dec = (n: number, digits: number) =>
+    n.toLocaleString('id-ID', { minimumFractionDigits: digits, maximumFractionDigits: digits })
   const trace: { label: string; value: string }[] = [
     {
-      label: 'Average daily sales',
+      // Same name as the Inputs row it repeats.
+      label: 'Demand velocity',
       value: velocity.lookbackDays > 0 && velocity.lookbackUnits > 0
-        ? `${velocity.lookbackUnits} ${product?.unit ?? ''} ÷ ${velocity.lookbackDays} days = ${velocity.avgDailySales.toFixed(2)}/day`
-        : `${velocity.avgDailySales.toFixed(2)} ${product?.unit ?? ''}/day`,
+        ? `${velocity.lookbackUnits} ${product?.unit ?? ''} ÷ ${velocity.lookbackDays} days = ${dec(velocity.avgDailySales, 2)}/day`
+        : `${dec(velocity.avgDailySales, 2)} ${product?.unit ?? ''}/day`,
     },
-    { label: 'Lead time', value: `${leadTimeDays} days (${leadTimeTierLabel(leadTimeTier, derivedLead.sampleSize)})` },
+    { label: 'Lead time', value: `${leadTimeDays} days, ${leadTimeTierLabel(leadTimeTier, derivedLead.sampleSize)}` },
     { label: 'Safety days', value: `${settings.safetyDays} days` },
     { label: 'Coverage days', value: `${coverageDays} days` },
     {
       label: 'Order up to',
-      value: `(${leadTimeDays} + ${settings.safetyDays} + ${coverageDays}) × ${velocity.avgDailySales.toFixed(2)} = ${targetQty.toFixed(1)}`,
+      value: `(${leadTimeDays} + ${settings.safetyDays} + ${coverageDays}) × ${dec(velocity.avgDailySales, 2)} = ${dec(targetQty, 1)}`,
     },
     { label: 'Available', value: `${atp.available}` },
-    { label: 'On order', value: `${atp.onOrder}` },
-    { label: 'Shortfall', value: `${targetQty.toFixed(1)} − (${atp.available} + ${atp.onOrder}) = ${gapQty.toFixed(1)}` },
+    { label: 'In transit', value: `${atp.onOrder}` },
+    { label: 'Shortfall', value: `${dec(targetQty, 1)} − (${atp.available} + ${atp.onOrder}) = ${dec(gapQty, 1)}` },
     { label: 'Rounded up', value: `${rawQty} ${product?.unit ?? ''}` },
   ]
   // MOQ and the purchase multiplier are applied when the PR becomes a PO, not here,

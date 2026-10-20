@@ -75,8 +75,11 @@ const leadTimeSource = computed(() => {
   if (!row) return ''
   return row.leadTimeTier === 'computed'
     ? tf('Average of the last {n} receipts', { n: row.leadTimeSampleSize })
-    : t(leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize))
+    : capitalize(t(leadTimeTierLabel(row.leadTimeTier, row.leadTimeSampleSize)))
 })
+
+/** A caption starts with a capital, like its neighbours ("Category default"). */
+function capitalize(s: string): string { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s }
 
 /**
  * A rough cost of the NEED at the vendor's unit price. The suggestion is in stocking
@@ -296,10 +299,10 @@ function exportPurchase() {
                 </span>
                 <!-- RS-009 / Rule 52: a return re-opens qty only when a replacement is
                      expected; a plain return stays received. -->
-                <span v-for="ret in returnsFor(row)" :key="ret.number" class="rp-bd-note" data-devchange="replenishment-purchase-return">
-                  {{ ret.replacementExpected
-                    ? tf('Returned {n} on {ret}. A replacement is expected, so it counts as in transit again.', { n: ret.qty, ret: ret.number })
-                    : tf('Returned {n} on {ret} with no replacement expected, so it is not counted as incoming.', { n: ret.qty, ret: ret.number }) }}
+                <!-- A replacement-expected return is already named on its document above;
+                     only a plain return needs saying, because it is NOT in the figure. -->
+                <span v-for="ret in returnsFor(row).filter(r => !r.replacementExpected)" :key="ret.number" class="rp-bd-note" data-devchange="replenishment-purchase-return">
+                  {{ tf('Returned {n} on {ret} with no replacement expected, so it is not counted as incoming.', { n: ret.qty, ret: ret.number }) }}
                 </span>
               </ContentList>
             </section>

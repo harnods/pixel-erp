@@ -43,6 +43,7 @@ import { readStore, writeStore } from '~/data/replenishmentStore'
 import { downloadCsv, splitCsv, type CsvRow } from '~/utils/csv'
 import { CATALOG } from '~/data/catalog'
 import { vendors } from '~/data/vendors'
+import { vendorItemsForVendor } from '~/data/vendorItems'
 import { ALL_WAREHOUSES } from '~/composables/useReplenishmentWarehouse'
 import { formatDate } from '~/utils/date'
 
@@ -253,7 +254,14 @@ function applyDrawer(v: ReplenishmentFiltersValue) {
 }
 const drawerFilterCount = computed(() => countReplenishmentFilters(appliedFilters.value))
 
-const vendorOptions = computed(() => vendors.map((v) => ({ id: v.id, name: v.name })))
+/** Only vendors that supply at least one product — utility, rent and logistics
+ *  vendors could never match a worklist row, so offering them is a dead filter. */
+const vendorOptions = computed(() => {
+  void recalcTick.value
+  return vendors
+    .filter((v) => vendorItemsForVendor(v.id).length > 0)
+    .map((v) => ({ id: v.id, name: v.name }))
+})
 const categoryOptions = computed(() =>
   [...new Set(CATALOG.map((c) => c.category))].sort().map((c) => ({ id: c, name: c })),
 )
