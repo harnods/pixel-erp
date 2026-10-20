@@ -26,7 +26,7 @@ import {
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
 import {
   buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, productActionRollup,
-  warehouseMinStockRollup,
+  warehouseMinStockRollup, atpFor,
 } from '~/data/replenishment'
 import { deriveLeadTime, isEstimatedTier, type LeadTimeTier } from '~/data/leadTimeHistory'
 import { getSkuWarehouseOverride, saveSkuWarehouseOverride, inheritedSafetyDays } from '~/data/replenishmentSettings'
@@ -393,7 +393,38 @@ const pagedTransactions = computed(() => {
 watch([txTypeFilter, txSearch], () => { txPage.value = 1 })
 
 // ── Stock by warehouses tab ──────────────────────────────────────────────────────
-const warehouseStock = computed(() => product.value ? getProductWarehouseStock(product.value.sku) : [])
+/**
+ * Per-warehouse stock, with Reserved / Available / In transit taken from the
+ * replenishment engine (PRD US-003 / US-004) — the same figures the worklist and its
+ * calculation drawer show. This tab sits beside the reorder point and explains it, so
+ * it must not read the warehouse module's picking holds and placeholder in-transit,
+ * which disagreed with the worklist for the same product and warehouse.
+ */
+const warehouseStock = computed(() => {
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return []
+  return getProductWarehouseStock(sku).map((s) => {
+    const atp = atpFor(sku, s.warehouseId)
+    return { ...s, reserved: atp.reserved, available: atp.available, onTheWay: atp.onOrder }
+  })
+})
+
+/**
+ * Header stock totals, summed from the Stock by warehouses rows so the header and the
+ * tab tell one story (replenishment Reserved / Available, US-003). A product with no
+ * stocked warehouse rows falls back to its own fields.
+ */
+const stockTotals = computed(() => {
+  const p = product.value
+  const rows = warehouseStock.value
+  if (!p) return { onHand: 0, reserved: 0, available: 0 }
+  if (!rows.length) return { onHand: p.onHand, reserved: p.reserved, available: p.available }
+  return rows.reduce(
+    (acc, r) => ({ onHand: acc.onHand + r.onHand, reserved: acc.reserved + r.reserved, available: acc.available + r.available }),
+    { onHand: 0, reserved: 0, available: 0 },
+  )
+})
 const whPage = ref(1)
 const whPerPage = ref(25)
 const pagedWarehouseStock = computed(() => {
@@ -1087,9 +1118,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
-            <ContentList label="On hand" :value="formatQty(product.onHand, product.unit)" />
-            <ContentList label="Reserved" :value="formatQty(product.reserved, product.unit)" />
-            <ContentList label="Available" :value="formatQty(product.available, product.unit)" />
+            <ContentList label="On hand" :value="formatQty(stockTotals.onHand, product.unit)" />
+            <ContentList label="Reserved" :value="formatQty(stockTotals.reserved, product.unit)" data-devchange="product-warehouses-engine-atp" />
+            <ContentList label="Available" :value="formatQty(stockTotals.available, product.unit)" />
             <!--
               NOT a company-wide min. stock. That row used to read
               `product.minStock`, which is a seed figure keyed on the product's
@@ -1937,7 +1968,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                     </td>
                     <td class="pd-td pd-td--num">{{ s.onHand.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ s.available.toLocaleString('id-ID') }}</td>
+                    <!-- Same as the worklist: reserved above on hand is Oversold (US-003). -->
+                    <td class="pd-td pd-td--num">
+                      <span :class="{ 'pd-qty-danger': s.available < 0 }">{{ s.available.toLocaleString('id-ID') }}</span>
+                      <span v-if="s.available < 0" class="pd-cell-sub pd-oversold" data-devchange="product-warehouses-engine-atp">{{ t('Oversold') }}</span>
+                    </td>
                     <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
 
                     <!-- Reorder point — calculated unless someone set it for this warehouse. -->
@@ -2558,6 +2593,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 /* The warehouse lines opened under a vendor: lighter, and joined to the row above. */
 .pd-tr--sub > .pd-td { background: var(--mp-background-neutral-subtle); border-bottom-color: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .pd-tr--sub:last-of-type > .pd-td, .pd-tr--sub:has(+ .pd-tr:not(.pd-tr--sub)) > .pd-td { border-bottom-color: var(--mp-border-default); }
+.pd-oversold { color: var(--mp-text-danger); }
+/* Same emphasis as the worklist's oversold number. */
+.pd-qty-danger { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
 .pd-wh-name--top { align-items: flex-start; }
 /* The estimate basis sits on its own line under the days, not beside them. */
 .pd-lead-est--below { display: block; margin-left: 0; margin-top: 2px; }

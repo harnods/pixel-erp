@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'product-warehouses-engine-atp',
+    title: 'Stock by warehouses: same Reserved / Available / In transit as the worklist',
+    description:
+      'The product\'s Stock by warehouses tab read the warehouse module\'s picking holds and a placeholder in-transit figure, so it disagreed with the replenishment worklist for the same product and warehouse (e.g. 1101 at Gudang Jakarta Pusat showed reserved 4, available 8, in transit 56 against the worklist\'s 33, −21 and 10). It now uses the replenishment engine: reserved = open sales orders + outbound transfers (US-003), in transit = open receipts and purchase orders (US-004). Negative available shows in red, with Oversold in red text under it — the same on the worklist (which used a badge before). The expanded calculation under each warehouse uses these figures too, and the Product info header (On hand / Reserved / Available) is now the sum of these rows, so header and tab agree.',
+    date: '2026-10-20',
+    files: ['ProductDetailsPage.vue'],
+  },
+  {
     id: 'replenishment-needssetup-reason-tooltip',
     title: 'Needs setup: reason guidance moved to a tooltip; filter bars wrap',
     description:

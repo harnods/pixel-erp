@@ -968,9 +968,8 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           class="rp-num-value"
           :class="{ 'rp-num-value--critical': (row as any).atp.oversold }"
         >{{ num((row as any).atp.available) }}</span>
-        <MpBadge v-if="(row as any).atp.oversold" for="tableStatus" type="critical">
-          {{ t('Oversold') }}
-        </MpBadge>
+        <!-- An error description, not a badge: it explains the red number above it. -->
+        <span v-if="(row as any).atp.oversold" class="rp-num-error" data-devchange="product-warehouses-engine-atp">{{ t('Oversold') }}</span>
       </div>
     </template>
 
@@ -1293,6 +1292,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .rp-num { display: flex; flex-direction: column; align-items: flex-end; gap: var(--mp-spacing-0\.5); min-width: 0; max-width: 100%; }
 .rp-num-value { color: var(--mp-text-default); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rp-num-value--critical { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
+.rp-num-error { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 .rp-num-value--muted { color: var(--mp-text-subtle); }
 .rp-num-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); text-align: right; }
 .rp-num-sub--fit { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
