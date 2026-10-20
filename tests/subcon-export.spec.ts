@@ -133,3 +133,45 @@ describe('subconStatus', () => {
     expect(subconStatus(order({ status: 'canceled' }, { promisedDate: BEFORE }), AFTER)).toBe('canceled')
   })
 })
+
+// Sample data — the seed shows every subcon status at least once.
+import { mergeSeedIntoSnapshot } from '../app/data/workOrders'
+import { SUBCON_STATUS_LABEL as LABELS, type SubconStatus } from '../app/data/subconExport'
+
+describe('Subcon order report sample data', () => {
+  it('covers every subcon status', () => {
+    const shown = new Set(subconReportRows(workOrders).map(r => r.status))
+    for (const s of Object.keys(LABELS) as SubconStatus[]) expect(shown.has(s), s).toBe(true)
+  })
+})
+
+describe('mergeSeedIntoSnapshot', () => {
+  const seed = [
+    { id: 'wo-1', number: 'WO-2026-0001' },
+    { id: 'wo-2', number: 'WO-2026-0002' },
+  ] as unknown as WorkOrder[]
+
+  it('adds seed rows the snapshot lacks and keeps the saved version of the rest', () => {
+    const saved = [{ id: 'wo-1', number: 'WO-2026-0001', status: 'in progress' }] as unknown as WorkOrder[]
+    const merged = mergeSeedIntoSnapshot(saved, seed)
+    expect(merged.map(w => w.id)).toEqual(['wo-1', 'wo-2'])
+    expect((merged[0] as unknown as { status: string }).status).toBe('in progress')
+  })
+
+  it('renumbers a user-created order whose number a new seed row now takes', () => {
+    const saved = [
+      { id: 'wo-new-2', number: 'WO-2026-0002' },
+      { id: 'wo-1', number: 'WO-2026-0001' },
+    ] as unknown as WorkOrder[]
+    const merged = mergeSeedIntoSnapshot(saved, seed)
+    const numbers = merged.map(w => w.number)
+    expect(new Set(numbers).size).toBe(numbers.length)
+    expect(merged.find(w => w.id === 'wo-new-2')!.number).toBe('WO-2026-0003')
+    expect(merged.find(w => w.id === 'wo-2')!.number).toBe('WO-2026-0002')
+  })
+
+  it('leaves a complete snapshot untouched', () => {
+    const saved = [...seed]
+    expect(mergeSeedIntoSnapshot(saved, seed)).toBe(saved)
+  })
+})

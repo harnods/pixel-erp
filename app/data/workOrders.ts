@@ -360,6 +360,76 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
       receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
     },
   },
+  // Samples so the Subcon order report shows every subcon status (subconStatus
+  // in subconExport.ts). The two rows above read Waiting materials; these cover
+  // the rest. Dates are offsets from the mock TODAY, so each keeps its status.
+  // Ready at vendor — Basic needs no materials; promised date well ahead.
+  {
+    bomIndex: 3, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'waiting subcon order', producedQty: 0, plannedQty: 200,
+    planStartDate: isoOffset(2), planEndDate: isoOffset(12),
+    subcon: {
+      scope: 'finished-good', split: 'full', method: 'basic',
+      vendorId: 'sv-02', vendorName: 'CV Kopi Sangrai Sejahtera',
+      promisedDate: isoOffset(15),
+      subconWarehouseId: 'wh-sub-02', subconWarehouseName: 'WH Subcon · CV Kopi Sangrai Sejahtera',
+      receivingWarehouseId: 'wh-001', receivingWarehouseName: 'Gudang Jakarta Pusat',
+    },
+  },
+  // Due soon — promised in 2 days (D-2).
+  {
+    bomIndex: 1, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'in progress', producedQty: 120, plannedQty: 400,
+    planStartDate: isoOffset(-8), planEndDate: isoOffset(1), startDate: isoOffset(-8),
+    subcon: {
+      scope: 'finished-good', split: 'full', method: 'resupply',
+      vendorId: 'sv-01', vendorName: 'PT Roastery Nusantara Mandiri',
+      promisedDate: isoOffset(2),
+      sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
+      subconWarehouseId: 'wh-sub-01', subconWarehouseName: 'WH Subcon · PT Roastery Nusantara Mandiri',
+      receivingWarehouseId: 'wh-001', receivingWarehouseName: 'Gudang Jakarta Pusat',
+    },
+  },
+  // Overdue — promised 4 days ago, still in progress.
+  {
+    bomIndex: 4, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'in progress', producedQty: 60, plannedQty: 250,
+    planStartDate: isoOffset(-20), planEndDate: isoOffset(-6), startDate: isoOffset(-20),
+    subcon: {
+      scope: 'finished-good', split: 'full', method: 'dropship',
+      vendorId: 'sv-04', vendorName: 'UD Karya Sangrai Utama',
+      promisedDate: isoOffset(-4),
+      subconWarehouseId: 'wh-sub-04', subconWarehouseName: 'WH Subcon · UD Karya Sangrai Utama',
+      receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
+    },
+  },
+  // Completed — everything produced and received.
+  {
+    bomIndex: 2, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'completed', producedQty: 150, plannedQty: 150,
+    planStartDate: isoOffset(-30), planEndDate: isoOffset(-15), startDate: isoOffset(-30), endDate: isoOffset(-12),
+    subcon: {
+      scope: 'finished-good', split: 'full', method: 'resupply',
+      vendorId: 'sv-03', vendorName: 'PT Java Roasting Works',
+      promisedDate: isoOffset(-12),
+      sourceWarehouseId: 'wh-001', sourceWarehouseName: 'Gudang Jakarta Pusat',
+      subconWarehouseId: 'wh-sub-03', subconWarehouseName: 'WH Subcon · PT Java Roasting Works',
+      receivingWarehouseId: 'wh-005', receivingWarehouseName: 'Gudang Semarang Industrial',
+    },
+  },
+  // Canceled — called off before production; never reads as overdue.
+  {
+    bomIndex: 0, category: 'Subcontracting', type: 'Assembly', trackRouting: false,
+    status: 'canceled', producedQty: 0, plannedQty: 100,
+    planStartDate: isoOffset(-10), planEndDate: isoOffset(-2), endDate: isoOffset(-9),
+    subcon: {
+      scope: 'finished-good', split: 'full', method: 'basic',
+      vendorId: 'sv-02', vendorName: 'CV Kopi Sangrai Sejahtera',
+      promisedDate: isoOffset(-3),
+      subconWarehouseId: 'wh-sub-02', subconWarehouseName: 'WH Subcon · CV Kopi Sangrai Sejahtera',
+      receivingWarehouseId: 'wh-001', receivingWarehouseName: 'Gudang Jakarta Pusat',
+    },
+  },
 ]
 
 function buildSeed(): WorkOrder[] {
@@ -372,10 +442,37 @@ function buildSeed(): WorkOrder[] {
   }))
 }
 
+/**
+ * Seed rows added after a browser saved its snapshot are merged in, so new
+ * samples show up without wiping anyone's saved orders. Saved versions of
+ * existing seed rows win (they carry the user's changes). A user-created order
+ * whose number a new seed row now uses is renumbered past the highest number.
+ */
+export function mergeSeedIntoSnapshot(snapshot: WorkOrder[], seed: WorkOrder[]): WorkOrder[] {
+  const have = new Set(snapshot.map(w => w.id))
+  const missing = seed.filter(s => !have.has(s.id))
+  if (!missing.length) return snapshot
+  const seedIds = new Set(seed.map(s => s.id))
+  const taken = new Set([...snapshot.filter(w => seedIds.has(w.id)), ...missing].map(w => w.number))
+  let max = 0
+  for (const w of [...snapshot, ...missing]) {
+    const m = w.number.match(/^WO-2026-(\d+)$/)
+    if (m) max = Math.max(max, parseInt(m[1]!, 10))
+  }
+  const merged = snapshot.map((w) => {
+    if (seedIds.has(w.id) || !taken.has(w.number)) return w
+    max += 1
+    return { ...w, number: `WO-2026-${String(max).padStart(4, '0')}` }
+  })
+  return [...merged, ...missing]
+}
+
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts.
 const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders-v2')
 
-export const workOrders = reactive<WorkOrder[]>(workOrderSnapshot ?? buildSeed())
+export const workOrders = reactive<WorkOrder[]>(
+  workOrderSnapshot ? mergeSeedIntoSnapshot(workOrderSnapshot, buildSeed()) : buildSeed(),
+)
 
 /** Persist the work-order snapshot (call after any mutation). */
 export function persistWorkOrders(): void {

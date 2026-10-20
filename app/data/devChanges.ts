@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-order-report-samples',
+    title: "Subcon order report: sample orders for every status",
+    description:
+      "Five sample subcon work orders (WO-2026-0027 to 0031) so the report shows Ready at vendor, Due soon, Overdue, Completed and Canceled alongside Waiting materials. They are merged into browsers that already saved work orders.",
+    date: '2026-10-20',
+    files: ['workOrders.ts'],
+  },
+  {
     id: 'subcon-order-report-due-soon',
     title: "Subcon order report: Due soon status",
     description:

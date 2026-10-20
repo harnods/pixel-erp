@@ -141,7 +141,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   <div class="sor-page" data-devchange="subcon-order-report">
     <div class="sor-titlebar">
       <MpButton class="sor-breadcrumb" variant="textLink" size="sm" @click="router.push('/production-report')">{{ t('Reports') }}</MpButton>
-      <h1 class="sor-title">{{ t(TITLE) }}</h1>
+      <h1 class="sor-title" data-devchange="subcon-order-report-samples">{{ t(TITLE) }}</h1>
     </div>
 
     <div class="sor-stage">
