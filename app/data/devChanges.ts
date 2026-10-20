@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-complete-drawer',
+    title: "Subcon Complete work order is a drawer",
+    description:
+      "Complete work order on a subcon order opens as a 760px drawer (shared ErpDrawer shell) instead of a centred modal, so the work order stays in view. Same content: produced vs planned, the remaining-qty note, unused qty per component.",
+    date: '2026-10-20',
+    files: ['CompleteSubconWorkOrderDrawer.vue'],
+  },
+  {
     id: 'wo-delete-scope',
     title: "Work order: Delete only when not started or canceled",
     description:
@@ -337,7 +345,7 @@ export const DEV_CHANGES: DevChange[] = [
     description:
       "Shows how much is still at the vendor \u2014 the real ceiling on unused qty. Column headers follow the qty naming convention.",
     date: '2026-10-14',
-    files: ['CompleteSubconWorkOrderModal.vue'],
+    files: ['CompleteSubconWorkOrderDrawer.vue'],
   },
   {
     id: 'subcon-transactions-order',

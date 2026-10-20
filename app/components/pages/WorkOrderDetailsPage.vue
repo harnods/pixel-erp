@@ -18,7 +18,7 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
-import CompleteSubconWorkOrderModal, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderModal.vue'
+import CompleteSubconWorkOrderDrawer, { type SubconComponentUsage } from '~/components/patterns/CompleteSubconWorkOrderDrawer.vue'
 import {
   buildDocumentPlan, docMatchesStep, allocateReservedBatches, SUBCON_SCOPE_LABEL,
   encodeSubconPrefill, subconVendorWarehouse, SUBCON_DOC_TYPE_LABEL, SUBCON_VENDORS,
@@ -2681,7 +2681,7 @@ function suppressFabClick(e: MouseEvent) {
 
     <!-- Start work order — subcon orders pick which document to raise first. -->
 
-    <CompleteSubconWorkOrderModal
+    <CompleteSubconWorkOrderDrawer
       v-if="subcon && wo"
       v-model:is-open="showCompleteSubconModal"
       :produced-qty="wo.producedQty"
