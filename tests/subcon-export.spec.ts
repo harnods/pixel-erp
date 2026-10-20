@@ -15,7 +15,7 @@ describe('buildSubconExportRows', () => {
   it('has exactly the R19 columns, in order', () => {
     expect(SUBCON_EXPORT_COLUMNS).toEqual([
       'WO number', 'Product', 'BOM', 'Subcon vendor', 'Method', 'Scope',
-      'Planned', 'Received', 'Promised date', 'Status',
+      'Planned', 'Received', 'Subcon cost', 'Promised date', 'Status',
     ])
     for (const r of rows) expect(Object.keys(r)).toEqual([...SUBCON_EXPORT_COLUMNS])
   })
@@ -199,5 +199,24 @@ describe('filterSubconReportRows', () => {
     const { product, vendorId } = rows[0]!
     for (const r of filterSubconReportRows(rows, { ...all, product })) expect(r.product).toBe(product)
     for (const r of filterSubconReportRows(rows, { ...all, vendorId })) expect(r.vendorId).toBe(vendorId)
+  })
+})
+
+
+// Subcon cost — the total of the order's cost lines, as the detail page sums it.
+import { subconCostLinesFor } from '../app/data/workOrders'
+
+describe('Subcon cost column', () => {
+  it('is the sum of every cost line on the work order', () => {
+    for (const row of subconReportRows(workOrders)) {
+      const wo = workOrders.find(w => w.id === row.id)!
+      expect(row.subconCost).toBe(subconCostLinesFor(wo).reduce((s, l) => s + l.amount, 0))
+      expect(row.subconCost).toBeGreaterThan(0)
+    }
+  })
+  it('sits right after Received, as a number the sheet can sum', () => {
+    const cols = [...SUBCON_EXPORT_COLUMNS]
+    expect(cols.indexOf('Subcon cost')).toBe(cols.indexOf('Received') + 1)
+    expect(typeof buildSubconExportRows(workOrders)[0]!['Subcon cost']).toBe('number')
   })
 })

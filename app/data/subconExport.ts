@@ -9,7 +9,7 @@
  * (SubconOrderReportPage.vue), which shows the rows on screen and downloads them.
  * The Work orders index keeps its export while filtered to Subcontracting.
  */
-import { subconMaterialsFulfilled, type WorkOrder, type WorkOrderStatus } from './workOrders'
+import { subconMaterialsFulfilled, subconCostLinesFor, type WorkOrder, type WorkOrderStatus } from './workOrders'
 import { TODAY_ISO } from './master'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { SUBCON_METHOD_LABEL, SUBCON_SCOPE_LABEL, type SubconMethod } from './subcon'
@@ -21,10 +21,11 @@ import { formatDate } from '../utils/date'
  */
 export const SUBCON_EXPORT_COLUMNS = [
   'WO number', 'Product', 'BOM', 'Subcon vendor', 'Method', 'Scope',
-  'Planned', 'Received', 'Promised date', 'Status',
+  'Planned', 'Received', 'Subcon cost', 'Promised date', 'Status',
 ] as const
 
-export type SubconExportRow = Record<(typeof SUBCON_EXPORT_COLUMNS)[number], string>
+/** Cell values — text, except Subcon cost, which stays a number so the sheet can sum it. */
+export type SubconExportRow = Record<(typeof SUBCON_EXPORT_COLUMNS)[number], string | number>
 
 /** The work order statuses as the index shows them (R22). */
 export const WORK_ORDER_STATUS_LABEL: Record<WorkOrderStatus, string> = {
@@ -56,6 +57,8 @@ export interface SubconReportRow {
   scope: string
   plannedQty: number
   receivedQty: number
+  /** Total subcon cost — every cost line on the order (subconCostLinesFor), as the detail page sums it. */
+  subconCost: number
   unit: string
   planStartDate: string
   promisedDate: string
@@ -85,6 +88,7 @@ export function subconReportRows(orders: readonly WorkOrder[]): SubconReportRow[
         scope: SUBCON_SCOPE_LABEL[c.scope],
         plannedQty: wo.plannedQty,
         receivedQty: wo.producedQty,
+        subconCost: subconCostLinesFor(wo).reduce((sum, l) => sum + l.amount, 0),
         unit: bom?.finishedGoodUnit ?? product?.unit ?? '',
         planStartDate: wo.planStartDate,
         promisedDate: c.promisedDate,
@@ -105,6 +109,7 @@ export function toSubconExportRows(rows: readonly SubconReportRow[]): SubconExpo
     'Scope': r.scope,
     'Planned': `${r.plannedQty} ${r.unit}`.trim(),
     'Received': String(r.receivedQty),
+    'Subcon cost': r.subconCost,
     'Promised date': formatDate(r.promisedDate),
     'Status': SUBCON_STATUS_LABEL[r.status] ?? r.status,
   }))

@@ -29,6 +29,7 @@ import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import { formatDate } from '~/utils/date'
+import { formatIDR } from '~/utils/currency'
 import { TODAY_ISO } from '~/data/master'
 import { workOrders } from '~/data/workOrders'
 import { SUBCON_METHOD_LABEL, type SubconMethod } from '~/data/subcon'
@@ -53,6 +54,7 @@ const columns: TableColumn[] = [
   { key: 'scope',        label: t('Scope')                                                           },
   { key: 'plannedQty',   label: t('Planned'),       align: 'right', sortable: true, sortType: 'number' },
   { key: 'receivedQty',  label: t('Received'),      align: 'right'                                   },
+  { key: 'subconCost',   label: t('Subcon cost'),   kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'promisedDate', label: t('Promised date'), kind: 'date',   sortable: true, sortType: 'date' },
   { key: 'status',       label: t('Status'),        kind: 'status'                                   },
 ]
@@ -220,6 +222,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <span :class="{ 'sc-muted': (row as unknown as SubconReportRow).receivedQty === 0 }" data-devchange="subcon-report-received-qty">
             {{ formatNum((row as unknown as SubconReportRow).receivedQty) }}
           </span>
+        </template>
+
+        <!-- ── Subcon cost — total of the order's cost lines ── -->
+        <template #cell-subconCost="{ value }">
+          <span data-devchange="subcon-report-subcon-cost">{{ formatIDR(value as number) }}</span>
         </template>
 
         <!-- ── Promised date — em dash when unset; overdue count when late ── -->

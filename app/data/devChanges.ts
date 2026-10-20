@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-report-subcon-cost',
+    title: "Subcon order report: Subcon cost column",
+    description:
+      "Total subcon cost per work order (every cost line, including revisions and lines added on the order), right after Received — on screen and in the Excel file, where it is a number the sheet can sum.",
+    date: '2026-10-20',
+    files: ['SubconOrderReportPage.vue', 'subconExport.ts'],
+  },
+  {
     id: 'subcon-report-export-button',
     title: "Production reports: Subcon order exports directly",
     description:
