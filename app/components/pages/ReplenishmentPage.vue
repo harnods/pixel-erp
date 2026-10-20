@@ -1007,6 +1007,14 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Requested qty (US-030 partial-request tracking) ── -->
     <template #cell-requestedQty="{ row }">
       {{ num((row as any).requestedQty) }}
+      <!-- US-030 AC-05: open requests exceed the suggested qty. -->
+      <MpBadge
+        v-if="(row as any).requestedQty > (row as any).suggestion.rawQty"
+        for="tableStatus"
+        type="announcement"
+        class="rp-over-requested"
+        data-devchange="replenishment-fully-requested"
+      >{{ t('Over-requested') }}</MpBadge>
     </template>
 
     <!-- ── Vendor ── -->
@@ -1284,6 +1292,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default); }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rp-signal-none { color: var(--mp-text-subtle); }
+.rp-over-requested { margin-top: var(--mp-spacing-1); }
 .rp-intransit-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap; }
 
 /* Bulk bar guidance when a selection spans warehouses — no cross-warehouse PR. */

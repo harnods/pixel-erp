@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-fully-requested',
+    title: 'To order: fully requested and over-requested lines (US-030)',
+    description:
+      'Three US-030 changes from PRD v23–v25. (1) Requested qty now keeps counting what is left unconverted on a partially converted request — only the part that went onto a PO leaves it (it becomes in transit), so a partial conversion no longer invites a second request for the same shortfall. (2) A line whose open requests already cover the whole suggested qty is no longer skipped by Request to purchase: it pre-fills 0 with "Already fully requested: X of Y suggested", and you can still type a qty to request more (EH-02). (3) When open requests exceed the suggested qty, the Requested qty cell shows an "Over-requested" badge (AC-05).',
+    date: '2026-10-20',
+    files: ['replenishment.ts', 'replenishmentPurchaseRequest.ts', 'CreatePurchaseRequestModal.vue', 'ReplenishmentPage.vue'],
+  },
+  {
     id: 'conversion-rule-42-43',
     title: 'PR to PO conversion: no-vendor lines and exact rounding',
     description:

@@ -225,7 +225,8 @@ function setQty(rowKey: string, raw: string) {
  */
 function termsNote(line: PrLine): string {
   const vi = line.vendorItem
-  if (!vi) return ''
+  // Nothing requested yet (e.g. a fully requested line at 0): no rounding to explain.
+  if (!vi || line.finalQty <= 0) return ''
   if (line.finalQty < vi.moq) {
     return tf('Vendor MOQ is {n}. Purchasing rounds up the qty on the purchase order', { n: vi.moq })
   }
@@ -256,7 +257,8 @@ function confirm() {
     qtyError.value = t('Enter a qty for at least one product')
     return
   }
-  const zeroLines = Object.entries(overrides).filter(([, v]) => v <= 0).length
+  // Every line still at 0 — typed, or a fully requested line left at its pre-fill.
+  const zeroLines = lines.value.filter(({ line }) => line.finalQty <= 0).length
   if (zeroLines > 0) {
     showQtyErrors.value = true
     qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0', { n: zeroLines })
@@ -412,6 +414,12 @@ function confirm() {
                       :aria-label="t('Request qty')"
                       @update:model-value="(v: string) => setQty(rowKeyFor(line.sku, line.warehouseId), v)"
                     />
+                    <!-- US-030 EH-02: open requests already cover the suggestion. -->
+                    <span
+                      v-if="line.fullyRequested"
+                      class="rp-po-note rp-po-note--info"
+                      data-devchange="replenishment-fully-requested"
+                    >{{ tf('Already fully requested: {requested} of {suggested} suggested', { requested: line.fullyRequested.requested, suggested: line.fullyRequested.suggested }) }}</span>
                     <!-- Offered, never applied behind the user's back (AC-03). -->
                     <span
                       v-if="pendingRecommend[rowKeyFor(line.sku, line.warehouseId)]"
@@ -610,6 +618,7 @@ function confirm() {
   display: block; margin-top: var(--mp-spacing-0\.5);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning);
 }
+.rp-po-note--info { padding: var(--mp-spacing-1) var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .rp-po-note--prompt { padding: var(--mp-spacing-1) var(--mp-spacing-2); color: var(--mp-colors-text-information); }
 .rp-po-note-actions { display: flex; gap: var(--mp-spacing-3); }
 

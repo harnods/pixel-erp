@@ -65,6 +65,11 @@ export interface PrLine {
    * time; the requester may change it.
    */
   requiredDate: string
+  /**
+   * Open requests already cover the whole suggested qty (US-030 EH-02): the line
+   * pre-fills 0 with a note, and the user may still request more (over-request).
+   */
+  fullyRequested?: { requested: number; suggested: number }
   unit: string
   unitCost: number
   availableQty: number
@@ -233,7 +238,12 @@ export function planPurchaseRequests(
     // Nothing recommended and nothing typed → nothing to request. A line the USER
     // set to 0 stays in its group instead, so its input remains editable in the
     // modal (moving it to Skipped removed the only control that could fix it).
-    if (override === undefined && (!recommendedQty || recommendedQty <= 0)) {
+    // US-030 EH-02: a line whose open requests already cover the suggestion is NOT
+    // skipped — it pre-fills 0 with "already fully requested", and creating more is
+    // still allowed (over-request, AC-05).
+    const fullyRequested = row.requestedQty > 0 && row.suggestion.rawQty > 0 && row.remainingToRequest === 0
+      && !(chosen && chosen !== row.vendorItem?.vendorId)
+    if (override === undefined && (!recommendedQty || recommendedQty <= 0) && !fullyRequested) {
       skipped.push({ ...base, reason: 'zero-qty' })
       continue
     }
@@ -265,6 +275,7 @@ export function planPurchaseRequests(
       // "Needed by" = today + lead time (US-020 AC-01), per line (RS-002). On the stock
       // clock, the same anchor every replenishment number uses.
       requiredDate: requiredDates[row.key] ?? shiftDays(REPL_ASOF_ISO, leadTimeForVendor(row, vendorId).days),
+      ...(fullyRequested ? { fullyRequested: { requested: row.requestedQty, suggested: row.suggestion.rawQty } } : {}),
       unit: row.unit,
       unitCost: vi?.unitCost ?? 0,
       availableQty: row.atp.available,

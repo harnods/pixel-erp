@@ -393,7 +393,10 @@ function openPrRequestedIndex(warehouseId: string): Map<string, number> {
 
   const map = new Map<string, number>()
   for (const pr of purchaseRequests) {
-    if (pr.status !== 'open') continue
+    // Open, or partially converted (Vendor Supply Profile Rule 41): only the part that
+    // went onto a PO leaves Requested — it is now In-Transit (US-030 VR-03). What is
+    // still unconverted on the request is still requested.
+    if (pr.status !== 'open' && pr.status !== 'partially processed') continue
     const origin = pr.replenishment
     if (origin?.warehouseId !== warehouseId) continue
     // Attribute ONLY the lines genuinely raised from a replenishment line (the origin
@@ -404,7 +407,7 @@ function openPrRequestedIndex(warehouseId: string): Map<string, number> {
     for (const ol of origin.lines) {
       if (!ol.sku) continue
       const live = pr.lines.find((l) => l.sku === ol.sku)
-      const qty = live ? live.requestedQty : ol.finalQty
+      const qty = live ? Math.max(0, live.requestedQty - (live.convertedQty ?? 0)) : ol.finalQty
       if (qty <= 0) continue
       map.set(ol.sku, (map.get(ol.sku) ?? 0) + qty)
     }
