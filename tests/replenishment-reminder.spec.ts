@@ -27,7 +27,10 @@ describe('daily replenishment reminder', () => {
     const go = n.detail.actions.find((a) => a.primary)!
     expect(go.to).toBe('/replenishment')
     // The numbers it quotes are the worklist's own.
-    expect(n.detail.fields.find((f) => f.label === 'Stocks out before resupply')!.value).toBe(String(wl.totals.belowLeadTime))
+    // Counted in worklist lines (product × warehouse), labelled as such.
+    const lines = wl.totals.belowLeadTime
+    expect(n.detail.fields.find((f) => f.label === 'Stocks out before resupply')!.value)
+      .toBe(lines === 1 ? '1 worklist line' : `${lines} worklist lines`)
     expect(n.detail.fields.find((f) => f.label === 'Covered by in transit')!.value).toBe(String(new Set(wl.coveredByInbound.map((r) => r.sku)).size))
   })
 

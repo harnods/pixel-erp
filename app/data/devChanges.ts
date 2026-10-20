@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vendor-products-search-pill',
+    title: 'Vendor Products tab: search is one pill again',
+    description:
+      'The search on a vendor\'s Products tab drew a square input box inside the rounded pill (a Pixel input inside the .filter-search box). It now uses the canonical pill markup — one rounded box, borderless input, search icon and a clear button — like every other filter-bar search.',
+    date: '2026-10-20',
+    files: ['VendorProductsTab.vue'],
+  },
+  {
     id: 'pr-review-tags-and-complete',
     title: 'Purchase requests: tag chips and Mark as completed',
     description:

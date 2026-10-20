@@ -34,7 +34,7 @@
 import { ref, reactive, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
+  MpIcon, MpInput,
   MpBanner, MpBannerIcon, MpBannerDescription, MpTooltip, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTextlink, css,
@@ -446,15 +446,15 @@ const canEditTerms = computed(() => !!props.vendorMasterId)
           </MpTooltip>
           <!-- Search is a rounded form pill, labelled by aria-label rather than a
                placeholder (rule/input-no-placeholder). -->
-          <MpInputGroup id="vp-search" class="filter-search">
-            <MpInputLeftAddon><MpIcon name="search" size="md" /></MpInputLeftAddon>
-            <MpInput v-model="search" type="text" :aria-label="t('Search product code or name')" />
-            <MpInputRightAddon v-if="search">
-              <MpButton variant="ghost" is-rounded :aria-label="t('Clear search')" @click="search = ''">
-                <MpIcon name="close" size="sm" />
-              </MpButton>
-            </MpInputRightAddon>
-          </MpInputGroup>
+          <!-- Canonical pill (pixel-enterprise-overrides §5): the box is the border, the
+               input inside is borderless — a Pixel MpInput here drew a second box. -->
+          <div id="vp-search" class="filter-search" data-devchange="vendor-products-search-pill">
+            <MpIcon name="search" size="md" />
+            <input v-model="search" class="filter-search-input" type="text" :aria-label="t('Search product code or name')" />
+            <MpButton v-if="search" variant="ghost" is-rounded size="sm" :aria-label="t('Clear search')" @click="search = ''">
+              <MpIcon name="close" size="sm" />
+            </MpButton>
+          </div>
         </div>
       </template>
 
