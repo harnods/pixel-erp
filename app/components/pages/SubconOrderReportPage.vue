@@ -4,7 +4,8 @@
  *
  * Recreates the first Subcon orders page (65e92e69, 16 Sep 2026) on today's
  * data: subcon work orders replaced the separate subcon order record, so each
- * row is one subcon work order, and Status is the work order's own (R22).
+ * row is one subcon work order. Status is the subcon status — promised date plus
+ * raw material fulfilment at the vendor (`subconStatus`), not the work order's own.
  *
  * Carried over from that page: Product over its BOM, the method chip, Received
  * muted until something comes back, the overdue day count beside the promised
@@ -29,11 +30,12 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import SubconMethodChip from '~/components/patterns/SubconMethodChip.vue'
 import { formatDate } from '~/utils/date'
 import { TODAY_ISO } from '~/data/master'
-import { workOrders, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders } from '~/data/workOrders'
 import { SUBCON_METHOD_LABEL, type SubconMethod } from '~/data/subcon'
 import {
   subconReportRows, toSubconExportRows, downloadSubconExport,
-  SUBCON_EXPORT_COLUMNS, WORK_ORDER_STATUS_LABEL, type SubconReportRow,
+  SUBCON_EXPORT_COLUMNS, SUBCON_STATUS_LABEL, SUBCON_STATUS_TYPE,
+  type SubconReportRow, type SubconStatus,
 } from '~/data/subconExport'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -58,8 +60,13 @@ const columns: TableColumn[] = [
 // ─── Filters ───────────────────────────────────────────────────────────────────
 const METHOD_OPTIONS = (Object.keys(SUBCON_METHOD_LABEL) as SubconMethod[])
   .map(m => ({ value: m, label: t(SUBCON_METHOD_LABEL[m]) }))
-const STATUS_OPTIONS = (Object.keys(WORK_ORDER_STATUS_LABEL) as WorkOrderStatus[])
-  .map(s => ({ value: s, label: t(WORK_ORDER_STATUS_LABEL[s]) }))
+// The four subcon statuses; Canceled is offered only once a canceled order exists.
+const STATUS_OPTIONS = computed(() => {
+  const present = new Set(rows.value.map(r => r.status))
+  return (Object.keys(SUBCON_STATUS_LABEL) as SubconStatus[])
+    .filter(s => s !== 'canceled' || present.has(s))
+    .map(s => ({ value: s, label: t(SUBCON_STATUS_LABEL[s]) }))
+})
 
 const methodFilter = ref('')
 const statusFilter = ref('')
@@ -105,10 +112,9 @@ const visibleColumns = computed<TableColumn[]>(() => columns.filter(c => columnV
 // ─── Display helpers ───────────────────────────────────────────────────────────
 function formatNum(n: number) { return n.toLocaleString('id-ID') }
 
-/** Days past the promised return date, for an order that is still open. */
-const CLOSED: WorkOrderStatus[] = ['completed', 'canceled']
+/** Days past the promised return date, shown only on an overdue order. */
 function lateDays(row: SubconReportRow): number {
-  if (!row.promisedDate || CLOSED.includes(row.status) || row.promisedDate >= TODAY_ISO) return 0
+  if (row.status !== 'overdue' || !row.promisedDate) return 0
   return Math.round((Date.parse(TODAY_ISO) - Date.parse(row.promisedDate)) / 86_400_000)
 }
 
@@ -227,9 +233,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </span>
         </template>
 
-        <!-- ── Status badge — the work order's own status ── -->
+        <!-- ── Subcon status — promised date + raw material fulfilment ── -->
         <template #cell-status="{ value }">
-          <ErpStatusBadge :status="(value as string)" :label="t(WORK_ORDER_STATUS_LABEL[value as WorkOrderStatus] ?? (value as string))" />
+          <ErpStatusBadge
+            data-devchange="subcon-order-report-status"
+            :status="(value as string)"
+            :label="t(SUBCON_STATUS_LABEL[value as SubconStatus])"
+            :type="SUBCON_STATUS_TYPE[value as SubconStatus]"
+          />
         </template>
 
         <!-- ── Actions kebab (sticky right) ── -->

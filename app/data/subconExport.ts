@@ -9,7 +9,8 @@
  * (SubconOrderReportPage.vue), which shows the rows on screen and downloads them.
  * The Work orders index keeps its export while filtered to Subcontracting.
  */
-import type { WorkOrder, WorkOrderStatus } from './workOrders'
+import { subconMaterialsFulfilled, type WorkOrder, type WorkOrderStatus } from './workOrders'
+import { TODAY_ISO } from './master'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { SUBCON_METHOD_LABEL, SUBCON_SCOPE_LABEL, type SubconMethod } from './subcon'
 import { formatDate } from '../utils/date'
@@ -55,7 +56,10 @@ export interface SubconReportRow {
   unit: string
   planStartDate: string
   promisedDate: string
-  status: WorkOrderStatus
+  /** Subcon status (promised date + raw material fulfilment) — what the report shows. */
+  status: SubconStatus
+  /** The work order's own status (R22), kept for reference. */
+  woStatus: WorkOrderStatus
 }
 
 /** Subcon work orders only, in the order given — non-subcon orders are left out. */
@@ -81,7 +85,8 @@ export function subconReportRows(orders: readonly WorkOrder[]): SubconReportRow[
         unit: bom?.finishedGoodUnit ?? product?.unit ?? '',
         planStartDate: wo.planStartDate,
         promisedDate: c.promisedDate,
-        status: wo.status,
+        status: subconStatus(wo),
+        woStatus: wo.status,
       }
     })
 }
@@ -98,8 +103,49 @@ export function toSubconExportRows(rows: readonly SubconReportRow[]): SubconExpo
     'Qty': `${r.plannedQty} ${r.unit}`.trim(),
     'Received': `${r.receivedQty}/${r.plannedQty}`,
     'Promised date': formatDate(r.promisedDate),
-    'Status': WORK_ORDER_STATUS_LABEL[r.status] ?? r.status,
+    'Status': SUBCON_STATUS_LABEL[r.status] ?? r.status,
   }))
+}
+
+/**
+ * Subcon status — where the outsourced work stands, read from two facts only:
+ * the promised return date, and whether every raw material is at the vendor
+ * (`subconMaterialsFulfilled`: approved warehouse transfers on Resupply,
+ * purchase-delivery receipts on Dropship; Basic needs none).
+ *
+ *   completed         the work order is completed
+ *   overdue           past the promised date and not completed
+ *   ready at vendor   materials fulfilled, promised date not passed
+ *   waiting materials materials short, promised date not passed
+ *
+ * A canceled work order is none of these — it keeps `canceled` so it never reads
+ * as overdue. "Today" is the app's mock timeline (TODAY_ISO), like every date rule.
+ */
+export type SubconStatus = 'waiting materials' | 'ready at vendor' | 'overdue' | 'completed' | 'canceled'
+
+export const SUBCON_STATUS_LABEL: Record<SubconStatus, string> = {
+  'waiting materials': 'Waiting materials',
+  'ready at vendor': 'Ready at vendor',
+  'overdue': 'Overdue',
+  'completed': 'Completed',
+  'canceled': 'Canceled',
+}
+
+/** Badge colour per subcon status (ErpStatusBadge `type`). */
+export const SUBCON_STATUS_TYPE: Record<SubconStatus, 'completed' | 'announcement' | 'information' | 'warning' | 'critical'> = {
+  'waiting materials': 'warning',
+  'ready at vendor': 'information',
+  'overdue': 'critical',
+  'completed': 'completed',
+  'canceled': 'announcement',
+}
+
+export function subconStatus(wo: WorkOrder, todayIso: string = TODAY_ISO): SubconStatus {
+  if (wo.status === 'completed') return 'completed'
+  if (wo.status === 'canceled') return 'canceled'
+  const promised = wo.subcon?.promisedDate
+  if (promised && promised < todayIso) return 'overdue'
+  return subconMaterialsFulfilled(wo) ? 'ready at vendor' : 'waiting materials'
 }
 
 /**

@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-order-report-status',
+    title: "Subcon order report: subcon status",
+    description:
+      "Status now reads the promised date and raw material fulfilment at the vendor: Waiting materials, Ready at vendor, Overdue (past the promised date, not completed) and Completed. The Excel Status column matches. The work order keeps its own status elsewhere.",
+    date: '2026-10-20',
+    files: ['SubconOrderReportPage.vue', 'subconExport.ts'],
+  },
+  {
     id: 'subcon-order-report-late',
     title: "Subcon order report: overdue day count",
     description:
