@@ -779,6 +779,8 @@ const canPartiallyProduce = computed(() =>
   && primaryAction.value === t('Complete work order')
   && wo.value?.status !== 'partially completed')
 // Actions menu items — terminal statuses drop the destructive/edit options.
+// Delete is offered only on a work order that is not started or canceled: once
+// it has moved, its documents and stock movements depend on it.
 const actionItems = computed(() => {
   const s = wo.value?.status
   if (s === 'completed') return ['Print']
@@ -788,7 +790,8 @@ const actionItems = computed(() => {
   const first = subcon.value ? 'Adjust work order' : 'Edit'
   // Cancel is offered until the subcon PO for the vendor's work is issued, then hidden.
   const cancel = wo.value && canCancelWorkOrder(wo.value) ? ['Cancel work order'] : []
-  return [first, 'Replace attachment', 'Print', ...cancel, 'Delete']
+  const del = s === 'not started' ? ['Delete'] : []
+  return [first, 'Replace attachment', 'Print', ...cancel, ...del]
 })
 
 const cancelOpen = ref(false)
@@ -1922,7 +1925,7 @@ function suppressFabClick(e: MouseEvent) {
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
                 :class="item === 'Delete' || item === 'Cancel work order' ? css({ color: 'var(--mp-text-critical, var(--mp-text-danger, #a8352d))' }) : ''"
-                :data-devchange="item === 'Cancel work order' ? 'subcon-cancel-wo' : undefined"
+                :data-devchange="item === 'Cancel work order' ? 'subcon-cancel-wo' : item === 'Delete' ? 'wo-delete-scope' : undefined"
                 @click="onActionItem(item)"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>

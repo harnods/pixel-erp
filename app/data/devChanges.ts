@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-delete-scope',
+    title: "Work order: Delete only when not started or canceled",
+    description:
+      "The Actions menu offers Delete only on a work order that is Not started or Canceled. Every other status (waiting, in progress, partially produced, completed) no longer shows it.",
+    date: '2026-10-20',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
     id: 'subcon-cancel-wo',
     title: "Cancel work order (detail Actions menu and list)",
     description:
