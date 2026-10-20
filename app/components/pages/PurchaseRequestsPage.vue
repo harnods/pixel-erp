@@ -458,7 +458,8 @@ const exportColumns = computed(() => [
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as PurchaseRequest).id)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="canCreatePurchaseOrders && canConvertPurchaseRequest(row as PurchaseRequest)" @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="markCompleted((row as PurchaseRequest).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
+            <!-- Already closed or voided: nothing left to complete. -->
+            <MpPopoverListItem v-if="(row as PurchaseRequest).status !== 'closed' && (row as PurchaseRequest).status !== 'voided'" @click="markCompleted((row as PurchaseRequest).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate(row as PurchaseRequest)">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />

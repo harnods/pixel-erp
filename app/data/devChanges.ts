@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'pr-review-tags-and-complete',
+    title: 'Purchase requests: tag chips and Mark as completed',
+    description:
+      'Two review fixes. Tag chips (shared ErpTagList) no longer show "View 0 more" when a chip merely wraps in a narrow column, and a label too long for its column now stays on one line with an ellipsis (full text on hover) instead of breaking mid-word — seen on the purchase request detail\'s Tags field. And a closed or voided purchase request no longer offers Mark as completed in its row menu.',
+    date: '2026-10-20',
+    files: ['ErpTagList.vue', 'PurchaseRequestsPage.vue'],
+  },
+  {
     id: 'products-view-replenishment-row',
     title: 'Products: row "View replenishment" opens the worklist for that product',
     description:
