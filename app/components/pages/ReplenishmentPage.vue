@@ -217,16 +217,20 @@ function inTransitSplitLabel(row: WorklistRow): string {
   let po = 0
   let wms = 0
   let invoiced = 0
+  let replacement = 0
   for (const d of row.atp.onOrderDocs) {
     if (d.owner === 'purchase_order') po += d.outstanding
     else wms += d.outstanding
     if (d.invoicedBeforeReceipt) invoiced += d.outstanding
+    if (d.replacementReturn) replacement += d.replacementReturn.qty
   }
   const parts: string[] = []
   // The owner split is only worth a sub-line when both owners contribute.
   if (po && wms) parts.push(`${t('On order')} ${num(po)}`, `${t('WMS inbound')} ${num(wms)}`)
   // Billed but not received still counts as in transit — say so (Rule 32).
   if (invoiced) parts.push(`${t('Invoiced, not received')} ${num(invoiced)}`)
+  // A return the vendor will replace is incoming again (RS-009 / Rule 52).
+  if (replacement) parts.push(`${t('Returned, replacement expected')} ${num(replacement)}`)
   return parts.join(' · ')
 }
 
@@ -943,7 +947,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <span
         v-if="inTransitSplitLabel(row as any)"
         class="rp-intransit-sub"
-        :data-devchange="(row as any).atp.onOrderDocs.some((d: any) => d.invoicedBeforeReceipt) ? 'replenishment-goods-in-transit-invoice' : undefined"
+        :data-devchange="(row as any).atp.onOrderDocs.some((d: any) => d.replacementReturn) ? 'replenishment-purchase-return' : (row as any).atp.onOrderDocs.some((d: any) => d.invoicedBeforeReceipt) ? 'replenishment-goods-in-transit-invoice' : undefined"
       >{{ inTransitSplitLabel(row as any) }}</span>
     </template>
 

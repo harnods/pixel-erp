@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-purchase-return',
+    title: 'Replenishment: purchase returns and in-transit',
+    description:
+      'A purchase return against received goods no longer leaves the worklist wrong (Vendor Supply Profile RS-009 / Rule 52). By default a return does not re-open in-transit: the goods stay received. Only a return marked "replacement expected" adds its qty back to in-transit, which lowers the suggested qty. Neither changes lead time. The worklist In transit cell shows "Returned, replacement expected N", and the Suggested qty drawer explains each return for the product — counted as incoming or not. Demo (no Purchase Return module yet): Anomali receipt RCV-2026-0010 into Gudang Jakarta Pusat — PRET-2026-001 returns 10 of SKU 1101 with a replacement expected, PRET-2026-002 returns 6 of SKU 1005 with none.',
+    date: '2026-10-20',
+    files: ['purchaseReturns.ts', 'replenishment.ts', 'ReplenishmentPage.vue', 'SuggestionBreakdownDrawer.vue'],
+  },
+  {
     id: 'pr-partial-conversion',
     title: 'Purchase request: partial conversion to purchase orders',
     description:

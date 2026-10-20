@@ -34,6 +34,7 @@ import { purchaseOrders } from './purchaseOrders'
 import { purchaseRequests } from './purchaseRequests'
 import { getPurchaseOrderDocument } from './purchaseOrderLines'
 import { goodsInTransitInvoiceFor } from './goodsInTransitInvoices'
+import { purchaseReturns, purchaseReturnsForReceiptLine } from './purchaseReturns'
 import { shiftDays } from './master'
 import {
   REPL_ASOF_ISO, getReplenishmentConfig,
@@ -194,6 +195,11 @@ export interface AtpOnOrderDoc {
    * in transit and the invoice never counts as a receipt for lead time.
    */
   invoicedBeforeReceipt?: string
+  /**
+   * Qty re-opened by a purchase return marked "replacement expected" (RS-009 / Rule
+   * 52), and the return it came from. Already included in `outstanding`.
+   */
+  replacementReturn?: { number: string; qty: number }
 }
 
 export interface AtpResult {
@@ -282,13 +288,20 @@ function onOrderIndex(warehouseId: string) {
   if (hit) return hit
 
   const map = new Map<string, AtpOnOrderDoc[]>()
+  /** Replacement-expected returns already counted through their receipt line. */
+  const reopenedReturns = new Set<string>()
   for (const receipt of receipts) {
     if (receipt.warehouseId !== warehouseId) continue
     if (!OPEN_RECEIPT_STATUSES.has(receipt.status)) continue
 
     const received = receivedSummaryForReceipt(receipt.id)
     for (const line of lineItemsForReceipt(receipt)) {
-      const outstanding = Math.max(0, line.purchaseQty - (received[line.sku]?.received ?? 0))
+      // Rule 52: a return re-opens qty only when a replacement is expected; a plain
+      // return leaves the line received. Never touches lead time.
+      const reopen = purchaseReturnsForReceiptLine(receipt.id, line.sku).find((r) => r.replacementExpected)
+      const reopened = reopen?.qty ?? 0
+      if (reopen) reopenedReturns.add(reopen.number)
+      const outstanding = Math.max(0, line.purchaseQty - (received[line.sku]?.received ?? 0)) + reopened
       if (outstanding <= 0) continue
       const list = map.get(line.sku) ?? []
       list.push({
@@ -302,9 +315,28 @@ function onOrderIndex(warehouseId: string) {
         // so this incoming qty is owned by WMS Inbound (US-029 handover).
         owner: 'wms_inbound',
         invoicedBeforeReceipt: goodsInTransitInvoiceFor(receipt.purchaseNo)?.number,
+        ...(reopen ? { replacementReturn: { number: reopen.number, qty: reopen.qty } } : {}),
       })
       map.set(line.sku, list)
     }
+  }
+
+  // A replacement-expected return whose receipt line could not be regenerated (or whose
+  // receipt is no longer open) still re-opens its qty as incoming (Rule 52).
+  for (const ret of purchaseReturns) {
+    if (!ret.replacementExpected || ret.warehouseId !== warehouseId || reopenedReturns.has(ret.number)) continue
+    const list = map.get(ret.sku) ?? []
+    list.push({
+      receiptId: ret.receiptId,
+      number: ret.receiptNumber,
+      purchaseNo: ret.purchaseNo,
+      eta: ret.date,
+      outstanding: ret.qty,
+      vendorName: ret.vendorName,
+      owner: 'wms_inbound',
+      replacementReturn: { number: ret.number, qty: ret.qty },
+    })
+    map.set(ret.sku, list)
   }
 
   // ── PO-owned In-Transit (US-028 / D25): an approved PO with no WMS inbound ──
