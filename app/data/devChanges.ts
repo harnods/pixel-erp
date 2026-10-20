@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'conversion-rule-42-43',
+    title: 'PR to PO conversion: no-vendor lines and exact rounding',
+    description:
+      'Two conversion rules from the Vendor Supply Profile. Rule 42: a request line for a product with no linked vendor cannot convert; the conversion modal now says it stays open on the request until a vendor is linked (it converts later, Rule 41). Rule 43: the order qty is the smallest valid qty at or above the need — at or below MoQ it is the MoQ, above it MoQ plus whole purchase multiples (e.g. MoQ 100, multiple 25: 80 → 100, 132 → 150). This matches the old rounding for every demo vendor; it differs only when MoQ is not a multiple of the purchase multiple (MoQ 10, multiple 4, need 13 → 14, not 16).',
+    date: '2026-10-20',
+    files: ['replenishment.ts', 'replenishmentDraftPo.ts'],
+  },
+  {
     id: 'replenishment-purchase-return',
     title: 'Replenishment: purchase returns and in-transit',
     description:

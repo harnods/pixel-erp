@@ -533,22 +533,31 @@ export function applyMoqAndPack(
   vi: VendorItem | undefined,
 ): { purchaseQty: number; stockingQty: number; raisedByMoq: boolean; raisedByPack: boolean } {
   const unitsPer = Math.max(1, vi?.unitsPerPurchaseUnit ?? 1)
+  // 0 means "not set" (a link a purchase request created has neither yet).
   const moq = Math.max(0, vi?.moq ?? 0)
-  const packSize = Math.max(1, vi?.packSize ?? 1)
+  const pack = Math.max(0, vi?.packSize ?? 0)
 
   if (rawStockingQty <= 0) {
     return { purchaseQty: 0, stockingQty: 0, raisedByMoq: false, raisedByPack: false }
   }
 
   const converted = Math.ceil(rawStockingQty / unitsPer)
-  const afterMoq = Math.max(converted, moq)
-  const afterPack = Math.ceil(afterMoq / packSize) * packSize
+  // Vendor Supply Profile Rule 43 — the smallest valid qty ≥ the need:
+  //   at or below MoQ → MoQ; above it → MoQ + n × multiple (smallest n);
+  //   no MoQ → smallest n × multiple; no multiple → the larger of MoQ and the need.
+  // Same result as "raise to MoQ, then round up to the multiple" whenever MoQ is a
+  // multiple of the purchase multiple; it differs only when it is not.
+  let qty: number
+  if (moq > 0 && converted <= moq) qty = moq
+  else if (pack <= 1) qty = Math.max(moq, converted)
+  else if (moq > 0) qty = moq + Math.ceil((converted - moq) / pack) * pack
+  else qty = Math.ceil(converted / pack) * pack
 
   return {
-    purchaseQty: afterPack,
-    stockingQty: afterPack * unitsPer,
-    raisedByMoq: afterMoq > converted,
-    raisedByPack: afterPack > afterMoq,
+    purchaseQty: qty,
+    stockingQty: qty * unitsPer,
+    raisedByMoq: moq > converted,
+    raisedByPack: qty > Math.max(converted, moq),
   }
 }
 

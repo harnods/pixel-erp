@@ -3944,6 +3944,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'includes {n} returned on {ret}, replacement expected': 'termasuk {n} yang diretur di {ret}, pengganti akan dikirim',
   'Returned {n} on {ret}. A replacement is expected, so it counts as in transit again.': 'Diretur {n} di {ret}. Pengganti akan dikirim, jadi dihitung sebagai dalam transit lagi.',
   'Returned {n} on {ret} with no replacement expected, so it is not counted as incoming.': 'Diretur {n} di {ret} tanpa pengganti, jadi tidak dihitung sebagai barang masuk.',
+  'No vendor linked to this product. It stays open on the request until one is linked': 'Belum ada vendor yang terhubung ke produk ini. Baris ini tetap terbuka di permintaan sampai vendor dihubungkan',
   'Invoiced, not received': 'Sudah ditagih, belum diterima',
   'invoiced on {invoice}, not received': 'ditagih di {invoice}, belum diterima',
   'Invoiced before receipt: the qty stays in transit until it is received, and the invoice does not count toward lead time.': 'Ditagih sebelum diterima: qty tetap dalam transit sampai diterima, dan tagihan tidak dihitung untuk lead time.',

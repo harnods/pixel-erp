@@ -118,7 +118,8 @@ export interface DraftPoResult {
 }
 
 const SKIP_LABEL: Record<SkipReason, string> = {
-  'no-vendor': 'No vendor',
+  // Rule 42: the line cannot convert until it has a vendor; it stays open (Rule 41).
+  'no-vendor': 'No vendor linked to this product. It stays open on the request until one is linked',
   'inactive-vendor-item': 'Vendor is inactive',
   'zero-qty': 'Nothing to order',
   'needs-setup': 'Needs setup',
