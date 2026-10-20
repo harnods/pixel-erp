@@ -28,10 +28,18 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-order-report-late',
+    title: "Subcon order report: overdue day count",
+    description:
+      "An open order past its promised return date shows how many days late it is beside the date (e.g. +3d).",
+    date: '2026-10-20',
+    files: ['SubconOrderReportPage.vue'],
+  },
+  {
     id: 'subcon-order-report',
     title: "Reports › Production: Subcon order report",
     description:
-      "New Production reports index with a Subcon order report: one row per subcon work order (WO number, product, BOM, vendor, method, scope, qty, received, promised date, status), filtered by plan start period, vendor, method and status.",
+      "New Production reports index with a Subcon order report, recreating the first Subcon orders page on subcon work orders: product over its BOM, method chip, received muted until something comes back, Method + Status filters, column settings and a row kebab.",
     date: '2026-10-19',
     files: ['ProductionReportsIndexPage.vue', 'SubconOrderReportPage.vue', 'subconExport.ts'],
   },
@@ -39,7 +47,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'subcon-order-report-export',
     title: "Subcon order report: Excel download",
     description:
-      "Downloads exactly the rows on screen — after period, filters and search — as an .xlsx file.",
+      "The export dialog (scope + columns) writes a real .xlsx of the rows on screen after filters and search, or only the current page.",
     date: '2026-10-19',
     files: ['SubconOrderReportPage.vue', 'subconExport.ts'],
   },

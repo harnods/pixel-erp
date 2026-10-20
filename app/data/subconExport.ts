@@ -11,7 +11,7 @@
  */
 import type { WorkOrder, WorkOrderStatus } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
-import { SUBCON_METHOD_LABEL, SUBCON_SCOPE_LABEL } from './subcon'
+import { SUBCON_METHOD_LABEL, SUBCON_SCOPE_LABEL, type SubconMethod } from './subcon'
 import { formatDate } from '../utils/date'
 
 /** R19 column headings, in order. */
@@ -46,6 +46,8 @@ export interface SubconReportRow {
   bomNumber: string
   vendorId: string
   vendor: string
+  /** Method id, for the method chip; `method` is its label. */
+  methodId: SubconMethod
   method: string
   scope: string
   plannedQty: number
@@ -71,6 +73,7 @@ export function subconReportRows(orders: readonly WorkOrder[]): SubconReportRow[
         bomNumber: bom?.number ?? '',
         vendorId: c.vendorId,
         vendor: c.vendorName,
+        methodId: c.method,
         method: SUBCON_METHOD_LABEL[c.method],
         scope: SUBCON_SCOPE_LABEL[c.scope],
         plannedQty: wo.plannedQty,
@@ -107,10 +110,19 @@ export function buildSubconExportRows(orders: readonly WorkOrder[]): SubconExpor
   return toSubconExportRows(subconReportRows(orders))
 }
 
-/** Download the rows as an .xlsx file, named for today. */
-export async function downloadSubconExport(rows: SubconExportRow[], today = new Date()): Promise<void> {
+/**
+ * Download the rows as an .xlsx file, named for today. `columns` narrows the sheet
+ * to the headings picked in the export dialog (R19 order kept); all by default.
+ */
+export async function downloadSubconExport(
+  rows: SubconExportRow[],
+  today = new Date(),
+  columns: readonly (typeof SUBCON_EXPORT_COLUMNS)[number][] = SUBCON_EXPORT_COLUMNS,
+): Promise<void> {
   const XLSX = await import('xlsx')
-  const sheet = XLSX.utils.json_to_sheet(rows, { header: [...SUBCON_EXPORT_COLUMNS] })
+  const header = SUBCON_EXPORT_COLUMNS.filter(c => columns.includes(c))
+  const picked = rows.map(r => Object.fromEntries(header.map(h => [h, r[h]])))
+  const sheet = XLSX.utils.json_to_sheet(picked, { header: [...header] })
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'Subcon work orders')
   const stamp = today.toISOString().slice(0, 10)

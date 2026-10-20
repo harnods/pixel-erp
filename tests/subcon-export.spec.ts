@@ -58,3 +58,32 @@ describe('Subcon order report rows', () => {
     expect(row.planStartDate).toBe(wo.planStartDate)
   })
 })
+
+// The export dialog's column picker narrows the sheet; R19 order is kept.
+import { vi } from 'vitest'
+const sheetCalls: { rows: Record<string, string>[]; header: string[] }[] = []
+vi.mock('xlsx', () => ({
+  utils: {
+    json_to_sheet: (rows: Record<string, string>[], opts: { header: string[] }) => { sheetCalls.push({ rows, header: opts.header }); return {} },
+    book_new: () => ({}),
+    book_append_sheet: () => {},
+  },
+  writeFile: () => {},
+}))
+
+describe('downloadSubconExport — picked columns', async () => {
+  const { downloadSubconExport } = await import('../app/data/subconExport')
+
+  it('writes only the picked columns, in R19 order, whatever order they were picked in', async () => {
+    sheetCalls.length = 0
+    await downloadSubconExport(buildSubconExportRows(workOrders), new Date('2026-10-20'), ['Status', 'WO number'])
+    expect(sheetCalls[0]!.header).toEqual(['WO number', 'Status'])
+    for (const r of sheetCalls[0]!.rows) expect(Object.keys(r)).toEqual(['WO number', 'Status'])
+  })
+
+  it('writes every R19 column by default', async () => {
+    sheetCalls.length = 0
+    await downloadSubconExport(buildSubconExportRows(workOrders))
+    expect(sheetCalls[0]!.header).toEqual([...SUBCON_EXPORT_COLUMNS])
+  })
+})

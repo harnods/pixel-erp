@@ -4283,4 +4283,5 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Search WO number, product or vendor": "Cari nomor perintah kerja, produk, atau vendor",
   "No subcon order": "Belum ada pesanan subkon",
   "Subcon orders will appear here.": "Pesanan subkon akan muncul di sini.",
+  "Export subcon orders": "Ekspor pesanan subkon",
 }
