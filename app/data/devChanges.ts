@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-remaining-to-request',
+    title: 'To order: Remaining to request column is back',
+    description:
+      'PRD v23 (US-030 AC-01) shows each line as "Requested 15, Remaining 25", so the Remaining to request column returns beside Requested qty (it was dropped on 12 Oct, before the PRD added it). Remaining = Suggested qty minus open requests from this line, never below 0 — it is what Request to purchase pre-fills. Always shown, like Requested qty, and included in the export.',
+    date: '2026-10-20',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
     id: 'replenishment-fully-requested',
     title: 'To order: fully requested and over-requested lines (US-030)',
     description:

@@ -369,16 +369,17 @@ const ALL_COLUMNS: TableColumn[] = [
   // the lead-time basis (Estimated lead time), and the cover/in-transit states
   // (Stocks out before resupply / Covered by in transit). A row with NO lead time is
   // never here — it routes to Needs setup — so that case is surfaced on that tab.
-  { key: 'signals',       label: 'Signals',         kind: 'tags' },
+  { key: 'signals',       label: 'Signals',         kind: 'badges' },
   { key: 'onHandQty',     label: 'On hand qty',     sortable: true, sortType: 'number', align: 'right' },
   { key: 'reservedQty',   label: 'Reserved qty',    sortable: true, sortType: 'number', align: 'right' },
   { key: 'availableQty',  label: 'Available qty',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'onOrderQty',    label: 'In transit qty',  sortable: true, sortType: 'number', align: 'right' },
   { key: 'suggestedQty',  label: 'Suggested qty',   sortable: true, sortType: 'number', align: 'right' },
   // Partial-request tracking (US-030): what is already on open PRs from this line.
-  // (The remainder, Suggested − Requested, is derivable and drives the PR pre-fill, so
-  // it is not a separate column.)
+  // The remainder, Suggested − Requested, is what a new PR pre-fills with — shown beside
+  // it so the line reads "Requested 15, Remaining 25" (PRD v23 US-030 AC-01).
   { key: 'requestedQty',  label: 'Requested qty',   sortable: true, sortType: 'number', align: 'right' },
+  { key: 'remainingToRequest', label: 'Remaining to request', kind: 'wide', sortable: true, sortType: 'number', align: 'right' },
   { key: 'reorderPoint',  label: 'Reorder point',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'coverValue',    label: 'Days of cover',   sortable: true, sortType: 'number', align: 'right' },
   { key: 'unit',          label: 'Unit',            kind: 'unit' },
@@ -395,7 +396,7 @@ const ALL_COLUMNS: TableColumn[] = [
  * Suggested qty, Days of cover, Warehouse and Vendor can never be hidden; and the
  * choice is remembered, so the user lands on the same set on every visit.
  */
-const LOCKED_COLUMNS = new Set(['productName', 'suggestedQty', 'requestedQty', 'coverValue', 'warehouseName', 'vendorName'])
+const LOCKED_COLUMNS = new Set(['productName', 'suggestedQty', 'requestedQty', 'remainingToRequest', 'coverValue', 'warehouseName', 'vendorName'])
 for (const c of ALL_COLUMNS) if (LOCKED_COLUMNS.has(c.key)) c.lockHide = true
 const COLUMNS_STORAGE_KEY = 'erp-db:replenishment-worklist-columns'
 const savedColumns = readStore<Record<string, boolean>>(COLUMNS_STORAGE_KEY, {})
@@ -420,7 +421,7 @@ const EXPORT_MAX_ROWS = 1000
 function exportWorklist() {
   const header: CsvRow = [
     'Product', 'SKU', 'Movement', 'Signals', 'Warehouse', 'On hand qty', 'Reserved qty',
-    'Available qty', 'In transit qty', 'Suggested qty', 'Requested qty',
+    'Available qty', 'In transit qty', 'Suggested qty', 'Requested qty', 'Remaining to request',
     'Reorder point', 'Unit', 'Vendor',
     'Days of cover', 'Lead time days', 'Demand velocity per day', 'Safety days',
   ]
@@ -432,7 +433,7 @@ function exportWorklist() {
     ].filter(Boolean).join('; '),
     r.warehouseName,
     r.atp.onHand, r.atp.reserved, r.atp.available, r.atp.onOrder,
-    r.suggestion.rawQty, r.requestedQty,
+    r.suggestion.rawQty, r.requestedQty, r.remainingToRequest,
     r.reorderPointSource === 'none' ? '' : r.reorderPoint, r.unit,
     r.vendor?.name ?? '',
     r.cover.coverDays === null ? '' : r.cover.coverDays.toFixed(1),
@@ -1017,6 +1018,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       >{{ t('Over-requested') }}</MpBadge>
     </template>
 
+    <template #cell-remainingToRequest="{ row }">
+      <span data-devchange="replenishment-remaining-to-request">{{ num((row as any).remainingToRequest) }}</span>
+    </template>
+
     <!-- ── Vendor ── -->
     <template #cell-vendorName="{ row }">
       <template v-if="(row as any).vendor">
@@ -1293,7 +1298,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rp-signal-none { color: var(--mp-text-subtle); }
 .rp-over-requested { margin-top: var(--mp-spacing-1); }
-.rp-intransit-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: nowrap; }
+.rp-intransit-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: normal; overflow-wrap: anywhere; }
 
 /* Bulk bar guidance when a selection spans warehouses — no cross-warehouse PR. */
 .rp-bulk-info {

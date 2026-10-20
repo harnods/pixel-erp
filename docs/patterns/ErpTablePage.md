@@ -188,6 +188,7 @@ actions `[...]` column stays flush right. Fixed types set min = max.
 | `status` | **128px** | **160px** | Status column rendered with a badge (`ErpStatusBadge`) |
 | `amount` | **160px** | **240px** | Any monetary amount (balance due, total, price) — right-aligned, IDR |
 | `tags` | **160px** | **240px** | Tag chips (`ErpTagList`) |
+| `badges` | **192px** | **240px** | Several stacked status badges per cell (e.g. a replenishment **Signals** column). The floor fits a three-word badge label plus cell padding, so a badge never spills out of its pill when the table is too wide to grow its columns. |
 | `unit` | **128px** | **128px** (fixed) | Unit of measurement (pcs, kg, …) |
 | `address` | **200px** | **240px** | Address, or any content that can wrap to multiple lines |
 | `wide` | **216px** | **240px** | A default-type column whose **header label** is longer than the default 160px floor (e.g. `Demand velocity per day`). Same cap as `default`; the higher floor stops the header clipping when the table is too wide to grow its columns. Use it instead of a one-off pixel `width`. |
