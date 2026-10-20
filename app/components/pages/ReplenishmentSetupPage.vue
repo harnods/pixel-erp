@@ -14,7 +14,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   toast, MpBadge, MpIcon, MpButton,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, MpTooltip,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -307,18 +307,38 @@ function onSaved() {
               {{ t('Below reorder point') }}
             </MpBadge>
           </template>
+          <!-- The how-to-fix guidance is on each badge's tooltip, so a row stays one or
+               two badge lines tall instead of repeating a paragraph on every row. -->
           <template v-else>
-            <MpBadge v-if="(row as any).flags.noDemand" for="tableStatus" type="warning">{{ t('No demand') }}</MpBadge>
-            <MpBadge v-if="(row as any).leadTimeTier === 'none'" for="tableStatus" type="warning">{{ t('Waiting for lead time') }}</MpBadge>
-            <MpBadge v-if="!(row as any).vendor" for="tableStatus" type="warning">{{ t('No vendor') }}</MpBadge>
+            <MpTooltip
+              v-if="(row as any).flags.noDemand"
+              :id="`rp-setup-tt-demand-${(row as any).key}`"
+              :label="t('No sales in the lookback window yet, so demand cannot be computed. It returns on its own once it starts selling.')"
+              placement="top"
+              use-portal
+            >
+              <MpBadge for="tableStatus" type="warning" data-devchange="replenishment-needssetup-reason-tooltip">{{ t('No demand') }}</MpBadge>
+            </MpTooltip>
+            <MpTooltip
+              v-if="(row as any).leadTimeTier === 'none'"
+              :id="`rp-setup-tt-lead-${(row as any).key}`"
+              :label="t('No lead time yet. Add a preferred vendor, make a purchase, or set a default lead time.')"
+              placement="top"
+              use-portal
+            >
+              <MpBadge for="tableStatus" type="warning" data-devchange="replenishment-needssetup-reason-tooltip">{{ t('Waiting for lead time') }}</MpBadge>
+            </MpTooltip>
+            <MpTooltip
+              v-if="!(row as any).vendor"
+              :id="`rp-setup-tt-vendor-${(row as any).key}`"
+              :label="t('No preferred vendor in this warehouse. Choose one on the product\'s Stock by warehouses tab.')"
+              placement="top"
+              use-portal
+            >
+              <MpBadge for="tableStatus" type="warning" data-devchange="replenishment-needssetup-reason-tooltip">{{ t('No vendor') }}</MpBadge>
+            </MpTooltip>
           </template>
         </div>
-        <span v-if="(row as any).bucket !== 'not-tracked' && (row as any).flags.noDemand" class="rp-missing-reason">
-          {{ t('No sales in the lookback window yet, so demand cannot be computed. It returns on its own once it starts selling.') }}
-        </span>
-        <span v-if="(row as any).bucket !== 'not-tracked' && (row as any).leadTimeTier === 'none'" class="rp-missing-reason">
-          {{ t('No lead time yet. Add a preferred vendor, make a purchase, or set a default lead time.') }}
-        </span>
         <!-- US-010 AC-03: a muted SKU that is moving Fast again is suggested back. -->
         <span v-if="(row as any).bucket === 'not-tracked' && (row as any).fsn.committed === 'fast'" class="rp-missing-reason">
           {{ t('Moving fast again.') }}

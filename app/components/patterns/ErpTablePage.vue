@@ -871,7 +871,12 @@ const bulkCountLabel = computed(() => {
   margin-bottom: var(--mp-spacing-5);
   flex-shrink: 0;
   gap: var(--mp-spacing-3);
+  /* When the filters and the search + actions group don't fit on one line (a narrow
+     window, or a page with many filters), the right group wraps to its own line —
+     still right-aligned — instead of pushing the whole page sideways. */
+  flex-wrap: wrap;
 }
+.erp-filter-bar > :last-child { margin-left: auto; }
 
 /* Mobile — the left (filters) and right (search + actions) groups stack instead
    of colliding; the search group then takes the full row. */

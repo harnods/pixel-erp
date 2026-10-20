@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-needssetup-reason-tooltip',
+    title: 'Needs setup: reason guidance moved to a tooltip; filter bars wrap',
+    description:
+      'Each Reason badge (No demand, Waiting for lead time, No vendor) now carries its how-to-fix guidance as a hover tooltip, instead of a paragraph repeated under the badges on every row — rows drop from about four lines to one or two. "Moving fast again. Turn tracking back on" stays visible because it is an action. Also: every table filter bar now wraps the search + actions group onto its own right-aligned line when it does not fit, instead of pushing the page sideways (seen on Needs setup in a narrow window).',
+    date: '2026-10-20',
+    files: ['ReplenishmentSetupPage.vue', 'ErpTablePage.vue'],
+  },
+  {
     id: 'replenishment-remaining-to-request',
     title: 'To order: Remaining to request column is back',
     description:
