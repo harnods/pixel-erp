@@ -252,6 +252,7 @@ function goBack() { router.push('/purchase-requests') }
               <th class="detail-th detail-th--num">{{ t('Requested qty') }}</th>
               <th class="detail-th detail-th--num">{{ t('Available qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
+              <th class="detail-th" data-devchange="replenishment-pr-line-required-date">{{ t('Required date') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -292,6 +293,8 @@ function goBack() { router.push('/purchase-requests') }
               </td>
               <td class="detail-td detail-td--num">{{ it.availableQty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
+              <!-- RS-002: a line without its own date is needed by the request's date. -->
+              <td class="detail-td">{{ formatDateLong(it.requiredDate ?? request.requiredDate) }}</td>
             </tr>
           </tbody>
         </table>
@@ -310,7 +313,7 @@ function goBack() { router.push('/purchase-requests') }
       <section class="detail-notes">
         <div class="detail-notes-left">
           <ContentList :label="t('Note')">
-            <p class="detail-note-text">{{ request.note }}</p>
+            <p class="detail-note-text">{{ request.note || '—' }}</p>
           </ContentList>
           <ContentList :label="`${t('Attachment')} (${request.attachments.length})`">
             <div v-if="request.attachments.length" class="detail-attach-list">

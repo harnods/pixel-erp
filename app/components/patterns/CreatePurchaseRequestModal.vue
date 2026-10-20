@@ -37,7 +37,7 @@
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
   MpButton, MpButtonGroup, MpTextlink, MpInput, MpIcon, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpDatePicker, css,
 } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
 import {
@@ -45,6 +45,7 @@ import {
 } from '~/data/replenishmentPurchaseRequest'
 import { vendorItemsForSku, vendorNameFor } from '~/data/vendorItems'
 import { vendors } from '~/data/vendors'
+import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
 import ContentList from '~/components/patterns/ContentList.vue'
 import { formatIDR } from '~/utils/currency'
 
@@ -59,6 +60,7 @@ const emit = defineEmits<{
   (e: 'confirm', payload: {
     overrides: Record<string, number>
     vendorChoices: Record<string, string | null>
+    requiredDates: Record<string, string>
   }): void
   (e: 'assign-vendor', sku: string): void
 }>()
@@ -68,6 +70,10 @@ const { t, tf } = useLocale()
 /** Local, discarded on close — edits never leak out unless the user confirms. */
 const overrides = reactive<Record<string, number>>({})
 const vendorChoices = reactive<Record<string, string | null>>({})
+/** Required dates the requester changed, ISO, keyed by row (RS-002). */
+const requiredDates = reactive<Record<string, string>>({})
+/** Set by a failed confirm: marks every date cell earlier than the request date. */
+const showDateErrors = ref(false)
 const qtyError = ref('')
 /** Set by a failed confirm: marks every qty cell still at 0 (rule/field-invalid-caption). */
 const showQtyErrors = ref(false)
@@ -84,13 +90,15 @@ watch(() => props.isOpen, (open) => {
   if (!open) return
   for (const k of Object.keys(overrides)) delete overrides[k]
   for (const k of Object.keys(vendorChoices)) delete vendorChoices[k]
+  for (const k of Object.keys(requiredDates)) delete requiredDates[k]
   for (const k of Object.keys(pendingRecommend)) delete pendingRecommend[k]
   qtyError.value = ''
   showQtyErrors.value = false
+  showDateErrors.value = false
 })
 
 /** Re-planned live, so changing a vendor visibly re-groups the line. */
-const plan = computed(() => planPurchaseRequests(props.rows, { ...overrides }, { ...vendorChoices }))
+const plan = computed(() => planPurchaseRequests(props.rows, { ...overrides }, { ...vendorChoices }, { ...requiredDates }))
 
 /**
  * One flat table in the order the user selected the rows. The plan still groups
@@ -179,6 +187,26 @@ function dismissRecommendation(rowKey: string) {
   delete pendingRecommend[rowKey]
 }
 
+// MpDatePicker speaks DD/MM/YYYY (value-type="format"); the data layer speaks ISO.
+function isoToDmy(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function dmyToIso(dmy: string): string {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+/** A required date before the request date cannot be met. */
+function dateIsEarly(iso: string): boolean { return iso < REPL_ASOF_ISO }
+
+function setRequiredDate(rowKey: string, dmy: string) {
+  // Clearing the field goes back to the lead-time default rather than leaving a blank.
+  if (!dmy) delete requiredDates[rowKey]
+  else requiredDates[rowKey] = dmyToIso(dmy)
+  qtyError.value = ''
+}
+
 function setQty(rowKey: string, raw: string) {
   const n = Number(raw)
   if (raw === '' || Number.isNaN(n)) delete overrides[rowKey]
@@ -234,7 +262,13 @@ function confirm() {
     qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0', { n: zeroLines })
     return
   }
-  emit('confirm', { overrides: { ...overrides }, vendorChoices: { ...vendorChoices } })
+  const earlyLines = lines.value.filter(({ line }) => dateIsEarly(line.requiredDate)).length
+  if (earlyLines > 0) {
+    showDateErrors.value = true
+    qtyError.value = tf('Products with a required date before the request date: {n}. Select a later date', { n: earlyLines })
+    return
+  }
+  emit('confirm', { overrides: { ...overrides }, vendorChoices: { ...vendorChoices }, requiredDates: { ...requiredDates } })
 }
 </script>
 
@@ -279,11 +313,12 @@ function confirm() {
           <div class="rp-po-table-scroll">
             <table class="rp-po-table">
               <colgroup>
-                <col>
+                <col class="rp-po-col-product">
                 <col class="rp-po-col-vendor">
                 <col class="rp-po-col-qty">
                 <col class="rp-po-col-qty">
                 <col class="rp-po-col-unit">
+                <col class="rp-po-col-date">
                 <col class="rp-po-col-value">
               </colgroup>
               <thead>
@@ -293,6 +328,7 @@ function confirm() {
                   <th class="rp-po-th rp-po-th--num">{{ t('Suggested qty') }}</th>
                   <th class="rp-po-th rp-po-th--num">{{ t('Request qty') }}</th>
                   <th class="rp-po-th">{{ t('Unit') }}</th>
+                  <th class="rp-po-th" data-devchange="replenishment-pr-line-required-date">{{ t('Required date') }}</th>
                   <th class="rp-po-th rp-po-th--num">{{ t('Estimated value') }}</th>
                 </tr>
               </thead>
@@ -399,6 +435,21 @@ function confirm() {
                     </span>
                   </td>
                   <td class="rp-po-td">{{ line.unit }}</td>
+                  <!-- RS-002: when this line is needed. Defaults to today + its lead time. -->
+                  <td
+                    class="rp-po-td rp-po-td--date"
+                    :class="{ 'rp-po-td--error': showDateErrors && dateIsEarly(line.requiredDate) }"
+                  >
+                    <MpDatePicker
+                      :id="`rp-pr-date-${line.sku}-${line.warehouseId}`"
+                      :model-value="isoToDmy(line.requiredDate)"
+                      format="DD/MM/YYYY"
+                      value-type="format"
+                      use-portal
+                      :aria-label="t('Required date')"
+                      @update:model-value="(v: string) => setRequiredDate(rowKeyFor(line.sku, line.warehouseId), v)"
+                    />
+                  </td>
                   <td class="rp-po-td rp-po-td--num">{{ valueLabel(line.finalQty * line.unitCost, line.unitCost) }}</td>
                 </tr>
               </tbody>
@@ -472,10 +523,14 @@ function confirm() {
 
 /* Form table — docs/patterns/FormTable.md. */
 .rp-po-table-scroll { overflow-x: auto; }
-.rp-po-table { width: 100%; min-width: 760px; table-layout: fixed; border-collapse: collapse; }
+.rp-po-table { width: 100%; min-width: 1024px; table-layout: fixed; border-collapse: collapse; }
+/* Seven columns outgrow the xl modal, so the card scrolls sideways instead of
+   squeezing the product name to a word per line. */
+.rp-po-col-product { width: 200px; }
 .rp-po-col-vendor { width: 200px; }
 .rp-po-col-qty { width: 128px; }
 .rp-po-col-unit { width: 64px; }
+.rp-po-col-date { width: 184px; } /* fits DD/MM/YYYY beside the picker's clear + calendar icons */
 .rp-po-col-value { width: 168px; }
 
 /* White header, uppercase, 28px, no vertical dividers
@@ -511,22 +566,31 @@ function confirm() {
 
 /* Editable cells: white, the cell owns border + focus ring, the control inside is
    borderless and fills the 40px baseline (rule/table-form-cell-no-border). */
-.rp-po-td--input, .rp-po-td--select { padding: 0; background: var(--mp-background-neutral); position: relative; }
+.rp-po-td--input, .rp-po-td--select, .rp-po-td--date { padding: 0; background: var(--mp-background-neutral); position: relative; }
 .rp-po-td--input :deep([class*='input']) {
   width: 100%; height: var(--mp-sizes-10);
   border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
   text-align: right; font-variant-numeric: tabular-nums;
 }
-.rp-po-td--input:focus-within::after, .rp-po-td--select:focus-within::after {
+.rp-po-td--input:focus-within::after, .rp-po-td--select:focus-within::after, .rp-po-td--date:focus-within::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
   border: 1px solid var(--mp-border-bold); pointer-events: none;
 }
-.rp-po-td--input.rp-po-td--error { background: var(--mp-colors-background-danger); }
+.rp-po-td--input.rp-po-td--error, .rp-po-td--date.rp-po-td--error { background: var(--mp-colors-background-danger); }
 .rp-po-td--error::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
   border: 1px solid var(--mp-colors-border-danger); pointer-events: none;
 }
 .rp-po-td--error :deep([class*='input']) { background: transparent; }
+/* The date cell's picker fills the cell and drops its own border, like the qty
+   input. Scoped to the input root only: a broad [class*='input'] match would also
+   stretch the calendar addon and push the date out of view. */
+.rp-po-td--date :deep(.mp-datepicker__root) { width: 100%; }
+.rp-po-td--date :deep(.mp-input__control) {
+  height: var(--mp-sizes-10);
+  border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
+  background: transparent;
+}
 
 /* Vendor select trigger — a custom single-root trigger, not a bordered MpSelect. */
 .rp-po-vendor-trigger {

@@ -33,6 +33,7 @@ import { warehouseTransfers, transferLineItems } from './warehouseTransfers'
 import { purchaseOrders } from './purchaseOrders'
 import { purchaseRequests } from './purchaseRequests'
 import { getPurchaseOrderDocument } from './purchaseOrderLines'
+import { goodsInTransitInvoiceFor } from './goodsInTransitInvoices'
 import { shiftDays } from './master'
 import {
   REPL_ASOF_ISO, getReplenishmentConfig,
@@ -187,6 +188,12 @@ export interface AtpOnOrderDoc {
    * owned by exactly one — counted once, never both (US-029 handover).
    */
   owner: 'purchase_order' | 'wms_inbound'
+  /**
+   * Set when the supplier has already invoiced this purchase but the goods are not
+   * received (Goods-in-Transit, RS-020 / Rule 32). Informational only: the qty stays
+   * in transit and the invoice never counts as a receipt for lead time.
+   */
+  invoicedBeforeReceipt?: string
 }
 
 export interface AtpResult {
@@ -294,6 +301,7 @@ function onOrderIndex(warehouseId: string) {
         // A receipt means the PO was pushed to WMS Inbound (or received directly),
         // so this incoming qty is owned by WMS Inbound (US-029 handover).
         owner: 'wms_inbound',
+        invoicedBeforeReceipt: goodsInTransitInvoiceFor(receipt.purchaseNo)?.number,
       })
       map.set(line.sku, list)
     }
@@ -325,6 +333,7 @@ function onOrderIndex(warehouseId: string) {
         // An approved PO with no receipt yet is In-Transit owned by the PO itself
         // (US-028) — it has not been handed over to WMS Inbound.
         owner: 'purchase_order',
+        invoicedBeforeReceipt: goodsInTransitInvoiceFor(po.number)?.number,
       })
       map.set(line.sku, list)
     }

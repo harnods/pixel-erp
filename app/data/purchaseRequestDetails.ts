@@ -1,5 +1,6 @@
 import { purchaseOrders } from '~/data/purchaseOrders'
 import { purchaseRequests } from './purchaseRequests'
+import { warehouses } from './warehouses'
 import type { PurchaseRequest } from './types'
 
 /**
@@ -77,12 +78,17 @@ function buildLinked(pr: PurchaseRequest, idx: number): PRLinkedTxn[] {
 }
 
 function buildDetail(base: PurchaseRequest, idx: number): PurchaseRequestDetail {
+  // A request raised from the replenishment worklist is for one real warehouse, and
+  // carries no note — the demo chrome would otherwise name a different warehouse.
+  const replWarehouse = base.replenishment
+    ? warehouses.find((w) => w.id === base.replenishment!.warehouseId)
+    : undefined
   return {
     ...base,
     department: pick(DEPARTMENTS, idx),
-    warehouse: pick(WAREHOUSES, idx),
-    deliverTo: pick(DELIVER_TO, idx),
-    note: pick(NOTES, idx),
+    warehouse: replWarehouse?.name ?? pick(WAREHOUSES, idx),
+    deliverTo: replWarehouse?.address ?? pick(DELIVER_TO, idx),
+    note: base.replenishment ? '' : pick(NOTES, idx),
     attachments: base.attachment ? [{ name: `PR-${base.number}.pdf`, sizeKB: 48 }] : [],
     lastUpdatedBy: base.procurementStaff,
     lastUpdatedAt: `${base.date}T09:30:00+07:00`,

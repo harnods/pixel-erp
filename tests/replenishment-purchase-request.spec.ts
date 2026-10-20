@@ -197,6 +197,29 @@ describe('createPurchaseRequests — commits requests, never orders', () => {
     }
   })
 
+  it('each line carries its own required date, defaulting to run date + its lead time (RS-002)', () => {
+    const rows = worklist.rows.filter((r) => r.suggestion.rawQty > 0).slice(0, 3)
+    const plan = planPurchaseRequests(rows)
+    for (const g of plan.groups) {
+      for (const l of g.lines) expect(l.requiredDate).toBe(shiftDays(REPL_ASOF_ISO, l.context.leadTimeDays))
+      const pr = createPurchaseRequestFromGroup(g)
+      for (const line of pr.lines) expect(line.requiredDate).toBeTruthy()
+      // The request is needed by its latest line.
+      expect(pr.requiredDate).toBe(g.lines.map((l) => l.requiredDate).sort().at(-1))
+    }
+  })
+
+  it('a requester-set required date is kept on the line and moves the request date', () => {
+    const row = worklist.rows.find((r) => r.suggestion.rawQty > 0)!
+    const later = shiftDays(REPL_ASOF_ISO, 120)
+    const plan = planPurchaseRequests([row], {}, {}, { [row.key]: later })
+    const line = plan.groups[0]!.lines[0]!
+    expect(line.requiredDate).toBe(later)
+    const pr = createPurchaseRequestFromGroup(plan.groups[0]!)
+    expect(pr.lines[0]!.requiredDate).toBe(later)
+    expect(pr.requiredDate).toBe(later)
+  })
+
   it('the suggested vendor rides along as guidance, not a binding (VR-05)', () => {
     const rows = worklist.rows.filter((r) => r.vendorItem && r.suggestion.rawQty > 0).slice(0, 2)
     const plan = planPurchaseRequests(rows)

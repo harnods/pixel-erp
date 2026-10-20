@@ -223,6 +223,11 @@ export interface PurchaseRequestLine {
   unit: string
   unitCost: number          // IDR
   taxLabel: string
+  /**
+   * When this line is needed (Vendor Supply Profile RS-002). Optional: a line without
+   * its own date is needed by the request's `requiredDate`.
+   */
+  requiredDate?: string     // ISO
 }
 
 export interface PurchaseRequest {

@@ -209,19 +209,25 @@ const baseRows = computed<SortableRow[]>(() =>
   toSortable([...worklist.value.rows, ...worklist.value.coveredByInbound]),
 )
 
-/** In-transit split by owner (US-028/029): on order (approved PO) vs in WMS inbound. */
+/**
+ * In-transit split by owner (US-028/029): on order (approved PO) vs in WMS inbound,
+ * plus how much of it the supplier has already invoiced (Goods-in-Transit, RS-020).
+ */
 function inTransitSplitLabel(row: WorklistRow): string {
   let po = 0
   let wms = 0
+  let invoiced = 0
   for (const d of row.atp.onOrderDocs) {
     if (d.owner === 'purchase_order') po += d.outstanding
     else wms += d.outstanding
+    if (d.invoicedBeforeReceipt) invoiced += d.outstanding
   }
   const parts: string[] = []
-  if (po) parts.push(`${t('On order')} ${num(po)}`)
-  if (wms) parts.push(`${t('WMS inbound')} ${num(wms)}`)
-  // Only worth a sub-line when both owners contribute; a single owner is obvious.
-  return po && wms ? parts.join(' · ') : ''
+  // The owner split is only worth a sub-line when both owners contribute.
+  if (po && wms) parts.push(`${t('On order')} ${num(po)}`, `${t('WMS inbound')} ${num(wms)}`)
+  // Billed but not received still counts as in transit — say so (Rule 32).
+  if (invoiced) parts.push(`${t('Invoiced, not received')} ${num(invoiced)}`)
+  return parts.join(' · ')
 }
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
@@ -564,8 +570,8 @@ async function runBulk(groups: Parameters<typeof createPurchaseRequestsFromGroup
     })
   }
 }
-function startBulk(payload: { overrides: Record<string, number>; vendorChoices: Record<string, string | null> }) {
-  const plan = planPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices)
+function startBulk(payload: { overrides: Record<string, number>; vendorChoices: Record<string, string | null>; requiredDates: Record<string, string> }) {
+  const plan = planPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices, payload.requiredDates)
   poOpen.value = false
   clearSelection?.()
   clearSelection = null
@@ -584,6 +590,7 @@ function retryBulk() {
 function confirmPr(payload: {
   overrides: Record<string, number>
   vendorChoices: Record<string, string | null>
+  requiredDates: Record<string, string>
 }) {
   // A big selection is created in the background with progress (US-018 AC-03).
   if (poRows.value.length >= BULK_ASYNC_MIN_LINES) { startBulk(payload); return }
@@ -592,7 +599,7 @@ function confirmPr(payload: {
   // rule/form-errors-inline — never an error toast over a closed form).
   let result: ReturnType<typeof createPurchaseRequests>
   try {
-    result = createPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices)
+    result = createPurchaseRequests(poRows.value, payload.overrides, payload.vendorChoices, 'You', payload.requiredDates)
   } catch {
     prError.value = t('The purchase request could not be saved. Try again')
     return
@@ -933,7 +940,11 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
          both contribute (US-028/029). -->
     <template #cell-onOrderQty="{ row }">
       {{ num((row as any).atp.onOrder) }}
-      <span v-if="inTransitSplitLabel(row as any)" class="rp-intransit-sub">{{ inTransitSplitLabel(row as any) }}</span>
+      <span
+        v-if="inTransitSplitLabel(row as any)"
+        class="rp-intransit-sub"
+        :data-devchange="(row as any).atp.onOrderDocs.some((d: any) => d.invoicedBeforeReceipt) ? 'replenishment-goods-in-transit-invoice' : undefined"
+      >{{ inTransitSplitLabel(row as any) }}</span>
     </template>
 
     <!-- Available is the number days-of-cover divides, so it is the one that

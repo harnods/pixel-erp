@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-goods-in-transit-invoice',
+    title: 'Replenishment: invoiced but not yet received (Goods-in-Transit)',
+    description:
+      'A supplier invoice billed before the goods arrive no longer leaves a buyer guessing (Vendor Supply Profile RS-020 / Rule 32). The qty stays in transit until it is actually received, and the invoice never counts as a receipt for lead time. The worklist In transit cell adds "Invoiced, not received N", and the Suggested qty drawer marks the document "invoiced on <invoice>, not received" with a one-line explanation. Demo: Tanamera invoice PINV-2026-GIT-001 bills Purchase Order #10091 (receipt RCV-2026-0002, Gudang Surabaya Timur) before receipt — see SKUs 1102, 1005 and 1003 there.',
+    date: '2026-10-20',
+    files: ['goodsInTransitInvoices.ts', 'replenishment.ts', 'ReplenishmentPage.vue', 'SuggestionBreakdownDrawer.vue'],
+  },
+  {
+    id: 'replenishment-pr-line-required-date',
+    title: 'Purchase request: required date on each line',
+    description:
+      'Each line of a purchase request now has its own Required date (Vendor Supply Profile RS-002). When you raise requests from the replenishment worklist, it defaults to the run date plus that line\'s lead time and you can change it in the Request to purchase modal; a date before the request date shows an inline error. The request\'s own Required date is the latest of its lines. The purchase request detail shows the date per line (a line without one falls back to the request date). Also fixed: a request raised from the worklist now shows its real warehouse and address on the detail page, and no demo note.',
+    date: '2026-10-20',
+    files: ['CreatePurchaseRequestModal.vue', 'PurchaseRequestDetailsPage.vue', 'replenishmentPurchaseRequest.ts', 'purchaseRequestDetails.ts', 'types.ts'],
+  },
+  {
     id: 'replenishment-stat-view-list',
     title: 'To order: "View replenishment list" shortcuts on the stat cards',
     description:

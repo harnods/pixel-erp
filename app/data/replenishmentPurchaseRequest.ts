@@ -60,6 +60,11 @@ export interface PrLine {
   finalQty: number
   /** True once a human has typed over the recommendation (US-022 VR-03). */
   manuallyEdited: boolean
+  /**
+   * When this line is needed, ISO (RS-002). Defaults to today + this line's lead
+   * time; the requester may change it.
+   */
+  requiredDate: string
   unit: string
   unitCost: number
   availableQty: number
@@ -85,7 +90,7 @@ export interface PrGroup {
   lines: PrLine[]
   /** Indicative only — a PR is a request, not a priced commitment. */
   estimatedValue: number
-  /** Longest lead time in the group — drives the "needed by" date. */
+  /** Longest lead time in the group. */
   leadTimeDays: number
 }
 
@@ -197,6 +202,7 @@ export function planPurchaseRequests(
   rows: WorklistRow[],
   overrides: Record<string, number> = {},
   vendorChoices: Record<string, string | null> = {},
+  requiredDates: Record<string, string> = {},
 ): PrPlan {
   const groups = new Map<string, Omit<PrGroup, 'estimatedValue' | 'leadTimeDays'>>()
   const skipped: PrSkippedLine[] = []
@@ -256,6 +262,9 @@ export function planPurchaseRequests(
       recommendedQty,
       finalQty,
       manuallyEdited: override !== undefined && override !== recommendedQty,
+      // "Needed by" = today + lead time (US-020 AC-01), per line (RS-002). On the stock
+      // clock, the same anchor every replenishment number uses.
+      requiredDate: requiredDates[row.key] ?? shiftDays(REPL_ASOF_ISO, leadTimeForVendor(row, vendorId).days),
       unit: row.unit,
       unitCost: vi?.unitCost ?? 0,
       availableQty: row.atp.available,
@@ -310,6 +319,7 @@ export function createPurchaseRequestFromGroup(group: PrGroup, createdBy = 'You'
       unit: line.unit || (product?.unit ?? 'Unit'),
       unitCost: line.unitCost,
       taxLabel: TAX_LABEL,
+      requiredDate: line.requiredDate,
     }
   })
 
@@ -336,9 +346,9 @@ export function createPurchaseRequestFromGroup(group: PrGroup, createdBy = 'You'
     })),
   }
 
-  // "Needed by" = today + lead time (US-020 AC-01). On the stock clock, the same
-  // anchor every replenishment number uses, so the date agrees with the row.
-  const requiredDate = shiftDays(REPL_ASOF_ISO, group.leadTimeDays)
+  // The request is needed by its latest line. With untouched dates that is today +
+  // the group's longest lead time (US-020 AC-01).
+  const requiredDate = group.lines.reduce((max, l) => (l.requiredDate > max ? l.requiredDate : max), REPL_ASOF_ISO)
 
   // Urgency reflects real risk, not a default: a group containing something that
   // stocks out before resupply is genuinely more urgent than a routine top-up.
@@ -373,8 +383,9 @@ export function createPurchaseRequests(
   overrides: Record<string, number> = {},
   vendorChoices: Record<string, string | null> = {},
   createdBy = 'You',
+  requiredDates: Record<string, string> = {},
 ): PrResult {
-  const plan = planPurchaseRequests(rows, overrides, vendorChoices)
+  const plan = planPurchaseRequests(rows, overrides, vendorChoices, requiredDates)
   const created: PrResult['created'] = []
   const skipped = [...plan.skipped]
   for (const planned of plan.groups) {
@@ -500,8 +511,9 @@ export function createPurchaseRequestsBatched(
   overrides: Record<string, number> = {},
   vendorChoices: Record<string, string | null> = {},
   opts: BatchOptions = {},
+  requiredDates: Record<string, string> = {},
 ): Promise<BatchedPrResult> {
-  const plan = planPurchaseRequests(rows, overrides, vendorChoices)
+  const plan = planPurchaseRequests(rows, overrides, vendorChoices, requiredDates)
   return createPurchaseRequestsFromGroups(plan.groups, opts).then((r) => ({
     ...r, skipped: [...plan.skipped, ...r.skipped],
   }))

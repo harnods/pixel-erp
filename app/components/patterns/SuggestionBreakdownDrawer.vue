@@ -280,8 +280,13 @@ function exportPurchase() {
                 {{ qty(row.atp.onOrder, row.unit) }}
                 <span class="rp-bd-note">
                   {{ row.atp.onOrderDocs.length
-                    ? row.atp.onOrderDocs.map(d => `${d.number}: ${d.outstanding} (${d.owner === 'purchase_order' ? t('on order') : t('in WMS inbound')})`).join(' · ')
+                    ? row.atp.onOrderDocs.map(d => `${d.number}: ${d.outstanding} (${d.owner === 'purchase_order' ? t('on order') : t('in WMS inbound')}${d.invoicedBeforeReceipt ? ` · ${tf('invoiced on {invoice}, not received', { invoice: d.invoicedBeforeReceipt })}` : ''})`).join(' · ')
                     : t('No open purchase orders or receipts') }}
+                </span>
+                <!-- RS-020 / Rule 32: an early invoice neither receives the goods nor
+                     shortens lead time, so the qty is still counted as in transit. -->
+                <span v-if="row.atp.onOrderDocs.some(d => d.invoicedBeforeReceipt)" class="rp-bd-note" data-devchange="replenishment-goods-in-transit-invoice">
+                  {{ t('Invoiced before receipt: the qty stays in transit until it is received, and the invoice does not count toward lead time.') }}
                 </span>
               </ContentList>
             </section>
