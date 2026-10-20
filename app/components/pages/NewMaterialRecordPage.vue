@@ -567,7 +567,11 @@ function handleSave() {
    content — input alone, or input+hint+link — within that reserved space. */
 .mr-td--input { padding: 0; vertical-align: middle; white-space: normal; height: 64px; }
 .mr-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
-.mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.mr-td--input { position: relative; }
+.mr-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 /* Disabled (nothing to return) — fill the whole cell like the locked columns
    beside it, instead of a gray input floating on the cell's own white background. */
 .mr-td--input-disabled { background: var(--mp-background-neutral-subtle); }

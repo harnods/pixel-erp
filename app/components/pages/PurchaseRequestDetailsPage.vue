@@ -14,6 +14,9 @@ import {
   convertPurchaseRequestToPos, canConvertPurchaseRequest, prLineStatus,
 } from '~/data/replenishmentDraftPo'
 import type { PurchaseRequest, PurchaseRequestLine } from '~/data/types'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests } from '~/data/purchaseRequests'
 import { vendorItemFor } from '~/data/vendorItems'
@@ -93,6 +96,16 @@ function confirmDelete() {
 
 const urgencyLabel = computed(() => request.value.urgency.charAt(0).toUpperCase() + request.value.urgency.slice(1))
 
+const prActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Edit' },
+    // Purchasing only, and only while something is left to convert (Rule 41).
+    { label: 'Create purchase order', show: canConvert.value, onClick: openConvert },
+    { label: 'Duplicate' },
+    { label: 'Void' },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: request.value.lastUpdatedAt,
   user: request.value.lastUpdatedBy,
@@ -416,38 +429,8 @@ function goBack() { router.push('/purchase-requests') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" right-icon="chevrons-down">
-              {{ t('Print & share') }}
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" right-icon="chevrons-down">
-              {{ t('Actions') }}
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="canConvert" data-devchange="pr-partial-conversion" @click="openConvert">{{ t('Create purchase order') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="pr-print" />
+        <DetailActionsMenu id="pr-actions" :groups="prActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -703,8 +686,8 @@ function goBack() { router.push('/purchase-requests') }
   margin-top: var(--mp-spacing-0\.5);
 }
 
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

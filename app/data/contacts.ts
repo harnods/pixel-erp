@@ -182,6 +182,40 @@ const SEED: Contact[] = [
   account('CT010', 'Coffee Cult Bali',         'PT Kultur Kopi Bali',         'buyer@coffeecult.id',            '0361-555012', 'Bali',       ['Food & Beverages'],                   80_000_000, '2026-01-09T10:20:00+07:00'),
   account('CT011', 'One Eighty Coffee',        'PT Seratus Delapan Puluh',    'supply@oneeighty.coffee',        '022-5550024', 'Bandung',    ['Food & Beverages'],                  100_000_000, '2026-01-08T12:00:00+07:00'),
   account('CT012', 'Pochi Coffee Roasters',    'PT Pochi Roastery Indonesia', 'roastery@pochicoffee.com',       '031-5550025', 'Surabaya',   ['Distributor'],                       150_000_000, '2026-01-06T09:35:00+07:00'),
+  // The one contact abroad (customer C026). A foreign contact carries a single
+  // free-form TIN instead of NPWP + NITKU, and DJP never validates it — which is
+  // why `taxStatus` stays 'not-validated' here rather than reading as a gap.
+  //
+  // It exists so the export path is reachable from seed data: "Create tax
+  // document" on its invoices defaults to a Dokumen Lain Keluaran (see
+  // CreateTaxDocumentDrawer), the way a domestic buyer defaults to a faktur.
+  {
+    ...blank(),
+    id: 'CT013',
+    types: ['customer'],
+    displayName: 'Nordic Roasters AB',
+    title: 'Mr',
+    fullName: 'Henrik Lindqvist',
+    companyName: 'Nordic Roasters AB',
+    emails: ['green@nordicroasters.se'],
+    phone: '+46-8-55500026',
+    mobile: '+46-70-5550026',
+    identityType: 'Passport',
+    identityNumber: 'SE8842190',
+    groups: ['Distributor'],
+    billingAddress: 'Sveavägen 44, 111 34 Stockholm, Sweden',
+    shippingAddress: 'Frihamnsgatan 8, 115 56 Stockholm, Sweden',
+    domicile: 'foreign',
+    npwp: '',
+    nitkuSuffix: '',
+    tin: 'SE556789012301',
+    taxStatus: 'not-validated',
+    creditLimit: 500_000_000,
+    currency: 'US Dollar ($)',
+    paymentTerms: 'Net 30',
+    memo: 'Green bean export account — FOB Tanjung Priok.',
+    updatedAt: '2026-01-05T08:10:00+07:00',
+  },
 ]
 
 // Vendors and "other" contacts share the same store — the role checkboxes on the
@@ -190,12 +224,11 @@ SEED[6]!.types = ['customer', 'vendor']
 SEED[8]!.types = ['other']
 
 // ── Purchasing vendors as contacts ────────────────────────────────────────────
-// The suppliers we BUY from live in the vendor master (`vendors.ts`, V0NN) because
-// purchase orders and AP reference them there. The Contacts module is where a user
-// looks a vendor up, so each supplier is also surfaced here as a vendor-type
-// contact linked back by `vendorMasterId` — that link is what lets the detail page
-// list the products a vendor supplies with their MOQ and price. Built from the
-// master rather than retyped, so the two never drift.
+// The suppliers we BUY from also live in the vendor master (`vendors.ts`, V0NN),
+// because purchase orders and AP reference them there. A contact whose name matches a
+// master vendor is linked back by `vendorMasterId` — that link is what lets the vendor
+// detail page list the products it supplies with their MOQ and price (Vendor Supply
+// Profile). Contacts with no master vendor simply have no link.
 const SUPPLIER_GROUP: Record<Vendor['id'], string> = {
   V001: 'Green bean supplier', V002: 'Green bean supplier', V003: 'Green bean supplier',
   V004: 'Green bean supplier', V005: 'Green bean supplier',
@@ -203,26 +236,61 @@ const SUPPLIER_GROUP: Record<Vendor['id'], string> = {
   V008: 'Logistics', V009: 'Utilities', V010: 'Utilities',
   V011: 'Property', V012: 'Software',
 }
-function supplierContact(v: Vendor, index: number): Contact {
+function vendor(
+  id: string, displayName: string, companyName: string, email: string, phone: string,
+  city: string, groups: string[], creditLimit: number, updatedAt: string,
+): Contact {
+  const master = vendors.find((v: Vendor) => v.name === displayName)
   return {
-    ...blank(),
-    id: `CT${String(100 + index + 1).padStart(3, '0')}`,
+    ...blank(), id, displayName, companyName,
+    groups: master && !groups.length ? [SUPPLIER_GROUP[master.id] ?? 'Supplier'] : groups,
+    ...(master ? { vendorMasterId: master.id } : {}),
     types: ['vendor'],
-    displayName: v.name,
-    companyName: v.name,
-    emails: v.email ? [v.email] : [],
-    phone: v.phone ?? '',
-    billingAddress: v.city ? `${v.city}, Indonesia` : '',
-    shippingAddress: v.city ? `${v.city}, Indonesia` : '',
-    groups: [SUPPLIER_GROUP[v.id] ?? 'Supplier'],
-    vendorMasterId: v.id,
-    updatedAt: '2026-01-13T09:00:00+07:00',
+    emails: [email], phone, mobile: '',
+    billingAddress: `${city}, Indonesia`, shippingAddress: `${city}, Indonesia`,
+    creditLimit, updatedAt,
+    banks: [],
   }
 }
-SEED.push(...vendors.map(supplierContact))
 
-// Bumped to v2 — the purchasing vendors now seed into the contacts store.
-const STORE_KEY = 'contacts-v2'
+const VENDOR_SEED: Contact[] = [
+  vendor('CT013', 'Klasik Beans Cooperative',    'Klasik Beans Cooperative',    'sales@klasikbeans.coop',         '022-5560001',  'Bandung',    [],              0, '2026-01-20T08:00:00+07:00'),
+  vendor('CT014', 'Sagaleh Coffee Supply',       'Sagaleh Coffee Supply',       'order@sagaleh.co.id',            '0751-556002',  'Padang',     [],              0, '2026-01-19T09:30:00+07:00'),
+  vendor('CT015', 'Gayo Highland Exporters',     'Gayo Highland Exporters',     'export@gayohighland.com',        '0643-556003',  'Takengon',   [],              0, '2026-01-18T10:00:00+07:00'),
+  vendor('CT016', 'Toraja Sapan Estate',         'Toraja Sapan Estate',         'estate@torajasapan.co.id',       '0423-556004',  'Toraja',     [],              0, '2026-01-17T11:00:00+07:00'),
+  vendor('CT017', 'Lampung Robusta Traders',     'Lampung Robusta Traders',     'trade@lampungrobusta.com',       '0721-556005',  'Lampung',    [],              0, '2026-01-16T08:45:00+07:00'),
+  vendor('CT018', 'PT Kemasan Prima Nusantara',  'PT Kemasan Prima Nusantara',  'sales@kemasanprima.co.id',       '021-5560006',  'Tangerang',  [],              0, '2026-01-15T14:20:00+07:00'),
+  vendor('CT019', 'Roast Machinery Indonesia',   'Roast Machinery Indonesia',   'info@roastmachinery.id',         '021-5560007',  'Jakarta',    [],              0, '2026-01-14T09:10:00+07:00'),
+  vendor('CT020', 'CV Logistik Antar Pulau',     'CV Logistik Antar Pulau',     'ops@logistikantarpulau.co.id',   '031-5560008',  'Surabaya',   [],              0, '2026-01-13T10:30:00+07:00'),
+  vendor('CT021', 'PLN (Persero)',               'PLN (Persero)',               'corporate@pln.co.id',            '123',          'Jakarta',    [],              0, '2026-01-12T08:00:00+07:00'),
+  vendor('CT022', 'Telkom Indonesia',            'Telkom Indonesia',            'corporate@telkom.co.id',         '147',          'Jakarta',    [],              0, '2026-01-11T09:00:00+07:00'),
+  vendor('CT023', 'PT Properti Sentosa',         'PT Properti Sentosa',         'lease@propertisentosa.co.id',    '021-5560011',  'Jakarta',    [],              0, '2026-01-10T13:00:00+07:00'),
+  vendor('CT024', 'Cloud & Software Partners',   'Cloud & Software Partners',   'billing@cloudsw.id',             '021-5560012',  'Jakarta',    [],              0, '2026-01-09T11:15:00+07:00'),
+  vendor('CT025', 'Flores Manggarai Arabica',    'Flores Manggarai Arabica',    'sales@floresmanggarai.co.id',    '0385-556013',  'Ruteng',     [],              0, '2026-01-08T08:30:00+07:00'),
+  vendor('CT026', 'Kintamani Bali Coffee',       'Kintamani Bali Coffee',       'order@kintamanicoffee.com',      '0366-556014',  'Bangli',     [],              0, '2026-01-07T10:00:00+07:00'),
+  vendor('CT027', 'Wamena Papua Highlands',      'Wamena Papua Highlands',      'highland@wamenacoffee.co.id',    '0969-556015',  'Wamena',     [],              0, '2026-01-06T09:00:00+07:00'),
+  vendor('CT028', 'Bajawa Ngada Cooperative',    'Bajawa Ngada Cooperative',    'coop@bajawangada.org',           '0384-556016',  'Bajawa',     [],              0, '2026-01-05T14:00:00+07:00'),
+  vendor('CT029', 'Temanggung Java Estate',      'Temanggung Java Estate',      'estate@temanggung.co.id',        '0293-556017',  'Temanggung', [],              0, '2026-01-04T11:30:00+07:00'),
+  vendor('CT030', 'Enrekang Kalosi Traders',     'Enrekang Kalosi Traders',     'trade@kalositraders.co.id',      '0420-556018',  'Enrekang',   [],              0, '2026-01-03T09:45:00+07:00'),
+  vendor('CT031', 'Simalungun Sidikalang Mill',  'Simalungun Sidikalang Mill',  'mill@sidikalangcoffee.com',      '0631-556019',  'Sidikalang', [],              0, '2026-01-02T10:15:00+07:00'),
+  vendor('CT032', 'Bengkulu Rejang Lebong',      'Bengkulu Rejang Lebong',      'farm@rejanglebong.co.id',        '0732-556020',  'Bengkulu',   [],              0, '2026-01-01T08:00:00+07:00'),
+  vendor('CT033', 'PT Pallet & Crate Indonesia', 'PT Pallet & Crate Indonesia', 'sales@palletcrate.co.id',        '021-5560021',  'Bekasi',     [],              0, '2025-12-30T14:20:00+07:00'),
+  vendor('CT034', 'Jaya Label & Sticker',        'Jaya Label & Sticker',        'info@jayalabel.co.id',           '021-5560022',  'Jakarta',    [],              0, '2025-12-29T10:00:00+07:00'),
+  vendor('CT035', 'CV Alat Ukur Presisi',        'CV Alat Ukur Presisi',        'order@alatukur.co.id',           '031-5560023',  'Surabaya',   [],              0, '2025-12-28T09:30:00+07:00'),
+  vendor('CT036', 'Nusantara Freight Services',  'Nusantara Freight Services',  'booking@nusfreight.co.id',       '021-5560024',  'Jakarta',    [],              0, '2025-12-27T11:00:00+07:00'),
+  vendor('CT037', 'PT Fumigasi Mandiri',         'PT Fumigasi Mandiri',         'service@fumigasi.co.id',         '021-5560025',  'Tangerang',  [],              0, '2025-12-26T08:45:00+07:00'),
+  vendor('CT038', 'Indo Water Treatment',        'Indo Water Treatment',        'sales@indowater.co.id',          '021-5560026',  'Jakarta',    [],              0, '2025-12-25T13:00:00+07:00'),
+  vendor('CT039', 'Sampoerna Cleaning Supply',   'Sampoerna Cleaning Supply',   'order@sampoernaclean.co.id',     '031-5560027',  'Surabaya',   [],              0, '2025-12-24T10:30:00+07:00'),
+  vendor('CT040', 'Budi Jaya Safety Equipment',  'Budi Jaya Safety Equipment',  'budi@jayasafety.co.id',          '021-5560028',  'Jakarta',    [],              0, '2025-12-23T09:00:00+07:00'),
+  vendor('CT041', 'Ibu Ratna Catering',          'Ibu Ratna Catering',          'ratna.catering@gmail.com',       '0812-5560029', 'Bandung',    [],              0, '2025-12-22T15:00:00+07:00'),
+  vendor('CT042', 'Dian Pest Control',           'Dian Pest Control',           'dian.pestcontrol@gmail.com',     '0813-5560030', 'Bogor',      [],              0, '2025-12-21T08:30:00+07:00'),
+]
+
+SEED.push(...VENDOR_SEED)
+
+// v3: main's vendor contacts (CT013…), now linked to the vendor master. Supersedes
+// v1 (no master links) and v2 (generated CT101… copies of the same vendors).
+const STORE_KEY = 'contacts-v3'
 
 export const contacts = reactive<Contact[]>(
   loadSnapshot<Contact>(STORE_KEY) ?? SEED.map((c) => ({ ...c, banks: c.banks.map((b) => ({ ...b })) })),
@@ -236,12 +304,32 @@ export function getContact(id: string): Contact | undefined {
   return contacts.find((c) => c.id === id)
 }
 
+/**
+ * The contact record behind a transaction's customer/vendor, matched on the
+ * display name — transactions reference `customers.ts` (C001…), a leaner FK
+ * table than this one (CT001…), so there's no id to join on. Backs the
+ * "Cannot create tax document" drawer's link out to the buyer's tax identity.
+ */
+export function findContactByDisplayName(name: string): Contact | undefined {
+  const needle = name.trim().toLowerCase()
+  return contacts.find((c) => c.displayName.trim().toLowerCase() === needle)
+}
+
 /** Contacts carrying a given role — backs the Customers / Vendors / Other lists. */
 export function contactsOfType(type: ContactType): Contact[] {
   return contacts.filter((c) => c.types.includes(type))
 }
 
-/** Next free id (CT013, CT014, …). */
+/** Resolve a contact id from a customer/company display name (join on name, as
+ *  the Transactions tab does), so a credit memo can link back to its contact.
+ *  Overlaps with findContactByDisplayName above, which returns the record and
+ *  matches displayName only — worth collapsing into one accessor. */
+export function getContactIdByName(name: string): string | undefined {
+  const n = name.trim().toLowerCase()
+  return contacts.find((c) => c.displayName.toLowerCase() === n || c.companyName.toLowerCase() === n)?.id
+}
+
+/** Next free id (CT014, CT015, …). */
 function nextId(): string {
   const max = contacts.reduce((n, c) => {
     const v = Number(c.id.replace(/\D/g, ''))

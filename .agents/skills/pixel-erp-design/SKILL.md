@@ -40,8 +40,10 @@ Identify the surface(s) in your task and load the matching rows. Read
 | A **drawer / side panel**      | `rule/drawer-*`                             | `docs/patterns/Drawer.md` |
 | A **detail page**              | `rule/detail-*`, `rule/type-*`              | `docs/patterns/details-page-format.md` |
 | A **settings page** (module config, view ↔ Edit) | `rule/settings-*`, `rule/form-*`, `rule/type-*` | `docs/patterns/settings-page.md` |
+| A **detail page footer action** (Actions ▾ / Print & share ▾) | `rule/btn-dropdown-*`, `rule/popover-no-icons`, `rule/btn-one-primary` | `docs/patterns/DetailActionsMenu.md`, `docs/patterns/PrintShareMenu.md` |
 | An **empty / error / loading** state | `rule/empty-state-structure`, `rule/toast-success-only`, `rule/form-errors-inline` | `docs/patterns/Toast.md` |
 | A **card / surface / page shell** | `rule/surface-*`, `rule/type-*`          | `docs/patterns/pixel-enterprise-overrides.md` |
+| The **global header bar** (`ErpHeader`) / a header icon button | `rule/header-icon-*`              | `docs/patterns/global-header-bar.md` |
 | **Copy / labels / terminology** | `rule/copy-*`                              | uxw-mekari guideline, `app/data/translations.ts` |
 | **Any** of the above (tokens)  | `rule/token-*`                              | `docs/patterns/pixel-enterprise-overrides.md` |
 
