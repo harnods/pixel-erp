@@ -454,7 +454,7 @@ function goToWorklist() { router.push('/replenishment') }
             </div>
             <div class="rs-control">
               <MpInput v-if="editing === 'demand'" id="rs-cv" v-model="draft.volatileCvThreshold" type="number" step="0.1" :class="css({ width: '176px' })" />
-              <span v-else class="rs-value">{{ committed.volatileCvThreshold }}</span>
+              <span v-else class="rs-value">{{ Number(committed.volatileCvThreshold).toLocaleString('id-ID') }}</span>
               <MpFormErrorMessage v-if="fieldErrors.volatility">{{ fieldErrors.volatility }}</MpFormErrorMessage>
             </div>
           </MpFormControl>
@@ -652,7 +652,8 @@ function goToWorklist() { router.push('/replenishment') }
                     </MpFormControl>
                   </div>
                   <span v-else-if="committed.fallbackLeadTimeDays !== null" class="rs-value">{{ days(committed.fallbackLeadTimeDays) }}</span>
-                  <span v-else class="rs-notset">{{ t('Not set') }}</span>
+                  <!-- View mode: plain "Not set", the same as a category row reading it. -->
+                  <span v-else class="rs-value">{{ t('Not set') }}</span>
                 </div>
               </div>
               <span v-if="(editing === 'lead' ? draft : committed).fallbackLeadTimeDays === null" class="rs-caption rs-notset-hint">
@@ -892,19 +893,15 @@ function goToWorklist() { router.push('/replenishment') }
 .rs-cat-row { display: flex; align-items: center; gap: var(--mp-spacing-2); min-height: var(--mp-sizes-9, 36px); }
 .rs-cat-row--fallback { align-items: flex-start; margin-top: var(--mp-spacing-1); padding-top: var(--mp-spacing-2); border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .rs-cat-row--fallback .rs-cat-name { padding-top: var(--mp-spacing-1\.5); }
+/* The name is padded to sit level with an edit-mode input; in view mode the value is
+   plain text, so it takes the same padding to stay on the name's line. */
+.rs-cat-row--fallback > .rs-value { padding-top: var(--mp-spacing-1\.5); }
 .rs-floor { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .rs-floor-switch { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); cursor: pointer; min-height: var(--mp-sizes-9, 36px); }
 .rs-floor-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .rs-cat-name { flex: 0 0 var(--mp-sizes-40, 160px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .rs-cat-name--fallback { color: var(--mp-text-secondary); }
 
-/* Lead-time floor "Not set" (D22) — a distinct empty state, never a typed 0. */
-.rs-notset {
-  display: inline-flex; align-items: center; height: var(--mp-sizes-9, 36px);
-  padding: 0 var(--mp-spacing-3); border-radius: var(--mp-radii-md);
-  border: 1px dashed var(--mp-border-default, #e3e7e9); background: var(--mp-background-neutral-subtle, #f8f9f9);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
-}
 .rs-notset-hint { max-width: var(--mp-sizes-100, 420px); }
 
 /* Section header: title left, Edit button right-aligned with the widest form row. */
