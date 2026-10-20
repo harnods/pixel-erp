@@ -11,10 +11,11 @@ describe('buildSubconExportRows', () => {
   const rows = buildSubconExportRows(workOrders)
   const subcon = workOrders.filter(w => w.category === 'Subcontracting')
 
+  // "Qty" renamed "Planned" on 2026-10-20 (requested).
   it('has exactly the R19 columns, in order', () => {
     expect(SUBCON_EXPORT_COLUMNS).toEqual([
       'WO number', 'Product', 'BOM', 'Subcon vendor', 'Method', 'Scope',
-      'Qty', 'Received', 'Promised date', 'Status',
+      'Planned', 'Received', 'Promised date', 'Status',
     ])
     for (const r of rows) expect(Object.keys(r)).toEqual([...SUBCON_EXPORT_COLUMNS])
   })
@@ -29,7 +30,8 @@ describe('buildSubconExportRows', () => {
   it('reads each row from its work order: produced over planned, and the subcon status', () => {
     const wo = subcon[0]!
     const row = rows[0]!
-    expect(row['Received']).toBe(`${wo.producedQty}/${wo.plannedQty}`)
+    // Received is the qty received alone, no longer received/planned (requested 2026-10-20).
+    expect(row['Received']).toBe(String(wo.producedQty))
     expect(row['Subcon vendor']).toBe(wo.subcon!.vendorName)
     expect(row['Status']).toBe(SUBCON_STATUS_LABEL[subconStatus(wo)])
     expect(row['Promised date']).toMatch(/^\d{2}\/\d{2}\/\d{4}$/)
@@ -173,5 +175,29 @@ describe('mergeSeedIntoSnapshot', () => {
   it('leaves a complete snapshot untouched', () => {
     const saved = [...seed]
     expect(mergeSeedIntoSnapshot(saved, seed)).toBe(saved)
+  })
+})
+
+
+// Export report dialog — date range (plan start), product, vendor.
+import { filterSubconReportRows } from '../app/data/subconExport'
+
+describe('filterSubconReportRows', () => {
+  const rows = subconReportRows(workOrders)
+  const all = { from: '2000-01-01', to: '2100-12-31' }
+
+  it('keeps every row for an all-time range with no product or vendor', () => {
+    expect(filterSubconReportRows(rows, all)).toHaveLength(rows.length)
+  })
+  it('keeps only plan start dates inside the range, both ends inclusive', () => {
+    const d = rows[0]!.planStartDate
+    const out = filterSubconReportRows(rows, { from: d, to: d })
+    expect(out.length).toBeGreaterThan(0)
+    for (const r of out) expect(r.planStartDate).toBe(d)
+  })
+  it('narrows to one finished good and one vendor', () => {
+    const { product, vendorId } = rows[0]!
+    for (const r of filterSubconReportRows(rows, { ...all, product })) expect(r.product).toBe(product)
+    for (const r of filterSubconReportRows(rows, { ...all, vendorId })) expect(r.vendorId).toBe(vendorId)
   })
 })

@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'subcon-report-export-button',
+    title: "Production reports: Subcon order exports directly",
+    description:
+      "The Subcon order card's button is now Export report. It opens a dialog instead of the report page.",
+    date: '2026-10-20',
+    files: ['ProductionReportsIndexPage.vue'],
+  },
+  {
+    id: 'subcon-report-export-modal',
+    title: "Subcon order export dialog: date range, product, vendor",
+    description:
+      "Required date range (plan start date, both ends inclusive), optional finished good and vendor — empty means all. Export writes an .xlsx of the matching subcon orders; a range that matches nothing is explained inline.",
+    date: '2026-10-20',
+    files: ['SubconOrderExportModal.vue', 'subconExport.ts'],
+  },
+  {
+    id: 'subcon-report-received-qty',
+    title: "Subcon order report: Planned and Received columns",
+    description:
+      "Qty is renamed Planned, and Received shows the qty received back from the vendor alone (200, not 200/400) — on screen and in the Excel file.",
+    date: '2026-10-20',
+    files: ['SubconOrderReportPage.vue', 'subconExport.ts'],
+  },
+  {
     id: 'subcon-order-report-samples',
     title: "Subcon order report: sample orders for every status",
     description:

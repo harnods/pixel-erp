@@ -4,9 +4,11 @@ import { MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 // Production → Reports index (Reports module → Production submenu, and the
 // Production menu's "Production reports" shortcut). Same card grid as Reports ›
-// Inventory. Only the Subcon order report exists so far.
+// Inventory. The Subcon order card exports straight to Excel: its button opens
+// SubconOrderExportModal (date range, product, vendor) instead of a report page
+// (2026-10-20). The page at /production-report/subcon-order stays routable.
+import SubconOrderExportModal from '~/components/patterns/SubconOrderExportModal.vue'
 const { t } = useLocale()
-const router = useRouter()
 
 interface ReportCard {
   slug: string
@@ -54,8 +56,9 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
-function viewReport(r: ReportCard) {
-  if (r.built) router.push(`/production-report/${r.slug}`)
+const exportOpen = ref(false)
+function exportReport(r: ReportCard) {
+  if (r.built) exportOpen.value = true
   else infoToast(`${t(r.title)} report — coming soon`)
 }
 </script>
@@ -68,11 +71,12 @@ function viewReport(r: ReportCard) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</MpButton>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" data-devchange="subcon-report-export-button" @click="exportReport(r)">{{ t('Export report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />
     </div>
+    <SubconOrderExportModal :is-open="exportOpen" @close="exportOpen = false" />
   </div>
 </template>
 

@@ -4287,4 +4287,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Waiting materials": "Menunggu bahan",
   "Ready at vendor": "Siap di vendor",
   "Due soon": "Mendekati tenggat",
+  "Export subcon order report": "Ekspor laporan pesanan subkon",
+  "Filters by the plan start date": "Difilter berdasarkan tanggal mulai rencana",
+  "You must select date range": "Anda harus memilih rentang tanggal",
+  "Select vendor": "Pilih vendor",
+  "Leave empty to include all products": "Kosongkan untuk menyertakan semua produk",
+  "Leave empty to include all vendors": "Kosongkan untuk menyertakan semua vendor",
+  "No subcon order matches these filters. Please change the date range, product or vendor": "Tidak ada pesanan subkon yang sesuai filter ini. Silakan ubah rentang tanggal, produk, atau vendor",
+  "Subcon order report exported": "Laporan pesanan subkon berhasil diekspor",
 }

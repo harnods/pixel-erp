@@ -51,7 +51,7 @@ const columns: TableColumn[] = [
   { key: 'vendor',       label: t('Subcon vendor'), kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'methodId',     label: t('Method')                                                          },
   { key: 'scope',        label: t('Scope')                                                           },
-  { key: 'plannedQty',   label: t('Qty'),           align: 'right', sortable: true, sortType: 'number' },
+  { key: 'plannedQty',   label: t('Planned'),       align: 'right', sortable: true, sortType: 'number' },
   { key: 'receivedQty',  label: t('Received'),      align: 'right'                                   },
   { key: 'promisedDate', label: t('Promised date'), kind: 'date',   sortable: true, sortType: 'date' },
   { key: 'status',       label: t('Status'),        kind: 'status'                                   },
@@ -210,15 +210,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- ── Scope ── -->
         <template #cell-scope="{ value }">{{ t(value as string) }}</template>
 
-        <!-- ── Qty ── -->
+        <!-- ── Planned ── -->
         <template #cell-plannedQty="{ value, row }">
           {{ formatNum(value as number) }} {{ (row as unknown as SubconReportRow).unit }}
         </template>
 
-        <!-- ── Received — received / ordered, muted until something comes back ── -->
+        <!-- ── Received — qty received back from the vendor, muted while 0 ── -->
         <template #cell-receivedQty="{ row }">
-          <span :class="{ 'sc-muted': (row as unknown as SubconReportRow).receivedQty === 0 }">
-            {{ formatNum((row as unknown as SubconReportRow).receivedQty) }} / {{ formatNum((row as unknown as SubconReportRow).plannedQty) }}
+          <span :class="{ 'sc-muted': (row as unknown as SubconReportRow).receivedQty === 0 }" data-devchange="subcon-report-received-qty">
+            {{ formatNum((row as unknown as SubconReportRow).receivedQty) }}
           </span>
         </template>
 

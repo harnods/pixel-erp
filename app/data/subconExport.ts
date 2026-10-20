@@ -15,10 +15,13 @@ import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { SUBCON_METHOD_LABEL, SUBCON_SCOPE_LABEL, type SubconMethod } from './subcon'
 import { formatDate } from '../utils/date'
 
-/** R19 column headings, in order. */
+/**
+ * R19 column headings, in order. "Qty" reads "Planned" and Received is the
+ * quantity received alone, not received/planned (2026-10-20).
+ */
 export const SUBCON_EXPORT_COLUMNS = [
   'WO number', 'Product', 'BOM', 'Subcon vendor', 'Method', 'Scope',
-  'Qty', 'Received', 'Promised date', 'Status',
+  'Planned', 'Received', 'Promised date', 'Status',
 ] as const
 
 export type SubconExportRow = Record<(typeof SUBCON_EXPORT_COLUMNS)[number], string>
@@ -100,8 +103,8 @@ export function toSubconExportRows(rows: readonly SubconReportRow[]): SubconExpo
     'Subcon vendor': r.vendor,
     'Method': r.method,
     'Scope': r.scope,
-    'Qty': `${r.plannedQty} ${r.unit}`.trim(),
-    'Received': `${r.receivedQty}/${r.plannedQty}`,
+    'Planned': `${r.plannedQty} ${r.unit}`.trim(),
+    'Received': String(r.receivedQty),
     'Promised date': formatDate(r.promisedDate),
     'Status': SUBCON_STATUS_LABEL[r.status] ?? r.status,
   }))
@@ -177,6 +180,7 @@ export async function downloadSubconExport(
   rows: SubconExportRow[],
   today = new Date(),
   columns: readonly (typeof SUBCON_EXPORT_COLUMNS)[number][] = SUBCON_EXPORT_COLUMNS,
+  fileName?: string,
 ): Promise<void> {
   const XLSX = await import('xlsx')
   const header = SUBCON_EXPORT_COLUMNS.filter(c => columns.includes(c))
@@ -185,5 +189,22 @@ export async function downloadSubconExport(
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'Subcon work orders')
   const stamp = today.toISOString().slice(0, 10)
-  XLSX.writeFile(book, `subcon-work-orders-${stamp}.xlsx`)
+  XLSX.writeFile(book, fileName ?? `subcon-work-orders-${stamp}.xlsx`)
+}
+
+/** What the Export report dialog narrows the file to. Empty product/vendor = all. */
+export interface SubconExportFilter {
+  /** ISO dates, inclusive — matched against the work order's plan start date. */
+  from: string
+  to: string
+  product?: string
+  vendorId?: string
+}
+
+/** Report rows inside the dialog's date range, product and vendor. */
+export function filterSubconReportRows(rows: readonly SubconReportRow[], f: SubconExportFilter): SubconReportRow[] {
+  return rows.filter(r =>
+    r.planStartDate >= f.from && r.planStartDate <= f.to
+    && (!f.product || r.product === f.product)
+    && (!f.vendorId || r.vendorId === f.vendorId))
 }
