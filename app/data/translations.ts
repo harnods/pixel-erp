@@ -3949,6 +3949,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Already fully requested: {requested} of {suggested} suggested': 'Sudah diminta seluruhnya: {requested} dari {suggested} saran',
   'Remaining to request': 'Sisa yang perlu diminta',
   'No preferred vendor in this warehouse. Choose one on the product\'s Stock by warehouses tab.': 'Belum ada vendor utama di gudang ini. Pilih di tab Stok per gudang pada produk.',
+  'No preferred vendor in this warehouse yet, so lead time cannot be measured. Add a preferred vendor, make a purchase, or set a default in {link}': 'Belum ada vendor utama di gudang ini, jadi waktu tunggu belum bisa diukur. Tambahkan vendor utama, lakukan pembelian, atau atur standar di {link}',
   'Invoiced, not received': 'Sudah ditagih, belum diterima',
   'invoiced on {invoice}, not received': 'ditagih di {invoice}, belum diterima',
   'Invoiced before receipt: the qty stays in transit until it is received, and the invoice does not count toward lead time.': 'Ditagih sebelum diterima: qty tetap dalam transit sampai diterima, dan tagihan tidak dihitung untuk lead time.',

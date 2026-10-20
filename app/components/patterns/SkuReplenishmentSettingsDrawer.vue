@@ -101,8 +101,11 @@ const overrideAboveMax = computed(() => {
 })
 
 /** The "how it gets resolved" note, split around the link to the lead-time defaults. */
-const leadNoteParts = computed(() =>
-  tf('No purchase orders for this vendor and product yet, so lead time cannot be measured. Add a preferred vendor, make a purchase, or set a default in {link}', { link: '\u0000' }).split('\u0000'))
+/** Says what is actually missing: with no preferred vendor there is no "this vendor". */
+const leadNoteParts = computed(() => (props.row?.vendor
+  ? tf('No purchase orders for this vendor and product yet, so lead time cannot be measured. Add a preferred vendor, make a purchase, or set a default in {link}', { link: '\u0000' })
+  : tf('No preferred vendor in this warehouse yet, so lead time cannot be measured. Add a preferred vendor, make a purchase, or set a default in {link}', { link: '\u0000' })
+).split('\u0000'))
 function goToDefaults() {
   leave()
   router.push('/replenishment-settings#lead-time')
@@ -400,7 +403,7 @@ function confirmMute() {
 .rp-set-body :deep(.mp-input-addon__root) { padding: 0 var(--mp-spacing-3); }
 /* MpTextlink pins its font-size with a layered !important that no page CSS can beat, so
    scale it instead: 14px x 12/14 = the 12px of the caption it sits in. */
-.rp-set-link { margin-left: var(--mp-spacing-1); zoom: calc(12 / 14); }
+.rp-set-link { zoom: calc(12 / 14); } /* the sentence already ends with a space */
 .rp-set-error { font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 
 .rp-set-footer {
