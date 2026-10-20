@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'pr-partial-conversion',
+    title: 'Purchase request: partial conversion to purchase orders',
+    description:
+      'A purchase request line can now be converted in parts (Vendor Supply Profile RS-003 / Rule 41). Each line records how much is already on purchase orders; converting again pre-fills only what is left ("Converted earlier: 40 of 60. Ordering the rest"), and a fully converted line is not offered again. Lines read Open, Partially converted, Converted or Closed — the request detail shows Converted qty and Status per line once anything is converted. The request is closed when nothing is left, otherwise Partially processed; Mark as completed closes the rest. Create purchase order is hidden on closed or fully converted requests (so nothing is ordered twice), and now works from the request detail\'s Actions menu too, which previously did nothing.',
+    date: '2026-10-20',
+    files: ['replenishmentDraftPo.ts', 'types.ts', 'PurchaseRequestDetailsPage.vue', 'PurchaseRequestsPage.vue', 'ConvertPrToPoModal.vue', 'ErpStatusBadge.vue'],
+  },
+  {
     id: 'product-vendor-priority',
     title: 'Vendors tab: vendor priority and the fallback when a preferred vendor goes inactive',
     description:

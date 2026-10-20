@@ -228,6 +228,12 @@ export interface PurchaseRequestLine {
    * its own date is needed by the request's `requiredDate`.
    */
   requiredDate?: string     // ISO
+  /**
+   * How much of `requestedQty` is already on purchase orders, in the same unit
+   * (Vendor Supply Profile Rule 41). A line converted for less than requested stays
+   * partially converted until the rest is converted or the request is closed.
+   */
+  convertedQty?: number
 }
 
 export interface PurchaseRequest {

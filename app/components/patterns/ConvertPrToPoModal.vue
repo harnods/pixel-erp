@@ -141,8 +141,15 @@ function roundNote(line: { vendorItem: { moq: number; packSize: number }; raised
   return ''
 }
 
+/** Rule 41: a line converted before only orders what is left of it. */
+function convertedNote(sku: string): string {
+  const prLine = props.pr?.lines.find((l) => l.sku === sku)
+  if (!prLine?.convertedQty) return ''
+  return tf('Converted earlier: {done} of {requested}. Ordering the rest', { done: prLine.convertedQty, requested: prLine.requestedQty })
+}
+
 function notesFor(line: DraftPoLine): string[] {
-  return [roundNote(line)].filter(Boolean)
+  return [convertedNote(line.sku), roundNote(line)].filter(Boolean)
 }
 
 const confirmLabel = computed(() => {

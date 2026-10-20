@@ -16,7 +16,7 @@ import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import ConvertPrToPoModal from '~/components/patterns/ConvertPrToPoModal.vue'
 import BulkConvertPrToPoModal from '~/components/patterns/BulkConvertPrToPoModal.vue'
-import { convertPurchaseRequestToPos, convertPurchaseRequestsToPos } from '~/data/replenishmentDraftPo'
+import { convertPurchaseRequestToPos, convertPurchaseRequestsToPos, canConvertPurchaseRequest } from '~/data/replenishmentDraftPo'
 import { formatDate } from '~/utils/date'
 import PurchaseRequestFiltersDrawer, { emptyPurchaseRequestFilters, type PurchaseRequestFiltersValue } from '~/components/patterns/PurchaseRequestFiltersDrawer.vue'
 import { purchaseRequests, updatePurchaseRequest } from '~/data'
@@ -177,7 +177,8 @@ const { canCreatePurchaseOrders } = usePurchasingAccess()
 const convertOpen = ref(false)
 const convertPr = ref<PurchaseRequest | null>(null)
 function createPurchaseOrder(pr: PurchaseRequest) {
-  if (!canCreatePurchaseOrders.value) return
+  // Rule 41: a closed request, or one fully converted, has nothing left to order.
+  if (!canCreatePurchaseOrders.value || !canConvertPurchaseRequest(pr)) return
   convertPr.value = pr
   convertOpen.value = true
 }
@@ -218,9 +219,14 @@ function confirmConvert(payload: {
 // the combined qty is rounded once to the vendor's MOQ & multiplier (US-018 / D12).
 const bulkConvertOpen = ref(false)
 const bulkConvertPrs = ref<PurchaseRequest[]>([])
+/** The bulk action is offered only when the selection has something left to order. */
+function bulkHasConvertible(selectedRows: Set<number>): boolean {
+  return (bulkSelectedRequests(selectedRows) as unknown as PurchaseRequest[]).some(canConvertPurchaseRequest)
+}
 function bulkCreatePurchaseOrder(selectedRows: Set<number>) {
   if (!canCreatePurchaseOrders.value) return
-  const prs = bulkSelectedRequests(selectedRows) as unknown as PurchaseRequest[]
+  // Only requests with something left to order (Rule 41) — never re-order a closed one.
+  const prs = (bulkSelectedRequests(selectedRows) as unknown as PurchaseRequest[]).filter(canConvertPurchaseRequest)
   if (!prs.length) return
   bulkConvertPrs.value = prs
   bulkConvertOpen.value = true
@@ -327,7 +333,7 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem v-if="canCreatePurchaseOrders" data-devchange="pr-create-po-permission" @click="bulkCreatePurchaseOrder(selectedRows as Set<number>)">{{ t('Create purchase order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCreatePurchaseOrders && bulkHasConvertible(selectedRows as Set<number>)" data-devchange="pr-create-po-permission" @click="bulkCreatePurchaseOrder(selectedRows as Set<number>)">{{ t('Create purchase order') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(bulkSelectedRequests(selectedRows as Set<number>).slice(0, 5))">{{ t('Copy link') }}</MpPopoverListItem>
@@ -451,7 +457,7 @@ const exportColumns = computed(() => [
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as PurchaseRequest).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="canCreatePurchaseOrders" @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCreatePurchaseOrders && canConvertPurchaseRequest(row as PurchaseRequest)" @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
             <MpPopoverListItem @click="markCompleted((row as PurchaseRequest).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate(row as PurchaseRequest)">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>

@@ -9,6 +9,11 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ConvertPrToPoModal from '~/components/patterns/ConvertPrToPoModal.vue'
+import {
+  convertPurchaseRequestToPos, canConvertPurchaseRequest, prLineStatus,
+} from '~/data/replenishmentDraftPo'
+import type { PurchaseRequest, PurchaseRequestLine } from '~/data/types'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests } from '~/data/purchaseRequests'
 import { vendorItemFor } from '~/data/vendorItems'
@@ -24,6 +29,36 @@ const hasApproval = true
 
 const router = useRouter()
 const request = computed(() => getPurchaseRequestDetail(props.orderId))
+
+// ── Create purchase order (Rule 41 partial conversion) ────────────────────────
+// The same conversion modal as the list. Offered only to purchase-order creators,
+// and only while something on the request is still unconverted.
+const canConvert = computed(() => canCreatePurchaseOrders.value && canConvertPurchaseRequest(request.value))
+const convertOpen = ref(false)
+const convertPr = computed<PurchaseRequest | null>(() => purchaseRequests.find((p) => p.id === request.value.id) ?? null)
+function openConvert() { if (canConvert.value) convertOpen.value = true }
+function confirmConvert(payload: {
+  warehouseId: string
+  vendorChoices: Record<string, string | null>
+  qtyOverrides: Record<string, number>
+}) {
+  const pr = convertPr.value
+  if (!pr) return
+  const result = convertPurchaseRequestToPos(pr, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
+  convertOpen.value = false
+  const n = result.created.length
+  if (!n) return
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('Draft purchase order created') : tf('{n} draft purchase orders created', { n }),
+    ...(result.skipped.length ? { description: tf('Skipped products: {n}', { n: result.skipped.length }) } : {}),
+    maxWidth: 'max-content',
+  })
+}
+
+/** Show the per-line conversion columns once anything on the request was converted. */
+const showConversion = computed(() => request.value.lines.some((l) => (l.convertedQty ?? 0) > 0))
+function lineStatus(line: PurchaseRequestLine) { return prLineStatus(request.value, line) }
 
 /**
  * Replenishment basis per line (US-017 AC-02, US-019 AC-01, US-023): the suggested
@@ -253,6 +288,9 @@ function goBack() { router.push('/purchase-requests') }
               <th class="detail-th detail-th--num">{{ t('Available qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
               <th class="detail-th" data-devchange="replenishment-pr-line-required-date">{{ t('Required date') }}</th>
+              <!-- Rule 41: how much of each line is already on a purchase order. -->
+              <th v-if="showConversion" class="detail-th detail-th--num">{{ t('Converted qty') }}</th>
+              <th v-if="showConversion" class="detail-th">{{ t('Status') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -295,6 +333,8 @@ function goBack() { router.push('/purchase-requests') }
               <td class="detail-td">{{ it.unit }}</td>
               <!-- RS-002: a line without its own date is needed by the request's date. -->
               <td class="detail-td">{{ formatDateLong(it.requiredDate ?? request.requiredDate) }}</td>
+              <td v-if="showConversion" class="detail-td detail-td--num">{{ it.convertedQty ?? 0 }}</td>
+              <td v-if="showConversion" class="detail-td"><ErpStatusBadge :status="lineStatus(it)" badge-for="tableStatus" /></td>
             </tr>
           </tbody>
         </table>
@@ -401,7 +441,7 @@ function goBack() { router.push('/purchase-requests') }
           <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="canCreatePurchaseOrders">{{ t('Create purchase order') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canConvert" data-devchange="pr-partial-conversion" @click="openConvert">{{ t('Create purchase order') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
               <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
               <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
@@ -411,6 +451,8 @@ function goBack() { router.push('/purchase-requests') }
       </div>
 
     </div><!-- /detail-stage -->
+
+    <ConvertPrToPoModal v-model:is-open="convertOpen" :pr="convertPr" @confirm="confirmConvert" />
 
     <ActivityLogModal
       :is-open="activityOpen"

@@ -110,6 +110,9 @@ const statusConfig: Record<string, StatusConfig> = {
   // ── information — blue ────────────────────────────
   invoice:    { type: 'information',  label: 'Invoice'    },
   'partially processed': { type: 'information', label: 'Partially processed' },
+  // PR line conversion states (Vendor Supply Profile Rule 41).
+  'partially converted': { type: 'information', label: 'Partially converted' },
+  converted:  { type: 'completed',    label: 'Converted'  },
   'partially-processed': { type: 'information', label: 'Partially processed' },
   'partially produced': { type: 'warning', label: 'Partially produced' },
   'partially completed': { type: 'information', label: 'Partially completed' },

@@ -24,7 +24,7 @@
  * carries accounting-clock dates, while `replenishment.asOf` records the worklist
  * snapshot it came from. Both dates are visible and neither is a fiction.
  */
-import type { PurchaseOrder, PurchaseOrderReplenishmentOrigin, PurchaseRequest } from './types'
+import type { PurchaseOrder, PurchaseOrderReplenishmentOrigin, PurchaseRequest, PurchaseRequestLine } from './types'
 import {
   addPurchaseOrder, nextPurchaseOrderId, nextPurchaseOrderNumber,
 } from './purchaseOrders'
@@ -320,6 +320,59 @@ export function suggestedVendorForSku(sku: string, warehouseId?: string): string
   return preferredVendorFor(sku, warehouseId)?.vendorId ?? vendorItemsForSku(sku)[0]?.vendorId ?? null
 }
 
+// ── Partial conversion (Vendor Supply Profile Rule 41) ───────────────────────
+
+export type PrLineConversionStatus = 'open' | 'partially converted' | 'converted' | 'closed'
+
+/** What is still to be ordered on a PR line, in the PR line's unit. */
+export function prLineRemaining(line: PurchaseRequestLine): number {
+  return Math.max(0, line.requestedQty - (line.convertedQty ?? 0))
+}
+
+/**
+ * A PR line is open, partially converted, converted or closed (Rule 41). A closed or
+ * voided request closes whatever it had not converted.
+ */
+export function prLineStatus(pr: PurchaseRequest, line: PurchaseRequestLine): PrLineConversionStatus {
+  const converted = line.convertedQty ?? 0
+  if (converted > 0 && prLineRemaining(line) === 0) return 'converted'
+  if (pr.status === 'closed' || pr.status === 'voided') return 'closed'
+  return converted > 0 ? 'partially converted' : 'open'
+}
+
+/** Whether anything on this request can still be converted into a purchase order. */
+export function canConvertPurchaseRequest(pr: PurchaseRequest): boolean {
+  if (pr.status === 'closed' || pr.status === 'voided') return false
+  return pr.lines.some((l) => prLineRemaining(l) > 0)
+}
+
+/**
+ * Write what a conversion ordered back onto the requests' lines, then set each
+ * request's status: closed once nothing is left, otherwise partially processed.
+ * `ordered` is per PR id → SKU → qty in the PR line's unit.
+ */
+function recordConversion(prs: PurchaseRequest[], ordered: Map<string, Map<string, number>>): void {
+  for (const pr of prs) {
+    const bySku = ordered.get(pr.id)
+    const lines = pr.lines.map((l) => {
+      const add = bySku?.get(l.sku) ?? 0
+      return add > 0 ? { ...l, convertedQty: (l.convertedQty ?? 0) + add } : l
+    })
+    const done = lines.every((l) => prLineRemaining(l) === 0)
+    updatePurchaseRequest(pr.id, {
+      lines,
+      status: done ? 'closed' : 'partially processed',
+      awaitingApproval: false,
+    })
+  }
+}
+
+function addOrdered(ordered: Map<string, Map<string, number>>, prId: string, sku: string, qty: number) {
+  const bySku = ordered.get(prId) ?? new Map<string, number>()
+  bySku.set(sku, (bySku.get(sku) ?? 0) + qty)
+  ordered.set(prId, bySku)
+}
+
 /**
  * Plan the purchase orders a PR would convert into (PRD D12 / US-019 VR-02).
  *
@@ -345,6 +398,9 @@ export function planPosFromPurchaseRequest(
   const skipped: SkippedLine[] = []
 
   for (const prLine of pr.lines) {
+    // Rule 41: only what is still open converts; a fully converted line is done.
+    const remaining = prLineRemaining(prLine)
+    if (remaining <= 0) continue
     const base = { sku: prLine.sku, productName: prLine.product, warehouseId, warehouseName }
     // 1 PR = 1 vendor: every line is sourced from the PR's bound vendor, unless a
     // per-SKU override is passed (a whole-PR vendor change sets them together).
@@ -360,10 +416,10 @@ export function planPosFromPurchaseRequest(
       skipped.push({ ...base, reason: 'missing-uom' }); continue
     }
 
-    // The PR line's requested qty is the STOCK-unit need — round it to this
+    // The PR line's remaining qty is the STOCK-unit need — round it to this
     // vendor's MOQ + purchase multiplier now (US-006). An override is already in
     // purchase units and is taken verbatim.
-    const rounded = applyMoqAndPack(prLine.requestedQty, vi)
+    const rounded = applyMoqAndPack(remaining, vi)
     const finalQty = prLine.sku in qtyOverrides ? qtyOverrides[prLine.sku]! : rounded.purchaseQty
     if (finalQty <= 0) { skipped.push({ ...base, reason: 'zero-qty' }); continue }
 
@@ -382,7 +438,7 @@ export function planPosFromPurchaseRequest(
       finalQty,
       unitCost: vi.unitCost,
       purchaseUnit: vi.purchaseUnit,
-      needStock: prLine.requestedQty,
+      needStock: remaining,
       raisedByMoq: rounded.raisedByMoq,
       raisedByPack: rounded.raisedByPack,
       context: {
@@ -429,10 +485,12 @@ export function convertPurchaseRequestToPos(
   })
 
   if (created.length > 0) {
-    updatePurchaseRequest(pr.id, {
-      status: skipped.length === 0 ? 'closed' : 'partially processed',
-      awaitingApproval: false,
-    })
+    // What each line put on a PO, back in the PR line's unit (Rule 41).
+    const ordered = new Map<string, Map<string, number>>()
+    for (const g of groups) {
+      for (const l of g.lines) addOrdered(ordered, pr.id, l.sku, l.finalQty * l.vendorItem.unitsPerPurchaseUnit)
+    }
+    recordConversion([pr], ordered)
   }
 
   return { created, skipped }
@@ -470,12 +528,14 @@ export function planPosFromPurchaseRequests(
   for (const pr of prs) {
     const prVendor = pr.vendor?.id ?? null
     for (const line of pr.lines) {
+      const remaining = prLineRemaining(line)
+      if (remaining <= 0) continue // Rule 41: already fully converted
       const vendorId = line.sku in vendorChoices ? vendorChoices[line.sku]! : (prVendor ?? suggestedVendorForSku(line.sku, pr.replenishment?.warehouseId))
       const key = `${vendorId ?? '∅'}::${line.sku}`
       if (!merged.has(key)) merged.set(key, { vendorId, sku: line.sku, product: line.product, need: 0, sources: [] })
       const m = merged.get(key)!
-      m.need += line.requestedQty
-      m.sources.push({ prId: pr.id, prNumber: pr.number, qty: line.requestedQty })
+      m.need += remaining
+      m.sources.push({ prId: pr.id, prNumber: pr.number, qty: remaining })
     }
   }
 
@@ -562,14 +622,20 @@ export function convertPurchaseRequestsToPos(
   })
 
   if (created.length > 0) {
-    const skippedSkus = new Set(skipped.map((s) => s.sku))
-    for (const pr of prs) {
-      const anySkipped = pr.lines.some((l) => skippedSkus.has(l.sku))
-      updatePurchaseRequest(pr.id, {
-        status: anySkipped ? 'partially processed' : 'closed',
-        awaitingApproval: false,
-      })
+    // A merged line's ordered qty is shared back out to the requests that fed it, in
+    // order, each up to what it still needed (Rule 41); rounding surplus is absorbed.
+    const ordered = new Map<string, Map<string, number>>()
+    for (const g of groups) {
+      for (const l of g.lines) {
+        let left = l.finalQty * l.vendorItem.unitsPerPurchaseUnit
+        for (const src of l.sources ?? []) {
+          const take = Math.min(src.qty, left)
+          if (take > 0) addOrdered(ordered, src.prId, l.sku, take)
+          left -= take
+        }
+      }
     }
+    recordConversion(prs, ordered)
   }
 
   return { created, skipped }
