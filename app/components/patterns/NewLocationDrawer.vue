@@ -9,7 +9,7 @@
 import {
   MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
   MpFormControl, MpFormLabel, MpFormHelpText, MpInput, MpAutocomplete,
-  MpButton, MpText, toast,
+  MpButton, MpRadio, MpText, toast,
 } from '@mekari/pixel3'
 import {
   addRootLocation, addSubLocation, updateLocation, defaultTypeForLevel, findLocation,
@@ -43,6 +43,10 @@ const level = ref<string>(STORAGE_LEVELS[0]!)
 const name = ref('')
 const type = ref<LocType>('Organizational')
 const description = ref('')
+const TYPE_OPTIONS: { value: LocType; title: string; desc: string }[] = [
+  { value: 'Organizational', title: 'Organizational', desc: 'For grouping only. Stock cannot be stored here directly.' },
+  { value: 'Storage', title: 'Storage', desc: 'Stock can be stored and tracked at this location.' },
+]
 
 // Breadcrumb (root → parent). For edit it's the edited node's ancestors; for a
 // sub-location it's the parent's path; empty for a root-level add.
@@ -191,22 +195,21 @@ async function save() {
 
           <MpFormControl id="nl-type" is-required>
             <MpFormLabel>Storage preference</MpFormLabel>
-            <div class="nl-type-cards">
-              <MpButton
-                v-for="opt in [
-                  { value: 'Organizational', title: 'Organizational', desc: 'For grouping only. Stock cannot be stored here directly.' },
-                  { value: 'Storage', title: 'Storage', desc: 'Stock can be stored and tracked at this location.' },
-                ]"
-                :key="opt.value"
-                type="button"
-                class="nl-type-card"
-                variant="ghost"
-                :class="{ 'nl-type-card--active': type === opt.value }"
-                @click="type = opt.value as LocType"
-              >
-                <span class="nl-type-title">{{ opt.title }}</span>
-                <span class="nl-type-desc">{{ opt.desc }}</span>
-              </MpButton>
+            <!-- Radio + caption list — same pattern as EditClassificationModal -->
+            <div class="nl-type-group" data-devchange="new-location-storage-preference-radio">
+              <div v-for="opt in TYPE_OPTIONS" :key="opt.value" class="nl-type-option">
+                <label class="nl-type-radio">
+                  <MpRadio
+                    :id="`nl-type-${opt.value}`"
+                    name="nl-type"
+                    :value="opt.value"
+                    :is-checked="type === opt.value"
+                    @change="type = opt.value"
+                  />
+                  <span>{{ opt.title }}</span>
+                </label>
+                <p class="nl-type-caption">{{ opt.desc }}</p>
+              </div>
             </div>
             <MpFormHelpText>{{ typeHelp }}</MpFormHelpText>
           </MpFormControl>
@@ -253,17 +256,17 @@ async function save() {
 .nl-crumb-sep { color: var(--mp-text-subtle, #9a9ea6); }
 .nl-crumb--current { color: var(--mp-text-subtle, #9a9ea6); }
 .nl-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
-.nl-type-cards { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.nl-type-card {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
-  text-align: left; cursor: pointer;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral);
+.nl-type-group { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+/* No gap — MpRadio renders its own 12px control-to-label gap internally */
+.nl-type-radio {
+  display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
 }
-.nl-type-card--active { border-color: var(--mp-border-selected, #0f6d4d); background: var(--mp-background-nav-stack-hovered, #d6f4e9); }
-.nl-type-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.nl-type-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+/* Caption sits under the label, aligned past the 16px control + its 12px gap */
+.nl-type-caption {
+  margin: 0; padding-left: var(--mp-spacing-8, 32px);
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
+}
 .nl-textarea {
   width: 100%; resize: vertical;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);

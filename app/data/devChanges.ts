@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'new-location-storage-preference-radio',
+    title: 'Storage preference uses the standard radio list',
+    description:
+      'New / Edit location drawer: Storage preference was two uneven, bordered button-cards with a mint selected fill. It is now the standard MpRadio title + caption list (same as Edit classification), so it reads like every other single-choice field.',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue'],
+  },
+  {
     id: 'row-kebab-icon-visible',
     title: 'Row actions (⋯) icon visible again',
     description:
