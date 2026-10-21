@@ -21,6 +21,9 @@ export interface SalesInvoiceFiltersValue {
   totalMax: string
   tagsComparator: TagsComparator
   tags: string[]
+  /** Faktur's own status — Normal / Pengganti / Diganti / … (taxDocumentStatus). */
+  taxDocStatus: string[]
+  /** What DJP replied — Draft / Processing / Approved / Rejected. */
   djpStatus: string[]
 }
 
@@ -37,6 +40,7 @@ export function emptySalesInvoiceFilters(): SalesInvoiceFiltersValue {
     totalMax: '',
     tagsComparator: 'isAnyOf',
     tags: [],
+    taxDocStatus: [],
     djpStatus: [],
   }
 }
@@ -59,8 +63,11 @@ export function emptySalesInvoiceFilters(): SalesInvoiceFiltersValue {
  * so they render a plain bold field-label rather than sitting inside
  * MpFormControl (which breaks their MpPopoverTrigger's cloneVNode injection).
  *
- * DJP status filters on the invoice's most recent tax document status (or
- * "Not generated" when it has none) — see getTaxDocumentsForInvoice /
+ * Tax document status and DJP status are two separate axes, and both filter on
+ * the invoice's CURRENT tax document (currentTaxDocument), or match nothing when
+ * it has none. Tax document status is the faktur's own status — Normal /
+ * Pengganti / Diganti / Dibatalkan; DJP status is what DJP replied. Keeping them
+ * apart is rule/efaktur-status-axes — see TAX_DOCUMENT_STATUS_LABELS /
  * DJP_STATUS_CONFIG in ~/data/taxDocuments.
  */
 import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
@@ -87,6 +94,7 @@ const props = defineProps<{
   columns: { key: string; label: string }[]
   statusOptions: { value: string; label: string }[]
   tagOptions: string[]
+  taxDocStatusOptions: { value: string; label: string }[]
   djpStatusOptions: { value: string; label: string }[]
 }>()
 const emit = defineEmits<{
@@ -94,8 +102,35 @@ const emit = defineEmits<{
   (e: 'apply', v: SalesInvoiceFiltersValue): void
 }>()
 
+const { t } = useLocale()
+
 const draft = reactive<SalesInvoiceFiltersValue>({ ...props.modelValue })
-watch(() => props.isOpen, (open) => { if (open) Object.assign(draft, props.modelValue) })
+
+/**
+ * The two tax checklists collapse; the rest of the drawer doesn't.
+ *
+ * They are the specialist pair — most users never touch them — and with Status
+ * they put 15 checkboxes in a row, which is what made this drawer the longest in
+ * the ERP (4 checklist groups; every other drawer has 2–3). Collapsed they read
+ * as two lines.
+ *
+ * Opened on a filter that is ALREADY applied, so an active filter is never
+ * hidden behind a closed section — that is the one thing collapsing must not do.
+ */
+const taxDocStatusOpen = ref(false)
+const djpStatusOpen = ref(false)
+
+watch(() => props.isOpen, (open) => {
+  if (!open) return
+  Object.assign(draft, props.modelValue)
+  taxDocStatusOpen.value = draft.taxDocStatus.length > 0
+  djpStatusOpen.value = draft.djpStatus.length > 0
+})
+
+/** "2 selected" / "None selected" under a collapsed section's label. */
+function selectedPreview(n: number) {
+  return n === 0 ? t('None selected') : `${n} ${t('selected')}`
+}
 
 function close() { emit('update:isOpen', false) }
 function apply() { emit('apply', { ...draft }); close() }
@@ -103,6 +138,9 @@ function clearAll() { Object.assign(draft, emptySalesInvoiceFilters()) }
 
 function toggleStatus(value: string) {
   draft.status = draft.status.includes(value) ? draft.status.filter((v) => v !== value) : [...draft.status, value]
+}
+function toggleTaxDocStatus(value: string) {
+  draft.taxDocStatus = draft.taxDocStatus.includes(value) ? draft.taxDocStatus.filter((v) => v !== value) : [...draft.taxDocStatus, value]
 }
 function toggleDjpStatus(value: string) {
   draft.djpStatus = draft.djpStatus.includes(value) ? draft.djpStatus.filter((v) => v !== value) : [...draft.djpStatus, value]
@@ -168,7 +206,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 
       <!-- Transaction date — past-preset range (Today / Last 7 / Last 30 days). -->
       <div class="sif-field">
-        <span class="sif-field-label">Transaction date</span>
+        <span class="sif-field-label">{{ t('Transaction date') }}</span>
         <AdvancedDateRangePicker
           :id="`${id}-transactiondate`" :model-value="draft.transactionDate"
           is-full-width hide-label placeholder="Select transaction date"
@@ -178,7 +216,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 
       <!-- Due date — forward-looking range (Next 7 / 14 / 30 days). -->
       <div class="sif-field">
-        <span class="sif-field-label">Due date</span>
+        <span class="sif-field-label">{{ t('Due date') }}</span>
         <AdvancedDateRangePicker
           :id="`${id}-duedate`" :model-value="draft.dueDate" direction="future"
           is-full-width hide-label placeholder="Select due date"
@@ -187,7 +225,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
       </div>
 
       <div class="sif-field">
-        <span class="sif-field-label">Status</span>
+        <span class="sif-field-label">{{ t('Status') }}</span>
         <ul class="sif-checklist">
           <li
             v-for="opt in statusOptions" :key="opt.value"
@@ -201,13 +239,43 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
         </ul>
       </div>
 
-      <!-- DJP status — the invoice's most recent tax document status, or
-           "Not generated" when it has none yet (see getTaxDocumentsForInvoice).
+      <!-- Tax document status — the faktur's own status on the invoice's current
+           tax document (Normal / Pengganti / Diganti / Dibatalkan). Sits ABOVE
+           DJP status: what the document IS comes before what DJP said about it.
            Hidden entirely (parent passes an empty list) until at least one
            invoice on the table has a tax document. -->
-      <div v-if="djpStatusOptions.length" class="sif-field">
-        <span class="sif-field-label">DJP status</span>
-        <ul class="sif-checklist">
+      <div v-if="taxDocStatusOptions.length" class="sif-field sif-field--collapsible">
+        <MpButton type="button" variant="ghost" class="sif-section-head" @click="taxDocStatusOpen = !taxDocStatusOpen">
+          <span class="sif-section-head-text">
+            <span class="sif-field-label">{{ t('Tax document status') }}</span>
+            <span class="sif-section-preview">{{ selectedPreview(draft.taxDocStatus.length) }}</span>
+          </span>
+          <MpIcon name="chevrons-down" size="sm" class="sif-section-chevron" :class="{ 'sif-section-chevron--open': taxDocStatusOpen }" />
+        </MpButton>
+        <ul v-if="taxDocStatusOpen" class="sif-checklist sif-checklist--panel">
+          <li
+            v-for="opt in taxDocStatusOptions" :key="opt.value"
+            class="sif-check-item" @click="toggleTaxDocStatus(opt.value)"
+          >
+            <span @click.stop>
+              <MpCheckbox :id="`${id}-taxdocstatus-${opt.value}`" :is-checked="draft.taxDocStatus.includes(opt.value)" @change="() => toggleTaxDocStatus(opt.value)" />
+            </span>
+            <span class="sif-check-label">{{ opt.label }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- DJP status — what DJP replied about that same document. Hidden on the
+           same condition as Tax document status above. -->
+      <div v-if="djpStatusOptions.length" class="sif-field sif-field--collapsible">
+        <MpButton type="button" variant="ghost" class="sif-section-head" @click="djpStatusOpen = !djpStatusOpen">
+          <span class="sif-section-head-text">
+            <span class="sif-field-label">{{ t('DJP status') }}</span>
+            <span class="sif-section-preview">{{ selectedPreview(draft.djpStatus.length) }}</span>
+          </span>
+          <MpIcon name="chevrons-down" size="sm" class="sif-section-chevron" :class="{ 'sif-section-chevron--open': djpStatusOpen }" />
+        </MpButton>
+        <ul v-if="djpStatusOpen" class="sif-checklist sif-checklist--panel">
           <li
             v-for="opt in djpStatusOptions" :key="opt.value"
             class="sif-check-item" @click="toggleDjpStatus(opt.value)"
@@ -221,7 +289,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
       </div>
 
       <div class="sif-field">
-        <span class="sif-field-label">Total (Rp)</span>
+        <span class="sif-field-label">{{ t('Total (Rp)') }}</span>
         <AmountComparatorField
           :id="`${id}-total`"
           :comparator="draft.totalComparator"
@@ -238,7 +306,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
       <!-- Tags — comparator prefix select + typeable tag input (chips), same
            shape as the Total (Rp) field above. -->
       <div class="sif-field">
-        <span class="sif-field-label">Tags</span>
+        <span class="sif-field-label">{{ t('Tags') }}</span>
         <div class="sif-tags">
           <MpPopover
             :id="`${id}-tags-comparator`" is-manual :is-open="tagsComparatorOpen"
@@ -324,6 +392,31 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 
 .sif-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .sif-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+
+/* Collapsible checklist section — same anatomy as EmployeesFiltersDrawer's
+   .ef-scope-* (label + selected preview on the left, chevron right) so the two
+   drawers read the same. The row is an MpButton, not a raw button element
+   (rule/token-no-raw-html), stripped back to a plain full-width row.
+   Angle brackets avoided on purpose: pixel-police scans comment text too. */
+.sif-field--collapsible { gap: 0; }
+.sif-section-head {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-2);
+  padding: 0 !important;
+  min-width: 0 !important;
+  height: auto !important;
+  background: transparent !important;
+  border: none !important;
+  text-align: left;
+}
+.sif-section-head-text { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.sif-section-preview { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.sif-section-chevron { color: var(--mp-text-secondary); transition: transform 150ms; flex-shrink: 0; }
+.sif-section-chevron--open { transform: rotate(180deg); }
+.sif-checklist--panel { margin-top: var(--mp-spacing-2); }
 
 .sif-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .sif-check-item { display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none; }

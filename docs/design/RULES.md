@@ -806,6 +806,16 @@ ERP override wins.
   Only the field *set* varies per page. *Don't:* invent a new field control or a native
   `<select>` (`rule/select-erpfilterselect`). **Why:** every filter drawer reads the
   same. **Lint:** review.
+  *Variant — collapsible checklist:* a checklist may collapse behind its own label
+  when a drawer carries **more than 3 checklist groups** (most carry 2–3). The header
+  is the bold label + a **"N selected" / "None selected"** preview + a trailing
+  `chevrons-down` that rotates on open; collapsed is the default, and a section whose
+  filter is **already applied opens automatically** when the drawer opens. Collapse
+  the specialist groups, not the page's primary Status. *Don't:* collapse a group
+  without the selected-count preview, or leave an applied filter shut — a filter the
+  user cannot see is one they cannot clear. **Source:** `EmployeesFiltersDrawer.vue`
+  (`.ef-scope-*`, from Talenta's `PxAllFiltersDrawer`); `SalesInvoiceFiltersDrawer.vue`
+  (the two tax axes). **Lint:** `tests/sales-invoice-filters-tax-axes.spec.ts`.
 - **`rule/filter-drawer-footer`** — *Do:* fixed footer, always three actions: a **ghost
   "Reset filter"** pinned **left** (clears the draft to empty), then **ghost "Cancel"** +
   **primary "Apply"** pinned **right**. Apply commits + closes; Cancel/× discards. *Don't:*
@@ -970,6 +980,12 @@ ERP override wins.
 - **`rule/token-no-raw-html`** — *Do:* use `Mp*` components (or a sanctioned
   `.btn-enterprise` button); no raw `<button>/<input>/<select>/<textarea>`. **Lint:**
   pixel-police.
+  *Writing about it:* `scripts/pixel-police-ci.sh` greps the **raw added lines**, so a
+  COMMENT that merely mentions one of these tags in angle brackets fails CI exactly
+  like real markup would. In prose write "a raw button element", not the bracketed
+  tag — or append `pixel-police-allow` to that line. Note the CI script applies this
+  check to **every** changed `.vue`, while `tests/pixel-police.spec.ts` scopes it to
+  CRM files, so a green local suite does not mean a green CI run for this rule.
 
 ## Copy & terminology — source: `docs/patterns/`, `app/data/translations.ts`
 
@@ -986,6 +1002,39 @@ ERP override wins.
 - **`rule/copy-id-translations`** — *Do:* all strings live in
   `app/data/translations.ts` (English key → Indonesian value) via `t()`. **Lint:**
   review.
+- **`rule/efaktur-status-axes`** — a tax document carries **three independent
+  axes**; never collapse two of them into one label or one field.
+
+  | Axis | Field | UI label (EN / ID) | Values |
+  |---|---|---|---|
+  | Which document is issued | `docKind` (`FK`/`DK`) | Document type / Jenis dokumen | Output tax invoice · Other output document |
+  | The faktur's own status | `kind` + `supersededAs`, read via `taxDocumentStatus()` | Tax document status / Status dokumen pajak | Normal · Replacement (Pengganti) · Cancellation (Pembatalan) · Replaced (Diganti) · Cancelled (Dibatalkan) · Return note (Nota retur) |
+  | What DJP replied | `status` | DJP status / Status DJP | — · Draft · Processing at DJP · Approved by DJP · Rejected by DJP |
+
+  *Do:* keep `DJP_STATUS_CONFIG` to replies only, and derive the faktur's status
+  with `taxDocumentStatus()`. A superseded faktur keeps `status: 'approved'` — DJP
+  approved it and never said otherwise — and carries `supersededAs`, so it reads
+  **Diganti / Approved by DJP** at the same time.
+  *Do:* render **DJP status as a badge** (`ErpStatusBadge` + `DJP_STATUS_CONFIG`) and
+  **Tax document status as plain text** (`TAX_DOCUMENT_STATUS_LABELS`, which carries
+  no tone by design). One classifies the document, the other reports a state that
+  changes and needs watching — badging both puts two chips in one row competing for
+  the same attention, and there is no good or bad way for a faktur to be a Pengganti.
+  Its index column still takes `kind: 'status'`: the 128–160 range is sized for short
+  status labels, badge or not.
+  *Don't:* put `Replaced` / `Cancelled` on the DJP axis; don't head the faktur-status
+  column **"Type"** (it collides with the Create drawer's "Document type"); don't
+  offer **Pembetulan / Dibetulkan** anywhere — a faktur is corrected ONLY by issuing
+  a pengganti, and "pembetulan" is a state on SPT and Bukti Potong, not on a faktur.
+  **Why:** the three answer different questions, and a filter that mixes them makes
+  "show me everything DJP rejected" unanswerable.
+  **Source:** PER-11/PJ/2025 Lampiran huruf D — **D.2.b.2)** (kode status: 00 normal,
+  01.. pengganti ke-N), **D.5.a/D.5.f** (correction only via pengganti),
+  **D.6** (pembatalan; the faktur stays on file), **D.2.b.3)b)** (NSFP issued on
+  "persetujuan dari Direktorat Jenderal Pajak").
+  **Lint:** `tests/tax-documents.spec.ts`, `tests/sales-invoice-filters-tax-axes.spec.ts`,
+  `tests/sales-invoice-tax-document-tab.spec.ts`,
+  `tests/sales-invoices-tax-status-column.spec.ts`.
 - **`rule/no-page-description-subtitle`** — *Do:* a page (or section) shows its
   **title** and goes straight to content. *Don't:* add a descriptive subtitle/lead
   paragraph under the title that explains **what the page is for** (e.g. "Group

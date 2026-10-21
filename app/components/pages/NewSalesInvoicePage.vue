@@ -35,7 +35,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { saveSalesInvoiceEdit } from '~/data/salesInvoiceEdits'
-import { getApprovedTaxDocument, generateChangeDrafts, type TaxDocument } from '~/data/taxDocuments'
+import { getApprovedTaxDocument, generateChangeDrafts, updateTaxDocumentStatus, type TaxDocument } from '~/data/taxDocuments'
 import {
   buildTaxSnapshot, detectTaxChanges, resolveTaxAction,
   type DetectedTaxChange, type SalesInvoiceTaxSnapshot, type TaxAction,
@@ -525,25 +525,40 @@ function commitEdit() {
 }
 
 /** Confirmed from the review drawer — save, then raise whatever DJP needs. */
-function onTaxReviewConfirm() {
+/**
+ * @param submit  "Save & submit to DJP" rather than "Save as draft".
+ *
+ * A cancellation generates TWO documents — the Cancellation itself and the fresh
+ * Normal faktur for the corrected transaction — and submitting sends BOTH. DJP
+ * imposes no ordering between them (PER-11/PJ/2025 Lampiran D.6 requires only
+ * that the cancelled faktur stays on file), and a button that says "submit"
+ * while quietly holding one of the two back would be lying about what it did.
+ */
+function onTaxReviewConfirm(submit: boolean) {
   commitEdit()
   const source = approvedTaxDoc.value
   const action = taxReviewAction.value
 
   // Explicit over `!== 'none'`: TaxAction also covers 'return-note', which an
   // edit can never resolve to and generateChangeDrafts must never be handed.
+  let generated: TaxDocument[] = []
   if (source && (action === 'replacement' || action === 'cancellation')) {
-    generateChangeDrafts({
+    generated = generateChangeDrafts({
       source, action, changes: taxReviewChanges.value,
       date: todayDMY(),
       invoiceSnapshot: editedSnapshot(),
     })
+    if (submit) generated.forEach(d => updateTaxDocumentStatus(d.id, 'awaiting-approval'))
   }
 
   taxReviewOpen.value = false
   toast.notify({
     variant: 'success',
-    title: action === 'none' ? t('Sales invoice updated') : t('Sales invoice updated and tax document draft generated'),
+    title: action === 'none'
+      ? t('Sales invoice updated')
+      : submit
+        ? t('Sales invoice updated and tax document submitted to DJP')
+        : t('Sales invoice updated and tax document draft generated'),
     rootProps: { class: 'toast-enterprise' },
   })
   // Land on the Tax document tab when there is a new draft waiting to be reviewed.

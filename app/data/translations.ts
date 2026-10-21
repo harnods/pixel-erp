@@ -673,6 +673,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No active teams yet.': 'Belum ada tim aktif.',
   'Publish': 'Publikasikan',
   'Save as draft': 'Simpan sebagai draft',
+  'Save & submit to DJP': 'Simpan & kirim ke DJP',
+  'Sales invoice updated and tax document submitted to DJP': 'Faktur penjualan diperbarui dan dokumen pajak dikirim ke DJP',
+  'Save as draft to review on the Tax document tab first, or submit to DJP now.': 'Simpan sebagai draft untuk ditinjau di tab Dokumen pajak dulu, atau kirim ke DJP sekarang.',
   'Unpublish': 'Batalkan publikasi',
   'Module published': 'Modul berhasil dipublikasikan',
   'Module saved as draft': 'Modul disimpan sebagai draft',
@@ -985,6 +988,29 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Overdue': 'Telat bayar',
   'Completed': 'Selesai',
   'Processing': 'Diproses',
+
+  // ── e-Faktur: the two status axes (rule/efaktur-status-axes) ────────────────
+  // Tax document status = the faktur's own status, DJP's "kode status"
+  // (PER-11/PJ/2025 Lampiran D.2.b.2 — Normal / Pengganti; D.6 — Pembatalan).
+  'Tax document status': 'Status dokumen pajak',
+  'Normal': 'Normal',
+  'Replacement': 'Pengganti',
+  'Cancellation': 'Pembatalan',
+  'Replaced': 'Diganti',
+  'Return note': 'Nota retur',
+  // 'Cancelled': 'Dibatalkan' already lives in the WMS statuses block below.
+  //
+  // DJP status = what DJP replied. Carries the "DJP" qualifier in every value by
+  // product decision (PRD wording), even though the column header says it too.
+  'DJP status': 'Status DJP',
+  'Processing at DJP': 'Memproses ke DJP',
+  'Approved by DJP': 'Disetujui DJP',
+  'Rejected by DJP': 'Ditolak DJP',
+  'Awaiting from buyer': 'Menunggu dari pembeli',
+
+  // Collapsible filter section header — "2 dipilih" / "Belum dipilih".
+  'None selected': 'Belum dipilih',
+  'selected': 'dipilih',
   'Scanning…': 'Memindai…',
   'Upload bank statement': 'Unggah rekening koran',
   'Drop your bank statement files here. We\'ll upload them to Dropbox and scan each one.': 'Letakkan file rekening koran Anda di sini. Kami akan mengunggahnya ke Dropbox dan memindai satu per satu.',
