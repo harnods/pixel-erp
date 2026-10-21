@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'row-kebab-icon-visible',
+    title: 'Row actions (⋯) icon visible again',
+    description:
+      'Row kebab buttons on ~45 tables (warehouses, storage locations, products, receipts, picking, packing, CRM, BOM, work orders…) rendered an invisible 0px icon — Pixel MpButton padding squeezed the 20px svg out of the 32px button. One global erp.css override restores the three-dot icon everywhere.',
+    date: '2026-10-21',
+    files: ['erp.css', 'WarehousesPage.vue', 'pixel-enterprise-overrides.md'],
+  },
+  {
     id: 'settings-purchase-page',
     title: 'Settings > Purchases page',
     description:
