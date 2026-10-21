@@ -395,8 +395,9 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 
 /* Collapsible checklist section — same anatomy as EmployeesFiltersDrawer's
    .ef-scope-* (label + selected preview on the left, chevron right) so the two
-   drawers read the same. The row is an MpButton, not a raw <button>
-   (rule/token-no-raw-html), stripped back to a plain full-width row. */
+   drawers read the same. The row is an MpButton, not a raw button element
+   (rule/token-no-raw-html), stripped back to a plain full-width row.
+   Angle brackets avoided on purpose: pixel-police scans comment text too. */
 .sif-field--collapsible { gap: 0; }
 .sif-section-head {
   width: 100% !important;

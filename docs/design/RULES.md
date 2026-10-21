@@ -980,6 +980,12 @@ ERP override wins.
 - **`rule/token-no-raw-html`** — *Do:* use `Mp*` components (or a sanctioned
   `.btn-enterprise` button); no raw `<button>/<input>/<select>/<textarea>`. **Lint:**
   pixel-police.
+  *Writing about it:* `scripts/pixel-police-ci.sh` greps the **raw added lines**, so a
+  COMMENT that merely mentions one of these tags in angle brackets fails CI exactly
+  like real markup would. In prose write "a raw button element", not the bracketed
+  tag — or append `pixel-police-allow` to that line. Note the CI script applies this
+  check to **every** changed `.vue`, while `tests/pixel-police.spec.ts` scopes it to
+  CRM files, so a green local suite does not mean a green CI run for this rule.
 
 ## Copy & terminology — source: `docs/patterns/`, `app/data/translations.ts`
 
