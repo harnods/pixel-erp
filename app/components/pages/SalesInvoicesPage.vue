@@ -21,7 +21,7 @@ import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
 import { salesInvoices, awaitingSalesInvoices, deleteSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
-import { getTaxDocumentsForInvoice, currentTaxDocument, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
+import { getTaxDocumentsForInvoice, currentTaxDocument, formatTaxDocumentNumber, updateTaxDocumentStatus, taxDocumentStatus, DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS, type TaxDocumentStatus, type TaxDocumentStatusValue } from '~/data/taxDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
@@ -41,6 +41,7 @@ const columns: TableColumn[] = [
   { key: 'customerName', label: t('Customer'),    kind: 'name', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',      label: t('Due date'),    kind: 'date',                                   sortType: 'date'   },
   { key: 'status',       label: t('Status'),      kind: 'status',                                 sortType: 'text'   },
+  { key: 'taxDocStatus', label: t('Tax document status'), kind: 'status',                         sortType: 'text'   },
   { key: 'djpStatus',    label: t('DJP status'),  kind: 'status',                                 sortType: 'text'   },
   { key: 'balance',      label: t('Balance due'), kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
   { key: 'total',        label: t('Total'),       kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
@@ -54,10 +55,14 @@ type Row = SalesInvoice & {
   attachment: boolean
   hasTaxDocument: boolean
   /**
-   * Status of the document that currently speaks for this invoice (see
+   * The two axes of the document that currently speaks for this invoice (see
    * currentTaxDocument — an invoice can carry a whole lineage), or
    * 'not-generated' when it has no tax document at all.
+   *
+   * `taxDocStatus` is the faktur's own status, `djpStatus` is DJP's reply. They
+   * are deliberately separate — see rule/efaktur-status-axes.
    */
+  taxDocStatus: TaxDocumentStatusValue | 'not-generated'
   djpStatus: TaxDocumentStatus | 'not-generated'
   overdueLabel: string | null
 }
@@ -89,6 +94,7 @@ const rows = computed<Row[]>(() =>
       customerName: inv.customer.name,
       attachment:   inv.hasAttachment ?? false,
       hasTaxDocument: taxDocs.length > 0,
+      taxDocStatus: current ? taxDocumentStatus(current) : 'not-generated',
       djpStatus: current ? current.status : 'not-generated',
       overdueLabel,
     }
@@ -107,12 +113,15 @@ const keywordColumns = [
   { key: 'tags',         label: t('Tags')     },
 ]
 const tagOptions = computed(() => [...new Set(salesInvoices.flatMap(inv => inv.tags ?? []))].sort())
-// DJP status is only a real column/filter when at least one invoice on the
-// table has a tax document — otherwise every row would just show "Not
-// generated" and the column/filter would be dead weight.
+// Tax document status / DJP status are only real columns/filters when at least
+// one invoice on the table has a tax document — otherwise every row would just
+// show an em dash and both would be dead weight.
 const hasAnyTaxDocument = computed(() => rows.value.some(r => r.hasTaxDocument))
-// Empty (and the drawer's DJP status field hidden) until the table has at
-// least one invoice with a tax document — see hasAnyTaxDocument below.
+// Empty (and the drawer's two tax fields hidden) until the table has at least
+// one invoice with a tax document — see hasAnyTaxDocument above.
+const taxDocStatusOptions = computed(() => hasAnyTaxDocument.value
+  ? (Object.keys(TAX_DOCUMENT_STATUS_LABELS) as TaxDocumentStatusValue[]).map(value => ({ value, label: t(TAX_DOCUMENT_STATUS_LABELS[value]) }))
+  : [])
 const djpStatusOptions = computed(() => hasAnyTaxDocument.value
   ? (Object.keys(DJP_STATUS_CONFIG) as TaxDocumentStatus[]).map(value => ({ value, label: t(DJP_STATUS_CONFIG[value].label) }))
   : [])
@@ -164,11 +173,12 @@ const {
       || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
         : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
         : f.tags.every(tg => !rowTags.includes(tg)))
+    const matchesTaxDocStatus = f.taxDocStatus.length === 0 || f.taxDocStatus.includes(row.taxDocStatus)
     const matchesDjpStatus = f.djpStatus.length === 0 || f.djpStatus.includes(row.djpStatus)
 
     return matchesSearch && matchesStatus
       && matchesKeyword && matchesTransactionDate && matchesDueDate && matchesDrawerStatus
-      && matchesTotal && matchesTags && matchesDjpStatus
+      && matchesTotal && matchesTags && matchesTaxDocStatus && matchesDjpStatus
   },
 })
 
@@ -183,6 +193,7 @@ const activeFilterCount = computed(() => {
   if (f.status.length > 0) n++
   if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
   if (f.tags.length > 0) n++
+  if (f.taxDocStatus.length > 0) n++
   if (f.djpStatus.length > 0) n++
   return n
 })
@@ -234,10 +245,11 @@ function formatDate(iso: string) {
 
 
 // Column show/hide (first column always on; Last updated appended, hidden by default;
-// DJP status also starts hidden — only shown once activated from column settings)
-const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'djpStatus'])
+// the two tax columns also start hidden — only shown once activated from column settings)
+const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'taxDocStatus', 'djpStatus'])
+const TAX_DOC_COLUMNS = new Set(['taxDocStatus', 'djpStatus'])
 const allCols = computed<TableColumn[]>(() => [
-  ...columns.filter(c => c.key !== 'djpStatus' || hasAnyTaxDocument.value),
+  ...columns.filter(c => !TAX_DOC_COLUMNS.has(c.key) || hasAnyTaxDocument.value),
   { key: 'lastUpdated', label: t('Last updated'), kind: 'date' },
 ])
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.value.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
@@ -552,8 +564,18 @@ function confirmBulkDelete() {
       </div>
     </template>
 
-    <!-- ── Cell: DJP status — only rendered once a tax document has actually
-         been generated for the invoice; otherwise shows an em dash. ── -->
+    <!-- ── Cell: Tax document status — the faktur's own status (Normal /
+         Pengganti / Diganti / …), only once a tax document exists. ── -->
+    <template #cell-taxDocStatus="{ row }">
+      <!-- Plain text, not a badge — see TAX_DOCUMENT_STATUS_LABELS.
+           em dash (not raw 'not-generated') so Vue never falls back to the raw sentinel value -->
+      <span>{{ (row as Row).hasTaxDocument
+        ? t(TAX_DOCUMENT_STATUS_LABELS[(row as Row).taxDocStatus as TaxDocumentStatusValue])
+        : '—' }}</span>
+    </template>
+
+    <!-- ── Cell: DJP status — what DJP replied about that same document; only
+         rendered once a tax document has actually been generated. ── -->
     <template #cell-djpStatus="{ row }">
       <ErpStatusBadge
         v-if="(row as Row).hasTaxDocument"
@@ -626,6 +648,7 @@ function confirmBulkDelete() {
     :columns="keywordColumns"
     :status-options="drawerStatusOptions"
     :tag-options="tagOptions"
+    :tax-doc-status-options="taxDocStatusOptions"
     :djp-status-options="djpStatusOptions"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"

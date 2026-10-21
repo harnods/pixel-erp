@@ -324,8 +324,9 @@ function save(status: TaxDocumentStatus) {
     documentType: isFk.value ? 'Output tax invoice' : 'Other output document',
     docKind: documentKind.value,
     // The form no longer asks: an FK raised against a whole invoice IS a full
-    // payment, and a DK carries no termin block at all (§6). Recorded rather
-    // than left blank so the index's Payment stage column still reads.
+    // payment, and a DK carries no termin block at all (§6). Still recorded —
+    // no column shows it any more, but the "View details" drawer reads it as
+    // Sales invoice type, and the e-faktur print needs the termin.
     paymentStage: isFk.value ? 'full-payment' : undefined,
     lane,
     djpCode,

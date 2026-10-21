@@ -13,7 +13,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   addTaxDocument, getTaxDocumentsForInvoice, hasDownPaymentTaxDocument, formatTaxDocumentNumber,
-  taxDocMenuItemDefs,
+  taxDocMenuItemDefs, taxDocumentStatus, taxDocumentStamp, getApprovedTaxDocument,
+  updateTaxDocumentStatus, normalizeTaxDocument, DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS,
+  type TaxDocument,
 } from '~/data/taxDocuments'
 
 describe('tax-document store', () => {
@@ -69,14 +71,22 @@ describe('tax-document store', () => {
   })
 
   it('draft leaves Edit and Delete enabled with no tooltip', () => {
-    const [, , edit, del] = taxDocMenuItemDefs('draft')
+    const doc = addTaxDocument({
+      salesInvoiceId: 'inv-taxdoc-menu-draft', date: '09/08/2026', documentType: 'Output tax invoice',
+      lane: 'domestic', djpCode: '01', status: 'draft',
+    })
+    const [, , edit, del] = taxDocMenuItemDefs(doc)
     expect(edit).toEqual({ label: 'Edit', disabled: false, tooltip: undefined })
     expect(del).toEqual({ label: 'Delete', disabled: false, tooltip: undefined })
   })
 
   it('once submitted (awaiting-approval, approved, rejected), Edit and Delete are disabled with an explanatory tooltip', () => {
     for (const status of ['awaiting-approval', 'approved', 'rejected'] as const) {
-      const items = taxDocMenuItemDefs(status)
+      const doc = addTaxDocument({
+        salesInvoiceId: `inv-taxdoc-menu-${status}`, date: '09/08/2026', documentType: 'Output tax invoice',
+        lane: 'domestic', djpCode: '01', status,
+      })
+      const items = taxDocMenuItemDefs(doc)
       const edit = items.find(i => i.label === 'Edit')!
       const del = items.find(i => i.label === 'Delete')!
       expect(edit.disabled).toBe(true)
@@ -120,5 +130,94 @@ describe('tax-document store', () => {
       status: 'approved',
     })
     expect(formatTaxDocumentNumber(doc)).toBe(`130${doc.serial}`)
+  })
+
+  /**
+   * rule/efaktur-status-axes — DJP status (what DJP replied) and Tax document
+   * status (the faktur's own kode status, PER-11/PJ/2025 Lampiran D.2.b.2) are
+   * separate. These pin the split so neither can quietly re-absorb the other.
+   */
+  describe('the two status axes stay separate', () => {
+    it('DJP status carries only approval states — never replaced/cancelled', () => {
+      expect(Object.keys(DJP_STATUS_CONFIG).sort()).toEqual(
+        ['approved', 'awaiting-approval', 'awaiting-from-buyer', 'draft', 'rejected'],
+      )
+    })
+
+    it('tax document status offers Normal/Pengganti/Pembatalan/Diganti/Dibatalkan/Nota retur — and no pembetulan', () => {
+      expect(Object.keys(TAX_DOCUMENT_STATUS_LABELS).sort()).toEqual(
+        ['cancellation', 'cancelled', 'normal', 'replaced', 'replacement', 'return-note'],
+      )
+    })
+
+    it('a snapshot stored with status replaced/cancelled migrates to approved + supersededAs', () => {
+      // Exactly what a localStorage snapshot written before the split looks like;
+      // normalizeTaxDocument is what every load runs it through.
+      for (const legacy of ['replaced', 'cancelled'] as const) {
+        const stored = {
+          id: `legacy-${legacy}`, salesInvoiceId: 'inv-taxdoc-legacy', date: '09/08/2026',
+          documentType: 'Output tax invoice', lane: 'domestic', djpCode: '01',
+          serial: '2500001234567', kind: 'normal', revision: 0,
+          status: legacy,
+        } as unknown as TaxDocument
+
+        const migrated = normalizeTaxDocument(stored)
+        expect(migrated.status).toBe('approved')
+        expect(migrated.supersededAs).toBe(legacy)
+        expect(taxDocumentStatus(migrated)).toBe(legacy)
+        // Its number survives the migration — it was issued and stays on file.
+        expect(formatTaxDocumentNumber(migrated)).toBe(`010${stored.serial}`)
+      }
+    })
+
+    it('normalizing a document that was never superseded leaves both axes alone', () => {
+      const migrated = normalizeTaxDocument({
+        id: 'legacy-plain', salesInvoiceId: 'inv-taxdoc-legacy', date: '09/08/2026',
+        documentType: 'Output tax invoice', lane: 'domestic', djpCode: '01',
+        serial: '2500001234567', kind: 'normal', revision: 0, status: 'approved',
+      } as TaxDocument)
+      expect(migrated.status).toBe('approved')
+      expect(migrated.supersededAs).toBeUndefined()
+      expect(taxDocumentStatus(migrated)).toBe('normal')
+    })
+
+    it('approving a replacement leaves the superseded faktur APPROVED and marks its lineage', () => {
+      const source = addTaxDocument({
+        salesInvoiceId: 'inv-taxdoc-lineage', date: '09/08/2026', documentType: 'Output tax invoice',
+        lane: 'domestic', djpCode: '01', status: 'approved',
+      })
+      const pengganti = addTaxDocument({
+        salesInvoiceId: 'inv-taxdoc-lineage', date: '10/08/2026', documentType: 'Output tax invoice',
+        lane: 'domestic', djpCode: '01', status: 'awaiting-approval',
+        kind: 'replacement', revision: 1, replacesId: source.id, serial: source.serial,
+      })
+      updateTaxDocumentStatus(pengganti.id, 'approved')
+
+      // DJP never un-approved it — only the lineage moved.
+      expect(source.status).toBe('approved')
+      expect(source.supersededAs).toBe('replaced')
+      expect(taxDocumentStatus(source)).toBe('replaced')
+      expect(taxDocumentStatus(pengganti)).toBe('replacement')
+      // ...so it still prints its number, under a DIGANTI cap.
+      expect(formatTaxDocumentNumber(source)).toHaveLength(16)
+      expect(taxDocumentStamp(source)).toBe('DIGANTI')
+      // ...and a later edit must answer to the pengganti, not the superseded one.
+      expect(getApprovedTaxDocument('inv-taxdoc-lineage')?.id).toBe(pengganti.id)
+    })
+
+    it('a superseded faktur is locked as a historical record, not as "submitted to DJP"', () => {
+      const doc: TaxDocument = {
+        ...addTaxDocument({
+          salesInvoiceId: 'inv-taxdoc-superseded-menu', date: '09/08/2026', documentType: 'Output tax invoice',
+          lane: 'domestic', djpCode: '01', status: 'approved',
+        }),
+        supersededAs: 'cancelled',
+      }
+      const items = taxDocMenuItemDefs(doc)
+      expect(items.map(i => i.label)).toContain('Print e-faktur')
+      expect(items.find(i => i.label === 'Edit')?.tooltip)
+        .toBe('Cannot be changed because it is kept as a historical record')
+      expect(taxDocumentStamp(doc)).toBe('BATAL')
+    })
   })
 })

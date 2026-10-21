@@ -29,11 +29,11 @@ import {
 } from '@mekari/pixel3'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import {
-  getTaxDocumentsForInvoice, formatTaxDocumentNumber, formatTaxDocumentKind,
-  updateTaxDocumentStatus, formatPaymentStage,
-  taxDocMenuItemDefs, DJP_STATUS_CONFIG,
+  getTaxDocumentsForInvoice, formatTaxDocumentNumber, taxDocumentStatus,
+  updateTaxDocumentStatus,
+  taxDocMenuItemDefs, DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS,
   getApprovedTaxDocument, generateReturnNoteDraft, outstandingReturnNote, removeTaxDocument,
-  type TaxDocument, type TaxDocumentPaymentStage,
+  type TaxDocument,
 } from '~/data/taxDocuments'
 import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
 import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermission'
@@ -229,7 +229,7 @@ interface TaxDocMenuItem { label: string; disabled?: boolean; tooltip?: string; 
  *  rather than hidden, so an unauthorised user can see what to request access for. */
 const SUBMIT_LABELS = ['Submit to DJP', 'Resubmit to DJP']
 function taxDocMenuItems(doc: TaxDocument, opts: { excludeViewDetails?: boolean } = {}): TaxDocMenuItem[] {
-  return taxDocMenuItemDefs(doc.status)
+  return taxDocMenuItemDefs(doc)
     .filter(item => !(opts.excludeViewDetails && item.label === 'View details'))
     .map(item => {
       const submitLocked = SUBMIT_LABELS.includes(item.label) && !canSubmitTaxDocument.value
@@ -349,10 +349,6 @@ function formatUpdatedAt(iso: string) {
 }
 
 function discountText(pct: number) { return pct > 0 ? `${pct}%` : '' }
-/** Delegates to the store's own formatter — a local copy here previously had no
- *  'full-payment' case and mislabelled those documents as "Settlement". */
-function paymentStageLabel(stage: TaxDocumentPaymentStage | undefined) { return t(formatPaymentStage(stage)) }
-
 /** File-type → Pixel document icon for an attachment. */
 function attachmentIcon(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? ''
@@ -429,6 +425,8 @@ function createSalesReturn() {
   returnReviewOpen.value = true
 }
 
+/** The drawer emits a submit flag, but a return note can never go to DJP — the
+ *  buyer issues the nota retur — so this path has no submit button and ignores it. */
 function onSalesReturnConfirm() {
   const source = approvedTaxDoc.value
   if (!source) return
@@ -827,13 +825,12 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
               <colgroup>
                 <col class="detail-linked-col--date" />
                 <col class="detail-linked-col--number" />
-                <col class="detail-linked-col--type" />
-                <col class="detail-linked-col--stage" />
+                <col class="detail-linked-col--taxstatus" />
                 <!-- Status stays the flexible column, as it was before Remark
                      existed: a badge absorbs leftover width harmlessly, whereas
                      a flexible Remark soaks up everything the long Coretax
-                     message wants and starves Number and Type down to a few
-                     characters each. -->
+                     message wants and starves Number and Tax document status
+                     down to a few characters each. -->
                 <col />
                 <col class="detail-linked-col--remark" />
                 <col class="detail-linked-col--actions" />
@@ -842,9 +839,8 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
                   <th class="detail-th">{{ t('Number') }}</th>
-                  <th class="detail-th">{{ t('Type') }}</th>
-                  <th class="detail-th">{{ t('Payment stage') }}</th>
-                  <th class="detail-th">{{ t('DJP Status') }}</th>
+                  <th class="detail-th">{{ t('Tax document status') }}</th>
+                  <th class="detail-th">{{ t('DJP status') }}</th>
                   <th class="detail-th">{{ t('Remark') }}</th>
                   <th class="detail-th" aria-hidden="true"></th>
                 </tr>
@@ -854,7 +850,7 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
                   <td class="detail-td">{{ doc.date }}</td>
                   <td class="detail-td">{{ formatTaxDocumentNumber(doc) }}</td>
                   <td class="detail-td">
-                    <span>{{ t(formatTaxDocumentKind(doc)) }}</span>
+                    <span>{{ t(TAX_DOCUMENT_STATUS_LABELS[taxDocumentStatus(doc)]) }}</span>
                     <!-- Which document this one supersedes — the lineage is the
                          whole point of a replacement/cancellation record. -->
                     <span v-if="supersededNumber(doc)" class="detail-taxdoc-supersedes">
@@ -866,7 +862,6 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
                       {{ t('Against') }} {{ returnNoteFor(doc) }}
                     </span>
                   </td>
-                  <td class="detail-td">{{ paymentStageLabel(doc.paymentStage) }}</td>
                   <td class="detail-td">
                     <ErpStatusBadge
                       :status="doc.status"
@@ -1416,15 +1411,15 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
 .detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
-.detail-linked-col--stage  { width: 160px; }
-.detail-linked-col--type   { width: 200px; }
+.detail-linked-col--taxstatus { width: 200px; }
 .detail-linked-col--remark { width: 280px; }
 .detail-linked-col--actions { width: 52px; }
 /* One line, ellipsised — the full message lives in the row's tooltip.
    The cap is in px, not %: under table-layout:auto a <col width> is only a hint,
    and a nowrap string reports its FULL length as the column's minimum content
    width — so a percentage resolves circularly and the Coretax message simply
-   takes 690px, squeezing Number and Type down to a few characters. A hard px
+   takes 690px, squeezing Number and Tax document status down to a few
+   characters. A hard px
    bound is what actually lets the ellipsis engage. Matches
    .detail-linked-col--remark. */
 .detail-taxdoc-remark {
@@ -1450,7 +1445,7 @@ onMounted(() => { if (invoice.value && canApplyCredit.value) applyModalOpen.valu
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-secondary);
 }
-/* "Replaces 01234…" under the type — a second line, subordinate to it */
+/* "Replaces 01234…" under the tax document status — a second line, subordinate to it */
 .detail-taxdoc-supersedes {
   display: block;
   font-size: var(--mp-font-sizes-sm);
