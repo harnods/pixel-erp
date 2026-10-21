@@ -300,14 +300,14 @@ export function findLocation(warehouseId: string, locId: string): { node: LocNod
   return walk(getStorageTree(warehouseId), [])
 }
 
-interface NewLoc { level: string; name: string; type: LocType }
+interface NewLoc { level: string; name: string; type: LocType; description?: string }
 export function addRootLocation(warehouseId: string, data: NewLoc): void {
-  getStorageTree(warehouseId).push({ id: newId(), level: data.level, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
+  getStorageTree(warehouseId).push({ id: newId(), level: data.level, name: data.name, type: data.type, description: data.description ?? '', skuQty: 0, skuStart: 0, children: [] })
   persist()
 }
 export function addSubLocation(warehouseId: string, parentId: string, data: NewLoc): void {
   const parent = findNode(getStorageTree(warehouseId), parentId)
-  if (parent) parent.children.push({ id: newId(), level: data.level, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
+  if (parent) parent.children.push({ id: newId(), level: data.level, name: data.name, type: data.type, description: data.description ?? '', skuQty: 0, skuStart: 0, children: [] })
   persist()
 }
 /** Edit an existing location's level, name, type and description. */

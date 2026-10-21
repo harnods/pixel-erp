@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'new-location-drawer-shell',
+    title: 'New / Edit location drawer on the standard drawer shell',
+    description:
+      'The location drawer moved off Pixel MpDrawer onto the shared ErpDrawer Teleport shell (filled header, × close, pinned footer with enterprise Cancel / Save), and Description is now a Pixel MpTextarea. Description is also saved when creating a location (it was only kept on edit).',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
     id: 'new-location-storage-preference-radio',
     title: 'Storage preference uses the standard radio list',
     description:
