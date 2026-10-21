@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'product-edit-save-changes',
+    title: 'Edit product: the main button says Save changes',
+    description:
+      'Editing an existing product now confirms with "Save changes" (UXW: Save changes = saving edits to existing data); creating a new product still says "Save".',
+    date: '2026-10-21',
+    files: ['NewProductPage.vue'],
+  },
+  {
     id: 'vendor-products-search-pill',
     title: 'Vendor Products tab: search is one pill again',
     description:

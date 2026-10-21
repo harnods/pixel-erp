@@ -934,7 +934,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
       <MpButton v-if="!isEdit" class="nw-btn-secondary" :is-disabled="isSaving || isSavingAndAdding" @click="saveAndAdd">
         {{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}
       </MpButton>
-      <MpButton class="nw-btn-save" :is-disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? t('Saving…') : t('Save') }}</MpButton>
+      <MpButton class="nw-btn-save" data-devchange="product-edit-save-changes" :is-disabled="isSaving || isSavingAndAdding" @click="save">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </div>
 
     <!-- ── Demo scenario FAB — Tax info preview states; nothing to preview in WMS ── -->
