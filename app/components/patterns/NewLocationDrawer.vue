@@ -8,11 +8,11 @@
  */
 import {
   MpFormControl, MpFormLabel, MpFormHelpText, MpInput, MpTextarea, MpAutocomplete,
-  MpButton, MpRadio, toast,
+  MpButton, MpRadio, MpBanner, MpBannerDescription, toast,
 } from '@mekari/pixel3'
 import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import {
-  addRootLocation, addSubLocation, updateLocation, defaultTypeForLevel, findLocation,
+  addRootLocation, addSubLocation, updateLocation, defaultTypeForLevel, findLocation, canHaveSubLocation,
   STORAGE_LEVELS, type LocType,
 } from '~/data/storageLocations'
 import { levelOptions, levelLabel } from '~/data/storageLevels'
@@ -40,6 +40,12 @@ const levelPickerOptions = computed(() => {
   return all.filter((_, i) => i > parentIdx)
 })
 const level = ref<string>(STORAGE_LEVELS[0]!)
+// Adding under a deepest-level parent (Bin): no level is left to pick. The tree menus
+// don't offer "Add sub-location" there; this is the fallback if the drawer opens anyway.
+const parentNode = computed(() =>
+  !isEdit.value && props.parentId ? findLocation(props.warehouseId, props.parentId)?.node ?? null : null,
+)
+const noDeeperLevel = computed(() => !!parentNode.value && !canHaveSubLocation(parentNode.value.level))
 const name = ref('')
 const type = ref<LocType>('Organizational')
 const description = ref('')
@@ -103,7 +109,7 @@ watch(level, (lvl) => {
 function close() { emit('update:isOpen', false) }
 const isSaving = ref(false)
 async function save() {
-  if (isSaving.value) return
+  if (isSaving.value || noDeeperLevel.value) return
   const nm = name.value.trim()
   if (!nm) { toast.notify({ variant: 'error', title: 'You must fill in location name' , maxWidth: 'max-content'}); return }
   if (!isEdit.value && props.parentId) {
@@ -138,69 +144,77 @@ async function save() {
     @close="close"
   >
     <template #body>
-      <div v-if="crumbs.length" class="nl-crumbs">
-        <template v-for="(c, i) in crumbs" :key="i">
-          <span class="nl-crumb">{{ c }}</span>
-          <span class="nl-crumb-sep">/</span>
-        </template>
-        <span class="nl-crumb nl-crumb--current">{{ isEdit ? name || 'Location' : 'New location' }}</span>
-      </div>
-
-      <MpFormControl id="nl-level" is-required>
-        <MpFormLabel>Level</MpFormLabel>
-        <MpAutocomplete
-          :id="`nl-level-ac-${parentId}`"
-          :key="`nl-level-ac-${parentId}`"
-          v-model="level"
-          :data="levelPickerOptions"
-          label-prop="label"
-          value-prop="value"
-          placeholder="Select level"
-          use-portal
-          is-full-width
-        />
-        <MpFormHelpText>{{ levelHelp }}</MpFormHelpText>
-      </MpFormControl>
-
-      <MpFormControl id="nl-name" is-required>
-        <MpFormLabel>Location name</MpFormLabel>
-        <MpInput id="nl-name-input" v-model="name" is-full-width placeholder="e.g. Cold Zone" />
-      </MpFormControl>
-
-      <MpFormControl id="nl-desc">
-        <MpFormLabel>Description</MpFormLabel>
-        <MpTextarea
-          id="nl-desc-input"
-          v-model="description"
-          placeholder="Optional notes about this location"
-          is-full-width
-        />
-      </MpFormControl>
-
-      <MpFormControl id="nl-type" is-required>
-        <MpFormLabel>Storage preference</MpFormLabel>
-        <!-- Radio + caption list — same pattern as EditClassificationModal -->
-        <div class="nl-type-group" data-devchange="new-location-storage-preference-radio">
-          <div v-for="opt in TYPE_OPTIONS" :key="opt.value" class="nl-type-option">
-            <label class="nl-type-radio">
-              <MpRadio
-                :id="`nl-type-${opt.value}`"
-                name="nl-type"
-                :value="opt.value"
-                :is-checked="type === opt.value"
-                @change="type = opt.value"
-              />
-              <span>{{ opt.title }}</span>
-            </label>
-            <p class="nl-type-caption">{{ opt.desc }}</p>
-          </div>
+      <MpBanner v-if="noDeeperLevel" variant="info" data-devchange="location-deepest-level">
+        <MpBannerDescription>{{ levelLabel(parentNode!.level) }} is the deepest level, so it can't have sub-locations.</MpBannerDescription>
+      </MpBanner>
+      <template v-else>
+        <div v-if="crumbs.length" class="nl-crumbs">
+          <template v-for="(c, i) in crumbs" :key="i">
+            <span class="nl-crumb">{{ c }}</span>
+            <span class="nl-crumb-sep">/</span>
+          </template>
+          <span class="nl-crumb nl-crumb--current">{{ isEdit ? name || 'Location' : 'New location' }}</span>
         </div>
-        <MpFormHelpText>{{ typeHelp }}</MpFormHelpText>
-      </MpFormControl>
+
+        <MpFormControl id="nl-level" is-required>
+          <MpFormLabel>Level</MpFormLabel>
+          <MpAutocomplete
+            :id="`nl-level-ac-${parentId}`"
+            :key="`nl-level-ac-${parentId}`"
+            v-model="level"
+            :data="levelPickerOptions"
+            label-prop="label"
+            value-prop="value"
+            placeholder="Select level"
+            use-portal
+            is-full-width
+          />
+          <MpFormHelpText>{{ levelHelp }}</MpFormHelpText>
+        </MpFormControl>
+
+        <MpFormControl id="nl-name" is-required>
+          <MpFormLabel>Location name</MpFormLabel>
+          <MpInput id="nl-name-input" v-model="name" is-full-width placeholder="e.g. Cold Zone" />
+        </MpFormControl>
+
+        <MpFormControl id="nl-desc">
+          <MpFormLabel>Description</MpFormLabel>
+          <MpTextarea
+            id="nl-desc-input"
+            v-model="description"
+            placeholder="Optional notes about this location"
+            is-full-width
+          />
+        </MpFormControl>
+
+        <MpFormControl id="nl-type" is-required>
+          <MpFormLabel>Storage preference</MpFormLabel>
+          <!-- Radio + caption list — same pattern as EditClassificationModal -->
+          <div class="nl-type-group" data-devchange="new-location-storage-preference-radio">
+            <div v-for="opt in TYPE_OPTIONS" :key="opt.value" class="nl-type-option">
+              <label class="nl-type-radio">
+                <MpRadio
+                  :id="`nl-type-${opt.value}`"
+                  name="nl-type"
+                  :value="opt.value"
+                  :is-checked="type === opt.value"
+                  @change="type = opt.value"
+                />
+                <span>{{ opt.title }}</span>
+              </label>
+              <p class="nl-type-caption">{{ opt.desc }}</p>
+            </div>
+          </div>
+          <MpFormHelpText>{{ typeHelp }}</MpFormHelpText>
+        </MpFormControl>
+      </template>
     </template>
 
     <template #footer>
-      <div class="nl-footer-right" data-devchange="new-location-drawer-shell">
+      <div v-if="noDeeperLevel" class="nl-footer-right">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Close</MpButton>
+      </div>
+      <div v-else class="nl-footer-right" data-devchange="new-location-drawer-shell">
         <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
         <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="save">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
       </div>

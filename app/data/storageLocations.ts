@@ -32,6 +32,12 @@ export function defaultTypeForLevel(level: string): LocType {
 /** The level labels (master data). Also used to populate the level picker. */
 export const STORAGE_LEVELS = ['Floor', 'Zone', 'Aisle', 'Row', 'Rack', 'Shelf', 'Bin']
 
+/** A location can only have sub-locations when a deeper level exists (Bin is the deepest). */
+export function canHaveSubLocation(level: string): boolean {
+  const i = STORAGE_LEVELS.indexOf(level)
+  return i >= 0 && i < STORAGE_LEVELS.length - 1
+}
+
 const NAME_POOLS: Record<string, string[]> = {
   Floor:  ['Ground Floor', 'First Floor', 'Second Floor', 'Mezzanine', 'Basement'],
   Zone:   ['Dry Zone', 'Cold Zone', 'Bulk Zone', 'Receiving Zone', 'Dispatch Zone', 'Quarantine Zone'],

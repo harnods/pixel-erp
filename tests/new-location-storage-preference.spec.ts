@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { getStorageTree, addRootLocation, addSubLocation } from '~/data/storageLocations'
+import { getStorageTree, addRootLocation, addSubLocation, canHaveSubLocation, STORAGE_LEVELS } from '~/data/storageLocations'
 import '~/data/warehouseDetails'
 
 const src = readFileSync(join(process.cwd(), 'app/components/patterns/NewLocationDrawer.vue'), 'utf8')
@@ -52,5 +52,27 @@ describe('storage location store — description on create', () => {
     expect(root.description).toBe('Top notes')
     addSubLocation('wh-001', root.id, { level: 'Bin', name: 'Desc Child', type: 'Storage', description: 'Child notes' })
     expect(root.children.find((n) => n.name === 'Desc Child')?.description).toBe('Child notes')
+  })
+})
+
+describe('deepest storage level — no sub-locations under a Bin', () => {
+  it('canHaveSubLocation is false only for the deepest level', () => {
+    expect(STORAGE_LEVELS[STORAGE_LEVELS.length - 1]).toBe('Bin')
+    expect(canHaveSubLocation('Bin')).toBe(false)
+    for (const lvl of STORAGE_LEVELS.slice(0, -1)) expect(canHaveSubLocation(lvl)).toBe(true)
+    expect(canHaveSubLocation('Unknown')).toBe(false)
+  })
+
+  it('both tree menus gate "Add sub-location" on canHaveSubLocation', () => {
+    for (const f of ['app/components/patterns/StorageLocationTree.vue', 'app/components/pages/WarehouseDetailsPage.vue']) {
+      const vue = readFileSync(join(process.cwd(), f), 'utf8')
+      expect(vue, f).toMatch(/<MpPopoverListItem v-if="canHaveSubLocation\(row\.node\.level\)"[^>]*@click="addSub(Loc)?\(row\.node\)"/)
+    }
+  })
+
+  it('the drawer falls back to an info banner + Close and refuses to save', () => {
+    expect(src).toMatch(/<MpBanner v-if="noDeeperLevel" variant="info"/)
+    expect(src).toMatch(/<div v-if="noDeeperLevel" class="nl-footer-right">[\s\S]*?>Close<\/MpButton>/)
+    expect(src).toMatch(/if \(isSaving\.value \|\| noDeeperLevel\.value\) return/)
   })
 })

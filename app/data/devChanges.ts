@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'location-deepest-level',
+    title: 'No "Add sub-location" under a Bin',
+    description:
+      'Bin is the deepest storage level, so the Storage locations menus no longer offer "Add sub-location" on Bin rows (it opened a drawer with an empty Level picker). If the drawer is opened under a Bin anyway, it shows an info banner and a Close button instead of the form.',
+    date: '2026-10-21',
+    files: ['StorageLocationTree.vue', 'WarehouseDetailsPage.vue', 'NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
     id: 'new-location-drawer-shell',
     title: 'New / Edit location drawer on the standard drawer shell',
     description:
