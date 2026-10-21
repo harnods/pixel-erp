@@ -1,7 +1,11 @@
 # PRD-05 alignment delta — e-Faktur status axes (Sales Invoice)
 
-Status: **PRD not yet updated.** The harness (PR #100) now implements the decisions
-below; this file is the list of edits PRD-05 needs so the two stop disagreeing.
+Status: **APPLIED** to PRD-05 on 21 Oct 2026 (Confluence version 5).
+<https://jurnal.atlassian.net/wiki/x/EYD-7Qs>
+
+This file is kept as the record of WHY each edit was made — the PRD itself carries the
+result, not the reasoning about what changed. The two items in "Open questions" below
+are now recorded in PRD-05 section 10 with owners (Product / Tax) and remain open.
 
 Source of truth for the tax rules: **PER-11/PJ/2025 Lampiran huruf D**.
 Implementation rule: `rule/efaktur-status-axes` in `docs/design/RULES.md`.
