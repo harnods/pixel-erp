@@ -721,6 +721,14 @@ ERP override wins.
   **only** when the slot holds more than one button. *Don't:* float actions elsewhere, let
   them scroll away, hardcode a per-page `actionsWidth="52px"`, or centre the button. **Why:**
   one reachable, uniform action affordance. **Lint:** review.
+- **`rule/table-row-kebab-icon`** — *Do:* the row `[…]` kebab always shows its three-dot
+  icon — the shared `.row-kebab` override in `erp.css` drops Pixel MpButton's 16px side
+  padding and keeps the icon from shrinking. Prefer `<MpButton left-icon="menu-kebab">` for
+  new kebabs. *Don't:* give a `.row-kebab` page rule horizontal padding ≥ 8px (with a raw
+  inline `<svg>` child it collapses to 0px wide), or re-patch the fix per page. **Why:** a
+  32px MpButton with 16px+16px padding has a 0px content box — the button is clickable but
+  invisible. **Source:** `docs/patterns/pixel-enterprise-overrides.md` §10.
+  **Lint:** `tests/pixel-police.spec.ts`.
 - **`rule/table-form-money-prefix`** — *Do:* a money input in a form-table cell carries a
   **currency prefix addon** (`Rp`) — a gray, semibold segment flush to the left of the
   input inside the same cell (the input has no border of its own). *Don't:* show a bare
