@@ -13,7 +13,7 @@ import {
   css, toast,
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
-import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
+import { getStorageTree, findLocation, canHaveSubLocation, type LocNode } from '~/data/storageLocations'
 import { deleteLocationSafe } from '~/data/integrityGuards'
 import { ensureLocationBarcode } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
@@ -216,7 +216,7 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
                   <MpPopoverList>
                     <MpPopoverListItem @click="editLoc(row.node)">Edit</MpPopoverListItem>
                     <MpPopoverListItem v-if="row.node.type === 'Storage'" @click="printLocationBarcode(row.node)">Print barcode</MpPopoverListItem>
-                    <MpPopoverListItem @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
+                    <MpPopoverListItem v-if="canHaveSubLocation(row.node.level)" data-devchange="location-deepest-level" @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
                     <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
                   </MpPopoverList>
                 </MpPopoverContent>
