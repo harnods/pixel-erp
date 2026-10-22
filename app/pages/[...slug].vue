@@ -31,7 +31,7 @@ import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wms
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
 import { awaitingSalesInvoicesCount, recurringSalesInvoicesCount } from '~/data/salesInvoices'
-import { awaitingSalesOrdersCount, recurringSalesOrdersCount } from '~/data/salesOrders'
+import { awaitingSalesOrdersCount } from '~/data/salesOrders'
 import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
 import { bills } from '~/data/bills'
 import { warehouses } from '~/data/warehouses'
@@ -1290,7 +1290,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Sales orders') {
     const out: Record<string, number> = {}
     const n = awaitingSalesOrdersCount(); if (n) out['Awaiting approval'] = n
-    const r = recurringSalesOrdersCount(); if (r) out['Recurring orders'] = r
     return out
   }
   if (currentPageKey.value === 'Sales quotes') {
