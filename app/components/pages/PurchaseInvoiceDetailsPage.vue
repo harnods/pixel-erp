@@ -3,6 +3,7 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpToggle,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -10,12 +11,13 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseInvoiceDetail } from '~/data/purchaseInvoiceDetails'
-import { purchaseInvoices } from '~/data/purchaseInvoices'
+import { purchaseInvoices, recurringPurchaseInvoices } from '~/data/purchaseInvoices'
 import {
   vendorAvailableDebit, applicationsForInvoice, applicationLabel,
 } from '~/data/debitMemos'
@@ -81,10 +83,97 @@ function goToApplyDebitForm() {
 }
 onMounted(() => { if (invoice.value && canApplyDebit.value) applyDebitModalOpen.value = true })
 
+// ─── Recurring info drawer ──────────────────────────────────────────────────
+const recurringDrawerOpen = ref(false)
+const recurringEditing = ref(false)
+const isSettingRecurring = ref(false)
+const setRecurringSendAutoEmail = ref(false)
+
+const editRepeatInterval = ref(1)
+const editRepeatUnit = ref('month')
+const editEndRepeat = ref('never')
+const editEndAfterCount = ref(12)
+const editEndOnDate = ref('')
+const editStartDate = ref('')
+
+const repeatUnitOptions = [
+  { label: 'Day(s)', value: 'day' }, { label: 'Week(s)', value: 'week' },
+  { label: 'Month(s)', value: 'month' }, { label: 'Year(s)', value: 'year' },
+]
+const endRepeatOptions = [
+  { label: 'Never', value: 'never' }, { label: 'After', value: 'after' }, { label: 'On', value: 'on' },
+]
+
+function unitLabel(unit: string) {
+  const map: Record<string, string> = { day: 'day(s)', week: 'week(s)', month: 'month(s)', year: 'year(s)' }
+  return map[unit] ?? unit
+}
+function endRepeatLabel(val: string) {
+  const map: Record<string, string> = { never: 'Never', after: 'After', on: 'On' }
+  return map[val] ?? val
+}
+function formatDateDMY(iso: string) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function todayDMY() {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function recurDmyToIso(dmy: string) {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+function openSetRecurringDrawer() {
+  editRepeatInterval.value = 1
+  editRepeatUnit.value = 'month'
+  editEndRepeat.value = 'never'
+  editEndAfterCount.value = 12
+  editEndOnDate.value = ''
+  editStartDate.value = todayDMY()
+  setRecurringSendAutoEmail.value = false
+  isSettingRecurring.value = true
+  recurringEditing.value = false
+  recurringDrawerOpen.value = true
+}
+
+function saveSetRecurring() {
+  const inv = invoice.value
+  if (!inv) return
+  const newId = `rpi-${Date.now()}`
+  recurringPurchaseInvoices.push({
+    id: newId,
+    templateName: `${inv.vendor.name} - Recurring`,
+    vendor: inv.vendor,
+    frequency: `Every ${editRepeatInterval.value} ${editRepeatUnit.value}`,
+    amount: inv.total,
+    nextDate: recurDmyToIso(editStartDate.value),
+    status: 'active',
+    createdCount: 0,
+    schedule: {
+      repeatInterval: editRepeatInterval.value,
+      repeatUnit: editRepeatUnit.value as 'day' | 'week' | 'month' | 'year',
+      endRepeat: editEndRepeat.value as 'never' | 'after' | 'on',
+      endAfterCount: editEndRepeat.value === 'after' ? editEndAfterCount.value : undefined,
+      endOnDate: editEndRepeat.value === 'on' ? recurDmyToIso(editEndOnDate.value) : undefined,
+      startDate: recurDmyToIso(editStartDate.value),
+      sendAutoEmail: setRecurringSendAutoEmail.value,
+    },
+  } as any)
+  isSettingRecurring.value = false
+  recurringDrawerOpen.value = false
+  toast.notify({ variant: 'success', title: t('Recurring purchase invoice created') })
+}
+
 const piActionGroups = computed<ActionItem[][]>(() => [
   [
     { label: 'Edit' },
     { label: 'Duplicate' },
+    { label: 'Set as recurring', onClick: openSetRecurringDrawer },
     { label: 'Add payment', show: canAddPayment.value, onClick: goToAddPayment },
     { label: 'Apply debit memo', show: canApplyDebit.value, onClick: goToApplyDebitForm },
   ],
@@ -563,6 +652,48 @@ function goBack() { router.push('/purchase-invoices') }
     <p class="detail-notfound-desc">{{ t('This purchase invoice may have been deleted or the link is invalid.') }}</p>
     <MpButton variant="secondary" is-rounded @click="router.push('/purchase-invoices')">{{ t('Back to purchase invoices') }}</MpButton>
   </div>
+
+  <!-- ── Recurring settings drawer ── -->
+  <ErpDrawer :is-open="recurringDrawerOpen" :title="isSettingRecurring ? t('Set as recurring') : t('Recurring settings')" @close="recurringDrawerOpen = false; isSettingRecurring = false">
+    <template #body>
+      <template v-if="isSettingRecurring">
+        <MpFormControl id="recur-set-repeat">
+          <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+          <div class="recur-edit-repeat-row">
+            <MpInput id="recur-set-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+            <MpAutocomplete id="recur-set-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+          </div>
+        </MpFormControl>
+
+        <MpFormControl id="recur-set-end">
+          <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+          <MpAutocomplete id="recur-set-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+          <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+            <MpInput id="recur-set-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+            <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+          </div>
+          <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+            <MpDatePicker id="recur-set-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </div>
+        </MpFormControl>
+
+        <MpFormControl id="recur-set-start">
+          <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+          <MpDatePicker id="recur-set-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+        </MpFormControl>
+
+        <div class="recur-view-row recur-auto-toggle">
+          <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+          <MpToggle :is-checked="setRecurringSendAutoEmail" @change="setRecurringSendAutoEmail = !setRecurringSendAutoEmail" />
+        </div>
+      </template>
+    </template>
+
+    <template v-if="isSettingRecurring" #footer>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="isSettingRecurring = false; recurringDrawerOpen = false">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" @click="saveSetRecurring">{{ t('Save') }}</button>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
@@ -1013,4 +1144,13 @@ function goBack() { router.push('/purchase-invoices') }
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
+.recur-view-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.recur-view-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 160px; flex-shrink: 0; }
+.recur-auto-toggle { padding-top: var(--mp-spacing-2); }
+.recur-edit-repeat-row { display: flex; gap: var(--mp-spacing-2); }
+.recur-edit-num { flex: 0 0 80px; }
+.recur-edit-unit { flex: 1; }
+.recur-edit-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.recur-edit-count { flex: 0 0 80px; }
+.recur-edit-sublabel { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 </style>
