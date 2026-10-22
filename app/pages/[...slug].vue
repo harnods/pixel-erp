@@ -268,6 +268,12 @@ const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/Sale
 const PurchaseQuoteDetailsPage = asyncPage(() => import('~/components/pages/PurchaseQuoteDetailsPage.vue'))
 const PurchaseDeliveryDetailsPage = asyncPage(() => import('~/components/pages/PurchaseDeliveryDetailsPage.vue'))
 const PurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/PurchaseInvoiceDetailsPage.vue'))
+const RecurringPurchaseInvoicesPage = asyncPage(() => import('~/components/pages/RecurringPurchaseInvoicesPage.vue'))
+const RecurringPurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/RecurringPurchaseInvoiceDetailsPage.vue'))
+const NewRecurringPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseInvoicePage.vue'))
+const RecurringPurchaseOrdersPage = asyncPage(() => import('~/components/pages/RecurringPurchaseOrdersPage.vue'))
+const RecurringPurchaseOrderDetailsPage = asyncPage(() => import('~/components/pages/RecurringPurchaseOrderDetailsPage.vue'))
+const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseOrderPage.vue'))
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
@@ -376,7 +382,7 @@ const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPa
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
 // built with; port to real routes if/when it needs deep-linking). ──────────────
-const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected'>('all')
+const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected' | 'recurring'>('all')
 provide('purchaseOrdersTab', purchaseOrdersTab)
 const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
 const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
@@ -435,6 +441,10 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
     poFormDuplicateId.value = null
     poFormRejectionBanner.value = null
   }
+}, { immediate: true })
+// Sync PO custom tab from ?tab=Recurring+orders (used by recurring PO pages on navigate-back)
+watch(() => [currentPageKey.value, route.query.tab] as const, ([key, tab]) => {
+  if (key === 'Purchase orders' && tab === 'Recurring orders') purchaseOrdersTab.value = 'recurring'
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
@@ -877,6 +887,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
   }
+  // /purchase-orders/recurring/new → New recurring purchase order form
+  if (segs.length >= 3 && segs[0] === 'purchase-orders' && segs[1] === 'recurring' && segs[2] === 'new') {
+    return { component: NewRecurringPurchaseOrderPage, id: 'new' }
+  }
+  // /purchase-orders/recurring/:id → recurring purchase order detail
+  if (segs.length >= 3 && segs[0] === 'purchase-orders' && segs[1] === 'recurring' && segs[2] !== 'new') {
+    return { component: RecurringPurchaseOrderDetailsPage, id: segs[2] }
+  }
   // /purchase-quotes/{new,:id/edit,:id}
   if (segs.length >= 2 && segs[0] === 'purchase-quotes' && segs[1] === 'new') {
     return { component: NewPurchaseQuotePage, id: 'new' }
@@ -923,9 +941,17 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'apply-debit-memo') {
     return { component: ApplyDebitMemoPage, id: segs[1] }
   }
+  // /purchase-invoices/recurring/new → New recurring purchase invoice form
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[1] === 'recurring' && segs[2] === 'new') {
+    return { component: NewRecurringPurchaseInvoicePage, id: 'new' }
+  }
+  // /purchase-invoices/recurring/:id → recurring purchase invoice detail
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[1] === 'recurring' && segs[2] !== 'new') {
+    return { component: RecurringPurchaseInvoiceDetailsPage, id: segs[2] }
+  }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'
-      && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
+      && !['awaiting-approval', 'dropbox', 'new', 'recurring'].includes(segs[1]!)) {
     return { component: PurchaseInvoiceDetailsPage, id: segs[1] }
   }
   // /sales-quotes/new → create form (must precede the :id match)
@@ -1203,7 +1229,7 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
-  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox', 'Recurring invoices'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
   'Sales invoices': ['All sales invoices', 'Awaiting approval', 'Recurring invoices'],
   'Sales orders': ['All sales orders', 'Awaiting approval', 'Recurring orders'],
@@ -1530,6 +1556,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'All purchase invoices': PurchaseInvoicesPage,
     'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
     'Dropbox': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
+    'Recurring invoices': RecurringPurchaseInvoicesPage,
   },
   // Awaiting approval reuses the Expenses approval-queue table (Approve button +
   // task/comment icons), context-adapted to purchase requests.
@@ -2353,12 +2380,25 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
 
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New purchase invoice
-          </button>
+          <MpPopover id="pi-create-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before btn-enterprise--icon-after">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                {{ t('New purchase invoice') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem>{{ t('New purchase invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/purchase-invoices/recurring/new')">{{ t('New recurring purchase invoice') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <div v-else-if="currentPageKey === 'Expenses'" class="page-title-actions">
           <!-- Import button + dropdown -->
@@ -2568,6 +2608,13 @@ function startResize(e: MouseEvent) {
           Rejected
           <MpBadge class="page-tab-count" for="additionalInformation" size="sm" type="warning">{{ poRejectedCount }}</MpBadge>
         </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'recurring' }"
+          @click="purchaseOrdersTab = 'recurring'"
+        >
+          Recurring orders
+        </button>
       </div>
 
       <!-- Status tabs (below the title, outside the stage) — hidden when there's
@@ -2628,6 +2675,7 @@ function startResize(e: MouseEvent) {
           <p class="tab-stage-placeholder__title">{{ tabLabel(activeTab) }}</p>
           <p class="tab-stage-placeholder__desc">Page content goes here.</p>
         </div>
+        <component v-else-if="currentPageKey === 'Purchase orders' && purchaseOrdersTab === 'recurring'" :is="RecurringPurchaseOrdersPage" />
         <component v-else :is="currentComponent" />
       </div>
       </template>
