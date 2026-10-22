@@ -275,6 +275,7 @@ const RecurringPurchaseOrdersPage = asyncPage(() => import('~/components/pages/R
 const RecurringPurchaseOrderDetailsPage = asyncPage(() => import('~/components/pages/RecurringPurchaseOrderDetailsPage.vue'))
 const RecurringBillsPage = asyncPage(() => import('~/components/pages/RecurringBillsPage.vue'))
 const RecurringBillDetailsPage = asyncPage(() => import('~/components/pages/RecurringBillDetailsPage.vue'))
+
 const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseOrderPage.vue'))
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
@@ -727,7 +728,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment-details') {
     return { component: PlaceholderPage, id: segs[1]! }
   }
-  // /expenses/recurring/:id → recurring expense detail
+  // /expenses/recurring/:id → recurring expense template detail
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[1] === 'recurring') {
     return { component: RecurringBillDetailsPage, id: segs[2]! }
   }

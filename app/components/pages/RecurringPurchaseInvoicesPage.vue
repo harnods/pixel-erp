@@ -8,7 +8,8 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
-import { recurringPurchaseInvoices, type RecurringPurchaseInvoice } from '~/data'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { recurringPurchaseInvoices, persistRecurringPurchaseInvoices, type RecurringPurchaseInvoice } from '~/data'
 
 const { t } = useLocale()
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -67,6 +68,31 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 const emptyIllustration = '/illustrations/empty-folder.png'
 function clearFilters() { search.value = ''; statusFilter.value = '' }
 
+// ─── Bulk delete ──────────────────────────────────────────────────────────────
+const bulkDeleteOpen = ref(false)
+const bulkDeleteIds = ref<string[]>([])
+let bulkDeleteDeselect: (() => void) | null = null
+
+function openBulkDelete(sel: Set<number>, deselectAll: () => void) {
+  bulkDeleteIds.value = [...sel]
+    .map(i => (paginated.value[i] as Row | undefined)?.id)
+    .filter(Boolean) as string[]
+  bulkDeleteDeselect = deselectAll
+  bulkDeleteOpen.value = true
+}
+
+function confirmBulkDelete() {
+  const ids = new Set(bulkDeleteIds.value)
+  const n = ids.size
+  for (let i = recurringPurchaseInvoices.length - 1; i >= 0; i--) {
+    if (ids.has(recurringPurchaseInvoices[i]!.id)) recurringPurchaseInvoices.splice(i, 1)
+  }
+  persistRecurringPurchaseInvoices()
+  bulkDeleteDeselect?.()
+  bulkDeleteDeselect = null
+  toast.notify({ variant: 'success', title: `${n} ${n === 1 ? t('recurring purchase invoice') : t('recurring purchase invoices')} ${t('deleted')}` })
+}
+
 
 </script>
 
@@ -80,6 +106,7 @@ function clearFilters() { search.value = ''; statusFilter.value = '' }
     :sort-key="sortKey"
     :sort-dir="sortDir"
     has-checkbox
+    bulk-label="recurring purchase invoice"
     :search="search"
     :has-active-filter="!!search || !!statusFilter"
     filter-empty-label="recurring purchase invoice"
@@ -90,6 +117,19 @@ function clearFilters() { search.value = ''; statusFilter.value = '' }
     @hide-column="hideColumn"
     @clear-filters="clearFilters"
   >
+
+    <!-- ── Bulk actions — Delete sits behind its own confirm (never in a dropdown) ── -->
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <span data-devchange="recurring-bulk-delete" />
+      <MpButton
+        size="sm"
+        variant="secondary"
+        is-rounded
+        @click="openBulkDelete(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Delete') }}
+      </MpButton>
+    </template>
 
     <!-- ── Filter bar ── -->
     <template #filters>
@@ -174,6 +214,15 @@ function clearFilters() { search.value = ''; statusFilter.value = '' }
       </div>
     </template>
   </ErpTablePage>
+
+  <!-- ── Bulk delete confirm ── -->
+  <ConfirmModal
+    v-model:is-open="bulkDeleteOpen"
+    :title="`${t('Delete')} ${bulkDeleteIds.length} ${bulkDeleteIds.length === 1 ? t('recurring purchase invoice') : t('recurring purchase invoices')}?`"
+    :description="t('Deleted recurring purchase invoices cannot be restored. Purchase invoices already created from them are kept.')"
+    :confirm-label="t('Delete')"
+    @confirm="confirmBulkDelete"
+  />
 
   <ScenarioFab v-model="previewMode" />
 </template>

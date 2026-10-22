@@ -12,7 +12,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { recurringSalesInvoices, type RecurringSalesInvoice } from '~/data/salesInvoices'
+import { recurringSalesInvoices, persistRecurringSalesInvoices, type RecurringSalesInvoice } from '~/data/salesInvoices'
 import { formatIDR } from '~/utils/currency'
 
 const props = defineProps<{ orderId: string }>()
@@ -103,6 +103,7 @@ function saveEditing() {
     tmpl.schedule.endOnDate = `${y3}-${m3}-${d3}`
   }
   recurringDrawerOpen.value = false
+  persistRecurringSalesInvoices()
   toast.notify({ variant: 'success', title: t('Recurring settings updated') })
 }
 
@@ -110,6 +111,7 @@ function toggleAutoEmail() {
   const tmpl = template.value
   if (tmpl?.schedule) {
     tmpl.schedule.sendAutoEmail = !tmpl.schedule.sendAutoEmail
+    persistRecurringSalesInvoices()
     toast.notify({ variant: 'success', title: t(tmpl.schedule.sendAutoEmail ? 'Automatic email enabled' : 'Automatic email disabled') })
   }
 }
@@ -119,6 +121,7 @@ const deleteOpen = ref(false)
 function confirmDelete() {
   const idx = recurringSalesInvoices.findIndex(r => r.id === props.orderId)
   if (idx !== -1) recurringSalesInvoices.splice(idx, 1)
+  persistRecurringSalesInvoices()
   deleteOpen.value = false
   toast.notify({ variant: 'success', title: t('Recurring invoice deleted') })
   goBack()

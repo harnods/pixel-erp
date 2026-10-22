@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import type { SalesInvoice } from './types'
 import { customers, EXPORT_CUSTOMER_ID } from './customers'
+import { loadSnapshot, saveSnapshot } from './persist'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 
 /**
@@ -284,8 +285,13 @@ const RECURRING_TEMPLATES: RecurringSalesInvoice[] = [
   buildRecurringTemplate({ id: 'RSI008', templateName: 'Monthly premium blend', customer: CYCLE_CUSTOMERS[7]!, frequency: 'Monthly', amount: 23_750_000, nextDate: simDay(SIM_SPAN_DAYS + 15), status: 'active', createdCount: 4, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'on', endOnDate: simDay(365), startDate: simDay(-120), sendAutoEmail: true } }, 7),
 ]
 
-export const recurringSalesInvoices = reactive<RecurringSalesInvoice[]>([...RECURRING_TEMPLATES])
+const K_RSI = 'recurring-sales-invoices-v1'
+
+export const recurringSalesInvoices = reactive<RecurringSalesInvoice[]>(
+  loadSnapshot<RecurringSalesInvoice>(K_RSI) ?? [...RECURRING_TEMPLATES],
+)
 export function recurringSalesInvoicesCount(): number { return recurringSalesInvoices.filter(r => r.status === 'active').length }
+export function persistRecurringSalesInvoices(): void { saveSnapshot(K_RSI, recurringSalesInvoices) }
 export function getRecurringForInvoice(recurringId: string): RecurringSalesInvoice | undefined {
   return recurringSalesInvoices.find(r => r.id === recurringId)
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpIcon, MpButton, MpTextlink,
+  MpTextlink,
   MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpToggle,
   css, toast,
 } from '@mekari/pixel3'
@@ -11,6 +11,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { recurringBills, persistRecurringBills, type RecurringBill } from '~/data/bills'
 import { formatIDR } from '~/utils/currency'
 
@@ -42,6 +43,18 @@ function endRepeatSummary(tmpl: RecurringBill) {
   if (s.endRepeat === 'on' && s.endOnDate) return `${t('End on')} ${formatDateLong(s.endOnDate)}`
   return '—'
 }
+
+// ── Totals — same grouping rule as the expense detail page: a "No tax" template
+// jumps straight to Total, with no redundant Subtotal or empty PPN row. ──
+const hasTax = computed(() => !!template.value?.taxAmount)
+const ppnRate = computed(() => {
+  const line = template.value?.lineItems?.find(li => li.tax && li.tax !== 'No tax')
+  const m = line?.tax.match(/(\d+)\s*%/)
+  return m ? m[1] : '11'
+})
+const groupTotal = computed(() => template.value?.amount ?? 0)
+const hasLess = computed(() => !!template.value?.withholding)
+const netAmount = computed(() => groupTotal.value - (template.value?.withholding?.amount ?? 0))
 
 // ── Edit recurring settings drawer ──
 const recurringDrawerOpen = ref(false)
@@ -147,7 +160,7 @@ const actionGroups = computed(() => [
       <div class="detail-bar-left">
         <MpTextlink id="rbill-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ t('Expenses') }}</MpTextlink>
         <div class="detail-titlerow-left">
-          <h1 class="detail-title">{{ template.beneficiary.name }}</h1>
+          <h1 class="detail-title">{{ template.templateName }}</h1>
           <ErpStatusBadge :status="template.status" :type="template.status === 'completed' ? 'announcement' : undefined" badge-for="additionalInformation" size="md" />
         </div>
       </div>
@@ -156,34 +169,118 @@ const actionGroups = computed(() => [
     <!-- ── Scrollable stage ── -->
     <div class="detail-stage">
 
-      <!-- ── Header summary ── -->
-      <section class="detail-summary">
-        <div class="content-list-grid">
-          <div class="content-list-col">
-            <ContentList :label="t('Beneficiary')">{{ template.beneficiary.name }}</ContentList>
-            <ContentList :label="t('Category')" :value="template.category" />
+      <!-- Beneficiary + Total — separated section, inline together -->
+      <section class="bd-primary" data-devchange="rbill-detail-template">
+        <ContentList :label="t('Beneficiary')">
+          <a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(template.beneficiary.name)}`, '_blank')">{{ template.beneficiary.name }}</a>
+        </ContentList>
+        <div class="detail-primary-total">
+          <span class="detail-total-amount">
+            <span class="detail-total-label">{{ t('Total') }}</span> {{ formatIDR(groupTotal) }}
+          </span>
+        </div>
+      </section>
+
+      <!-- Meta grid: col 1 = 318px, col 2-5 fill equally -->
+      <section class="bd-meta content-list-grid">
+        <div class="content-list-col">
+          <ContentList :label="t('Next expense')">
+            <template v-if="template.status !== 'completed'">{{ formatDateLong(template.nextDate) }}</template>
+            <template v-else>—</template>
+          </ContentList>
+          <ContentList v-if="template.schedule" :label="t('Start date')" :value="formatDateLong(template.schedule.startDate)" />
+        </div>
+        <div class="content-list-col">
+          <ContentList v-if="template.schedule" :label="t('Repeats every')">{{ template.schedule.repeatInterval }} {{ unitLabel(template.schedule.repeatUnit) }}</ContentList>
+          <ContentList v-if="template.schedule" :label="t('End repeat')">{{ endRepeatSummary(template) }}</ContentList>
+        </div>
+        <div class="content-list-col">
+          <ContentList :label="t('Frequency')" :value="t(template.frequency)" />
+          <ContentList :label="t('Reference no.')" :value="template.referenceNo || '—'" />
+        </div>
+        <div class="content-list-col">
+          <ContentList :label="t('Category')" :value="template.category" />
+          <ContentList :label="t('Generated')">{{ template.createdCount }}</ContentList>
+        </div>
+        <div class="content-list-col">
+          <ContentList :label="t('Tags')">
+            <span v-if="template.tags?.length">{{ template.tags.join(', ') }}</span>
+            <template v-else>—</template>
+          </ContentList>
+        </div>
+      </section>
+
+      <!-- ── Line items — canonical detail-page table pattern ── -->
+      <section class="detail-items-section">
+        <table class="detail-items">
+          <thead>
+            <tr>
+              <th class="detail-th">{{ t('Account') }}</th>
+              <th class="detail-th">{{ t('Description') }}</th>
+              <th class="detail-th">{{ t('Tax') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
+            </tr>
+          </thead>
+          <tbody class="detail-items-body">
+            <tr v-if="!template.lineItems?.length">
+              <td class="detail-td detail-td--muted" colspan="4">{{ t('No accounts.') }}</td>
+            </tr>
+            <tr v-for="(li, i) in template.lineItems" :key="i" class="detail-item-row">
+              <td class="detail-td">{{ li.account }}</td>
+              <td class="detail-td">{{ li.description || '—' }}</td>
+              <td class="detail-td">{{ li.tax }}</td>
+              <td class="detail-td detail-td--num">{{ formatIDR(li.amount) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-if="template.lineItems?.length" class="detail-items-count">
+          <span>{{ t('Showing') }} {{ template.lineItems.length }} {{ t('of') }} {{ template.lineItems.length }} {{ t('accounts') }}</span>
+        </div>
+      </section>
+
+      <!-- ── Notes + totals ── -->
+      <section class="detail-notes">
+        <div class="detail-notes-left">
+          <ContentList :label="t('Memo')" class="detail-memo-section">
+            <p class="detail-note-text">{{ template.memo || '—' }}</p>
+          </ContentList>
+        </div>
+        <div class="detail-totals">
+          <!-- Group 1: Subtotal + PPN — only for taxed templates -->
+          <template v-if="hasTax">
+            <div class="detail-total-row">
+              <span class="detail-total-row-label detail-total-row-label--total">{{ t('Subtotal') }}</span>
+              <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(template.subtotal ?? template.amount) }}</span>
+            </div>
+            <div class="detail-total-row">
+              <span class="detail-total-row-label">PPN {{ ppnRate }}%</span>
+              <span class="detail-total-row-amt">{{ formatIDR(template.taxAmount ?? 0) }}</span>
+            </div>
+            <p v-if="template.priceIncludesTax" class="detail-total-note">{{ t('Prices are inclusive of tax') }}</p>
+            <div class="detail-total-rule detail-total-rule--dashed" />
+          </template>
+
+          <!-- Group 2: Total + Less: withholding -->
+          <div class="detail-total-row">
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
+            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(groupTotal) }}</span>
           </div>
-          <div class="content-list-col">
-            <ContentList :label="t('Next expense')">
-              <template v-if="template.status !== 'completed'">{{ formatDateLong(template.nextDate) }}</template>
-              <template v-else>—</template>
-            </ContentList>
-            <ContentList v-if="template.schedule" :label="t('Start date')" :value="formatDateLong(template.schedule.startDate)" />
+          <div v-if="template.withholding" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Less:') }} {{ template.withholding.name }}</span>
+            <span class="detail-total-row-amt">({{ formatIDR(template.withholding.amount) }})</span>
           </div>
-          <div class="content-list-col">
-            <ContentList v-if="template.schedule" :label="t('Repeats every')">{{ template.schedule.repeatInterval }} {{ unitLabel(template.schedule.repeatUnit) }}</ContentList>
-            <ContentList v-if="template.schedule" :label="t('End repeat')">{{ endRepeatSummary(template) }}</ContentList>
-          </div>
-          <div class="content-list-col">
-            <ContentList :label="t('Frequency')" :value="t(template.frequency)" />
-            <ContentList :label="t('Generated')">{{ template.createdCount }}</ContentList>
-          </div>
-          <div class="detail-primary-total">
-            <span class="detail-total-label">{{ t('Total') }}</span>
-            <span class="detail-total-amount">{{ formatIDR(template.amount) }}</span>
+          <div v-if="hasLess" class="detail-total-rule detail-total-rule--dashed" />
+
+          <!-- Group 3: Amount per expense — only when a deduction exists -->
+          <div v-if="hasLess" class="detail-total-row">
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Amount per expense') }}</span>
+            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(netAmount) }}</span>
           </div>
         </div>
       </section>
+
+      <!-- Last updated -->
+      <a v-if="template.lastUpdatedAt" class="detail-updated" @click.prevent>{{ t('Last updated by') }} {{ template.lastUpdatedBy }} {{ t('on') }} {{ formatDateLong(template.lastUpdatedAt) }}</a>
 
       <!-- ── Tabs — Recurring history ── -->
       <MpTabs v-if="hasHistory" id="rbill-detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
@@ -352,19 +449,23 @@ const actionGroups = computed(() => [
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-8);
+  container-type: inline-size;
 }
 
-/* ── Header summary ── */
-.detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
-
-.detail-primary-total {
-  grid-column: 3 / -1;
-  justify-self: end;
-  align-self: start;
-  padding-top: var(--mp-spacing-2);
+/* ── Primary: beneficiary + total ── */
+.bd-primary {
   display: flex;
-  align-items: baseline;
-  gap: var(--mp-spacing-2);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--mp-spacing-6);
+}
+.detail-value-link { color: var(--mp-text-link); cursor: pointer; }
+.detail-value-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.detail-primary-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--mp-spacing-1);
 }
 .detail-total-label {
   font-size: var(--mp-font-sizes-xl, 20px);
@@ -375,6 +476,7 @@ const actionGroups = computed(() => [
   font-size: var(--mp-font-sizes-xl, 20px);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
+  white-space: nowrap;
 }
 
 .content-list-grid {
@@ -385,26 +487,9 @@ const actionGroups = computed(() => [
 }
 .content-list-col { display: flex; flex-direction: column; }
 
-/* ── Tabs ── */
-.detail-tabs { margin-top: 0; }
-.detail-tabs :deep(.mp-tab--isSelected_true),
-.detail-tabs :deep(.mp-tab--isSelected_true:hover) {
-  color: var(--mp-text-selected) !important;
-}
-.detail-tabs :deep(.mp-tab-selected-border--isSelected_true) {
-  background-color: var(--mp-border-selected, #029861) !important;
-}
-.detail-tabs :deep([data-pixel-component="MpTabList"]) {
-  margin-bottom: var(--mp-spacing-5) !important;
-}
-
-/* ── Linked transactions table ── */
-.detail-linked { table-layout: fixed; }
-.detail-linked-col--date   { width: 160px; }
-.detail-linked-col--number { width: 260px; }
-.detail-linked-col--amount { width: 200px; }
-.detail-linked-col--status { width: 160px; }
-
+/* ── Line items table ── */
+.detail-items-section { display: flex; flex-direction: column; }
+.detail-items, .detail-linked { width: 100%; border-collapse: collapse; }
 .detail-th {
   height: var(--mp-sizes-7, 28px);
   text-align: left;
@@ -436,6 +521,102 @@ const actionGroups = computed(() => [
   white-space: nowrap;
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4);
 }
+.detail-td--muted { color: var(--mp-text-secondary); }
+.detail-items-body { border-bottom: 1px solid var(--mp-border-default); }
+.detail-items-count {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--mp-spacing-3);
+  margin: 0;
+  padding: var(--mp-spacing-3) var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+}
+
+/* ── Notes + totals ── */
+.detail-notes { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
+.detail-notes-left { display: flex; flex-direction: column; gap: var(--mp-spacing-6); flex-shrink: 0; order: 2; }
+.detail-note-text {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-lg, 20px);
+  color: var(--mp-text-default);
+  white-space: pre-line;
+}
+.detail-totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-4);
+  width: min(428px, 32.4cqw);
+  flex-shrink: 0;
+  padding-top: var(--mp-spacing-2);
+  order: 1;
+}
+@container (min-width: 720px) {
+  .detail-notes { flex-direction: row; justify-content: space-between; align-items: flex-start; }
+  .detail-notes-left { order: 1; }
+  .detail-totals { order: 2; }
+}
+.detail-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-4);
+}
+.detail-total-row-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.detail-total-row-amt { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
+.detail-total-row-label--total, .detail-total-row-amt--total {
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+.detail-total-note {
+  margin: 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.detail-total-rule--dashed {
+  height: var(--mp-border-width-sm, 1px);
+  background: repeating-linear-gradient(
+    to right,
+    var(--mp-border-default) 0,
+    var(--mp-border-default) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+/* ── Last updated ── */
+.detail-updated {
+  margin: 0;
+  align-self: flex-start;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-link);
+  cursor: pointer;
+}
+.detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Tabs ── */
+.detail-tabs { margin-top: 0; }
+.detail-tabs :deep(.mp-tab--isSelected_true),
+.detail-tabs :deep(.mp-tab--isSelected_true:hover) {
+  color: var(--mp-text-selected) !important;
+}
+.detail-tabs :deep(.mp-tab-selected-border--isSelected_true) {
+  background-color: var(--mp-border-selected, #029861) !important;
+}
+.detail-tabs :deep([data-pixel-component="MpTabList"]) {
+  margin-bottom: var(--mp-spacing-5) !important;
+}
+
+/* ── Linked transactions table ── */
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
+.detail-linked-col--number { width: 260px; }
+.detail-linked-col--amount { width: 200px; }
+.detail-linked-col--status { width: 160px; }
 
 .detail-tab-heading {
   margin: 0 0 var(--mp-spacing-3);

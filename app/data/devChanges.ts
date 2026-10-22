@@ -28,6 +28,26 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'recurring-bulk-delete',
+    title: 'Bulk delete on recurring index pages',
+    description:
+      'Selecting rows on any recurring index (sales invoices, sales orders, purchase invoices, purchase orders, expenses) now reveals a Delete action in the shared ErpTablePage bulk bar. Delete is a dedicated button behind its own confirm modal — never folded into the Actions dropdown (rule/bulk-actions-no-delete). Deleting persists and the selection clears.',
+    date: '2026-10-22',
+    files: [
+      'RecurringSalesInvoicesPage.vue', 'RecurringSalesOrdersPage.vue',
+      'RecurringPurchaseInvoicesPage.vue', 'RecurringPurchaseOrdersPage.vue',
+      'RecurringBillsPage.vue', 'salesInvoices.ts',
+    ],
+  },
+  {
+    id: 'rbill-detail-template',
+    title: 'Recurring expense template detail',
+    description:
+      'The recurring expense detail now mirrors the expense detail page as a template — beneficiary + total, meta grid (next expense, start date, repeats every, end repeat, frequency, category, generated, tags), account line items, memo and the Subtotal/PPN/Total breakdown — with recurring history below. Matches the pattern already used by recurring sales invoices, sales orders, purchase invoices and purchase orders.',
+    date: '2026-10-22',
+    files: ['RecurringBillDetailsPage.vue', 'bills.ts'],
+  },
+  {
     id: 'settings-inventory-page',
     title: 'Settings > Inventory page',
     description:
