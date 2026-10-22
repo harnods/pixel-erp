@@ -19,7 +19,7 @@ import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getContactIdByName } from '~/data/contacts'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
-import { salesOrderCompletionRows, recurringSalesOrders, getRecurringForSalesOrder } from '~/data/salesOrders'
+import { salesOrderCompletionRows, recurringSalesOrders, getRecurringForSalesOrder, persistSalesOrders, persistRecurringSalesOrders } from '~/data/salesOrders'
 import { addProductionRequest } from '~/data/productionRequests'
 
 const props = defineProps<{ orderId: string }>()
@@ -201,8 +201,9 @@ function saveSetRecurring() {
       sendAutoEmail: setRecurringSendAutoEmail.value,
     },
   } as any)
+  persistRecurringSalesOrders()
   const src = sourceOrder.value
-  if (src) src.recurringId = newId
+  if (src) { src.recurringId = newId; persistSalesOrders() }
   isSettingRecurring.value = false
   recurringDrawerOpen.value = false
   toast.notify({ variant: 'success', title: t('Recurring sales order created') })

@@ -209,8 +209,13 @@ const RECURRING_PI_TEMPLATES: RecurringPurchaseInvoice[] = [
   buildRecurringPITemplate({ id: 'RPI008', templateName: 'Monthly premium blend supply', vendor: vendors[7]!, frequency: 'Monthly', amount: 24_800_000, nextDate: simDay(SIM_SPAN_DAYS + 15), status: 'active', createdCount: 4, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'on', endOnDate: simDay(365), startDate: simDay(-120), sendAutoEmail: true } }, 7),
 ]
 
-export const recurringPurchaseInvoices = reactive<RecurringPurchaseInvoice[]>([...RECURRING_PI_TEMPLATES])
+const K_RPI = 'recurring-purchase-invoices-v1'
+
+export const recurringPurchaseInvoices = reactive<RecurringPurchaseInvoice[]>(
+  loadSnapshot<RecurringPurchaseInvoice>(K_RPI) ?? [...RECURRING_PI_TEMPLATES],
+)
 export function recurringPurchaseInvoicesCount(): number { return recurringPurchaseInvoices.filter(r => r.status === 'active').length }
+export function persistRecurringPurchaseInvoices(): void { saveSnapshot(K_RPI, recurringPurchaseInvoices) }
 export function getRecurringForPurchaseInvoice(recurringId: string): RecurringPurchaseInvoice | undefined {
   return recurringPurchaseInvoices.find(r => r.id === recurringId)
 }

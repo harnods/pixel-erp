@@ -3,6 +3,7 @@ import type { PurchaseOrder, PurchaseOrderStatus } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 import type { RecurringSchedule } from './salesInvoices'
+import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * Purchase orders — a deterministic TIME SERIES spanning 1 Jan 2026 → today
@@ -65,7 +66,15 @@ function buildPurchaseOrders(): PurchaseOrder[] {
   return out.reverse() // newest first
 }
 
-export const purchaseOrders: PurchaseOrder[] = reactive(buildPurchaseOrders())
+const K_PO = 'purchase-orders-v1'
+
+export const purchaseOrders: PurchaseOrder[] = reactive<PurchaseOrder[]>(
+  loadSnapshot<PurchaseOrder>(K_PO) ?? buildPurchaseOrders(),
+)
+
+export function persistPurchaseOrders(): void {
+  saveSnapshot(K_PO, purchaseOrders)
+}
 
 // ── Recurring Purchase Orders ──────────────────────────────────────────────────
 
@@ -225,8 +234,13 @@ const RPO_TEMPLATES: RecurringPurchaseOrder[] = [
   buildRecurringPOTemplate({ id: 'RPO008', templateName: 'Monthly premium blend beans', vendor: vendors[7 % vendors.length]!, frequency: 'Monthly', amount: 28_500_000, nextDate: simDay(SIM_SPAN_DAYS + 15), status: 'active', createdCount: 4, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'on', endOnDate: simDay(365), startDate: simDay(-120), sendAutoEmail: true } }, 7),
 ]
 
-export const recurringPurchaseOrders = reactive<RecurringPurchaseOrder[]>([...RPO_TEMPLATES])
+const K_RPO = 'recurring-purchase-orders-v1'
+
+export const recurringPurchaseOrders = reactive<RecurringPurchaseOrder[]>(
+  loadSnapshot<RecurringPurchaseOrder>(K_RPO) ?? [...RPO_TEMPLATES],
+)
 export function recurringPurchaseOrdersCount(): number { return recurringPurchaseOrders.filter(r => r.status === 'active').length }
+export function persistRecurringPurchaseOrders(): void { saveSnapshot(K_RPO, recurringPurchaseOrders) }
 export function getRecurringForPurchaseOrder(recurringId: string): RecurringPurchaseOrder | undefined {
   return recurringPurchaseOrders.find(r => r.id === recurringId)
 }

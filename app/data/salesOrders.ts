@@ -4,6 +4,7 @@ import { CATALOG } from './catalog'
 import { customers, EXPORT_CUSTOMER_ID } from './customers'
 import type { RecurringSchedule } from './salesInvoices'
 import { SIM_SPAN_DAYS, simDay } from './simClock'
+import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * Mock sales orders for a wholesale + retail coffee business
@@ -162,7 +163,15 @@ function build(): SalesOrder[] {
   return out
 }
 
-export const salesOrders: SalesOrder[] = build()
+const K_SO = 'sales-orders-v1'
+
+export const salesOrders: SalesOrder[] = reactive<SalesOrder[]>(
+  loadSnapshot<SalesOrder>(K_SO) ?? build(),
+)
+
+export function persistSalesOrders(): void {
+  saveSnapshot(K_SO, salesOrders)
+}
 
 /** "Awaiting approval" queue for the Sales orders › Awaiting approval tab
  *  (deterministic every-7th subset; drives both the list and the count badge). */
@@ -319,8 +328,13 @@ const RSO_TEMPLATES: RecurringSalesOrder[] = [
   buildRecurringSOTemplate({ id: 'RSO008', templateName: 'Monthly premium blend', customer: CUSTOMERS[7]!, frequency: 'Monthly', amount: 23_750_000, nextDate: simDay(SIM_SPAN_DAYS + 15), status: 'active', createdCount: 4, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'on', endOnDate: simDay(365), startDate: simDay(-120), sendAutoEmail: true } }, 7),
 ]
 
-export const recurringSalesOrders = reactive<RecurringSalesOrder[]>([...RSO_TEMPLATES])
+const K_RSO = 'recurring-sales-orders-v1'
+
+export const recurringSalesOrders = reactive<RecurringSalesOrder[]>(
+  loadSnapshot<RecurringSalesOrder>(K_RSO) ?? [...RSO_TEMPLATES],
+)
 export function recurringSalesOrdersCount(): number { return recurringSalesOrders.filter(r => r.status === 'active').length }
+export function persistRecurringSalesOrders(): void { saveSnapshot(K_RSO, recurringSalesOrders) }
 export function getRecurringForSalesOrder(recurringId: string): RecurringSalesOrder | undefined {
   return recurringSalesOrders.find(r => r.id === recurringId)
 }

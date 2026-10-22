@@ -15,7 +15,7 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
-import { recurringPurchaseOrders, getRecurringForPurchaseOrder } from '~/data/purchaseOrders'
+import { recurringPurchaseOrders, getRecurringForPurchaseOrder, persistPurchaseOrders, persistRecurringPurchaseOrders } from '~/data/purchaseOrders'
 import { getContactIdByName } from '~/data/contacts'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
@@ -370,8 +370,9 @@ function saveSetRecurring() {
       sendAutoEmail: setRecurringSendAutoEmail.value,
     },
   } as any)
+  persistRecurringPurchaseOrders()
   const src = sourceOrder.value
-  if (src) src.recurringId = newId
+  if (src) { src.recurringId = newId; persistPurchaseOrders() }
   isSettingRecurring.value = false
   recurringDrawerOpen.value = false
   toast.notify({ variant: 'success', title: 'Recurring purchase order created' })
@@ -1607,24 +1608,27 @@ function saveSetRecurring() {
   background: var(--mp-colors-red-800, #a8352d);
   border-color: var(--mp-colors-red-800, #a8352d);
 }
+.recur-view-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.recur-view-header { display: flex; align-items: center; justify-content: space-between; }
+.recur-view-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .recur-view-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .recur-view-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 160px; flex-shrink: 0; }
+.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
 .recur-auto-toggle { padding-top: var(--mp-spacing-2); }
+
 .recur-edit-repeat-row { display: flex; gap: var(--mp-spacing-2); }
 .recur-edit-num { flex: 0 0 80px; }
 .recur-edit-unit { flex: 1; }
 .recur-edit-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
 .recur-edit-count { flex: 0 0 80px; }
 .recur-edit-sublabel { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.recur-view-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.recur-view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--mp-spacing-1); }
-.recur-view-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.recur-history-section { margin-top: var(--mp-spacing-4); }
-.recur-history-heading { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0 0 var(--mp-spacing-2); }
-.recur-history-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.recur-history-item { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.recur-history-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); min-width: 160px; }
-.recur-history-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 100px; }
-.recur-history-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin: 0; }
+
+.recur-history-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); padding-top: var(--mp-spacing-4); }
+.recur-history-heading { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-history-list { display: flex; flex-direction: column; }
+.recur-history-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default)); }
+.recur-history-item:last-child { border-bottom: none; }
+.recur-history-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); min-width: 180px; }
+.recur-history-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); flex: 1; }
+.recur-history-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>
