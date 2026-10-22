@@ -682,7 +682,7 @@ function goBack() { router.push('/sales-orders') }
           <template v-if="!recurringEditing">
             <div class="recur-view-section">
               <div class="recur-view-header">
-                <span class="recur-view-title">{{ t('Schedule') }}</span>
+                <h3 class="recur-view-title">{{ t('Schedule') }}</h3>
                 <MpTextlink @click="startEditing">{{ t('Edit') }}</MpTextlink>
               </div>
 
@@ -1193,10 +1193,10 @@ function goBack() { router.push('/sales-orders') }
    (erp.css) — no page-local button styling / hardcoded brand colors. */
 .recur-view-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .recur-view-header { display: flex; align-items: center; justify-content: space-between; }
-.recur-view-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.recur-view-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .recur-view-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .recur-view-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 160px; flex-shrink: 0; }
-.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); }
+.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .recur-auto-toggle { padding-top: var(--mp-spacing-2); }
 .recur-edit-repeat-row { display: flex; gap: var(--mp-spacing-2); }
 .recur-edit-num { flex: 0 0 80px; }
