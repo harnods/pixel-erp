@@ -30,7 +30,7 @@ import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
-import { awaitingSalesInvoicesCount } from '~/data/salesInvoices'
+import { awaitingSalesInvoicesCount, recurringSalesInvoicesCount } from '~/data/salesInvoices'
 import { awaitingSalesOrdersCount } from '~/data/salesOrders'
 import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
 import { bills } from '~/data/bills'
@@ -259,6 +259,8 @@ const pageRegistry: Record<string, Component> = {
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
+const RecurringSalesInvoicesPage = asyncPage(() => import('~/components/pages/RecurringSalesInvoicesPage.vue'))
+const RecurringSalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/RecurringSalesInvoiceDetailsPage.vue'))
 const SalesQuoteDetailsPage = asyncPage(() => import('~/components/pages/SalesQuoteDetailsPage.vue'))
 const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/SalesDeliveryDetailsPage.vue'))
 const PurchaseQuoteDetailsPage = asyncPage(() => import('~/components/pages/PurchaseQuoteDetailsPage.vue'))
@@ -478,6 +480,7 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const NewRecurringSalesInvoicePage = asyncPage(() => import('~/components/pages/NewRecurringSalesInvoicePage.vue'))
 const ApplyCreditMemoPage = asyncPage(() => import('~/components/pages/ApplyCreditMemoPage.vue'))
 const CreditMemoDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoDetailsPage.vue'))
 const CreditMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoAppliedDetailsPage.vue'))
@@ -936,6 +939,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-deliveries') {
     return { component: SalesDeliveryDetailsPage, id: segs[1] }
   }
+  // /sales-invoices/recurring/new → New recurring sales invoice form
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[1] === 'recurring' && segs[2] === 'new') {
+    return { component: NewRecurringSalesInvoicePage, id: 'new' }
+  }
   // /sales-invoices/new → New sales invoice form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
     return { component: NewSalesInvoicePage, id: 'new' }
@@ -959,6 +966,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /payments-received/:id → Payment received detail
   if (segs.length >= 2 && segs[0] === 'payments-received') {
     return { component: PaymentReceivedDetailsPage, id: segs[1] }
+  }
+  // /sales-invoices/recurring/:id → recurring sales invoice detail
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[1] === 'recurring' && segs[2] !== 'new') {
+    return { component: RecurringSalesInvoiceDetailsPage, id: segs[2] }
   }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {
@@ -1183,7 +1194,7 @@ const pageTabs: Record<string, string[]> = {
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
   'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
-  'Sales invoices': ['All sales invoices', 'Awaiting approval'],
+  'Sales invoices': ['All sales invoices', 'Awaiting approval', 'Recurring invoices'],
   'Sales orders': ['All sales orders', 'Awaiting approval'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
@@ -1261,7 +1272,9 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   // Sales modules — the Awaiting approval tab badges its own deterministic queue.
   if (currentPageKey.value === 'Sales invoices') {
-    const n = awaitingSalesInvoicesCount(); return n ? { 'Awaiting approval': n } : {}
+    const out: Record<string, number> = {}
+    const n = awaitingSalesInvoicesCount(); if (n) out['Awaiting approval'] = n
+    return out
   }
   if (currentPageKey.value === 'Sales orders') {
     const n = awaitingSalesOrdersCount(); return n ? { 'Awaiting approval': n } : {}
@@ -1460,7 +1473,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
   // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
-  'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
+  'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']!, 'Recurring invoices': RecurringSalesInvoicesPage },
   'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
   'Inbound delivery': {
@@ -1934,12 +1947,25 @@ function startResize(e: MouseEvent) {
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newSalesInvoice">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New sales invoice
-          </button>
+          <MpPopover id="si-create-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before btn-enterprise--icon-after">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                {{ t('New sales invoice') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="newSalesInvoice">{{ t('New sales invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/sales-invoices/recurring/new')">{{ t('New recurring sales invoice') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <div v-else-if="currentPageKey === 'Cowork tasks'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">

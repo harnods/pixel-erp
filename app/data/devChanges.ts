@@ -755,6 +755,30 @@ export const DEV_CHANGES: DevChange[] = [
     date: '2026-09-30',
     files: ['CrmGenericModulePage.vue'],
   },
+  {
+    id: 'rsi-schedule-fields',
+    title: 'New recurring sales invoice form',
+    description:
+      'A new form page for creating recurring sales invoices, with fields for repeat interval/unit, end repeat options, start date, next transaction date, and automatic email sending.',
+    date: '2026-10-22',
+    files: ['NewRecurringSalesInvoicePage.vue'],
+  },
+  {
+    id: 'si-set-as-recurring',
+    title: 'Set as recurring action',
+    description:
+      'Row action in All sales invoices to convert an invoice into a recurring template via a drawer with repeats every, end repeat, start date, and send automatic email fields.',
+    date: '2026-10-22',
+    files: ['SalesInvoicesPage.vue'],
+  },
+  {
+    id: 'si-detail-recurring-btn',
+    title: 'Recurring settings on invoice detail',
+    description:
+      'Icon button in the invoice detail title bar (visible for invoices linked to a recurring template). Opens a drawer showing the schedule (view/edit), auto-email toggle, and recurring history.',
+    date: '2026-10-22',
+    files: ['SalesInvoiceDetailsPage.vue'],
+  },
 ]
 
 const byId = new Map(DEV_CHANGES.map(c => [c.id, c]))

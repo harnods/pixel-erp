@@ -71,6 +71,7 @@ export interface SalesInvoice {
   /** false for a small subset of invoices — those carry no PPN component at
    *  all, so "Create tax document" has nothing to document and is hidden. */
   hasPpn: boolean
+  recurringId?: string
 }
 
 export interface PurchaseInvoice {

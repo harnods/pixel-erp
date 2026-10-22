@@ -1448,7 +1448,7 @@ function onSave() {
    --mp-spacing-5: that token resolves to 20.8px here (rem-based). */
 .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
 .si-note-field { display: flex; flex-direction: column; }
-.si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+.si-field-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 /* char-counter on the label row (rule/input-char-counter) */
 .si-lbl-row { display: flex; align-items: baseline; justify-content: space-between; }
 .si-counter { font-size: var(--mp-font-sizes-sm, 0.75rem); color: var(--mp-text-secondary); }

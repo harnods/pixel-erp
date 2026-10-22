@@ -4,8 +4,10 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpIcon, MpButton, MpButtonGroup, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
+  MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpCheckbox,
   css, toast,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -19,7 +21,7 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { salesInvoices, awaitingSalesInvoices, deleteSalesInvoices } from '~/data'
+import { salesInvoices, awaitingSalesInvoices, deleteSalesInvoices, recurringSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
 import { getTaxDocumentsForInvoice, currentTaxDocument, formatTaxDocumentNumber, updateTaxDocumentStatus, taxDocumentStatus, DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS, type TaxDocumentStatus, type TaxDocumentStatusValue } from '~/data/taxDocuments'
 
@@ -286,6 +288,93 @@ function openShare(r: Row) {
 function openShareBulk(selectedRows: Set<number>) {
   const rows = bulkSelectedInvoices(selectedRows)
   if (rows.length) openShare(rows[0]!)
+}
+
+// ─── Set as recurring drawer ─────────────────────────────────────────────────
+function todayISO() { return new Date().toISOString().slice(0, 10) }
+function isoToDMY(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function dmyToIso(dmy: string) {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+const recurringDrawerOpen = ref(false)
+const recurringSourceRow = ref<Row | null>(null)
+const recurRepeatInterval = ref(1)
+const recurRepeatUnit = ref('month')
+const recurRepeatUnitOptions = [
+  { label: t('Day'), value: 'day' },
+  { label: t('Week'), value: 'week' },
+  { label: t('Month'), value: 'month' },
+  { label: t('Year'), value: 'year' },
+]
+const recurEndRepeat = ref('never')
+const recurEndRepeatOptions = [
+  { label: t('Repeat forever'), value: 'never' },
+  { label: t('End after'), value: 'after' },
+  { label: t('End on'), value: 'on' },
+]
+const recurEndAfterCount = ref(12)
+const recurEndOnDate = ref('')
+const recurStartDate = ref(isoToDMY(todayISO()))
+const recurSendAutoEmail = ref(false)
+
+const recurNextTransactionDate = computed(() => {
+  if (!recurStartDate.value) return ''
+  const iso = dmyToIso(recurStartDate.value)
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const unit = recurRepeatUnit.value
+  const n = recurRepeatInterval.value || 1
+  if (unit === 'day') d.setDate(d.getDate() + n)
+  else if (unit === 'week') d.setDate(d.getDate() + n * 7)
+  else if (unit === 'month') d.setMonth(d.getMonth() + n)
+  else if (unit === 'year') d.setFullYear(d.getFullYear() + n)
+  return isoToDMY(d.toISOString().slice(0, 10))
+})
+
+function openRecurringDrawer(row: Row) {
+  recurringSourceRow.value = row
+  recurRepeatInterval.value = 1
+  recurRepeatUnit.value = 'month'
+  recurEndRepeat.value = 'never'
+  recurEndAfterCount.value = 12
+  recurEndOnDate.value = ''
+  recurStartDate.value = isoToDMY(todayISO())
+  recurSendAutoEmail.value = false
+  recurringDrawerOpen.value = true
+}
+
+function saveRecurring() {
+  if (!recurringSourceRow.value) return
+  const row = recurringSourceRow.value
+  const newId = `rsi-${Date.now()}`
+  recurringSalesInvoices.push({
+    id: newId,
+    templateName: `${row.customerName ?? row.customer.name} - Recurring`,
+    customer: row.customer,
+    frequency: `Every ${recurRepeatInterval.value} ${recurRepeatUnit.value}`,
+    amount: row.total,
+    nextDate: dmyToIso(recurNextTransactionDate.value),
+    status: 'active',
+    createdCount: 0,
+    schedule: {
+      repeatInterval: recurRepeatInterval.value,
+      repeatUnit: recurRepeatUnit.value as 'day' | 'week' | 'month' | 'year',
+      endRepeat: recurEndRepeat.value as 'never' | 'after' | 'on',
+      endAfterCount: recurEndRepeat.value === 'after' ? recurEndAfterCount.value : undefined,
+      endOnDate: recurEndRepeat.value === 'on' ? dmyToIso(recurEndOnDate.value) : undefined,
+      startDate: dmyToIso(recurStartDate.value),
+      sendAutoEmail: recurSendAutoEmail.value,
+    },
+  })
+  const inv = salesInvoices.find(si => si.id === row.id)
+  if (inv) inv.recurringId = newId
+  recurringDrawerOpen.value = false
+  toast.notify({ variant: 'success', title: t('Recurring sales invoice created') })
 }
 
 // "Submit to DJP" only shows once every selected invoice has a tax document
@@ -615,6 +704,7 @@ function confirmBulkDelete() {
             <MpPopoverListItem @click="navigateTo(`/sales-invoices/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="(row as Row).balance > 0">{{ t('Add payment') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="!(row as Row).recurringId" @click="openRecurringDrawer(row as Row)">{{ t('Set as recurring') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
@@ -717,6 +807,46 @@ function confirmBulkDelete() {
     @close="shareOpen = false"
     @send="shareOpen = false"
   />
+
+  <!-- ── Set as recurring drawer ── -->
+  <ErpDrawer :is-open="recurringDrawerOpen" :title="t('Set as recurring')" @close="recurringDrawerOpen = false" data-devchange="si-set-as-recurring">
+    <template #body>
+      <MpFormControl id="recur-repeat">
+        <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+        <div class="recur-repeat-row">
+          <MpInput id="recur-repeat-interval" v-model.number="recurRepeatInterval" type="number" :min="1" class="recur-repeat-num" />
+          <MpAutocomplete id="recur-repeat-unit" v-model="recurRepeatUnit" :data="recurRepeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-repeat-unit" />
+        </div>
+        <span class="recur-caption">{{ t('Next transaction date') }}: {{ recurNextTransactionDate || '—' }}</span>
+      </MpFormControl>
+
+      <MpFormControl id="recur-end">
+        <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+        <MpAutocomplete id="recur-end-inp" v-model="recurEndRepeat" :data="recurEndRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+        <div v-if="recurEndRepeat === 'after'" class="recur-end-sub">
+          <MpInput id="recur-end-after-count" v-model.number="recurEndAfterCount" type="number" :min="1" class="recur-end-count" />
+          <span class="recur-end-label">{{ t('occurrences') }}</span>
+        </div>
+        <div v-if="recurEndRepeat === 'on'" class="recur-end-sub">
+          <MpDatePicker id="recur-end-on-date" v-model="recurEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+        </div>
+      </MpFormControl>
+
+      <MpFormControl id="recur-start">
+        <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+        <MpDatePicker id="recur-start-date" v-model="recurStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+      </MpFormControl>
+
+      <div class="recur-auto-email">
+        <MpCheckbox id="recur-send-auto-email" v-model:is-checked="recurSendAutoEmail">{{ t('Send automatic email') }}</MpCheckbox>
+      </div>
+    </template>
+
+    <template #footer>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="recurringDrawerOpen = false">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" @click="saveRecurring">{{ t('Save') }}</button>
+    </template>
+  </ErpDrawer>
 
   <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
   <ScenarioFab v-model="previewMode" />
@@ -1078,4 +1208,14 @@ function confirmBulkDelete() {
   .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .stat-card { flex: 0 0 auto; }
 }
+
+/* ── Set as recurring drawer ── */
+.recur-repeat-row { display: flex; gap: var(--mp-spacing-2); }
+.recur-repeat-num { flex: 0 0 80px; }
+.recur-repeat-unit { flex: 1; }
+.recur-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+.recur-end-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.recur-end-count { flex: 0 0 80px; }
+.recur-end-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.recur-auto-email { padding-top: var(--mp-spacing-1); }
 </style>
