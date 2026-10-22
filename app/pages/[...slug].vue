@@ -273,6 +273,8 @@ const RecurringPurchaseInvoiceDetailsPage = asyncPage(() => import('~/components
 const NewRecurringPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseInvoicePage.vue'))
 const RecurringPurchaseOrdersPage = asyncPage(() => import('~/components/pages/RecurringPurchaseOrdersPage.vue'))
 const RecurringPurchaseOrderDetailsPage = asyncPage(() => import('~/components/pages/RecurringPurchaseOrderDetailsPage.vue'))
+const RecurringBillsPage = asyncPage(() => import('~/components/pages/RecurringBillsPage.vue'))
+const RecurringBillDetailsPage = asyncPage(() => import('~/components/pages/RecurringBillDetailsPage.vue'))
 const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseOrderPage.vue'))
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
@@ -724,6 +726,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // still pending → placeholder for now.
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment-details') {
     return { component: PlaceholderPage, id: segs[1]! }
+  }
+  // /expenses/recurring/:id → recurring expense detail
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[1] === 'recurring') {
+    return { component: RecurringBillDetailsPage, id: segs[2]! }
   }
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {
@@ -1228,7 +1234,7 @@ const pageTabs: Record<string, string[]> = {
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox', 'Recurring expenses'],
   'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox', 'Recurring invoices'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
   'Sales invoices': ['All sales invoices', 'Awaiting approval', 'Recurring invoices'],
@@ -1549,6 +1555,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Bills': BillsIndexPage,
     'Awaiting Approval': BillsAwaitingApprovalPage,
     'Dropbox': BillsReviewFilesPage,
+    'Recurring expenses': RecurringBillsPage,
   },
   // Purchase invoices reuses the same review-files table over its own queue —
   // the `surface` prop swaps both the data and the review route.
