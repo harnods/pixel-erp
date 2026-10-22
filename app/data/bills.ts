@@ -1,11 +1,15 @@
 import { reactive } from 'vue'
 import type { Bill } from './types'
+import type { RecurringSchedule } from './salesInvoices'
+import { loadSnapshot, saveSnapshot } from './persist'
+import { SIM_SPAN_DAYS, simDay } from './simClock'
 
 // Company operating expenses (electricity, internet, water, rent, subscriptions,
 // employee reimbursements, services). A healthy AP list: most bills are already
 // PAID; only a few slipped past their due date and show as overdue.
 // Overdue = still unpaid AND past due; everything else here is paid.
-export const bills = reactive<Bill[]>([
+
+const SEED_BILLS: Bill[] = [
   { id: 'BILL001', number: 1, beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' },          category: 'Services',      date: '2026-06-20', dueDate: '2026-07-04', total: 5_450_000,  balanceDue: 0,          status: 'paid',   tags: ['Recurring'], reconciled: true,
     memo: 'Monthly office cleaning & security service for HQ — approved by Finance Manager.',
     attachments: [
@@ -51,7 +55,17 @@ export const bills = reactive<Bill[]>([
     taxAmount: 1_000_000,
     priceIncludesTax: true,
     lineItems: [{ account: '560 - Professional services', description: 'Tax advisory retainer (July) — incl. PPN', tax: 'PPN 10%', amount: 11_000_000 }]},
-])
+]
+
+const K_BILLS = 'bills-v1'
+
+export const bills = reactive<Bill[]>(
+  loadSnapshot<Bill>(K_BILLS) ?? [...SEED_BILLS],
+)
+
+export function persistBills(): void {
+  saveSnapshot(K_BILLS, bills)
+}
 
 let billAddSeq = bills.length
 
@@ -102,4 +116,96 @@ export function deleteBills(ids: string[]): number {
     }
   }
   return removed
+}
+
+// ── Recurring Bills ───────────────────────────────────────────────────────────
+
+export interface RecurringBillHistoryEntry {
+  billNumber: string
+  date: string
+  amount: number
+  status: string
+}
+
+export interface RecurringBill {
+  id: string
+  templateName: string
+  beneficiary: { id: string; name: string }
+  category: string
+  frequency: string
+  amount: number
+  nextDate: string
+  status: 'active' | 'completed'
+  createdCount: number
+  schedule?: RecurringSchedule
+  history?: RecurringBillHistoryEntry[]
+}
+
+const RECURRING_BILL_TEMPLATES: RecurringBill[] = [
+  {
+    id: 'RBILL001', templateName: 'Monthly office cleaning', beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' }, category: 'Services',
+    frequency: 'Monthly', amount: 5_450_000, nextDate: simDay(SIM_SPAN_DAYS + 5), status: 'active', createdCount: 6,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-180), sendAutoEmail: true },
+    history: [
+      { billNumber: 'Expense #00021', date: simDay(-5), amount: 5_200_000, status: 'Unpaid' },
+      { billNumber: 'Expense #00001', date: simDay(-35), amount: 5_450_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL002', templateName: 'Monthly electricity (HQ)', beneficiary: { id: 'V001', name: 'PT PLN (Persero)' }, category: 'Utilities',
+    frequency: 'Monthly', amount: 6_200_000, nextDate: simDay(SIM_SPAN_DAYS + 3), status: 'active', createdCount: 12,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-365), sendAutoEmail: false },
+    history: [
+      { billNumber: 'Expense #00002', date: simDay(-3), amount: 6_200_000, status: 'Unpaid' },
+      { billNumber: 'Expense #00016', date: simDay(-20), amount: 2_800_000, status: 'Paid' },
+      { billNumber: 'Expense #00012', date: simDay(-30), amount: 3_500_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL003', templateName: 'Monthly internet (Biznet)', beneficiary: { id: 'V003', name: 'Biznet Networks' }, category: 'Internet',
+    frequency: 'Monthly', amount: 2_200_000, nextDate: simDay(SIM_SPAN_DAYS + 7), status: 'active', createdCount: 8,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-240), sendAutoEmail: true },
+    history: [
+      { billNumber: 'Expense #00017', date: simDay(-10), amount: 2_200_000, status: 'Paid' },
+      { billNumber: 'Expense #00003', date: simDay(-40), amount: 2_200_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL004', templateName: 'Monthly Google Workspace', beneficiary: { id: 'V008', name: 'Google Workspace' }, category: 'Software',
+    frequency: 'Monthly', amount: 2_500_000, nextDate: simDay(SIM_SPAN_DAYS + 10), status: 'active', createdCount: 10,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-300), sendAutoEmail: false },
+    history: [
+      { billNumber: 'Expense #00020', date: simDay(-8), amount: 2_500_000, status: 'Paid' },
+      { billNumber: 'Expense #00008', date: simDay(-38), amount: 2_500_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL005', templateName: 'Monthly office rent', beneficiary: { id: 'V005', name: 'PT Graha Perkantoran Sudirman' }, category: 'Rent',
+    frequency: 'Monthly', amount: 28_000_000, nextDate: simDay(SIM_SPAN_DAYS + 1), status: 'active', createdCount: 7,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 12, startDate: simDay(-210), sendAutoEmail: true },
+  },
+  {
+    id: 'RBILL006', templateName: 'Quarterly consulting retainer', beneficiary: { id: 'V011', name: 'PT Konsultan Prima' }, category: 'Services',
+    frequency: 'Quarterly', amount: 11_000_000, nextDate: simDay(SIM_SPAN_DAYS + 30), status: 'active', createdCount: 3,
+    schedule: { repeatInterval: 3, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-270), sendAutoEmail: true },
+    history: [
+      { billNumber: 'Expense #00025', date: simDay(-2), amount: 11_000_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL007', templateName: 'Weekly mobile plan', beneficiary: { id: 'V009', name: 'Telkomsel' }, category: 'Telephone',
+    frequency: 'Monthly', amount: 1_100_000, nextDate: simDay(SIM_SPAN_DAYS + 12), status: 'completed', createdCount: 12,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 12, startDate: simDay(-365), sendAutoEmail: false },
+  },
+]
+
+const K_RBILL = 'recurring-bills-v1'
+
+export const recurringBills = reactive<RecurringBill[]>(
+  loadSnapshot<RecurringBill>(K_RBILL) ?? [...RECURRING_BILL_TEMPLATES],
+)
+export function recurringBillsCount(): number { return recurringBills.filter(r => r.status === 'active').length }
+export function persistRecurringBills(): void { saveSnapshot(K_RBILL, recurringBills) }
+export function getRecurringForBill(recurringId: string): RecurringBill | undefined {
+  return recurringBills.find(r => r.id === recurringId)
 }

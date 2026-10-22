@@ -146,6 +146,7 @@ export interface Bill {
   payment?: BillPayment
   /** true once the payment has been matched against a bank transaction */
   reconciled?: boolean
+  recurringId?: string
 }
 
 export interface ReviewFile {
