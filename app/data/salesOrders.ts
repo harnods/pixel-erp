@@ -321,3 +321,6 @@ const RSO_TEMPLATES: RecurringSalesOrder[] = [
 
 export const recurringSalesOrders = reactive<RecurringSalesOrder[]>([...RSO_TEMPLATES])
 export function recurringSalesOrdersCount(): number { return recurringSalesOrders.filter(r => r.status === 'active').length }
+export function getRecurringForSalesOrder(recurringId: string): RecurringSalesOrder | undefined {
+  return recurringSalesOrders.find(r => r.id === recurringId)
+}

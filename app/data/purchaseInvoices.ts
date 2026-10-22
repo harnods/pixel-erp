@@ -211,3 +211,6 @@ const RECURRING_PI_TEMPLATES: RecurringPurchaseInvoice[] = [
 
 export const recurringPurchaseInvoices = reactive<RecurringPurchaseInvoice[]>([...RECURRING_PI_TEMPLATES])
 export function recurringPurchaseInvoicesCount(): number { return recurringPurchaseInvoices.filter(r => r.status === 'active').length }
+export function getRecurringForPurchaseInvoice(recurringId: string): RecurringPurchaseInvoice | undefined {
+  return recurringPurchaseInvoices.find(r => r.id === recurringId)
+}

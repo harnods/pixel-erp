@@ -227,3 +227,6 @@ const RPO_TEMPLATES: RecurringPurchaseOrder[] = [
 
 export const recurringPurchaseOrders = reactive<RecurringPurchaseOrder[]>([...RPO_TEMPLATES])
 export function recurringPurchaseOrdersCount(): number { return recurringPurchaseOrders.filter(r => r.status === 'active').length }
+export function getRecurringForPurchaseOrder(recurringId: string): RecurringPurchaseOrder | undefined {
+  return recurringPurchaseOrders.find(r => r.id === recurringId)
+}

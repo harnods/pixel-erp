@@ -87,6 +87,7 @@ export interface PurchaseInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+  recurringId?: string
 }
 
 export interface BillAttachment {
@@ -213,6 +214,7 @@ export interface SalesOrder {
   items: SalesOrderItem[]
   globalDiscount: number                  // IDR, order-level discount
   shippingFee: number                     // IDR
+  recurringId?: string
 }
 
 /** A requested line on a purchase request — the source rows a purchase order
@@ -333,4 +335,5 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  recurringId?: string
 }
