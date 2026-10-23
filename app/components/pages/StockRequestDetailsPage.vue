@@ -19,7 +19,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpBadge, MpButton, MpTooltip, toast, css,
+  MpIcon, MpBadge, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
@@ -460,17 +460,15 @@ function saveSerials(serials: string[]) {
               <tr v-for="(l, li) in g.lines" :key="`${l.productId}-${li}`" class="wod-tr" :class="{ 'srd-tr--rejected': l.rejected }">
                 <td class="wod-td wod-td--wrap">
                   <div class="srd-product">
-                    <span class="srd-product-name">
-                      {{ l.product }}
-                      <MpTooltip :label="t('Activity log')" placement="top" use-portal>
-                        <MpButton
-                          class="srd-log-btn" variant="ghost" left-icon="log" is-rounded
-                          :aria-label="`${t('Activity log')} — ${l.product}`"
-                          @click="openLineLog(l)"
-                        />
-                      </MpTooltip>
-                    </span>
+                    <span class="srd-product-name">{{ l.product }}</span>
                     <span class="srd-product-sku">{{ l.sku }}</span>
+                    <!-- Same affordance as the index: a text link under the SKU,
+                         not an icon that has to be guessed at and then explained. -->
+                    <span
+                      class="cell-link srd-log-link" role="button"
+                      :aria-label="`${t('View log')} — ${l.product}`"
+                      @click.stop="openLineLog(l)"
+                    >{{ t('View log') }}</span>
                     <!-- W-7 — what kind of demand this line is. MpBadge is the one
                          badge component (rule/badge-single-mpbadge); these used to be
                          a hand-rolled chip with its own colours. -->
@@ -696,9 +694,11 @@ function saveSerials(serials: string[]) {
 .srd-product-name { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); }
 .srd-product-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
 .detail-updated--static { cursor: default; text-decoration: none; color: var(--mp-text-secondary, #3a4749); }
-/* The log button sits inline after the component name, so the name stays the
-   thing being read and the button is reachable without leaving the row. */
-.srd-product-name { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+/* The log link sits on its own line under the SKU, as it does on the index. */
+.srd-log-link {
+  display: inline-block; width: fit-content; margin-top: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
+}
 .detail-updated {
   margin: 0; align-self: flex-start;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
