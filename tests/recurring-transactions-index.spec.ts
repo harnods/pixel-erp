@@ -101,7 +101,7 @@ describe('allRecurringTransactions()', () => {
   })
 
   it('leaves the six types with no module unlinked', () => {
-    const unlinked = ['Bank deposit', 'Bank transfer', 'Bank withdrawal', 'Journal entry', 'Receive payment', 'Purchase payment']
+    const unlinked = ['Receive money', 'Bank transfer', 'Bank withdrawal', 'Journal entry', 'Receive payment', 'Purchase payment']
     for (const type of unlinked) {
       const row = allRecurringTransactions().find(r => r.type === type)!
       expect(row, `no row for ${type}`).toBeTruthy()

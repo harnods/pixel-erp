@@ -4588,7 +4588,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // Recurring transactions (Other lists)
   "Next schedule": "Jadwal berikutnya",
   "All transaction types": "Semua tipe transaksi",
-  "Bank deposit": "Setor bank",
   "Bank transfer": "Transfer bank",
   "Bank withdrawal": "Tarik tunai bank",
   "Journal entry": "Jurnal umum",
@@ -4600,6 +4599,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Choose the transaction you want to repeat on a schedule.": "Pilih transaksi yang ingin Anda ulang sesuai jadwal.",
   "recurring transaction": "transaksi berulang",
   "recurring transactions": "transaksi berulang",
+  "Payer": "Pembayar",
+  "Select payer": "Pilih pembayar",
+  "New recurring receive money": "Terima uang berulang",
+  "Recurring transaction created": "Transaksi berulang berhasil dibuat",
   "Delete recurring transaction?": "Hapus transaksi berulang?",
   "Recurring transaction deleted": "Transaksi berulang berhasil dihapus",
   "Deleted recurring transactions cannot be restored. Transactions already created from them are kept.": "Transaksi berulang yang dihapus tidak dapat dipulihkan. Transaksi yang sudah dibuat tetap tersimpan.",

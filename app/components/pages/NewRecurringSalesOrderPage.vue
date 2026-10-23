@@ -468,69 +468,8 @@ function onSave() {
         </div>
       </section>
 
-      <!-- ── Recurring schedule section ── -->
-      <section class="rsi-schedule-section si-dashed-divider" data-devchange="rsi-schedule-fields">
-        <div class="rsi-schedule-grid">
-          <!-- Repeats every -->
-          <MpFormControl id="f-repeat" class="si-field rsi-repeat-field">
-            <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
-            <div class="rsi-repeat-row">
-              <MpInput
-                id="f-repeat-interval" v-model.number="repeatInterval"
-                type="number" :min="1" class="rsi-repeat-num"
-              />
-              <MpAutocomplete
-                id="f-repeat-unit" v-model="repeatUnit"
-                :data="repeatUnitOptions" label-prop="label" value-prop="value"
-                use-portal is-full-width class="rsi-repeat-unit"
-              />
-            </div>
-            <span class="si-field-caption">{{ t('Next transaction date') }}: {{ nextTransactionDate || '—' }}</span>
-          </MpFormControl>
-
-          <!-- End repeat -->
-          <MpFormControl id="f-end-repeat" class="si-field rsi-end-field">
-            <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
-            <MpAutocomplete
-              id="f-end-repeat-inp" v-model="endRepeat"
-              :data="endRepeatOptions" label-prop="label" value-prop="value"
-              use-portal is-full-width
-            />
-            <div v-if="endRepeat === 'after'" class="rsi-end-sub">
-              <MpInput
-                id="f-end-after-count" v-model.number="endAfterCount"
-                type="number" :min="1" class="rsi-end-count"
-              />
-              <span class="rsi-radio-label">{{ t('occurrences') }}</span>
-            </div>
-            <div v-if="endRepeat === 'on'" class="rsi-end-sub">
-              <MpDatePicker
-                id="f-end-on-date" v-model="endOnDate"
-                class="rsi-end-date" format="DD/MM/YYYY" value-type="format" use-portal
-              />
-            </div>
-          </MpFormControl>
-
-          <!-- Start date -->
-          <MpFormControl id="f-start-date" class="si-field">
-            <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
-            <MpDatePicker
-              id="f-start-date-inp" v-model="startDate"
-              class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal
-            />
-          </MpFormControl>
-
-          <!-- Send automatic email -->
-          <div class="rsi-auto-email">
-            <MpCheckbox id="f-send-auto-email" v-model:is-checked="sendAutoEmail">
-              {{ t('Send automatic email') }}
-            </MpCheckbox>
-          </div>
-        </div>
-      </section>
-
       <!-- ── Header section 2 — fixed-width fields that wrap, never stretch ── -->
-      <section class="si-header2">
+      <section class="si-header2 si-dashed-divider">
         <!-- Col 1: addresses + shipping toggles -->
         <div class="si-header2-col si-header2-col--wide">
           <MpFormControl id="f-billing" class="si-field">
@@ -617,6 +556,67 @@ function onSave() {
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
             <ErpDimensionTagUpsell id="rso-dim-upsell" />
           </MpFormControl>
+        </div>
+      </section>
+
+      <!-- ── Recurring schedule section ── -->
+      <section class="rsi-schedule-section" data-devchange="rsi-schedule-fields">
+        <div class="rsi-schedule-grid">
+          <!-- Repeats every -->
+          <MpFormControl id="f-repeat" class="si-field rsi-repeat-field">
+            <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+            <div class="rsi-repeat-row">
+              <MpInput
+                id="f-repeat-interval" v-model.number="repeatInterval"
+                type="number" :min="1" class="rsi-repeat-num"
+              />
+              <MpAutocomplete
+                id="f-repeat-unit" v-model="repeatUnit"
+                :data="repeatUnitOptions" label-prop="label" value-prop="value"
+                use-portal is-full-width class="rsi-repeat-unit"
+              />
+            </div>
+            <span class="si-field-caption">{{ t('Next transaction date') }}: {{ nextTransactionDate || '—' }}</span>
+          </MpFormControl>
+
+          <!-- End repeat -->
+          <MpFormControl id="f-end-repeat" class="si-field rsi-end-field">
+            <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+            <MpAutocomplete
+              id="f-end-repeat-inp" v-model="endRepeat"
+              :data="endRepeatOptions" label-prop="label" value-prop="value"
+              use-portal is-full-width
+            />
+            <div v-if="endRepeat === 'after'" class="rsi-end-sub">
+              <MpInput
+                id="f-end-after-count" v-model.number="endAfterCount"
+                type="number" :min="1" class="rsi-end-count"
+              />
+              <span class="rsi-radio-label">{{ t('occurrences') }}</span>
+            </div>
+            <div v-if="endRepeat === 'on'" class="rsi-end-sub">
+              <MpDatePicker
+                id="f-end-on-date" v-model="endOnDate"
+                class="rsi-end-date" format="DD/MM/YYYY" value-type="format" use-portal
+              />
+            </div>
+          </MpFormControl>
+
+          <!-- Start date -->
+          <MpFormControl id="f-start-date" class="si-field">
+            <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+            <MpDatePicker
+              id="f-start-date-inp" v-model="startDate"
+              class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal
+            />
+          </MpFormControl>
+
+          <!-- Send automatic email -->
+          <div class="rsi-auto-email">
+            <MpCheckbox id="f-send-auto-email" v-model:is-checked="sendAutoEmail">
+              {{ t('Send automatic email') }}
+            </MpCheckbox>
+          </div>
         </div>
       </section>
 
@@ -1244,7 +1244,7 @@ function onSave() {
 .si-td--input { position: relative; }
 .si-td--input:focus-within::after {
   content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
-  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+  box-shadow: inset 0 0 0 2px var(--mp-colors-border-bold, #8c9596); /* pixel-police-allow-shadow: neutral slate focus ring over collapsed borders (rule: never a brand colour) */
 }
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
 .si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }

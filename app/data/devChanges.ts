@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'recurring-receive-money-form',
+    title: 'New recurring receive money form',
+    description:
+      'The Receive money option in the Recurring transactions type picker now opens a real form instead of the placeholder (Bank deposit was renamed to Receive money). Layout follows the Cash management "New receive money" design: Deposit to + Payer + Total, the recurring schedule, transaction no./reference/tags, the Account-Description-Tax-Amount line items, message/memo/attachment and the Subtotal/PPN/Total breakdown. Shell and table are the InternalTransferFormPage and New expense patterns verbatim (docs/patterns/FormTable.md), not new components. Saving creates a Receive money template whose payer becomes the index\'s Name.',
+    date: '2026-10-23',
+    files: ['NewRecurringReceiveMoneyPage.vue', 'recurringTransactions.ts', '[...slug].vue'],
+  },
+  {
     id: 'recurring-transactions-index',
     title: 'Recurring transactions index (Other lists)',
     description:

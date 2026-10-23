@@ -23,7 +23,7 @@ export const RECURRING_TXN_TYPES = [
   'Purchase invoice',
   'Purchase order',
   'Expense',
-  'Bank deposit',
+  'Receive money',
   'Bank transfer',
   'Bank withdrawal',
   'Journal entry',
@@ -56,13 +56,13 @@ export interface RecurringOtherTxn {
 
 const OTHER_TEMPLATES: RecurringOtherTxn[] = [
   {
-    id: 'RTXN001', templateName: 'Daily store settlement deposit', type: 'Bank deposit',
+    id: 'RTXN001', templateName: 'Daily store settlement deposit', type: 'Receive money',
     party: { id: 'C006', name: 'Kopi Kenangan Pusat' },
     frequency: 'Daily', amount: 12_500_000, nextDate: simDay(SIM_SPAN_DAYS + 1), status: 'active', createdCount: 120,
     schedule: { repeatInterval: 1, repeatUnit: 'day', endRepeat: 'never', startDate: simDay(-150), sendAutoEmail: false },
   },
   {
-    id: 'RTXN002', templateName: 'Weekly consignment deposit', type: 'Bank deposit',
+    id: 'RTXN002', templateName: 'Weekly consignment deposit', type: 'Receive money',
     party: { id: 'C003', name: 'Hotel Mulia Senayan' },
     frequency: 'Weekly', amount: 35_000_000, nextDate: simDay(SIM_SPAN_DAYS + 4), status: 'active', createdCount: 26,
     schedule: { repeatInterval: 1, repeatUnit: 'week', endRepeat: 'never', startDate: simDay(-182), sendAutoEmail: false },
@@ -136,6 +136,29 @@ export const recurringOtherTransactions = reactive<RecurringOtherTxn[]>(
 )
 export function persistRecurringOtherTransactions(): void {
   saveSnapshot(K_RTXN, recurringOtherTransactions)
+}
+
+let otherSeq = 0
+/** Create a template for one of the six module-less types (e.g. the Receive money form). */
+export function addRecurringOtherTransaction(input: Omit<RecurringOtherTxn, 'id'>): RecurringOtherTxn {
+  const txn: RecurringOtherTxn = { ...input, id: `RTXN-NEW-${++otherSeq}-${Date.now()}` }
+  recurringOtherTransactions.unshift(txn)
+  persistRecurringOtherTransactions()
+  return txn
+}
+
+/**
+ * A human frequency label from the schedule, matching the seeded wording so the
+ * index's Frequency column reads the same for created and seeded templates.
+ */
+export function frequencyLabel(interval: number, unit: 'day' | 'week' | 'month' | 'year'): string {
+  if (interval === 1) {
+    return { day: 'Daily', week: 'Weekly', month: 'Monthly', year: 'Yearly' }[unit]
+  }
+  if (interval === 2 && unit === 'week') return 'Bi-weekly'
+  if (interval === 3 && unit === 'month') return 'Quarterly'
+  if (interval === 6 && unit === 'month') return 'Semi-annually'
+  return `Every ${interval} ${unit}s`
 }
 
 /**
