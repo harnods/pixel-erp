@@ -19,7 +19,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpBadge, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, toast, css,
+  MpIcon, MpBadge, MpButton, MpTooltip, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
@@ -100,6 +100,22 @@ const lineStatus = stockRequestLineStatus
 // ─── Actions ───────────────────────────────────────────────────────────────────
 const reserveOpen = ref(false)
 const unreserveOpen = ref(false)
+/** The warehouse group Reserve was opened from — stock is committed at ONE
+ *  warehouse, so the drawer is scoped to the group whose button opened it. */
+const reserveGroupLines = ref<StockRequestLine[]>([])
+/** The component whose log is open — the log is asked for per component here. */
+const logLine = ref<StockRequestLine | null>(null)
+function openLineLog(line: StockRequestLine) {
+  logLine.value = line
+  activityOpen.value = true
+}
+function canReserveGroup(g: { lines: StockRequestLine[] }): boolean {
+  return g.lines.some(l => !l.rejected && lineCovered(l) < l.qty)
+}
+function openGroupReserve(g: { lines: StockRequestLine[] }) {
+  reserveGroupLines.value = g.lines.filter(l => !l.rejected)
+  reserveOpen.value = true
+}
 
 function onReserve(productIds: string[]) {
   if (!req.value) return
@@ -264,9 +280,7 @@ const serialOpen = ref(false)
 function trackingLabel(line: StockRequestLine): string {
   const tracking = lineTracking(line)
   if (!tracking) return '—'
-  const { batches, serials } = reservedTracking(line)
-  if (tracking === 'serial') return serials.length ? serials.join(', ') : t('Select serial number')
-  return batches.length ? batches.map(b => `${b.batchNo} (${b.qty})`).join(', ') : t('Select batch')
+  return tracking === 'serial' ? t('View serial number') : t('View batch')
 }
 function isChanged(line: StockRequestLine): boolean { return trackingChanged(line) }
 
@@ -339,27 +353,12 @@ function saveSerials(serials: string[]) {
           </MpPopoverContent>
         </MpPopover>
 
-        <button class="btn-enterprise btn-enterprise--primary" @click="reserveOpen = true">{{ t('Reserve stock') }}</button>
+
       </div>
     </header>
 
     <!-- ── Stage ── -->
     <div class="detail-stage">
-      <!-- A rejected line is already dimmed and badged on its own row, so it needs
-           no banner of its own; only the shortfall asks the crew to act now.
-           A shortfall is the warehouse's ordinary business, and the banner names
-           the two ways out of it, so it reads as a warning rather than an error. -->
-      <MpBanner v-if="transferLines.length" id="srd-shortfall" variant="warning" class="srd-banner" data-devchange="sr-detail-shortfall-banner">
-        <MpBannerIcon id="srd-shortfall-icon" />
-        <MpBannerTitle id="srd-shortfall-title">
-          {{ transferLines.length }}
-          {{ transferLines.length === 1 ? t('component is short at its destination warehouse') : t('components are short at their destination warehouses') }}
-        </MpBannerTitle>
-        <MpBannerDescription id="srd-shortfall-desc">
-          {{ t('Create a warehouse transfer or a purchase request from Actions.') }}
-        </MpBannerDescription>
-      </MpBanner>
-
       <!-- ── Request info ── -->
       <section class="wod-section">
         <h2 class="wod-section-title">{{ t('Request info') }}</h2>
@@ -383,12 +382,11 @@ function saveSerials(serials: string[]) {
           </div>
 
           <div class="srd-emphasis">
-            <span class="srd-emphasis-label">{{ t('Reserved') }}</span>
-            <span class="srd-emphasis-value" :class="{ 'srd-ok': reservedLines === componentCount && componentCount > 0 }">
-              {{ reservedLines }}/{{ componentCount }}
+            <span class="srd-emphasis-label">{{ t('Fulfilled') }}</span>
+            <span class="srd-emphasis-value" :class="{ 'srd-ok': consumedLines === componentCount && componentCount > 0 }">
+              {{ consumedLines }}/{{ componentCount }}
             </span>
-            <span class="srd-emphasis-sub">{{ t('components fully reserved') }}</span>
-            <span v-if="consumedLines > 0" class="srd-emphasis-sub">{{ consumedLines }}/{{ componentCount }} {{ t('consumed by production') }}</span>
+            <span class="srd-emphasis-sub">{{ t('components fulfilled') }}</span>
             <span v-if="overdue" class="srd-emphasis-sub srd-short">{{ t('Overdue') }}</span>
           </div>
         </div>
@@ -405,10 +403,18 @@ function saveSerials(serials: string[]) {
             <MpIcon name="warehouse" size="md" />
             {{ g.warehouse }}
           </h2>
-          <span class="srd-section-sub">
-            {{ g.lines.length }} {{ g.lines.length === 1 ? t('component') : t('components') }}
-            <template v-if="g.toTransfer > 0"> · <span class="srd-short">{{ g.toTransfer }} {{ t('to transfer') }}</span></template>
-          </span>
+          <div class="srd-group-right">
+            <!-- No component count or shortfall total here: the rows below are the
+                 count, and the shortfall is in their Qty to transfer column.
+                 Reservation is taken per warehouse — stock is committed at one —
+                 so the action belongs beside the group it acts on, not on the
+                 page header. -->
+            <button
+              v-if="canReserveGroup(g)"
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+              @click="openGroupReserve(g)"
+            >{{ t('Reserve stock') }}</button>
+          </div>
         </div>
 
         <div class="wod-table-scroll">
@@ -454,7 +460,16 @@ function saveSerials(serials: string[]) {
               <tr v-for="(l, li) in g.lines" :key="`${l.productId}-${li}`" class="wod-tr" :class="{ 'srd-tr--rejected': l.rejected }">
                 <td class="wod-td wod-td--wrap">
                   <div class="srd-product">
-                    <span class="srd-product-name">{{ l.product }}</span>
+                    <span class="srd-product-name">
+                      {{ l.product }}
+                      <MpTooltip :label="t('Activity log')" placement="top" use-portal>
+                        <MpButton
+                          class="srd-log-btn" variant="ghost" left-icon="log" is-rounded
+                          :aria-label="`${t('Activity log')} — ${l.product}`"
+                          @click="openLineLog(l)"
+                        />
+                      </MpTooltip>
+                    </span>
                     <span class="srd-product-sku">{{ l.sku }}</span>
                     <!-- W-7 — what kind of demand this line is. MpBadge is the one
                          badge component (rule/badge-single-mpbadge); these used to be
@@ -475,8 +490,9 @@ function saveSerials(serials: string[]) {
                 <td class="wod-td">
                   <ErpStatusBadge :status="lineStatus(l)" :label="t(READINESS_LABEL[lineStatus(l)] ?? '')" />
                 </td>
-                <!-- Tracked components carry the work order's pick; PPIC may reserve
-                     other units, and the work order detail is told when they do. -->
+                <!-- The units are already chosen on the work order that raised the
+                     request; the warehouse reads them here rather than picking
+                     again, so this is a view link, never an empty selector. -->
                 <td class="wod-td wod-td--wrap">
                   <span v-if="!lineTracking(l)" class="srd-muted">—</span>
                   <span v-else class="srd-tracking">
@@ -521,16 +537,17 @@ function saveSerials(serials: string[]) {
     />
 
     <!-- ── Reserve / Unreserve (UC-02 / UC-03) ── -->
-    <!-- Provenance line — the ONLY way into the activity log
-         (rule/activity-log-trigger). -->
-    <a class="detail-updated" @click.prevent="activityOpen = true">
+    <!-- Provenance line — states who last touched the request. The log itself is
+         reached per COMPONENT, from the product name in the table: "what happened
+         to this component" is the question actually asked here. -->
+    <p class="detail-updated detail-updated--static">
       {{ t('Last updated by') }} {{ lastUpdated?.user ?? (req.lines[0]?.requestor ?? '—') }}
       {{ t('on') }} {{ formatDate((lastUpdated?.date ?? req.requestDate).slice(0, 10)) }}
-    </a>
+    </p>
 
     <ActivityLogModal
       :is-open="activityOpen"
-      :subject="`${t('Stock request')} ${req.number}`"
+      :subject="logLine ? `${logLine.product} — ${req.number}` : `${t('Stock request')} ${req.number}`"
       :updated-by="lastUpdated?.user ?? (req.lines[0]?.requestor ?? '—')"
       :updated-at="lastUpdated?.date ?? req.requestDate"
       :entries="activityEntries"
@@ -539,7 +556,7 @@ function saveSerials(serials: string[]) {
 
     <ReserveMaterialsModal
       id="srd-reserve" :is-open="reserveOpen"
-      :work-order-number="req.number" :lines="lines"
+      :work-order-number="req.number" :lines="reserveGroupLines"
       @close="reserveOpen = false" @reserve="onReserve"
     />
     <UnreserveMaterialsModal
@@ -678,6 +695,10 @@ function saveSerials(serials: string[]) {
 .srd-product { display: flex; flex-direction: column; }
 .srd-product-name { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default, #080d0e); }
 .srd-product-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #3a4749); }
+.detail-updated--static { cursor: default; text-decoration: none; color: var(--mp-text-secondary, #3a4749); }
+/* The log button sits inline after the component name, so the name stays the
+   thing being read and the button is reachable without leaving the row. */
+.srd-product-name { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .detail-updated {
   margin: 0; align-self: flex-start;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;

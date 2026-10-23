@@ -3710,6 +3710,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
 
   // ── Production › Work order material reservation (PRD UC-00 … UC-04) ────────
   'Material reservation': 'Reservasi material',
+  'components fulfilled': 'komponen terpenuhi',
+  'Fulfilled': 'Terpenuhi',
+  'View batch': 'Lihat batch',
+  'View serial number': 'Lihat nomor seri',
   'Number of transactions': 'Jumlah transaksi',
   'Used qty': 'Qty terpakai',
   'Unreserve stock': 'Lepas reservasi stok',
