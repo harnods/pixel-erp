@@ -462,6 +462,14 @@ function saveSerials(serials: string[]) {
                   <div class="srd-product">
                     <span class="srd-product-name">{{ l.product }}</span>
                     <span class="srd-product-sku">{{ l.sku }}</span>
+                    <!-- W-7 — what kind of demand this line is. MpBadge is the one
+                         badge component (rule/badge-single-mpbadge); these used to be
+                         a hand-rolled chip with its own colours. It stays with the
+                         name and SKU it qualifies; the link that leaves the row
+                         comes after everything describing it. -->
+                    <MpBadge v-if="l.tag" for="tableStatus" :type="l.tag === 'additional' ? 'warning' : 'information'">
+                      {{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
+                    </MpBadge>
                     <!-- Same affordance as the index: a text link under the SKU,
                          not an icon that has to be guessed at and then explained. -->
                     <span
@@ -469,12 +477,6 @@ function saveSerials(serials: string[]) {
                       :aria-label="`${t('View log')} — ${l.product}`"
                       @click.stop="openLineLog(l)"
                     >{{ t('View log') }}</span>
-                    <!-- W-7 — what kind of demand this line is. MpBadge is the one
-                         badge component (rule/badge-single-mpbadge); these used to be
-                         a hand-rolled chip with its own colours. -->
-                    <MpBadge v-if="l.tag" for="tableStatus" :type="l.tag === 'additional' ? 'warning' : 'information'">
-                      {{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
-                    </MpBadge>
                   </div>
                 </td>
                 <td class="wod-td wod-td--num">{{ l.qty }} {{ l.unit }}</td>
