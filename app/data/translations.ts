@@ -2972,7 +2972,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'All tax payments made in a period, with their billing codes, so you can tie every payment back to a return.':
     'Seluruh pembayaran pajak dalam satu masa beserta kode billing-nya, agar setiap pembayaran dapat ditelusuri ke SPT-nya.',
 
-
   // ── PRD OD-001 v1.0 §5.1 — row statuses ──────────────────────────────────────
   // Badge label first (short, holds a table cell), then the long form the drawer
   // and the workspace banner show. Indonesian keeps the domain nouns — faktur,
@@ -4589,7 +4588,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Next schedule": "Jadwal berikutnya",
   "All transaction types": "Semua tipe transaksi",
   "Bank transfer": "Transfer bank",
-  "Bank withdrawal": "Tarik tunai bank",
+  
   "Journal entry": "Jurnal umum",
   "Purchase payment": "Pembayaran pembelian",
   "Daily": "Harian",
@@ -4603,6 +4602,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Select payer": "Pilih pembayar",
   "New recurring receive money": "Terima uang berulang",
   "Recurring transaction created": "Transaksi berulang berhasil dibuat",
+  "You must select a transaction type": "Anda harus memilih tipe transaksi",
+  "Select payee": "Pilih penerima",
+  "You must select payee": "Anda harus memilih penerima",
+  "New recurring spend money": "Keluar uang berulang",
+  "Less: Withholding tax": "Dikurangi: PPh",
+  "Visible to vendor": "Terlihat oleh vendor",
   "Delete recurring transaction?": "Hapus transaksi berulang?",
   "Recurring transaction deleted": "Transaksi berulang berhasil dihapus",
   "Deleted recurring transactions cannot be restored. Transactions already created from them are kept.": "Transaksi berulang yang dihapus tidak dapat dipulihkan. Transaksi yang sudah dibuat tetap tersimpan.",

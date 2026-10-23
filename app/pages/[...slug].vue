@@ -277,6 +277,7 @@ const RecurringPurchaseOrderDetailsPage = asyncPage(() => import('~/components/p
 const RecurringBillsPage = asyncPage(() => import('~/components/pages/RecurringBillsPage.vue'))
 const RecurringBillDetailsPage = asyncPage(() => import('~/components/pages/RecurringBillDetailsPage.vue'))
 const NewRecurringReceiveMoneyPage = asyncPage(() => import('~/components/pages/NewRecurringReceiveMoneyPage.vue'))
+const NewRecurringSpendMoneyPage = asyncPage(() => import('~/components/pages/NewRecurringSpendMoneyPage.vue'))
 
 const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseOrderPage.vue'))
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
@@ -735,6 +736,7 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // picker and the row's Edit land on the placeholder.
   if (segs.length >= 3 && segs[0] === 'recurring-transactions' && segs[1] === 'new') {
     if (segs[2] === 'receive-money') return { component: NewRecurringReceiveMoneyPage, id: 'new' }
+    if (segs[2] === 'spend-money') return { component: NewRecurringSpendMoneyPage, id: 'new' }
     return { component: PlaceholderPage, id: segs[2]! }
   }
   if (segs.length >= 3 && segs[0] === 'recurring-transactions' && segs[2] === 'edit') {

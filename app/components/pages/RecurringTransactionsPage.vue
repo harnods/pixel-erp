@@ -13,6 +13,7 @@ import {
   MpIcon, MpButton, MpButtonGroup, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpAutocomplete, MpFormControl, MpFormLabel, MpFormErrorMessage,
   css, toast,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -107,8 +108,16 @@ function clearFilters() { search.value = ''; statusFilter.value = ''; typeFilter
 // Opened from the page title bar button, which lives in pages/[...slug].vue and
 // signals through an injected counter (same pattern as contactAddSignal).
 const newTxnOpen = ref(false)
+const newTxnType = ref('')
+const newTxnError = ref('')
+const NEW_TYPE_OPTIONS = [...RECURRING_TXN_TYPES].map(v => ({ value: v, label: t(v) }))
+
 const newTxnSignal = inject<Ref<number>>('recurringTxnNewSignal', ref(0))
-watch(newTxnSignal, () => { newTxnOpen.value = true })
+watch(newTxnSignal, () => {
+  newTxnType.value = ''
+  newTxnError.value = ''
+  newTxnOpen.value = true
+})
 
 /** Types with a recurring creation form; the rest fall through to the placeholder. */
 const NEW_ROUTES: Partial<Record<RecurringTxnType, string>> = {
@@ -120,7 +129,9 @@ const NEW_ROUTES: Partial<Record<RecurringTxnType, string>> = {
 
 function slug(type: string) { return type.toLowerCase().replace(/\s+/g, '-') }
 
-function chooseType(type: RecurringTxnType) {
+function confirmNewType() {
+  const type = newTxnType.value as RecurringTxnType
+  if (!type) { newTxnError.value = t('You must select a transaction type'); return }
   newTxnOpen.value = false
   router.push(NEW_ROUTES[type] ?? `/recurring-transactions/new/${slug(type)}`)
 }
@@ -349,21 +360,25 @@ function confirmDelete() {
       </MpModalHeader>
       <MpModalBody>
         <p class="rtxn-pick-hint">{{ t('Choose the transaction you want to repeat on a schedule.') }}</p>
-        <div class="rtxn-pick-list">
-          <button
-            v-for="type in RECURRING_TXN_TYPES"
-            :key="type"
-            type="button"
-            class="rtxn-pick-item"
-            @click="chooseType(type)"
-          >
-            {{ t(type) }}
-          </button>
-        </div>
+        <MpFormControl :is-invalid="!!newTxnError">
+          <MpFormLabel for="rtxn-new-type" is-required>{{ t('Transaction type') }}</MpFormLabel>
+          <MpAutocomplete
+            id="rtxn-new-type"
+            v-model="newTxnType"
+            :data="NEW_TYPE_OPTIONS"
+            label-prop="label"
+            value-prop="value"
+            is-searchable use-portal is-full-width
+            :placeholder="t('Select transaction type')"
+            @update:model-value="newTxnError = ''"
+          />
+          <MpFormErrorMessage v-if="newTxnError">{{ newTxnError }}</MpFormErrorMessage>
+        </MpFormControl>
       </MpModalBody>
       <MpModalFooter>
         <div class="rtxn-footer-btns">
           <MpButton class="btn-enterprise btn-enterprise--ghost" @click="newTxnOpen = false">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmNewType">{{ t('Continue') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -426,29 +441,6 @@ function confirmDelete() {
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-secondary);
-}
-.rtxn-pick-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--mp-spacing-2);
-}
-.rtxn-pick-item {
-  display: flex;
-  align-items: center;
-  min-height: var(--mp-sizes-11, 44px);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-lg, 8px);
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-lg, 20px);
-  color: var(--mp-text-default);
-  text-align: left;
-  cursor: pointer;
-}
-.rtxn-pick-item:hover {
-  background: var(--mp-background-neutral-hovered);
-  border-color: var(--mp-border-bold);
 }
 .rtxn-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>
