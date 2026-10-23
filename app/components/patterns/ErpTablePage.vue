@@ -101,12 +101,6 @@ const props = withDefaults(defineProps<{
   /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
    *  your filters". Defaults to the generic "No results match your filters". */
   filterEmptyLabel?: string
-  /** Let the LAST column grow to absorb any leftover table width instead of staying
-   *  pinned to its declared `width` (table-layout:fixed otherwise distributes that
-   *  leftover proportionally across every column, including fixed-width ones like
-   *  the sticky actions column — see BillsReviewFilesPage.vue). Off by default so
-   *  every other page's column widths stay exactly as declared. */
-  lastColumnFlexible?: boolean
   /** Pin the actions column to the right edge while the table scrolls horizontally.
    *  On by default (the ERP standard); set false for a table whose actions column
    *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
@@ -137,7 +131,6 @@ const props = withDefaults(defineProps<{
   bulkLabelPlural: undefined,
   actionsWidth: undefined,
   filterEmptyLabel: undefined,
-  lastColumnFlexible: false,
   stickyActions: true,
   actionsAlignTop: false,
 })

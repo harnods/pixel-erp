@@ -30,9 +30,14 @@ const { t } = useLocale()
 const rows = computed<CrmActivityEntry[]>(() => crmActivityLog)
 
 const columns: TableColumn[] = [
-  { key: 'date',    label: 'Date',    kind: 'date',   sortable: true, sortType: 'date' },
-  { key: 'user',    label: 'User',    width: '160px', sortable: true, sortType: 'text' },
-  { key: 'action',  label: 'Actions', kind: 'status', sortable: true, sortType: 'text' },
+  // The cell renders formatDateTime ("06/09/2026, 16:40"), which `date` (160px)
+  // clips — that is what the `datetime` kind is for.
+  { key: 'date',    label: 'Date',    kind: 'datetime', sortable: true, sortType: 'date' },
+  // A person's name is a name: the kind, not a hand-set pixel width.
+  { key: 'user',    label: 'User',    kind: 'name',     sortable: true, sortType: 'text' },
+  // No `kind`: ACTIONS is a plain text category, not an ErpStatusBadge, so it
+  // takes the default range rather than a badge column's 128px.
+  { key: 'action',  label: 'Actions',                   sortable: true, sortType: 'text' },
   { key: 'feature', label: 'Feature', sortable: true, sortType: 'text' },
   { key: 'number',  label: 'Number',  kind: 'number' },
   { key: 'detail',  label: 'Detail',  kind: 'address' },
@@ -139,7 +144,6 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
         filter-empty-label="activity"
         :search="search"
         :has-active-filter="hasActiveFilter"
-        last-column-flexible
         no-row-hover
         @page-change="setPage"
         @per-page-change="setPerPage"
