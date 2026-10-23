@@ -19,6 +19,7 @@ import {
   blockedByReservation, appendStockRequestLines, reserveRequestProducts,
   stockRequestLineStatus, stockRequestStatus, needsAction, lineCovered,
   type WorkOrderMaterialLine,
+  lowestLineStatus,
 } from '~/data/stockRequests'
 
 const WO_ID = 'wo-lifecycle-test'
@@ -113,13 +114,28 @@ describe('W-3 — status is derived', () => {
     expect(needsAction(request)).toBe(false)
   })
 
-  it('gives the request the LOWEST status among its lines', () => {
+  // The request's own status answers "is anything outstanding", so reserving does
+  // not close it — only issuing does. How far reservation has got is the LINE
+  // question, which `lowestLineStatus` answers.
+  it('gives the request the LOWEST line status among its lines', () => {
     const request = raise([material('mdf', 20), material('kaki', 40)], { mdf: 20, kaki: 40 })
     request.lines[0]!.reserved = 20
     request.lines[1]!.reserved = 0
-    expect(stockRequestStatus(request)).toBe('requested')
+    expect(lowestLineStatus(request)).toBe('requested')
+    expect(stockRequestStatus(request)).toBe('open')
     request.lines[1]!.reserved = 40
-    expect(stockRequestStatus(request)).toBe('reserved')
+    expect(lowestLineStatus(request)).toBe('reserved')
+    // Reserved is not issued — the request still has demand to settle.
+    expect(stockRequestStatus(request)).toBe('open')
+  })
+
+  it('completes a request only once every line is fulfilled', () => {
+    const request = raise([material('mdf', 20)], { mdf: 20 })
+    request.lines[0]!.reserved = 20
+    expect(stockRequestStatus(request)).toBe('open')
+    request.lines[0]!.consumed = 20
+    expect(lowestLineStatus(request)).toBe('fulfilled')
+    expect(stockRequestStatus(request)).toBe('completed')
   })
 
   it('keeps a line out of the Requested tab only once reserved + consumed meets required', () => {
@@ -222,7 +238,8 @@ describe('UC-06 worked example — WO-2026-0042', () => {
     // 30 < 40 — all-or-nothing per line, so Kaki besi reserves NOTHING.
     expect(request.lines.find(l => l.productId === 'kaki')!.reserved).toBe(0)
     expect(request.lines.find(l => l.productId === 'baut')!.reserved).toBe(160)
-    expect(stockRequestStatus(request)).toBe('requested')
+    expect(lowestLineStatus(request)).toBe('requested')
+    expect(stockRequestStatus(request)).toBe('open')
   })
 
   it('step 2: an Edit before start grows MDF in place and adds Handle as a new line', () => {

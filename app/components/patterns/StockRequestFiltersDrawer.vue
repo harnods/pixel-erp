@@ -10,15 +10,15 @@ export interface StockRequestFiltersValue {
   status: string[]
   /** product ids; empty = every product. Same state as the bar's Product pill. */
   product: string[]
-  /** destination warehouse id; empty = every warehouse. Same state as its pill. */
-  warehouse: string
+  /** destination warehouse ids; empty = every warehouse. Same state as its pill. */
+  warehouse: string[]
   /** AdvancedDateRangePicker range — null = not applied. Same state as the bar's
    *  Request date, so the drawer and the pill can never disagree. */
   requestDate: Date[] | null
 }
 
 export function emptyStockRequestFilters(): StockRequestFiltersValue {
-  return { keyword: '', status: [], product: [], warehouse: '', requestDate: null }
+  return { keyword: '', status: [], product: [], warehouse: [], requestDate: null }
 }
 </script>
 
@@ -108,9 +108,9 @@ function toggleStatus(value: string) {
           <div class="srf-field">
             <span class="srf-field-label">{{ t('Destination warehouse') }}</span>
             <ErpFilterSelect
-              :id="`${id}-warehouse`" :model-value="draft.warehouse" width="100%"
+              :id="`${id}-warehouse`" :model-value="draft.warehouse" multiple width="100%"
               :placeholder="t('Destination warehouse')" :options="warehouseOptions"
-              @update:model-value="draft.warehouse = ($event as string)"
+              @update:model-value="draft.warehouse = ($event as string[])"
             />
           </div>
 

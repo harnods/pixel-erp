@@ -21,9 +21,10 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import { entriesFor } from '~/data/activityLog'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
-import ExportModal from '~/components/patterns/ExportModal.vue'
 import StockRequestFiltersDrawer, {
   emptyStockRequestFilters, type StockRequestFiltersValue,
 } from '~/components/patterns/StockRequestFiltersDrawer.vue'
@@ -32,7 +33,7 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
-  requestRequiredQty, requestCoveredQty, lineCovered, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
+  lineCovered, stockRequestLineStatus, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
   reserveStock, reserveRequestProducts, rejectRequestLine, canReject, canRejectLine,
   isLineOverdue,
   type StockRequest, type StockRequestLine,
@@ -95,19 +96,21 @@ const viewOptions = [
  * first column already says what the row is.
  */
 const woColumns: TableColumn[] = [
-  // W-9 — the request's own number is its identity; the work order that raised it
-  // is a field on it, not its name.
+  // W-9 — the request's own number is its identity; the transaction that raised
+  // it is a field on it, not its name.
   { key: 'number',              label: t('Stock request no.'),     kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'workOrderNumber',     label: t('Work order number'),     kind: 'number', sortable: true, sortType: 'text' },
-  // What the request IS, then where it is wanted — the same pair, in the same
-  // place, as the By product table, so switching views does not move them.
+  // "Transaction", not "Work order": a work order is the only kind that raises a
+  // request today, but the column is for whatever raised it.
+  { key: 'workOrderNumber',     label: t('Transaction number'),    kind: 'number', sortable: true, sortType: 'text' },
+  // The REQUEST's own status — open / completed / canceled. Not the raising work
+  // order's, which could read "In progress" over a request nobody had touched.
   { key: 'status',              label: t('Status'),                kind: 'status',                 sortType: 'text' },
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name',  sortable: true, sortType: 'text' },
-  { key: 'requiredDate',        label: t('Required date'),         kind: 'date',   sortable: true, sortType: 'date' },
-  // The qty block reads across in the By product order: available → required →
-  // reserved → remaining → unit. Each figure sums the request's lines, as
-  // Required qty already did.
-  { key: 'available',           label: t('Available qty'),                         sortable: true, sortType: 'number', align: 'right' },
+  { key: 'requiredDate',        label: t('Earliest required date'), kind: 'date',  sortable: true, sortType: 'date' },
+  // The qty block belongs to the PRODUCT lines in the breakdown, not to the
+  // request above them: a request's components are counted in different units, so
+  // a total on the request row would be a number in no unit at all. The request
+  // row leaves these blank and each line fills its own.
   { key: 'qty',                 label: t('Required qty'),                          sortable: true, sortType: 'number', align: 'right' },
   { key: 'reserved',            label: t('Reserved qty'),                          sortable: true, sortType: 'number', align: 'right' },
   { key: 'remaining',           label: t('Remaining qty'),                         sortable: true, sortType: 'number', align: 'right' },
@@ -224,10 +227,7 @@ function matchesDateRange(iso: string, range: Date[] | null): boolean {
 // and destination warehouse. Canceled work orders never appear; Done ones show
 // only under All, with no actions.
 type WoRow = StockRequest & {
-  status: string; qty: number; overdue: boolean
-  /** The request's own qty block — each figure sums its lines, as `qty` does.
-      `unit` is empty when the lines disagree, since no one unit is true then. */
-  reserved: number; remaining: number; available: number; unit: string
+  status: string; overdue: boolean
   /** Earliest required date across the request's lines — the column the overdue
       note belongs under, because that is the date being missed. */
   requiredDate: string
@@ -243,7 +243,7 @@ type WoRow = StockRequest & {
  * only narrow a tab to part of itself.
  */
 const productFilter = ref<string[]>([])
-const warehouseFilter = ref('')
+const warehouseFilter = ref<string[]>([])
 
 const productOptions = computed(() => {
   const byId = new Map<string, string>()
@@ -264,21 +264,14 @@ const woRows = computed<WoRow[]>(() =>
       const w = workOrderFor(r)
       return {
         ...r,
-        // The dashboard shows the WORK ORDER's status, not the readiness rollup —
-        // except on the terminal tab, where what put the row there is the REQUEST's
-        // own status. A row sitting under "Closed" while its badge
-        // read "In progress" (the job runs on; its extra demand was declined)
-        // looked like a filter bug.
-        status: (isTerminalTab.value ? stockRequestStatus(r) : (w?.status ?? stockRequestStatus(r))) as string,
-        qty: requestRequiredQty(r),
-        reserved: r.lines.reduce((n, l) => n + l.reserved, 0),
-        // W-2 — Remaining = Required − Reserved − Consumed; consumption draws the
-        // reservation down, so issued qty still counts as covered.
-        remaining: Math.max(0, requestRequiredQty(r) - requestCoveredQty(r)),
-        available: r.lines.reduce((n, l) => n + l.destAvailable, 0),
-        // A request can hold lines in different units, and there is no honest way
-        // to add Sack to Kg — so the column names the unit only when they agree.
-        unit: [...new Set(r.lines.map(l => l.unit))].length === 1 ? (r.lines[0]?.unit ?? '') : '',
+        // The REQUEST's own status — open / completed / canceled. It used to show
+        // the raising work order's, so a row could read "In progress" while every
+        // component on it was still untouched: the job had started, the request
+        // had not. A request answers for itself.
+        status: stockRequestStatus(r) as string,
+        // No qty totals on a request row. Summing Sack and Kg across a request's
+        // components produced a number in no unit at all; qty belongs to the
+        // product lines underneath, where it has one.
         overdue: isOverdue(r, TODAY_ISO),
         requiredDate: [...r.lines].map(l => l.requiredDate).sort()[0] ?? r.requestDate,
         woStartDate: w?.planStartDate ?? r.requestDate,
@@ -307,8 +300,8 @@ function matchesWoRow(row: WoRow, s: string, status: string): boolean {
   const matchesQuickDate = matchesDateRange(row.requestDate, dateFilter.value)
   const matchesProduct = productFilter.value.length === 0
     || row.lines.some(l => productFilter.value.includes(l.productId))
-  const matchesWarehouse = !warehouseFilter.value
-    || row.lines.some(l => l.destinationWarehouseId === warehouseFilter.value)
+  const matchesWarehouse = warehouseFilter.value.length === 0
+    || row.lines.some(l => warehouseFilter.value.includes(l.destinationWarehouseId))
 
   const f = appliedFilters
   const kw = f.keyword.toLowerCase().trim()
@@ -341,7 +334,7 @@ const skuRows = computed<SkuDemandGroup[]>(() => {
       || g.entries.some(e => e.workOrderNumber.toLowerCase().includes(s)))
     .filter(g => !kw || `${g.product} ${g.sku}`.toLowerCase().includes(kw))
     .filter(g => productFilter.value.length === 0 || productFilter.value.includes(g.productId))
-    .filter(g => !warehouseFilter.value || g.destinationWarehouseId === warehouseFilter.value)
+    .filter(g => warehouseFilter.value.length === 0 || warehouseFilter.value.includes(g.destinationWarehouseId))
     .filter(g => appliedFilters.status.length === 0 || appliedFilters.status.includes(g.status))
 })
 
@@ -369,7 +362,7 @@ const activeFilterCount = computed(() => {
   if (appliedFilters.keyword) n++
   if (appliedFilters.status.length > 0) n++
   if (productFilter.value.length > 0) n++
-  if (warehouseFilter.value) n++
+  if (warehouseFilter.value.length > 0) n++
   if (dateFilter.value?.length) n++
   return n
 })
@@ -379,7 +372,7 @@ const hasActiveFilter = computed(() => !!search.value || isDrawerFilterActive.va
 function clearFilters() {
   search.value = ''
   productFilter.value = []
-  warehouseFilter.value = ''
+  warehouseFilter.value = []
   dateFilter.value = null
   Object.assign(appliedFilters, emptyStockRequestFilters())
 }
@@ -405,6 +398,26 @@ function toggleExpand(key: string) { expanded[key] = !expanded[key] }
 // ─── Row actions (W-1 row menu, W-7 reject) ────────────────────────────────────
 // "View details" opens the stock request; the work order is one click further in.
 function viewDetails(requestId: string) { router.push(`/stock-requests/${requestId}`) }
+
+/**
+ * The activity log for ONE component on ONE request — opened from a breakdown
+ * row, which is the level the question is asked at: "what happened to this
+ * component on this request", not "what happened to the request".
+ */
+const lineLogFor = ref<{ request: StockRequest; productId: string } | null>(null)
+const lineLogOpen = ref(false)
+function openLineLog(request: StockRequest, productId: string) {
+  lineLogFor.value = { request, productId }
+  lineLogOpen.value = true
+}
+const lineLogSubject = computed(() => {
+  const ctx = lineLogFor.value
+  if (!ctx) return ''
+  const line = ctx.request.lines.find(l => l.productId === ctx.productId)
+  return `${line?.product ?? t('Component')} — ${ctx.request.number}`
+})
+const lineLogEntries = computed(() =>
+  lineLogFor.value ? entriesFor('stock-request', lineLogFor.value.request.id) : [])
 function reserve(req: StockRequest) {
   const qty = reserveStock(req.id, { source: 'stock-request' })
   if (qty === undefined) {
@@ -483,12 +496,6 @@ function onPerPageChange(n: number) {
   else setPerPage(n)
 }
 
-// ─── Export ───────────────────────────────────────────────────────────────────
-const exportOpen = ref(false)
-const exportColumns = computed(() => {
-  const cols = view.value === 'product' ? skuColumns : allWoCols
-  return cols.map(c => ({ key: c.key, label: c.label, ...(c.key === cols[0]!.key ? { required: true } : {}) }))
-})
 </script>
 
 <template>
@@ -535,7 +542,7 @@ const exportColumns = computed(() => {
           :placeholder="t('Product')" :options="productOptions"
         />
         <ErpFilterSelect
-          id="sr-warehouse" v-model="warehouseFilter"
+          id="sr-warehouse" v-model="warehouseFilter" multiple
           :placeholder="t('Destination warehouse')" :options="warehouseOptions"
         />
         <div class="sr-daterange">
@@ -559,9 +566,6 @@ const exportColumns = computed(() => {
             <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
           </MpTooltip>
           <ColumnSettingsMenu id="sr-columns" :items="columnItems" :visibility="columnVisibility" />
-          <MpTooltip :label="t('Export')" placement="bottom">
-            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
-          </MpTooltip>
         </MpButtonGroup>
 
         <div class="filter-search">
@@ -623,11 +627,14 @@ const exportColumns = computed(() => {
     </template>
     <template #cell-openWorkOrders="{ row }">{{ sku(row).openWorkOrders }}</template>
     <template #cell-required="{ row }">{{ sku(row).required }}</template>
-    <template #cell-reserved="{ row }">{{ view === 'product' ? sku(row).reserved : wo(row).reserved }}</template>
-    <!-- A request holding lines in two units cannot name one, so it names none. -->
+    <template #cell-reserved="{ row }">
+      <template v-if="view === 'product'">{{ sku(row).reserved }}</template>
+    </template>
     <template #cell-unit="{ row }">
       <template v-if="view === 'product'">{{ sku(row).unit }}</template>
-      <span v-else :class="{ 'sr-muted': !wo(row).unit }">{{ wo(row).unit || '—' }}</span>
+    </template>
+    <template #cell-qty>
+      <!-- Request rows carry no qty; the breakdown lines do. -->
     </template>
     <template #cell-consumed="{ row }">
       {{ sku(row).consumed > 0 ? sku(row).consumed : '—' }}
@@ -638,9 +645,6 @@ const exportColumns = computed(() => {
     <template #cell-remaining="{ row }">
       <span v-if="view === 'product'" :class="{ 'sr-short': sku(row).remaining > 0 }">
         {{ sku(row).remaining > 0 ? sku(row).remaining : '—' }}
-      </span>
-      <span v-else :class="{ 'sr-short': wo(row).remaining > 0 }">
-        {{ wo(row).remaining > 0 ? wo(row).remaining : '—' }}
       </span>
     </template>
 
@@ -730,10 +734,14 @@ const exportColumns = computed(() => {
                  under a date header. -->
             <span v-else-if="col.key === 'qty'" class="cell-text">{{ line.qty }}</span>
             <span v-else-if="col.key === 'reserved'" class="cell-text">{{ lineCovered(line) }}</span>
-            <span v-else-if="col.key === 'available'" class="cell-text">{{ line.destAvailable }}</span>
             <span v-else-if="col.key === 'unit'" class="cell-text">{{ line.unit }}</span>
             <span v-else-if="col.key === 'remaining'" :class="{ 'sr-short': line.qty - lineCovered(line) > 0 }">
               {{ line.qty - lineCovered(line) > 0 ? line.qty - lineCovered(line) : '—' }}
+            </span>
+            <!-- The LINE's status — how far this component has got, which is a
+                 different question from whether the request is still open. -->
+            <span v-else-if="col.key === 'status'">
+              <ErpStatusBadge :status="stockRequestLineStatus(line)" />
             </span>
             <span v-else-if="col.key === 'requiredDate'" class="cell-text">
               {{ formatDate(line.requiredDate) }}
@@ -741,10 +749,20 @@ const exportColumns = computed(() => {
             </span>
             <span v-else-if="col.key === 'workOrderNumber'" class="sr-muted">—</span>
             <span v-else-if="col.key === 'woStartDate'" class="cell-text">—</span>
-            <span v-else-if="col.key === 'destinationWarehouse'" class="cell-text" :title="line.destinationWarehouse">{{ line.destinationWarehouse }}</span>
+            <MpTooltip v-else-if="col.key === 'destinationWarehouse'" :label="line.destinationWarehouse" placement="top" use-portal>
+              <span class="cell-text sr-truncate">{{ line.destinationWarehouse }}</span>
+            </MpTooltip>
           </td>
           <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
-          <td class="sr-child-td sr-child-td--actions" />
+          <td class="sr-child-td sr-child-td--actions">
+            <MpTooltip :label="t('Activity log')" placement="top">
+              <MpButton
+                variant="ghost" left-icon="log" is-rounded
+                :aria-label="t('Activity log')"
+                @click="openLineLog(wo(row), line.productId)"
+              />
+            </MpTooltip>
+          </td>
         </tr>
       </template>
     </template>
@@ -775,8 +793,6 @@ const exportColumns = computed(() => {
 
     <template #cell-woStartDate="{ row }">{{ formatDate(wo(row).woStartDate) }}</template>
 
-    <template #cell-qty="{ row }">{{ wo(row).qty }}</template>
-
     <!-- W-7 — the overdue note belongs under the date being missed. -->
     <template #cell-requiredDate="{ row }">
       {{ formatDate(wo(row).requiredDate) }}
@@ -789,11 +805,12 @@ const exportColumns = computed(() => {
 
     <!-- ══ Shared ════════════════════════════════════════════════════════════ -->
 
-    <!-- Status — the WORK ORDER's status, in the transaction view only. A product
-         row aggregates several transactions whose statuses differ, so one rolled-up
-         badge there claimed more than the row knows; the breakdown rows carry the
-         status instead. The badge alone: overdue is not a status, it is a date that
-         has passed, so it sits under the date it passed (W-7). -->
+    <!-- Status — the REQUEST's own (open / completed / canceled), in the
+         transaction view only. A product row aggregates several requests whose
+         statuses differ, so one rolled-up badge there claimed more than the row
+         knows; the breakdown rows carry the LINE status instead. The badge alone:
+         overdue is not a status, it is a date that has passed, so it sits under
+         the date it passed (W-7). -->
     <template #cell-status="{ row }">
       <ErpStatusBadge v-if="view === 'transaction'" :status="wo(row).status" />
       <!-- The em dash is deliberate: an empty cell would fall through to
@@ -865,10 +882,12 @@ const exportColumns = computed(() => {
     @apply="applyDrawerFilters"
   />
 
-  <ExportModal
-    :open="exportOpen" :title="t('Export stock requests')" entity-label="stock requests"
-    :columns="exportColumns" :total="view === 'product' ? skuTotal : total"
-    @close="exportOpen = false" @export="exportOpen = false"
+  <!-- Per-component activity log, opened from a breakdown row in either view. -->
+  <ActivityLogModal
+    :is-open="lineLogOpen"
+    :subject="lineLogSubject"
+    :entries="lineLogEntries"
+    @close="lineLogOpen = false"
   />
 
   <!-- ── Prototype scenario FAB (bottom-right): populated vs empty ── -->
@@ -912,6 +931,7 @@ const exportColumns = computed(() => {
 
 /* Available — the W-6 warning icon follows the figure, so the eye reads the number
    first and the flag second, and the icon is the thing nearest the row's actions. */
+.sr-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .sr-available { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); }
 .sr-available-warning { color: var(--mp-text-critical, #a8352d); cursor: help; flex-shrink: 0; }
 

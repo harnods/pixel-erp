@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   stockRequests, skuDemandGroups, isAwaitingTab, isTerminalRequest, stockRequestOpenCount,
+  stockRequestStatus,
   stockRequestStatusOptions,
   isOverdue, isLineOverdue, canRejectLine, rejectRequestLine,
   type StockRequest, type StockRequestLine,
@@ -188,8 +189,18 @@ describe('W-4 — the Awaiting tab', () => {
     expect(isAwaitingTab(req)).toBe(true)
   })
 
-  it('drops a row once reserved + consumed reaches required', () => {
+  // Reserving is not finishing. The request's status asks whether anything is
+  // outstanding, and stock committed but not yet issued still is — so a fully
+  // RESERVED request stays in Awaiting and only leaves once it is fulfilled.
+  it('keeps a fully reserved row until its qty is issued', () => {
     const req = seedForWorkOrder([line('mdf', 20, { reserved: 12, consumed: 8 })])
+    expect(stockRequestStatus(req)).toBe('open')
+    expect(isAwaitingTab(req)).toBe(true)
+  })
+
+  it('drops a row once every line is fulfilled', () => {
+    const req = seedForWorkOrder([line('mdf', 20, { consumed: 20 })])
+    expect(stockRequestStatus(req)).toBe('completed')
     expect(isAwaitingTab(req)).toBe(false)
   })
 
@@ -260,11 +271,15 @@ describe('The Closed tab', () => {
     expect(isTerminalRequest(req)).toBe(false)
   })
 
-  it('no longer offers the two terminal statuses in the Status filter', () => {
+  // The filter offers LINE statuses — "show me the components still to reserve".
+  // The request's own three are the tabs, so offering them here could only ever
+  // empty the table.
+  it('offers the line statuses, never the request-level ones', () => {
     const values = stockRequestStatusOptions.map(o => o.value)
-    expect(values).not.toContain('rejected')
-    expect(values).not.toContain('canceled')
-    expect(values).toEqual(['requested', 'partially reserved', 'reserved', 'issued / picked'])
+    for (const requestLevel of ['open', 'completed', 'canceled']) {
+      expect(values).not.toContain(requestLevel)
+    }
+    expect(values).toEqual(['requested', 'partially reserved', 'reserved', 'fulfilled'])
   })
 })
 

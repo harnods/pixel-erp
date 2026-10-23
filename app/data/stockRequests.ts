@@ -126,28 +126,37 @@ export interface StockRequest {
  * means by "the lowest status among its lines".
  */
 export type StockRequestStatus =
+  | 'open'
+  | 'completed'
+  | 'canceled'
+
+/**
+ * A LINE's status — the reservation progress of one component, which is a
+ * different question from the request's. A request is open or it is not; a line
+ * says how far the warehouse has got with that component.
+ *
+ * `rejected` sits outside the progression: the stockist declined that line, so it
+ * is no longer demand at all (W-7). It is kept because a rejected line still has
+ * to render as something on the request it stays listed on.
+ */
+export type StockRequestLineStatus =
   | 'requested'
   | 'partially reserved'
   | 'reserved'
-  | 'issued / picked'
+  | 'fulfilled'
   | 'rejected'
-  | 'canceled'
 
 /**
  * Rank for "lowest status wins" (W-3). A request is only as good as its weakest
  * line: one untouched component means the warehouse still has work to do, however
  * complete the rest is.
- *
- * `canceled` outranks everything because it is decided by the work order, not by
- * reservation progress — a cancelled job's lines are moot whatever their qty says.
  */
-const STATUS_RANK: Record<StockRequestStatus, number> = {
+const LINE_STATUS_RANK: Record<StockRequestLineStatus, number> = {
   'requested': 0,
   'partially reserved': 1,
   'rejected': 2,
   'reserved': 3,
-  'issued / picked': 4,
-  'canceled': 5,
+  'fulfilled': 4,
 }
 
 /**
@@ -174,33 +183,45 @@ export function requestCoveredQty(req: StockRequest): number {
 /**
  * One line's status (W-3) — derived, never stored.
  *
- * `canceled` is passed in rather than read here because it is a property of the
- * raising work order, not of the line; see {@link stockRequestStatus}.
+ * `fulfilled` means the qty asked for has been issued to production; up to that
+ * point the line is requested, partially reserved or reserved by how much of it
+ * the warehouse has committed.
  */
-export function stockRequestLineStatus(line: StockRequestLine): StockRequestStatus {
+export function stockRequestLineStatus(line: StockRequestLine): StockRequestLineStatus {
   if (line.rejected) return 'rejected'
-  if (line.consumed >= line.qty && line.qty > 0) return 'issued / picked'
+  if (line.consumed >= line.qty && line.qty > 0) return 'fulfilled'
   const covered = lineCovered(line)
   if (covered === 0) return 'requested'
   return covered < line.qty ? 'partially reserved' : 'reserved'
 }
 
 /**
- * The request's badge — **the lowest status among its lines** (v0.5 W-3).
+ * The request's own status — **open, completed or canceled**, which is a smaller
+ * question than its lines': is there anything left for the warehouse to do?
  *
- * This replaces v0.4's qty-weighted derivation, which could call a request
- * "partially reserved" when one line was untouched and another over-covered. Status
- * is about whether the warehouse still has work to do, and qty totals hide that.
+ * It is deliberately NOT the raising work order's status. The dashboard used to
+ * show that, so a row could read "In progress" while every component on it was
+ * still unreserved — the job had started, the request had not been touched. A
+ * request answers for itself.
  *
- * A cancelled or deleted work order makes the whole request Canceled (UC-09); its
- * lines keep their own figures so the record still reads truthfully.
+ * `canceled` comes from the work order, because a cancelled job's demand is moot
+ * whatever its lines say (UC-09). Otherwise a request is completed once nothing
+ * is outstanding — every line fulfilled, or every line declined — and open until
+ * then. The Awaiting tab is exactly the open ones; Closed holds the other two.
  */
 export function stockRequestStatus(req: StockRequest): StockRequestStatus {
   if (workOrderFor(req)?.status === 'canceled') return 'canceled'
+  if (req.lines.length === 0) return 'open'
+  const outstanding = req.lines.filter(l => !l.rejected && stockRequestLineStatus(l) !== 'fulfilled')
+  return outstanding.length === 0 ? 'completed' : 'open'
+}
+
+/** The lowest line status on a request — how far the warehouse has got overall. */
+export function lowestLineStatus(req: StockRequest): StockRequestLineStatus {
   if (req.lines.length === 0) return 'requested'
   return req.lines
     .map(stockRequestLineStatus)
-    .reduce((lowest, s) => (STATUS_RANK[s] < STATUS_RANK[lowest] ? s : lowest))
+    .reduce((lowest, s) => (LINE_STATUS_RANK[s] < LINE_STATUS_RANK[lowest] ? s : lowest))
 }
 
 /**
@@ -238,16 +259,16 @@ export function needsAction(req: StockRequest): boolean {
 /**
  * Status options for the quick filter / All-filters drawer — no "All …" entry (W-5).
  *
- * The two TERMINAL statuses are deliberately absent: `rejected` and `canceled`
- * are a TAB now (see {@link isTerminalRequest}), and offering them here too would
- * let a user ask the Awaiting tab for rejected rows, which by definition holds
- * none — a filter that can only ever empty the table.
+ * These are the LINE statuses, because that is what a filter on this page is for:
+ * "show me the components still to reserve". The request's own three — open,
+ * completed, canceled — are the tabs, so offering them here as well would let a
+ * user ask the Awaiting tab for completed rows, which by definition holds none.
  */
-export const stockRequestStatusOptions: { value: StockRequestStatus; label: string }[] = [
+export const stockRequestStatusOptions: { value: StockRequestLineStatus; label: string }[] = [
   { value: 'requested',          label: 'Requested'          },
   { value: 'partially reserved', label: 'Partially reserved' },
   { value: 'reserved',           label: 'Reserved'           },
-  { value: 'issued / picked',    label: 'Issued / picked'    },
+  { value: 'fulfilled',          label: 'Fulfilled'          },
 ]
 
 /**
@@ -581,27 +602,17 @@ export function isActionable(req: StockRequest): boolean {
  * to do.
  */
 export function isAwaitingTab(req: StockRequest): boolean {
-  return isOnDashboard(req) && isActionable(req) && needsAction(req)
+  return isOnDashboard(req) && stockRequestStatus(req) === 'open'
 }
 
 /**
- * The **Closed** tab — the two TERMINAL statuses (W-3).
- *
- * `rejected` and `canceled` are the states where nothing further will happen:
- * the stockist declined the demand, or the raising work order went away. They
- * stay listed, because a request that vanishes reads like one that was never
- * raised — but they are not work, so they live apart from the tab the stockist
- * works down, and they are no longer offered in the Status filter either.
- *
- * Status is derived, so this needs no second clause: `rejected` outranks every
- * fulfilled state in STATUS_RANK, so a request whose own demand is settled and
- * whose extra line was declined derives `rejected` on its own. One whose demand
- * is still open derives the lower status and stays in Awaiting, where the work
- * is.
+ * The **Closed** tab — completed and canceled, the two statuses where nothing
+ * further will happen. They stay listed, because a request that vanishes reads
+ * like one that was never raised, but they are not work, so they live apart from
+ * the tab the stockist works down.
  */
 export function isTerminalRequest(req: StockRequest): boolean {
-  const status = stockRequestStatus(req)
-  return status === 'rejected' || status === 'canceled'
+  return stockRequestStatus(req) !== 'open'
 }
 
 /** Requests still needing warehouse action — drives the sidebar count badge. */
@@ -632,8 +643,8 @@ export interface SkuDemandEntry {
   /** The earliest required date among the lines merged here. */
   requiredDate: string
   destAvailable: number
-  /** The LOWEST status among the lines merged here, as a request's own status is. */
-  status: StockRequestStatus
+  /** The LOWEST line status among the lines merged here. */
+  status: StockRequestLineStatus
 }
 
 /** One aggregated component row — same SKU summed across every open work order. */
@@ -662,7 +673,9 @@ export interface SkuDemandGroup {
   remaining: number
   /** free stock now, after any backdated recalculation (W-6) */
   available: number
-  status: StockRequestStatus
+  /** Lowest LINE status across this component's demand — the same vocabulary the
+   *  breakdown rows use, so a product row and its transactions read alike. */
+  status: StockRequestLineStatus
   /**
    * W-7 — any line behind this row past its required date and not fully covered.
    * The product view shows it exactly as the transaction view does: a product row
@@ -734,7 +747,7 @@ export function skuDemandGroups(
       seen.qty += line.qty
       seen.covered += lineCovered(line)
       if (line.requiredDate < seen.requiredDate) seen.requiredDate = line.requiredDate
-      if (STATUS_RANK[status] < STATUS_RANK[seen.status]) seen.status = status
+      if (LINE_STATUS_RANK[status] < LINE_STATUS_RANK[seen.status]) seen.status = status
     }
     const entries: SkuDemandEntry[] = [...byRequest.values()]
     const required = entries.reduce((s, e) => s + e.qty, 0)
@@ -771,7 +784,7 @@ export function skuDemandGroups(
       // Lowest status among the lines behind this row, same rule as a request (W-3).
       status: entries
         .map(e => e.status)
-        .reduce((lowest, st) => (STATUS_RANK[st] < STATUS_RANK[lowest] ? st : lowest), 'issued / picked' as StockRequestStatus),
+        .reduce((lowest, st) => (LINE_STATUS_RANK[st] < LINE_STATUS_RANK[lowest] ? st : lowest), 'fulfilled' as StockRequestLineStatus),
       ...(backdate ? { backdate } : {}),
       // Fully covered — not merely "enough stock exists" (see needsAction).
       sufficient: remaining === 0,
@@ -925,10 +938,14 @@ export function reservedForWorkOrder(workOrderId: string, productId: string): nu
   return linesForProduct(req, productId).reduce((s, l) => s + lineCovered(l), 0)
 }
 
-/** Material readiness of a whole work order — the badge on its detail header. */
-export function workOrderReadiness(workOrderId: string): StockRequestStatus | undefined {
+/**
+ * Material readiness of a whole work order — the badge on its detail header. This
+ * is the lowest LINE status, not the request's own: "is every component ready",
+ * not "is the request still open".
+ */
+export function workOrderReadiness(workOrderId: string): StockRequestLineStatus | undefined {
   const req = requestForWorkOrder(workOrderId)
-  return req ? stockRequestStatus(req) : undefined
+  return req ? lowestLineStatus(req) : undefined
 }
 
 /**
