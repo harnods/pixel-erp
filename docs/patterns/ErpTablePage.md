@@ -247,16 +247,21 @@ interface TableColumn {
 
 **Width resolution order** (`colStyle`): explicit `width` → pinned exactly (min =
 max = width); otherwise the `kind`'s range (or `default` when `kind` is unset). The
-table uses `table-layout: auto` so these min/max ranges are honoured, plus a
+table uses `table-layout: fixed` with a
 flexible spacer column that soaks up leftover width — keeping the caps intact and
-the sticky actions `[...]` column flush right. The spacer sits before the first
-`isTrailingAction` column when present, else right before the actions slot.
+the sticky actions `[...]` column flush right.
+
+**The spacer is ALWAYS rendered**, on every table, whether or not it has actions.
+It is what makes the caps hold: under `table-layout: fixed` a surplus is shared out
+across the columns, pushing every one past its declared max, so something has to
+absorb it. A read-only table (no `#actions` slot, no `isTrailingAction`) needs that
+just as much as one with a kebab — it simply has nothing to push right. When the
+columns already fill the table the spacer collapses to 0.
 
 **The action column is ALWAYS flush right, pushed by exactly one spacer column** —
 whether that action is the `[...]` kebab (`#actions` slot) OR a trailing button such
-as "View details" (`isTrailingAction: true`). The spacer is inserted whenever there
-is an `#actions` slot **or** any `isTrailingAction` column, so a table with only a
-"View details" button (no kebab) still pushes it to the far right. Give the
+as "View details" (`isTrailingAction: true`). The spacer sits before the first
+`isTrailingAction` column when present, else after all data columns. Give the
 trailing-action column `align: 'right'` so the button hugs the edge inside its cell.
 
 ## Slots

@@ -452,11 +452,18 @@ const spacerBeforeIndex = computed(() => {
 // trailing-action column (e.g. a "View details" button). Either way we insert the
 // single flexible spacer so the action column is always pushed to the far right.
 const hasTrailingAction = computed(() => props.columns.some(c => c.isTrailingAction))
-const showSpacer = computed(() => !!slots.actions || hasTrailingAction.value)
+// Always present. The spacer is what makes the width standard hold: under
+// table-layout:fixed a surplus is shared out across the columns, pushing every
+// one past its declared max, so SOMETHING has to absorb it. A read-only table
+// (no actions slot, no trailing action) needs that just as much as one with a
+// [...] column — it just has nothing to push right. Collapses to 0 when the
+// columns already fill the table.
+const showSpacer = computed(() => true)
 
 const totalCols = computed(() =>
   props.columns.length +
-  (slots.actions ? 2 : (hasTrailingAction.value ? 1 : 0)) +   // actions col (+ its spacer), or just the spacer for a trailing-action button
+  1 +                               // the flexible spacer, always present
+  (slots.actions ? 1 : 0) +         // the sticky [...] column
   (props.hasAiChat ? 1 : 0)
 )
 
@@ -507,7 +514,7 @@ const bulkCountLabel = computed(() => {
             <col v-if="showSpacer && ci === spacerBeforeIndex" class="erp-col-spacer" />
             <col :style="colStyle(col)" />
           </template>
-          <col v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
+          <col v-if="showSpacer && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
           <col v-if="$slots.actions" :style="{ width: actionsColWidth, minWidth: actionsColWidth, maxWidth: actionsColWidth }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
@@ -617,7 +624,7 @@ const bulkCountLabel = computed(() => {
             </template>
 
             <!-- Flexible spacer th (no trailing-action column → sits before the actions slot) -->
-            <th v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-th erp-th--spacer" />
+            <th v-if="showSpacer && !loading && spacerBeforeIndex === columns.length" class="erp-th erp-th--spacer" />
 
             <!-- Actions th — sticky right, no label (hidden only on first-load skeleton) -->
             <th
@@ -680,7 +687,7 @@ const bulkCountLabel = computed(() => {
               </template>
 
               <!-- Flexible spacer td (no trailing-action column → sits before the actions slot) -->
-              <td v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
 
               <!-- Actions td — sticky right -->
               <td
@@ -740,7 +747,7 @@ const bulkCountLabel = computed(() => {
                 />
               </td>
               </template>
-              <td v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && !loading && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
               <!-- match data-row columns during pagination; hidden on first load -->
               <td
                 v-if="$slots.actions && !loading"
