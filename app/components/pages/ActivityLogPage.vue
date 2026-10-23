@@ -36,7 +36,9 @@ const rows = computed<ActivityEntry[]>(() => (previewMode.value === 'Empty state
 const columns: TableColumn[] = [
   { key: 'date',    label: t('Date'),    kind: 'datetime', sortable: true, sortType: 'date' },
   { key: 'user',    label: t('User'),    kind: 'name',     sortable: true, sortType: 'text' },
-  { key: 'action',  label: t('Actions'), kind: 'status',   sortable: true, sortType: 'text' },
+  // No `kind`: ACTIONS is a plain text category, not a badge, so it takes the
+  // default range. `status` (128px) is reserved for ErpStatusBadge columns.
+  { key: 'action',  label: t('Actions'),                 sortable: true, sortType: 'text' },
   { key: 'feature', label: t('Feature'),                   sortable: true, sortType: 'text' },
   { key: 'number',  label: t('Number'),  kind: 'number' },
   { key: 'detail',  label: t('Detail'),  kind: 'address' },
@@ -279,6 +281,45 @@ function visibleDetails(row: ActivityEntry): ActivityDetail[] {
 </template>
 
 <style scoped>
+/* Filter bar — the same scoped block every index page carries (.filter-search
+   itself comes from erp.css). */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-all-btn {
+  display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
+  background: var(--mp-background-neutral) !important;
+  border: 1px solid var(--mp-border-bold, #8c9596) !important;
+  border-radius: var(--mp-radii-full, 999px) !important;
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary); cursor: pointer; white-space: nowrap;
+}
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
+.filter-all-btn--active {
+  background: var(--mp-background-neutral-subtle) !important;
+  border-color: var(--mp-colors-border-bold, #8c9596) !important;
+}
+.filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
+.filter-search-input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default); min-width: 0;
+}
+.filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px);
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* Empty state */
+.empty-full { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-9) var(--mp-spacing-4); }
+.empty-full-title { font-size: var(--mp-font-sizes-lg, 1rem); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin-bottom: var(--mp-spacing-2); }
+
 /* Link + muted */
 .cell-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }

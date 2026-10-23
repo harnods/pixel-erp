@@ -27,10 +27,11 @@ beforeAll(() => {
 })
 beforeEach(() => { localStorage.clear() })
 
+type Column = { key: string; label: string; kind?: string }
 type Vm = {
   paginated: ActivityEntry[]
   total: number
-  columns: { key: string; label: string }[]
+  columns: Column[]
   statusFilter: string
   featureFilter: string
   search: string
@@ -52,6 +53,21 @@ describe('Activity log index', () => {
     const vm = await mountPage()
     expect(vm.columns.map(c => c.key))
       .toEqual(['date', 'user', 'action', 'feature', 'number', 'detail'])
+  })
+
+  it('takes every width from the shared kinds, none hand-set', async () => {
+    const vm = await mountPage()
+    const kindOf = (k: string) => vm.columns.find(c => c.key === k)!.kind
+    expect(kindOf('date')).toBe('datetime')     // "30/01/2026, 11:00" clips at 160
+    expect(kindOf('user')).toBe('name')
+    expect(kindOf('number')).toBe('number')
+    expect(kindOf('detail')).toBe('address')    // wraps to several lines
+    // ACTIONS is plain text, not an ErpStatusBadge — `status` (128px) would be
+    // borrowing a badge column's width for a category label.
+    expect(kindOf('action')).toBeUndefined()
+    expect(kindOf('feature')).toBeUndefined()
+    // No column may carry a pixel width of its own.
+    expect(vm.columns.every(c => !('width' in c))).toBe(true)
   })
 
   it('lists every seeded entry, newest first', async () => {
