@@ -856,6 +856,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['BillOfMaterialsIndexPage.vue'],
   },
   {
+    id: 'activity-log-index',
+    title: 'Activity log index',
+    description:
+      'Other lists \u203a Activity log: the company-wide audit trail (Figma Other-Lists 4215-21752) as DATE \u00b7 USER \u00b7 ACTIONS \u00b7 FEATURE \u00b7 NUMBER \u00b7 DETAIL. An update reads old \u2192 new; a busy entry shows three lines plus a "+N more" toggle. Filter by Actions, Feature, or All filters (date range + user), and search across every column. Same table the CRM already renders from the same Figma node, contextualised for ERP modules.',
+    date: '2026-10-23',
+    files: ['ActivityLogPage.vue', 'activityLog.ts'],
+  },
+  {
     id: 'mp-upload-change-payload',
     title: 'Upload fields stage what you pick',
     description:

@@ -158,6 +158,7 @@ const pageRegistry: Record<string, Component> = {
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
   'Recurring transactions': defineAsyncComponent(() => import('~/components/pages/RecurringTransactionsPage.vue')),
   'File manager':      defineAsyncComponent(() => import('~/components/pages/FileManagerPage.vue')),
+  'Activity log':      defineAsyncComponent(() => import('~/components/pages/ActivityLogPage.vue')),
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),

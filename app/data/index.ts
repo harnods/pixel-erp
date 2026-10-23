@@ -118,6 +118,9 @@ export * from './recurringTransactions'
 export * from './fileManager'
 export * from './fileAttachmentHandoff'
 
+// ── Other lists — activity log ──────────────────────────────────────────────
+export * from './activityLog'
+
 // ── Seed status coverage — runs LAST (after every base seed has initialised) so
 // the mock DB has ≥1 record in every inbound/outbound status. ─────────────────
 import './seedCoverage'
