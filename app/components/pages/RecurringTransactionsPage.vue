@@ -368,7 +368,7 @@ function confirmDelete() {
             :data="NEW_TYPE_OPTIONS"
             label-prop="label"
             value-prop="value"
-            is-searchable use-portal is-full-width
+            is-searchable is-full-width
             :placeholder="t('Select transaction type')"
             @update:model-value="newTxnError = ''"
           />
