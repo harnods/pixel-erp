@@ -279,6 +279,8 @@ const RecurringBillDetailsPage = asyncPage(() => import('~/components/pages/Recu
 const NewRecurringReceiveMoneyPage = asyncPage(() => import('~/components/pages/NewRecurringReceiveMoneyPage.vue'))
 const NewRecurringSpendMoneyPage = asyncPage(() => import('~/components/pages/NewRecurringSpendMoneyPage.vue'))
 const NewRecurringInternalTransferPage = asyncPage(() => import('~/components/pages/NewRecurringInternalTransferPage.vue'))
+const NewRecurringReceivePaymentPage = asyncPage(() => import('~/components/pages/NewRecurringReceivePaymentPage.vue'))
+const NewRecurringPurchasePaymentPage = asyncPage(() => import('~/components/pages/NewRecurringPurchasePaymentPage.vue'))
 
 const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseOrderPage.vue'))
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
@@ -739,6 +741,8 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[2] === 'receive-money') return { component: NewRecurringReceiveMoneyPage, id: 'new' }
     if (segs[2] === 'spend-money') return { component: NewRecurringSpendMoneyPage, id: 'new' }
     if (segs[2] === 'internal-transfer') return { component: NewRecurringInternalTransferPage, id: 'new' }
+    if (segs[2] === 'receive-payment') return { component: NewRecurringReceivePaymentPage, id: 'new' }
+    if (segs[2] === 'purchase-payment') return { component: NewRecurringPurchasePaymentPage, id: 'new' }
     return { component: PlaceholderPage, id: segs[2]! }
   }
   if (segs.length >= 3 && segs[0] === 'recurring-transactions' && segs[2] === 'edit') {
