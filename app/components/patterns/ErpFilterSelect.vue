@@ -11,7 +11,7 @@
  * a checkbox per option and an "N selected" trigger. The menu stays open while
  * you tick, since picking several is the point. `modelValue` is then a string[].
  */
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import {
   MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpButton, MpCheckbox, css,
@@ -73,7 +73,18 @@ const filtered = computed<Opt[]>(() => {
 
 function focusOpen() { if (props.disabled || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
-function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
+/**
+ * Single-select closes on blur — the pick is the whole interaction, so losing
+ * focus means done. MULTIPLE does NOT: ticking an option moves focus to its
+ * checkbox, and closing on that blur meant the list shut after the first pick
+ * and had to be reopened for every component. There, closing is the popover's
+ * own job — it emits `close` on a click outside, which is the gesture that
+ * actually means "finished picking".
+ */
+function onBlur() {
+  if (props.multiple) return
+  window.setTimeout(() => { open.value = false; query.value = '' }, 120)
+}
 function close() { open.value = false; query.value = '' }
 function pick(v: string) {
   if (props.multiple) {
@@ -92,10 +103,29 @@ function clearAll() {
 function enter() { if (filtered.value.length) pick(filtered.value[0]!.value) }
 
 const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'auto' })
+
+/**
+ * Multi-select closes on a click OUTSIDE the field and its menu. The popover is
+ * `is-manual`, so it never closes itself, and blur cannot do the job here: every
+ * tick moves focus to a checkbox and would shut the list after one pick. The
+ * menu is portalled, so "outside" has to account for it as well as the field.
+ */
+const rootEl = ref<HTMLElement | null>(null)
+function onDocumentPointerDown(e: Event) {
+  if (!open.value || !props.multiple) return
+  const target = e.target as Node | null
+  if (!target) return
+  if (rootEl.value?.contains(target)) return
+  if ((target as Element).closest?.('[data-pixel-component="MpPopoverContent"]')) return
+  open.value = false
+  query.value = ''
+}
+onMounted(() => document.addEventListener('pointerdown', onDocumentPointerDown, true))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointerDown, true))
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !disabled, 'efs--disabled': disabled, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
+  <div ref="rootEl" class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !disabled, 'efs--disabled': disabled, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
