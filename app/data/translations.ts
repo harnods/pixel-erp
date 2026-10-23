@@ -4606,6 +4606,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Select payee": "Pilih penerima",
   "You must select payee": "Anda harus memilih penerima",
   "New recurring spend money": "Keluar uang berulang",
+  "New recurring internal transfer": "Transfer internal berulang",
   "Less: Withholding tax": "Dikurangi: PPh",
   "Visible to vendor": "Terlihat oleh vendor",
   "Delete recurring transaction?": "Hapus transaksi berulang?",
