@@ -13,7 +13,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpButton, MpInput, MpAutocomplete, MpDatePicker, MpInputTag, MpTextarea, MpUpload, MpUploadList,
-  MpIcon, MpCheckbox, MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
+  MpIcon, MpCheckbox, MpTextlink, MpFormControl, MpFormLabel, MpFormErrorMessage, toast,
   type DataInterface,
 } from '@mekari/pixel3'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
@@ -229,7 +229,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" type="button" @click="goBack">{{ t('Recurring transactions') }}</button>
+          <MpTextlink id="rm-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ t('Recurring transactions') }}</MpTextlink>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New recurring receive money') }}</h1>
@@ -507,7 +507,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .it-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
   background: var(--mp-background-neutral, white); border-radius: 12px 12px 0 0;
-  padding: 24px; container-type: inline-size;
+  padding: var(--mp-spacing-6); container-type: inline-size;
 }
 .detail-footer {
   flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
