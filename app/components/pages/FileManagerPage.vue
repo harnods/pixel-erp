@@ -282,8 +282,8 @@ function confirmDelete() {
     <!-- ── Bulk actions ──
          One secondary-sm "Actions" dropdown, the repo default for a bulk bar
          (rule/btn-sm-secondary-only). Same four entries as the row menu.
-         Delete is in here at the user's explicit request; note this is the one
-         thing rule/bulk-actions-no-delete argues against. -->
+         Delete is last and danger-styled, behind a ConfirmModal that names the
+         count (rule/bulk-actions-delete-confirmed). -->
     <template #bulk-actions="{ selectedRows, deselectAll }">
       <MpPopover id="fm-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>

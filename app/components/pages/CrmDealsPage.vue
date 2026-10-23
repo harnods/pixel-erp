@@ -10,7 +10,7 @@
  * page at /crm/deals/new); Edit navigates to /crm/deals/:id/edit. Import/Export reuse the
  * shared modals; stage moves go through moveDealStage (Won terminal, Lost reason,
  * reopen) so the kanban and the table enforce the same PRD rules; bulk owner/stage
- * update the selection. Per rule/bulk-actions-no-delete + the PRD "no permanent
+ * update the selection. Per rule/bulk-actions-delete-confirmed + the PRD "no permanent
  * delete in V1", the only lifecycle action is Archive / Restore.
  */
 import { ref, reactive, computed, watch, inject, onMounted } from 'vue'

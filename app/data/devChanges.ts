@@ -47,7 +47,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'recurring-bulk-delete',
     title: 'Bulk delete on recurring index pages',
     description:
-      'Selecting rows on any recurring index (sales invoices, sales orders, purchase invoices, purchase orders, expenses) now reveals a Delete action in the shared ErpTablePage bulk bar. Delete is a dedicated button behind its own confirm modal — never folded into the Actions dropdown (rule/bulk-actions-no-delete). Deleting persists and the selection clears.',
+      'Selecting rows on any recurring index (sales invoices, sales orders, purchase invoices, purchase orders, expenses) now reveals a Delete action in the shared ErpTablePage bulk bar. Delete is a dedicated button beside the Actions dropdown, behind its own confirm modal (rule/bulk-actions-delete-confirmed). Deleting persists and the selection clears.',
     date: '2026-10-22',
     files: [
       'RecurringSalesInvoicesPage.vue', 'RecurringSalesOrdersPage.vue',

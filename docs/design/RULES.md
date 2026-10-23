@@ -80,7 +80,7 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | Green/brand active segment, square segmented | pill + `#E2E8F0`/`#165082` active | `rule/segmented-control-pill` |
 | A calendar clipped by an overflow container | portal it (`AdvancedDateRangePicker`) | `rule/date-picker-no-clip` |
 | A hand-rolled preview/scenario FAB on an index page | shared `ScenarioFab` (black, settings icon) | `rule/index-scenario-fab` |
-| `Delete` in a table bulk-actions menu | non-destructive bulk ops only | `rule/bulk-actions-no-delete` |
+| Bulk `Delete` that deletes straight from the bar, or confirms without a count | last item in the Actions dropdown, danger-styled, behind a `ConfirmModal` naming the count | `rule/bulk-actions-delete-confirmed` |
 | A thumbnail rail beside a PDF preview | single-column PDF, no rail | `rule/pdf-preview-modal` |
 | Export wired to a silent download | open `ExportModal` | `rule/export-modal` |
 | Share-via-email as a form-only dialog | `ShareViaEmailModal` (form + PDF preview) | `rule/share-via-email-modal` |
@@ -1119,12 +1119,27 @@ Every list/index page shares the same demo scaffolding and bulk-bar rules.
   it from a `loading` flag the page holds true until the initial (mock) fetch
   resolves. *Don't:* flash an empty table or a spinner-only screen on first paint.
   **Why:** consistent perceived-performance across the app. **Lint:** review.
-- **`rule/bulk-actions-no-delete`** — *Do:* the table **bulk-actions** bar (the
-  secondary-sm "Actions" dropdown) lists non-destructive batch operations only.
-  *Don't:* put **Delete** (or any hard-destructive action) in the bulk menu.
-  **Why:** bulk delete from a multi-select is too easy to trigger by accident;
-  deletion stays a per-record action behind its own confirm. **Lint:** review
-  (grep bulk-actions slot for `Delete`).
+- **`rule/bulk-actions-delete-confirmed`** — *Do:* a table **bulk-actions** bar
+  may offer **Delete**, and it is **always** behind a confirm. Put it **last** in
+  the secondary-sm "Actions" dropdown, styled destructive
+  (`class="row-menu-item--danger"`), wired to an `ask*`/`open*` handler that opens
+  a `ConfirmModal` (`variant="danger"`) naming **how many records** will go and
+  saying the deletion cannot be undone; the delete itself happens only in the
+  modal's `confirm` handler. On success, deselect the rows and toast the count.
+  *Don't:* delete straight from the bulk bar, ship a bulk Delete control wired to
+  nothing, or confirm with a message that doesn't say how many records are
+  affected. **Why:** bulk delete from a multi-select is easy to trigger by
+  accident, so the count in the confirm is the safety net — not the absence of
+  the action, which the modules genuinely need. **History:** this rule used to
+  read `rule/bulk-actions-no-delete` ("non-destructive batch operations only").
+  It was overruled: 15 index pages ship bulk Delete, all but one behind a
+  confirm. The rule now describes what the app does. **Lint:** review — grep
+  bulk-actions slots for `Delete` and check each one reaches a `ConfirmModal`.
+  **Known gaps:** `BillOfMaterialsIndexPage.vue`'s bulk Delete has **no handler
+  at all** (dead control — fix or remove it). Delete sits inside the Actions
+  dropdown on `CrmDealsPage`, `FileManagerPage`, `SalesOrdersPage` and
+  `SalesDeliveriesPage`; the other ten render it as a standalone secondary-sm
+  button beside the dropdown — the older form, which new pages should not copy.
 
 ## Patterns — shared modals & drawers (print · share · copy link · export)
 
