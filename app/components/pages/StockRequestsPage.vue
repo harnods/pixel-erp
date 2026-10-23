@@ -765,14 +765,13 @@ function onPerPageChange(n: number) {
               <span class="sr-child-sku-code">{{ entry.workOrderNumber }}</span>
               <!-- The log belongs with what it is about — this request's history
                    for this component — not in the actions column, where it read as
-                   one more thing to do to the row. -->
-              <MpTooltip :label="t('Activity log')" placement="top" use-portal>
-                <MpButton
-                  class="sr-log-btn" variant="ghost" left-icon="log" is-rounded
-                  :aria-label="`${t('Activity log')} — ${entry.requestNumber}`"
-                  @click="openEntryLog(sku(row), entry)"
-                />
-              </MpTooltip>
+                   one more thing to do to the row. A text link, because an icon
+                   here had to be guessed at and then explained by a tooltip. -->
+              <span
+                class="cell-link sr-log-link" role="button"
+                :aria-label="`${t('View log')} — ${entry.requestNumber}`"
+                @click.stop="openEntryLog(sku(row), entry)"
+              >{{ t('View log') }}</span>
             </span>
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
             <template v-else-if="col.key === 'required'">{{ entry.qty }}</template>
@@ -824,13 +823,11 @@ function onPerPageChange(n: number) {
             <span v-if="col.key === 'number'" class="sr-child-sku">
               <span class="sr-child-sku-name">{{ line.product }}</span>
               <span class="sr-child-sku-code">{{ line.sku }}</span>
-              <MpTooltip :label="t('Activity log')" placement="top" use-portal>
-                <MpButton
-                  class="sr-log-btn" variant="ghost" left-icon="log" is-rounded
-                  :aria-label="`${t('Activity log')} — ${line.product}`"
-                  @click="openLineLog(wo(row), line.productId)"
-                />
-              </MpTooltip>
+              <span
+                class="cell-link sr-log-link" role="button"
+                :aria-label="`${t('View log')} — ${line.product}`"
+                @click.stop="openLineLog(wo(row), line.productId)"
+              >{{ t('View log') }}</span>
             </span>
             <!-- Each cell means on a line what its header means on the request
                  above it: the line's own qty, required date, readiness and
@@ -1046,7 +1043,12 @@ function onPerPageChange(n: number) {
 
 /* Available — the W-6 warning icon follows the figure, so the eye reads the number
    first and the flag second, and the icon is the thing nearest the row's actions. */
-.sr-log-btn { margin-left: calc(-1 * var(--mp-spacing-2)); }
+/* Its own line under the code it follows, at the small size the SKU uses — it is
+   a way in, not a figure to read. */
+.sr-log-link {
+  display: inline-block; width: fit-content; margin-top: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
+}
 .sr-child-actions { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .sr-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .sr-available { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); }
