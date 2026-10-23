@@ -22,6 +22,8 @@ import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
+import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
 import { entriesFor } from '~/data/activityLog'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
@@ -34,9 +36,9 @@ import { TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   lineCovered, stockRequestLineStatus, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
-  reserveStock, reserveRequestProducts, rejectRequestLine, canReject, canRejectLine,
+  reserveStock, reserveRequestProducts, unreserveRequestProducts, rejectRequestLine, canReject, canRejectLine,
   isLineOverdue,
-  type StockRequest, type StockRequestLine,
+  type StockRequest, type StockRequestLine, type UnreserveDisposition,
   type SkuDemandGroup, type SkuDemandEntry,
 } from '~/data/stockRequests'
 
@@ -133,23 +135,21 @@ const woColumns: TableColumn[] = [
 const skuColumns: TableColumn[] = [
   { key: 'product',     label: t('Product name'),        kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',         label: t('SKU'),                 kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'openWorkOrders', label: t('Open transactions'),                sortable: true, sortType: 'number', align: 'right' },
+  { key: 'openWorkOrders', label: t('Number of transactions'),           sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
   // Status sits beside the date it depends on — a row is late or not against its
   // earliest required date, so the two read together.
   { key: 'status',      label: t('Status'),              kind: 'status',                 sortType: 'text' },
-  // Where the demand is wanted, then what is free THERE — availability is always
-  // per warehouse (W-10), so the two belong side by side, ahead of the qty block.
   { key: 'destinationWarehouse', label: t('Destination warehouse'), kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'available',   label: t('Available qty'),                           sortable: true, sortType: 'number', align: 'right' },
-  // The qty block reads across: required → reserved → remaining, then the unit
-  // they are all counted in. One unit column instead of a suffix on every number
-  // keeps the figures column-aligned and comparable down the page.
+  // The qty block reads across in the order the demand is worked: what is needed,
+  // then what has been committed and drawn down against it, then what is free at
+  // the destination to settle the rest, then the unit they are all counted in.
   { key: 'required',    label: t('Required qty'),                            sortable: true, sortType: 'number', align: 'right' },
   { key: 'reserved',    label: t('Reserved qty'),                            sortable: true, sortType: 'number', align: 'right' },
+  { key: 'consumed',    label: t('Used qty'),                                sortable: true, sortType: 'number', align: 'right' },
   { key: 'remaining',   label: t('Remaining qty'),                           sortable: true, sortType: 'number', align: 'right' },
+  { key: 'available',   label: t('Available qty'),                           sortable: true, sortType: 'number', align: 'right' },
   { key: 'unit',        label: t('Unit'),                kind: 'unit' },
-  { key: 'consumed',    label: t('Consumed qty'),                            sortable: true, sortType: 'number', align: 'right' },
 ]
 
 // Column show/hide — first column always on; "Last updated" is opt-in (off by default).
@@ -165,7 +165,7 @@ const allSkuCols: TableColumn[] = skuColumns
 const columnVisibility = reactive<Record<string, boolean>>({
   // Start date and Last updated are opt-in: neither is demand data.
   ...Object.fromEntries(allWoCols.map(c => [c.key, c.key !== 'lastUpdated' && c.key !== 'woStartDate'])),
-  ...Object.fromEntries(allSkuCols.map(c => [`sku.${c.key}`, c.key !== 'consumed'])),
+  ...Object.fromEntries(allSkuCols.map(c => [`sku.${c.key}`, true])),
 })
 const columnItems = computed(() => (view.value === 'product'
   ? allSkuCols.map((c, i) => ({ key: `sku.${c.key}`, label: c.label, disabled: i === 0 }))
@@ -443,21 +443,86 @@ const byRequest = (requestId: string) => ({ fromStockRequest: requestId })
  * transaction at once hid which ones actually moved, and the stockist works a
  * request at a time.
  */
-function reserveEntry(group: SkuDemandGroup, entry: SkuDemandEntry) {
-  const r = reserveRequestProducts(entry.requestId, [group.productId], { source: 'stock-request' })
+/**
+ * Reserve and unreserve both confirm before they act: the drawer lists the
+ * components in scope with a tickbox each, and the qty is NOT editable — a
+ * reservation is all of a line or none of it (R-8), so a qty field would offer a
+ * choice the model does not have.
+ *
+ * Scope follows the warehouse. A whole request can be reserved in one go only
+ * when every line of it is wanted at the SAME destination; stock is committed at
+ * a warehouse, so a request spanning three of them is three different decisions
+ * and has to be taken a component at a time.
+ */
+const confirmFor = ref<{ request: StockRequest; lines: StockRequestLine[] } | null>(null)
+const confirmReserveOpen = ref(false)
+const confirmUnreserveOpen = ref(false)
+
+/** Every line of this request is wanted at one warehouse. */
+function singleWarehouse(req: StockRequest): boolean {
+  return new Set(req.lines.filter(l => !l.rejected).map(l => l.destinationWarehouseId)).size <= 1
+}
+
+function openConfirm(req: StockRequest, lines: StockRequestLine[], kind: 'reserve' | 'unreserve') {
+  confirmFor.value = { request: req, lines }
+  if (kind === 'reserve') confirmReserveOpen.value = true
+  else confirmUnreserveOpen.value = true
+}
+
+/** From a By transaction request row — the whole request, same-warehouse only. */
+function reserveRequest(req: StockRequest) { openConfirm(req, req.lines.filter(l => !l.rejected), 'reserve') }
+function unreserveRequest(req: StockRequest) { openConfirm(req, req.lines.filter(l => l.reserved > 0), 'unreserve') }
+
+/** From a breakdown row — one component on one request. */
+function linesFor(req: StockRequest, productId: string) {
+  return req.lines.filter(l => l.productId === productId && !l.rejected)
+}
+function requestOf(id: string) { return stockRequests.find(r => r.id === id) }
+
+function onConfirmReserve(productIds: string[]) {
+  const ctx = confirmFor.value
+  confirmReserveOpen.value = false
+  if (!ctx) return
+  const r = reserveRequestProducts(ctx.request.id, productIds, { source: 'stock-request' })
   if (r.reservedQty === 0) {
-    toast.notify({
-      variant: 'error',
-      title: t('Failed to reserve. No stock at the destination warehouse'),
-      maxWidth: 'max-content',
-    })
+    toast.notify({ variant: 'error', title: t('Failed to reserve. No stock at the destination warehouse'), maxWidth: 'max-content' })
     return
   }
   toast.notify({
     variant: 'success',
-    title: `${r.reservedQty} ${t('unit reserved for')} ${entry.requestNumber}`,
+    title: `${r.reservedQty} ${t('unit reserved for')} ${ctx.request.number}`,
     maxWidth: 'max-content',
   })
+}
+
+function onConfirmUnreserve(payload: { productIds: string[]; disposition: UnreserveDisposition; reason: string }) {
+  const ctx = confirmFor.value
+  confirmUnreserveOpen.value = false
+  if (!ctx) return
+  const qty = unreserveRequestProducts(ctx.request.id, payload.productIds, payload.disposition, {
+    source: 'stock-request', reason: payload.reason,
+  })
+  if (qty === 0) return
+  toast.notify({
+    variant: 'success',
+    title: `${qty} ${t('unit unreserved for')} ${ctx.request.number}`,
+    maxWidth: 'max-content',
+  })
+}
+
+/** The activity log for one component on one request, from a By product row. */
+function openEntryLog(group: SkuDemandGroup, entry: SkuDemandEntry) {
+  const req = requestOf(entry.requestId)
+  if (req) openLineLog(req, group.productId)
+}
+
+function reserveEntryConfirm(group: SkuDemandGroup, entry: SkuDemandEntry) {
+  const req = requestOf(entry.requestId)
+  if (req) openConfirm(req, linesFor(req, group.productId), 'reserve')
+}
+function unreserveEntry(group: SkuDemandGroup, entry: SkuDemandEntry) {
+  const req = requestOf(entry.requestId)
+  if (req) openConfirm(req, linesFor(req, group.productId).filter(l => l.reserved > 0), 'unreserve')
 }
 
 const byComponent = (productIds: string[]) => ({ fromComponent: productIds.join(',') })
@@ -481,6 +546,12 @@ function reject(req: StockRequest) {
 // record, and this page feeds it two different row shapes depending on the view.
 function sku(row: unknown): SkuDemandGroup { return row as SkuDemandGroup }
 function wo(row: unknown): WoRow { return row as WoRow }
+
+/** Do the picked component rows all sit at ONE destination warehouse? */
+function oneWarehouseSelected(sel: Set<number>): boolean {
+  const ids = [...sel].map(i => skuPaginated.value[i]?.destinationWarehouseId).filter(Boolean)
+  return ids.length > 0 && new Set(ids).size === 1
+}
 
 function selectedSkuIds(sel: Set<number>): string[] {
   return [...sel].map(i => skuPaginated.value[i]?.productId).filter(Boolean) as string[]
@@ -586,8 +657,15 @@ function onPerPageChange(n: number) {
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <MpPopoverListItem @click="createPurchaseRequest(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create purchase request') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="createWarehouseTransfer(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
+            <!-- Both documents are raised AT one warehouse, so a selection
+                 spanning several has no single destination to raise one against.
+                 The row stays pickable and the reason is stated, rather than the
+                 action being greyed out with nothing to explain it. -->
+            <template v-if="oneWarehouseSelected(selectedRows as Set<number>)">
+              <MpPopoverListItem @click="createPurchaseRequest(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create purchase request') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="createWarehouseTransfer(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
+            </template>
+            <MpPopoverListItem v-else is-disabled>{{ t('Select components from one destination warehouse') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -637,7 +715,7 @@ function onPerPageChange(n: number) {
       <!-- Request rows carry no qty; the breakdown lines do. -->
     </template>
     <template #cell-consumed="{ row }">
-      {{ sku(row).consumed > 0 ? sku(row).consumed : '—' }}
+      <template v-if="view === 'product'">{{ sku(row).consumed > 0 ? sku(row).consumed : '—' }}</template>
     </template>
 
     <!-- Remaining = Required − Reserved − Consumed (W-2). Consumed counts as
@@ -689,8 +767,14 @@ function onPerPageChange(n: number) {
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
             <template v-else-if="col.key === 'required'">{{ entry.qty }}</template>
             <template v-else-if="col.key === 'reserved'">{{ entry.covered }}</template>
+            <template v-else-if="col.key === 'consumed'">{{ entry.consumed > 0 ? entry.consumed : '—' }}</template>
+            <!-- What this request still has outstanding for this component. -->
+            <span v-else-if="col.key === 'remaining'" :class="{ 'sr-short': entry.qty - entry.covered > 0 }">
+              {{ entry.qty - entry.covered > 0 ? entry.qty - entry.covered : '—' }}
+            </span>
             <template v-else-if="col.key === 'unit'">{{ sku(row).unit }}</template>
-            <template v-else-if="col.key === 'available'">{{ entry.destAvailable }}</template>
+            <!-- Availability is a property of the WAREHOUSE, not of one request's
+                 share of it, so it is stated once on the product row above. -->
             <template v-else-if="col.key === 'status'">
               <ErpStatusBadge :status="entry.status" />
             </template>
@@ -699,17 +783,27 @@ function onPerPageChange(n: number) {
           <!-- The request is the unit stock is reserved against, so the action
                lives on the breakdown row rather than on the product above it. -->
           <td class="sr-child-td sr-child-td--actions">
-            <MpPopover :id="`sr-entry-actions-${entry.requestId}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-              <MpPopoverTrigger>
-                <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
-              </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-                <MpPopoverList>
-                  <MpPopoverListItem @click="viewDetails(entry.requestId)">{{ t('View details') }}</MpPopoverListItem>
-                  <MpPopoverListItem v-if="entry.qty > entry.covered" @click="reserveEntry(sku(row), entry)">{{ t('Reserve stock') }}</MpPopoverListItem>
-                </MpPopoverList>
-              </MpPopoverContent>
-            </MpPopover>
+            <span class="sr-child-actions">
+              <MpTooltip :label="t('Activity log')" placement="top">
+                <MpButton
+                  variant="ghost" left-icon="log" is-rounded
+                  :aria-label="t('Activity log')"
+                  @click="openEntryLog(sku(row), entry)"
+                />
+              </MpTooltip>
+              <MpPopover :id="`sr-entry-actions-${entry.requestId}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopoverTrigger>
+                  <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+                  <MpPopoverList>
+                    <MpPopoverListItem @click="viewDetails(entry.requestId)">{{ t('View details') }}</MpPopoverListItem>
+                    <MpPopoverListItem v-if="entry.qty > entry.covered" @click="reserveEntryConfirm(sku(row), entry)">{{ t('Reserve stock') }}</MpPopoverListItem>
+                    <MpPopoverListItem v-if="entry.covered > 0" @click="unreserveEntry(sku(row), entry)">{{ t('Unreserve stock') }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </span>
           </td>
         </tr>
       </template>
@@ -853,8 +947,13 @@ function onPerPageChange(n: number) {
           <template v-if="view === 'transaction'">
             <MpPopoverList>
               <MpPopoverListItem @click="viewDetails(wo(row).id)">{{ t('View details') }}</MpPopoverListItem>
-              <template v-if="!wo(row).rejected && wo(row).status !== 'reserved' && wo(row).status !== 'issued / picked'">
-                <MpPopoverListItem @click="reserve(wo(row))">{{ t('Reserve stock') }}</MpPopoverListItem>
+              <template v-if="wo(row).status === 'open'">
+                <MpPopoverListItem v-if="singleWarehouse(wo(row))" @click="reserveRequest(wo(row))">{{ t('Reserve stock') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="singleWarehouse(wo(row)) && wo(row).lines.some(l => l.reserved > 0)" @click="unreserveRequest(wo(row))">{{ t('Unreserve stock') }}</MpPopoverListItem>
+                <!-- Several destinations: stock is committed at a warehouse, so
+                     the decision is taken a component at a time, in the rows
+                     below. Saying so beats a disabled item with no explanation. -->
+                <MpPopoverListItem v-if="!singleWarehouse(wo(row))" @click="toggleExpand(wo(row).id)">{{ t('Reserve per component below') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="createWarehouseTransfer(byRequest(wo(row).id))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="createPurchaseRequest(byRequest(wo(row).id))">{{ t('Create purchase request') }}</MpPopoverListItem>
               </template>
@@ -880,6 +979,20 @@ function onPerPageChange(n: number) {
     :warehouse-options="warehouseOptions"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
+  />
+
+  <!-- Reserve / unreserve always confirm: tick the components, qty is fixed. -->
+  <ReserveMaterialsModal
+    id="sr-reserve" :is-open="confirmReserveOpen"
+    :work-order-number="confirmFor?.request.number ?? ''"
+    :lines="confirmFor?.lines ?? []"
+    @close="confirmReserveOpen = false" @reserve="onConfirmReserve"
+  />
+  <UnreserveMaterialsModal
+    id="sr-unreserve" :is-open="confirmUnreserveOpen"
+    :work-order-number="confirmFor?.request.number ?? ''"
+    :lines="confirmFor?.lines ?? []"
+    @close="confirmUnreserveOpen = false" @unreserve="onConfirmUnreserve"
   />
 
   <!-- Per-component activity log, opened from a breakdown row in either view. -->
@@ -931,6 +1044,7 @@ function onPerPageChange(n: number) {
 
 /* Available — the W-6 warning icon follows the figure, so the eye reads the number
    first and the flag second, and the icon is the thing nearest the row's actions. */
+.sr-child-actions { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .sr-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .sr-available { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); }
 .sr-available-warning { color: var(--mp-text-critical, #a8352d); cursor: help; flex-shrink: 0; }

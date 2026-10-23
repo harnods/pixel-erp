@@ -640,6 +640,8 @@ export interface SkuDemandEntry {
   qty: number
   /** Summed across the request's lines for this component. */
   covered: number
+  /** Qty already issued to production, summed the same way. */
+  consumed: number
   /** The earliest required date among the lines merged here. */
   requiredDate: string
   destAvailable: number
@@ -738,6 +740,7 @@ export function skuDemandGroups(
           workOrderNumber: req.workOrderNumber,
           qty: line.qty,
           covered: lineCovered(line),
+          consumed: line.consumed,
           requiredDate: line.requiredDate,
           destAvailable: line.destAvailable,
           status,
@@ -746,6 +749,7 @@ export function skuDemandGroups(
       }
       seen.qty += line.qty
       seen.covered += lineCovered(line)
+      seen.consumed += line.consumed
       if (line.requiredDate < seen.requiredDate) seen.requiredDate = line.requiredDate
       if (LINE_STATUS_RANK[status] < LINE_STATUS_RANK[seen.status]) seen.status = status
     }
