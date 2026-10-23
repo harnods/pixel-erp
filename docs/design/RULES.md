@@ -1132,11 +1132,12 @@ Every list/index page shares the same demo scaffolding and bulk-bar rules.
   accident, so the count in the confirm is the safety net — not the absence of
   the action, which the modules genuinely need. **History:** this rule used to
   read `rule/bulk-actions-no-delete` ("non-destructive batch operations only").
-  It was overruled: 15 index pages ship bulk Delete, all but one behind a
+  It was overruled: 15 index pages ship bulk Delete, every one behind a
   confirm. The rule now describes what the app does. **Lint:** review — grep
   bulk-actions slots for `Delete` and check each one reaches a `ConfirmModal`.
-  **Known gaps:** `BillOfMaterialsIndexPage.vue`'s bulk Delete has **no handler
-  at all** (dead control — fix or remove it). Delete sits inside the Actions
+  **Where the module soft-deletes** (Bill of materials, Warehouses) the bulk
+  action is **Archive**, matching the row menu — never label it Delete when
+  nothing is actually deleted. **Known gaps:** Delete sits inside the Actions
   dropdown on `CrmDealsPage`, `FileManagerPage`, `SalesOrdersPage` and
   `SalesDeliveriesPage`; the other ten render it as a standalone secondary-sm
   button beside the dropdown — the older form, which new pages should not copy.

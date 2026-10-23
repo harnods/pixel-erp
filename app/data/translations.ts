@@ -2790,6 +2790,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Archive bill of materials?": "Arsipkan daftar material?",
   "will be removed from the list. You can still find it via the Show archived BOM filter.": "akan dihapus dari daftar. Anda masih dapat menemukannya melalui filter Tampilkan BOM diarsipkan.",
   "bill of materials": "daftar material",
+  // Indonesian has no plural form — both read "daftar material".
+  "bills of materials": "daftar material",
+  "will be removed from the list. You can still find them via the Show archived BOM filter.": "akan dihapus dari daftar. Anda masih dapat menemukannya melalui filter Tampilkan BOM diarsipkan.",
   "Costing ref.": "Ref. biaya",
   "No bill of materials": "Tidak ada daftar material",
   "Bill of materials will appear here.": "Daftar material akan muncul di sini.",

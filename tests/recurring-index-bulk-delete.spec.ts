@@ -5,9 +5,10 @@
  *
  * Two things are pinned here, because both are easy to regress:
  *  1. Delete is reachable from the shared ErpTablePage bulk bar once rows are
- *     selected — and is a dedicated button, NOT folded into an "Actions"
- *     dropdown (rule/bulk-actions-delete-confirmed keeps destructive ops out of that
- *     menu, so the button + its own confirm modal is the sanctioned shape).
+ *     selected. These pages render it as a dedicated button rather than inside
+ *     an "Actions" dropdown — the older of the two shapes the app uses
+ *     (rule/bulk-actions-delete-confirmed), kept here because that is what
+ *     these five pages actually ship.
  *  2. Confirming actually removes the selected templates from the backing
  *     store, so the bulk bar is not dead UI.
  */

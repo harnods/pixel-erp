@@ -848,6 +848,14 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['FileManagerPage.vue', 'AddFileDrawer.vue'],
   },
   {
+    id: 'bom-bulk-archive',
+    title: 'Bulk archive on Bill of materials',
+    description:
+      'The bulk bar on the BOM index shipped a Delete button wired to no handler — selecting rows and pressing it did nothing. It now archives the selection behind a confirm that names how many BOMs go, and is labelled Archive, because this module has no hard delete: the row menu archives too and an archived BOM stays reachable via Show archived BOM. Rows already archived are left out of the count.',
+    date: '2026-10-23',
+    files: ['BillOfMaterialsIndexPage.vue'],
+  },
+  {
     id: 'mp-upload-change-payload',
     title: 'Upload fields stage what you pick',
     description:
