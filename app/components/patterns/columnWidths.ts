@@ -39,8 +39,10 @@ export interface ColWidthRange {
  */
 export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   date:    { minWidth: '160px', maxWidth: '160px' }, // fixed
-  // A timestamp needs more room than a bare date: "30/01/2026, 11:00" plus
-  // the "by <user>" line beneath it. 160 clipped both.
+  // A timestamp column. Measured, "30/01/2026, 11.00" is 123px and a 160px
+  // column gives 136px of content, so this is NOT about clipping — it is
+  // breathing room for a cell carrying date, time and often a byline under it,
+  // which reads cramped at the bare-date width.
   datetime: { minWidth: '220px', maxWidth: '220px' }, // fixed
   // 240 min, not 160. Two things have to fit here at the MINIMUM, because a
   // saturated table never grows a column past it:
