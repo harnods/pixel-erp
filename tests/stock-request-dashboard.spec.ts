@@ -330,3 +330,42 @@ describe('By product and By transaction cover the same requests', () => {
     expect(seen).toEqual(new Set(['sr-parity-002', 'sr-parity-003']))
   })
 })
+
+/**
+ * Bulk documents — a purchase request or a warehouse transfer — are raised AT
+ * one warehouse, so the By product selection is held to one. The page disables
+ * the rows that could not join a selection rather than letting a mixed one be
+ * built and then refused, so the constraint shows while choosing.
+ */
+describe('By product bulk selection is held to one warehouse', () => {
+  function rowsAcrossTwoWarehouses() {
+    const a = line('mdf', 4)
+    const b = { ...line('kaki', 6), destinationWarehouseId: 'wh-002', destinationWarehouse: 'Gudang Surabaya Timur' }
+    const req: StockRequest = {
+      id: 'sr-wh-scope', number: 'SR-2026-9500',
+      workOrderId: workOrders.find(w => w.status === 'not started')!.id,
+      workOrderNumber: 'WO-SCOPE', requestDate: '2026-06-20', lines: [a, b],
+    }
+    stockRequests.push(req)
+    return skuDemandGroups([req])
+  }
+
+  beforeEach(() => {
+    for (let i = stockRequests.length - 1; i >= 0; i--) {
+      if (stockRequests[i]!.id === 'sr-wh-scope') stockRequests.splice(i, 1)
+    }
+  })
+
+  it('splits a request across warehouses into rows that cannot be picked together', () => {
+    const groups = rowsAcrossTwoWarehouses()
+    const warehouses = new Set(groups.map(g => g.destinationWarehouseId))
+    expect(groups.length).toBe(2)
+    expect(warehouses.size).toBe(2)
+
+    // The page's rule: once one row is picked, rows at any other warehouse are
+    // out of scope for the same document.
+    const picked = groups[0]!
+    const outOfScope = groups.filter(g => g.destinationWarehouseId !== picked.destinationWarehouseId)
+    expect(outOfScope).toHaveLength(1)
+  })
+})

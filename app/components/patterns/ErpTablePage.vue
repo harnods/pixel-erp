@@ -89,6 +89,13 @@ const props = withDefaults(defineProps<{
   contextLabel?: (row: Record<string, unknown>) => string
   /** Return true for rows that cannot be selected (checkbox disabled) */
   rowDisabled?: (row: Record<string, unknown>, index: number) => boolean
+  /**
+   * Hide the select-all checkbox, in the header and in the bulk bar. For a table
+   * whose bulk action is only valid over part of the list — the stock requests
+   * By product view, where a document is raised at ONE warehouse — "select all"
+   * is an offer the action cannot honour.
+   */
+  noSelectAll?: boolean
   /** Singular noun shown in the bulk bar count, e.g. "warehouse" → "2 warehouses selected" */
   bulkLabel?: string
   /** Plural override for the bulk bar count — use when the noun isn't just `bulkLabel + 's'`
@@ -148,6 +155,7 @@ const props = withDefaults(defineProps<{
   search: '',
   contextLabel: undefined,
   rowDisabled: undefined,
+  noSelectAll: false,
   bulkLabel: 'item',
   bulkLabelPlural: undefined,
   actionsWidth: undefined,
@@ -168,7 +176,7 @@ const emit = defineEmits<{
   clearFilters: []
   clearSearch: []
   clearAll: []
-  selectionChange: [count: number]
+  selectionChange: [count: number, indices: number[]]
 }>()
 
 // Column width resolution (source of truth = columnWidths.ts):
@@ -267,7 +275,7 @@ function deselectAll() {
   selectedRows.value = new Set()
 }
 
-watch(selectedRows, (s) => emit('selectionChange', s.size))
+watch(selectedRows, (s) => emit('selectionChange', s.size, [...s]))
 
 // Reset selection when rows change (page change, filter, sort)
 watch(() => props.rows, () => {
@@ -548,6 +556,7 @@ const bulkCountLabel = computed(() => {
               <div class="erp-bulk-bar">
                 <div class="erp-bulk-bar__left">
                   <MpCheckbox
+                    v-if="!noSelectAll"
                     id="erp-bulk-select-all"
                     :is-checked="allSelected"
                     :is-indeterminate="someSelected"
@@ -592,7 +601,7 @@ const bulkCountLabel = computed(() => {
             >
               <span class="th-inner">
                 <MpCheckbox
-                  v-if="hasCheckbox && ci === 0"
+                  v-if="hasCheckbox && ci === 0 && !noSelectAll"
                   id="erp-select-all"
                   :is-checked="allSelected"
                   :is-indeterminate="someSelected"

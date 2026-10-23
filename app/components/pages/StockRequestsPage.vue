@@ -135,7 +135,9 @@ const woColumns: TableColumn[] = [
 const skuColumns: TableColumn[] = [
   { key: 'product',     label: t('Product name'),        kind: 'name',   sortable: true, sortType: 'text' },
   { key: 'sku',         label: t('SKU'),                 kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'openWorkOrders', label: t('Number of transactions'),           sortable: true, sortType: 'number', align: 'right' },
+  // `number` kind for the width, not because it is an identifier: the header is
+  // long, and at the default 160px minimum it was clipped on a saturated table.
+  { key: 'openWorkOrders', label: t('Number of transactions'), kind: 'number', sortable: true, sortType: 'number', align: 'right' },
   { key: 'earliestRequired', label: t('Earliest required'), kind: 'date', sortable: true, sortType: 'date' },
   // Status sits beside the date it depends on — a row is late or not against its
   // earliest required date, so the two read together.
@@ -547,10 +549,22 @@ function reject(req: StockRequest) {
 function sku(row: unknown): SkuDemandGroup { return row as SkuDemandGroup }
 function wo(row: unknown): WoRow { return row as WoRow }
 
-/** Do the picked component rows all sit at ONE destination warehouse? */
-function oneWarehouseSelected(sel: Set<number>): boolean {
-  const ids = [...sel].map(i => skuPaginated.value[i]?.destinationWarehouseId).filter(Boolean)
-  return ids.length > 0 && new Set(ids).size === 1
+/**
+ * Bulk documents are raised AT one warehouse, so the selection is held to one.
+ * Rather than let a mixed selection be built and then refused, the rows that
+ * could not join it are disabled as soon as the first is picked — the constraint
+ * is visible while choosing instead of after. Select-all goes with it: it is an
+ * offer the action could never honour.
+ */
+const selectedSkuRows = ref<number[]>([])
+const selectedWarehouseId = computed(() =>
+  selectedSkuRows.value.length
+    ? skuPaginated.value[selectedSkuRows.value[0]!]?.destinationWarehouseId
+    : undefined)
+function skuRowDisabled(_row: Record<string, unknown>, index: number): boolean {
+  const picked = selectedWarehouseId.value
+  if (!picked) return false
+  return skuPaginated.value[index]?.destinationWarehouseId !== picked
 }
 
 function selectedSkuIds(sel: Set<number>): string[] {
@@ -586,7 +600,10 @@ function onPerPageChange(n: number) {
     :search="search"
     :filter-empty-label="view === 'product' ? 'component' : 'stock request'"
     :has-checkbox="view === 'product'"
+    :no-select-all="view === 'product'"
+    :row-disabled="view === 'product' ? skuRowDisabled : undefined"
     bulk-label="component"
+    @selection-change="(_c: number, idx: number[]) => (selectedSkuRows = idx)"
     @page-change="onPageChange"
     @per-page-change="onPerPageChange"
     @sort="toggleSort"
@@ -657,15 +674,11 @@ function onPerPageChange(n: number) {
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
-            <!-- Both documents are raised AT one warehouse, so a selection
-                 spanning several has no single destination to raise one against.
-                 The row stays pickable and the reason is stated, rather than the
-                 action being greyed out with nothing to explain it. -->
-            <template v-if="oneWarehouseSelected(selectedRows as Set<number>)">
-              <MpPopoverListItem @click="createPurchaseRequest(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create purchase request') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="createWarehouseTransfer(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
-            </template>
-            <MpPopoverListItem v-else is-disabled>{{ t('Select components from one destination warehouse') }}</MpPopoverListItem>
+            <!-- Both documents are raised AT one warehouse. The selection is
+                 already held to one (rows elsewhere disable the moment the first
+                 is picked), so there is no mixed case left to refuse here. -->
+            <MpPopoverListItem @click="createPurchaseRequest(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create purchase request') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="createWarehouseTransfer(byComponent(selectedSkuIds(selectedRows as Set<number>)))">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
