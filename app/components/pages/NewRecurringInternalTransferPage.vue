@@ -416,12 +416,23 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 /* ── Deposit to + Payer + Total row ── */
+/* Row 1 shares .ex-grid-2's track sizing so its fields line up with the rows
+   below it — a flex row with fixed-width fields does not. */
 .ex-row-1 {
-  display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; align-items: end;
   padding-bottom: 20px; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
-.ex-field-flex { width: 316px; flex-shrink: 0; min-width: 0; }
-.it-total-inline { margin-left: auto; display: flex; align-items: flex-end; padding-bottom: 8px; white-space: nowrap; }
+@container (min-width: 860px) {
+  .ex-row-1 { grid-template-columns: repeat(4, 1fr); }
+}
+.ex-field-flex { min-width: 0; }
+.it-total-inline {
+  grid-column: 1 / -1; justify-self: end;
+  display: flex; align-items: flex-end; padding-bottom: var(--mp-spacing-2); white-space: nowrap;
+}
+@container (min-width: 860px) {
+  .it-total-inline { grid-column: 3 / -1; }
+}
 .detail-total-amount { font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-total-label { font-weight: var(--mp-font-weights-semi-bold); }
 

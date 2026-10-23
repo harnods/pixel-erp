@@ -472,14 +472,16 @@ function handleSave() {
 .sm-right { border-radius: 12px 12px 0 0; }
 .ex-right { flex: 1; min-width: 0; overflow-y: auto; background: var(--mp-background-neutral, white); padding: 24px; container-type: inline-size; }
 
-/* Pay from / Payee are a flex row (not a grid) so Total always stays inline with them,
-   regardless of container width — fixed to Transaction date's own column width (316px,
-   measured at 1440px) rather than a grid fraction. */
+/* Row 1 shares .ex-grid-2's track sizing so its fields line up with the rows
+   below it — a flex row with fixed-width fields does not. */
 .ex-row-1 {
-  display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; align-items: end;
   padding-bottom: 20px; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
-.ex-field-flex { width: 316px; flex-shrink: 0; min-width: 0; }
+@container (min-width: 860px) {
+  .ex-row-1 { grid-template-columns: repeat(4, 1fr); }
+}
+.ex-field-flex { min-width: 0; }
 .ex-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; padding: 20px 0; max-width: 620px; }
 @container (min-width: 860px) {
   .ex-grid-2 { grid-template-columns: repeat(4, 1fr); max-width: none; }
