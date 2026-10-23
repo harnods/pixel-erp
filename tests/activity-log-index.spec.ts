@@ -27,7 +27,7 @@ beforeAll(() => {
 })
 beforeEach(() => { localStorage.clear() })
 
-type Column = { key: string; label: string; kind?: string }
+type Column = { key: string; label: string; kind?: string; flexible?: boolean }
 type Vm = {
   paginated: ActivityEntry[]
   total: number
@@ -52,7 +52,7 @@ describe('Activity log index', () => {
   it('shows the Figma\'s six columns, in order', async () => {
     const vm = await mountPage()
     expect(vm.columns.map(c => c.key))
-      .toEqual(['date', 'user', 'action', 'feature', 'number', 'detail'])
+      .toEqual(['date', 'user', 'action', 'feature', 'number', 'details'])
   })
 
   it('takes every width from the shared kinds, none hand-set', async () => {
@@ -61,13 +61,16 @@ describe('Activity log index', () => {
     expect(kindOf('date')).toBe('datetime')     // "30/01/2026, 11:00" clips at 160
     expect(kindOf('user')).toBe('name')
     expect(kindOf('number')).toBe('number')
-    expect(kindOf('detail')).toBe('address')    // wraps to several lines
+    expect(kindOf('details')).toBe('address')   // wraps to several lines
     // ACTIONS is plain text, not an ErpStatusBadge — `status` (128px) would be
     // borrowing a badge column's width for a category label.
     expect(kindOf('action')).toBeUndefined()
     expect(kindOf('feature')).toBeUndefined()
     // No column may carry a pixel width of its own.
     expect(vm.columns.every(c => !('width' in c))).toBe(true)
+    // Details is last with nothing to its right, so it takes the slack that
+    // would otherwise sit in an empty spacer.
+    expect(vm.columns.filter(c => c.flexible).map(c => c.key)).toEqual(['details'])
   })
 
   it('lists every seeded entry, newest first', async () => {

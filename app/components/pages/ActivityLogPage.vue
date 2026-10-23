@@ -36,12 +36,16 @@ const rows = computed<ActivityEntry[]>(() => (previewMode.value === 'Empty state
 const columns: TableColumn[] = [
   { key: 'date',    label: t('Date'),    kind: 'datetime', sortable: true, sortType: 'date' },
   { key: 'user',    label: t('User'),    kind: 'name',     sortable: true, sortType: 'text' },
-  // No `kind`: ACTIONS is a plain text category, not a badge, so it takes the
-  // default range. `status` (128px) is reserved for ErpStatusBadge columns.
-  { key: 'action',  label: t('Actions'),                 sortable: true, sortType: 'text' },
+  // Singular: a row records one action. (The filter above stays "Actions" —
+  // that one picks from the whole set.) No `kind`: this is a plain text
+  // category, not a badge, and `status` (128px) is for ErpStatusBadge columns.
+  { key: 'action',  label: t('Action'),                  sortable: true, sortType: 'text' },
   { key: 'feature', label: t('Feature'),                   sortable: true, sortType: 'text' },
   { key: 'number',  label: t('Number'),  kind: 'number' },
-  { key: 'detail',  label: t('Detail'),  kind: 'address' },
+  // Plural: a single entry can list several changed fields. Flexible because
+  // it is the last column and nothing sits to its right — the leftover width
+  // reads better here than in an empty spacer.
+  { key: 'details', label: t('Details'), kind: 'address', flexible: true },
 ]
 
 const actionOptions = ACTIVITY_ACTIONS.map(a => ({ value: a, label: t(a) }))
@@ -178,7 +182,7 @@ function visibleDetails(row: ActivityEntry): ActivityDetail[] {
         </MpTooltip>
         <div class="filter-search">
           <MpIcon name="search" size="sm" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search activity')" />
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
           <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
         </div>
       </div>
@@ -207,7 +211,7 @@ function visibleDetails(row: ActivityEntry): ActivityDetail[] {
     </template>
 
     <!-- Detail: labelled old → new edits or plain text; 3 lines + "+N more" -->
-    <template #cell-detail="{ row }">
+    <template #cell-details="{ row }">
       <div v-if="(row as unknown as ActivityEntry).details.length" class="al-details">
         <div v-for="(d, i) in visibleDetails(row as unknown as ActivityEntry)" :key="i" class="al-detail">
           <span v-if="d.label" class="al-detail-label">{{ t(d.label) }}</span>

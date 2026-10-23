@@ -251,7 +251,15 @@ table uses `table-layout: fixed` with a
 flexible spacer column that soaks up leftover width — keeping the caps intact and
 the sticky actions `[...]` column flush right.
 
-**The spacer is ALWAYS rendered**, on every table, whether or not it has actions.
+**`flexible: true` on a column** hands that column the leftover width instead of
+the spacer, uncapped (it still never drops below its `kind`'s min), and the spacer
+is then not rendered. Use it for a free-text column with nothing to its right — a
+Details / Description column on a table with no actions — where the slack reads
+better in the cell than in an empty spacer. At most one per table. Everything else
+still holds its max: on Activity log at 1920px, Details goes 240 → 368 and DATE,
+USER, ACTION, FEATURE and NUMBER stay exactly where they were.
+
+**The spacer is ALWAYS rendered** otherwise, whether or not the table has actions.
 It is what makes the caps hold: under `table-layout: fixed` a surplus is shared out
 across the columns, pushing every one past its declared max, so something has to
 absorb it. A read-only table (no `#actions` slot, no `isTrailingAction`) needs that

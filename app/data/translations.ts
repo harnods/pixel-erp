@@ -4627,6 +4627,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Change page": "Ubah halaman",
   "Select page": "Pilih halaman",
   // Activity log (Other lists, Figma 4215-21752)
+  "Action": "Aksi",
+  // still used by CrmActivityLogPage
   "Search activity": "Cari aktivitas",
   "No activity yet": "Belum ada aktivitas",
   "Everything people do in this account will appear here.": "Semua yang dilakukan pengguna di akun ini akan muncul di sini.",

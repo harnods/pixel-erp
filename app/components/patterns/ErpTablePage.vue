@@ -51,6 +51,12 @@ export interface TableColumn {
   /** Explicit fixed width. Use ONLY for layout-only columns (e.g. a 40px icon)
    *  or as an escape hatch; semantic columns should use `kind` instead. */
   width?: string
+  /** This column absorbs whatever width is left over, instead of the flexible
+   *  spacer. For a free-text column with nothing to its right (a Detail /
+   *  Description column on a table with no actions), the slack reads better in
+   *  the cell than in an empty spacer. It still never goes below its `kind`'s
+   *  min. At most one column per table. */
+  flexible?: boolean
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
   /** Enables the ERP column-header sort menu (hover icon → popover). The options shown
@@ -397,6 +403,12 @@ function computeWidths() {
     avail -= used
     if (used < 0.5) break
   }
+  // Anything still left goes to the flexible column, uncapped — that is the
+  // point of the flag. Without one it stays with the spacer.
+  if (avail > 0.5) {
+    const fi = cols.findIndex(c => c.flexible)
+    if (fi >= 0) widths[fi] += avail
+  }
   const map: Record<string, number> = {}
   cols.forEach((c, i) => { map[c.key] = Math.round(widths[i]) })
   // Skip the write when nothing changed — avoids a ResizeObserver feedback loop.
@@ -451,7 +463,7 @@ const hasTrailingAction = computed(() => props.columns.some(c => c.isTrailingAct
 // (no actions slot, no trailing action) needs that just as much as one with a
 // [...] column — it just has nothing to push right. Collapses to 0 when the
 // columns already fill the table.
-const showSpacer = computed(() => true)
+const showSpacer = computed(() => !props.columns.some(c => c.flexible))
 
 const totalCols = computed(() =>
   props.columns.length +
