@@ -183,6 +183,7 @@ actions `[...]` column stays flush right. Fixed types set min = max.
 | `kind` | Min width | Max width | Use for |
 | ------ | --------- | --------- | ------- |
 | `date` | **160px** | **160px** (fixed) | Any date column (created, transaction, etc.) — `DD/MM/YYYY` |
+| `datetime` | **220px** | **220px** (fixed) | A timestamp, optionally stacked over a `by <user>` byline — `DD/MM/YYYY, HH:mm`. Wider than `date`, which clips both lines. |
 | `number` | **240px** | **280px** | Document / transaction number (often a link). 240 min because the cell must fit the codified `<Module name> #<number>` format (~141px) **plus up to two trailing status icons** (48px) and 24px padding = 221px — at the minimum, since a saturated table never grows a column past it. |
 | `name` | **240px** | **280px** | Vendor / customer / beneficiary / warehouse / product — any entity name |
 | `status` | **128px** | **160px** | Status column rendered with a badge (`ErpStatusBadge`) |

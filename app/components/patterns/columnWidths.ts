@@ -15,6 +15,7 @@
  */
 export type ColumnKind =
   | 'date'     // any date column (created, due, transaction date …)
+  | 'datetime' // a timestamp, optionally stacked over a byline ("by <user>")
   | 'number'   // document / transaction number (often a link)
   | 'name'     // vendor / customer / beneficiary / warehouse / product … any name
   | 'status'   // status column rendered with a badge
@@ -38,6 +39,9 @@ export interface ColWidthRange {
  */
 export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   date:    { minWidth: '160px', maxWidth: '160px' }, // fixed
+  // A timestamp needs more room than a bare date: "30/01/2026, 11:00" plus
+  // the "by <user>" line beneath it. 160 clipped both.
+  datetime: { minWidth: '220px', maxWidth: '220px' }, // fixed
   // 240 min, not 160. Two things have to fit here at the MINIMUM, because a
   // saturated table never grows a column past it:
   //   • the codified "<Module name> #<number>" format (~141px for

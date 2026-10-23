@@ -815,6 +815,46 @@ export const DEV_CHANGES: DevChange[] = [
     date: '2026-10-22',
     files: ['SalesInvoiceDetailsPage.vue'],
   },
+  {
+    id: 'file-manager-index',
+    title: 'File manager index',
+    description:
+      'Other lists \u203a File manager: every file attached anywhere in the account, with Page and Number filters, search, and row actions. A file with no transaction number has no page yet, so its row offers Attach to an existing transaction / Create a new transaction; an attached file offers Change page instead.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'fileManager.ts'],
+  },
+  {
+    id: 'file-manager-drop',
+    title: 'Drag & drop to upload',
+    description:
+      'Dropping files anywhere on the File manager page uploads them straight away \u2014 no modal, no staging step. They land unattached, so each new row offers Attach to an existing transaction from its row menu. Reuses GlobalFileDropOverlay.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'GlobalFileDropOverlay.vue'],
+  },
+  {
+    id: 'file-manager-add-drawer',
+    title: 'Add file drawer',
+    description:
+      'Add file in the File manager title bar now opens a drawer: stage the files, then either attach them to an existing transaction (Page + transaction number, both read from the real module stores) or pick the transaction to create. Continue routes to that create form with the files already attached. Only pages whose form has an Attachment field are offered under Create.',
+    date: '2026-10-23',
+    files: ['AddFileDrawer.vue', 'FileManagerPage.vue', 'fileAttachmentHandoff.ts'],
+  },
+  {
+    id: 'file-manager-bulk-actions',
+    title: 'File manager bulk actions',
+    description:
+      'Selecting rows shows one secondary-sm Actions dropdown holding the same four entries as the row menu: Download, Attach to an existing transaction, Create a new transaction, Delete. Attach and Create reuse the Add file drawer in its existing-files mode, so the Application section behaves identically however it is reached.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'AddFileDrawer.vue'],
+  },
+  {
+    id: 'mp-upload-change-payload',
+    title: 'Upload fields stage what you pick',
+    description:
+      'MpUpload emits the native Event (ev.target.files), but 17 attachment fields typed their handler as a FileList, so nothing was ever staged — the picked file silently vanished. All of them now accept both shapes.',
+    date: '2026-10-23',
+    files: ['AddFileDrawer.vue', 'NewCreditMemoPage.vue', 'SpendMoneyPage.vue'],
+  },
 ]
 
 const byId = new Map(DEV_CHANGES.map(c => [c.id, c]))

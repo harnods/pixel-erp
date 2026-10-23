@@ -157,6 +157,7 @@ const pageRegistry: Record<string, Component> = {
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
   'Recurring transactions': defineAsyncComponent(() => import('~/components/pages/RecurringTransactionsPage.vue')),
+  'File manager':      defineAsyncComponent(() => import('~/components/pages/FileManagerPage.vue')),
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
@@ -1687,6 +1688,9 @@ provide('contactAddSignal', contactAddSignal)
 // Recurring transactions' title-bar button opens the type picker inside the page.
 const recurringTxnNewSignal = ref(0)
 provide('recurringTxnNewSignal', recurringTxnNewSignal)
+// File manager's title-bar button opens the Add file drawer inside the page.
+const fileManagerAddSignal = ref(0)
+provide('fileManagerAddSignal', fileManagerAddSignal)
 const isContactsIndex = computed(() =>
   ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
 // Type-specific create label for the contacts index page-title button.
@@ -2272,6 +2276,14 @@ function startResize(e: MouseEvent) {
             @click="vatSetupSave++"
           >
             {{ t('Save changes') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'File manager'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="fileManagerAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('Add file') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Recurring transactions'" class="page-title-actions">
