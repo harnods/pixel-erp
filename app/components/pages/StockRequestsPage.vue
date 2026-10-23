@@ -763,6 +763,16 @@ function onPerPageChange(n: number) {
             <span v-if="col.key === 'product'" class="sr-child-sku">
               <span class="cell-link cell-text" @click="viewDetails(entry.requestId)">{{ entry.requestNumber }}</span>
               <span class="sr-child-sku-code">{{ entry.workOrderNumber }}</span>
+              <!-- The log belongs with what it is about — this request's history
+                   for this component — not in the actions column, where it read as
+                   one more thing to do to the row. -->
+              <MpTooltip :label="t('Activity log')" placement="top" use-portal>
+                <MpButton
+                  class="sr-log-btn" variant="ghost" left-icon="log" is-rounded
+                  :aria-label="`${t('Activity log')} — ${entry.requestNumber}`"
+                  @click="openEntryLog(sku(row), entry)"
+                />
+              </MpTooltip>
             </span>
             <template v-else-if="col.key === 'earliestRequired'">{{ formatDate(entry.requiredDate) }}</template>
             <template v-else-if="col.key === 'required'">{{ entry.qty }}</template>
@@ -784,13 +794,6 @@ function onPerPageChange(n: number) {
                lives on the breakdown row rather than on the product above it. -->
           <td class="sr-child-td sr-child-td--actions">
             <span class="sr-child-actions">
-              <MpTooltip :label="t('Activity log')" placement="top">
-                <MpButton
-                  variant="ghost" left-icon="log" is-rounded
-                  :aria-label="t('Activity log')"
-                  @click="openEntryLog(sku(row), entry)"
-                />
-              </MpTooltip>
               <MpPopover :id="`sr-entry-actions-${entry.requestId}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                 <MpPopoverTrigger>
                   <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
@@ -821,6 +824,13 @@ function onPerPageChange(n: number) {
             <span v-if="col.key === 'number'" class="sr-child-sku">
               <span class="sr-child-sku-name">{{ line.product }}</span>
               <span class="sr-child-sku-code">{{ line.sku }}</span>
+              <MpTooltip :label="t('Activity log')" placement="top" use-portal>
+                <MpButton
+                  class="sr-log-btn" variant="ghost" left-icon="log" is-rounded
+                  :aria-label="`${t('Activity log')} — ${line.product}`"
+                  @click="openLineLog(wo(row), line.productId)"
+                />
+              </MpTooltip>
             </span>
             <!-- Each cell means on a line what its header means on the request
                  above it: the line's own qty, required date, readiness and
@@ -848,15 +858,7 @@ function onPerPageChange(n: number) {
             </MpTooltip>
           </td>
           <td v-if="showSpacer" class="sr-child-td sr-child-td--spacer" />
-          <td class="sr-child-td sr-child-td--actions">
-            <MpTooltip :label="t('Activity log')" placement="top">
-              <MpButton
-                variant="ghost" left-icon="log" is-rounded
-                :aria-label="t('Activity log')"
-                @click="openLineLog(wo(row), line.productId)"
-              />
-            </MpTooltip>
-          </td>
+          <td class="sr-child-td sr-child-td--actions" />
         </tr>
       </template>
     </template>
@@ -1044,6 +1046,7 @@ function onPerPageChange(n: number) {
 
 /* Available — the W-6 warning icon follows the figure, so the eye reads the number
    first and the flag second, and the icon is the thing nearest the row's actions. */
+.sr-log-btn { margin-left: calc(-1 * var(--mp-spacing-2)); }
 .sr-child-actions { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .sr-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .sr-available { display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5, 6px); }
