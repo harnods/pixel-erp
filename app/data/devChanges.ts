@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'recurring-transactions-index',
+    title: 'Recurring transactions index (Other lists)',
+    description:
+      'Other lists > Recurring transactions is now a real index instead of a placeholder. It aggregates every recurring template across all 11 transaction types — the five that own a module store (sales invoice/order, purchase invoice/order, expense) plus six cash/journal types seeded here. Name shows the customer/vendor, as on every module recurring list, and links to that module\'s recurring detail page where one exists. Filter by transaction type and status on the left, search on the right; each row has a [...] menu with Edit and Delete, and selecting rows reveals a bulk Delete — both behind a confirm. The title bar\'s + New recurring transaction opens a type picker.',
+    date: '2026-10-23',
+    files: ['RecurringTransactionsPage.vue', 'recurringTransactions.ts', '[...slug].vue'],
+  },
+  {
     id: 'recurring-bulk-delete',
     title: 'Bulk delete on recurring index pages',
     description:

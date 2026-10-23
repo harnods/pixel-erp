@@ -156,6 +156,7 @@ const pageRegistry: Record<string, Component> = {
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Recurring transactions': defineAsyncComponent(() => import('~/components/pages/RecurringTransactionsPage.vue')),
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
@@ -726,6 +727,15 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // Reached by clicking the Number in the bill's Payment details table. Design is
   // still pending → placeholder for now.
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment-details') {
+    return { component: PlaceholderPage, id: segs[1]! }
+  }
+  // /recurring-transactions/new/:type and /recurring-transactions/:id/edit →
+  // the six cash/journal types own no form or detail page yet, so the type
+  // picker and the row's Edit land on the placeholder.
+  if (segs.length >= 3 && segs[0] === 'recurring-transactions' && segs[1] === 'new') {
+    return { component: PlaceholderPage, id: segs[2]! }
+  }
+  if (segs.length >= 3 && segs[0] === 'recurring-transactions' && segs[2] === 'edit') {
     return { component: PlaceholderPage, id: segs[1]! }
   }
   // /expenses/recurring/:id → recurring expense template detail
@@ -1662,6 +1672,9 @@ provide('courierAddSignal', courierAddSignal)
 // (it knows which role list is active), so signal it the same way.
 const contactAddSignal = ref(0)
 provide('contactAddSignal', contactAddSignal)
+// Recurring transactions' title-bar button opens the type picker inside the page.
+const recurringTxnNewSignal = ref(0)
+provide('recurringTxnNewSignal', recurringTxnNewSignal)
 const isContactsIndex = computed(() =>
   ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
 // Type-specific create label for the contacts index page-title button.
@@ -2247,6 +2260,14 @@ function startResize(e: MouseEvent) {
             @click="vatSetupSave++"
           >
             {{ t('Save changes') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Recurring transactions'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="recurringTxnNewSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New recurring transaction') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Approval workflows'" class="page-title-actions">
