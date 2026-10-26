@@ -230,7 +230,7 @@ function save() {
                 {{ t('Remove') }}
               </MpButton>
             </div>
-            <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" class="setup-file-input" hidden @change="onLogoChange" />
+            <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" hidden @change="onLogoChange" /> <!-- pixel-police-allow: hidden file picker, no visible control -->
           </div>
         </div>
 
