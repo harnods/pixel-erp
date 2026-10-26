@@ -18,6 +18,7 @@ import {
 } from '@mekari/pixel3'
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
 import { DEFAULT_COA } from '~/data/wmsCutover'
+import { CATALOG } from '~/data/catalog'
 
 const { t } = useLocale()
 
@@ -375,7 +376,7 @@ function save() {
             </div>
             <div v-else class="dm-ob-status dm-ob-status--done">
               <MpIcon name="done" size="sm" color="icon.success" />
-              <span>{{ t('Products have been imported') }}</span>
+              <span>{{ CATALOG.length }} {{ t('products have been imported') }}</span>
               <span class="dm-status-separator">·</span>
               <a href="/product-list?tab=All+products" class="dm-status-link">{{ t('View products') }}</a>
             </div>
