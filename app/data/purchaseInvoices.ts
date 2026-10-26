@@ -1,12 +1,17 @@
+import { reactive } from 'vue'
 import type { PurchaseInvoice } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
+import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * Vendor invoices (AP) — a deterministic TIME SERIES spanning 1 Jan 2026 → today
  * (22 Aug 2026), using the shared `vendors` master so AP reconciles to one vendor
  * identity. Status is derived from the due date vs "today":
  *   • due passed + unpaid → overdue   • due passed + paid → paid   • not due → open
+ *
+ * Reactive + persisted so the debit-memo overlay can write derived balance/status
+ * back (mirrors the sales-invoice pattern for credit memos).
  */
 const PINV_COUNT = 80
 const AMOUNTS = [
@@ -22,11 +27,13 @@ function buildPurchaseInvoices(): PurchaseInvoice[] {
     const dueDate = simDay(offset + 30)
     const vendor = vendors[i % vendors.length]!
     const amount = AMOUNTS[i % AMOUNTS.length]! + (i % 4) * 900_000
-    const duePassed = daysUntil(dueDate) < 0
 
+    const duePassed = daysUntil(dueDate) < 0
     let status: PurchaseInvoice['status']
     if (duePassed) status = (i % 7 === 0 || i % 12 === 0) ? 'overdue' : 'paid'
     else status = 'open'
+
+    const balance = status === 'paid' ? 0 : amount
 
     const tags: string[] = []
     if (amount >= 50_000_000) tags.push('Import')
@@ -39,6 +46,8 @@ function buildPurchaseInvoices(): PurchaseInvoice[] {
       date,
       dueDate,
       amount,
+      total: amount,
+      balance,
       status,
       itemCount: 1 + (i % 6),
       hasAttachment: i % 3 === 0,
@@ -48,7 +57,15 @@ function buildPurchaseInvoices(): PurchaseInvoice[] {
   return out.reverse() // newest first
 }
 
-export const purchaseInvoices: PurchaseInvoice[] = buildPurchaseInvoices()
+const K_PI = 'purchase-invoices-v1'
+
+export const purchaseInvoices = reactive<PurchaseInvoice[]>(
+  loadSnapshot<PurchaseInvoice>(K_PI) ?? buildPurchaseInvoices(),
+)
+
+export function persistPurchaseInvoices(): void {
+  saveSnapshot(K_PI, purchaseInvoices)
+}
 
 /**
  * Awaiting-approval subset — a realistic handful of the newest invoices pending

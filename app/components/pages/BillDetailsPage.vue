@@ -10,11 +10,14 @@ import {
 import type jsPDF from 'jspdf'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import MatchedDetailsDrawer from '~/components/patterns/MatchedDetailsDrawer.vue'
 import JournalEntryDrawer, { type JournalEntryRow } from '~/components/patterns/JournalEntryDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { bills, deleteBills } from '~/data/bills'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import { formatDate, formatDateLong } from '~/utils/date'
@@ -181,6 +184,19 @@ function attachmentIcon(name: string): string {
 function goExpenses() {
   router.push({ path: '/expenses', query: { tab: 'Bills' } })
 }
+
+const billActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: openPdfPreview },
+    { label: 'Add payment', show: bill.value?.status === 'unpaid' && !isAwaitingApproval.value, onClick: () => { router.push(`/expenses/${bill.value?.id}/payment`) } },
+    { label: 'Set as recurring', show: showSetAsRecurring && !isAwaitingApproval.value },
+  ],
+  [
+    { label: 'Duplicate', onClick: duplicate },
+    { label: 'Edit', show: bill.value?.status === 'unpaid' || isAwaitingApproval.value, onClick: edit },
+    { label: 'Delete', disabled: isReconciled.value, tooltip: isReconciled.value ? 'Unmatch reconciliation to delete' : undefined, onClick: () => { deleteOpen.value = true } },
+  ],
+])
 </script>
 
 <template>
@@ -271,7 +287,7 @@ function goExpenses() {
 
       <!-- Beneficiary + Total — separated section, inline together -->
       <section class="bd-primary">
-        <ContentList :label="t('Beneficiary')" :value="bill.beneficiary.name" />
+        <ContentList :label="t('Beneficiary')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(bill.beneficiary.name)}`, '_blank')">{{ bill.beneficiary.name }}</a></ContentList>
         <div class="detail-primary-total">
           <span class="detail-total-amount">
             <span class="detail-total-label">{{ t(hasLess ? 'Balance due' : 'Total') }}</span> {{ formatIDR(hasLess ? balanceDue : groupTotal) }}
@@ -466,32 +482,7 @@ function goExpenses() {
         {{ t('Pay with Mekari Pay') }}
       </MpButton>
 
-      <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-        <MpPopoverTrigger>
-          <MpButton class="btn-enterprise" :class="isAwaitingApproval ? 'btn-enterprise--secondary' : 'btn-enterprise--primary'">
-            {{ t('Actions') }}
-            <MpIcon name="chevrons-down" size="sm" />
-          </MpButton>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem @click="openPdfPreview">{{ t('Preview') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="bill.status === 'unpaid' && !isAwaitingApproval" @click="router.push(`/expenses/${bill.id}/payment`)">{{ t('Add payment') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="showSetAsRecurring && !isAwaitingApproval">{{ t('Set as recurring') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem @click="duplicate">{{ t('Duplicate') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval" @click="edit">{{ t('Edit') }}</MpPopoverListItem>
-            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" :label="t('Unmatch reconciliation to delete')" placement="top" use-portal>
-              <span class="detail-actions-delete-tt-wrap">
-                <MpPopoverListItem is-disabled>{{ t('Delete') }}</MpPopoverListItem>
-              </span>
-            </MpTooltip>
-            <MpPopoverListItem v-else @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <DetailActionsMenu id="detail-actions" placement="bottom-end" :variant="isAwaitingApproval ? 'secondary' : 'primary'" :groups="billActionGroups" />
     </footer>
 
     <!-- ── Print / Preview PDF modal ── -->

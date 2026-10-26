@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AUTHORITY_ACTIONS, AUTHORITY_FEATURES, SYSTEM_ROLES, accountUsers,
-  authorityActionsFor, authorityFeaturesFor, authorityRowKeys, customRoles,
+  authorityActionsFor, authorityRowKeys, customRoles,
   getCustomRole, getSystemRole, systemRolesFor, userRoleNames, userRoleTypes,
 } from '~/data/usersRoles'
 
@@ -23,45 +23,35 @@ describe('authority feature catalogue', () => {
   })
 
   it('gives report-style features a view-only action set', () => {
+    const catalogue = AUTHORITY_ACTIONS.map((a) => a.value)
     for (const feature of AUTHORITY_FEATURES) {
       const actions = authorityActionsFor(feature)
-      if (feature.viewOnly) expect(actions).toEqual(['view'])
-      else expect(actions).toEqual(AUTHORITY_ACTIONS.map((a) => a.value))
+      if (feature.actions) {
+        // An explicit per-feature list wins over both defaults — the CRM
+        // module-access row is view ("has access") + edit ("is Administrator"),
+        // because create/delete have no meaning there.
+        expect(actions).toEqual(feature.actions)
+        expect(actions.every((a) => catalogue.includes(a))).toBe(true)
+      } else if (feature.viewOnly) {
+        expect(actions).toEqual(['view'])
+      } else {
+        expect(actions).toEqual(catalogue)
+      }
     }
   })
 })
 
-describe('Project Accounting is gated on the billing component', () => {
-  const projectAccounting = AUTHORITY_FEATURES.find((f) => f.id === 'project-accounting')
-
-  it('carries the five project sub-features', () => {
-    expect(projectAccounting).toBeDefined()
-    expect(projectAccounting!.subfeatures.map((s) => s.label)).toEqual([
-      'Project setup',
-      'Cost tracking',
-      'Recognition and billing',
-      'Change management',
-      'Project health',
-    ])
-  })
-
-  it('is offered when the tenant has the component', () => {
-    const ids = authorityFeaturesFor(true).map((f) => f.id)
-    expect(ids).toContain('project-accounting')
-  })
-
-  it('is dropped entirely — not shown-disabled — when the tenant does not', () => {
-    const ids = authorityFeaturesFor(false).map((f) => f.id)
-    expect(ids).not.toContain('project-accounting')
-    // Every other feature still stands.
-    expect(ids.length).toBe(AUTHORITY_FEATURES.length - 1)
-  })
-
-  it('leaves ungated features untouched either way', () => {
-    const ungated = AUTHORITY_FEATURES.filter((f) => !f.requiresProjectAccounting).map((f) => f.id)
-    expect(authorityFeaturesFor(false).map((f) => f.id)).toEqual(ungated)
-  })
-})
+// The feature-level Project Accounting gate (authorityFeaturesFor + a
+// `project-accounting` feature carrying five subfeatures) was removed in
+// b0686289, which replaced AUTHORITY_FEATURES wholesale with the real 3-level
+// Figma hierarchy — that matrix has no project-accounting row and the helper
+// went with it. Its four tests were left behind asserting a model that no
+// longer exists.
+//
+// The gate that DID survive is role-level: Project Manager carries
+// requiresProjectAccounting and systemRolesFor() filters on it. That is covered
+// by "is offered only when the tenant has the Project Accounting component"
+// below, so nothing is lost here.
 
 describe('Project Manager is a predefined (existing) role', () => {
   const pm = getSystemRole('project-manager')

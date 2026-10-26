@@ -254,7 +254,7 @@ async function save() {
   </template>
 
   <div v-else class="cte-missing">
-    <MpIcon name="doc" size="lg" />
+    <MpIcon name="doc" size="32px" />
     <p>Task not found.</p>
     <MpButton is-rounded variant="secondary" @click="router.push('/cowork-tasks')">Back to Tasks</MpButton>
   </div>

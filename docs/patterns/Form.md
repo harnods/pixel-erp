@@ -74,6 +74,33 @@ Every field that needs a label, help text, or validation is wrapped in
 
 ---
 
+## Transaction no. field (`TransactionNoField`) ⚠️
+
+Every transaction **form** (sales invoice/order/quote/delivery, credit memo +
+apply + refund, expense, receipt, stock count, transfer, …) has an auto-generated
+**Transaction no.** field: a disabled input whose **label carries a settings
+gear** that opens the shared `NumberFormatSettingsModal` (auto-numbering format).
+
+**Do not hand-roll the label + gear + modal.** Use the single reusable component
+[`TransactionNoField.vue`](../../app/components/patterns/TransactionNoField.vue):
+
+```vue
+<TransactionNoField field-id="apply-no" :next-number="nextTxNo" @save="onSave" />
+```
+
+- `field-id` (required) — unique id stem for the control + modal.
+- `next-number` (required) — the next auto number shown in the modal preview
+  (e.g. `` `${t('Credit memo applied')} #${nextApplicationNumber()}` ``).
+- `label` / `title` / `caption` / `placeholder` / `existing-formats` — optional;
+  default to the "Transaction no." copy and the shared modal defaults.
+
+The component renders the `MpFormControl` + label row (label + gear) + disabled
+input + `NumberFormatSettingsModal`, so it drops straight into a field slot (e.g.
+one cell of a two-column `date / transaction-no` grid). This is the source of
+truth — `rule/form-transaction-no-field`.
+
+---
+
 ## Error message copy
 
 Form error messages must follow the UXW library. When exact UXW copy is not

@@ -57,10 +57,18 @@ const statusConfig: Record<string, StatusConfig> = {
   fulfilled:  { type: 'completed',    label: 'Fulfilled'  },
   ready:      { type: 'completed',    label: 'Ready'      },
   reserved:   { type: 'completed',    label: 'Reserved'   },
+  // VAT reconciliation periods (PRD OD-001 §5.2). `not reconciled` sits with the
+  // gray group below; `finalized` is green like `reconciled` because it is the
+  // same result signed off, not a different one.
+  reconciled: { type: 'completed',    label: 'Reconciled' },
+  finalized:  { type: 'completed',    label: 'Finalized'  },
 
   // ── warning — yellow ──────────────────────────────
   open:       { type: 'warning',      label: 'Open'       },
   unpaid:     { type: 'warning',      label: 'Unpaid'     },
+  'partially-paid': { type: 'warning', label: 'Partially paid' },
+  'partially-used': { type: 'information', label: 'Partially used' },
+  'used-up':  { type: 'announcement', label: 'Used up'    },
   pending:    { type: 'warning',      label: 'Pending'    },
   'in transit':{ type: 'warning',     label: 'In transit' },
   'awaiting arrival':{ type: 'warning', label: 'Awaiting arrival' },
@@ -72,11 +80,12 @@ const statusConfig: Record<string, StatusConfig> = {
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
   'in review':{ type: 'warning',      label: 'In review'  },
+  'partially reconciled': { type: 'warning', label: 'Partially reconciled' },
   'on progress':{ type: 'warning',    label: 'On progress'},
   medium:     { type: 'warning',      label: 'Medium'     },
   recommended:{ type: 'warning',      label: 'Recommended'},
   // Warehouses › Stock requests — raised from a work order, nothing reserved yet.
-  // PRD UC-11 W-3/W-5 wording: "Requested" (was "To reserve" in the early mockup).
+  // PRD W-3/W-5 wording: "Requested" (was "To reserve" in the early mockup).
   requested:  { type: 'warning',      label: 'Requested'  },
   // Settings › Users & roles — invitation sent, account not yet accepted.
   invited:    { type: 'warning',      label: 'Invited'    },
@@ -102,6 +111,7 @@ const statusConfig: Record<string, StatusConfig> = {
   cancelled:  { type: 'announcement', label: 'Cancelled'  },
   canceled:   { type: 'announcement', label: 'Canceled'   },
   'not started':{ type: 'announcement', label: 'Not started' },
+  'not reconciled': { type: 'announcement', label: 'Not reconciled' },
   'not allocated':{ type: 'announcement', label: 'Not allocated' },
   'issued / picked':{ type: 'announcement', label: 'Issued / picked' },
   not_started:{ type: 'warning',      label: 'Open'        },

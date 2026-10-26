@@ -160,7 +160,7 @@ function openFull() { emit('open-full', seed()) }
 .cqd-label-row { display: flex; align-items: center; justify-content: space-between; }
 
 .cqd-input { width: 100%; box-sizing: border-box; height: var(--mp-sizes-9\.5, 38px); padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-colors-background-neutral, #fff); border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; }
-.cqd-input:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
+.cqd-input:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); } /* pixel-police-allow-shadow: focus ring */
 .cqd-input--invalid { border-color: var(--mp-border-danger, #e2483d); }
 
 .cqd-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c9372c); }

@@ -71,6 +71,8 @@ export * from './purchaseDeliveryDetails'
 export * from './purchaseInvoiceDetails'
 export * from './purchaseRequestDetails'
 export * from './salesInvoices'
+// Credit memo / applied / refund — also overlays credit onto invoice balance+status.
+export * from './creditMemos'
 export * from './salesDeliveries'
 
 // ── Adjustments / transfers / cycle counts ──────────────────────────────────

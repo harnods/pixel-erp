@@ -98,6 +98,108 @@ export const DEV_CHANGES: DevChange[] = [
       'Raw materials added, removed or re-quantified on New work order were saved to the stock request but never to the work order, so its detail page and the material consume / return form listed the BOM instead. The rows are now stored on the work order (with the warehouse picked per row) and both surfaces read them; older work orders fall back to their BOM.',
     date: '2026-10-06',
     files: ['workOrders.ts', 'stockRequests.ts', 'CreateWorkOrderPage.vue', 'WorkOrderDetailsPage.vue', 'NewMaterialRecordPage.vue'],
+    id: 'wod-material-reservation',
+    title: 'Work order: Material reservation moves onto the materials it acts on',
+    description:
+      'The Reservation button has left the title bar for a row directly above the Raw materials table — the components it reserves are the rows beneath it, not the work order as a whole. It is now labelled Material reservation, is the black tertiary button that search-adjacent and section-toolbar actions use (rule/filter-bar-action-tertiary), and carries a chevron so it reads as the dropdown it always was. Reserve and Unreserve open as drawers rather than modals, and the approval note in Unreserve leads the content: it qualifies everything below it — that the release happens immediately, unapproved — so it has to be read before the components are picked.',
+    date: '2026-10-19',
+    files: ['WorkOrderDetailsPage.vue', 'ReserveMaterialsModal.vue', 'UnreserveMaterialsModal.vue'],
+  },
+  {
+    id: 'erp-drawer-width',
+    title: 'ErpDrawer: the width prop actually applies now',
+    description:
+      'Every drawer in the app was rendering at the flex fallback width instead of the one its caller asked for. The panel width was built into a Panda CSS class from a prop, and Panda extracts classes statically at build time — so the class landed on the element with no rule behind it, and not one mp-w_min(...) rule existed in the built stylesheet. The width is an inline style now, so all ~20 drawers take the width they were written with.',
+    date: '2026-10-19',
+    files: ['ErpDrawer.vue'],
+  },
+  {
+    id: 'srd-warehouse-tables',
+    title: 'Stock request detail: the warehouse tables share one column grid',
+    description:
+      'Each destination warehouse renders its own table, and each was sizing to its own content — so the headers stepped sideways down the page and no two groups could be read against each other. They now share a fixed column template, so every group lines up. Status moved to sit after Required date, Requestor moved last (it is provenance, not something acted on), and the dashed rule between groups is gone — the heading and its spacing already separate them.',
+    date: '2026-10-19',
+    files: ['StockRequestDetailsPage.vue'],
+  },
+  {
+    id: 'sr-backdate-tooltip',
+    title: 'Stock requests: the backdate warning moves onto Available qty',
+    description:
+      'W-6 explains why a component shows negative availability. Spelled out under the product name it wrapped to six lines and set the height of the entire row — 153px against the 46px of its neighbours — while sitting in a column it says nothing about. It is now a warning-triangle after the Available figure it explains, with the reason and the transaction on hover.',
+    date: '2026-10-19',
+    files: ['StockRequestsPage.vue'],
+  },
+  {
+    id: 'sr-view-default-transaction',
+    title: 'Stock requests: By transaction leads, and is the default view',
+    description:
+      'The switcher now reads By transaction / By product, and opens on By transaction. A row there IS a record — it has a number, a detail page and actions. By product is the aggregate lens over the same requests: useful when sourcing one component, but a row is a rollup with no record behind it, which is a strange thing to land on first.',
+    date: '2026-10-19',
+    files: ['StockRequestsPage.vue'],
+  },
+  {
+    id: 'sr-seed-depth',
+    title: 'Stock requests: enough data to page, sort and filter against',
+    description:
+      'The seed bills of materials now carry 1 to 10 components each instead of 1 or 2, and fourteen more work orders were added — seven active, seven canceled. Awaiting holds 19 requests over 31 component rows, Closed holds 11 over 29, and the breakdown under a row varies from 1 to 10 in both views. Because a request mirrors its work order\'s bill, the depth comes from the BOMs rather than from numbers invented at the request.',
+    date: '2026-10-19',
+    files: ['billOfMaterials.ts', 'workOrders.ts', 'stockRequests.ts'],
+  },
+  {
+    id: 'sr-view-parity',
+    title: 'Stock requests: both views cover the same requests on Closed',
+    description:
+      'Settled lines are kept out of the product rollup so they cannot inflate what is still to do — but the Closed tab is made of settled requests, so that rule emptied it: 11 requests By transaction against 2 rows By product. The rollup now takes a flag, set on Closed only. The two views are one data set seen two ways, and a test holds them to it.',
+    date: '2026-10-19',
+    files: ['stockRequests.ts', 'StockRequestsPage.vue', 'stock-request-dashboard.spec.ts'],
+  },
+  {
+    id: 'sr-filters-complete',
+    title: 'Stock requests: the drawer holds every filter, and the bar stops wrapping',
+    description:
+      'All filters now repeats Product, Destination warehouse and Request date alongside its own Keywords and Status, bound to the same state as the pills so the two can never disagree, and its badge counts every filter rather than only its own. The Request date in the drawer used to filter by a line\'s REQUIRED date despite its label; it now means what the pill means. The date field is sized to the range it prints instead of 288px, and when the bar runs out of room the left group wraps rather than the right, which used to detach the icon tools above the search.',
+    date: '2026-10-19',
+    files: ['StockRequestsPage.vue', 'StockRequestFiltersDrawer.vue'],
+  },
+  {
+    id: 'erp-table-empty-pinned',
+    title: 'Tables: the filtered-empty state stays put when the table scrolls sideways',
+    description:
+      'A table wide enough to scroll put its "nothing matches your filters" block across the full width of every column, so scrolling right carried the illustration and its Clear all filters link off screen. The block is now pinned to the visible area and sized to it, so it stays centred in view at any scroll position. ErpTablePage owns this, so every table gets it.',
+    date: '2026-10-19',
+    files: ['ErpTablePage.vue'],
+  },
+  {
+    id: 'sr-by-transaction-columns',
+    title: 'Stock requests: the By transaction table carries its own qty block',
+    description:
+      'The two views now read the same way. The chevron moved to the right edge of the stock request number, where the product name already keeps it, so the toggle sits at one x down the whole column. Status and Destination warehouse follow the work order number, and the request gained Available, Reserved and Remaining qty beside Required, in the By product order, with the unit split into its own column. Each figure sums the request lines, as Required qty already did — except the unit, which stays blank when a request holds lines in two different units, because no single unit is true then. Request type is gone from this view too.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue'],
+  },
+  {
+    id: 'sr-closed-tab-filters',
+    title: 'Stock requests: Closed tab, and a Product / Destination warehouse filter bar',
+    description:
+      'The Rejected / canceled tab is now Closed. The Status pill is gone — Awaiting and Closed already are the status split, so it could only narrow a tab to part of itself — and in its place the bar leads with Product (multi-select) and Destination warehouse: what the stockist is sourcing, and where it is wanted. Multi-select is a new mode on ErpFilterSelect rather than a second component, so the pill still matches its neighbours and any filter bar can have one.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue', 'ErpFilterSelect.vue', '[...slug].vue'],
+  },
+  {
+    id: 'sr-by-product-breakdown',
+    title: 'Stock requests: one breakdown row per request, and reserve moves onto it',
+    description:
+      'A request holding two lines for the same component showed the same SR number twice, which read as a duplicate rather than as two kinds of demand; its lines are now summed into one row, dated by the earliest and statused by the lowest. Request type and the requestor came off with them. Reserve stock moved from the product row to the breakdown row, because the request is the unit stock is reserved against — settling every transaction at once hid which ones actually moved. Reject is gone from the product row; it stays on the transaction view, where a request can be declined.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue', 'stockRequests.ts'],
+  },
+  {
+    id: 'sr-by-product-columns',
+    title: 'Stock requests: grid lines, and the By product columns re-ordered',
+    description:
+      'The By product table now draws vertical rules between columns, the way the Production request index does — with eleven columns, several of them numeric, row stripes alone left the eye guessing which figure sat under which header. Destination warehouse moved to sit right after Status, with Available qty beside it, so where the demand is wanted and what is free there read together. The unit moved out of every number into its own column after Remaining qty, which lets the figures column-align. Grid lines are a new opt-in prop on ErpTablePage, so any table can take them.',
+    date: '2026-10-15',
+    files: ['StockRequestsPage.vue', 'ErpTablePage.vue'],
   },
   {
     id: 'sr-detail-group-transfer-btn',
@@ -298,6 +400,268 @@ export const DEV_CHANGES: DevChange[] = [
       'Choosing transaction type "Work order" shows a second dropdown under it to pick the work order transaction the workflow gates (Start work order, adjustment, partial completion, completion, cancel/close). A type can have only one ACTIVE workflow — types another active workflow already has are not offered, and turning on a workflow whose type is already covered asks to turn the other one off. Approvers are limited to users with Work order access, up to 4 levels, and the list shows "Applies to: …". Requests still waiting for approval follow the rule live: saving a workflow updates their levels and approvers (a removed level lets the request move on or execute; decided requests keep their history).',
     date: '2026-10-10',
     files: ['CreateApprovalWorkflowPage.vue', 'ApprovalWorkflowsPage.vue', 'approvalWorkflows.ts'],
+    id: 'settings-purchase-page',
+    title: 'Settings > Purchases page',
+    description:
+      'New Purchases settings page mirroring the Sales settings pattern: General settings with hover Edit → inline edit (default payment term, vendor-in-PR / shipping / discounts / deposit toggles, default message), Email templates with kebab (…) → Edit template modal, and a Document layout & branding section with Customize design.',
+    date: '2026-10-16',
+    files: ['SettingsPurchasePage.vue'],
+  },
+  {
+    id: 'settings-sales-page',
+    title: 'Settings > Sales page',
+    description:
+      'New Sales settings page with general toggles (shipping, discounts, deposit, price rules, etc.), invoice reminders, email/WhatsApp templates with kebab menus, and document layout & branding section.',
+    date: '2026-10-16',
+    files: ['SettingsSalesPage.vue'],
+  },
+  {
+    id: 'purchase-payment-form',
+    title: 'Add Purchase Payment form',
+    description:
+      'Add Payment form for Purchase module — exact mirror of Receive Payment. Vendor info, date/txn/ref fields, deposit-to account, payment method, invoice allocation table with balance/amount columns, withholding tax, memo + attachment. Navigates from purchase invoice detail.',
+    date: '2026-10-16',
+    files: ['AddPurchasePaymentPage.vue', 'purchasePayments.ts', 'debitMemos.ts'],
+  },
+  {
+    id: 'purchase-payment-detail',
+    title: 'Purchase Payment detail page',
+    description:
+      'Read-only detail page for Purchase Payment records: vendor, deposit-to, allocation table, WHT breakdown, memo, journal entry drawer, activity log, Edit/Delete actions. Mirror of PaymentReceivedDetailsPage.',
+    date: '2026-10-16',
+    files: ['PurchasePaymentDetailsPage.vue', 'purchasePayments.ts'],
+  },
+  {
+    id: 'receive-payment-header',
+    title: 'Add Payment form (redesigned)',
+    description:
+      'Redesigned Add Payment form following Figma spec: read-only customer info block (name + email), Date paid / Transaction no. / Reference no. row, Account / Payment method row, invoice table with NUMBER / DUE DATE / BALANCE DUE / TOTAL / AMOUNT PAID columns, transaction count, withholding tax checkbox, memo + attachment section.',
+    date: '2026-10-15',
+    files: ['AddPaymentPage.vue', 'paymentsReceived.ts', 'salesInvoiceDetails.ts', 'creditMemos.ts'],
+  },
+  {
+    id: 'receive-payment-wht',
+    title: 'Withholding tax on payment received',
+    description:
+      'Optional withholding tax (PPh) on the Receive Payment form: checkbox reveals WHT account selector + amount field. Total = Subtotal − WHT. Journal: Dr Cash (net), Dr PPh Payable (WHT), Cr A/R (gross). Five standard WHT accounts (PPh 21/22/23/4(2)/15).',
+    date: '2026-10-15',
+    files: ['AddPaymentPage.vue', 'paymentsReceived.ts'],
+  },
+  {
+    id: 'payment-received-detail',
+    title: 'Payment Received detail page',
+    description:
+      'Read-only detail page for Payment Received records: customer, deposit-to, allocation table, WHT breakdown, memo, journal entry drawer, activity log, Edit/Delete actions. Follows CreditMemoAppliedDetailsPage pattern.',
+    date: '2026-10-15',
+    files: ['PaymentReceivedDetailsPage.vue', 'paymentsReceived.ts'],
+  },
+  {
+    id: 'cd-transactions-tab',
+    title: 'Customer details: Transactions tab',
+    description:
+      'The customer (contact) details Transactions tab is now a full ErpTablePage over the customer’s unified documents — sales invoices, orders, quotes and credit memos — with four KPI tiles (Overdue / Unpaid invoices, Payment received, Open credits), Transaction + Status filters, search, and pagination. Credit memo is also a new entry point in the "Create transaction" menu. Built entirely from existing Pixel/ERP components (Figma: Contacts › Transactions).',
+    date: '2026-10-14',
+    files: ['ContactDetailsPage.vue', 'customerTransactions.ts'],
+  },
+  {
+    id: 'print-share-menu',
+    title: 'Shared Print & share menu + detail refinements',
+    description:
+      'The "Print & share" dropdown is now a single reusable component (PrintShareMenu) instead of a hand-rolled MpPopover per page; used on the credit memo detail / applied / refund pages. On the Credit Memo Applied detail, the header now aligns "Credit memo" vertically with "Transaction no." below it. Table-cell "View details" chips were replaced by the row-number textlink.',
+    date: '2026-10-14',
+    files: ['PrintShareMenu.vue', 'CreditMemoAppliedDetailsPage.vue', 'CreditMemoDetailsPage.vue', 'CreditMemoRefundDetailsPage.vue'],
+  },
+  {
+    id: 'txno-settings-gear',
+    title: 'Transaction no. — reusable settings-gear field',
+    description:
+      'The "Transaction no." form field is now a single reusable component (TransactionNoField) whose label carries a settings gear opening the auto-numbering modal — matching New sales invoice. Added to the credit memo Apply / Refund / New forms (previously a plain disabled "Auto" input) and codified as the pattern in docs/patterns/Form.md + rule/form-transaction-no-field.',
+    date: '2026-10-14',
+    files: ['TransactionNoField.vue', 'ApplyCreditMemoPage.vue', 'CreateCreditMemoRefundPage.vue', 'NewCreditMemoPage.vue', 'Form.md'],
+  },
+  {
+    id: 'header-icon-white',
+    title: 'Header icons: white glyph on dark header',
+    description:
+      'The header quick-action icons (help, inbox, upload) now render white (icon.inverse) instead of the dark ghost-button default, and stay white on hover — only the background fill changes. Matches the quick-create "+" icon.',
+    date: '2026-10-14',
+    files: ['IconButton.vue', 'ErpHeader.vue', 'pixel-enterprise-overrides.md'],
+  },
+  {
+    id: 'invoice-apply-credit-memo',
+    title: 'Sales invoice: Apply credit memo',
+    description:
+      'Opening an invoice whose customer has available credit (and the invoice has a balance) now proactively shows the "Apply credit memo?" prompt — Apply credit memo opens the form, Not now (or ×) dismisses it. The Add payment split menu also lists Apply credit memo (same condition); choosing it opens the form directly, with no second prompt.',
+    date: '2026-10-14',
+    files: ['SalesInvoiceDetailsPage.vue', 'ApplyCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'invoice-less-credit-memo',
+    title: 'Sales invoice: credit shown in totals & payments',
+    description:
+      'When a credit memo is applied, the totals block shows a "Less: Credit Memo" line and the Balance due drops accordingly; the Payments tab lists each Credit Memo Applied with a View details link. Invoice status becomes "Partially paid" when only partly settled.',
+    date: '2026-10-14',
+    files: ['SalesInvoiceDetailsPage.vue', 'salesInvoiceDetails.ts', 'creditMemos.ts', 'ErpStatusBadge.vue'],
+  },
+  {
+    id: 'dm-detail-actions',
+    title: 'Debit memo detail page',
+    description:
+      'New Debit memo detail page (AP-side mirror of credit memo): available debit, debit-account lines, running balance, Debit applications and Debit refund sections, and an Actions menu (Apply debit memo, Create debit memo refund, Edit, Delete). Delete is blocked with an explanation while the memo is in use.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'apply-dm-save',
+    title: 'Apply debit memo form',
+    description:
+      'New Apply debit memo form — spends one debit memo across the vendor\'s open purchase invoices with per-invoice "amount to apply", live Amount to debit / Remaining debit, and inline validation. Reachable from a purchase invoice or a debit memo.',
+    date: '2026-10-14',
+    files: ['ApplyDebitMemoPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'apply-dm-form',
+    title: 'Apply debit memo — vendor + memo selector',
+    description:
+      'Apply debit memo form: vendor is locked to the entry context, debit memo autocomplete with available debit display. Opening from a purchase invoice pre-applies the available debit to that invoice.',
+    date: '2026-10-14',
+    files: ['ApplyDebitMemoPage.vue'],
+  },
+  {
+    id: 'refund-dm-save',
+    title: 'Create debit memo refund form',
+    description:
+      'New Create debit memo refund form — deposits vendor\'s remaining debit back as cash into a bank account ("Deposit to" instead of "Pay from"), across one or more debit memos, with live Total refund and inline validation.',
+    date: '2026-10-14',
+    files: ['CreateDebitMemoRefundPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'refund-dm-form',
+    title: 'Debit memo refund — Deposit to field',
+    description:
+      'The refund direction is inverted vs credit memo: "Deposit to" (cash IN from vendor) replaces "Pay from" (cash OUT to customer). The rest of the form mirrors credit memo refund.',
+    date: '2026-10-14',
+    files: ['CreateDebitMemoRefundPage.vue'],
+  },
+  {
+    id: 'new-dm-save',
+    title: 'Create / edit debit memo form',
+    description:
+      'Create/edit debit memo form (AP-side mirror of credit memo): vendor, date, debit-account lines, memo, attachments. Editing cannot reduce the memo below debit already used or change vendor once used.',
+    date: '2026-10-14',
+    files: ['NewDebitMemoPage.vue', 'debitMemos.ts'],
+  },
+  {
+    id: 'new-dm-form',
+    title: 'Debit memo form — vendor selector',
+    description:
+      'Vendor autocomplete on the new debit memo form. Pre-fills from ?vendor= query param when navigating from a vendor detail page.',
+    date: '2026-10-14',
+    files: ['NewDebitMemoPage.vue'],
+  },
+  {
+    id: 'dm-detail-jump',
+    title: 'Debit memo — jump to another memo',
+    description:
+      'DetailJumpTo on debit memo detail page lets you switch between debit memos without going back to the list.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'dm-detail-journal',
+    title: 'Debit memo — view journal entry',
+    description:
+      'View journal entry link on debit memo detail page opens a drawer showing the AP-side journal: Dr AP, Cr each line account.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'dm-detail-activity',
+    title: 'Debit memo — activity log',
+    description:
+      'Last updated link opens the activity log modal for the debit memo.',
+    date: '2026-10-14',
+    files: ['DebitMemoDetailsPage.vue'],
+  },
+  {
+    id: 'pinv-less-debit-memo',
+    title: 'Purchase invoice — Less: Debit Memo totals line',
+    description:
+      'Purchase invoice detail page now shows "Less: Debit Memo" in the totals section when a debit memo has been applied, mirroring the sales invoice "Less: Credit Memo" pattern. Also shows Amount paid, Balance due.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue', 'purchaseInvoiceDetails.ts'],
+  },
+  {
+    id: 'pinv-payments-tab',
+    title: 'Purchase invoice — Payments tab',
+    description:
+      'Purchase invoice detail page now has a Payments tab showing cash payments and debit memo applications. Debit memo applied rows link to their detail page.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue', 'purchaseInvoiceDetails.ts'],
+  },
+  {
+    id: 'pinv-apply-debit-memo',
+    title: 'Purchase invoice — Apply debit memo action',
+    description:
+      'Purchase invoice Actions menu now includes "Apply debit memo" when the vendor has available debit and the invoice has a remaining balance.',
+    date: '2026-10-14',
+    files: ['PurchaseInvoiceDetailsPage.vue'],
+  },
+  {
+    id: 'cm-detail-actions',
+    title: 'Credit memo detail page',
+    description:
+      'New Credit memo detail page: available credit, credit-account lines, running balance, Credit applications and Credit refund sections, and an Actions menu (Apply credit memo, Create credit memo refund, Edit, Delete). Delete is blocked with an explanation while the memo is in use.',
+    date: '2026-10-14',
+    files: ['CreditMemoDetailsPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'apply-cm-save',
+    title: 'Apply credit memo form',
+    description:
+      'New Apply credit memo form — spends one credit memo across the customer’s open invoices with per-invoice "amount to apply", live Amount to credit / Remaining credit, and inline validation (over balance, over available, date rules). Reachable from an invoice or a credit memo.',
+    date: '2026-10-14',
+    files: ['ApplyCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'form-table-focus-ring',
+    title: 'Form-table focus ring no longer clipped',
+    description:
+      'Every editable form-table cell now draws its focus/active (and error) ring as an ::after overlay above the collapsed column borders, so the ring’s left/right edges are no longer clipped or overpainted. Applied repo-wide (~45 cells across 38 form tables); codified in docs/patterns/FormTable.md.',
+    date: '2026-10-14',
+    files: ['FormTable.md', 'credit-memo.css', 'NewSalesInvoicePage.vue', 'CreateReceiptPage.vue', 'ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'apply-cm-form',
+    title: 'Apply credit memo — Figma design pass',
+    description:
+      'Apply credit memo form aligned to Figma: white form-table header (not gray), the "Amount to apply" cell now fills the cell with no floating inner border and a left-aligned value, a subtle dashed divider between Amount to credit and Remaining credit, and the Attachment dropzone narrowed to match the Customer/Transaction date field width. Opening the form from an invoice now pre-applies the available credit to that invoice (capped by its balance).',
+    date: '2026-10-14',
+    files: ['ApplyCreditMemoPage.vue', 'credit-memo.css'],
+  },
+  {
+    id: 'refund-cm-save',
+    title: 'Create credit memo refund form',
+    description:
+      'New Create credit memo refund form — pays a customer’s remaining credit back in cash from a bank/cash account across one or more credit memos, with a live Total refund and inline validation.',
+    date: '2026-10-14',
+    files: ['CreateCreditMemoRefundPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'new-cm-save',
+    title: 'Create / edit credit memo form',
+    description:
+      'Inferred create/edit credit memo form (no explicit Figma frame — flagged as a design gap). Customer, date, credit-account lines, memo, attachments. Editing cannot reduce the memo below credit already used or move it to another customer once used.',
+    date: '2026-10-14',
+    files: ['NewCreditMemoPage.vue', 'creditMemos.ts'],
+  },
+  {
+    id: 'cm-report-links',
+    title: 'Credit memo report wired to the documents',
+    description:
+      'The Credit Memo report is now derived from the credit memo mini-DB (not a separate seed), so creating/editing/deleting a credit memo, application or refund updates the report immediately. Memo numbers and mutation rows deep-link to their detail pages.',
+    date: '2026-10-14',
+    files: ['creditMemoReport.ts', 'CreditMemoReportPage.vue', 'creditMemos.ts'],
   },
   {
     id: 'crm-generic-actions-column',

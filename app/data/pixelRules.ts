@@ -32,6 +32,10 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/btn-save-toast': 'A save/submit/delete shows a success toast — UXW copy "[Object] saved".',
   'rule/btn-no-disabled-validation': 'Never disable for validation — keep clickable, error inline.',
 
+  // Global header bar
+  'rule/header-icon-inverse': 'A header icon button renders its glyph white via <MpIcon color="icon.inverse"> (not :left-icon) and stays white on hover/active — on the dark background.header a ghost button\'s default dark icon would disappear. Use the shared IconButton.',
+  'rule/header-icon-veil-no-border': 'A header icon button\'s hover fill is a literal translucent white rgba(255,255,255,.12) (active .2) with border:none — never the Panda background.surface.bold.* token (resolves to opaque near-white #f8f9f9, a light box) and never a visible border.',
+
   // Forms & inputs
   'rule/form-actions-always-present': 'Footer Cancel + primary are always rendered.',
   'rule/form-errors-inline': 'Validation errors render inline, never as a toast.',

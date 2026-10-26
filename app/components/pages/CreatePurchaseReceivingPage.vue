@@ -544,7 +544,11 @@ function handleCreate() {
 /* Expected qty — the one editable column, so it's white with an inset focus
    ring, per this codebase's form-table convention (everything else stays gray). */
 .pr-td--input { padding: 0; background: var(--mp-background-neutral, #fff); }
-.pr-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.pr-td--input { position: relative; }
+.pr-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pr-qty-input {
   display: block; width: 100%; box-sizing: border-box;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);

@@ -375,7 +375,7 @@ const emptyCopy = computed(() => {
    neutral bold border + 1px neutral ring, never Pixel's default brand-emerald ring. */
 .filter-search:focus-within {
   border-color: var(--mp-colors-border-bold, #8c9596);
-  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
+  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596); /* pixel-police-allow-shadow: border ring */
 }
 .filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }

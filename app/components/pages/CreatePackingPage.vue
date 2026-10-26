@@ -946,7 +946,11 @@ async function handleCreate() {
 
 /* Editable Pack qty cell — white, input fills edge-to-edge, focus ring */
 .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
-.pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pk-td--input { position: relative; }
+.pk-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 /* Direct/skip-picking mode is a FORM table (Pack qty input) → read-only cells go
    gray, the input + sticky action stay white. From-picking mode is a plain read-only
    table, so it keeps default (no gray). */

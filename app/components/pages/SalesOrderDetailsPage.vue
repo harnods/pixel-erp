@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
@@ -10,6 +10,11 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCompletedModal.vue'
+import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
 import { salesOrderCompletionRows } from '~/data/salesOrders'
@@ -56,6 +61,29 @@ const markCompleteRows = computed(() => salesOrderCompletionRows(order.value))
 function confirmMarkComplete() {
   toast.notify({ variant: 'success', title: t('Sales order marked as completed'), rootProps: { class: 'toast-enterprise' } })
 }
+const previewOpen = ref(false)
+const pdfUrl = ref('')
+const PDF_B64 = 'JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNDIwIDI2MF0vQ29udGVudHMgNCAwIFIvUmVzb3VyY2VzPDwvRm9udDw8L0YxIDUgMCBSPj4+Pj4+ZW5kb2JqCjQgMCBvYmo8PC9MZW5ndGggMTIwPj5zdHJlYW0KQlQgL0YxIDIyIFRmIDQwIDIwMCBUZCAoU2FtcGxlIGludm9pY2UgUERGKSBUaiBFVApCVCAvRjEgMTMgVGYgNDAgMTY1IFRkIChQcmV2aWV3IHJlbmRlcmVkIGluIGFuIGlmcmFtZS4pIFRqIEVUCmVuZHN0cmVhbSBlbmRvYmoKNSAwIG9iajw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+ZW5kb2JqCnRyYWlsZXI8PC9Sb290IDEgMCBSPj4='
+if (import.meta.client) {
+  const bytes = Uint8Array.from(atob(PDF_B64), (c) => c.charCodeAt(0))
+  pdfUrl.value = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
+const soActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: () => { previewOpen.value = true } },
+    { label: 'Create production request', onClick: handleCreateProductionRequest },
+    { label: 'Mark as completed', onClick: () => { markCompleteOpen.value = true }, show: canMarkCompleted.value },
+  ],
+  [
+    { label: 'Edit' },
+    { label: 'Set as recurring' },
+    { label: 'Duplicate' },
+    { label: 'Void' },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
+
 const activityEntries = computed(() => [{
   date: order.value.lastUpdatedAt,
   user: order.value.lastUpdatedBy,
@@ -238,7 +266,9 @@ function goBack() { router.push('/sales-orders') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')" :value="order.customer.name" />
+            <ContentList :label="t('Customer')">
+              <a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(order.customer.name)}`, '_blank')">{{ order.customer.name }}</a>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -434,51 +464,8 @@ function goBack() { router.push('/sales-orders') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" left-icon="chevrons-down">
-              {{ t('Print & share') }}
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" left-icon="chevrons-down">
-              {{ t('Actions') }}
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="handleCreateProductionRequest">{{ t('Create production request') }}</MpPopoverListItem>
-              <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
-              <MpPopoverListItem v-if="canMarkCompleted" @click="markCompleteOpen = true">{{ t('Mark as completed') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="so-print" />
+        <DetailActionsMenu id="so-actions" :groups="soActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -506,6 +493,8 @@ function goBack() { router.push('/sales-orders') }
       :rows="markCompleteRows"
       @confirm="confirmMarkComplete"
     />
+
+    <FilePreviewModal :open="previewOpen" :src="pdfUrl" :filename="`sales-order-${order.number}.pdf`" @close="previewOpen = false" />
   </div>
 </template>
 
@@ -796,8 +785,8 @@ function goBack() { router.push('/sales-orders') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

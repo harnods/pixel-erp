@@ -9,7 +9,7 @@ import { useLocale } from '~/composables/useLocale'
  * PRD v0.5 requires reservation activity to be LOGGED, not merely toasted: every
  * reserve, unreserve and release must be traceable to an actor with its component
  * and qty, and every release must name which of the three triggers produced it
- * (UC-02, UC-03, UC-15 R-1, US-8). A release with no log entry is indistinguishable
+ * (UC-02, UC-03, UC-11 R-1, US-8). A release with no log entry is indistinguishable
  * from stock that went missing.
  *
  * That is why this is an append-only STORE rather than a derivation. The repo's

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Request additional stock — PRD v0.5 D-7 (the tail of UC-11).
+ * Request additional stock — PRD v0.5 D-7 (the tail of the stock requests dashboard spec).
  *
  * Production asks the warehouse for MORE of a component than the work order's own
  * demand, with its own required date and its own reason. The lines land on the

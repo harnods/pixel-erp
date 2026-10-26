@@ -1205,7 +1205,11 @@ async function doCreate() {
 }
 /* Editable qty cell — white, input fills edge-to-edge, focus ring */
 .pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
-.pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pk-items .pk-td--input { position: relative; }
+.pk-items .pk-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pk-qty-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box; text-align: right;
   padding: 0 var(--mp-spacing-2);

@@ -1,9 +1,9 @@
 # Stock Request & WO Material Reservation — as built
 
 What the prototype on `feat/material-reserve` actually does, written so it can be
-diffed against **[PRD] Work Order - Material Reservation**, Draft v0.5 on
-Confluence (page `51289981861`, space `PD`, status *Need feedback*, last edited
-29 Sep 2026). Requirement IDs below (S-x, C-x, D-x, W-x, R-x) are the PRD's own.
+diffed against **[PRD] Work Order: Material Reservation** on Confluence (page
+`51289981861`, space `PD`, status *Need feedback*). Requirement IDs below
+(S-x, C-x, D-x, W-x, R-x) are the PRD's own.
 
 **Last reconciled 14 Oct 2026**, against the PRD revision of **12 Oct** (page now
 titled *[PRD] Work Order: Material Reservation*). That revision changed UC-00,
@@ -11,13 +11,18 @@ C-1, UC-03 and UC-06 and deleted L-12; the build followed — see §3, "Resolved
 14 Oct". Earlier reconciliations (2 Oct) are kept below for history. The PRD's own "Known implementation gaps" list is now stale in
 two respects: reserve and unreserve DO write activity-log entries, and the UC-04
 start-gate rules ARE built.
+**Last reconciled 15 Oct 2026, against page version 13 (edited 13 Oct 2026).**
+The page still labels itself Draft v0.5 and its Document History still ends at
+25 Sep, but the body has been edited five times since — see §7 for what moved and
+what it means for this build. Where the build and the PRD disagreed earlier, the
+build moved — see §3.
 
 v0.5 is the authority. It supersedes both PRD v0.4 and the Confluence draft
 *[PRD] INV — Stock Request Dashboard*, and it names this branch as its reference
 implementation.
 
 Sources this was built from:
-- PRD v0.5 (UC-00, UC-01–UC-06, UC-09, UC-11, UC-15)
+- PRD v0.5 (UC-00, UC-01–UC-06, UC-09, UC-11), read at page version 7
 - Figma *Warehouse — Stock Request* and *Production Material Requisition &
   Reservation* — **stale, see §3**
 
@@ -27,7 +32,7 @@ Sources this was built from:
 
 | Surface | Route / component | Notes |
 | --- | --- | --- |
-| Stock requests index | `/stock-requests` | Tabs **Awaiting** (default) / **Rejected / canceled**; views By product / By transaction, as a segmented control |
+| Stock requests index | `/stock-requests` | Tabs **Awaiting** (default) / **Closed**; views **By transaction** (default) / By product, as a segmented control |
 | Stock request detail | `/stock-requests/:requestId` | Exactly one detail page, grouped by destination warehouse |
 | Production settings | `/production-settings` | Settings › Production |
 | WO detail | `/work-orders/:id` | Reservation menu, readiness badge, Reserved/Consumed columns |
@@ -88,7 +93,7 @@ their own Adjust and Cancel. Product owner's calls on merging them:
 | Area | Result |
 | --- | --- |
 | **Adjust** | Both kept as separate actions: approval's **Adjust work order** (planned output qty, approval-aware) and material-reserve's UC-06 Adjust, renamed **Adjust materials**. Both hide while an approval request is pending |
-| **Cancel** | Approval's **Cancel/close work order** is the only cancel. It now releases the stock-request reservation and logs it (UC-15 trigger b) through `cancelWorkOrder()` in `woApproval.ts` — on the page when not gated, and at final approval when it is. The R-6 "qty released / restored" confirmation and `CancelWorkOrderModal` are retired |
+| **Cancel** | Approval's **Cancel/close work order** is the only cancel. It now releases the stock-request reservation and logs it (UC-11 trigger b) through `cancelWorkOrder()` in `woApproval.ts` — on the page when not gated, and at final approval when it is. The R-6 "qty released / restored" confirmation and `CancelWorkOrderModal` are retired |
 | **Start** | The reservation gate (UC-04) runs FIRST; only a work order that may start goes to the approval transaction |
 | **Completion** | An approved completion also returns leftover reservation to available stock (R-3), same as a direct one |
 | **Delete** | UC-09: Not started or Completed; refused In progress; Canceled shows Print only |
@@ -205,19 +210,38 @@ S-4.
   message naming Cancel. Cancel takes a mandatory reason; both release reservations
   and leave the request as Canceled. The confirmation names qty released and qty
   restored (R-6).
-- **UC-15** — one `releaseReservation` transition behind all three triggers:
+- **UC-11** — one `releaseReservation` transition behind all three triggers:
   completion with leftover (automatic, unapproved), cancel/delete, manual
   unreserve. Partial completion leaves the remaining reserve reserved.
 - **Tabs** — **Awaiting** (W-4: not fully reserved, on a request that is neither
-  rejected nor canceled) and **Rejected / canceled** (the terminal states of W-3).
-  The terminal tab hides the Status filter and the All-filters drawer, and clears
-  anything already set through them: the tab IS a status filter, and the drawer
-  only adds status and keyword on top of it.
+  rejected nor canceled) and **Closed** (the terminal states of W-3).
+  The terminal tab hides the All-filters drawer and clears anything already set
+  through it: the tab IS a status filter, and the drawer only adds status and
+  keyword on top of it.
+- **Filter bar** — Product (multi-select) · Destination warehouse · Request date ·
+  All filters. The drawer repeats all three next to its own Keywords and Status,
+  bound to the same state, so the two surfaces cannot disagree; its badge counts
+  every filter. When the bar runs out of width the LEFT group wraps — when the
+  right group wrapped, the icon tools detached above the search and read as a
+  bug. The two axes a stockist works along are what they are sourcing and
+  where it is wanted. There is no Status pill: Awaiting and Closed already are the
+  status split, so one could only narrow a tab to part of itself. Multi-select is
+  `ErpFilterSelect`'s own `multiple` mode, not a second component.
 
   Membership is derived status alone. `rejected` outranks the fulfilled states in
   `STATUS_RANK`, so a request whose own demand is settled and whose extra line the
   stockist declined derives `rejected` by itself; one whose demand is still open
   derives the lower status and stays in Awaiting, where the work is.
+- **Columns** — both views lead with identity, then Status · Destination
+  warehouse, then the qty block in one order: Available · Required · Reserved ·
+  Remaining · Unit. By transaction sums each figure across the request's lines;
+  its Unit is blank when the lines disagree, since no one unit is true then.
+  Neither view carries Request type.
+- **View parity** — the two views are one data set seen two ways; picking one
+  changes what a row IS, never which requests are in scope. Settled lines are
+  excluded from the product rollup so they cannot inflate Awaiting, which is
+  wrong on Closed — a tab made OF settled requests — so `skuDemandGroups` takes
+  an `includeSettled` flag that the page sets there. Held by a test.
 - **W-1…W-10** — both views; product rows are one per SKU **per destination
   warehouse** so availability is never summed across warehouses; W-2's column set
   behind a column menu; derived statuses incl. Rejected and Canceled; overdue;
@@ -275,8 +299,93 @@ app/components/pages/CreateWorkOrderPage.vue       C-3 / C-4 on save
 app/data/notifications.ts                         in-app notifications (L-11)
 
 tests/wo-start-gate.spec.ts                UC-04 by partial mode, toggle off
-tests/reservation-release.spec.ts          UC-15 triggers, R-8, no disposition
+tests/reservation-release.spec.ts          UC-11 triggers, R-8, no disposition
 tests/wo-reservation-toggle-and-c1.spec.ts UC-00 toggle, C-1 plan window
+tests/wo-start-gate.spec.ts                UC-04's four rows
+tests/reservation-release.spec.ts          UC-11 triggers, R-8, dispositions
 tests/stock-request-lifecycle.spec.ts      W-3, UC-06, the PRD's worked example
 tests/stock-request-dashboard.spec.ts      W-2/W-4/W-7 rollup and tab rules
 ```
+
+---
+
+## 7. Reconciliation with page version 13 (13 Oct 2026)
+
+The PRD was edited five times between 9 and 13 Oct, after this branch was built.
+The version table was not updated, so the page still presents itself as v0.5 of
+25 Sep. This section records the delta so the next reader does not have to diff
+it again.
+
+### 7.1 Confirmed — the build already matches
+
+| Area | Confirmation in v13 |
+| --- | --- |
+| UC-04 start gate | The four-row table is unchanged, word for word |
+| All-or-nothing auto-reserve (C-3) | OPEN-12 resolved in its favour: "All-or-nothing per line retained and validated in the prototype" |
+| `Partially reserved` line status | Confirmed by the worked example — an Edit raising qty above a fully reserved line yields it |
+| Adjust below reserved | Confirmed: unreserve happens inside the Adjust modal, full remaining qty, and the updated line is re-sent to the request |
+| Edit below reserved | Confirmed: "Qty cannot go below the already-reserved amount" on the Not-started path |
+| SR numbering | OPEN-15's recommendation (SR-YYYY-NNNN, per tenant, reset yearly) is what this branch issues |
+| Adjustment delta lines | Kept by UC-06's notes, the worked example (L5 is tagged `Adjustment`) and the user stories |
+
+### 7.2 Renumbering — applied to this branch
+
+Release moved from **UC-15 to UC-11**, and v13 has no UC section for the stock
+requests dashboard at all (the old UC-11). Every citation in the code, the tests
+and this document was remapped on 15 Oct: old UC-15 → UC-11, and old UC-11 → a
+plain reference to the dashboard and its W-ids, which no longer hang off a UC.
+
+### 7.3 The dashboard spec has been deleted
+
+v13 no longer contains the **W-1 … W-10 requirement table**. Scope still promises
+"a Stock Requests dashboard aggregated by product or by transaction", and W-2,
+W-3, W-6, W-7, W-9 and W-10 are still cited from other sections — but nothing in
+the page defines them any more.
+
+Until the PM restores it, **§1–§5 of this document are the only written spec for
+the largest surface on this branch.** Treat it accordingly: it is the artefact to
+paste back into Confluence, not a secondary record.
+
+### 7.4 Four contradictions — not built, awaiting a ruling
+
+> **Superseded on this branch (merged 26 Oct).** §7.4 was written against the
+> branch as it stood on 15 Oct. The 12 Oct alignment, merged in on 26 Oct, has
+> since ruled on S-4 (removed — the gate follows the partial mode), the
+> reservation toggle (restored) and UC-06 Edit (auto-unreserve). See "Resolved
+> 14 Oct" in §3. The "Branch today" column below is kept as the record of the
+> question, not the current state.
+
+In each case v13 contradicts itself, and this branch matches the older half. No
+code was changed for any of them.
+
+| # | v13 says | …but v13 also says | Branch today |
+| --- | --- | --- | --- |
+| S-4 | The start gate should use the existing partial consume / completion setting, not a new toggle | UC-04 still keys the gate off "unless S-4 is on" as its own condition | Separate `allowStartWithLimitedStock` toggle, gate per UC-04 |
+| Reservation on/off | UC-00: "There is a toggle to disable / enable the reservation of work order" | User story 1: "There is no setting to disable reservation itself" | `reservationEnabled()` is hardcoded true (L-12) |
+| D-4 menu | UC-02: the Reservation button "opens the Reserve action only" | The user story: "it offers Reserve and Unreserve only" | Reserve + Unreserve, Unreserve gated to Not started |
+| UC-06 | The table now reads "unreserve remaining reserved qty / existing line updated in place" for every qty change, both phases — which would delete Adjustment delta lines | Its own notes, worked example and user stories all keep delta lines | Delta lines kept |
+
+A fifth, smaller item: S-1 gained the qualifier that Production may reserve from
+the WO page *"if the product(s) have availability quantity"*. The branch does not
+gate the entry point on availability; if that is intended it becomes an inline
+message, never a disabled button (`rule/btn-no-disabled`).
+
+### 7.5 OPEN-30 — answered
+
+> *Are UC-05 to UC-09 outside the scope of branch `feat/material-reserve`, or in
+> scope but not yet built?*
+
+The PRD notes this is "a fact from the team, not a design choice" and asks for it
+to be stated explicitly. As built on this branch:
+
+| UC | State on `feat/material-reserve` |
+| --- | --- |
+| UC-05 — Material issue / consumption | **Built, minus the ledger.** A Consume / return records section on WO detail lists numbered records with product, date, qty, memo and recorder, filterable by type, with "New record" to add one and batch/serial links on tracked materials (`materialConsumeReturn.ts`). Consumption draws the reservation down and is written back to the request line. No journal is posted — the prototype posts none anywhere |
+| UC-06 — WO Edit & Adjust | **Built.** Both modals, Adjustment delta lines, requestor reassignment, the below-reserved rule on each path, and warehouse notification |
+| UC-07 — Output / partial completion | **Built, minus the ledger.** `partially produced` and `partially completed` statuses, Main output and Other outputs tables with cost allocation, and a Complete work order flow that auto-consumes the remaining qty before closing. No COGM journal |
+| UC-08 — Material return | **Built, minus the ledger.** Return is the second record type in the same Consume / return section, seeded and creatable. No Dr Inventory Cr WIP posting |
+| UC-09 — WO Cancel & Delete | **Cancel built** — reason, automatic release, stock-adjustment deletion, request left `Canceled`. **Delete not built** |
+
+So all five are present as UI and state; what none of them do is post to a
+ledger, because this prototype has no journal layer at all. The only outright
+absence is WO **Delete**. None of the five was descoped by anyone.

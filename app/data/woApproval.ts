@@ -136,7 +136,7 @@ const PRODUCTION_LEVELS = (): WoApprovalLevel[] => [
 function buildSeed(): WoApprovalRequest[] {
   return [
     {
-      id: 'wor-001', workOrderId: 'wo-25', type: 'start', ref: null,
+      id: 'wor-001', workOrderId: 'wo-38', type: 'start', ref: null,
       requester: PPIC, ruleId: 'awf-007', transactionDate: dateOnly(-1),
       payload: {}, status: 'pending', currentLevel: 2, levels: PRODUCTION_LEVELS(),
       log: [
@@ -151,7 +151,7 @@ function buildSeed(): WoApprovalRequest[] {
       log: [{ event: 'submitted', user: LINE_LEADER, at: at(-1, '14:00') }],
     },
     {
-      id: 'wor-004', workOrderId: 'wo-26', type: 'start', ref: null,
+      id: 'wor-004', workOrderId: 'wo-39', type: 'start', ref: null,
       requester: PPIC, ruleId: 'awf-007', transactionDate: dateOnly(-2),
       payload: {}, status: 'rejected', currentLevel: null, levels: PRODUCTION_LEVELS(),
       log: [
@@ -653,7 +653,7 @@ export function startWorkOrder(wo: WorkOrder): void {
 
 /**
  * Cancel / close a work order: status Canceled, its batch/serial picks dropped, and
- * — UC-15 trigger (b) — its stock-request reservation released back to available
+ * — UC-11 trigger (b) — its stock-request reservation released back to available
  * stock and logged. One function for both paths: applied immediately from the page
  * when the action isn't gated, or here at final approval. Returns the qty released.
  */
@@ -683,7 +683,7 @@ function execute(req: WoApprovalRequest) {
       if (req.payload.producedQty != null) wo.producedQty = req.payload.producedQty
       wo.status = 'completed'
       wo.endDate = today
-      // UC-15 R-3 — whatever is still reserved on a completed job is unused, and goes
+      // UC-11 R-3 — whatever is still reserved on a completed job is unused, and goes
       // back to available stock automatically (WIP settlement is open with SCM-COS).
       releaseOnCompletion(wo.id, { user: req.requester, source: 'work-order' })
       break

@@ -1,5 +1,5 @@
 /**
- * Stock requests dashboard — PRD v0.5 UC-11 (W-1 … W-8).
+ * Stock requests dashboard — PRD v0.5 stock requests dashboard (W-1 … W-8).
  *
  * The rules under test are the ones a stockist reads numbers off:
  *   • W-2 — Remaining = Required − Reserved − Consumed, and availability is shown
@@ -216,11 +216,11 @@ describe('W-4 — the Awaiting tab', () => {
 })
 
 /**
- * The Rejected / canceled tab — the two terminal statuses (W-3). They are not
+ * The Closed tab — the two terminal statuses (W-3). They are not
  * work, so they sit apart from the tab the stockist works down, and they are no
  * longer offered in the Status filter either.
  */
-describe('The Rejected / canceled tab', () => {
+describe('The Closed tab', () => {
   const canceledWorkOrderId = workOrders.find(w => w.status === 'canceled')?.id
   const activeWorkOrderId = workOrders.find(w => w.status === 'not started')!.id
 
@@ -265,5 +265,53 @@ describe('The Rejected / canceled tab', () => {
     expect(values).not.toContain('rejected')
     expect(values).not.toContain('canceled')
     expect(values).toEqual(['requested', 'partially reserved', 'reserved', 'issued / picked'])
+  })
+})
+
+/**
+ * The two views are ONE data set seen two ways — picking a view changes what a
+ * row is, never which requests are in scope. The Closed tab is where that came
+ * apart: settled lines are excluded from the product rollup so they cannot
+ * inflate the Awaiting figures, which left that tab's By product view all but
+ * empty while By transaction listed every canceled request.
+ */
+describe('By product and By transaction cover the same requests', () => {
+  const canceledId = workOrders.find(w => w.status === 'canceled')!.id
+
+  beforeEach(() => {
+    for (let i = stockRequests.length - 1; i >= 0; i--) {
+      if (stockRequests[i]!.id.startsWith('sr-parity-')) stockRequests.splice(i, 1)
+    }
+  })
+
+  function parityRequest(id: string, workOrderId: string, lines: StockRequestLine[]): StockRequest {
+    const req: StockRequest = {
+      id, number: `SR-2026-9${id.slice(-3)}`, workOrderId,
+      workOrderNumber: 'WO-PARITY', requestDate: '2026-06-20', lines,
+    }
+    stockRequests.push(req)
+    return req
+  }
+
+  it('rolls up a cancelled request only when settled lines are asked for', () => {
+    const req = parityRequest('sr-parity-001', canceledId, [line('mdf', 12)])
+
+    // Awaiting: settled demand must not reach the rollup.
+    expect(skuDemandGroups([req])).toHaveLength(0)
+
+    // Closed: the same request IS the content, so it has to be there.
+    const closed = skuDemandGroups([req], undefined, true)
+    expect(closed).toHaveLength(1)
+    expect(closed[0]!.required).toBe(12)
+    expect(closed[0]!.entries.map(e => e.requestId)).toEqual(['sr-parity-001'])
+  })
+
+  it('covers every request of the tab, not a subset', () => {
+    const a = parityRequest('sr-parity-002', canceledId, [line('mdf', 4)])
+    const b = parityRequest('sr-parity-003', canceledId, [line('kaki', 6)])
+
+    const groups = skuDemandGroups([a, b], undefined, true)
+    const seen = new Set(groups.flatMap(g => g.entries.map(e => e.requestId)))
+    expect(seen).toEqual(new Set(['sr-parity-002', 'sr-parity-003']))
   })
 })

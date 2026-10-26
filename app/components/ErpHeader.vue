@@ -24,7 +24,7 @@
 
     <!-- Right: Actions + User -->
     <MpFlex class="erp-header__right">
-      <MpFlex class="erp-header__actions">
+      <MpFlex class="erp-header__actions" data-devchange="header-icon-white">
         <!-- Quick-create (+) and the monitor/display shortcut are ERP-only -->
         <ErpQuickCreateMenu v-if="!isWms" />
         <IconButton icon="help" />

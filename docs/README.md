@@ -24,6 +24,7 @@ Start here. This is the home for ERP UI/UX documentation.
 
 | Topic | Doc | Covers |
 |---|---|---|
+| Global header bar | [global-header-bar.md](patterns/global-header-bar.md) | The dark 56px app header (`ErpHeader`) — logo/switcher, center search, quick-action icon buttons (always white `icon.inverse`, translucent-white hover veil, no border), user menu |
 | Page title bar | [page-title-bar.md](patterns/page-title-bar.md) | The 72px title bar shared by every page — dimensions, index/detail/form variants, title-bar badge rule |
 | Index page format | [index-page-format.md](patterns/index-page-format.md) | Wireframe + spec for list/index pages (filter bar → table → pagination) |
 | Detail page format | [details-page-format.md](patterns/details-page-format.md) | Wireframe + spec for transaction detail pages (header summary 2–5 col → line items → totals → tabs → footer actions) |

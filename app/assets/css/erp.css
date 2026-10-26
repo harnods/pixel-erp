@@ -611,6 +611,13 @@ input[type="number"] {
 }
 .cell-link:hover { text-decoration: underline; }
 
+.detail-value-link {
+  color: var(--mp-colors-text-link, #165082);
+  cursor: pointer;
+  text-decoration: none;
+}
+.detail-value-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
 /* ── Badge for=additionalInformation — SOLID (not pastel) ─────────────────────
    tableStatus stays pastel/subtle (in-row status); additionalInformation (beside
    titles/tabs) is a bold, filled chip. In this pulled build both collapse to the

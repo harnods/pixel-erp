@@ -127,12 +127,12 @@ describe('one workflow per Work order type', () => {
 describe('Start work order — reservation on approval', () => {
   it('reserves the planned material only when the start is approved', () => {
     const plan = { 'p-1': { warehouseId: 'wh-1', serialSelection: ['SN-1'] } }
-    wo('wo-25').reservationPlan = plan
-    expect(wo('wo-25').materialReservations).toBeUndefined()
+    wo('wo-38').reservationPlan = plan
+    expect(wo('wo-38').materialReservations).toBeUndefined()
     approveRequest('wor-001', SARI)
-    expect(wo('wo-25').status).toBe('in progress')
-    expect(wo('wo-25').materialReservations).toEqual(plan)
-    expect(wo('wo-25').reservationPlan).toBeUndefined()
+    expect(wo('wo-38').status).toBe('in progress')
+    expect(wo('wo-38').materialReservations).toEqual(plan)
+    expect(wo('wo-38').reservationPlan).toBeUndefined()
   })
 
   it('a not-gated start reserves immediately', () => {
@@ -143,7 +143,7 @@ describe('Start work order — reservation on approval', () => {
   })
 
   it('a pending start blocks starting again; a rejected start reserves nothing', () => {
-    expect(guardMessage('wo-25')).toMatch(/locked/)
+    expect(guardMessage('wo-38')).toMatch(/locked/)
     rejectRequest('wor-002', LEVEL_1, 'Line not free')
     expect(wo('wo-2').status).toBe('not started')
     expect(wo('wo-2').materialReservations).toBeUndefined()
@@ -185,9 +185,9 @@ describe('approve / reject — level by level', () => {
 
 describe('guards and quantities', () => {
   it('any pending request freezes the work order (only Print / Cancel approval request stay)', () => {
-    for (const id of ['wo-6', 'wo-7', 'wo-8', 'wo-25']) expect(guardMessage(id)).toMatch(/Only Print is available/)
+    for (const id of ['wo-6', 'wo-7', 'wo-8', 'wo-38']) expect(guardMessage(id)).toMatch(/Only Print is available/)
     expect(guardMessage('wo-3')).toBeNull()
-    expect(isFrozen('wo-26')).toBe(false)
+    expect(isFrozen('wo-39')).toBe(false)
   })
 
   it('consume (not gated) is capped at planned − consumed', () => {
@@ -198,11 +198,11 @@ describe('guards and quantities', () => {
 
 describe('derived list state and log', () => {
   it('the status stays as-is while a request is pending', () => {
-    expect(displayStatus(wo('wo-25'))).toBe('not started')
+    expect(displayStatus(wo('wo-38'))).toBe('not started')
     expect(displayStatus(wo('wo-6'))).toBe('in progress')
     expect(displayStatus(wo('wo-7'))).toBe(wo('wo-7').status)
     approveRequest('wor-001', SARI)
-    expect(displayStatus(wo('wo-25'))).toBe('in progress')
+    expect(displayStatus(wo('wo-38'))).toBe('in progress')
     approveRequest('wor-005', LEVEL_1)
     approveRequest('wor-005', SARI)
     expect(displayStatus(wo('wo-6'))).toBe('in progress')
@@ -221,7 +221,7 @@ describe('derived list state and log', () => {
   it('indicator / approval status come from requests', () => {
     expect(pendingForWorkOrder('wo-8')).toHaveLength(1)
     expect(workOrderApprovalStatus(wo('wo-8'))).toBe('waiting')
-    expect(workOrderApprovalStatus(wo('wo-26'))).toBe('rejected')
+    expect(workOrderApprovalStatus(wo('wo-39'))).toBe('rejected')
     expect(workOrderApprovalStatus(wo('wo-3'))).toBeNull()
   })
 
@@ -321,10 +321,10 @@ describe('pending requests follow the approval rule live', () => {
   })
 
   it('removing the level a request waits at lets it execute', () => {
-    // wor-001 (start, wo-25) already passed level 1 and waits at level 2.
+    // wor-001 (start, wo-38) already passed level 1 and waits at level 2.
     updateApprovalWorkflow('awf-007', input(rule('awf-007'), [{ matchType: 'any', approverIds: [id(LEVEL_1)] }]))
     expect(req('wor-001').status).toBe('executed')
-    expect(wo('wo-25').status).toBe('in progress')
+    expect(wo('wo-38').status).toBe('in progress')
     expect(req('wor-002').status).toBe('pending') // still needs level 1
   })
 

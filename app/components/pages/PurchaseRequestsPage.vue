@@ -145,10 +145,16 @@ const urgencyOptions = [
 ]
 
 // ─── Urgency pip (Pixel priority icon + label) ─────────────────────────────────
-const URGENCY_META: Record<string, { label: string; icon: string; color: string }> = {
-  low:    { label: t('Low'),    icon: 'priority-low',    color: 'var(--mp-text-link, #165082)'    },
-  medium: { label: t('Medium'), icon: 'priority-medium', color: 'var(--mp-icon-warning, #e46910)' },
-  high:   { label: t('High'),   icon: 'priority-high',   color: 'var(--mp-icon-danger, #e2483d)'  },
+/**
+ * `iconColor` is MpIcon's `color` prop, NOT a CSS colour. MpIcon inline-styles
+ * `--mp-icon-color` on its own <svg>, so a CSS `color` (or `:style`) is ignored
+ * and every urgency icon renders the same grey. The prop takes a dot-path into
+ * `--mp-colors-*` — `icon.warning` → `--mp-colors-icon-warning`.
+ */
+const URGENCY_META: Record<string, { label: string; icon: string; iconColor: string }> = {
+  low:    { label: t('Low'),    icon: 'priority-low',    iconColor: 'icon.information' },
+  medium: { label: t('Medium'), icon: 'priority-medium', iconColor: 'icon.warning'     },
+  high:   { label: t('High'),   icon: 'priority-high',   iconColor: 'icon.danger'      },
 }
 
 // ─── First-load skeleton (pagination skeleton is handled by ErpTablePage) ─────
@@ -343,7 +349,7 @@ const exportColumns = computed(() => [
     <!-- ── Cell: Urgency level (Pixel priority icon + label) ── -->
     <template #cell-urgency="{ value }">
       <span class="urgency">
-        <MpIcon :name="URGENCY_META[value as string]?.icon" size="sm" class="urgency__ic" :style="{ color: URGENCY_META[value as string]?.color }" />
+        <MpIcon :name="URGENCY_META[value as string]?.icon" size="sm" class="urgency__ic" :color="URGENCY_META[value as string]?.iconColor" />
         <span class="urgency__label">{{ URGENCY_META[value as string]?.label }}</span>
       </span>
     </template>

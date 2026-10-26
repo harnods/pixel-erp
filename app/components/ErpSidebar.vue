@@ -447,6 +447,10 @@ const erpNavGroups: NavItem[][] = [
         { label: 'Purchases', to: 'Purchase report' },
         { label: 'Inventory', to: 'Inventory report' },
         { label: 'WMS', to: 'WMS report' },
+        // Reports › Tax is the index of tax reports (card grid, same as Sales /
+        // Inventory / WMS). VAT reconciliation is one of its cards — it lives
+        // here rather than under Accounting because it *is* a tax report: it
+        // reads ERP records against DJP Coretax, it doesn't post anything.
         { label: 'Tax', to: 'Tax report' },
         { label: 'Cash & bank', to: 'Cash & bank report' },
         { label: 'Production', to: 'Production report' },
@@ -459,7 +463,10 @@ const erpNavGroups: NavItem[][] = [
       submenu: [
         [
           { label: 'Cash management' },
-          { label: 'Reconciliations' },
+          // VAT reconciliation is NOT here — it sits under Reports › Tax. It
+          // reconciles ERP records against DJP Coretax and posts nothing, so it
+          // reads as a tax report, and "Reconciliations" next to Cash management
+          // would have read as *bank* reconciliation (its meaning in Jurnal).
           { label: 'Consolidation' },
           { label: 'Chart of accounts' },
           { label: 'Close books' },
@@ -779,33 +786,14 @@ const xpmNavGroups: NavItem[][] = [
   ],
 ]
 
-// Mekari Buzz (Marketing tool) nav — Campaigns + Assets. Assets carries a level-2
-// panel (same UI as ERP's Reports/Settings) with Branding + Photo stocks.
-const buzzNavGroups: NavItem[][] = [
-  [
-    { name: 'Home', icon: 'home' },
-    { name: 'Campaigns', icon: 'promo', to: 'Buzz campaigns' },
-  ],
-  [
-    {
-      name: 'Assets', icon: 'products',
-      panelSubmenu: [[
-        { label: 'Branding', to: 'Buzz branding' },
-        { label: 'Photo stocks', to: 'Buzz photo stocks' },
-      ]],
-    },
-  ],
-]
-
 // Active scenario drives which nav is shown. WMS Ops + Ops 2 share the trimmed
-// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav; Buzz
-// uses the Marketing nav; ERP uses the ERP nav.
+// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav;
+// ERP uses the ERP nav.
 const { activeScenario } = useScenario()
 const navGroups = computed<NavItem[][]>(() => {
   if (activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2') return wmsOpsNavGroups.value
   if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups.value
   if (activeScenario.value === 'XPM') return xpmNavGroups
-  if (activeScenario.value === 'BUZZ') return buzzNavGroups
   return erpNavGroups
 })
 
@@ -967,6 +955,19 @@ const SECTION_PARENT: Record<string, string> = {
   Delivery: 'Outbound delivery',
   Receiving: 'Inbound delivery',
   'Put away': 'Inbound delivery',
+  // The whole VAT reconciliation module hangs off Reports › Tax — the index is
+  // a card on that page, and everything else is reached from inside the index
+  // (a masa row → its workspace; the title bar → the rules). None of them has a
+  // menu entry, so without this they'd snap the sidebar to Home. Every key maps
+  // straight to 'Tax report': the lookup is single-hop, so pointing the inner
+  // pages at 'Vat reconciliation' (itself off-nav now) would resolve to nothing.
+  'Vat reconciliation': 'Tax report',
+  'Faktur keluaran': 'Tax report',
+  'Faktur masukan': 'Tax report',
+  'Matching rules': 'Tax report',
+  'Unmatched and discrepancies': 'Tax report',
+  'Payments received': 'Sales invoices',
+  'Purchase payments': 'Purchase invoices',
 }
 
 watch([currentPageKey, activeSectionOverride, () => route.path, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {

@@ -127,7 +127,7 @@ function goBack() {
         <!-- Empty state — everything resolved -->
         <template v-if="!pendingSetupProducts.length">
           <div class="pen-empty">
-            <MpIcon name="check" size="lg" color="icon.success" />
+            <MpIcon name="check" size="32px" color="icon.success" />
             <p class="pen-empty-title">{{ t('No products pending setup') }}</p>
             <p class="pen-empty-desc">
               {{ t('New WMS products will appear here with their held entries until they are routed to an account.') }}

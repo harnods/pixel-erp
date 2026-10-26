@@ -236,6 +236,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'New activated users only get access to their own records.': 'User baru yang diaktifkan hanya mendapat akses ke data miliknya sendiri.',
   'Full access to CRM data and settings (Administrator)': 'Akses penuh ke data dan pengaturan CRM (Administrator)',
   'Access to CRM, scoped to their own records': 'Akses ke CRM, terbatas pada data milik mereka sendiri',
+  'selected': 'dipilih',
   'permission selected': 'izin dipilih',
   'permissions selected': 'izin dipilih',
   'Team Admin': 'Team admin',
@@ -3708,6 +3709,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Not enough stock to reserve any line in full': 'Stok tidak cukup untuk mereservasi baris mana pun secara penuh',
 
   // ── Production › Work order material reservation (PRD UC-00 … UC-04) ────────
+  'Material reservation': 'Reservasi material',
   'Reservation': 'Reservasi',
   'Reserve': 'Reservasi',
   'Unreserve': 'Batalkan reservasi',
@@ -3746,7 +3748,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Close a work order in batches, before the full planned quantity is produced.': 'Tutup perintah kerja secara bertahap, sebelum seluruh jumlah rencana diproduksi.',
   'When off, a work order can only start once every component is reserved.': 'Saat nonaktif, perintah kerja hanya bisa dimulai setelah semua komponen direservasi.',
 
-  // ── Warehouses › Stock request detail (PRD UC-11 + prototype detail screen) ──
+  // ── Warehouses › Stock request detail (PRD stock request dashboard + prototype detail screen) ──
   'Request info': 'Info permintaan',
   'Components': 'Komponen',
   'components fully reserved': 'komponen direservasi penuh',
@@ -3810,7 +3812,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Partial consume and partial completion cannot both be on — turning one on turns the other off.': 'Konsumsi bertahap dan penyelesaian bertahap tidak bisa aktif bersamaan — mengaktifkan salah satu akan menonaktifkan yang lain.',
   'A work order can start only once every component is reserved in full.': 'Perintah kerja baru bisa dimulai setelah semua komponen direservasi penuh.',
   // Stock requests index — tabs, columns, states (uxw-mekari-erp audit, 5 Oct)
-  'Rejected / canceled': 'Ditolak / dibatalkan',
   'Stock request not found': 'Permintaan stok tidak ditemukan',
   'Stock request no.': 'No. permintaan stok',
   'Switch stock request': 'Ganti permintaan stok',
@@ -3974,7 +3975,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Work order canceled': 'Perintah kerja dibatalkan',
   'Work order deleted': 'Perintah kerja dihapus',
 
-  // Release & activity log (UC-15)
+  // Release & activity log (UC-11)
   'Reserved material': 'Material direservasi',
   'Released reservation': 'Reservasi dilepas',
   'Qty reserved': 'Kuantitas direservasi',

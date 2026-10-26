@@ -153,16 +153,23 @@ function seedBom(
 }
 
 const SEED_SPEC: { fg: string; materials: string[]; category: 'Standard' | 'Custom'; costing: 'Actual cost' | 'Standard cost'; desc: string }[] = [
-  { fg: 'p09', materials: ['p01', 'p02'], category: 'Standard', costing: 'Actual cost', desc: 'House blend medium roast for retail 250g bags.' },
-  { fg: 'p10', materials: ['p03'], category: 'Custom', costing: 'Standard cost', desc: 'Single-origin dark roast, small batch.' },
-  { fg: 'p11', materials: ['p04', 'p05'], category: 'Custom', costing: 'Standard cost', desc: 'Premium blend for specialty cafes.' },
-  { fg: 'p12', materials: ['p06'], category: 'Standard', costing: 'Actual cost', desc: 'Everyday light roast, wholesale pack.' },
-  { fg: 'p26', materials: ['p07', 'p08'], category: 'Standard', costing: 'Actual cost', desc: 'Seasonal blend, medium-dark profile.' },
+  // Component counts run from 1 to 10 on purpose: a bill with one component and
+  // a bill with ten are different things to read, and every surface built on a
+  // BOM — the work order's Raw materials table, the stock request it raises and
+  // that request's breakdown row — inherits the spread from here.
+  //
+  // The blends share Gayo Grade 1 (p01) as their base bean, which is also why the
+  // same component shows up across many open transactions in the By product view.
+  { fg: 'p09', materials: ['p01', 'p02', 'p03'], category: 'Standard', costing: 'Actual cost', desc: 'House blend medium roast for retail 250g bags.' },
+  { fg: 'p10', materials: ['p01'], category: 'Custom', costing: 'Standard cost', desc: 'Single-origin dark roast, small batch.' },
+  { fg: 'p11', materials: ['p01', 'p04', 'p05', 'p06'], category: 'Custom', costing: 'Standard cost', desc: 'Premium blend for specialty cafes.' },
+  { fg: 'p12', materials: ['p01', 'p06'], category: 'Standard', costing: 'Actual cost', desc: 'Everyday light roast, wholesale pack.' },
+  { fg: 'p26', materials: ['p07', 'p08', 'p02', 'p03', 'p04', 'p05'], category: 'Standard', costing: 'Actual cost', desc: 'Seasonal blend, medium-dark profile.' },
   { fg: 'p27', materials: ['p01'], category: 'Custom', costing: 'Standard cost', desc: 'Decaf process, swiss water method.' },
-  { fg: 'p13', materials: ['p16', 'p20'], category: 'Standard', costing: 'Actual cost', desc: 'Assembled espresso machine, factory spec.' },
-  { fg: 'p14', materials: ['p17'], category: 'Custom', costing: 'Standard cost', desc: 'Semi-automatic unit, custom trim.' },
-  { fg: 'p16', materials: ['p20'], category: 'Standard', costing: 'Actual cost', desc: 'Burr grinder, standard assembly.' },
-  { fg: 'p28', materials: ['p02', 'p18'], category: 'Custom', costing: 'Standard cost', desc: 'Compact machine for small cafes.' },
+  { fg: 'p13', materials: ['p16', 'p20', 'p21', 'p22', 'p23'], category: 'Standard', costing: 'Actual cost', desc: 'Assembled espresso machine, factory spec.' },
+  { fg: 'p14', materials: ['p17', 'p20', 'p21', 'p22', 'p23', 'p24', 'p25'], category: 'Custom', costing: 'Standard cost', desc: 'Semi-automatic unit, custom trim.' },
+  { fg: 'p16', materials: ['p20', 'p21'], category: 'Standard', costing: 'Actual cost', desc: 'Burr grinder, standard assembly.' },
+  { fg: 'p28', materials: ['p18', 'p19', 'p20', 'p21', 'p22', 'p23', 'p24', 'p25', 'p30', 'p02'], category: 'Custom', costing: 'Standard cost', desc: 'Compact machine for small cafes.' },
 ]
 
 function buildSeed(): BillOfMaterials[] {
@@ -172,12 +179,17 @@ function buildSeed(): BillOfMaterials[] {
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts: a
 // present snapshot wins over the freshly-generated seed; "Reset demo data" clears it.
-const bomSnapshot = loadSnapshot<BillOfMaterials>('billOfMaterials')
+/**
+ * Versioned key: the seed bills now carry 1–10 components each, and a snapshot
+ * written against the old 1–2 component seed would quietly pin a returning
+ * machine to those — along with the thin stock requests they raise.
+ */
+const bomSnapshot = loadSnapshot<BillOfMaterials>('billOfMaterials.v2')
 export const billOfMaterials = reactive<BillOfMaterials[]>(bomSnapshot ?? buildSeed())
 
 /** Persist the BOM snapshot (call after any mutation). */
 export function persistBillOfMaterials(): void {
-  saveSnapshot('billOfMaterials', billOfMaterials)
+  saveSnapshot('billOfMaterials.v2', billOfMaterials)
 }
 
 let bomAddSeq = billOfMaterials.length

@@ -53,12 +53,19 @@ describe('tax-document store', () => {
     }
   })
 
-  it('an approved document formats Number as DJP code + its 15-digit serial', () => {
+  // PRD-05 moved faktur numbering onto DJP's real structure: 2-digit kode
+  // transaksi + 1 status digit + 13-digit NSFP = 16. This test still asserted the
+  // earlier 15-digit-serial simplification, which the implementation replaced —
+  // the status digit is what makes a Normal faktur and its pengganti differ in
+  // exactly one character, so it has to be in the number.
+  it('an approved document formats Number as kode transaksi + status digit + its 13-digit NSFP', () => {
     const doc = addTaxDocument({
       salesInvoiceId: 'inv-taxdoc-approved', date: '09/08/2026', documentType: 'Output tax invoice', paymentStage: 'down-payment', lane: 'domestic', djpCode: '04', status: 'approved',
     })
-    expect(doc.serial).toHaveLength(15)
-    expect(formatTaxDocumentNumber(doc)).toBe(`04${doc.serial}`)
+    expect(doc.serial).toHaveLength(13)
+    // revision 0 → status digit 0
+    expect(formatTaxDocumentNumber(doc)).toBe(`040${doc.serial}`)
+    expect(formatTaxDocumentNumber(doc)).toHaveLength(16)
   })
 
   it('draft leaves Edit and Delete enabled with no tooltip', () => {
@@ -112,6 +119,6 @@ describe('tax-document store', () => {
       paymentStage: 'down-payment', lane: 'foreign', djpCode: '13', exportNoticeReference: 'EN-1', classificationCode: 'CC-1',
       status: 'approved',
     })
-    expect(formatTaxDocumentNumber(doc)).toBe(`13${doc.serial}`)
+    expect(formatTaxDocumentNumber(doc)).toBe(`130${doc.serial}`)
   })
 })

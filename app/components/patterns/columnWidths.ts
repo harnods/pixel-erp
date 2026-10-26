@@ -38,7 +38,15 @@ export interface ColWidthRange {
  */
 export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   date:    { minWidth: '160px', maxWidth: '160px' }, // fixed
-  number:  { minWidth: '160px', maxWidth: '240px' },
+  // 240 min, not 160. Two things have to fit here at the MINIMUM, because a
+  // saturated table never grows a column past it:
+  //   • the codified "<Module name> #<number>" format (~141px for
+  //     "Sales Invoice #40150"), and
+  //   • up to two trailing status icons in the same cell (2x20px + 8px gap = 48px),
+  //     e.g. the e-faktur and attachment markers on Sales invoices.
+  // 141 + 8 + 48 = 197, plus the cell's 24px padding = 221. 240 clears that with
+  // room to spare; 160 and 200 both truncated the ID format they were meant to show.
+  number:  { minWidth: '240px', maxWidth: '280px' },
   name:    { minWidth: '240px', maxWidth: '280px' },
   status:  { minWidth: '128px', maxWidth: '160px' },
   amount:  { minWidth: '160px', maxWidth: '240px' },

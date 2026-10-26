@@ -238,7 +238,7 @@ function orderBadge(status: string) {
             <div class="cd-panel">
               <!-- Company profile -->
               <section class="cd-profile">
-                <MpAvatar :id="`cd-av-${customer.id}`" :name="customer.company" size="lg" variant-color="green" />
+                <MpAvatar :id="`cd-av-${customer.id}`" :name="customer.company" size="32px" variant-color="green" />
                 <div class="cd-profile-body">
                   <div class="cd-profile-titlerow">
                     <h2 class="cd-profile-name">{{ customer.company }}</h2>
@@ -429,7 +429,7 @@ function orderBadge(status: string) {
   </div>
 
   <div v-else class="cd-missing">
-    <MpIcon name="profile" size="lg" />
+    <MpIcon name="profile" size="32px" />
     <p>Company not found.</p>
     <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/customers')">Back to Companies</MpButton>
   </div>

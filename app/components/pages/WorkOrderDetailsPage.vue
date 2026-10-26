@@ -178,7 +178,7 @@ const editOpen = ref(false)
 
 /**
  * UC-09 — Delete, allowed Not started or Completed. Reservations are released
- * automatically (UC-15 trigger b); the request stays on the dashboard as Canceled.
+ * automatically (UC-11 trigger b); the request stays on the dashboard as Canceled.
  */
 function deleteWorkOrder() {
   const w = wo.value
@@ -614,7 +614,7 @@ function completeWorkOrder() {
   wo.value.endDate = new Date().toISOString().slice(0, 10)
   persistWorkOrders()
 
-  // UC-15 R-3 — trigger (a). Whatever is still reserved when a work order
+  // UC-11 R-3 — trigger (a). Whatever is still reserved when a work order
   // COMPLETES is by definition unused, so it returns to available stock
   // automatically and unapproved: holding a job's last step for a decision nobody
   // is making just strands the material. (A PARTIAL completion does not come
@@ -808,7 +808,7 @@ function onTransactionDone(result: WoTransactionResult, mode: WoTransactionMode)
 }
 
 // Not gated cancel/close — applied immediately: status Canceled, batch/serial picks
-// dropped, and the stock-request reservation released and logged (UC-15 trigger b).
+// dropped, and the stock-request reservation released and logged (UC-11 trigger b).
 // The same cancelWorkOrder() runs when a gated request is approved.
 function cancelNow() {
   if (!wo.value) return
@@ -1103,22 +1103,6 @@ function suppressFabClick(e: MouseEvent) {
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- D-4 — ONE Reservation action opening Reserve / Unreserve; separate
-             buttons are deliberately not used. S-2 — hidden entirely (not
-             disabled) when the method is Two-step. -->
-        <MpPopover v-if="showReservationMenu" id="wod-reservation" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">{{ t('Reservation') }}</button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="reserveOpen = true">{{ t('Reserve') }}</MpPopoverListItem>
-              <!-- D-6 — unreserve exists only while the work order has not started -->
-              <MpPopoverListItem v-if="notStarted && hasReservation" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
         <!-- Approver view — when a request on this work order awaits the viewer's level,
              the primary action becomes Approve (the work order can't move on until it's
              decided anyway); the chevron segment offers Reject. The Approval log icon sits
@@ -1241,6 +1225,29 @@ function suppressFabClick(e: MouseEvent) {
             <MpIcon name="information" size="sm" />
             {{ t('Reservation via Stock requests only (PPIC / stockist)') }}
           </p>
+          <!-- D-4 — ONE Material reservation action opening Reserve / Unreserve;
+               separate buttons are deliberately not used. It sits directly above
+               the table because the components it acts on are the rows beneath it,
+               not the work order as a whole. S-2 — hidden entirely (not disabled)
+               when the method is Two-step. -->
+          <div v-if="showReservationMenu" class="wod-reserve-actions">
+            <MpPopover id="wod-reservation" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+              <MpPopoverTrigger>
+                <MpButton
+                  variant="tertiary" is-rounded right-icon="chevrons-down"
+                  data-devchange="wod-material-reservation"
+                >{{ t('Material reservation') }}</MpButton>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+                <MpPopoverList>
+                  <MpPopoverListItem @click="reserveOpen = true">{{ t('Reserve') }}</MpPopoverListItem>
+                  <!-- D-6 — unreserve exists only while the work order has not started -->
+                  <MpPopoverListItem v-if="notStarted && hasReservation" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
+          </div>
+
           <div class="wod-table-scroll" data-devchange="wo-raw-materials-as-created">
             <table class="wod-table">
               <thead>
@@ -1855,6 +1862,10 @@ function suppressFabClick(e: MouseEvent) {
 
 /* Material readiness note + badge (PRD UC-00 S-2, UC-02) */
 .wod-section-title { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+/* Material reservation — its own row above the table it acts on. A section-toolbar
+   action, so it is the black tertiary button (rule/filter-bar-action-tertiary);
+   the green primary belongs to the page title bar. */
+.wod-reserve-actions { display: flex; margin-bottom: var(--mp-spacing-4); }
 .wod-reserve-note {
   display: flex; align-items: center; gap: var(--mp-spacing-1);
   margin: 0 0 var(--mp-spacing-3);
