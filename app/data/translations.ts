@@ -2889,6 +2889,24 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "No data migration in progress. Connected systems that need setup will appear here.":
     "Tidak ada migrasi data berjalan. Sistem terhubung yang perlu disiapkan akan muncul di sini.",
 
+  // ── Data migration — step-based import wizard ──────────────────────────────
+  "Opening balance": "Saldo awal",
+  "Company address": "Alamat perusahaan",
+  "Bank account info": "Info rekening bank",
+  "Save & continue": "Simpan & lanjutkan",
+  "Company info saved": "Info perusahaan tersimpan",
+  "Company logo updated": "Logo perusahaan diperbarui",
+  "This step is not available yet.": "Langkah ini belum tersedia.",
+  "You can add more bank accounts in": "Anda dapat menambahkan rekening bank lainnya di",
+  "Bank account info will appear as payment info on invoices when enabled in the invoice template.": "Info rekening bank akan muncul sebagai info pembayaran pada faktur bila diaktifkan di template faktur.",
+  "Company profile": "Profil perusahaan",
+  "You can add new accounts in": "Anda dapat menambahkan akun baru di",
+  "while filling in your opening balances.": "sambil mengisi saldo awal Anda.",
+  "Set up opening balance": "Atur saldo awal",
+  "Opening balance is used to set balances based on the conversion date, which is the date you start recording in Jurnal.": "Saldo awal berfungsi untuk menetapkan saldo berdasarkan tanggal konversi, yakni tanggal mulai pencatatan di Jurnal.",
+  "Setting up opening balance...": "Mengatur saldo awal...",
+  "Opening balance has been set up": "Saldo awal telah diatur",
+
   // ── Reports › Inventory — index + Dual Unit Inventory Report ──────────────────
   "View report": "Lihat laporan",
   "Coming soon": "Segera hadir",

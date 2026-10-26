@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'dm-step-layout',
+    title: 'Data migration step-based layout',
+    description:
+      'Settings → Data migration now uses a two-column layout with an ordered step list on the left (Company info, Opening balance, Products, Contacts, Sales, Purchases, Expenses) and the active step form on the right. Company info step is fully built.',
+    date: '2026-10-26',
+    files: ['DataMigrationPage.vue', 'translations.ts'],
+  },
+  {
     id: 'recurring-receive-money-form',
     title: 'New recurring receive money form',
     description:
