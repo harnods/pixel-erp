@@ -137,6 +137,16 @@ const coaRows = computed(() => {
   return DEFAULT_COA.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
 })
 
+// ─── Products — Import ────────────────────────────────────────────────────────
+const prodStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startProductImport() {
+  prodStatus.value = 'running'
+  setTimeout(() => {
+    prodStatus.value = 'done'
+  }, 3000)
+}
+
 // ─── Save ────────────────────────────────────────────────────────────────────
 function validate(): boolean {
   for (const k of Object.keys(errors)) delete errors[k]
@@ -344,6 +354,44 @@ function save() {
         </div>
       </template>
 
+      <!-- Products step -->
+      <template v-else-if="activeStepId === 'products'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import products') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your product data from a spreadsheet to quickly set up your product catalog in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="prodStatus === 'idle'"
+              id="dm-prod-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startProductImport"
+            >
+              {{ t('Import products') }}
+            </MpButton>
+            <div v-else-if="prodStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing products...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" size="sm" color="icon.success" />
+              <span>{{ t('Products have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/products" class="dm-status-link">{{ t('View products') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-prod-info-banner" variant="info">
+              <MpBannerIcon id="dm-prod-info-banner-icon" />
+              <MpBannerDescription id="dm-prod-info-banner-desc">
+                {{ t('You can also') }} <a href="/products/new" class="dm-banner-link">{{ t('add a new product') }}</a> {{ t('directly from the product page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
       <!-- Placeholder for other steps -->
       <template v-else>
         <div class="dm-placeholder">
@@ -479,6 +527,17 @@ function save() {
 }
 .dm-ob-spinner { width: var(--mp-sizes-4, 16px); height: var(--mp-sizes-4, 16px); }
 .dm-ob-spinner :deep(svg) { width: var(--mp-sizes-4, 16px); height: var(--mp-sizes-4, 16px); }
+.dm-status-separator {
+  color: var(--mp-text-placeholder);
+  margin: 0 var(--mp-spacing-1);
+}
+.dm-status-link {
+  color: var(--mp-text-link);
+  text-decoration: none;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+}
+.dm-status-link:hover { text-decoration: underline; }
 
 .dm-form-top {
   display: grid;

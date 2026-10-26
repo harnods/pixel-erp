@@ -2907,6 +2907,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Setting up opening balance...": "Mengatur saldo awal...",
   "Opening balance has been set up": "Saldo awal telah diatur",
 
+  // ── Data migration › Products
+  "Import products": "Impor produk",
+  "Import your product data from a spreadsheet to quickly set up your product catalog in Jurnal.": "Impor data produk dari spreadsheet untuk menyiapkan katalog produk di Jurnal dengan cepat.",
+  "Importing products...": "Mengimpor produk...",
+  "Products have been imported": "Produk telah diimpor",
+  "View products": "Lihat produk",
+  "You can also": "Anda juga bisa",
+  "add a new product": "menambahkan produk baru",
+  "directly from the product page.": "langsung dari halaman produk.",
+
   // ── Reports › Inventory — index + Dual Unit Inventory Report ──────────────────
   "View report": "Lihat laporan",
   "Coming soon": "Segera hadir",
