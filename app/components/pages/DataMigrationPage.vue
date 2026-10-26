@@ -230,7 +230,7 @@ function save() {
                 {{ t('Remove') }}
               </MpButton>
             </div>
-            <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" class="dm-logo-file-input" @change="onLogoChange" />
+            <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" hidden @change="onLogoChange" />
           </div>
         </div>
 
@@ -413,8 +413,8 @@ function save() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: var(--mp-sizes-6, 24px);
+  height: var(--mp-sizes-6, 24px);
   border-radius: var(--mp-radii-full, 999px);
   background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm);
@@ -515,7 +515,7 @@ function save() {
 }
 
 .dm-logo-img {
-  height: 64px;
+  height: var(--mp-sizes-16, 64px);
   width: auto;
   object-fit: contain;
   max-width: 200px;
@@ -523,7 +523,7 @@ function save() {
 
 .dm-logo-placeholder {
   width: 100px;
-  height: 64px;
+  height: var(--mp-sizes-16, 64px);
   border: 1px dashed var(--mp-border-default);
   border-radius: var(--mp-radii-lg);
   display: flex;
