@@ -377,7 +377,7 @@ function save() {
               <MpIcon name="done" size="sm" color="icon.success" />
               <span>{{ t('Products have been imported') }}</span>
               <span class="dm-status-separator">·</span>
-              <a href="/products" class="dm-status-link">{{ t('View products') }}</a>
+              <a href="/product-list?tab=All+products" class="dm-status-link">{{ t('View products') }}</a>
             </div>
           </div>
 
@@ -385,7 +385,7 @@ function save() {
             <MpBanner id="dm-prod-info-banner" variant="info">
               <MpBannerIcon id="dm-prod-info-banner-icon" />
               <MpBannerDescription id="dm-prod-info-banner-desc">
-                {{ t('You can also') }} <a href="/products/new" class="dm-banner-link">{{ t('add a new product') }}</a> {{ t('directly from the product page.') }}
+                {{ t('You can also') }} <a href="/product-list/new" class="dm-banner-link">{{ t('add a new product') }}</a> {{ t('directly from the product page.') }}
               </MpBannerDescription>
             </MpBanner>
           </div>
