@@ -230,7 +230,7 @@ function save() {
                 {{ t('Remove') }}
               </MpButton>
             </div>
-            <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" hidden @change="onLogoChange" />
+            <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" class="setup-file-input" hidden @change="onLogoChange" />
           </div>
         </div>
 
@@ -477,8 +477,8 @@ function save() {
 .dm-ob-status--done {
   color: var(--mp-feedback-success-text, #15803d);
 }
-.dm-ob-spinner { width: 16px; height: 16px; }
-.dm-ob-spinner :deep(svg) { width: 16px; height: 16px; }
+.dm-ob-spinner { width: var(--mp-sizes-4, 16px); height: var(--mp-sizes-4, 16px); }
+.dm-ob-spinner :deep(svg) { width: var(--mp-sizes-4, 16px); height: var(--mp-sizes-4, 16px); }
 
 .dm-form-top {
   display: grid;
@@ -522,7 +522,7 @@ function save() {
 }
 
 .dm-logo-placeholder {
-  width: 100px;
+  width: var(--mp-sizes-24, 100px);
   height: var(--mp-sizes-16, 64px);
   border: 1px dashed var(--mp-border-default);
   border-radius: var(--mp-radii-lg);
@@ -537,19 +537,9 @@ function save() {
   gap: var(--mp-spacing-2);
 }
 
-.dm-logo-file-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* ─── Divider + subsection ───────────────────────────────────────────────── */
 .dm-divider {
-  height: 1px;
+  height: var(--mp-sizes-px, 1px);
   background: var(--mp-border-default);
 }
 
