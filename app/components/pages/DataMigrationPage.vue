@@ -246,9 +246,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
           :class="{ 'dm-step--active': step.id === activeStepId, 'dm-step--done': stepDone[step.id] }"
           @click="activeStepId = step.id"
         >
-          <span v-if="stepDone[step.id]" class="dm-step-number dm-step-number--done">
-            <MpIcon name="done" size="sm" />
-          </span>
+          <MpIcon v-if="stepDone[step.id]" name="done" size="sm" color="icon.success" />
           <span v-else class="dm-step-number">{{ idx + 1 }}</span>
           <span class="dm-step-label">{{ t(step.label) }}</span>
         </button>
@@ -684,15 +682,6 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
-}
-
-.dm-step-number--done {
-  background: var(--mp-background-success, #16a34a);
-  color: var(--mp-text-inverse, #fff);
-}
-.dm-step--active .dm-step-number--done {
-  background: var(--mp-background-success, #16a34a);
-  color: var(--mp-text-inverse, #fff);
 }
 
 .dm-step-label {
