@@ -1,22 +1,37 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject, ref, onMounted } from 'vue'
 import {
-  MpIcon, toast,
+  MpIcon, MpButton, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
+import HomePageV2 from '~/components/pages/HomePageV2.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { picForWarehouse } from '~/data/warehouses'
 import HomeActionsDrawer from '~/components/HomeActionsDrawer.vue'
 import { selectedActions, type HomeActionDef } from '~/data/homeActions'
+import { infoToast } from '~/utils/toasts'
+import { isOpeningBalanceComplete } from '~/data/wmsCutover'
 
 // What's-new card art — cropped from the Figma design (the mock-UI preview band).
 import whatsnewReconciliation from '~/assets/images/home/whatsnew-reconciliation.png?url'
 import whatsnewAnomaly from '~/assets/images/home/whatsnew-anomaly.png?url'
 import whatsnewProduction from '~/assets/images/home/whatsnew-production.png?url'
 import setupBuilding from '~/assets/images/home/setup-building.png?url'
+import openingBalanceIllus from '~/assets/images/home/opening-balance.png?url'
+import productsIllus from '~/assets/images/home/products.png?url'
+import contactsIllus from '~/assets/images/home/contacts.png?url'
+import transactionsIllus from '~/assets/images/home/transactions.png?url'
+import bankIllus from '~/assets/images/home/bank.png?url'
+import teamIllus from '~/assets/images/home/team.png?url'
 
 const router = useRouter()
-const { navigate } = useNavigation()
+const { t } = useLocale()
+
+// ── Home version (v1 / v2) — switched from the FAB, persisted ──────────────────
+// Home v2 is the default; a stored '1' opts back into the legacy layout.
+const homeVersion = ref<1 | 2>(2)
+onMounted(() => { try { if (localStorage.getItem('erp-home-version') === '1') homeVersion.value = 1 } catch { /* ignore */ } })
+function setHomeVersion(v: 1 | 2) { homeVersion.value = v; try { localStorage.setItem('erp-home-version', String(v)) } catch { /* ignore */ } }
 // Open the Airene chat panel (provided by [...slug].vue) from the Useful links.
 const toggleAirene = inject<() => void>('toggleAirene', () => {})
 // Drives the hero glow — the SearchBox emits its AI-mode state up.
@@ -43,7 +58,7 @@ const todayLabel = new Date().toLocaleDateString('en-GB', {
 // Pills are user-managed: pick up to 6 from a catalog + drag to reorder via the
 // "Add actions" modal (opened by the "Actions" pill). Selection persists (mini-DB).
 function soon(what: string) {
-  toast.notify({ variant: 'info', title: `${what} — coming soon`, maxWidth: 'max-content' })
+  infoToast(`${what} — ${t('coming soon')}`)
 }
 function runAction(a: HomeActionDef) {
   if (a.path === '#') soon(a.label)
@@ -58,17 +73,17 @@ const anomalies: Anomaly[] = [
   {
     id: 'a1',
     title: 'Unusual amount in Sales invoice #33201',
-    body: 'The transaction value of Sales Invoice #33201 is Rp500,000,000 — 5× above average for customer Anomali Coffee. Double-check the sales invoice and ensure that components such as amount, quantity, and payment terms are correct.',
+    body: 'The transaction value of Sales Invoice #33201 is Rp500.000.000 — 5× above average for customer Anomali Coffee. Double-check the sales invoice and ensure that components such as amount, quantity, and payment terms are correct.',
   },
   {
     id: 'a2',
     title: 'Possible duplicate payment in Purchase invoice #12088',
-    body: 'Purchase Invoice #12088 to EXPAT Roasters (Rp33,000,000) matches a payment already recorded 3 days ago. Confirm this is not a duplicate before approving the disbursement.',
+    body: 'Purchase Invoice #12088 to EXPAT Roasters (Rp33.000.000) matches a payment already recorded 3 days ago. Confirm this is not a duplicate before approving the disbursement.',
   },
   {
     id: 'a3',
     title: 'Unexpected stock write-off in Gudang Jakarta Pusat',
-    body: 'A 120 Kg write-off of Arabica Gayo Grade 1 was recorded in Gudang Jakarta Pusat — 8× the usual monthly adjustment. Review the stock adjustment and confirm the reason code.',
+    body: 'A 120 kg write-off of Arabica Gayo Grade 1 was recorded in Gudang Jakarta Pusat — 8× the usual monthly adjustment. Review the stock adjustment and confirm the reason code.',
   },
 ]
 const anomalyExpanded = ref(false)
@@ -94,73 +109,144 @@ const approvals: Approval[] = [
 ]
 const actionsRequiredCount = 10
 
+// Approve only confirms with a toast for now — the item stays in the list.
 function approve(a: Approval) {
-  toast.notify({ variant: 'success', title: `${a.title} approved`, maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: `${a.title} ${t('approved')}`, maxWidth: 'max-content' })
 }
 
 // ── What's new ────────────────────────────────────────────────────────────────
 interface NewsCard { key: string; title: string[]; desc: string; art: string }
 const news: NewsCard[] = [
-  { key: 'blue',   title: ['Smarter reconciliation', 'is now available'], desc: 'Speed up bank reconciliation with our AI tool for accurate matching.', art: whatsnewReconciliation },
-  { key: 'yellow', title: ['Detect your financial', 'anomalies earlier'],  desc: 'Identify unusual transactions in 1 click.',                            art: whatsnewAnomaly },
-  { key: 'green',  title: ['Plan production with', 'confidence'],          desc: 'Stay ahead with clear schedules and real-time visibility.',            art: whatsnewProduction },
+  { key: 'blue',   title: [t('Smarter reconciliation'), t('is now available')], desc: t('Speed up bank reconciliation with Airene for accurate matching.'), art: whatsnewReconciliation },
+  { key: 'yellow', title: [t('Detect your financial'), t('anomalies earlier')],  desc: t('Identify unusual transactions in 1 click.'),                            art: whatsnewAnomaly },
+  { key: 'green',  title: [t('Plan production with'), t('confidence')],          desc: t('Stay ahead with clear schedules and real-time visibility.'),            art: whatsnewProduction },
 ]
 // ─── Demo scenario state (FAB) ───────────────────────────────────────────────
 type WhatsNewDemoState = 'default' | 'more'
 const whatsNewDemoState = ref<WhatsNewDemoState>('default')
 const whatsNewDemoStates: { value: WhatsNewDemoState; label: string }[] = [
-  { value: 'default', label: "What's new — Default" },
-  { value: 'more', label: "What's new — >3" },
+  { value: 'default', label: t("What's new — Default") },
+  { value: 'more', label: t("What's new — >3") },
 ]
 const whatsNewHasPagination = computed(() => whatsNewDemoState.value === 'more')
 
 // ── Set up Mekari ERP ─────────────────────────────────────────────────────────
-interface SetupStep { label: string; time: string; done: boolean }
-const setupSteps: SetupStep[] = [
-  { label: 'Complete company settings',       time: 'APPROX. 2 MINUTES', done: true },
-  { label: 'Set up opening balances',         time: 'APPROX. 5 MINUTES', done: false },
-  { label: 'Add or import products',          time: 'APPROX. 4 MINUTES', done: false },
-  { label: 'Add or import contacts',          time: 'APPROX. 4 MINUTES', done: false },
-  { label: 'Add or import sales transactions', time: 'APPROX. 5 MINUTES', done: false },
-  { label: 'Connect your bank account',       time: 'APPROX. 3 MINUTES', done: false },
-  { label: 'Invite your team',                time: 'APPROX. 2 MINUTES', done: false },
-]
-const setupDone = computed(() => setupSteps.filter(s => s.done).length)
-const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.length) * 100))
+// Clicking a step swaps the right-hand detail panel; a step with `to` deep-links
+// into its setup flow when "Set up now" is clicked.
+interface SetupStep { label: string; time: string; done: boolean; heading: string; sub: string; cta: string; to?: string; illus?: string }
+// Computed so a step auto-completes when its flow is done elsewhere — e.g. once
+// the WMS→ERP opening balance is published in Settings → Data migration.
+const setupSteps = computed<SetupStep[]>(() => [
+  {
+    label: t('Complete company settings'), time: t('APPROX. 2 MINUTES'), done: true,
+    heading: t('Fill in important information about your company'),
+    sub: t('Organize company info to activate features like multi-currency, formats, and tax inclusive.'),
+    cta: t('Review'),
+    to: '/company-profile',
+  },
+  {
+    label: t('Set up opening balances'), time: t('APPROX. 5 MINUTES'), done: isOpeningBalanceComplete(),
+    heading: t('Set up your opening balances'),
+    sub: t('Bring your chart of accounts, product mapping, and opening balances into ERP before you start recording.'),
+    cta: t('Set up opening balances'),
+    to: '/data-migration',
+    illus: openingBalanceIllus,
+  },
+  {
+    label: t('Add or import products'), time: t('APPROX. 4 MINUTES'), done: false,
+    heading: t('Add or import your products'),
+    sub: t('Build your product catalogue so you can start selling and tracking stock.'),
+    cta: t('Import products'),
+    illus: productsIllus,
+  },
+  {
+    label: t('Add or import contacts'), time: t('APPROX. 4 MINUTES'), done: false,
+    heading: t('Add or import your contacts'),
+    sub: t('Bring in customers and vendors to speed up your transactions.'),
+    cta: t('Import contacts'),
+    illus: contactsIllus,
+  },
+  {
+    label: t('Add or import sales transactions'), time: t('APPROX. 5 MINUTES'), done: false,
+    heading: t('Add or import your sales transactions'),
+    sub: t('Record outstanding invoices and orders so your books stay accurate.'),
+    cta: t('Import transactions'),
+    illus: transactionsIllus,
+  },
+  {
+    label: t('Connect your bank account'), time: t('APPROX. 3 MINUTES'), done: false,
+    heading: t('Connect your bank account'),
+    sub: t('Reconcile transactions automatically by linking your bank.'),
+    cta: t('Connect bank'),
+    illus: bankIllus,
+  },
+  {
+    label: t('Invite your team'), time: t('APPROX. 2 MINUTES'), done: false,
+    heading: t('Invite your team'),
+    sub: t('Give your colleagues access with the right roles.'),
+    cta: t('Invite user'),
+    illus: teamIllus,
+  },
+])
+// A step counts as done if its flow completed OR the user skipped it.
+const skipped = ref<Set<string>>(new Set())
+function stepDone(s: SetupStep): boolean { return s.done || skipped.value.has(s.label) }
+const setupDone = computed(() => setupSteps.value.filter(stepDone).length)
+const setupPercent = computed(() => Math.round((setupDone.value / setupSteps.value.length) * 100))
+// FAB demo state; the whole "Set up Mekari ERP" section disappears once every
+// step is done (all completed / skipped).
+const setupComplete = ref(false)
+const allSetupDone = computed(() => setupComplete.value || setupDone.value >= setupSteps.value.length)
+const activeSetupStep = ref(0)
+const currentSetup = computed(() => setupSteps.value[activeSetupStep.value]!)
+function setupNow() {
+  const to = currentSetup.value.to
+  if (to) router.push(to)
+  else soon(t('Set up now'))
+}
+function skipStep() {
+  const next = new Set(skipped.value)
+  next.add(currentSetup.value.label)
+  skipped.value = next
+}
 
 // ── Learn Mekari ERP ────────────────────────────────────────────────────────
 interface LearnCard { tag: string; tone: 'blue' | 'neutral' | 'yellow'; title: string; desc: string; cta: string }
 const learn: LearnCard[] = [
-  { tag: 'Online training',  tone: 'blue',    title: 'Reporting & bookkeeping',    desc: 'Learn how to prepare and run the accounting process in Mekari ERP from start to finish.', cta: 'Sign up' },
-  { tag: 'Offline training', tone: 'neutral', title: 'Mekari ERP offline training', desc: 'Learn how to get started with Mekari ERP face to face with our product consultants.',      cta: 'Sign up' },
-  { tag: 'Tutorial video',   tone: 'yellow',  title: 'Demo: Mekari ERP',            desc: 'Watch a guided tutorial on how to get started with Mekari ERP.',                            cta: 'Watch video' },
+  { tag: t('Online training'),  tone: 'blue',    title: t('Reporting & bookkeeping'),    desc: t('Learn how to prepare and run the accounting process in Mekari ERP from start to finish.'), cta: t('Sign up') },
+  { tag: t('Offline training'), tone: 'neutral', title: t('Mekari ERP offline training'), desc: t('Learn how to get started with Mekari ERP face to face with our product consultants.'),      cta: t('Sign up') },
+  { tag: t('Tutorial video'),   tone: 'yellow',  title: t('Demo: Mekari ERP'),            desc: t('Watch a guided tutorial on how to get started with Mekari ERP.'),                            cta: t('Watch video') },
 ]
 </script>
 
 <template>
   <div class="home">
+    <!-- ── ERP Home v2 (unified format) — swapped in from the FAB ── -->
+    <HomePageV2 v-if="homeVersion === 2" />
+
+    <template v-else>
     <!-- ── Hero ─────────────────────────────────────────────────────────── -->
     <section class="hero" :class="{ 'hero--ai': heroAi }">
       <div class="hero__glow" aria-hidden="true" />
       <div class="hero__inner">
         <p class="hero__date">{{ todayLabel }}</p>
         <div class="hero__greeting">
-          <h2 class="hero__line">Hello, {{ firstName }}</h2>
-          <h2 class="hero__line">What would you like to do today?</h2>
+          <h2 class="hero__line">{{ t('Hello') }}, {{ firstName }}</h2>
+          <h2 class="hero__line">{{ t('What would you like to do today?') }}</h2>
         </div>
 
         <SearchBox class="hero__search" @aimode="v => heroAi = v" />
 
         <div class="chips">
           <div class="chips__row">
-            <button v-for="a in selectedActions" :key="a.key" class="chip" type="button" @click="runAction(a)">
+            <MpButton v-for="a in selectedActions" :key="a.key" class="chip" type="button" @click="runAction(a)">
               <MpIcon :name="a.icon" size="md" class="chip__icon" />
               {{ a.label }}
-            </button>
-            <button class="chip" type="button" @click="manageActionsOpen = true">
+            </MpButton>
+            <MpButton class="chip" type="button" @click="manageActionsOpen = true">
               <MpIcon name="add" size="md" class="chip__icon" />
-              Actions
-            </button>
+              {{ t('Actions') }}
+            </MpButton>
           </div>
         </div>
       </div>
@@ -169,7 +255,7 @@ const learn: LearnCard[] = [
     <div class="home__col">
       <!-- ── Tasks ──────────────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Tasks</h3>
+        <h3 class="sec__title">{{ t('Tasks') }}</h3>
 
         <!-- Anomaly alerts — a collapsed deck when there's more than one -->
         <div v-if="anomalies.length" class="anomaly-block">
@@ -189,8 +275,8 @@ const learn: LearnCard[] = [
               </div>
               <p class="anomaly__body">{{ a.body }}</p>
               <div class="anomaly__actions">
-                <button class="btn btn--ghost" type="button" @click="soon('Ignore')">Ignore</button>
-                <button class="btn btn--secondary" type="button" @click="soon('Review')">Review</button>
+                <MpButton variant="ghost" is-rounded @click="soon(t('Ignore'))">{{ t('Ignore') }}</MpButton>
+                <MpButton variant="secondary" is-rounded @click="soon(t('Review'))">{{ t('Review') }}</MpButton>
               </div>
             </div>
 
@@ -199,26 +285,26 @@ const learn: LearnCard[] = [
             <div v-if="anomalies.length > 1 && !anomalyExpanded" class="anomaly-peek" aria-hidden="true" />
           </div>
 
-          <button
+          <MpButton
             v-if="anomalies.length > 1"
             class="anomaly-toggle"
             type="button"
+            :left-icon="anomalyExpanded ? 'caret-up' : 'caret-down'"
             @click="anomalyExpanded = !anomalyExpanded"
           >
-            <MpIcon :name="anomalyExpanded ? 'caret-up' : 'caret-down'" size="sm" />
-            {{ anomalyExpanded ? 'Show less' : 'Show more' }}
-          </button>
+            {{ anomalyExpanded ? t('Show less') : t('Show more') }}
+          </MpButton>
         </div>
 
         <!-- Awaiting approval -->
         <div class="card approvals">
           <div class="approvals__tabs">
-            <button class="apptab apptab--active" type="button">
-              Awaiting approval <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
-            </button>
-            <button class="apptab" type="button" @click="soon('Actions required')">
-              Actions required <span class="apptab__count">{{ actionsRequiredCount }}</span>
-            </button>
+            <MpButton class="apptab apptab--active" type="button">
+              {{ t('Awaiting approval') }} <span class="apptab__count apptab__count--active">{{ approvals.length }}</span>
+            </MpButton>
+            <MpButton class="apptab" type="button" @click="soon(t('Actions required'))">
+              {{ t('Actions required') }} <span class="apptab__count">{{ actionsRequiredCount }}</span>
+            </MpButton>
           </div>
 
           <div class="approvals__list">
@@ -229,28 +315,26 @@ const learn: LearnCard[] = [
               <div class="appr__main">
                 <p class="appr__title">{{ a.title }}</p>
                 <p v-if="a.party" class="appr__party">{{ a.party }}</p>
-                <p class="appr__by">Requested by {{ a.by }}</p>
+                <p class="appr__by">{{ t('Requested by') }} {{ a.by }}</p>
               </div>
               <div class="appr__amount">
                 <p class="appr__amount-main">{{ a.amount }}</p>
                 <p v-if="a.amountSub" class="appr__amount-sub">{{ a.amountSub }}</p>
               </div>
-              <button class="btn btn--secondary btn--sm" type="button" @click.stop="approve(a)">Approve</button>
-              <button class="appr__kebab" type="button" @click.stop>
-                <MpIcon name="menu-kebab" size="md" />
-              </button>
+              <MpButton variant="secondary" is-rounded @click.stop="approve(a)">{{ t('Approve') }}</MpButton>
+              <MpButton class="appr__kebab" type="button" left-icon="menu-kebab" @click.stop />
             </div>
           </div>
 
-          <button class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
-            View all awaiting approvals
-          </button>
+          <MpButton class="approvals__all" type="button" @click="router.push('/inbox?tab=awaiting-approval&innerTab=all')">
+            {{ t('View all awaiting approvals') }}
+          </MpButton>
         </div>
       </section>
 
       <!-- ── What's new ─────────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">What's new</h3>
+        <h3 class="sec__title">{{ t("What's new") }}</h3>
         <div class="whatsnew">
           <div class="whatsnew__track">
             <article v-for="n in news" :key="n.key" class="wn" :class="`wn--${n.key}`">
@@ -260,14 +344,12 @@ const learn: LearnCard[] = [
               </div>
               <img :src="n.art" alt="" class="wn__art">
               <div class="wn__foot">
-                <button class="wn__link" type="button" @click="soon('Learn more')">Learn more</button>
-                <button class="btn btn--secondary btn--sm" type="button" @click="soon('Try feature')">Try feature</button>
+                <MpButton class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</MpButton>
+                <MpButton variant="secondary" is-rounded @click="soon(t('Try feature'))">{{ t('Try feature') }}</MpButton>
               </div>
             </article>
           </div>
-          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" aria-label="Next" @click="soon('More updates')">
-            <MpIcon name="chevrons-right" size="md" />
-          </button>
+          <MpButton v-if="whatsNewHasPagination" class="whatsnew__next" type="button" :aria-label="t('Next')" left-icon="chevrons-right" @click="soon(t('More updates'))" />
         </div>
         <div v-if="whatsNewHasPagination" class="whatsnew__dots">
           <span class="dot dot--active" />
@@ -276,66 +358,66 @@ const learn: LearnCard[] = [
         </div>
       </section>
 
-      <!-- ── Set up Mekari ERP ──────────────────────────────────────────── -->
-      <section class="sec">
+      <!-- ── Set up Mekari ERP (hidden once every step is completed) ─────── -->
+      <section v-if="!allSetupDone" class="sec">
         <div class="setup-head">
-          <h3 class="sec__title">Set up Mekari ERP</h3>
+          <h3 class="sec__title">{{ t('Set up Mekari ERP') }}</h3>
           <div class="setup-progress">
             <div class="setup-progress__bar"><div class="setup-progress__fill" :style="{ width: setupPercent + '%' }" /></div>
             <div class="setup-progress__meta">
               <span class="setup-progress__pct">{{ setupPercent }}%</span>
-              <span class="setup-progress__steps">{{ setupDone }} of {{ setupSteps.length }} steps completed</span>
+              <span class="setup-progress__steps">{{ setupDone }} {{ t('of') }} {{ setupSteps.length }} {{ t('steps completed') }}</span>
             </div>
           </div>
         </div>
 
         <div class="card setup">
           <div class="setup__list">
-            <button
+            <MpButton
               v-for="(s, i) in setupSteps"
               :key="s.label"
               class="setup-step"
-              :class="{ 'setup-step--active': i === 0 }"
+              :class="{ 'setup-step--active': i === activeSetupStep }"
               type="button"
-              @click="navigate('Company profile')"
+              @click="activeSetupStep = i"
             >
-              <span class="setup-step__check" :class="{ 'setup-step__check--done': s.done }">
-                <MpIcon v-if="s.done" name="check" size="sm" />
+              <span class="setup-step__check" :class="{ 'setup-step__check--done': stepDone(s) }">
+                <MpIcon name="check" size="sm" />
               </span>
               <span class="setup-step__text">
                 <span class="setup-step__label">{{ s.label }}</span>
                 <span class="setup-step__time">{{ s.time }}</span>
               </span>
-            </button>
+            </MpButton>
           </div>
 
           <div class="setup__detail">
+            <a v-if="!stepDone(currentSetup)" class="setup__skip" @click.prevent="skipStep">{{ t('Skip') }}</a>
             <div class="setup__copy">
-              <h4 class="setup__heading">Fill in important information<br>about your company</h4>
-              <p class="setup__sub">Organize company info to activate features like multi-currency, formats, and tax inclusive.</p>
+              <h4 class="setup__heading">{{ currentSetup.heading }}</h4>
+              <p class="setup__sub">{{ currentSetup.sub }}</p>
               <div class="setup__actions">
-                <button class="btn btn--brand" type="button" @click="navigate('Company profile')">Set up now</button>
-                <button class="btn btn--secondary btn--icon" type="button" @click="soon('Watch video')">
-                  <MpIcon name="play-video" size="md" />
-                  Watch video
-                </button>
+                <MpButton variant="primary" is-rounded @click="setupNow">{{ currentSetup.cta }}</MpButton>
+                <MpButton class="btn btn--secondary btn--icon" type="button" left-icon="play-video" @click="soon(t('Watch video'))">
+                  {{ t('Watch video') }}
+                </MpButton>
               </div>
             </div>
-            <img :src="setupBuilding" alt="" class="setup__illus">
+            <img :src="currentSetup.illus ?? setupBuilding" alt="" class="setup__illus">
           </div>
         </div>
       </section>
 
       <!-- ── Learn Mekari ERP ───────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Learn Mekari ERP</h3>
+        <h3 class="sec__title">{{ t('Learn Mekari ERP') }}</h3>
         <div class="learn">
           <article v-for="l in learn" :key="l.title" class="card learn-card">
             <span class="learn-tag" :class="`learn-tag--${l.tone}`">{{ l.tag }}</span>
             <h4 class="learn-card__title">{{ l.title }}</h4>
             <p class="learn-card__desc">{{ l.desc }}</p>
             <div class="learn-card__foot">
-              <button class="btn btn--secondary btn--sm" type="button" @click="soon(l.cta)">{{ l.cta }}</button>
+              <MpButton variant="secondary" is-rounded @click="soon(l.cta)">{{ l.cta }}</MpButton>
             </div>
           </article>
         </div>
@@ -343,45 +425,58 @@ const learn: LearnCard[] = [
 
       <!-- ── Useful links ───────────────────────────────────────────────── -->
       <section class="sec">
-        <h3 class="sec__title">Useful links</h3>
+        <h3 class="sec__title">{{ t('Useful links') }}</h3>
         <div class="useful">
-          <button class="useful-link" type="button" @click="toggleAirene()">
+          <MpButton class="useful-link" type="button" @click="toggleAirene()">
             <MpIcon name="chat" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
-              <span class="useful-link__title">Live chat</span>
-              <span class="useful-link__desc">Chat with our customer support for any questions or inquiries.</span>
+              <span class="useful-link__title">{{ t('Live chat') }}</span>
+              <span class="useful-link__desc">{{ t('Chat with our customer support for any questions or inquiries.') }}</span>
             </span>
-          </button>
-          <button class="useful-link" type="button" @click="soon('Help center')">
+          </MpButton>
+          <MpButton class="useful-link" type="button" @click="soon(t('Help center'))">
             <MpIcon name="book" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
-              <span class="useful-link__title">Help center</span>
-              <span class="useful-link__desc">Guidelines for all features in Mekari ERP.</span>
+              <span class="useful-link__title">{{ t('Help center') }}</span>
+              <span class="useful-link__desc">{{ t('Guidelines for all features in Mekari ERP.') }}</span>
             </span>
-          </button>
+          </MpButton>
         </div>
       </section>
     </div>
 
     <HomeActionsDrawer v-model:isOpen="manageActionsOpen" />
+    </template>
 
     <!-- ── Demo scenario FAB ── -->
     <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="demo-fab" aria-label="Change scenario state"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <MpButton class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
-        <p class="demo-fab-heading">Scenarios</p>
+        <p class="demo-fab-heading">{{ t('Home version') }}</p>
         <MpPopoverList>
-          <MpPopoverListItem
-            v-for="s in whatsNewDemoStates"
-            :key="s.value"
-            :is-active="s.value === whatsNewDemoState"
-            @click="whatsNewDemoState = s.value"
-          >
-            {{ s.label }}
-          </MpPopoverListItem>
+          <MpPopoverListItem :is-active="homeVersion === 1" @click="setHomeVersion(1)">{{ t('Version 1') }}</MpPopoverListItem>
+          <MpPopoverListItem :is-active="homeVersion === 2" @click="setHomeVersion(2)">{{ t('Version 2') }}</MpPopoverListItem>
         </MpPopoverList>
+        <template v-if="homeVersion === 1">
+          <p class="demo-fab-heading">{{ t("What's new") }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem
+              v-for="s in whatsNewDemoStates"
+              :key="s.value"
+              :is-active="s.value === whatsNewDemoState"
+              @click="whatsNewDemoState = s.value"
+            >
+              {{ s.label }}
+            </MpPopoverListItem>
+          </MpPopoverList>
+          <p class="demo-fab-heading">{{ t('Set up Mekari ERP') }}</p>
+          <MpPopoverList>
+            <MpPopoverListItem :is-active="!setupComplete" @click="setupComplete = false">{{ t('In progress') }}</MpPopoverListItem>
+            <MpPopoverListItem :is-active="setupComplete" @click="setupComplete = true">{{ t('All completed') }}</MpPopoverListItem>
+          </MpPopoverList>
+        </template>
       </MpPopoverContent>
     </MpPopover>
   </div>
@@ -400,7 +495,7 @@ const learn: LearnCard[] = [
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  background: var(--mp-background-inverse, #080d0e); color: var(--mp-colors-white); cursor: pointer; z-index: 1200;
   box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
 }
 .demo-fab:hover { opacity: 0.9; }
@@ -411,8 +506,12 @@ const learn: LearnCard[] = [
    white margin between it and the stage edge. */
 .hero {
   position: relative;
-  background: linear-gradient(180deg, var(--mp-background-neutral-subtle, #f8f9f9) 0%, #ffffff 15.4%);
-  border-radius: var(--mp-radii-xl, 12px);
+  /* Full-bleed: escape the stage's side padding so the header reaches the edges;
+     the stage drops its top padding + rounding for Home so it's flush to the top. */
+  margin: 0 calc(var(--mp-spacing-6) * -1) 0;
+  /* Soft header backdrop that fades into the white stage — spans the full hero so
+     it stays visible now that the header is full-bleed (was fading out by 15%). */
+  background: linear-gradient(180deg, var(--mp-background-hero-tint, #eaf0f6) 0%, var(--mp-background-stage, #ffffff) 100%);
   padding: var(--mp-spacing-6);
 }
 /* Soft AI glow behind the search when AI Mode is on. */
@@ -543,7 +642,7 @@ const learn: LearnCard[] = [
 .btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .btn--brand {
   background: var(--mp-background-brand-bold, #029861);
-  color: #fff;
+  color: var(--mp-colors-white);
 }
 .btn--brand:hover { background: var(--mp-background-brand-bold-hovered, #0f6d4d); }
 .btn--ghost {
@@ -565,7 +664,7 @@ const learn: LearnCard[] = [
 .anomaly-stack--deck .anomaly {
   position: relative;
   z-index: 2;
-  border: 2px solid #fff;
+  border: 2px solid var(--mp-colors-white);
 }
 .anomaly-peek {
   position: absolute;
@@ -608,7 +707,7 @@ const learn: LearnCard[] = [
   gap: var(--mp-spacing-3);
 }
 .anomaly__head { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.anomaly__icon { color: #e5810f; flex-shrink: 0; }
+.anomaly__icon { color: var(--mp-colors-warning-default, #e5810f); flex-shrink: 0; }
 .anomaly__title {
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
@@ -693,6 +792,11 @@ const learn: LearnCard[] = [
   color: var(--mp-text-secondary, #3a4749);
 }
 .appr__main { flex: 1; min-width: 0; }
+/* Truncate with ellipsis when the row is tight — never let the text collapse to
+   one-character-per-line (min-width:0 flex child + long unbroken content). */
+.appr__title,
+.appr__party,
+.appr__by { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .appr__title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__party { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); }
 .appr__by { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -720,7 +824,9 @@ const learn: LearnCard[] = [
 .whatsnew { position: relative; }
 .whatsnew__track {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Reflow: keep a readable min card width and wrap to fewer columns when the
+     content area narrows (tablet/mobile) — never squish below 240px. */
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .wn {
@@ -731,9 +837,9 @@ const learn: LearnCard[] = [
   display: flex;
   flex-direction: column;
 }
-.wn--green    { --wn-bg: #edf9f2; background: var(--wn-bg); }
-.wn--yellow   { --wn-bg: #FFF9EA; background: var(--wn-bg); }
-.wn--blue     { --wn-bg: #eaf4fc; background: var(--wn-bg); }
+.wn--green    { --wn-bg: var(--mp-colors-success-weaker, #edf9f2); background: var(--wn-bg); }
+.wn--yellow   { --wn-bg: var(--mp-colors-warning-weaker, #FFF9EA); background: var(--wn-bg); }
+.wn--blue     { --wn-bg: var(--mp-colors-info-weaker, #eaf4fc); background: var(--wn-bg); }
 .wn__head { position: relative; z-index: 1; padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
@@ -840,8 +946,11 @@ const learn: LearnCard[] = [
   max-height: 296px;
   overflow-y: auto;
 }
+/* MpButton centres its content (justify-content: center), which left every step
+   indented by its own text width — pin the check + text to the start edge. */
 .setup-step {
   display: flex;
+  justify-content: flex-start !important;
   align-items: center;
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3);
@@ -862,17 +971,21 @@ const learn: LearnCard[] = [
   border-radius: 999px;
   display: flex; align-items: center; justify-content: center;
   border: 1.5px dashed var(--mp-border-bold, #8c9596);
-  color: #fff;
 }
+/* Not-done: a subtle grey check inside the dashed ring. */
+.setup-step__check :deep(svg) { color: var(--mp-text-secondary, #8c9596); }
 .setup-step__check--done {
   border: none;
   background: var(--mp-background-brand-bold, #029861);
 }
+/* Done: white check on the green fill (MpIcon otherwise keeps its own colour). */
+.setup-step__check--done :deep(svg) { color: var(--mp-text-inverse-static, #fff); }
 .setup-step__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .setup-step__label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.setup-step__time { font-size: var(--mp-font-sizes-sm); letter-spacing: 0.4px; color: var(--mp-text-secondary); }
+.setup-step__time { font-size: var(--mp-font-sizes-sm, 12px); line-height: var(--mp-line-heights-sm, 16px); font-weight: var(--mp-font-weights-regular); letter-spacing: 0.4px; color: var(--mp-text-secondary); }
 
 .setup__detail {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -880,6 +993,17 @@ const learn: LearnCard[] = [
   gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-8);
 }
+.setup__skip {
+  position: absolute;
+  top: var(--mp-spacing-4);
+  right: var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-sm, 12px);
+  line-height: var(--mp-line-heights-sm, 16px);
+  font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-link);
+  cursor: pointer;
+}
+.setup__skip:hover { text-decoration: underline; text-underline-offset: 2px; }
 .setup__copy { flex: 1; min-width: 0; }
 .setup__heading {
   margin: 0 0 var(--mp-spacing-2);
@@ -900,7 +1024,7 @@ const learn: LearnCard[] = [
 /* ── Learn ────────────────────────────────────────────────────────────────── */
 .learn {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--mp-spacing-6);
 }
 .learn-card {
@@ -919,7 +1043,7 @@ const learn: LearnCard[] = [
 }
 .learn-tag--blue    { background: #eaf1fd; color: #3d5bcc; }
 .learn-tag--neutral { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary, #3a4749); }
-.learn-tag--yellow  { background: #fdf6dd; color: #a14a0b; }
+.learn-tag--yellow  { background: var(--mp-colors-warning-weaker, #fdf6dd); color: var(--mp-colors-warning-bolder, #a14a0b); }
 .learn-card__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);
@@ -935,15 +1059,24 @@ const learn: LearnCard[] = [
 .learn-card__foot { margin-top: auto; display: flex; justify-content: flex-end; }
 
 /* ── Useful links ─────────────────────────────────────────────────────────── */
+/* Groups share the row equally (fill), exactly 24px apart; wrap below 260px each. */
 .useful {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--mp-spacing-6);
 }
+/* MpButton forces a fixed height, centred content, nowrap and semibold text —
+   reset all four so the description wraps at its max-width in regular weight. */
 .useful-link {
+  flex: 1 1 260px;
+  min-width: 0;
   display: flex;
+  justify-content: flex-start !important;
   align-items: flex-start;
   gap: var(--mp-spacing-4);
+  height: auto !important;
+  white-space: normal !important;
+  font-weight: var(--mp-font-weights-regular, 400) !important;
   background: none;
   border: none;
   padding: 0;
@@ -953,6 +1086,69 @@ const learn: LearnCard[] = [
 .useful-link__icon { color: var(--mp-text-default, #080d0e); flex-shrink: 0; margin-top: 2px; width: 24px; height: 24px; }
 .useful-link__text { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .useful-link__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.useful-link__desc { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); max-width: 280px; }
+.useful-link__desc { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
 .useful-link:hover .useful-link__title { text-decoration: underline; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────────
+   Cards/sections reflow (grids wrap via auto-fit above; splits stack here). Data
+   tables are NOT touched — they keep their own horizontal scroll so columns stay
+   full-width and readable (see ErpTablePage .erp-table-wrapper). */
+
+/* Tablet — the two-pane Set up card can't hold a 328px list + detail side by side */
+@media (max-width: 900px) {
+  .setup { flex-direction: column; }
+  .setup__list {
+    width: 100%;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  }
+}
+
+/* Mobile — tighten spacing, shrink the hero, stack the setup detail */
+@media (max-width: 600px) {
+  .home { gap: var(--mp-spacing-6); }
+
+  .hero { padding: var(--mp-spacing-4); }
+  .hero__line { font-size: var(--mp-font-sizes-xl); line-height: 28px; }
+
+  /* Quick shortcuts: compact so they pack horizontally and wrap (2–3 per row on
+     a phone) instead of stacking one-per-line. */
+  .chips { margin-top: var(--mp-spacing-4); }
+  .chips__row { gap: var(--mp-spacing-2); justify-content: center; }
+  .chip {
+    height: 32px;
+    padding: 0 var(--mp-spacing-3);
+    font-size: var(--mp-font-sizes-sm);
+    gap: var(--mp-spacing-1);
+  }
+  .chip__icon { width: 16px; height: 16px; }
+
+  .setup__detail {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-4);
+    padding: var(--mp-spacing-5);
+  }
+  .setup__illus { display: none; }
+  .setup__actions { flex-wrap: wrap; }
+
+  .setup-progress { width: 100%; }
+
+  /* Awaiting-approval is a list, not a table — stack each item vertically:
+     title (+ kebab pinned top-right), then party, requester, amount, Approve. */
+  .appr {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--mp-spacing-1);
+    position: relative;
+    padding-right: var(--mp-spacing-10, 40px);   /* clear the top-right kebab */
+  }
+  .appr__thumb { display: none; }
+  .appr__main { width: 100%; }
+  .appr__amount { text-align: left; margin-left: 0; }
+  .appr__amount-main { font-weight: var(--mp-font-weights-semi-bold); }
+  .appr__kebab { position: absolute; top: var(--mp-spacing-3); right: var(--mp-spacing-4); }
+  .appr > .btn { align-self: flex-start; margin-top: var(--mp-spacing-2); }
+}
 </style>
