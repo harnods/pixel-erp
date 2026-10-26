@@ -48,12 +48,14 @@ const activeStepId = ref('company-info')
 const activeStep = computed(() => STEPS.find(s => s.id === activeStepId.value)!)
 
 // ─── Company info form state ─────────────────────────────────────────────────
+const companySaved = ref(false)
+
 const companyInfo = reactive({
   companyName: 'PT Central Perk Indonesia',
-  companyAddress: 'MidPlaza 2 Lantai 4\nJl. Jenderal Sudirman No.Kav. 10-11, Kec. Tanah Abang,\nJakarta Pusat, DKI Jakarta 10220',
-  email: 'rizal.candra@centralperk.co.id',
-  phone: '+628129209988',
-  npwp: '00098765432102222',
+  companyAddress: '',
+  email: '',
+  phone: '',
+  npwp: '',
 })
 
 const draft = reactive({
@@ -68,7 +70,7 @@ const req = (label: string) => `${t('You must fill in')} ${label}`
 function clearErr(field: string) { if (errors[field]) delete errors[field] }
 
 // ─── Logo upload ────────────────────────────────────────────────────────────
-const logoUrl = ref(centralPerkLogo)
+const logoUrl = ref('')
 const logoInputEl = ref<HTMLInputElement | null>(null)
 
 function triggerLogoUpload() {
@@ -90,9 +92,9 @@ function removeLogo() {
 
 // ─── Bank account ───────────────────────────────────────────────────────────
 const bank = reactive({
-  bankName: 'Bank BCA',
-  accountNo: '78806350373',
-  accountName: 'PT Central Perk Indonesia',
+  bankName: '',
+  accountNo: '',
+  accountName: '',
 })
 
 const draftBank = reactive({ ...bank })
@@ -216,8 +218,20 @@ function save() {
     npwp: draft.npwp,
   })
   Object.assign(bank, draftBank)
+  companySaved.value = true
   toast.notify({ variant: 'success', title: t('Company info saved'), maxWidth: 'max-content' })
 }
+
+// ─── Step completion tracking ───────────────────────────────────────────────
+const stepDone = computed<Record<string, boolean>>(() => ({
+  'company-info': companySaved.value,
+  'opening-balance': obStatus.value === 'done',
+  'products': prodStatus.value === 'done',
+  'contacts': contactStatus.value === 'done',
+  'sales': salesStatus.value === 'done',
+  'purchases': purchasesStatus.value === 'done',
+  'expenses': expensesStatus.value === 'done',
+}))
 </script>
 
 <template>
@@ -229,10 +243,13 @@ function save() {
           v-for="(step, idx) in STEPS"
           :key="step.id"
           class="dm-step"
-          :class="{ 'dm-step--active': step.id === activeStepId }"
+          :class="{ 'dm-step--active': step.id === activeStepId, 'dm-step--done': stepDone[step.id] }"
           @click="activeStepId = step.id"
         >
-          <span class="dm-step-number">{{ idx + 1 }}</span>
+          <span v-if="stepDone[step.id]" class="dm-step-number dm-step-number--done">
+            <MpIcon name="done" size="sm" />
+          </span>
+          <span v-else class="dm-step-number">{{ idx + 1 }}</span>
           <span class="dm-step-label">{{ t(step.label) }}</span>
         </button>
       </nav>
@@ -667,6 +684,15 @@ function save() {
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
+}
+
+.dm-step-number--done {
+  background: var(--mp-background-success, #16a34a);
+  color: var(--mp-text-inverse, #fff);
+}
+.dm-step--active .dm-step-number--done {
+  background: var(--mp-background-success, #16a34a);
+  color: var(--mp-text-inverse, #fff);
 }
 
 .dm-step-label {
