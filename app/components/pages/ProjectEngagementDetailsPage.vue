@@ -20,7 +20,7 @@
  * (docs/patterns/tabs.md §2), kept in the URL via ?tab=.
  */
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpButton,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpButton, MpProgress, MpSegmentedControl,
   MpTextarea, MpIcon, MpInput, MpInputGroup, MpInputRightAddon,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpBadge, toast, MpTextlink,
 } from '@mekari/pixel3'
@@ -466,6 +466,7 @@ const bulkChips = computed(() => [
   { key: '90' as const, label: `${t('61–90 days')} (${inBucket(60, 90).length})` },
   { key: '90p' as const, label: `${t('90+ days')} (${inBucket(90, 1e9).length})` },
 ])
+const reviewAgeOptions = computed(() => bulkChips.value.map(c => ({ id: `pa-age-${c.key}`, label: c.label, value: c.key })))
 const reviewLines = computed(() => reviewChip.value === 'all' ? openLines.value : inBucket(...BUCKETS[reviewChip.value]))
 
 function ageTone(x: CostEntry) { const d = daysAgo(x.date); return d <= 30 ? 'ok' : d <= 60 ? 'default' : d <= 90 ? 'near' : 'over' }
@@ -664,13 +665,21 @@ function doVerify(info: MilestoneVerificationInput) {
   }
 }
 
+/**
+ * Why the button is never disabled: an invoiced milestone can't be reversed, but
+ * `rule/btn-no-disabled-validation` allows a disable only for a loading or
+ * duplicate-submit lock. The action stays clickable and states the reason in the
+ * row (`rule/form-errors-inline` — an error belongs beside the thing, not in a toast).
+ */
+const unverifyError = reactive<Record<string, string>>({})
 function doUnverify(mid: string) {
   const e = engagement.value
   if (!e) return
   if (!unverifyMilestone(e.id, mid)) {
-    toast.notify({ variant: 'error', title: t('Milestone already invoiced. Void the invoice first'), maxWidth: 'max-content' })
+    unverifyError[mid] = t('Already invoiced. Void the invoice before reversing this verification.')
     return
   }
+  delete unverifyError[mid]
   toast.notify({ variant: 'success', title: t('Verification reversed'), maxWidth: 'max-content' })
 }
 
@@ -880,15 +889,15 @@ watch(reviewChip, () => { setReviewPage(1) })
         <template v-if="creationApproval.rejectedBy">
           <ErpStatusBadge status="rejected" :label="t('Rejected')" />
           <span class="pa-statusline-text">{{ t('Rejected by') }} {{ creationApproval.rejectedBy }} · {{ creationApproval.rejectReason }}</span>
-          <MpButton v-if="creationApproval.submittedBy === currentUser.name" is-rounded variant="secondary" size="sm" @click="editAndResubmit">{{ t('Edit and resubmit') }}</MpButton>
+          <MpButton v-if="creationApproval.submittedBy === currentUser.name" is-rounded variant="secondary" @click="editAndResubmit">{{ t('Edit and resubmit') }}</MpButton>
           <span v-else class="pa-statusline-text">{{ t('Waiting for') }} {{ creationApproval.submittedBy }} {{ t('to edit and resubmit') }}</span>
         </template>
         <template v-else>
           <ErpStatusBadge status="pending" :label="t('Pending approval')" />
           <span class="pa-statusline-text">{{ creationApproval.ruleName }} · {{ t('Submitted by') }} {{ creationApproval.submittedBy }} {{ t('on') }} {{ formatDateLong(creationApproval.submittedAt) }}</span>
           <template v-if="decision(creationApproval).ok">
-            <MpButton is-rounded variant="secondary" size="sm" @click="approvePending(creationApproval)">{{ t('Approve') }}</MpButton>
-            <MpButton is-rounded variant="secondary" size="sm" @click="rejectTarget = { kind: 'approval', approval: creationApproval, label: engagement.name }">{{ t('Reject') }}</MpButton>
+            <MpButton is-rounded variant="secondary" @click="approvePending(creationApproval)">{{ t('Approve') }}</MpButton>
+            <MpButton is-rounded variant="secondary" @click="rejectTarget = { kind: 'approval', approval: creationApproval, label: engagement.name }">{{ t('Reject') }}</MpButton>
           </template>
           <span v-else class="pa-statusline-text">{{ decision(creationApproval).reason }}</span>
         </template>
@@ -1032,8 +1041,8 @@ watch(reviewChip, () => { setReviewPage(1) })
                     <td class="pa-td pa-td--actions">
                       <template v-if="v.vo">
                         <template v-if="addendumDecision(v.vo).ok">
-                          <MpButton is-rounded variant="secondary" size="sm" @click="voConfirmId = v.id">{{ t('Approve') }}</MpButton>
-                          <MpButton is-rounded variant="secondary" size="sm" @click="startRejectVo(v.vo)">{{ t('Reject') }}</MpButton>
+                          <MpButton is-rounded variant="secondary" @click="voConfirmId = v.id">{{ t('Approve') }}</MpButton>
+                          <MpButton is-rounded variant="secondary" @click="startRejectVo(v.vo)">{{ t('Reject') }}</MpButton>
                         </template>
                         <span v-else class="pa-tiny">{{ addendumDecision(v.vo).reason }}</span>
                       </template>
@@ -1109,7 +1118,14 @@ watch(reviewChip, () => { setReviewPage(1) })
                 <template #cell-date="{ value }">{{ formatDate(String(value)) }}</template>
                 <template #cell-cost="{ value }">{{ formatIdr(Number(value)) }}</template>
                 <template #empty>
-                  <p class="pa-note">{{ t('No cost lines yet. Cost lines tagged to this project appear here.') }}</p>
+                  <div class="empty-full">
+                    <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
+                    <p class="empty-full-title">{{ t('No cost lines') }}</p>
+                    <p class="empty-full-desc">{{ t('Cost lines tagged to this project appear here.') }}</p>
+                    <MpButton v-if="!isClosed" class="pa-empty-cta" is-rounded variant="secondary"
+                      @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                    >{{ t('New expense') }}</MpButton>
+                  </div>
                 </template>
               </ErpTablePage>
             </section>
@@ -1176,9 +1192,7 @@ watch(reviewChip, () => { setReviewPage(1) })
             <template v-if="engagement.method === 'tm'">
               <section class="pa-card" data-tour="pa-tm-summary">
                 <h2 class="pa-card-title pa-card-title--spaced">{{ methodLabel('tm') }}</h2>
-                <div class="pa-progress">
-                  <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${tmEarnedPct.toFixed(0)}%` }" />
-                </div>
+                <MpProgress class="pa-progress" color="positive" :value="tmEarnedPct.toFixed(0)" />
                 <div v-for="r in tmRows" :key="r.k" class="pa-kv-row pa-kv-row--wide">
                   <dt class="pa-kv-key">
                     <span class="pa-kv-strong">{{ r.k }}</span>
@@ -1195,13 +1209,13 @@ watch(reviewChip, () => { setReviewPage(1) })
 
               <section class="pa-card" data-tour="pa-review-queue">
                 <h2 class="pa-card-title">{{ t('Review queue') }}</h2>
-                <div class="pa-chips">
-                  <MpButton is-rounded
-                    v-for="c in bulkChips" :key="c.key"
-                    variant="secondary" size="sm" :class="{ 'pa-chip--active': reviewChip === c.key }" :aria-pressed="reviewChip === c.key"
-                    @click="reviewChip = c.key"
-                  >{{ c.label }}</MpButton>
-                </div>
+                <!-- One-of-five age filter, so a segmented control, not tag input:
+                     MpInputTag is multi-select tag ENTRY (rule/select-multi-mpinputtag)
+                     and would lose both the single selection and the counts. -->
+                <MpSegmentedControl
+                  id="pa-review-age" name="pa-review-age" class="pa-review-age"
+                  v-model="reviewChip" :data="reviewAgeOptions"
+                />
 
                 <ErpTablePage
                   class="pa-erp-table"
@@ -1227,7 +1241,14 @@ watch(reviewChip, () => { setReviewPage(1) })
                     <span class="pa-age" :data-tone="row.tone">{{ row.age }} {{ row.age === 1 ? t('day') : t('days') }}</span>
                   </template>
                   <template #empty>
-                    <p class="pa-note">{{ t('No lines to review. New cost lines tagged to this project appear here.') }}</p>
+                    <div class="empty-full">
+                      <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
+                      <p class="empty-full-title">{{ t('No lines to review') }}</p>
+                      <p class="empty-full-desc">{{ t('Cost lines tagged to this project appear here for review.') }}</p>
+                      <MpButton v-if="!isClosed" class="pa-empty-cta" is-rounded variant="secondary"
+                        @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                      >{{ t('New expense') }}</MpButton>
+                    </div>
                   </template>
                 </ErpTablePage>
               </section>
@@ -1251,9 +1272,7 @@ watch(reviewChip, () => { setReviewPage(1) })
             <template v-else-if="engagement.method === 'input'">
               <section class="pa-card" data-tour="pa-input-progress">
                 <h2 class="pa-card-title pa-card-title--spaced">{{ methodLabel('input') }}</h2>
-                <div class="pa-progress">
-                  <div class="pa-progress-fill" data-tone="ok" :style="{ width: `${Math.min(100, pocPct(engagement)).toFixed(0)}%` }" />
-                </div>
+                <MpProgress class="pa-progress" color="positive" :value="Math.min(100, pocPct(engagement)).toFixed(0)" />
                 <p class="pa-lead">{{ t('Revenue recognized to date') }}: <b>{{ formatIdr(revenue(engagement)) }}</b></p>
                 <p v-if="engagement.budget === null" class="pa-note">
                   {{ t('No budget, so percentage complete is not calculated.') }}
@@ -1284,7 +1303,14 @@ watch(reviewChip, () => { setReviewPage(1) })
                   <template #cell-date="{ value }">{{ formatDate(String(value)) }}</template>
                   <template #cell-cost="{ value }">{{ formatIdr(Number(value)) }}</template>
                   <template #empty>
-                    <p class="pa-note">{{ t('No cost lines yet. Cost lines tagged to this project appear here.') }}</p>
+                    <div class="empty-full">
+                      <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
+                      <p class="empty-full-title">{{ t('No cost lines') }}</p>
+                      <p class="empty-full-desc">{{ t('Cost lines tagged to this project appear here.') }}</p>
+                      <MpButton v-if="!isClosed" class="pa-empty-cta" is-rounded variant="secondary"
+                        @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                      >{{ t('New expense') }}</MpButton>
+                    </div>
                   </template>
                 </ErpTablePage>
               </section>
@@ -1324,20 +1350,18 @@ watch(reviewChip, () => { setReviewPage(1) })
                       <td class="pa-td pa-td--actions">
                         <template v-if="m.approval">
                           <template v-if="decision(m.approval).ok">
-                            <MpButton is-rounded variant="secondary" size="sm" @click="approvePending(m.approval)">{{ t('Approve') }}</MpButton>
-                            <MpButton is-rounded variant="secondary" size="sm" @click="rejectTarget = { kind: 'approval', approval: m.approval, label: m.label }">{{ t('Reject') }}</MpButton>
+                            <MpButton is-rounded variant="secondary" @click="approvePending(m.approval)">{{ t('Approve') }}</MpButton>
+                            <MpButton is-rounded variant="secondary" @click="rejectTarget = { kind: 'approval', approval: m.approval, label: m.label }">{{ t('Reject') }}</MpButton>
                           </template>
                           <span v-else class="pa-tiny">{{ decision(m.approval).reason }}</span>
                         </template>
-                        <MpButton is-rounded v-else-if="m.canVerify" variant="secondary" size="sm" @click="verifyMid = m.id">
+                        <MpButton is-rounded v-else-if="m.canVerify" variant="secondary" @click="verifyMid = m.id">
                           {{ t('Verify milestone') }}
                         </MpButton>
-                        <MpButton is-rounded
-                          v-else-if="m.showUnverify" variant="secondary" size="sm"
-                          :is-disabled="m.locked" @click="doUnverify(m.id)"
-                        >
-                          {{ m.locked ? t('Invoiced') : t('Reverse verification') }}
+                        <MpButton is-rounded v-else-if="m.showUnverify" variant="secondary" @click="doUnverify(m.id)">
+                          {{ t('Reverse verification') }}
                         </MpButton>
+                        <p v-if="unverifyError[m.id]" class="pa-warn">{{ unverifyError[m.id] }}</p>
                       </td>
                     </tr>
                   </tbody>
@@ -1402,7 +1426,15 @@ watch(reviewChip, () => { setReviewPage(1) })
                   {{ t('New invoice') }}
                 </MpButton>
               </div>
-              <table class="pa-table">
+              <div v-if="!billingRows.length" class="empty-full">
+                <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
+                <p class="empty-full-title">{{ t('No billing milestones') }}</p>
+                <p class="empty-full-desc">{{ t('Milestones to bill appear here.') }}</p>
+                <MpButton v-if="!isClosed" class="pa-empty-cta" is-rounded variant="secondary" @click="newInvoice('adhoc', t('Invoice'))">
+                  {{ t('New invoice') }}
+                </MpButton>
+              </div>
+              <table v-else class="pa-table">
                 <thead>
                   <tr>
                     <th class="pa-th">{{ t('Milestone') }}</th>
@@ -1424,7 +1456,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                       <ErpStatusBadge :status="m.statusKey" :label="m.statusLabel" />
                     </td>
                     <td class="pa-td pa-td--actions">
-                      <MpButton is-rounded v-if="m.hasAction" variant="secondary" size="sm" @click="m.action()">{{ m.actionLabel }}</MpButton>
+                      <MpButton is-rounded v-if="m.hasAction" variant="secondary" @click="m.action()">{{ m.actionLabel }}</MpButton>
                     </td>
                   </tr>
                 </tbody>
@@ -1433,7 +1465,17 @@ watch(reviewChip, () => { setReviewPage(1) })
 
             <section class="pa-card" data-tour="pa-invoices">
               <h2 class="pa-card-title">{{ t('Invoices') }}</h2>
-              <table class="pa-table">
+              <!-- The tm branch creates invoices from Ready to invoice above, so only
+                   the ad-hoc methods carry the create CTA here. -->
+              <div v-if="!engagement.invoices.length" class="empty-full">
+                <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
+                <p class="empty-full-title">{{ t('No invoices') }}</p>
+                <p class="empty-full-desc">{{ t('Invoices for this project appear here.') }}</p>
+                <MpButton v-if="engagement.method !== 'tm' && !isClosed" class="pa-empty-cta" is-rounded variant="secondary" @click="newInvoice('adhoc', t('Invoice'))">
+                  {{ t('New invoice') }}
+                </MpButton>
+              </div>
+              <table v-else class="pa-table">
                 <thead>
                   <tr>
                     <th class="pa-th">{{ t('Invoice number') }}</th>
@@ -1457,14 +1499,13 @@ watch(reviewChip, () => { setReviewPage(1) })
                       />
                     </td>
                     <td class="pa-td pa-td--actions">
-                      <MpButton is-rounded v-if="i.status === 'unpaid' && !isClosed" variant="secondary" size="sm" @click="doRecordPayment(i.id)">
+                      <MpButton is-rounded v-if="i.status === 'unpaid' && !isClosed" variant="secondary" @click="doRecordPayment(i.id)">
                         {{ t('Record payment') }}
                       </MpButton>
                     </td>
                   </tr>
                 </tbody>
               </table>
-              <p v-if="!engagement.invoices.length" class="pa-note">{{ t('No invoices yet. Create one with New invoice.') }}</p>
             </section>
           </MpTabPanel>
 
@@ -1692,6 +1733,14 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-kv-val { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); text-align: right; white-space: nowrap; }
 
 /* ── Tables (detail-page read-only style) ─────────────────────────────────── */
+/* Table empty state — same shape as the Project accounting index
+   (rule/empty-state-structure); the CTA is secondary, as the rule asks. */
+.empty-full { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-6) 0; }
+.empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin: var(--mp-spacing-0\.5) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.pa-empty-cta { margin-top: var(--mp-spacing-4); }
+
 .pa-table-scroll { overflow-x: auto; }
 .pa-table { width: 100%; border-collapse: collapse; margin-top: var(--mp-spacing-3); }
 .pa-th {
@@ -1704,11 +1753,14 @@ watch(reviewChip, () => { setReviewPage(1) })
 }
 .pa-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pa-td {
-  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
-  height: var(--mp-sizes-10); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-2);
+  height: var(--mp-sizes-10); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle;
   border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
-.pa-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
+/* A row carrying a stacked cell aligns THAT ROW's cells top; single-line rows stay
+   middle (rule/table-cell-padding-align). :has keeps it per row, not per cell. */
+.pa-table tr:has(.pa-tiny) .pa-td { vertical-align: top; }
+.pa-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4); }
 .pa-td--muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pa-td--strong { font-weight: var(--mp-font-weights-semi-bold); }
 .pa-td[data-tone='adverse'] { color: var(--mp-text-danger); }
@@ -1719,9 +1771,9 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-tr--group > .pa-td { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* ── Progress bars ────────────────────────────────────────────────────────── */
-.pa-progress { height: var(--mp-sizes-3); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f8f9f9); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
-.pa-progress-fill { height: 100%; border-radius: var(--mp-radii-full, 999px); }
-.pa-progress-fill[data-tone='ok'] { background: var(--mp-colors-emerald-700, #029861); }
+/* MpProgress owns the bar itself; the page only spaces it. */
+.pa-progress { margin-bottom: var(--mp-spacing-4); }
+.pa-review-age { margin-bottom: var(--mp-spacing-4); }
 
 .pa-bucket { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1) 0; }
 .pa-bucket-label { width: calc(var(--mp-sizes-12) * 2); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
@@ -1752,8 +1804,6 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-weight-input { width: calc(var(--mp-sizes-12) * 3); flex-shrink: 0; }
 
 /* ── Misc ─────────────────────────────────────────────────────────────────── */
-.pa-chips { display: flex; gap: var(--mp-spacing-2); flex-wrap: wrap; margin-bottom: var(--mp-spacing-2); }
-.pa-chip--active { border-color: var(--mp-colors-border-selected) !important; background: var(--mp-colors-background-success) !important; }
 .pa-chip-row { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; margin-top: var(--mp-spacing-1); }
 .pa-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); flex-wrap: wrap; }
 .pa-bar-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
