@@ -192,7 +192,7 @@ function save() {
       </nav>
 
       <!-- ── Right: Form ────────────────────────────────────────────────── -->
-      <div class="dm-form-area" :class="[activeStepId === 'opening-balance' ? 'dm-form-area--fullbleed' : 'dm-form-area--narrow']">
+      <div class="dm-form-area" :class="[activeStepId === 'opening-balance' || activeStepId === 'products' ? 'dm-form-area--fullbleed' : 'dm-form-area--narrow']">
       <!-- Company info form -->
       <template v-if="activeStepId === 'company-info'">
         <div class="dm-form-top">
