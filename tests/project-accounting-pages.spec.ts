@@ -19,11 +19,12 @@ import NewEngagementPage from '~/components/pages/NewEngagementPage.vue'
 import ProjectExpensePage from '~/components/pages/ProjectExpensePage.vue'
 import ProjectInvoicePage from '~/components/pages/ProjectInvoicePage.vue'
 import VerifyMilestoneModal from '~/components/patterns/VerifyMilestoneModal.vue'
+import SubmitAddendumModal from '~/components/patterns/SubmitAddendumModal.vue'
 import { useTableState } from '~/composables/useTableState'
 import { useProjectViewAs } from '~/composables/useProjectViewAs'
 import {
   engagements, findEngagement, revenue, openEntries, daysAgo, methodLabel, closeHint, canClose, pendingVos,
-  approvalFor, TODAY,
+  approvalFor, closeHint, TODAY,
 } from '~/data/projectAccounting'
 
 // ── Nuxt auto-imports that vitest has no layer for ───────────────────────────
@@ -201,14 +202,48 @@ describe('ProjectEngagementDetailsPage — one tree per recognition method', () 
     expect(text).toContain('Addendum Rule 001')
     expect(findEngagement('e7')!.contractValue).toBe(2_400_000_000)
 
-    // The scope question appears once the addendum form is opened, with no answer preselected.
+    // "Submit addendum" opens the modal; the form itself is asserted on the modal.
     const open = w.findAll('button').find(b => b.text() === 'Submit addendum')!
     await open.trigger('click')
     await flushPromises()
-    expect(w.text()).toContain('Is this new, separately priced work?')
-    expect(w.text()).toContain('Extends existing work')
-    expect(w.text()).toContain('Separate new work')
-    expect(w.findAll('.pa-choice--picked')).toHaveLength(0)
+    expect(w.findComponent(SubmitAddendumModal).props('isOpen')).toBe(true)
+    w.unmount()
+  })
+
+  it('the addendum modal asks the scope question with no answer preselected', async () => {
+    // MpModal teleports, so the content is asserted on document.body, not the wrapper.
+    const w = mount(SubmitAddendumModal, { props: { isOpen: true }, attachTo: document.body })
+    await flushPromises()
+    const body = () => document.body.textContent ?? ''
+    expect(body()).toContain('Revised contract value')
+    expect(body()).toContain('Is this new, separately priced work?')
+    expect(body()).toContain('Extends existing work')
+    expect(body()).toContain('Separate new work')
+    expect(document.querySelectorAll('.sam-choice--picked')).toHaveLength(0)
+
+    // Footer actions are always present, and an empty form errors inline, never silently.
+    const submit = [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === 'Submit')!
+    expect(submit).toBeTruthy()
+    submit.click()
+    await flushPromises()
+    expect(body()).toContain('You must fill in the revised contract value')
+    expect(w.emitted('confirm')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('Close project stays live when the gate is unmet and states the reason inline', async () => {
+    routeQuery.tab = 'closed'
+    const w = await mountPage(ProjectEngagementDetailsPage, { orderId: 'e7' })
+    const gate = w.find('[data-tour="pa-close-gate"]')
+    expect(gate.text()).toContain('Not ready to close')
+
+    // Never disabled, never a silent no-op: the reason turns into an inline error.
+    expect(gate.find('.pa-card-desc--error').exists()).toBe(false)
+    const close = gate.findAll('button').find(b => b.text() === 'Close project')!
+    expect(close.attributes('disabled')).toBeUndefined()
+    await close.trigger('click')
+    await flushPromises()
+    expect(gate.find('.pa-card-desc--error').text()).toBe(closeHint(findEngagement('e7')!))
     w.unmount()
   })
 
@@ -488,8 +523,12 @@ describe('ProjectExpensePage', () => {
 })
 
 describe('ProjectInvoicePage', () => {
+  // e11 is the project that carries reviewed, uninvoiced cost. Asserting the
+  // amounts matters: with a project that has none, this page still renders its
+  // "Prefilled…" heading over an empty Rp0 line, so a heading-only assertion
+  // passes without anything having been prefilled.
   it('prefills every reviewed, uninvoiced line for a cost-plus project', async () => {
-    routeQuery.project = 'e3'
+    routeQuery.project = 'e11'
     routeQuery.kind = 'tm'
     routeQuery.label = 'Progress billing'
 
@@ -498,8 +537,14 @@ describe('ProjectInvoicePage', () => {
 
     expect(text).toContain('New invoice')
     expect(text).toContain('Prefilled with reviewed cost lines not yet invoiced')
-    // e3's two decided-but-uninvoiced lines are already reflected in the totals.
-    expect(text).toContain('Balance due')
+    // Line descriptions live in editable cells, so they are input values, not text.
+    const values = w.findAll('input').map(i => (i.element as HTMLInputElement).value)
+    // entryLabel prefixes the category: "Labor: …", "Expense: …".
+    expect(values).toContain('Labor: Yoga Prasetyo — ledger review')
+    expect(values).toContain('Labor: Dewi Kusuma — supporting schedules')
+    expect(values).toContain('Expense: Courier for signed documents')
+    // 6.000.000 and 3.500.000 carry the 20% margin; the courier line is at cost.
+    expect(text).toContain('Rp12.400.000,00')
     w.unmount()
   })
 

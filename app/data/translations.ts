@@ -1409,6 +1409,13 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "as a new customer": "sebagai pelanggan",
   "Add new customer": "Tambah pelanggan",
   "You must select customer": "Anda harus memilih pelanggan",
+  // Cross-line rule on the invoice form: the labels are the column headers, and
+  // "qty" is never translated (uxw-mekari-erp-terms).
+  "You must fill in qty and unit price on at least one line": "Anda harus memasukkan qty dan harga satuan pada setidaknya satu baris",
+  "You must fill in amount on at least one line": "Anda harus memasukkan jumlah pada setidaknya satu baris",
+  // Reject modal — the error names the field, so the label needs its pair too.
+  "Reason for rejection": "Alasan penolakan",
+  "You must fill in reason for rejection": "Anda harus memasukkan alasan penolakan",
   "Estimated delivery date": "Perkiraan tanggal pengiriman",
   "No couriers found.": "Kurir tidak ditemukan.",
   "Sales Delivery": "Pengiriman penjualan",
@@ -3629,8 +3636,14 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Add new budget": "Tambah anggaran baru",
   "The budget this engagement draws against": "Anggaran yang digunakan proyek ini",
   "Filled from the selected budget. You can edit it": "Diisi dari anggaran yang dipilih. Anda dapat mengubahnya",
+  // Per-line column header on the expense and invoice forms, and the label in the
+  // budget drawers — 11 components ask for it, none of them had an ID value.
+  "Project": "Proyek",
   "Project assignment": "Penugasan proyek",
   "Define who leads the project and who works on it.": "Tentukan siapa yang memimpin proyek dan siapa yang mengerjakannya.",
+  "Customer": "Pelanggan",
+  "Submit": "Kirim",
+  "Method": "Metode",
   "Project manager": "Manajer proyek",
   "Select project manager": "Pilih manajer proyek",
   "Team member": "Anggota tim",

@@ -478,6 +478,22 @@ function seed(): Engagement[] {
       invoices: [{ id: 'INV-2176', label: 'Final billing', amount: 9_000_000, date: '2026-07-02', status: 'paid', paidDate: '2026-07-16' }],
       closedAt: '2026-07-28', closedBy: 'Made Ardika',
     }),
+    /**
+     * Reviewed cost waiting on its invoice. e3 deliberately models the step
+     * before this one (two lines reviewed and billed, two still awaiting a
+     * decision), so without e11 no project ever has a reviewed, uninvoiced
+     * line and the cost-plus invoice prefill has nothing to prefill. The
+     * at-cost line exercises the per-line margin waiver at the same time.
+     */
+    baseEngagement({
+      id: 'e11', name: 'Quarterly Bookkeeping Review', client: 'PT Sentosa Niaga', pm: 'Yoga Prasetyo',
+      method: 'tm', markupPct: 20, stage: 'billing', feeEstimate: 24_000_000, budget: 20_000_000,
+      entries: [
+        cost('Labor', 'Yoga Prasetyo — ledger review', 'Internal payroll', '2026-07-14', 6_000_000, 'Expense', 'EXP-1168', 20, 'bill', false, 24),
+        cost('Labor', 'Dewi Kusuma — supporting schedules', 'Internal payroll', '2026-07-21', 3_500_000, 'Expense', 'EXP-1181', 20, 'bill', false, 16),
+        cost('Expense', 'Courier for signed documents', 'PT Kirim Cepat', '2026-07-25', 1_000_000, 'Expense', 'EXP-1188', 20, 'atcost', false, null),
+      ],
+    }),
   ])
 }
 
@@ -648,7 +664,8 @@ export function canClose(e: Engagement): boolean {
 export function closeHint(e: Engagement): string {
   if (pendingVos(e).length) return 'Approve or reject every pending addendum before closing.'
   if ((e.approvals ?? []).length) return 'Decide every pending approval before closing.'
-  if (canClose(e)) return 'Ready to close. Revenue is final, every invoice is paid and no addendum is pending.'
+  // The card's title already says "Ready to close"; the hint gives the reason only.
+  if (canClose(e)) return 'Revenue is final, every invoice is paid and no addendum is pending.'
   if (e.method === 'tm') return 'To close, review and invoice every cost line, then record payment for every invoice.'
   if (e.method === 'input') return 'To close, the project must be 100% complete and every billing milestone paid.'
   if (e.method === 'output' && (e.milestones ?? []).every(m => m.verified) && wipNet(e) > 0) {

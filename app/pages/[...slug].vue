@@ -2323,6 +2323,9 @@ function startResize(e: MouseEvent) {
             @click="router.push('/users-and-roles/invite')"
           >{{ t('Invite user') }}</MpButton>
         </div>
+        <!-- Two buttons, not one menu: an action launcher needs a shared object noun
+             for its label (New transaction → New spend money), and a project and an
+             expense have none. Creation pattern instead (uxw-mekari-erp-terms). -->
         <div v-else-if="currentPageKey === 'Project accounting'" class="page-title-actions">
           <MpButton variant="secondary" is-rounded @click="router.push('/project-accounting/expense/new')">{{ t('New expense') }}</MpButton>
           <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/project-accounting/new')">{{ t('New project') }}</MpButton>

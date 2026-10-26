@@ -231,7 +231,7 @@ function cancel() { router.push('/project-accounting') }
               >
                 <template #buttonAction>{{ t('Add new contact') }}</template>
               </MpAutocomplete>
-              <MpFormErrorMessage>{{ t('You must fill in customer') }}</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
             </MpFormControl>
           </div>
         </section>

@@ -822,6 +822,9 @@ const bulkCountLabel = computed(() => {
       </table>
     </div>
 
+    <!-- Totals and other summaries that belong under the rows, above pagination. -->
+    <slot name="after-table" />
+
     <!-- ── Pagination ── (hidden during first-load skeleton) -->
     <ErpPagination
       v-if="!loading && total > 0"

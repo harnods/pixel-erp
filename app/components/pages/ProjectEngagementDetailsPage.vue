@@ -14,11 +14,14 @@
  * from the prototype-only View as control (useProjectViewAs).
  *
  * A `detailMatch` route: this page owns its 72px title bar and its own stage
- * padding (DESIGN.md → Layout). In-page detail tabs use MpTabs (docs/patterns/tabs.md).
+ * padding (DESIGN.md → Layout). Layout follows SalesInvoiceDetailsPage — the header
+ * carries only name, status and the record action; the stage carries the stats, the
+ * project information grid and then the five stage tabs as in-stage MpTabs
+ * (docs/patterns/tabs.md §2), kept in the URL via ?tab=.
  */
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpButton, MpRadio,
-  MpTextarea, MpIcon, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpButton,
+  MpTextarea, MpIcon, MpInput, MpInputGroup, MpInputRightAddon,
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpBadge, toast, MpTextlink,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -30,6 +33,7 @@ import CloseProjectModal from '~/components/patterns/CloseProjectModal.vue'
 import ReopenProjectModal from '~/components/patterns/ReopenProjectModal.vue'
 import VerifyMilestoneModal from '~/components/patterns/VerifyMilestoneModal.vue'
 import RejectRequestModal from '~/components/patterns/RejectRequestModal.vue'
+import SubmitAddendumModal from '~/components/patterns/SubmitAddendumModal.vue'
 import DetailJumpTo, { type JumpItem } from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import { useTableState } from '~/composables/useTableState'
@@ -198,11 +202,8 @@ const contractRows = computed(() => {
   const e = engagement.value
   if (!e) return []
   return [
-    { k: t('Method'), v: methodLabel(e.method) },
     { k: e.method === 'tm' ? t('Fee estimate') : t('Contract value'), v: e.method === 'tm' && e.budget === null ? t('No budget') : formatIdr(e.method === 'tm' ? e.feeEstimate : e.contractValue) },
     { k: t('Budgeted cost'), v: e.budget === null ? t('No budget') : formatIdr(e.budget) },
-    { k: t('Customer'), v: e.client },
-    { k: t('Project manager'), v: e.pm },
     { k: t('Status'), v: projectStatusLabel(e) },
   ]
 })
@@ -219,42 +220,15 @@ const planRows = computed(() => {
 
 // ── Addenda ───────────────────────────────────────────────────────────────────
 const voFormOpen = ref(false)
-const voValue = ref('')
-const voReason = ref('')
-/** No preselection: whether the change is separate work is a judgment the submitter must make. */
-const voDistinct = ref<boolean | null>(null)
-const voErrors = reactive({ value: '', reason: '', distinct: '' })
 const voConfirmId = ref<string | null>(null)
-const addendaCard = ref<HTMLElement | null>(null)
 
-/** Title-bar "Submit addendum": go to Setup, open the form, bring it into view. */
-function openAddendumForm() {
-  goTab('setup')
-  voFormOpen.value = true
-  nextTick(() => {
-    setTimeout(() => addendaCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
-  })
-}
-
-function resetVoForm() {
-  voValue.value = ''; voReason.value = ''; voDistinct.value = null
-  voErrors.value = ''; voErrors.reason = ''; voErrors.distinct = ''
-}
-
-function submitAddendum() {
+function submitAddendum(payload: { value: number; reason: string; distinct: boolean }) {
   const e = engagement.value
   if (!e) return
-  const val = Number(voValue.value)
-  voErrors.value = !val || val <= 0 ? t('You must fill in the revised contract value') : ''
-  voErrors.reason = voReason.value.trim().length < 5 ? t('Enter a reason of at least 5 characters') : ''
-  voErrors.distinct = voDistinct.value === null ? t('Choose whether this is new, separately priced work') : ''
-  if (voErrors.value || voErrors.reason || voErrors.distinct) return
   const before = e.vos.length
-  addAddendum(e.id, val, voReason.value, voDistinct.value === true, currentUser.value.name)
+  addAddendum(e.id, payload.value, payload.reason, payload.distinct, currentUser.value.name)
   const added = e.vos[before]
   const gate = added ? approvalFor(e, 'addendum', added.id) : undefined
-  resetVoForm()
-  voFormOpen.value = false
   toast.notify({
     variant: 'success',
     title: gate ? `${t('Addendum submitted.')} ${waitingFor(gate)}.` : t('Addendum submitted.'),
@@ -792,6 +766,19 @@ const overBudgetLine = computed(() => {
 
 const closable = computed(() => (engagement.value ? canClose(engagement.value) : false))
 const closeOpen = ref(false)
+/**
+ * Close project stays live whether or not the gate is met (CLAUDE.md › Form &
+ * modal actions): clicking too early states the reason inline instead of the
+ * button sitting there dead. The reason is closeHint(), already the card's
+ * description — it turns red in place rather than printing twice.
+ */
+const closeError = ref(false)
+watch(closable, (ok) => { if (ok) closeError.value = false })
+function tryClose() {
+  if (!closable.value) { closeError.value = true; return }
+  closeError.value = false
+  closeOpen.value = true
+}
 const reopenOpen = ref(false)
 const mayReopen = computed(() => canReopen(currentUser.value.name))
 const closeSum = computed(() => engagement.value ? closeSummary(engagement.value) : { revenue: 0, cost: 0, margin: 0, marginPct: null })
@@ -876,23 +863,12 @@ watch(reviewChip, () => { setReviewPage(1) })
           <ErpStatusBadge :status="statusBadgeKey" :label="t(projectStatusLabel(engagement))" badge-for="additionalInformation" />
           <DetailJumpTo id="pa-jump" :items="jumpItems" :aria-label="t('Switch project')" :empty-text="t('No projects found')" @select="jumpTo" />
         </div>
-        <p class="detail-subtitle">
-          {{ engagement.client }} · {{ methodLabel(engagement.method) }} · {{ t('Managed by') }} {{ engagement.pm }}
-        </p>
       </div>
 
+      <!-- Submit addendum is the only record-level action, so it alone stays in the
+           header. The per-tab create buttons live at the head of their own tab. -->
       <div class="detail-bar-actions">
-        <MpButton is-rounded
-          v-if="activeStage === 'execution' && !isClosed"
-          variant="secondary" left-icon="add"
-          @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
-        >
-          {{ t('New expense') }}
-        </MpButton>
-        <MpButton is-rounded v-if="activeStage === 'billing' && !isClosed" variant="secondary" left-icon="add" @click="newInvoice('adhoc', t('Invoice'))">
-          {{ t('New invoice') }}
-        </MpButton>
-        <MpButton is-rounded v-if="!isClosed" id="pa-submit-addendum" variant="secondary" @click="openAddendumForm">
+        <MpButton is-rounded v-if="!isClosed" id="pa-submit-addendum" variant="secondary" @click="voFormOpen = true">
           {{ t('Submit addendum') }}
         </MpButton>
       </div>
@@ -918,7 +894,21 @@ watch(reviewChip, () => { setReviewPage(1) })
         </template>
       </div>
 
-      <ProjectStatCards :stats="stats" data-tour="pa-stats" />
+      <!-- ── Project information ── the record's fixed facts, on every tab
+           (docs/patterns/details-page-format.md; SalesInvoiceDetailsPage). -->
+      <section class="detail-summary" data-tour="pa-project-info">
+        <div class="content-list-grid">
+          <div class="content-list-col">
+            <ContentList :label="t('Customer')" :value="engagement.client" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Method')" :value="methodLabel(engagement.method)" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Project manager')" :value="engagement.pm" />
+          </div>
+        </div>
+      </section>
 
       <a v-if="lastActivity" class="detail-updated" @click.prevent="activityOpen = true">
         {{ t('Last updated by') }} {{ lastActivity.user || engagement.pm }} {{ t('on') }} {{ formatDateLong(lastActivity.date) }}
@@ -926,8 +916,11 @@ watch(reviewChip, () => { setReviewPage(1) })
 
       <MpTabs id="pa-engagement-tabs" v-model="activeIndex" is-manual variant-color="green" class="pa-tabs">
         <MpTabList>
-          <MpTab v-for="s in STAGES" :key="s.key" :value="s.key">{{ t(s.label) }}</MpTab>
+          <MpTab v-for="s in STAGES" :key="s.key" :id="`pa-tab-${s.key}`" :value="s.key">{{ t(s.label) }}</MpTab>
         </MpTabList>
+
+        <!-- The figures are per-tab, so they sit under the tab list, not above it. -->
+        <ProjectStatCards :stats="stats" data-tour="pa-stats" class="pa-tab-stats" />
 
         <MpTabPanels>
           <!-- ═══ Setup & contract ═══════════════════════════════════════════ -->
@@ -1001,54 +994,10 @@ watch(reviewChip, () => { setReviewPage(1) })
             </section>
 
             <!-- ── Contract addenda: append-only; the form opens from "Submit addendum" ── -->
-            <section ref="addendaCard" class="pa-card" data-tour="pa-addenda">
+            <section class="pa-card" data-tour="pa-addenda">
               <div class="pa-card-head">
                 <h2 class="pa-card-title">{{ t('Contract addenda') }}</h2>
-                <MpButton is-rounded v-if="!voFormOpen && !isClosed" variant="secondary" @click="voFormOpen = true">{{ t('Submit addendum') }}</MpButton>
-              </div>
-
-              <div v-if="voFormOpen" class="pa-vo">
-                <div class="pa-vo-form">
-                  <MpFormControl id="pa-vo-value" is-required :is-invalid="!!voErrors.value">
-                    <MpFormLabel>{{ t('Revised contract value') }}</MpFormLabel>
-                    <MpInputGroup id="pa-vo-value-group" is-full-width>
-                      <MpInputLeftAddon>Rp</MpInputLeftAddon>
-                      <MpInput id="pa-vo-value-input" v-model="voValue" type="number" is-full-width />
-                    </MpInputGroup>
-                    <MpFormErrorMessage>{{ voErrors.value }}</MpFormErrorMessage>
-                  </MpFormControl>
-                  <MpFormControl id="pa-vo-reason" is-required :is-invalid="!!voErrors.reason">
-                    <MpFormLabel>{{ t('Reason') }}</MpFormLabel>
-                    <MpInput id="pa-vo-reason-input" v-model="voReason" is-full-width />
-                    <MpFormErrorMessage>{{ voErrors.reason }}</MpFormErrorMessage>
-                  </MpFormControl>
-                </div>
-
-                <MpFormControl id="pa-vo-distinct" is-required :is-invalid="!!voErrors.distinct" class="pa-box">
-                  <MpFormLabel>{{ t('Is this new, separately priced work?') }}</MpFormLabel>
-                  <div class="pa-choices" role="radiogroup">
-                    <label class="pa-choice" :class="{ 'pa-choice--picked': voDistinct === false }">
-                      <MpRadio id="pa-vo-distinct-no" name="pa-vo-distinct" value="extends" :is-checked="voDistinct === false" @change="voDistinct = false; voErrors.distinct = ''" />
-                      <span class="pa-choice-body">
-                        <span class="pa-choice-title">{{ t('Extends existing work') }}</span>
-                        <span class="pa-choice-desc">{{ t('For example, a larger foundation. Revenue to date is adjusted in the current period.') }}</span>
-                      </span>
-                    </label>
-                    <label class="pa-choice" :class="{ 'pa-choice--picked': voDistinct === true }">
-                      <MpRadio id="pa-vo-distinct-yes" name="pa-vo-distinct" value="separate" :is-checked="voDistinct === true" @change="voDistinct = true; voErrors.distinct = ''" />
-                      <span class="pa-choice-body">
-                        <span class="pa-choice-title">{{ t('Separate new work') }}</span>
-                        <span class="pa-choice-desc">{{ t('For example, a separate structure. Recognized from this period on, with its own milestone.') }}</span>
-                      </span>
-                    </label>
-                  </div>
-                  <MpFormErrorMessage>{{ voErrors.distinct }}</MpFormErrorMessage>
-                </MpFormControl>
-
-                <div class="pa-actions pa-actions--tight">
-                  <MpButton variant="primary" is-rounded @click="submitAddendum">{{ t('Submit addendum') }}</MpButton>
-                  <MpButton is-rounded variant="ghost" @click="voFormOpen = false; resetVoForm()">{{ t('Cancel') }}</MpButton>
-                </div>
+                <MpButton is-rounded v-if="!isClosed" variant="tertiary" @click="voFormOpen = true">{{ t('Submit addendum') }}</MpButton>
               </div>
 
               <table class="pa-table">
@@ -1098,7 +1047,6 @@ watch(reviewChip, () => { setReviewPage(1) })
           <!-- ═══ Costs ══════════════════════════════════════════════════════ -->
           <MpTabPanel value="execution">
             <section class="pa-card" data-tour="pa-cost-lines">
-              <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
               <ErpTablePage
                 class="pa-erp-table"
                 :columns="costColumns"
@@ -1121,9 +1069,7 @@ watch(reviewChip, () => { setReviewPage(1) })
               >
                 <template #filters>
                   <div class="filter-left">
-                    <span class="pa-filter-note">
-                      {{ rollSearch.trim() ? `${t('Matching lines')}: ${formatIdr(rollFilteredTotal)} ${t('of')} ${formatIdr(actualCost(engagement))}` : `${t('Total cost incurred')}: ${formatIdr(actualCost(engagement))}` }}
-                    </span>
+                    <h2 class="pa-card-title">{{ t('Cost lines') }}</h2>
                   </div>
                   <div class="filter-right">
                     <div class="filter-search">
@@ -1132,6 +1078,22 @@ watch(reviewChip, () => { setReviewPage(1) })
                       <button v-if="rollSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="rollSearch = ''">
                         <MpIcon name="close" size="sm" />
                       </button>
+                    </div>
+                    <MpButton
+                      v-if="!isClosed" is-rounded variant="tertiary" left-icon="add"
+                      @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                    >
+                      {{ t('New expense') }}
+                    </MpButton>
+                  </div>
+                </template>
+                <template #after-table>
+                  <div class="pa-table-totals">
+                    <div class="pa-total-row">
+                      <span class="pa-total-label">{{ rollSearch.trim() ? t('Matching lines') : t('Total cost incurred') }}</span>
+                      <span class="pa-total-amt">
+                        {{ rollSearch.trim() ? `${formatIdr(rollFilteredTotal)} ${t('of')} ${formatIdr(actualCost(engagement))}` : formatIdr(actualCost(engagement)) }}
+                      </span>
                     </div>
                   </div>
                 </template>
@@ -1434,7 +1396,12 @@ watch(reviewChip, () => { setReviewPage(1) })
             </template>
 
             <section v-else class="pa-card" data-tour="pa-billing-schedule">
-              <h2 class="pa-card-title">{{ t('Billing schedule') }}</h2>
+              <div class="pa-card-head">
+                <h2 class="pa-card-title">{{ t('Billing schedule') }}</h2>
+                <MpButton v-if="!isClosed" is-rounded variant="tertiary" left-icon="add" @click="newInvoice('adhoc', t('Invoice'))">
+                  {{ t('New invoice') }}
+                </MpButton>
+              </div>
               <table class="pa-table">
                 <thead>
                   <tr>
@@ -1538,15 +1505,15 @@ watch(reviewChip, () => { setReviewPage(1) })
               <div class="pa-card-head">
                 <div>
                   <h2 class="pa-card-title">{{ closable ? t('Ready to close') : t('Not ready to close') }}</h2>
-                  <p class="pa-card-desc">{{ closeHint(engagement) }}</p>
+                  <p class="pa-card-desc" :class="{ 'pa-card-desc--error': closeError }">{{ closeHint(engagement) }}</p>
+                  <p v-if="(engagement.reopenLog ?? []).length" class="pa-card-desc">
+                    {{ t('Reopened on') }} {{ formatDateLong(engagement.reopenLog![engagement.reopenLog!.length - 1]!.date) }} {{ t('by') }} {{ engagement.reopenLog![engagement.reopenLog!.length - 1]!.by }} · {{ engagement.reopenLog![engagement.reopenLog!.length - 1]!.reason }}
+                  </p>
                 </div>
-                <MpButton is-rounded :variant="closable ? 'primary' : 'secondary'" @click="closable ? (closeOpen = true) : undefined">
+                <MpButton is-rounded variant="primary" @click="tryClose">
                   {{ t('Close project') }}
                 </MpButton>
               </div>
-              <p v-if="(engagement.reopenLog ?? []).length" class="pa-note">
-                {{ t('Reopened on') }} {{ formatDateLong(engagement.reopenLog![engagement.reopenLog!.length - 1]!.date) }} {{ t('by') }} {{ engagement.reopenLog![engagement.reopenLog!.length - 1]!.by }} · {{ engagement.reopenLog![engagement.reopenLog!.length - 1]!.reason }}
-              </p>
             </section>
           </MpTabPanel>
         </MpTabPanels>
@@ -1566,6 +1533,8 @@ watch(reviewChip, () => { setReviewPage(1) })
       @update:is-open="voConfirmId = null"
       @confirm="doApproveVo"
     />
+    <SubmitAddendumModal v-model:is-open="voFormOpen" @confirm="submitAddendum" />
+
     <RejectRequestModal
       v-if="rejectTarget"
       :is-open="!!rejectTarget"
@@ -1624,7 +1593,7 @@ watch(reviewChip, () => { setReviewPage(1) })
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-3) var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -1639,22 +1608,46 @@ watch(reviewChip, () => { setReviewPage(1) })
   line-height: var(--mp-line-heights-2xl, 32px); letter-spacing: var(--mp-letter-spacings-tight, -0.2px);
   color: var(--mp-text-default);
 }
-.detail-subtitle { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-bar-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-shrink: 0; }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex; flex-direction: column; gap: var(--mp-spacing-8);
 }
 
 .pa-tabs { display: block; }
+/* The per-tab figures sit between the tab list and the first card of the panel. */
+.pa-tab-stats { margin: var(--mp-spacing-5) 0 0; }
+/* active tab uses text/selected + border/selected, not the raw green variant */
+.pa-tabs :deep(.mp-tab--isSelected_true),
+.pa-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
+/* only the SELECTED tab's underline — the bare class hits every tab's underline */
+.pa-tabs :deep(.mp-tab-selected-border--isSelected_true) {
+  background-color: var(--mp-border-selected, #029861) !important;
+}
+/* MpTabList ships a 24px bottom margin; the first card adds its own 32px top */
+.pa-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: 0 !important; }
+
+/* ── Project information ── the detail grid: col 1 = 318px (shrinks when tight),
+   col 2+ fill equally. No row gap — ContentList self-pads 8px top/bottom. */
+.detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
+.content-list-grid {
+  display: grid;
+  /* Four even columns on the stat cards' rhythm above, three of them filled —
+     not the invoice page's 318px lead column, which aligns to a line-item table
+     this page does not have. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: var(--mp-spacing-6);
+  row-gap: 0;
+}
+.content-list-col { display: flex; flex-direction: column; }
 
 /* ── Cards — a 1px border, never a drop-shadow (DESIGN.md) ────────────────── */
 .pa-card {
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px);
-  background: var(--mp-background-neutral); padding: var(--mp-spacing-5) var(--mp-spacing-6);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px);
+  background: var(--mp-background-neutral, #ffffff); padding: var(--mp-spacing-5) var(--mp-spacing-6);
   margin-top: var(--mp-spacing-8);
 }
 .pa-card--notice { background: var(--mp-colors-background-information); border-color: var(--mp-colors-border-information); }
@@ -1666,6 +1659,18 @@ watch(reviewChip, () => { setReviewPage(1) })
   margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
 .pa-card-title--spaced { margin-bottom: var(--mp-spacing-4); }
+/* Card header: title left, its create action right, centred on the title's line. */
+.pa-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-4);
+}
+.pa-card-head .pa-card-title { margin-bottom: 0; }
+/* In a card head the description belongs to the block that centres against the
+   action, so it drops its trailing margin; a head that is the card's only row
+   drops its own. */
+.pa-card-head .pa-card-desc { margin-bottom: 0; }
+.pa-card-head .pa-card-desc + .pa-card-desc { margin-top: var(--mp-spacing-2); }
+.pa-card-head:last-child { margin-bottom: 0; }
 .pa-card-desc { margin: var(--mp-spacing-1) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); max-width: 860px; }
 .pa-lead { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .pa-note { margin: var(--mp-spacing-3) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -1677,10 +1682,10 @@ watch(reviewChip, () => { setReviewPage(1) })
 
 /* ── Key/value rows ───────────────────────────────────────────────────────── */
 /* Key/value fields use ContentList (docs/patterns/details-page-format.md). */
-.pa-fields > * + * { border-top: 1px solid var(--mp-border-default); }
+.pa-fields > * + * { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .pa-plan-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); }
 /* The cost-plus build-up keeps its own row: a caption under the key, figure right. */
-.pa-kv-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default); }
+.pa-kv-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .pa-kv-row--wide { align-items: baseline; }
 .pa-kv-key { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); display: flex; flex-direction: column; }
 .pa-kv-strong { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -1692,16 +1697,16 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-th {
   height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); text-transform: uppercase; vertical-align: middle;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .pa-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pa-td {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-4) var(--mp-spacing-2\.5) var(--mp-spacing-2);
   height: var(--mp-sizes-10); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: top;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .pa-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4); }
 .pa-td--muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
@@ -1710,17 +1715,17 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-td--wrap { white-space: normal; }
 .pa-td--actions { text-align: right; white-space: nowrap; }
 .pa-td--actions > * + * { margin-left: var(--mp-spacing-2); }
-.pa-tr--total > .pa-td { background: var(--mp-background-neutral-subtle); font-weight: var(--mp-font-weights-semi-bold); }
-.pa-tr--group > .pa-td { background: var(--mp-background-neutral-subtle); }
+.pa-tr--total > .pa-td { background: var(--mp-background-neutral-subtle, #f8f9f9); font-weight: var(--mp-font-weights-semi-bold); }
+.pa-tr--group > .pa-td { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 
 /* ── Progress bars ────────────────────────────────────────────────────────── */
-.pa-progress { height: var(--mp-sizes-3); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
+.pa-progress { height: var(--mp-sizes-3); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f8f9f9); overflow: hidden; margin-bottom: var(--mp-spacing-4); }
 .pa-progress-fill { height: 100%; border-radius: var(--mp-radii-full, 999px); }
 .pa-progress-fill[data-tone='ok'] { background: var(--mp-colors-emerald-700, #029861); }
 
 .pa-bucket { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1) 0; }
 .pa-bucket-label { width: calc(var(--mp-sizes-12) * 2); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); }
-.pa-bucket-track { flex: 1; height: var(--mp-sizes-2); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle); overflow: hidden; }
+.pa-bucket-track { flex: 1; height: var(--mp-sizes-2); border-radius: var(--mp-radii-full, 999px); background: var(--mp-background-neutral-subtle, #f8f9f9); overflow: hidden; }
 .pa-bucket-fill { display: block; height: 100%; border-radius: var(--mp-radii-full, 999px); }
 .pa-bucket-fill[data-tone='ok'] { background: var(--mp-colors-emerald-700, #029861); }
 .pa-bucket-fill[data-tone='near'] { background: var(--mp-colors-orange-600, #e46910); }
@@ -1737,22 +1742,6 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-summary--bad { color: var(--mp-text-danger); }
 
 /* ── Addendum form ────────────────────────────────────────────────────────── */
-.pa-vo { margin-top: var(--mp-spacing-4); }
-.pa-vo-form { display: grid; grid-template-columns: 1fr 1.6fr; gap: var(--mp-spacing-3); align-items: end; margin-bottom: var(--mp-spacing-4); }
-.pa-box { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px); padding: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-3); }
-.pa-box-title { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.pa-choices { display: flex; gap: var(--mp-spacing-3); flex-wrap: wrap; }
-.pa-choice {
-  flex: 1; min-width: calc(var(--mp-sizes-16) * 4); text-align: left; cursor: pointer;
-  display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md, 6px);
-  background: var(--mp-background-neutral); padding: var(--mp-spacing-3) var(--mp-spacing-4);
-}
-.pa-choice:hover { background: var(--mp-background-neutral-hovered); }
-.pa-choice--picked { border-color: var(--mp-colors-border-selected); background: var(--mp-colors-background-success); }
-.pa-choice-body { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.pa-choice-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.pa-choice-desc { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md, 20px); }
 
 .pa-inline-form { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; }
 .pa-inline-amount { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap; }
@@ -1769,24 +1758,38 @@ watch(reviewChip, () => { setReviewPage(1) })
 .pa-actions { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-4); flex-wrap: wrap; }
 .pa-bar-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .pa-bar-actions { display: flex; gap: var(--mp-spacing-2); flex-wrap: wrap; }
-.pa-actions--tight { margin-top: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2); }
 
 /* ── Approval / status lines (no banners) ─────────────────────────────────── */
 .pa-statusline { display: flex; align-items: center; gap: var(--mp-spacing-3); flex-wrap: wrap; margin: 0; }
 .pa-statusline--plain { margin-top: var(--mp-spacing-4); }
 .pa-statusline-text { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
-/* Health figures use the shared stats band (caption above the figure) — same rules as BillsIndexPage. */
-.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
-.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
-.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
-.stat-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
-.stat-period { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
-.stat-amount { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
-.pa-health-stats { margin: 0; }
+/* Health figures use the shared stats band (caption above the figure) — same rules
+   as BillsIndexPage. Every selector is scoped to .pa-health-stats: a child
+   component's root carries this page's scope id too, so a bare `.stats-section`
+   rule here would override ProjectStatCards' own band. */
+.pa-health-stats {
+  margin: 0;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  gap: var(--mp-spacing-6); align-items: start;
+}
+.pa-health-stats .stat-card { min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.pa-health-stats .stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
+.pa-health-stats .stat-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.pa-health-stats .stat-period { margin: 0; font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.pa-health-stats .stat-amount { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
 
 /* ErpTablePage inside a card: no extra outer chrome. */
+/* The close gate's reason, promoted to an inline error once the button is
+   pressed too early (same tokens as .px-error on the expense form). */
+.pa-card-desc--error { color: var(--mp-text-danger); }
+
 .pa-erp-table { margin-top: var(--mp-spacing-3); }
+/* Cost lines leads with the filter bar instead of a title row, so the table page
+   drops that top margin and the bar takes the card head's 16px gap — the card
+   then keeps the same rhythm as the Billing schedule card beside it. */
+.pa-card > .pa-erp-table:first-child { margin-top: 0; }
+.pa-card > .pa-erp-table:first-child :deep(.erp-filter-bar) { margin-bottom: var(--mp-spacing-4); }
 .filter-left, .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .search-clear-btn {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
@@ -1794,13 +1797,23 @@ watch(reviewChip, () => { setReviewPage(1) })
   border: none; background: none; cursor: pointer; color: var(--mp-text-secondary);
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
-.pa-filter-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+/* Totals under the rows, right-aligned over the amount column
+   (SalesInvoiceDetailsPage › .detail-totals). */
+.pa-table-totals { display: flex; justify-content: flex-end; padding: var(--mp-spacing-4) 0 var(--mp-spacing-2); }
+.pa-total-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-6); min-width: calc(var(--mp-sizes-16) * 5);
+}
+.pa-total-label { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pa-total-amt { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); white-space: nowrap; }
 .pa-cellstack { display: flex; flex-direction: column; min-width: 0; }
 .pa-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* No negative margin pulling it under the cards — the stage's own gap sets the
+   rhythm, so the activity-log link sits a full step below the stats band. */
 .detail-updated {
-  margin: calc(-1 * var(--mp-spacing-4)) 0 0; align-self: flex-start;
+  align-self: flex-start;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
 }
 .detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }

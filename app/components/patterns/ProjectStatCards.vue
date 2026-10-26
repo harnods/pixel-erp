@@ -41,10 +41,16 @@ defineEmits<{ link: [key: string] }>()
 </template>
 
 <style scoped>
-/* Copied from BillsIndexPage's stats band so index and project pages match it. */
-.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+/* Copied from BillsIndexPage's stats band so index and project pages match it.
+   Grid, not flex: flex-grow shares only the LEFTOVER space, so a long figure made
+   its own column wider and the band fell off the page's column rhythm. Even
+   auto-columns put every card on the same pitch, whatever the figures read. */
+.stats-section {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  gap: var(--mp-spacing-6); align-items: start;
+}
 .stat-card {
-  flex: 1; min-width: 0;
+  min-width: 0;
   display: flex; flex-direction: column; gap: var(--mp-spacing-1);
   padding-right: var(--mp-spacing-6);
   align-self: stretch;
@@ -79,7 +85,8 @@ defineEmits<{ link: [key: string] }>()
 .stat-link:hover { text-decoration: underline; }
 
 @media (max-width: 640px) {
-  .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .stat-card { flex: 0 0 auto; }
+  /* Cards size to their content and the band scrolls, instead of four columns
+     crushing together on a phone. */
+  .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; grid-auto-columns: max-content; }
 }
 </style>

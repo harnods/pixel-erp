@@ -306,7 +306,7 @@ async function save() {
               >
                 <template #buttonAction>{{ t('Add new contact') }}</template>
               </MpAutocomplete>
-              <MpFormErrorMessage>{{ t('You must fill in customer') }}</MpFormErrorMessage>
+              <MpFormErrorMessage>{{ t('You must select customer') }}</MpFormErrorMessage>
             </MpFormControl>
             <MpFormControl id="pi-address">
               <MpFormLabel>{{ t('Billing address') }}</MpFormLabel>
@@ -419,7 +419,7 @@ async function save() {
             </tbody>
           </table>
         </div>
-        <p v-if="linesError" class="pi-error">{{ t('Enter a quantity and unit price on at least one line') }}</p>
+        <p v-if="linesError" class="pi-error">{{ t('You must fill in qty and unit price on at least one line') }}</p>
         <div v-if="amountErrors.length" class="pi-warnings">
           <p v-for="w in amountErrors" :key="w" class="pi-error pi-error--amount">
             <MpIcon name="error" size="sm" class="pi-warning-icon" />
@@ -480,7 +480,7 @@ async function save() {
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-3) var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -497,13 +497,13 @@ async function save() {
 .detail-subtitle { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
 }
 
-.pi-context { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px); padding: var(--mp-spacing-4); }
+.pi-context { border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px); padding: var(--mp-spacing-4); }
 .pi-context-title {
   margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary);
@@ -515,7 +515,7 @@ async function save() {
 .pi-head-col { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 
 /* ── Line table: NewExpensePage ex-* markup (FormTable.md) ───────────────── */
-.ex-table-section { border-bottom: 1px solid var(--mp-border-default); overflow-x: auto; }
+.ex-table-section { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); overflow-x: auto; }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
 .pi-lines { min-width: 980px; }
 .pi-col-product { width: 140px; }
@@ -529,17 +529,17 @@ async function save() {
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .ex-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .ex-th--del { padding: 0; }
 .ex-td {
   height: var(--mp-sizes-10, 40px); padding: 0; vertical-align: top;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
 .ex-td--input { position: relative; }
@@ -548,13 +548,13 @@ async function save() {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10, 40px);
   box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused); pointer-events: none; /* pixel-police-allow-shadow: focus ring, not a surface lift */
 }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 /* Pixel inputs carry an intrinsic min width; let them shrink to the column. */
 .ex-td--input :deep(.mp-input__root), .ex-td--input :deep(input) { min-width: 0; width: 100%; }
 /* Calculated cell: read-only, subtle fill, right-aligned figure. */
 .ex-td--readonly {
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) var(--mp-sizes-2\.5, 10px) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle); text-align: right; white-space: nowrap;
+  background: var(--mp-background-neutral-subtle, #f8f9f9); text-align: right; white-space: nowrap;
 }
 .ex-td--del { text-align: center; }
 .ex-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
@@ -565,7 +565,7 @@ async function save() {
 .ex-amount-prefix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
 .ex-amount-cell :deep(.mp-input__root) { flex: 1; min-width: 0; height: var(--mp-sizes-10, 40px); }
@@ -590,7 +590,7 @@ async function save() {
 .pi-foot-left { flex: 1; min-width: 280px; }
 .pi-hint { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .pi-totals { min-width: 300px; }
-.pi-total-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1\.5, 6px) 0; border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); }
+.pi-total-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1\.5, 6px) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md); }
 .pi-total-row--grand { border-bottom: none; padding-top: var(--mp-spacing-2\.5, 10px); font-size: var(--mp-font-sizes-lg, 18px); font-weight: var(--mp-font-weights-semi-bold); }
 .pi-total-key { color: var(--mp-text-secondary); }
 

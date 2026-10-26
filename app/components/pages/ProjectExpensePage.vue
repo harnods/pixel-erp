@@ -294,7 +294,7 @@ function cancel() {
             </tbody>
           </table>
         </div>
-        <p v-if="amountError" class="px-error">{{ t('Enter an amount on at least one line') }}</p>
+        <p v-if="amountError" class="px-error">{{ t('You must fill in amount on at least one line') }}</p>
 
         <div class="px-foot">
           <div class="px-foot-left">

@@ -137,7 +137,7 @@ describe('seed figures — the three engines side by side', () => {
       return acc
     }, {})
     expect(byStatus).toEqual({
-      'In progress': ['e1', 'e2', 'e3', 'e5', 'e6', 'e7'],
+      'In progress': ['e1', 'e2', 'e3', 'e5', 'e6', 'e7', 'e11'],
       'Pending approval': ['e8'],
       Rejected: ['e9'],
       Closed: ['e10'],
