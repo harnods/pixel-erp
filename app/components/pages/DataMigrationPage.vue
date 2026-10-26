@@ -19,6 +19,11 @@ import {
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
 import { DEFAULT_COA } from '~/data/wmsCutover'
 import { CATALOG } from '~/data/catalog'
+import { customers } from '~/data/customers'
+import { vendors } from '~/data/vendors'
+import { salesInvoices } from '~/data/salesInvoices'
+import { purchaseInvoices } from '~/data/purchaseInvoices'
+import { bills } from '~/data/bills'
 
 const { t } = useLocale()
 
@@ -148,6 +153,47 @@ function startProductImport() {
   }, 3000)
 }
 
+// ─── Contacts — Import ───────────────────────────────────────────────────────
+const contactStatus = ref<'idle' | 'running' | 'done'>('idle')
+const contactCount = computed(() => customers.length + vendors.length)
+
+function startContactImport() {
+  contactStatus.value = 'running'
+  setTimeout(() => {
+    contactStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Sales — Import ──────────────────────────────────────────────────────────
+const salesStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startSalesImport() {
+  salesStatus.value = 'running'
+  setTimeout(() => {
+    salesStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Purchases — Import ──────────────────────────────────────────────────────
+const purchasesStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startPurchasesImport() {
+  purchasesStatus.value = 'running'
+  setTimeout(() => {
+    purchasesStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Expenses — Import ───────────────────────────────────────────────────────
+const expensesStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startExpensesImport() {
+  expensesStatus.value = 'running'
+  setTimeout(() => {
+    expensesStatus.value = 'done'
+  }, 3000)
+}
+
 // ─── Save ────────────────────────────────────────────────────────────────────
 function validate(): boolean {
   for (const k of Object.keys(errors)) delete errors[k]
@@ -192,7 +238,7 @@ function save() {
       </nav>
 
       <!-- ── Right: Form ────────────────────────────────────────────────── -->
-      <div class="dm-form-area" :class="[activeStepId === 'opening-balance' || activeStepId === 'products' ? 'dm-form-area--fullbleed' : 'dm-form-area--narrow']">
+      <div class="dm-form-area" :class="[activeStepId === 'company-info' ? 'dm-form-area--narrow' : 'dm-form-area--fullbleed']">
       <!-- Company info form -->
       <template v-if="activeStepId === 'company-info'">
         <div class="dm-form-top">
@@ -387,6 +433,158 @@ function save() {
               <MpBannerIcon id="dm-prod-info-banner-icon" />
               <MpBannerDescription id="dm-prod-info-banner-desc">
                 {{ t('You can also') }} <a href="/product-list/new" class="dm-banner-link">{{ t('add a new product') }}</a> {{ t('directly from the product page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Contacts step -->
+      <template v-else-if="activeStepId === 'contacts'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import contacts') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your customer and vendor data to set up your contact list in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="contactStatus === 'idle'"
+              id="dm-contact-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startContactImport"
+            >
+              {{ t('Import contacts') }}
+            </MpButton>
+            <div v-else-if="contactStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing contacts...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" size="sm" color="icon.success" />
+              <span>{{ contactCount }} {{ t('contacts have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/customers" class="dm-status-link">{{ t('View contacts') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-contact-info-banner" variant="info">
+              <MpBannerIcon id="dm-contact-info-banner-icon" />
+              <MpBannerDescription id="dm-contact-info-banner-desc">
+                {{ t('You can also') }} <a href="/customers/new" class="dm-banner-link">{{ t('add a new contact') }}</a> {{ t('directly from the contacts page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Sales step -->
+      <template v-else-if="activeStepId === 'sales'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import sales') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your sales invoice data to set up your sales records in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="salesStatus === 'idle'"
+              id="dm-sales-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startSalesImport"
+            >
+              {{ t('Import sales') }}
+            </MpButton>
+            <div v-else-if="salesStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing sales...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" size="sm" color="icon.success" />
+              <span>{{ salesInvoices.length }} {{ t('sales invoices have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/sales-invoices" class="dm-status-link">{{ t('View sales invoices') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-sales-info-banner" variant="info">
+              <MpBannerIcon id="dm-sales-info-banner-icon" />
+              <MpBannerDescription id="dm-sales-info-banner-desc">
+                {{ t('You can also') }} <a href="/sales-invoices/new" class="dm-banner-link">{{ t('create a new sales invoice') }}</a> {{ t('directly from the sales page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Purchases step -->
+      <template v-else-if="activeStepId === 'purchases'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import purchases') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your purchase invoice data to set up your purchase records in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="purchasesStatus === 'idle'"
+              id="dm-purchases-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startPurchasesImport"
+            >
+              {{ t('Import purchases') }}
+            </MpButton>
+            <div v-else-if="purchasesStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing purchases...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" size="sm" color="icon.success" />
+              <span>{{ purchaseInvoices.length }} {{ t('purchase invoices have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/purchase-invoices" class="dm-status-link">{{ t('View purchase invoices') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-purchases-info-banner" variant="info">
+              <MpBannerIcon id="dm-purchases-info-banner-icon" />
+              <MpBannerDescription id="dm-purchases-info-banner-desc">
+                {{ t('You can also') }} <a href="/purchase-invoices/new" class="dm-banner-link">{{ t('create a new purchase invoice') }}</a> {{ t('directly from the purchases page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Expenses step -->
+      <template v-else-if="activeStepId === 'expenses'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import expenses') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your expense data to set up your expense records in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="expensesStatus === 'idle'"
+              id="dm-expenses-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startExpensesImport"
+            >
+              {{ t('Import expenses') }}
+            </MpButton>
+            <div v-else-if="expensesStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing expenses...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" size="sm" color="icon.success" />
+              <span>{{ bills.length }} {{ t('expenses have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/expenses" class="dm-status-link">{{ t('View expenses') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-expenses-info-banner" variant="info">
+              <MpBannerIcon id="dm-expenses-info-banner-icon" />
+              <MpBannerDescription id="dm-expenses-info-banner-desc">
+                {{ t('You can also') }} <a href="/expenses/new" class="dm-banner-link">{{ t('create a new expense') }}</a> {{ t('directly from the expenses page.') }}
               </MpBannerDescription>
             </MpBanner>
           </div>

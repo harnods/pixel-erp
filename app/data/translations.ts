@@ -2917,6 +2917,42 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "add a new product": "menambahkan produk baru",
   "directly from the product page.": "langsung dari halaman produk.",
 
+  // ── Data migration › Contacts
+  "Import contacts": "Impor kontak",
+  "Import your customer and vendor data to set up your contact list in Jurnal.": "Impor data pelanggan dan vendor untuk menyiapkan daftar kontak di Jurnal.",
+  "Importing contacts...": "Mengimpor kontak...",
+  "contacts have been imported": "kontak telah diimpor",
+  "View contacts": "Lihat kontak",
+  "add a new contact": "menambahkan kontak baru",
+  "directly from the contacts page.": "langsung dari halaman kontak.",
+
+  // ── Data migration › Sales
+  "Import sales": "Impor penjualan",
+  "Import your sales invoice data to set up your sales records in Jurnal.": "Impor data faktur penjualan untuk menyiapkan catatan penjualan di Jurnal.",
+  "Importing sales...": "Mengimpor penjualan...",
+  "sales invoices have been imported": "faktur penjualan telah diimpor",
+  "View sales invoices": "Lihat faktur penjualan",
+  "create a new sales invoice": "membuat faktur penjualan baru",
+  "directly from the sales page.": "langsung dari halaman penjualan.",
+
+  // ── Data migration › Purchases
+  "Import purchases": "Impor pembelian",
+  "Import your purchase invoice data to set up your purchase records in Jurnal.": "Impor data faktur pembelian untuk menyiapkan catatan pembelian di Jurnal.",
+  "Importing purchases...": "Mengimpor pembelian...",
+  "purchase invoices have been imported": "faktur pembelian telah diimpor",
+  "View purchase invoices": "Lihat faktur pembelian",
+  "create a new purchase invoice": "membuat faktur pembelian baru",
+  "directly from the purchases page.": "langsung dari halaman pembelian.",
+
+  // ── Data migration › Expenses
+  "Import expenses": "Impor pengeluaran",
+  "Import your expense data to set up your expense records in Jurnal.": "Impor data pengeluaran untuk menyiapkan catatan pengeluaran di Jurnal.",
+  "Importing expenses...": "Mengimpor pengeluaran...",
+  "expenses have been imported": "pengeluaran telah diimpor",
+  "View expenses": "Lihat pengeluaran",
+  "create a new expense": "membuat pengeluaran baru",
+  "directly from the expenses page.": "langsung dari halaman pengeluaran.",
+
   // ── Reports › Inventory — index + Dual Unit Inventory Report ──────────────────
   "View report": "Lihat laporan",
   "Coming soon": "Segera hadir",
