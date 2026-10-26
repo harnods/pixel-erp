@@ -429,6 +429,55 @@ function seed(): Engagement[] {
         amount: 120_000_000, submittedBy: 'Rina Wulandari', submittedAt: '2026-08-01', approvers: ['Rizal Candra'],
       }],
     }),
+    /**
+     * e8 / e9 / e10 exist so the index can show every status a project can hold —
+     * Pending approval, Rejected and Closed alongside In progress. Without them the
+     * Status column, its badge intents and the Status filter only ever render one
+     * value. Both approval requests sit above awf-005's Rp500.000.000 threshold, so
+     * the rule that gated them is the one Settings actually ships.
+     */
+    baseEngagement({
+      id: 'e8', name: 'Bandung Office Fit-Out', client: 'PT Mitra Sejahtera', pm: 'Rina Wulandari',
+      method: 'output', stage: 'setup', contractValue: 850_000_000, budget: 640_000_000,
+      milestones: [
+        { id: 'm1', label: 'Design sign-off', pct: 20, verified: false, invId: null, recognized: 0 },
+        { id: 'm2', label: 'Partition & ceiling works', pct: 50, verified: false, invId: null, recognized: 0 },
+        { id: 'm3', label: 'Handover', pct: 30, verified: false, invId: null, recognized: 0 },
+      ],
+      approvals: [{
+        id: 'apr-e8-1', action: 'project-creation', refId: null, ruleId: 'awf-005',
+        ruleName: 'Project Creation Rule 001', amount: 850_000_000,
+        submittedBy: 'Rina Wulandari', submittedAt: '2026-08-02', approvers: ['Rizal Candra', 'Budi Santoso'],
+      }],
+    }),
+    baseEngagement({
+      id: 'e9', name: 'Surabaya Cold Storage', client: 'PT Nusantara Pangan', pm: 'Yoga Prasetyo',
+      method: 'input', stage: 'setup', contractValue: 1_200_000_000, budget: 980_000_000,
+      approvals: [{
+        id: 'apr-e9-1', action: 'project-creation', refId: null, ruleId: 'awf-005',
+        ruleName: 'Project Creation Rule 001', amount: 1_200_000_000,
+        submittedBy: 'Yoga Prasetyo', submittedAt: '2026-07-29', approvers: ['Rizal Candra', 'Budi Santoso'],
+        rejectedBy: 'Rizal Candra', rejectedAt: '2026-07-30',
+        rejectReason: 'Budgeted cost leaves an 18% margin, below the 25% floor for cold-chain work. Reprice and resubmit.',
+      }],
+      approvalLog: [{
+        approvalId: 'apr-e9-1', action: 'project-creation', refId: null, decision: 'rejected',
+        by: 'Rizal Candra', date: '2026-07-30', submittedBy: 'Yoga Prasetyo',
+        reason: 'Budgeted cost leaves an 18% margin, below the 25% floor for cold-chain work. Reprice and resubmit.',
+      }],
+    }),
+    /** Closed: every cost reviewed and invoiced, the invoice paid, so wipNet is 0 —
+     *  the state canClose() demands before closeProject() will set closedAt. */
+    baseEngagement({
+      id: 'e10', name: 'Payroll Audit 2025', client: 'PT Harmoni Jaya', pm: 'Made Ardika',
+      method: 'tm', markupPct: 20, stage: 'closed', feeEstimate: 9_000_000, budget: 7_500_000,
+      entries: [
+        cost('Labor', 'Made Ardika — payroll testing', 'Internal payroll', '2026-06-18', 5_000_000, 'Expense', 'EXP-1058', 20, 'bill', true, 25),
+        cost('Labor', 'Dewi Kusuma — BPJS reconciliation', 'Internal payroll', '2026-06-25', 2_500_000, 'Expense', 'EXP-1069', 20, 'bill', true, 14),
+      ],
+      invoices: [{ id: 'INV-2176', label: 'Final billing', amount: 9_000_000, date: '2026-07-02', status: 'paid', paidDate: '2026-07-16' }],
+      closedAt: '2026-07-28', closedBy: 'Made Ardika',
+    }),
   ])
 }
 
@@ -469,9 +518,13 @@ export function formatIdrShort(n: number): string {
   return `Rp${Math.round(n || 0).toLocaleString('id-ID')}`
 }
 
-/** Negatives render in accounting parentheses: (Rp1.000,00). */
+/**
+ * Negatives take the sign before the symbol: -Rp1.000,00 (rule/format-idr,
+ * docs/patterns/currency-format.md). Accounting parentheses are the cash
+ * module's multi-currency convention only, not the house format.
+ */
 export function formatIdrSigned(n: number): string {
-  return n < 0 ? `(${formatIdr(-n)})` : formatIdr(n)
+  return n < 0 ? `-${formatIdr(-n)}` : formatIdr(n)
 }
 
 // ── Derived figures ──────────────────────────────────────────────────────────
@@ -1185,9 +1238,17 @@ export function saveExpense(input: { beneficiary: string; date: string; lines: E
   return { docNo, taggedIds, untagged: valid.length - tagged.length }
 }
 
-/** Projects selectable on a transaction line — closed projects are not taggable. */
+/**
+ * Projects selectable on a transaction line. Only a live project is taggable:
+ * a closed one no longer takes cost, and one still waiting on its creation
+ * approval — or rejected outright — has no approved contract to book against
+ * (its own tabs stay locked until approval). Status is read through
+ * `projectStatusKey` so this list can never drift from the Status column.
+ * `stage` is checked too: closing sets both, but a stage-only close still counts.
+ */
 export function projectOptions(): { id: string; name: string }[] {
-  return [{ id: '', name: 'No project' }, ...engagements.filter(e => e.stage !== 'closed').map(e => ({ id: e.id, name: e.name }))]
+  const taggable = engagements.filter(e => e.stage !== 'closed' && projectStatusKey(e) === 'in progress')
+  return [{ id: '', name: 'No project' }, ...taggable.map(e => ({ id: e.id, name: e.name }))]
 }
 
 // ── Portfolio-level rollups (index page stats) ───────────────────────────────

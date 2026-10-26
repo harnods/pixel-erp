@@ -469,7 +469,11 @@ describe('ProjectExpensePage', () => {
     const headers = w.findAll('th').map(th => th.text())
     expect(headers).toContain('Project')
     expect(headers).toContain('Hours')
-    expect(text).toContain('Drop your receipt file here')
+    // OCR autofill drop zone — the four-line pattern, each line a full sentence.
+    expect(text).toContain('Drop your file here or')
+    expect(text).toContain('Airene will read your file and fill in the details automatically.')
+    expect(text).toContain('Supported formats: PDF, PNG, JPG.')
+    expect(text).toContain('Maximum file size: 10 MB.')
     w.unmount()
   })
 

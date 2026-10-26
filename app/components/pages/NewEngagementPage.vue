@@ -273,7 +273,7 @@ function cancel() { router.push('/project-accounting') }
             <MpFormControl v-else id="ne-value" :is-required="valueRequired" :is-invalid="valueError">
               <MpFormLabel>{{ valueLabel }}</MpFormLabel>
               <MpInputGroup id="ne-value-group" is-full-width>
-                <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
                 <MpInput
                   id="ne-value-input" v-model="draft.value" type="number" is-full-width :is-invalid="valueError"
                   @update:model-value="valueError = false"
@@ -312,7 +312,7 @@ function cancel() { router.push('/project-accounting') }
             <MpFormControl id="ne-budget">
               <MpFormLabel>{{ t('Budgeted cost') }}</MpFormLabel>
               <MpInputGroup id="ne-budget-group" is-full-width>
-                <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                <MpInputLeftAddon has-background>Rp</MpInputLeftAddon>
                 <MpInput id="ne-budget-input" v-model="draft.budget" type="number" is-full-width />
               </MpInputGroup>
               <p class="ne-hint">{{ t('Filled from the selected budget. You can edit it.') }}</p>
@@ -320,15 +320,15 @@ function cancel() { router.push('/project-accounting') }
           </div>
 
           <!-- Cost plus margin only: the margin the contract entitles you to. -->
-          <div v-if="isCostPlus" class="ne-box ne-box--narrow">
+          <div v-if="isCostPlus" class="ne-grid ne-grid--3 ne-grid--next">
             <MpFormControl id="ne-markup" is-required>
               <MpFormLabel>{{ t('Agreed margin on cost') }}</MpFormLabel>
               <MpInputGroup id="ne-markup-group">
                 <MpInput id="ne-markup-input" v-model="draft.markup" type="number" />
-                <MpInputRightAddon>%</MpInputRightAddon>
+                <MpInputRightAddon has-background>%</MpInputRightAddon>
               </MpInputGroup>
+              <p class="ne-hint">{{ t('Charged on every reviewed cost line. Reviewers can waive it per line.') }}</p>
             </MpFormControl>
-            <p class="ne-hint">{{ t('Charged on every reviewed cost line. Reviewers can waive it per line.') }}</p>
           </div>
         </section>
 
@@ -336,7 +336,8 @@ function cancel() { router.push('/project-accounting') }
         <section class="ne-section">
           <h2 class="ne-section-title">{{ t('Project assignment') }}</h2>
           <p class="ne-hint ne-hint--lead">{{ t('Define who leads the project and who works on it.') }}</p>
-          <div class="ne-grid ne-grid--2">
+          <!-- Stacked, not paired: a select sits on its own row (rule/form-select-half). -->
+          <div class="ne-grid ne-grid--3 ne-assign-grid">
             <MpFormControl id="ne-pm">
               <MpFormLabel>{{ t('Project manager') }}</MpFormLabel>
               <MpAutocomplete
@@ -344,7 +345,6 @@ function cancel() { router.push('/project-accounting') }
                 label-prop="name" value-prop="name" use-portal is-full-width
                 :placeholder="t('Select project manager')"
               />
-              <p class="ne-hint">{{ t('Users with the Owner, Ultimate or Project Manager role') }}</p>
             </MpFormControl>
 
             <MpFormControl id="ne-team">
@@ -365,7 +365,6 @@ function cancel() { router.push('/project-accounting') }
                   {{ t('Add team member') }}
                 </MpButton>
               </div>
-              <p class="ne-hint">{{ t('What each member can see follows their own role permissions') }}</p>
             </MpFormControl>
           </div>
         </section>
@@ -382,7 +381,7 @@ function cancel() { router.push('/project-accounting') }
             <MpInput :id="`ne-ms-label-${m.id}`" v-model="m.label" is-full-width :aria-label="t('Milestone name')" />
             <MpInputGroup :id="`ne-ms-pct-group-${m.id}`" class="ne-line-pct">
               <MpInput :id="`ne-ms-pct-${m.id}`" v-model="m.pct" type="number" :aria-label="t('Weight')" @update:model-value="weightsError = false" />
-              <MpInputRightAddon>%</MpInputRightAddon>
+              <MpInputRightAddon has-background>%</MpInputRightAddon>
             </MpInputGroup>
             <MpButton
               variant="ghost" is-rounded left-icon="minus-circular" class="ne-line-remove"
@@ -430,7 +429,7 @@ function cancel() { router.push('/project-accounting') }
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-3) var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -446,14 +445,14 @@ function cancel() { router.push('/project-accounting') }
 }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
 }
 
 /* ── Form ────────────────────────────────────────────────────────────────── */
 .ne-form { max-width: 960px; }
-.ne-section { padding: var(--mp-spacing-6) 0; border-bottom: 1px solid var(--mp-border-default); }
+.ne-section { padding: var(--mp-spacing-6) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ne-section:first-child { padding-top: 0; }
 .ne-section-title {
   margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-xl, 20px);
@@ -466,22 +465,25 @@ function cancel() { router.push('/project-accounting') }
 .ne-grid { display: grid; gap: var(--mp-spacing-4); }
 .ne-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ne-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Project assignment stacks: Team members sits under Project manager, and the
+   PM select keeps its half width rather than stretching (rule/form-select-half). */
+/* Both assignment fields sit in the first column of the 3-column grid, so each is
+   one column wide and lines up with the fields above, while still stacking —
+   a select keeps its own row and never stretches (rule/form-select-half). */
+.ne-assign-grid > * { grid-column: 1; }
 
 /* Surfaces are separated by a 1px border, never a drop-shadow (DESIGN.md). */
-.ne-box {
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px);
-  padding: var(--mp-spacing-4); margin-top: var(--mp-spacing-4);
-}
-.ne-box--narrow { max-width: 520px; }
+/* A grid row that follows another one needs the same gap between them. */
+.ne-grid--next { margin-top: var(--mp-spacing-4); }
 
 /* ── Method picker ───────────────────────────────────────────────────────── */
 .ne-methods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mp-spacing-3); }
 .ne-method {
   display: flex; flex-direction: column; gap: var(--mp-spacing-1); text-align: left; cursor: pointer;
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px);
-  background: var(--mp-background-neutral); padding: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px);
+  background: var(--mp-background-neutral, #ffffff); padding: var(--mp-spacing-4);
 }
-.ne-method:hover { background: var(--mp-background-neutral-hovered); }
+.ne-method:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .ne-method--picked, .ne-method--picked:hover { border-color: var(--mp-colors-border-selected); background: var(--mp-colors-background-success); }
 .ne-method--invalid { border-color: var(--mp-colors-border-danger); }
 .ne-method-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -496,14 +498,14 @@ function cancel() { router.push('/project-accounting') }
 /* ── Selected team members (mirrors the Cash account access picker) ──────── */
 .ne-sel-list {
   display: flex; flex-direction: column;
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px);
   margin-bottom: var(--mp-spacing-3); overflow: hidden;
 }
 .ne-sel-row {
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
 }
-.ne-sel-row + .ne-sel-row { border-top: 1px solid var(--mp-border-default); }
+.ne-sel-row + .ne-sel-row { border-top: 1px solid var(--mp-border-default, #e3e7e9); }
 .ne-sel-info { display: flex; flex-direction: column; min-width: 0; }
 .ne-sel-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ne-sel-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }

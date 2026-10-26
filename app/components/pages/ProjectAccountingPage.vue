@@ -8,7 +8,7 @@
  * drawer, pill search, checkbox bulk bar, first-load skeleton, ScenarioFab.
  */
 import {
-  MpBadge, MpButton, MpIcon, MpButtonGroup, MpTooltip,
+  MpButton, MpIcon, MpButtonGroup, MpTooltip,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -382,10 +382,11 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
         </div>
       </template>
 
-      <!-- ── Method: one neutral badge; the tooltip carries the meaning ── -->
+      <!-- ── Method: plain cell text (rule/table-cell-text-plain); the tooltip carries
+           the meaning. A badge here read as a second status beside the real one. ── -->
       <template #cell-methodName="{ row }">
         <MpTooltip :label="asRow(row).methodFormal" placement="top">
-          <MpBadge for="tableStatus" type="announcement">{{ asRow(row).methodName }}</MpBadge>
+          <span class="pa-trunc">{{ asRow(row).methodName }}</span>
         </MpTooltip>
       </template>
 
@@ -457,7 +458,7 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
 .pa-cell { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .pa-name {
   display: block; max-width: 100%;
-  text-align: left; font-weight: var(--mp-font-weights-semi-bold);
+  text-align: left;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pa-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-0\.5); }
@@ -474,7 +475,7 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
 .pa-spend-pct[data-tone='none'] { color: var(--mp-text-secondary); font-weight: var(--mp-font-weights-regular); }
 
 /* 6px rail: bar heights have no token (accepted no-token exception). */
-.pa-bar { flex: none; width: 100%; height: 6px; border-radius: var(--mp-radii-full); background: var(--mp-background-neutral-subtle); overflow: hidden; }
+.pa-bar { flex: none; width: 100%; height: 6px; border-radius: var(--mp-radii-full); background: var(--mp-background-neutral-subtle, #f8f9f9); overflow: hidden; }
 .pa-bar-fill { height: 100%; border-radius: var(--mp-radii-full); }
 .pa-bar-fill[data-tone='ok'] { background: var(--mp-colors-background-success-bold); }
 .pa-bar-fill[data-tone='near'] { background: var(--mp-colors-orange-600); }
@@ -491,7 +492,7 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
   display: inline-flex; align-items: center; white-space: nowrap;
   padding: var(--mp-spacing-1) var(--mp-spacing-3);
   border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
 }
 
@@ -504,17 +505,17 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
 .filter-all-btn {
   display: inline-flex !important; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-2) var(--mp-spacing-3) !important;
-  background: var(--mp-background-neutral) !important;
-  border: 1px solid var(--mp-border-bold) !important;
+  background: var(--mp-background-neutral, #ffffff) !important;
+  border: 1px solid var(--mp-border-bold, #8c9596) !important;
   border-radius: var(--mp-radii-full) !important;
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary) !important;
   cursor: pointer;
 }
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered) !important; }
+.filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3) !important; }
 .filter-all-btn--active {
-  background: var(--mp-background-neutral-subtle) !important;
+  background: var(--mp-background-neutral-subtle, #f8f9f9) !important;
   border-color: var(--mp-colors-border-bold) !important;
   color: var(--mp-text-link) !important;
 }
@@ -522,8 +523,8 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2); width: var(--filter-search-w, 248px);
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral, #ffffff);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-full);
   color: var(--mp-text-subtle);
 }
@@ -539,7 +540,7 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
   color: var(--mp-colors-icon-default);
   border-radius: var(--mp-radii-full);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Empty state */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

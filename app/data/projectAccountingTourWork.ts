@@ -124,6 +124,46 @@ export function sampleEngagements(): Engagement[] {
         amount: 120_000_000, submittedBy: 'Rina Wulandari', submittedAt: '2026-08-01', approvers: ['Rizal Candra'],
       }],
     }),
+    eng({
+      id: 'e8', name: 'Bandung Office Fit-Out', client: 'PT Mitra Sejahtera', pm: 'Rina Wulandari',
+      method: 'output', stage: 'setup', contractValue: 850_000_000, budget: 640_000_000,
+      milestones: [
+        { id: 'm1', label: 'Design sign-off', pct: 20, verified: false, invId: null, recognized: 0 },
+        { id: 'm2', label: 'Partition & ceiling works', pct: 50, verified: false, invId: null, recognized: 0 },
+        { id: 'm3', label: 'Handover', pct: 30, verified: false, invId: null, recognized: 0 },
+      ],
+      approvals: [{
+        id: 'apr-e8-1', action: 'project-creation', refId: null, ruleId: 'awf-005',
+        ruleName: 'Project Creation Rule 001', amount: 850_000_000,
+        submittedBy: 'Rina Wulandari', submittedAt: '2026-08-02', approvers: ['Rizal Candra', 'Budi Santoso'],
+      }],
+    }),
+    eng({
+      id: 'e9', name: 'Surabaya Cold Storage', client: 'PT Nusantara Pangan', pm: 'Yoga Prasetyo',
+      method: 'input', stage: 'setup', contractValue: 1_200_000_000, budget: 980_000_000,
+      approvals: [{
+        id: 'apr-e9-1', action: 'project-creation', refId: null, ruleId: 'awf-005',
+        ruleName: 'Project Creation Rule 001', amount: 1_200_000_000,
+        submittedBy: 'Yoga Prasetyo', submittedAt: '2026-07-29', approvers: ['Rizal Candra', 'Budi Santoso'],
+        rejectedBy: 'Rizal Candra', rejectedAt: '2026-07-30',
+        rejectReason: 'Budgeted cost leaves an 18% margin, below the 25% floor for cold-chain work. Reprice and resubmit.',
+      }],
+      approvalLog: [{
+        approvalId: 'apr-e9-1', action: 'project-creation', refId: null, decision: 'rejected',
+        by: 'Rizal Candra', date: '2026-07-30', submittedBy: 'Yoga Prasetyo',
+        reason: 'Budgeted cost leaves an 18% margin, below the 25% floor for cold-chain work. Reprice and resubmit.',
+      }],
+    }),
+    eng({
+      id: 'e10', name: 'Payroll Audit 2025', client: 'PT Harmoni Jaya', pm: 'Made Ardika',
+      method: 'tm', markupPct: 20, stage: 'closed', feeEstimate: 9_000_000, budget: 7_500_000,
+      entries: [
+        cost('Labor', 'Made Ardika — payroll testing', 'Internal payroll', '2026-06-18', 5_000_000, 'Expense', 'EXP-1058', 20, 'bill', true, 25),
+        cost('Labor', 'Dewi Kusuma — BPJS reconciliation', 'Internal payroll', '2026-06-25', 2_500_000, 'Expense', 'EXP-1069', 20, 'bill', true, 14),
+      ],
+      invoices: [{ id: 'INV-2176', label: 'Final billing', amount: 9_000_000, date: '2026-07-02', status: 'paid', paidDate: '2026-07-16' }],
+      closedAt: '2026-07-28', closedBy: 'Made Ardika',
+    }),
   ]
 }
 

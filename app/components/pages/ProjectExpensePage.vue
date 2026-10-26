@@ -45,6 +45,18 @@ const date = ref(toDisplayDate(TODAY))
 const reference = ref('')
 const memo = ref('')
 
+/**
+ * Receipt drop zone. The `choose` link is the drop zone's documented click and
+ * keyboard affordance, so it opens a real picker rather than decorating the
+ * strip — the chosen file's name then stands in for the prompt. Reading the
+ * file is Airene's job and is not part of this prototype.
+ */
+const receiptInput = ref<HTMLInputElement | null>(null)
+const receiptName = ref('')
+function onReceiptPick(e: Event) {
+  receiptName.value = (e.target as HTMLInputElement).files?.[0]?.name ?? ''
+}
+
 /** Every line, new ones included, starts on the project the form was opened from. */
 function blankLine(account: string): ExpenseDraftLine {
   return { id: nextId(), account, description: '', project: presetProject, hours: '', tax: 'No tax', amount: '' }
@@ -159,13 +171,20 @@ function cancel() {
       <!-- ── Receipt autofill: one compact strip above the form, so the line
            table keeps the full stage width ── -->
       <div class="px-dropzone">
-        <MpIcon name="sparkle" size="sm" class="px-dropzone-icon" />
+        <MpIcon name="upload" size="sm" class="px-dropzone-icon" />
         <div class="px-dropzone-text">
-          <p class="px-dropzone-title">{{ t('Drop your receipt file here') }}</p>
-          <p class="px-dropzone-desc">
-            {{ t('Airene fills in the details from your receipt. File must be in PDF, PNG or JPG with a maximum of 10 MB') }}
+          <p class="px-dropzone-title">
+            {{ receiptName || t('Drop your file here or') }}
+            <MpTextlink v-if="!receiptName" @click="receiptInput?.click()">{{ t('choose') }}</MpTextlink>
           </p>
+          <p class="px-dropzone-desc">{{ t('Airene will read your file and fill in the details automatically.') }}</p>
+          <p class="px-dropzone-desc">{{ t('Supported formats: PDF, PNG, JPG.') }}</p>
+          <p class="px-dropzone-desc">{{ t('Maximum file size: 10 MB.') }}</p>
         </div>
+        <input
+          ref="receiptInput" class="px-dropzone-input" type="file" accept=".pdf,.png,.jpg,.jpeg"
+          :aria-label="t('Drop your file here or')" @change="onReceiptPick"
+        >
       </div>
 
       <!-- ── Document ── -->
@@ -314,7 +333,7 @@ function cancel() {
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; min-height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: var(--mp-spacing-3) var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -330,7 +349,7 @@ function cancel() {
 }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
+  background: var(--mp-background-stage, #ffffff); border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-8);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
@@ -338,7 +357,7 @@ function cancel() {
 
 /* ── Budget context strip ─────────────────────────────────────────────────── */
 .px-context {
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg, 8px);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-lg, 8px);
   padding: var(--mp-spacing-4);
 }
 .px-context-title {
@@ -349,20 +368,21 @@ function cancel() {
 /* ── Receipt autofill strip ───────────────────────────────────────────────── */
 .px-dropzone {
   display: flex; align-items: center; gap: var(--mp-spacing-3);
-  border: 1px dashed var(--mp-border-bold); border-radius: var(--mp-radii-lg, 8px);
+  border: 1px dashed var(--mp-border-bold, #8c9596); border-radius: var(--mp-radii-lg, 8px);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
 }
 .px-dropzone-icon { flex-shrink: 0; color: var(--mp-text-secondary); }
 .px-dropzone-text { min-width: 0; }
 .px-dropzone-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .px-dropzone-desc { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.px-dropzone-input { display: none; }
 
 .px-doc { min-width: 0; }
 .px-head-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-5); }
 .px-banner { margin-bottom: var(--mp-spacing-4); }
 
 /* ── Line table: NewExpensePage ex-* markup (FormTable.md) ───────────────── */
-.ex-table-section { border-bottom: 1px solid var(--mp-border-default); }
+.ex-table-section { border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-table { width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0; }
 /* Fits a 1280 stage without scrolling: Description takes what is left. */
 .px-col-account { width: 224px; }
@@ -374,17 +394,17 @@ function cancel() {
 .ex-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   text-transform: uppercase; color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .ex-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .ex-th--del { padding: 0; }
 .ex-td {
   height: var(--mp-sizes-10, 40px); padding: 0; vertical-align: top;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .ex-tr:last-child .ex-td { border-bottom: none; }
 .ex-td--input { position: relative; }
@@ -393,7 +413,7 @@ function cancel() {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10, 40px);
   box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused); pointer-events: none; /* pixel-police-allow-shadow: focus ring, not a surface lift */
 }
-.ex-td--border { border-right: 1px solid var(--mp-border-default); }
+.ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 /* Pixel inputs carry an intrinsic min width; let them shrink to the column. */
 .ex-td--input :deep(.mp-input__root), .ex-td--input :deep(input) { min-width: 0; width: 100%; }
 .ex-td--del { text-align: center; }
@@ -407,7 +427,7 @@ function cancel() {
 .ex-amount-prefix {
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   padding: 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
 }
 .ex-amount-cell :deep(.mp-input__root) { flex: 1; min-width: 0; height: var(--mp-sizes-10, 40px); }
@@ -426,7 +446,7 @@ function cancel() {
 .px-foot-left { flex: 1; min-width: 280px; display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-5); }
 .px-hint { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .px-totals { min-width: 260px; }
-.px-total-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1\.5, 6px) 0; border-bottom: 1px solid var(--mp-border-default); font-size: var(--mp-font-sizes-md); }
+.px-total-row { display: flex; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-1\.5, 6px) 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9); font-size: var(--mp-font-sizes-md); }
 .px-total-row--grand { border-bottom: none; padding-top: var(--mp-spacing-2\.5, 10px); font-size: var(--mp-font-sizes-lg, 18px); font-weight: var(--mp-font-weights-semi-bold); }
 .px-total-key { color: var(--mp-text-secondary); }
 .px-num { font-variant-numeric: tabular-nums; }

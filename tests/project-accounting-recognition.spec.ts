@@ -32,7 +32,7 @@ import {
   closeEngagement, saveExpense, projectOptions, portfolioTotals,
   invoiceLineAmount, invoiceLineTax, draftWeightSum, methodLabel,
   approveRequest, rejectRequest, approvalFor, pendingVos, submitMilestoneVerification,
-  projectStatusLabel, projectStatusKey, resubmitEngagement, draftFromEngagement,
+  projectStatusLabel, projectStatusKey, resubmitEngagement, draftFromEngagement, formatIdrSigned,
   reopenEngagement, canReopen, billingStatusOf,
   TODAY, type EngagementDraft, type RecognitionMethod,
 } from '~/data/projectAccounting'
@@ -128,8 +128,20 @@ describe('seed figures — the three engines side by side', () => {
     expect(portfolioTotals().pendingAddenda).toBe(1)
   })
 
-  it('every seeded project reads In progress', () => {
-    expect(engagements.map(projectStatusLabel)).toEqual(Array(6).fill('In progress'))
+  // The seed covers every status a project can hold, so the Status column, its badge
+  // intents and the Status filter all have something to render. Six working projects,
+  // plus one of each terminal/gated state.
+  it('the seed reaches all four statuses', () => {
+    const byStatus = engagements.reduce<Record<string, string[]>>((acc, e) => {
+      (acc[projectStatusLabel(e)] ??= []).push(e.id)
+      return acc
+    }, {})
+    expect(byStatus).toEqual({
+      'In progress': ['e1', 'e2', 'e3', 'e5', 'e6', 'e7'],
+      'Pending approval': ['e8'],
+      Rejected: ['e9'],
+      Closed: ['e10'],
+    })
   })
 })
 
@@ -147,6 +159,20 @@ describe('entryFinal — what the customer is actually charged', () => {
 
   it('absorb charges the customer nothing', () => {
     expect(entryFinal({ ...line, decision: 'absorb' })).toBe(0)
+  })
+})
+
+// rule/format-idr: the sign goes before the symbol. Accounting parentheses are
+// the cash module's multi-currency convention, never the house format.
+describe('formatIdrSigned', () => {
+  it('puts a minus before the symbol, not parentheses', () => {
+    expect(formatIdrSigned(-965_000_000)).toBe('-Rp965.000.000,00')
+    expect(formatIdrSigned(-1_000)).not.toContain('(')
+  })
+
+  it('leaves a positive and zero unsigned', () => {
+    expect(formatIdrSigned(1_000)).toBe('Rp1.000,00')
+    expect(formatIdrSigned(0)).toBe('Rp0,00')
   })
 })
 
@@ -865,6 +891,28 @@ describe('projectOptions', () => {
 
     e.stage = 'closed'
     expect(projectOptions().some(o => o.id === e.id)).toBe(false)
+  })
+
+  // Cost can only be booked against a live contract. A project still waiting on
+  // its creation approval, or rejected, has none — its own tabs stay locked.
+  it('hides projects that are pending approval or rejected', () => {
+    const e = make('input', { name: 'Awaiting approval' })
+    expect(projectOptions().some(o => o.id === e.id)).toBe(true)
+
+    e.approvals = [{
+      id: 'apr-x', action: 'project-creation', refId: null, ruleId: 'awf-005',
+      ruleName: 'Project Creation Rule 001', amount: e.contractValue,
+      submittedBy: 'Rina Wulandari', submittedAt: TODAY, approvers: ['Rizal Candra'],
+    }]
+    expect(projectStatusLabel(e)).toBe('Pending approval')
+    expect(projectOptions().some(o => o.id === e.id)).toBe(false)
+
+    e.approvals[0]!.rejectedBy = 'Rizal Candra'
+    expect(projectStatusLabel(e)).toBe('Rejected')
+    expect(projectOptions().some(o => o.id === e.id)).toBe(false)
+
+    e.approvals = []
+    expect(projectOptions().some(o => o.id === e.id)).toBe(true)
   })
 })
 
