@@ -156,7 +156,52 @@ function build(): SalesOrder[] {
   return out
 }
 
-export const salesOrders: SalesOrder[] = build()
+/**
+ * Contract orders for the percentage-based delivery work — the shape the PRD's
+ * worked example uses: a 1-lot service line (a percentage of it is the only way
+ * to express progress) beside a counted product line whose percentages do not
+ * land on whole units. 33% of 16 unit is 5,28, which is exactly the number a
+ * user has to work out by hand today.
+ *
+ * SO101 mirrors the PRD example. SO102 is mid-contract on one line only, so the
+ * order reads `Mixed`. SO103 is fully delivered — the state where the delivery
+ * action is disabled. See docs/plans/percentage-based-sales-delivery.md.
+ */
+/** Same derivation the generated orders use, so a contract order satisfies the
+ *  single-source-of-truth rule in tests/sales-order-totals.spec.ts: items drive
+ *  the total, and the status drives the balance due. */
+function contractOrder(
+  id: string, number: number, customerIndex: number, date: string, dueDate: string,
+  status: SalesOrderStatus, items: SalesOrderItem[],
+): SalesOrder {
+  const customer = CUSTOMERS[customerIndex]!
+  const { total } = computeTotals(items, 0, 0)
+  const balanceDue =
+    status === 'closed' || status === 'voided' ? 0
+    : status === 'partially processed' ? Math.round(total / 2 / 50_000) * 50_000
+    : total
+  return {
+    id, number, customer: { id: customer.id, name: customer.name },
+    date, dueDate, status, balanceDue, total, tags: ['Contract'],
+    items, globalDiscount: 0, shippingFee: 0,
+  }
+}
+
+const CONTRACT_ORDERS: SalesOrder[] = [
+  contractOrder('SO101', 10190, 14, '2026-02-02', '2026-08-02', 'partially processed', [
+    { product: 'Instalasi & commissioning', sku: 'SRV-INST', description: 'Termin contract — site installation', qty: 1, unit: 'lot', unitPrice: 600_000_000, discountPct: 0, amount: 600_000_000 },
+    { product: 'Panel Listrik', sku: 'PNL-16', description: 'Electrical panel, staged supply', qty: 16, unit: 'unit', unitPrice: 25_000_000, discountPct: 0, amount: 400_000_000 },
+  ]),
+  contractOrder('SO102', 10191, 2, '2026-03-09', '2026-09-09', 'partially processed', [
+    { product: 'Jasa pemeliharaan', sku: 'SRV-MTN', description: 'Annual maintenance — termin', qty: 1, unit: 'lot', unitPrice: 200_000_000, discountPct: 0, amount: 200_000_000 },
+    { product: 'Mesin Kopi Komersial', sku: 'MCH-COM', description: 'Commercial machine, staged supply', qty: 4, unit: 'unit', unitPrice: 25_000_000, discountPct: 0, amount: 100_000_000 },
+  ]),
+  contractOrder('SO103', 10192, 5, '2026-01-12', '2026-06-12', 'closed', [
+    { product: 'Jasa instalasi', sku: 'SRV-FIT', description: 'Fit-out, delivered in full', qty: 1, unit: 'lot', unitPrice: 150_000_000, discountPct: 0, amount: 150_000_000 },
+  ]),
+]
+
+export const salesOrders: SalesOrder[] = [...build(), ...CONTRACT_ORDERS]
 
 // User-created orders (New sales order form) survive a reload — appended after the seed.
 const CREATED_KEY = 'sales-orders-created'

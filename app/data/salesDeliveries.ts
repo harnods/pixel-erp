@@ -1,4 +1,5 @@
-import type { SalesDelivery, FulfillmentStatus, BillingStatus } from './types'
+import type { SalesDelivery, SDDeliveryLine, FulfillmentStatus, BillingStatus } from './types'
+import { loadCreated, saveCreated } from './persist'
 
 /**
  * Mock sales deliveries for a wholesale + retail coffee business
@@ -86,4 +87,132 @@ function build(): SalesDelivery[] {
   return out
 }
 
-export const salesDeliveries: SalesDelivery[] = build()
+/** A percentage of the ordered quantity, truncated to six decimals (PRD R-03, E-04). */
+export function derivedQty(orderedQty: number, percent: number): number {
+  return Math.trunc(orderedQty * (percent / 100) * 1e6) / 1e6
+}
+
+/**
+ * Tranche deliveries against the contract orders in salesOrders.ts. These are the
+ * records the percentage work reads: each line keeps the mode and the figure the
+ * user typed beside the quantity it produced, so the audit trail is real data and
+ * not a display trick.
+ *
+ * SO101 follows the PRD's worked example — 40% then 33% on both lines, leaving 27%.
+ * SO102 is deliberately uneven: the service line is at 50%, the machine line
+ * untouched, so the order reads `Mixed`. SO103 is complete at 100%.
+ */
+const SRV = (i: number, product: string, sku: string, description: string, qty: number, mode: 'qty' | 'percent', value: number): SDDeliveryLine =>
+  ({ orderLineIndex: i, product, sku, description, unit: 'lot', qty, inputMode: mode, inputValue: value })
+const UNIT = (i: number, product: string, sku: string, description: string, qty: number, mode: 'qty' | 'percent', value: number): SDDeliveryLine =>
+  ({ orderLineIndex: i, product, sku, description, unit: 'unit', qty, inputMode: mode, inputValue: value })
+
+const CONTRACT_DELIVERIES: SalesDelivery[] = [
+  {
+    id: 'SD101', number: 20101, customer: { id: 'C015', name: 'Distributor Sentra Boga' },
+    date: '2026-03-02', fulfillmentStatus: 'partially delivered', billingStatus: 'invoiced',
+    total: 400_000_000, tags: ['Contract'], orderId: 'SO101',
+    items: [
+      SRV(0, 'Instalasi & commissioning', 'SRV-INST', 'Termin 1 — 40%', derivedQty(1, 40), 'percent', 40),
+      UNIT(1, 'Panel Listrik', 'PNL-16', 'Termin 1 — 40%', derivedQty(16, 40), 'percent', 40),
+    ],
+  },
+  {
+    id: 'SD102', number: 20102, customer: { id: 'C015', name: 'Distributor Sentra Boga' },
+    date: '2026-04-06', fulfillmentStatus: 'partially delivered', billingStatus: 'unbilled',
+    total: 330_000_000, tags: ['Contract'], orderId: 'SO101',
+    items: [
+      SRV(0, 'Instalasi & commissioning', 'SRV-INST', 'Termin 2 — 33%', derivedQty(1, 33), 'percent', 33),
+      UNIT(1, 'Panel Listrik', 'PNL-16', 'Termin 2 — 33%', derivedQty(16, 33), 'percent', 33),
+    ],
+  },
+  {
+    id: 'SD103', number: 20103, customer: { id: 'C003', name: 'Hotel Mulia Senayan' },
+    date: '2026-04-20', fulfillmentStatus: 'partially delivered', billingStatus: 'unbilled',
+    total: 100_000_000, tags: ['Contract'], orderId: 'SO102',
+    items: [SRV(0, 'Jasa pemeliharaan', 'SRV-MTN', 'Termin 1 — 50%', derivedQty(1, 50), 'percent', 50)],
+  },
+  {
+    id: 'SD104', number: 20104, customer: { id: 'C006', name: 'Kopi Kenangan Pusat' },
+    date: '2026-02-18', fulfillmentStatus: 'delivered', billingStatus: 'invoiced',
+    total: 150_000_000, tags: ['Contract'], orderId: 'SO103',
+    items: [SRV(0, 'Jasa instalasi', 'SRV-FIT', 'Delivered in full', 1, 'percent', 100)],
+  },
+]
+
+export const salesDeliveries: SalesDelivery[] = [...build(), ...CONTRACT_DELIVERIES]
+
+/**
+ * Delivered-to-date per sales order line, keyed by the line's index in
+ * SalesOrder.items. The single source for progress-so-far (PRD R-05), the
+ * over-delivery check (R-06) and Fill Remaining (R-14) — all three must read the
+ * same number or they can disagree. Percent is always against the ORDERED
+ * quantity, never the remaining balance (R-02), so the caller supplies it.
+ */
+export function deliveredByLine(orderId: string): Record<number, number> {
+  const out: Record<number, number> = {}
+  for (const d of salesDeliveries) {
+    if (d.orderId !== orderId || !d.items) continue
+    for (const l of d.items) out[l.orderLineIndex] = (out[l.orderLineIndex] ?? 0) + l.qty
+  }
+  return out
+}
+
+/**
+ * OD-003. A released lock is permanent and one way: the line becomes QTY forever
+ * (R-16). Releases are user actions, so they persist like any other created
+ * record rather than being regenerated with the seed.
+ */
+export interface InputBasisRelease {
+  orderId: string
+  orderLineIndex: number
+  by: string
+  reason: string
+  date: string
+}
+const RELEASE_KEY = 'sales-delivery-basis-releases'
+export const inputBasisReleases: InputBasisRelease[] = loadCreated<InputBasisRelease>(RELEASE_KEY)
+
+function isReleased(orderId: string, orderLineIndex: number): boolean {
+  return inputBasisReleases.some(r => r.orderId === orderId && r.orderLineIndex === orderLineIndex)
+}
+
+/**
+ * The delivery that locked a line to PERCENT, or null when the line is free
+ * (R-08 → R-10). Only PERCENT locks — a line first delivered by quantity stays
+ * open to either mode. Returns the FIRST delivery by date, because that is the
+ * one that set the basis and the one the hint has to name.
+ */
+export function lineLock(orderId: string, orderLineIndex: number): { id: string; number: number; date: string } | null {
+  if (isReleased(orderId, orderLineIndex)) return null
+  const locking = salesDeliveries
+    .filter(d => d.orderId === orderId && d.items?.some(l => l.orderLineIndex === orderLineIndex && l.inputMode === 'percent'))
+    .sort((a, b) => a.date.localeCompare(b.date))[0]
+  return locking ? { id: locking.id, number: locking.number, date: locking.date } : null
+}
+
+/** The input mode a line is locked to, or null when it is still free. */
+export function lineInputBasis(orderId: string, orderLineIndex: number): 'percent' | null {
+  return lineLock(orderId, orderLineIndex) ? 'percent' : null
+}
+
+/**
+ * Whether the current user may release a lock. The prototype has no sales
+ * permission model, so this is the single place a real check would go — the PRD
+ * requires it to be permissioned (R-16), and that requirement is recorded here
+ * rather than silently dropped.
+ */
+export function canReleaseInputBasis(): boolean {
+  return true
+}
+
+/** Release a PERCENT lock — one way, reason required, written to the trail (R-16). */
+export function releaseInputBasis(orderId: string, orderLineIndex: number, by: string, reason: string): boolean {
+  if (!canReleaseInputBasis()) return false
+  if (!reason.trim()) return false
+  if (isReleased(orderId, orderLineIndex)) return false
+  const entry: InputBasisRelease = { orderId, orderLineIndex, by, reason: reason.trim(), date: new Date().toISOString().slice(0, 10) }
+  inputBasisReleases.push(entry)
+  saveCreated(RELEASE_KEY, inputBasisReleases)
+  return true
+}

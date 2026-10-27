@@ -422,7 +422,7 @@ const bulkDeleteTitle = computed(() => bulkSelectedCount.value === 1
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as Row).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="router.push('/sales-deliveries/new')">{{ t('Create sales delivery') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="router.push({ path: '/sales-deliveries/new', query: { order: (row as Row).id } })">{{ t('Create sales delivery') }}</MpPopoverListItem>
             <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
             <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
             <MpPopoverListItem v-if="canMarkCompleted((row as Row).status)" @click="openMarkComplete(row as Row)">{{ t('Mark as completed') }}</MpPopoverListItem>

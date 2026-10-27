@@ -132,6 +132,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially packed': { type: 'information', label: 'Partially packed' },
   'partially shipped': { type: 'information', label: 'Partially shipped' },
   'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
+  'partially delivered': { type: 'information', label: 'Partially delivered' },
   'in progress':{ type: 'information',  label: 'In progress' },
   in_progress:{ type: 'information',  label: 'In progress' },
   'task created':{ type: 'information', label: 'Task created' },

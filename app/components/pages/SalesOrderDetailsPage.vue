@@ -546,7 +546,7 @@ function copyLink() {
             <MpPopoverList>
               <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
               <template v-if="isOpenish">
-                <MpPopoverListItem @click="router.push('/sales-deliveries/new')">{{ t('Create sales delivery') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push({ path: '/sales-deliveries/new', query: { order: order.id } })">{{ t('Create sales delivery') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push('/progress-invoice')">{{ t('Create progress invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push('/proforma-invoice')">{{ t('Create proforma invoice') }}</MpPopoverListItem>

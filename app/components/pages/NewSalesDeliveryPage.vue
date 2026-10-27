@@ -12,7 +12,7 @@
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
-  MpInputGroup, MpInputLeftAddon,
+  MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpSegmentedControl,
   MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpAutocomplete, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -24,12 +24,29 @@ import {
   customers, products, salesDeliveries,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
+import { salesOrders } from '~/data/salesOrders'
+import { deliveredByLine, derivedQty, lineLock, releaseInputBasis, canReleaseInputBasis } from '~/data/salesDeliveries'
+import ReleaseInputBasisModal from '~/components/patterns/ReleaseInputBasisModal.vue'
 import type { SalesDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
+
+/**
+ * A delivery raised from a sales order (`?order=SO101`) draws down that order's
+ * lines, so the form carries the ordered quantity and how much of it has already
+ * gone out. Without the order there is nothing to take a percentage OF, which is
+ * why this link is Wave 0 of docs/plans/percentage-based-sales-delivery.md.
+ * Deliveries created straight from the list keep working with no order.
+ */
+const sourceOrder = computed(() => {
+  const id = String(route.query.order ?? '')
+  return id ? salesOrders.find(o => o.id === id) ?? null : null
+})
+const deliveredSoFar = computed(() => sourceOrder.value ? deliveredByLine(sourceOrder.value.id) : {})
 
 function todayISO() { return new Date().toISOString().slice(0, 10) }
 function isoToDMY(iso: string) {
@@ -98,13 +115,192 @@ interface LineItem {
   taxLabel: string
   productError: boolean
   qtyError: boolean
+  /** Set only on an order-sourced line: which order line it draws down, and that
+   *  line's ordered quantity. `null` on a free-standing delivery. */
+  orderLineIndex: number | null
+  orderedQty: number | null
+  /**
+   * OD-001. `qty` above is always the posting basis (R-03). In percent mode the
+   * user types `inputValue` and `qty` is derived from it; in qty mode the two are
+   * the same number. Both are saved, so the document can show what was typed.
+   */
+  inputMode: 'qty' | 'percent'
+  inputValue: number
+}
+
+/** Percent mode needs an ordered quantity to multiply — an ad-hoc line has none. */
+function canUsePercent(item: LineItem): boolean {
+  return item.orderedQty !== null
+}
+
+/**
+ * Re-derives `qty` from whatever the user typed. Percent is always against the
+ * ORDERED quantity, never the remaining balance (R-02), so a second tranche of
+ * 33% means the same number of units as the first.
+ */
+function applyInput(item: LineItem, value: number) {
+  item.inputValue = Number.isFinite(value) ? value : 0
+  item.qty = item.inputMode === 'percent' && item.orderedQty !== null
+    ? derivedQty(item.orderedQty, item.inputValue)
+    : item.inputValue
+  item.qtyError = false
+}
+
+function setInputMode(item: LineItem, mode: unknown) {
+  const next = mode === 'percent' ? 'percent' : 'qty'
+  if (next === item.inputMode) return
+  // Belt and braces: the Quantity segment is disabled while locked, but the
+  // lock is a rule, not a UI state (R-09).
+  if (next === 'qty' && lockOf(item)) return
+  item.inputMode = next
+  // Switching mode clears the figure rather than reinterpreting it: 5 units and
+  // 5 percent are different claims, and silently converting one into the other
+  // is exactly the unrecorded arithmetic this feature removes.
+  applyInput(item, 0)
+}
+
+const MODE_OPTIONS = computed(() => [
+  { id: 'mode-qty', label: t('Quantity'), value: 'qty' },
+  { id: 'mode-percent', label: t('Percent'), value: 'percent' },
+])
+
+/**
+ * OD-003. A line first delivered by percent is locked to percent: two people
+ * must not record progress on the same line on different bases. `lockBump`
+ * re-reads the lock after a release, which mutates module state the template
+ * cannot track on its own.
+ */
+const lockBump = ref(0)
+function lockOf(item: LineItem) {
+  void lockBump.value
+  return sourceOrder.value && item.orderLineIndex !== null
+    ? lineLock(sourceOrder.value.id, item.orderLineIndex)
+    : null
+}
+/** Mode options with Quantity disabled while the line is locked (R-09). The
+ *  option stays VISIBLE — a hint explains why it cannot be picked, per the PRD. */
+function modeOptionsFor(item: LineItem) {
+  const locked = !!lockOf(item)
+  return MODE_OPTIONS.value.map(o => (o.value === 'qty' ? { ...o, isDisabled: locked } : o))
+}
+
+const releaseTarget = ref<LineItem | null>(null)
+const releaseOpen = computed({
+  get: () => releaseTarget.value !== null,
+  set: (v: boolean) => { if (!v) releaseTarget.value = null },
+})
+const releaseLabel = computed(() => releaseTarget.value?.product ?? '')
+const releaseLockedBy = computed(() => {
+  const l = releaseTarget.value ? lockOf(releaseTarget.value) : null
+  return l ? `${t('Sales Delivery')} #${l.number}` : ''
+})
+function doRelease(reason: string) {
+  const item = releaseTarget.value
+  if (!item || !sourceOrder.value || item.orderLineIndex === null) return
+  if (!releaseInputBasis(sourceOrder.value.id, item.orderLineIndex, 'Rizal Candra', reason)) return
+  lockBump.value += 1
+  toast.notify({ variant: 'success', title: t('Input mode released'), rootProps: { class: 'toast-enterprise' } })
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
 
+/** Delivered to date on this line, in the order's units (PRD R-05). */
+function deliveredQtyOf(item: LineItem): number {
+  return item.orderLineIndex === null ? 0 : (deliveredSoFar.value[item.orderLineIndex] ?? 0)
+}
+/** What is still owed on the line — the ceiling the over-delivery check uses (R-06). */
+function remainingQtyOf(item: LineItem): number {
+  if (item.orderedQty === null) return 0
+  return Math.max(0, item.orderedQty - deliveredQtyOf(item))
+}
+
+/**
+ * OD-004. The same progress as a percentage of the ordered quantity. Users think
+ * in cumulative contract percentage but entry is per-document and incremental, so
+ * both numbers are shown beside the increment being typed (R-05) — that pairing
+ * is half the control against double-delivering the same progress.
+ */
+function pctOf(qty: number, ordered: number | null): number | null {
+  return ordered && ordered > 0 ? (qty / ordered) * 100 : null
+}
+/** Percent for display — up to two decimals, trailing zeros trimmed. */
+function formatPct(n: number): string {
+  return `${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
+}
+function deliveredPctLabel(item: LineItem): string {
+  const p = pctOf(deliveredQtyOf(item), item.orderedQty)
+  return p === null ? '' : `${formatPct(p)} · `
+}
+function remainingPctLabel(item: LineItem): string {
+  const p = pctOf(remainingQtyOf(item), item.orderedQty)
+  return p === null ? '' : `${formatPct(p)} · `
+}
+
+/**
+ * The order's progress as one figure, or `Mixed` when its lines disagree (E-01).
+ * A single number would hide that one line is at 50% and another at nothing —
+ * exactly the state a return leaves behind — so the per-line figures above stay
+ * visible either way and this only summarises when it honestly can.
+ */
+const orderProgress = computed<string | null>(() => {
+  const o = sourceOrder.value
+  if (!o) return null
+  const pcts = items.value
+    .filter(it => it.orderedQty !== null)
+    .map(it => pctOf(deliveredQtyOf(it), it.orderedQty))
+    .filter((p): p is number => p !== null)
+  if (!pcts.length) return null
+  const first = pcts[0]!
+  // Tolerance, not equality: these are derived from six-decimal quantities.
+  return pcts.every(p => Math.abs(p - first) < 0.005) ? formatPct(first) : t('Mixed')
+})
+
+// Prefill every order line, so the user draws the order down rather than
+// retyping it. Customer comes from the order too — it cannot differ.
+watch(sourceOrder, (o) => {
+  if (!o) return
+  customerId.value = o.customer.id
+  onCustomerChange(o.customer.id)
+  items.value = o.items.map((it, i) => ({
+    _key: ++_seq,
+    product: it.product,
+    sku: it.sku,
+    description: it.description,
+    qty: 0,
+    unit: it.unit,
+    unitPrice: it.unitPrice,
+    discountPct: it.discountPct,
+    taxLabel: 'PPN 11%',
+    productError: false,
+    qtyError: false,
+    orderLineIndex: i,
+    orderedQty: it.qty,
+    // A locked line opens in the mode it is locked to; an unlocked one defaults
+    // to Quantity (PRD: "Quantity is preselected on a line with no prior delivery").
+    inputMode: o.id && lineLock(o.id, i) ? 'percent' : 'qty',
+    inputValue: 0,
+  }))
+}, { immediate: true })
+
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
 function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
+}
+
+/**
+ * OD-002. What the typed percentage produces, shown while it is typed so the
+ * figure can be checked against the BAST before saving — "5,28 unit ·
+ * Rp132.000.000". Only in percent mode: in quantity mode the number typed IS
+ * the quantity, so there is no derivation to preview.
+ */
+function previewOf(item: LineItem): string | null {
+  if (item.inputMode !== 'percent' || item.orderedQty === null || !(item.inputValue > 0)) return null
+  return `${formatQty(item.qty)} ${item.unit} · ${formatIDR(lineAmount(item))}`
+}
+
+/** Up to six decimals, trailing zeros trimmed, decimal comma (PRD R-03). */
+function formatQty(n: number): string {
+  return n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 6 })
 }
 
 function productMatches(query: string) {
@@ -140,6 +336,11 @@ function selectNewProduct(p: typeof products[number]) {
     taxLabel: 'PPN 11%',
     productError: false,
     qtyError: false,
+    // An ad-hoc row draws down no order line, so there is no ordered quantity.
+    orderLineIndex: null,
+    orderedQty: null,
+    inputMode: 'qty',
+    inputValue: 1,
   })
   newRowSearch.value = ''
   openProductRow.value = null
@@ -177,6 +378,29 @@ const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.
 // NewExpensePage's line-items error banner.
 const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError))
 const noItemsError = ref(false)   // set on save attempt with zero line items (inline, not a toast)
+
+/**
+ * OD-005. Cumulative delivered may not exceed the ordered quantity (R-06). The
+ * check runs on SAVE, not on every keystroke: a user mid-way through typing 40
+ * has momentarily typed 4, and flagging that would be noise.
+ *
+ * The whole document is rejected even when only one line is over (E-02), and the
+ * entry is never silently adjusted (R-07) — the user fixes the number, because a
+ * system that quietly trims a figure is how revenue stops matching the contract.
+ */
+const overDeliveryErrors = ref<string[]>([])
+
+function overDeliveryMessage(item: LineItem): string | null {
+  if (item.orderedQty === null || !(item.qty > 0)) return null
+  const remaining = remainingQtyOf(item)
+  // Tolerance: both sides come from six-decimal arithmetic, so a line landing
+  // exactly on its balance must not fail by a float hair.
+  if (item.qty <= remaining + 1e-6) return null
+  const asked = item.inputMode === 'percent'
+    ? `${formatPct(item.inputValue)}`
+    : `${formatQty(item.qty)} ${item.unit}`
+  return `${item.product}: ${asked} ${t('is more than the')} ${formatQty(remaining)} ${item.unit} ${t('still available')}.`
+}
 
 // ── Totals ────────────────────────────────────────────────────────────────────
 const subtotal      = computed(() => items.value.reduce((s, it) => s + it.qty * it.unitPrice, 0))
@@ -231,9 +455,12 @@ function validate(): boolean {
   noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
+  overDeliveryErrors.value = []
   items.value.forEach(it => {
     if (!it.product) { it.productError = true; ok = false }
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
+    const over = overDeliveryMessage(it)
+    if (over) { it.qtyError = true; overDeliveryErrors.value.push(over); ok = false }
   })
   return ok
 }
@@ -264,6 +491,23 @@ function onSave() {
     billingStatus: 'unbilled',
     total: total.value,
     tags: tagsList.value.map(t2 => String(t2.value)),
+    ...(sourceOrder.value
+      ? {
+          orderId: sourceOrder.value.id,
+          items: items.value
+            .filter(it => it.orderLineIndex !== null)
+            .map(it => ({
+              orderLineIndex: it.orderLineIndex!,
+              product: it.product,
+              sku: it.sku,
+              description: it.description,
+              unit: it.unit,
+              qty: it.qty,
+              inputMode: it.inputMode,
+              inputValue: it.inputValue,
+            })),
+        }
+      : {}),
   }
   salesDeliveries.push(delivery)
   toast.notify({ variant: 'success', title: t('Sales delivery saved'), rootProps: { class: 'toast-enterprise' } })
@@ -364,7 +608,12 @@ function onSave() {
         <div class="si-header2-col">
           <MpFormControl id="f-so-no" class="si-field">
             <MpFormLabel>{{ t('Sales order no.') }}</MpFormLabel>
-            <span class="si-readonly-value">-</span>
+            <span class="si-readonly-value">{{ sourceOrder ? `#${sourceOrder.number}` : '-' }}</span>
+          </MpFormControl>
+
+          <MpFormControl v-if="orderProgress" id="f-order-progress" class="si-field">
+            <MpFormLabel>{{ t('Delivered so far') }}</MpFormLabel>
+            <span class="si-readonly-value">{{ orderProgress }}</span>
           </MpFormControl>
 
           <MpFormControl id="f-tags" class="si-field">
@@ -380,8 +629,19 @@ function onSave() {
 
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save delivery') }}</MpBannerTitle>
-          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales delivery needs at least one line item before you can save.') : t('Please review the highlighted fields and try again.') }}</MpBannerDescription>
+          <MpBannerTitle>
+            {{ overDeliveryErrors.length ? t('More than the order has left to deliver')
+              : noItemsError && !hasLineItemErrors ? t('Add at least one product')
+              : t('Failed to save delivery') }}
+          </MpBannerTitle>
+          <MpBannerDescription>
+            <!-- Names the line and the balance available, so the fix takes seconds
+                 even when one line of many is over (R-07). -->
+            <ul v-if="overDeliveryErrors.length" class="sd-over-list">
+              <li v-for="m in overDeliveryErrors" :key="m">{{ m }}</li>
+            </ul>
+            <template v-else>{{ noItemsError && !hasLineItemErrors ? t('A sales delivery needs at least one line item before you can save.') : t('Please review the highlighted fields and try again.') }}</template>
+          </MpBannerDescription>
         </MpBanner>
 
         <div class="si-items-scroll">
@@ -390,7 +650,8 @@ function onSave() {
               <col class="si-col-drag" />
               <col class="si-col-product" />
               <col class="si-col-desc" />
-              <col class="si-col-qty" />
+              <col class="si-col-ordered" />
+              <col class="si-col-mode" />
               <col class="si-col-qty" />
               <col class="si-col-unit" />
               <col class="si-col-del" />
@@ -401,6 +662,7 @@ function onSave() {
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
                 <th class="si-th">{{ t('Qty ordered') }}</th>
+                <th class="si-th">{{ t('Input mode') }}</th>
                 <th class="si-th">{{ t('Qty delivered') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
                 <th class="si-th si-th--del" />
@@ -453,21 +715,63 @@ function onSave() {
                   <MpInput v-model="item.description" is-full-width />
                 </td>
 
-                <!-- Qty ordered — read-only, from the source sales order (none here) -->
-                <td class="si-td si-td--border si-td--calc"><span class="si-affix-value">-</span></td>
+                <!-- Qty ordered — read-only, from the source sales order -->
+                <td class="si-td si-td--border si-td--calc">
+                  <span class="si-affix-value">{{ item.orderedQty === null ? '-' : formatQty(item.orderedQty) }}</span>
+                  <span v-if="item.orderedQty !== null" class="sd-progress">
+                    <span class="sd-progress-line">{{ t('Delivered') }} {{ deliveredPctLabel(item) }}{{ formatQty(deliveredQtyOf(item)) }}</span>
+                    <span class="sd-progress-line">{{ t('Remaining') }} {{ remainingPctLabel(item) }}{{ formatQty(remainingQtyOf(item)) }}</span>
+                  </span>
+                </td>
+
+                <!-- OD-001 — per-line input mode. A segmented control, not a pair of
+                     chips (rule/segmented-control-pill). Only an order-sourced line
+                     has an ordered quantity to take a percentage of. -->
+                <td class="si-td si-td--border">
+                  <template v-if="canUsePercent(item)">
+                    <MpSegmentedControl
+                      :id="`f-mode-${item._key}`" :name="`f-mode-${item._key}`"
+                      :model-value="item.inputMode" :data="modeOptionsFor(item)"
+                      @update:model-value="(v: unknown) => setInputMode(item, v)"
+                    />
+                    <!-- The disabled option is explained, never just greyed: the user
+                         has to know WHY Quantity is gone, and which delivery did it. -->
+                    <span v-if="lockOf(item)" class="sd-lock">
+                      {{ t('Locked to Percent by') }} {{ t('Sales Delivery') }} #{{ lockOf(item)!.number }}
+                      <MpTextlink v-if="canReleaseInputBasis()" :id="`f-release-${item._key}`" as="a"
+                        class="sd-lock-release" @click.prevent="releaseTarget = item"
+                      >{{ t('Release') }}</MpTextlink>
+                    </span>
+                  </template>
+                  <span v-else class="si-affix-value">-</span>
+                </td>
 
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.qtyError }">
                   <MpTooltip
                     v-if="item.qtyError" :id="`si-qty-tt-${item._key}`"
-                    :label="t('Qty must be more than 0')" placement="top" use-portal
-                    class="si-error-tooltip-wrap"
+                    :label="item.inputMode === 'percent' ? t('Percent must be more than 0') : t('Qty must be more than 0')"
+                    placement="top" use-portal class="si-error-tooltip-wrap"
                   >
-                    <MpInput type="number" :model-value="item.qty" is-full-width
+                    <MpInputGroup v-if="item.inputMode === 'percent'" :id="`f-pct-group-${item._key}`" is-full-width>
+                      <MpInput type="number" :model-value="item.inputValue" is-full-width :is-invalid="item.qtyError"
+                        @update:model-value="(v) => applyInput(item, Number(v))" />
+                      <MpInputRightAddon has-background>%</MpInputRightAddon>
+                    </MpInputGroup>
+                    <MpInput v-else type="number" :model-value="item.inputValue" is-full-width
                       :is-invalid="item.qtyError"
-                      @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                      @update:model-value="(v) => applyInput(item, Number(v))" />
                   </MpTooltip>
-                  <MpInput v-else type="number" :model-value="item.qty" is-full-width
-                    @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                  <span v-if="item.qtyError && previewOf(item)" class="sd-preview">{{ previewOf(item) }}</span>
+                  <template v-else>
+                    <MpInputGroup v-if="item.inputMode === 'percent'" :id="`f-pct-group-${item._key}`" is-full-width>
+                      <MpInput type="number" :model-value="item.inputValue" is-full-width
+                        @update:model-value="(v) => applyInput(item, Number(v))" />
+                      <MpInputRightAddon has-background>%</MpInputRightAddon>
+                    </MpInputGroup>
+                    <MpInput v-else type="number" :model-value="item.inputValue" is-full-width
+                      @update:model-value="(v) => applyInput(item, Number(v))" />
+                    <span v-if="previewOf(item)" class="sd-preview">{{ previewOf(item) }}</span>
+                  </template>
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
@@ -584,6 +888,18 @@ function onSave() {
 
     </div><!-- /si-form-stage -->
 
+    <ReleaseInputBasisModal
+
+      v-model:is-open="releaseOpen"
+
+      :line-label="releaseLabel"
+
+      :locked-by="releaseLockedBy"
+
+      @confirm="doRelease"
+
+    />
+
     <NumberFormatSettingsModal
       v-model:open="noSettingsOpen"
       :title="t('Transaction no. settings')"
@@ -688,6 +1004,21 @@ function onSave() {
 .si-field { min-width: 0; }
 /* MpInputTag and MpDatePicker need explicit full-width hooks */
 .si-field :deep(.input-tag__root) { width: 100%; }
+/* Delivered / remaining sits under the ordered quantity — a caption, so 12px
+   secondary (rule/type-*), not a second value competing with the figure. Stacked
+   rather than one line: a six-decimal quantity makes any fixed width a guess. */
+.sd-progress { display: flex; flex-direction: column; margin-top: var(--mp-spacing-0\.5); }
+.sd-progress-line { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+/* The derived quantity and value under the percent input — supporting text for
+   the figure above it, so caption size and secondary colour (rule/type-*). */
+.sd-preview { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+/* Why Quantity is unavailable, and the way out of it (OD-003). Wraps — naming a
+   delivery makes this longer than the column. */
+.sd-lock { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
+.sd-lock-release { margin-left: var(--mp-spacing-1); }
+/* The reset strips list-style, so a bulleted list needs both back (CLAUDE.md). */
+.sd-over-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-5); }
+.sd-over-list li { display: list-item; }
 .si-datepicker { width: 100%; }
 .si-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
@@ -717,7 +1048,14 @@ function onSave() {
 .si-col-drag     { width: 44px; }
 .si-col-product  { width: 280px; }
 .si-col-desc     { width: auto; }
-.si-col-qty      { width: 64px; }
+/* Wide enough for the ordered figure plus its delivered/remaining caption; the
+   64px qty column cannot hold "Delivered 11,68 · Remaining 4,32". */
+.si-col-ordered  { width: 140px; }
+/* Holds the two-segment Quantity / Percent control without wrapping its labels. */
+.si-col-mode     { width: 184px; }
+/* 64px fits a bare count, but not the percent input plus the quantity and value
+   it produces (OD-002) — "5,28 unit · Rp132.000.000". */
+.si-col-qty      { width: 220px; }
 .si-col-unit     { width: 104px; }
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
