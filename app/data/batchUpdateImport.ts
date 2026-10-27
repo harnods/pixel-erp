@@ -106,10 +106,21 @@ function productByName(name: string) {
   return productIndexRows().find((r) => r.name.trim().toLowerCase() === needle)
 }
 
+/** A batch's current attribute values in the import's cell format (what the export writes). */
+function currentAttributeCell(attributes: BatchAttributeInput, key: BatchAttributeKey): string {
+  switch (key) {
+    case 'supplier': return attributes.supplier ? vendors.find((v) => v.id === attributes.supplier)?.name ?? '' : ''
+    case 'grade': return attributes.grade ? gradeById(attributes.grade)?.name ?? '' : ''
+    default: return isoToCell(attributes[key] ?? undefined)
+  }
+}
+
 const ATTRIBUTE_KEYS: readonly BatchAttributeKey[] = ['expiry_date', 'manufacturing_date', 'best_before_date', 'supplier', 'grade']
 
 interface CheckedRow {
   result: BatchUpdateRowResult
+  /** True for a valid row whose cells are all blank or already the batch's current value. */
+  unchanged?: true
   /** Present only for a valid row: what to apply to which batch. */
   patch?: { sku: string; batchId: string; description?: string; attributes: BatchAttributeInput }
 }
@@ -148,8 +159,13 @@ export function validateBatchUpdateRows(rows: readonly BatchUpdateRow[]): Checke
     // Nothing to check cell by cell without a known batch of a batch-tracked product.
     if (!tracked || !batch) return { result }
 
-    const descriptionCell = row.description.trim()
-    const filledAttributes = ATTRIBUTE_KEYS.filter((k) => row[k].trim())
+    // A cell that's blank or already the batch's current value is no change.
+    const sameAsNow = (cell: string, current: string) => cell.toLowerCase() === current.trim().toLowerCase()
+    const descriptionCell = sameAsNow(row.description.trim(), batch.description ?? '') ? '' : row.description.trim()
+    const filledAttributes = ATTRIBUTE_KEYS.filter((k) => {
+      const cell = row[k].trim()
+      return cell && !sameAsNow(cell, currentAttributeCell(batch.attributes, k))
+    })
     if (batch.isUnassigned) {
       // The Unassigned batch never carries attributes (PM answer A5); it's a system
       // batch, so its description isn't imported either. Copy pending PM (A7).
@@ -200,6 +216,9 @@ export function validateBatchUpdateRows(rows: readonly BatchUpdateRow[]): Checke
       }
     }
 
+    // Nothing to change: skip the row rather than judging attributes the user never touched.
+    if (!descriptionCell && !filledAttributes.length) return errors.length ? { result } : { result, unchanged: true }
+
     // A required attribute must have a value once the row is applied.
     for (const a of getBatchAttributeConfig(product!.sku)) {
       if (!a.required) continue
@@ -228,7 +247,11 @@ export function applyBatchUpdateImport(rows: readonly BatchUpdateRow[], by?: str
   let unchanged = 0
   const failed: BatchUpdateRowResult[] = []
 
-  for (const { result, patch } of validateBatchUpdateRows(rows)) {
+  for (const { result, patch, unchanged: skipped } of validateBatchUpdateRows(rows)) {
+    if (skipped) {
+      unchanged++
+      continue
+    }
     if (!patch) {
       failed.push(result)
       continue
@@ -305,11 +328,11 @@ export function buildBatchExport({ skus, onlyRequiredEmpty }: BatchExportOptions
           productName: product.name,
           batchNumber: b.batchNo,
           description: b.description,
-          expiry_date: isoToCell(b.attributes.expiry_date),
-          manufacturing_date: isoToCell(b.attributes.manufacturing_date),
-          best_before_date: isoToCell(b.attributes.best_before_date),
-          supplier: b.attributes.supplier ? vendors.find((v) => v.id === b.attributes.supplier)?.name ?? '' : '',
-          grade: b.attributes.grade ? gradeById(b.attributes.grade)?.name ?? '' : '',
+          expiry_date: currentAttributeCell(b.attributes, 'expiry_date'),
+          manufacturing_date: currentAttributeCell(b.attributes, 'manufacturing_date'),
+          best_before_date: currentAttributeCell(b.attributes, 'best_before_date'),
+          supplier: currentAttributeCell(b.attributes, 'supplier'),
+          grade: currentAttributeCell(b.attributes, 'grade'),
         },
       })
     }

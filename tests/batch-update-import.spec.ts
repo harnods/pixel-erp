@@ -152,13 +152,42 @@ describe('applying the import', () => {
     expect(rows[0]).toMatchObject({ productName: nameOf('1001'), batchNumber: 'Batch #001', supplier: 'Gayo Highland Exporters', grade: 'A' })
     expect(rows[0]!.expiry_date).toMatch(/^\d{2}\/\d{2}\/\d{4}$/)
 
-    // Nothing changes. Seed batches #003/#004 have no Vendor, which 1001 requires, so
-    // those rows are rejected exactly as the batch form would reject saving them.
+    // Nothing changes, so every row is skipped, including seed batches #003/#004 that
+    // have no Vendor (which 1001 requires): an unedited row is not judged (ATINV-9083).
     const result = api.applyBatchUpdateImport(rows.map((r, i) => ({ rowNumber: i + 2, ...r })))
-    expect(result).toMatchObject({ updated: 0, unchanged: 2 })
-    expect(result.failed.map((f) => [f.batchNumber, f.errors])).toEqual([
-      ['Batch #003', ['Attribute Vendor must be filled']],
-      ['Batch #004', ['Attribute Vendor must be filled']],
+    expect(result).toMatchObject({ updated: 0, unchanged: 4, failed: [] })
+  })
+
+  describe('an unedited re-upload (ATINV-9083)', () => {
+    const requireGrade = () => api.setBatchAttributeConfig('1001', [
+      { key: 'supplier', required: true }, { key: 'grade', required: true }, { key: 'expiry_date' },
     ])
+
+    it('skips an unedited exported row even when a required attribute is empty', () => {
+      requireGrade()
+      let n = 2
+      const rows = api.buildBatchExport({ skus: ['1001'], onlyRequiredEmpty: false }).rows
+        .map((r) => ({ rowNumber: n++, ...r.cells }))
+      expect(rows.length).toBeGreaterThan(0)
+      const result = api.applyBatchUpdateImport(rows)
+      expect(result.failed).toEqual([])
+      expect(result.unchanged).toBe(rows.length)
+    })
+
+    it('still fails a changed row that leaves a required attribute empty', () => {
+      requireGrade()
+      const flagged = api.buildBatchExport({ skus: ['1001'], onlyRequiredEmpty: true }).rows[0]!
+      const result = api.applyBatchUpdateImport([{ rowNumber: 2, ...flagged.cells, description: 'Edited note' }])
+      expect(result.failed.flatMap((f) => f.errors)).toContain('Attribute Grade must be filled')
+    })
+
+    it('treats a cell equal to the current value as unchanged', () => {
+      const exported = api.buildBatchExport({ skus: ['1001'], onlyRequiredEmpty: false }).rows
+        .find((r) => r.cells.batchNumber === 'Batch #001')!
+      const result = api.applyBatchUpdateImport([
+        { rowNumber: 2, ...exported.cells, supplier: exported.cells.supplier.toUpperCase(), grade: exported.cells.grade.toLowerCase() },
+      ])
+      expect(result).toMatchObject({ updated: 0, unchanged: 1, failed: [] })
+    })
   })
 })
