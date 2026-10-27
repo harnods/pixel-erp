@@ -703,9 +703,8 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-landing-hero-card {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  align-items: end;
   gap: var(--mp-spacing-8);
-  padding: var(--mp-spacing-10) var(--mp-spacing-10) 0;
+  padding: 0 var(--mp-spacing-10) 0;
   background: var(--mp-background-neutral-subtle);
   border-radius: var(--mp-radii-xl, 16px);
   overflow: hidden;
@@ -714,8 +713,9 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-landing-left {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: var(--mp-spacing-4);
-  padding-bottom: var(--mp-spacing-10);
+  padding: var(--mp-spacing-10) 0;
 }
 
 .dm-landing-title {
