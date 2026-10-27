@@ -766,7 +766,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-landing-step-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--mp-spacing-0\.5, 2px);
   padding-top: 1px;
 }
 
