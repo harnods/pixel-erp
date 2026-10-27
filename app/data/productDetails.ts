@@ -461,6 +461,7 @@ function resolveBatchAttributes(
   sku: string,
   current: BatchAttributeValues,
   input: BatchAttributeInput,
+  opts: { skipRequired?: boolean } = {},
 ): { values: BatchAttributeValues; errors: BatchError[] } {
   const config = getBatchAttributeConfig(sku)
   const selected = new Set(config.map((a) => a.key))
@@ -481,7 +482,7 @@ function resolveBatchAttributes(
     else values[key] = value
   }
   for (const a of config) {
-    if (a.required && !values[a.key] && !errors.some((e) => e.field === a.key)) {
+    if (!opts.skipRequired && a.required && !values[a.key] && !errors.some((e) => e.field === a.key)) {
       errors.push({ code: 'required', field: a.key })
     }
   }
@@ -536,6 +537,100 @@ export function createBatch(
     changes: batchChanges({ batchNo: '', description: '', attributes: {} }, { batchNo, description, attributes: values }),
   })
   return { ok: true, value: getProductBatchById(sku, id)! }
+}
+
+// ── Batch identity bridge (ATINV-9082 §5.1) ─────────────────────────────────────────
+// A batch is identified by product + batch number, not by warehouse: a warehouse lot
+// and a product batch record with the same SKU and number are the same batch.
+
+/** The product batch with this number (case-insensitive). Never the Unassigned batch. */
+export function findProductBatch(sku: string, batchNo: string): ProductBatchSummary | undefined {
+  const n = batchNo.trim().toLowerCase()
+  if (!n) return undefined
+  return getProductBatches(sku).find((b) => !b.isUnassigned && b.batchNo.toLowerCase() === n)
+}
+
+/** The batch's attribute values: the record's when the batch exists, otherwise just
+ *  the lot's expiry (omitted when empty) so a lot with no record still renders. */
+export function batchAttributesFor(sku: string, batchNo: string, lotExpiry?: string): BatchAttributeValues {
+  const batch = findProductBatch(sku, batchNo)
+  if (batch) return { ...batch.attributes }
+  return lotExpiry ? { expiry_date: lotExpiry } : {}
+}
+
+/** The existing batch, or a new record for a lot that physically exists. Skips the
+ *  required-attribute check (the lot is already there; its attributes are filled in
+ *  later) but still rejects Unassigned and non-batch-tracked products — callers only
+ *  pass tracked SKUs, so those throw. */
+export function ensureProductBatch(
+  sku: string,
+  batchNo: string,
+  seed: { expiry_date?: string; description?: string } = {},
+  by = CURRENT_USER,
+): ProductBatchSummary {
+  const existing = findProductBatch(sku, batchNo)
+  if (existing) return existing
+  if (!productIndexRows().some((r) => r.sku === sku)) throw new Error(`ensureProductBatch: unknown product ${sku}`)
+  if (!isProductBatchTracked(sku)) throw new Error(`ensureProductBatch: ${sku} is not batch-tracked`)
+  const noError = validateBatchNo(sku, batchNo)
+  if (noError) throw new Error(`ensureProductBatch: invalid batch number (${noError.code})`)
+  // Expiry is stored only when the product's set includes it.
+  const hasExpiry = getBatchAttributeConfig(sku).some((a) => a.key === 'expiry_date')
+  const { values, errors } = resolveBatchAttributes(
+    sku, {}, hasExpiry && seed.expiry_date ? { expiry_date: seed.expiry_date } : {}, { skipRequired: true },
+  )
+  if (errors.length) throw new Error(`ensureProductBatch: invalid seed (${errors.map((e) => e.code).join(', ')})`)
+  const at = new Date().toISOString()
+  const id = newBatchId(sku)
+  const no = batchNo.trim()
+  const description = (seed.description ?? '').trim()
+  saveBatchRecord({
+    id, sku, created: true, batchNo: no, description, attributes: { ...values },
+    createdAt: at, updatedAt: at, updatedBy: by,
+  }, {
+    date: at, user: by, action: 'created',
+    changes: batchChanges({ batchNo: '', description: '', attributes: {} }, { batchNo: no, description, attributes: values }),
+  })
+  return getProductBatchById(sku, id)!
+}
+
+/** Fill the batch's EMPTY attributes — keys in the product's set only, never overwriting
+ *  a value that's already there, never blocked by other empty required ones (a
+ *  transaction must not fail over master data). Logs activity like `updateBatch`. */
+export function fillEmptyBatchAttributes(
+  sku: string,
+  id: string,
+  values: BatchAttributeValues,
+  by = CURRENT_USER,
+): ProductBatchSummary {
+  const batch = getProductBatchById(sku, id)
+  if (!batch) throw new Error(`fillEmptyBatchAttributes: unknown batch ${id}`)
+  if (batch.isUnassigned) throw new Error('fillEmptyBatchAttributes: the Unassigned batch has no attributes')
+  const inSet = new Set(getBatchAttributeConfig(sku).map((a) => a.key))
+  const filled: BatchAttributeValues = {}
+  for (const key of BATCH_ATTRIBUTE_KEYS) {
+    const value = (values[key] ?? '').trim()
+    if (!value || batch.attributes[key] || !inSet.has(key)) continue
+    if (validateAttributeValue(key, value, undefined)) continue
+    filled[key] = value
+  }
+  if (!Object.keys(filled).length) return batch
+
+  const next: BatchAttributeValues = { ...batch.attributes, ...filled }
+  const changes = batchChanges(
+    { batchNo: batch.batchNo, description: batch.description, attributes: batch.attributes },
+    { batchNo: batch.batchNo, description: batch.description, attributes: next },
+  )
+  const attributes: BatchAttributeInput = {}
+  for (const key of BATCH_ATTRIBUTE_KEYS) attributes[key] = next[key] ?? null
+  const at = new Date().toISOString()
+  saveBatchRecord({
+    ...(findBatchRecord(id) ?? { id, sku, created: false }),
+    attributes,
+    updatedAt: at,
+    updatedBy: by,
+  }, { date: at, user: by, action: 'updated', changes })
+  return getProductBatchById(sku, id)!
 }
 
 type BatchChanges = NonNullable<Parameters<typeof saveBatchRecord>[1]>['changes']

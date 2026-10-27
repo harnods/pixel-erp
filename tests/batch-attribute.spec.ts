@@ -170,9 +170,12 @@ describe('grade list', () => {
   it('blocks deleting a grade a batch still uses, reporting how many', () => {
     const r = api.deleteGrade(api.SEED_GRADE_IDS.A)
     expect(r.ok).toBe(false)
-    expect(!r.ok && r.errors).toEqual([{ code: 'in-use', count: 1 }])
-    expect(api.deleteGrade(api.SEED_GRADE_IDS.C).ok).toBe(true)
-    expect(api.grades().map((g) => g.name)).toEqual(['A', 'B'])
+    expect(!r.ok && r.errors).toEqual([{ code: 'in-use', count: 7 }]) // 1 seed edit + 6 seeded lot records (batchStore lot seed)
+    // Seeded lots now hold Grade C too, so an unused grade is the deletable one.
+    const d = api.createGrade({ name: 'D' })
+    const dId = d.ok ? d.value.id : ''
+    expect(api.deleteGrade(dId).ok).toBe(true)
+    expect(api.grades().map((g) => g.name)).toEqual(['A', 'B', 'C'])
   })
 
   it('renaming a grade shows the new name on batches that already hold it', () => {
@@ -239,7 +242,7 @@ describe('batches', () => {
       expect(created.attributes).toEqual({ supplier: 'V002', grade: api.SEED_GRADE_IDS.B, expiry_date: '2027-02' })
       expect(created.expiryDate).toBe('2027-02-28')
       expect(api.batchHasMovements('1001', created.id)).toBe(false)
-      expect(api.countBatchesUsingGrade(api.SEED_GRADE_IDS.B)).toBe(2)
+      expect(api.countBatchesUsingGrade(api.SEED_GRADE_IDS.B)).toBe(8) // 1 seed edit + 6 seeded lot records + this batch
     })
 
     it('keeps the batch number unique per product (case-insensitive), not globally', () => {

@@ -13,7 +13,9 @@
  */
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
-import { SEED_GRADE_IDS, type BatchAttributeKey } from './batchAttributes'
+import { SEED_GRADE_IDS, getBatchAttributeConfig, type BatchAttributeKey } from './batchAttributes'
+import { warehouses } from './warehouses'
+import { getWarehouseDetail } from './warehouseDetails'
 
 /** Per-key override of a batch's attribute values. A string sets the value; `null`
  *  clears it — including a value the seed derived (e.g. a seeded expiry date). A key
@@ -46,18 +48,75 @@ const SEED_RECORDS: BatchRecord[] = [
   { id: '1001::seed-1', sku: '1001', created: false, attributes: { supplier: 'V001', grade: SEED_GRADE_IDS.B } },
 ]
 
-const RECORDS_KEY = 'batch-records-v1'
+// ── SEED DATA: records for warehouse lots (ATINV-9082 §5.1) ───────────────────────
+// WMS lots (warehouseDetails.ts, `Batch #00001`) and product batch records are ONE
+// batch master, identified by product + batch number. So the demo SKUs whose attribute
+// set is richer than Expiry get a created record per distinct warehouse lot, filled
+// with every attribute the product needs. The FIRST lot of each SKU leaves its required
+// non-expiry attributes empty, to demo that state. Seed data, not user input.
+const LOT_SEED_SKUS = ['1001', '1002', '1101'] as const
+const LOT_SEED_VENDORS = ['V001', 'V002', 'V003']
+const LOT_SEED_GRADES = [SEED_GRADE_IDS.A, SEED_GRADE_IDS.B, SEED_GRADE_IDS.C]
+
+/** `YYYY-MM-DD` shifted by whole months (UTC-safe, day clamped to 28 to stay valid). */
+function shiftMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number) as [number, number, number]
+  const t = y * 12 + (m - 1) + months
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}-${String(Math.min(d, 28)).padStart(2, '0')}`
+}
+
+/** Built lazily (first read of the store) — warehouseDetails.ts sits in an import
+ *  cycle with this module, so nothing may touch it at module load. Deterministic:
+ *  warehouses in list order, lots in stock order, first sighting of a number wins. */
+function buildLotSeedRecords(): BatchRecord[] {
+  const out: BatchRecord[] = []
+  for (const sku of LOT_SEED_SKUS) {
+    const lots = new Map<string, string>() // batchNo → expiry
+    for (const w of warehouses) {
+      const item = getWarehouseDetail(w.id)?.stock.find((s) => s.sku === sku)
+      for (const lot of item?.batches ?? []) if (!lots.has(lot.batchNo)) lots.set(lot.batchNo, lot.expiryDate)
+    }
+    const config = getBatchAttributeConfig(sku)
+    let n = 0
+    for (const [batchNo, expiry] of lots) {
+      const attributes: BatchAttributeOverrides = {}
+      for (const a of config) {
+        if (n === 0 && a.required && a.key !== 'expiry_date') continue // the demo's "still empty" lot
+        if (a.key === 'expiry_date' && expiry) attributes.expiry_date = expiry
+        else if (a.key === 'manufacturing_date' && expiry) attributes.manufacturing_date = shiftMonths(expiry, -12)
+        else if (a.key === 'best_before_date' && expiry) attributes.best_before_date = shiftMonths(expiry, -1)
+        else if (a.key === 'supplier') attributes.supplier = LOT_SEED_VENDORS[n % LOT_SEED_VENDORS.length]!
+        else if (a.key === 'grade') attributes.grade = LOT_SEED_GRADES[n % LOT_SEED_GRADES.length]!
+      }
+      out.push({ id: `${sku}::seed-lot-${n}`, sku, created: true, batchNo, description: '', attributes })
+      n++
+    }
+  }
+  return out
+}
+
+const RECORDS_KEY = 'batch-records-v2'
+const storedRecords = loadSnapshot<BatchRecord>(RECORDS_KEY)
 const records = reactive<BatchRecord[]>(
-  loadSnapshot<BatchRecord>(RECORDS_KEY) ?? SEED_RECORDS.map((r) => ({ ...r, attributes: { ...r.attributes } })),
+  storedRecords ?? SEED_RECORDS.map((r) => ({ ...r, attributes: { ...r.attributes } })),
 )
+// A stored snapshot already contains the lot records; a fresh seed adds them on first use.
+let lotRecordsSeeded = !!storedRecords
+function ensureLotRecords() {
+  if (lotRecordsSeeded) return
+  lotRecordsSeeded = true
+  records.push(...buildLotSeedRecords())
+}
 function persistRecords() { saveSnapshot(RECORDS_KEY, records) }
 
 export function findBatchRecord(id: string): BatchRecord | undefined {
+  ensureLotRecords()
   return records.find((r) => r.id === id)
 }
 
 /** Records for one product, in insertion order (created batches in creation order). */
 export function batchRecordsForSku(sku: string): BatchRecord[] {
+  ensureLotRecords()
   return records.filter((r) => r.sku === sku)
 }
 
@@ -94,6 +153,7 @@ export function saveBatchRecord(
   record: BatchRecord,
   change?: Omit<BatchActivity, 'batchId' | 'sku'>,
 ): void {
+  ensureLotRecords()
   const i = records.findIndex((r) => r.id === record.id)
   if (i === -1) records.push(record)
   else records.splice(i, 1, record)
@@ -115,5 +175,6 @@ export function newBatchId(sku: string): string {
  *  next saved (story 7). Seed batches never derive a grade, so records are the
  *  complete picture. */
 export function countBatchesUsingGrade(gradeId: string): number {
+  ensureLotRecords()
   return records.filter((r) => r.attributes?.grade === gradeId).length
 }

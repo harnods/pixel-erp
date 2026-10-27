@@ -154,8 +154,10 @@ describe('applying the import', () => {
 
     // Nothing changes, so every row is skipped, including seed batches #003/#004 that
     // have no Vendor (which 1001 requires): an unedited row is not judged (ATINV-9083).
+    // The export also lists 1001's seeded warehouse-lot records (8), so 4 + 8 rows.
     const result = api.applyBatchUpdateImport(rows.map((r, i) => ({ rowNumber: i + 2, ...r })))
-    expect(result).toMatchObject({ updated: 0, unchanged: 4, failed: [] })
+    expect(rows.length).toBe(12)
+    expect(result).toMatchObject({ updated: 0, unchanged: 12, failed: [] })
   })
 
   describe('an unedited re-upload (ATINV-9083)', () => {
