@@ -186,6 +186,7 @@ function seedRows(): void {
         budget -= take
       }
     }
+    appendUnpickedPlannedRows()
     return
   }
 
@@ -203,6 +204,29 @@ function seedRows(): void {
   // computed separately (countOnHandBaseline) precisely so it stays accurate
   // even though the table itself starts empty.
   rows.value = []
+}
+
+/** Picking execution: a suggested (planned) batch the operator hasn't picked — e.g. they
+ *  scanned a different batch and saved — stays in the table as an uncounted row, so its
+ *  attributes sit beside the scanned batch's for comparison. A saved pick keeps only the
+ *  counted rows, so without this the suggestion would vanish on reopen. Reads the stock
+ *  record directly, not the computeds (seedRows() runs before they are initialised). */
+function appendUnpickedPlannedRows(): void {
+  if (props.kind !== 'picking' || !props.executionMode) return
+  const lots = getWarehouseDetail(props.warehouseId)?.stock.find(s => s.sku === props.sku)?.batches ?? []
+  for (const p of props.plannedBatches ?? []) {
+    if (rows.value.some(r => r.batchNo === p.batchNo)) continue
+    const lot = lots.find(l => l.batchNo === p.batchNo)
+    if (!lot) continue
+    rows.value.push({
+      key: lot.batchNo, batchNo: lot.batchNo, expiryDate: lot.expiryDate, desc: DEMO_DESCS[rows.value.length % DEMO_DESCS.length]!,
+      onHand: lot.onHand, counted: null, unit: lot.unit ?? '', location: lot.location,
+      ...lotAttrs(lot.batchNo, lot.expiryDate),
+      isNew: false,
+      expiryDisplay: isoToDisplay(lot.expiryDate), expiryMode: 'date',
+      originLocRows: initLocRows(undefined), destLocRows: initLocRows(undefined),
+    })
+  }
 }
 
 // { immediate: true } is required because the component mounts with open=true

@@ -147,6 +147,26 @@ describe('ManageBatchDrawer — batch attributes', () => {
     w.unmount()
   })
 
+  it('shows attributes for both the suggested and the scanned batch when they differ', async () => {
+    // Suggested A (Batch #00002, V002) was not picked; the operator scanned B (Batch #00085, V003).
+    const row = (batchNo: string, expiryDate: string, counted: number | null) => ({
+      key: batchNo, batchNo, expiryDate, desc: '', onHand: 5, counted, unit: 'Kg', location: 'Bin 01',
+    })
+    const w = mountDrawer({
+      kind: 'picking', executionMode: true, targetCount: 1,
+      plannedBatches: [{ batchNo: 'Batch #00002', qty: 1 }],
+      modelValue: [row('Batch #00085', '2026-11-26', 1)],
+    })
+    await flushPromises()
+    const text = w.find('tbody').text()
+    expect(text).toContain(vendors.find((v) => v.id === 'V002')!.name) // suggested
+    expect(text).toContain(vendors.find((v) => v.id === 'V003')!.name) // scanned
+    // The suggested row is read-only and never counted as picked.
+    const suggested = w.findAll('tbody tr').find((r) => r.text().includes('Batch #00002'))!
+    expect(suggested.find('td.mbd-td--planned').text()).toBe('1')
+    w.unmount()
+  })
+
   it('shows attribute values under each option in the batch dropdown', async () => {
     const w = mountDrawer({ kind: 'transfer' })
     await flushPromises()
