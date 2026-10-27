@@ -53,7 +53,7 @@ const companySaved = ref(false)
 const companyInfo = reactive({
   companyName: 'PT Central Perk Indonesia',
   companyAddress: '',
-  email: '',
+  email: 'owner@centralperk.co.id',
   phone: '',
   npwp: '',
 })
@@ -246,7 +246,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
           :class="{ 'dm-step--active': step.id === activeStepId, 'dm-step--done': stepDone[step.id] }"
           @click="activeStepId = step.id"
         >
-          <MpIcon v-if="stepDone[step.id]" name="done" size="sm" color="icon.success" />
+          <MpIcon v-if="stepDone[step.id]" name="done" variant="fill" size="sm" color="icon.success" />
           <span v-else class="dm-step-number">{{ idx + 1 }}</span>
           <span class="dm-step-label">{{ t(step.label) }}</span>
         </button>
@@ -288,18 +288,22 @@ const stepDone = computed<Record<string, boolean>>(() => ({
           <!-- Logo upload (right side of the form top row) -->
           <div class="dm-logo-upload">
             <span class="dm-logo-label">{{ t('Company logo') }}</span>
-            <div class="dm-logo-preview">
-              <img v-if="logoUrl" :src="logoUrl" alt="Company logo" class="dm-logo-img" />
-              <div v-else class="dm-logo-placeholder">
-                <MpIcon name="image" size="32px" color="icon.subtle" />
+            <template v-if="logoUrl">
+              <div class="dm-logo-preview">
+                <img :src="logoUrl" alt="Company logo" class="dm-logo-img" />
               </div>
-            </div>
-            <div class="dm-logo-actions">
+              <div class="dm-logo-actions">
+                <MpButton variant="secondary" type="button" class="btn-enterprise btn-enterprise--secondary" size="sm" @click="triggerLogoUpload">
+                  {{ t('Change') }}
+                </MpButton>
+                <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" size="sm" @click="removeLogo">
+                  {{ t('Remove') }}
+                </MpButton>
+              </div>
+            </template>
+            <div v-else class="dm-logo-actions">
               <MpButton variant="secondary" type="button" class="btn-enterprise btn-enterprise--secondary" size="sm" @click="triggerLogoUpload">
-                {{ logoUrl ? t('Change') : t('Upload') }}
-              </MpButton>
-              <MpButton v-if="logoUrl" type="button" class="btn-enterprise btn-enterprise--ghost" size="sm" @click="removeLogo">
-                {{ t('Remove') }}
+                {{ t('Upload') }}
               </MpButton>
             </div>
             <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" hidden @change="onLogoChange" /> <!-- pixel-police-allow: hidden file picker, no visible control -->
@@ -360,7 +364,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
               <span>{{ t('Setting up opening balance...') }}</span>
             </div>
             <div v-else class="dm-ob-status dm-ob-status--done">
-              <MpIcon name="done" size="sm" color="icon.success" />
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
               <span>{{ t('Opening balance has been set up') }}</span>
             </div>
           </div>
@@ -436,7 +440,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
               <span>{{ t('Importing products...') }}</span>
             </div>
             <div v-else class="dm-ob-status dm-ob-status--done">
-              <MpIcon name="done" size="sm" color="icon.success" />
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
               <span>{{ CATALOG.length }} {{ t('products have been imported') }}</span>
               <span class="dm-status-separator">·</span>
               <a href="/product-list?tab=All+products" class="dm-status-link">{{ t('View products') }}</a>
@@ -474,7 +478,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
               <span>{{ t('Importing contacts...') }}</span>
             </div>
             <div v-else class="dm-ob-status dm-ob-status--done">
-              <MpIcon name="done" size="sm" color="icon.success" />
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
               <span>{{ contactCount }} {{ t('contacts have been imported') }}</span>
               <span class="dm-status-separator">·</span>
               <a href="/customers" class="dm-status-link">{{ t('View contacts') }}</a>
@@ -512,7 +516,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
               <span>{{ t('Importing sales...') }}</span>
             </div>
             <div v-else class="dm-ob-status dm-ob-status--done">
-              <MpIcon name="done" size="sm" color="icon.success" />
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
               <span>{{ salesInvoices.length }} {{ t('sales invoices have been imported') }}</span>
               <span class="dm-status-separator">·</span>
               <a href="/sales-invoices" class="dm-status-link">{{ t('View sales invoices') }}</a>
@@ -550,7 +554,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
               <span>{{ t('Importing purchases...') }}</span>
             </div>
             <div v-else class="dm-ob-status dm-ob-status--done">
-              <MpIcon name="done" size="sm" color="icon.success" />
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
               <span>{{ purchaseInvoices.length }} {{ t('purchase invoices have been imported') }}</span>
               <span class="dm-status-separator">·</span>
               <a href="/purchase-invoices" class="dm-status-link">{{ t('View purchase invoices') }}</a>
@@ -588,7 +592,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
               <span>{{ t('Importing expenses...') }}</span>
             </div>
             <div v-else class="dm-ob-status dm-ob-status--done">
-              <MpIcon name="done" size="sm" color="icon.success" />
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
               <span>{{ bills.length }} {{ t('expenses have been imported') }}</span>
               <span class="dm-status-separator">·</span>
               <a href="/expenses" class="dm-status-link">{{ t('View expenses') }}</a>
