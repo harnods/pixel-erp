@@ -58,7 +58,9 @@ describe('ManageBatchDrawer — batch attributes', () => {
     expect(w.find('[data-devchange="batch-drawer-attributes"]').exists()).toBe(true)
     const v002 = vendors.find((v) => v.id === 'V002')!.name
     expect(w.find('tbody').text()).toContain(v002)
-    expect(w.find('tbody').text()).toContain('· Rank')
+    // Read-only cells read like Stock by batches (ruling R6).
+    expect(w.find('tbody').text()).toContain('B (Rank')
+    expect(w.find('tbody').text()).not.toContain('· Rank')
     w.unmount()
   })
 
@@ -103,6 +105,24 @@ describe('ManageBatchDrawer — batch attributes', () => {
     expect(w.text()).toContain('must be filled')
     expect(w.text()).toContain('Vendor')
     expect(w.emitted('save')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('a typed number matching an existing batch keeps its set values read-only', async () => {
+    const w = mountDrawer({ kind: 'in-out' })
+    await flushPromises()
+    await openSelectBatch()
+    ;([...document.body.querySelectorAll('.mbd-popover-add-row')].pop() as HTMLElement).click()
+    await flushPromises()
+    await w.find('tbody input.mbd-cell-input').setValue('Batch #00002') // seeded record: V002, grade B
+    await w.find('td.mbd-td--counted input.mbd-qty-input').setValue('2')
+    await flushPromises()
+    expect(w.findAllComponents(MpAutocomplete).length).toBe(0)
+    const v002 = vendors.find((v) => v.id === 'V002')!.name
+    expect(w.find('tbody').text()).toContain(v002)
+    await clickSave(w)
+    const saved = w.emitted('save')![0]![0] as Array<{ attributes?: Record<string, string> }>
+    expect(saved[0]!.attributes).toMatchObject({ supplier: 'V002', grade: 'grade-b', expiry_date: '2027-02-26' })
     w.unmount()
   })
 

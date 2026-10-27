@@ -29,7 +29,10 @@ export function useBatchAttributeColumns(sku: Ref<string>): {
   // The catalog label is the t() key; Supplier is already labelled "Vendor" there.
   const label = (k: BatchAttributeKey) => t(batchAttributeDef(k).label)
 
-  const gradeText = (name: string, rank: number) => `${name} · ${t('Rank')} ${rank}`
+  // Read-only text matches Stock by batches / batch detail ("A (Rank 1)"); a pickable
+  // option reads "A · Rank 1" (controller ruling R6).
+  const gradeText = (name: string, rank: number) => `${name} (${t('Rank')} ${rank})`
+  const gradeOption = (name: string, rank: number) => `${name} · ${t('Rank')} ${rank}`
 
   function text(k: BatchAttributeKey, v: BatchAttributeValues): string {
     const value = v[k]
@@ -52,7 +55,7 @@ export function useBatchAttributeColumns(sku: Ref<string>): {
 
   function options(k: BatchAttributeKey): { value: string; label: string }[] {
     if (k === 'supplier') return vendors.map((v) => ({ value: v.id, label: v.name }))
-    if (k === 'grade') return activeGrades().map((g) => ({ value: g.id, label: gradeText(g.name, g.rank) }))
+    if (k === 'grade') return activeGrades().map((g) => ({ value: g.id, label: gradeOption(g.name, g.rank) }))
     return []
   }
 

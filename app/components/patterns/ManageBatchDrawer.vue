@@ -252,15 +252,26 @@ const attrLabel = attrCols.label
 /** A cell's text. Dates in a table cell stay numeric DD/MM/YYYY like the Expiry
  *  column beside them (rule/format-date); the dropdown's line uses the long form. */
 function attrText(row: WorkRow, key: BatchAttributeKey) {
-  const v = row.attributes?.[key]
+  const values = effectiveAttrs(row)
+  const v = values[key]
   if (v && (key === 'manufacturing_date' || key === 'best_before_date')) return formatDate(v)
-  return attrCols.text(key, row.attributes ?? {})
+  return attrCols.text(key, values)
+}
+/** The row's values with the batch master's NON-EMPTY ones on top — a typed number
+ *  that matches an existing batch is that batch, and a transaction never overwrites
+ *  a value it already holds (§5.1). Delivery keeps its own rules. */
+function effectiveAttrs(row: WorkRow): BatchAttributeValues {
+  const own = { ...(row.attributes ?? {}) }
+  if (isDelivery.value || !attrMode.value) return own
+  const master = findProductBatch(props.sku, row.batchNo)?.attributes ?? {}
+  for (const [k, v] of Object.entries(master) as [BatchAttributeKey, string | undefined][]) if (v) own[k] = v
+  return own
 }
 const isUnassignedNo = (batchNo: string) => batchNo.trim().toLowerCase() === UNASSIGNED_BATCH_NO.toLowerCase()
 /** The value the batch master already holds — never editable (a transaction only
- *  fills an empty attribute). A new row holds nothing yet. */
+ *  fills an empty attribute). A typed new number that matches an existing batch is
+ *  that batch, so new rows are looked up too. */
 function masterValue(row: WorkRow, key: BatchAttributeKey): string {
-  if (row.isNew) return ''
   return findProductBatch(props.sku, row.batchNo)?.attributes[key] ?? ''
 }
 /** Whether this row's attribute cell is an input. Delivery keeps its own rules: only a
@@ -529,7 +540,8 @@ function attrDateDisplay(row: WorkRow, key: BatchAttributeKey): string {
 
 /** What a row saves and is checked with: its values, plus a new row's typed expiry. */
 function rowAttrValues(r: WorkRow): BatchAttributeValues {
-  return { ...(r.attributes ?? {}), ...(r.isNew && r.expiryDate ? { expiry_date: r.expiryDate } : {}) }
+  const typed = { ...(r.attributes ?? {}), ...(r.isNew && r.expiryDate ? { expiry_date: r.expiryDate } : {}) }
+  return { ...typed, ...effectiveAttrs({ ...r, attributes: typed }) }
 }
 
 /** Receiving kinds other than delivery (ATINV-9082 §5.1): required attributes filled,
