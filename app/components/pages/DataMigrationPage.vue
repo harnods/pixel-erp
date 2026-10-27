@@ -17,6 +17,7 @@ import {
   toast,
 } from '@mekari/pixel3'
 import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
+import dmHeroImg from '~/assets/images/data-migration-hero.webp'
 import { DEFAULT_COA } from '~/data/wmsCutover'
 import { CATALOG } from '~/data/catalog'
 import { customers } from '~/data/customers'
@@ -256,9 +257,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
     <!-- ── Landing page (step 0) ─────────────────────────────────────────── -->
     <div v-if="showLanding" class="dm-landing">
       <div class="dm-landing-content">
-        <div class="dm-landing-icon-wrap">
-          <MpIcon name="company" size="md" color="icon.information" />
-        </div>
+        <img :src="dmHeroImg" alt="" class="dm-landing-hero" />
         <h2 class="dm-landing-title">{{ t('Set up your data') }}</h2>
         <p class="dm-landing-desc">{{ t('Migrate your existing business data into Mekari Jurnal. Complete each step to transfer your company information, financial records, and transaction history.') }}</p>
 
@@ -704,14 +703,9 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   text-align: center;
 }
 
-.dm-landing-icon-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-12, 48px);
-  height: var(--mp-sizes-12, 48px);
-  border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-information-subtlest, #e0f2fe);
+.dm-landing-hero {
+  width: 120px;
+  height: auto;
   margin-bottom: var(--mp-spacing-4);
 }
 
