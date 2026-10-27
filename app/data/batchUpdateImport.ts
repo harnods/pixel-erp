@@ -160,17 +160,19 @@ export function validateBatchUpdateRows(rows: readonly BatchUpdateRow[]): Checke
     if (!tracked || !batch) return { result }
 
     // A cell that's blank or already the batch's current value is no change.
-    const sameAsNow = (cell: string, current: string) => cell.toLowerCase() === current.trim().toLowerCase()
+    // Vendor and grade names compare case-insensitively; description and dates compare exactly.
+    const sameAsNow = (cell: string, current: string, ignoreCase = false) =>
+      ignoreCase ? cell.toLowerCase() === current.trim().toLowerCase() : cell === current.trim()
     const descriptionCell = sameAsNow(row.description.trim(), batch.description ?? '') ? '' : row.description.trim()
     const filledAttributes = ATTRIBUTE_KEYS.filter((k) => {
       const cell = row[k].trim()
-      return cell && !sameAsNow(cell, currentAttributeCell(batch.attributes, k))
+      return cell && !sameAsNow(cell, currentAttributeCell(batch.attributes, k), k === 'supplier' || k === 'grade')
     })
     if (batch.isUnassigned) {
       // The Unassigned batch never carries attributes (PM answer A5); it's a system
       // batch, so its description isn't imported either. Copy pending PM (A7).
       if (descriptionCell || filledAttributes.length) errors.push("Unassigned batch can't have attributes")
-      return { result }
+      return errors.length ? { result } : { result, unchanged: true }
     }
 
     const selected = new Set(getBatchAttributeConfig(product!.sku).map((a) => a.key))

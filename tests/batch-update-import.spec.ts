@@ -189,5 +189,18 @@ describe('applying the import', () => {
       ])
       expect(result).toMatchObject({ updated: 0, unchanged: 1, failed: [] })
     })
+
+    it('applies a case-only description edit', () => {
+      const exported = api.buildBatchExport({ skus: ['1001'], onlyRequiredEmpty: false }).rows
+        .find((r) => r.cells.batchNumber === 'Batch #001')!
+      api.applyBatchUpdateImport([{ rowNumber: 2, ...exported.cells, description: 'note' }])
+      const result = api.applyBatchUpdateImport([{ rowNumber: 2, ...exported.cells, description: 'Note' }])
+      expect(result).toMatchObject({ updated: 1, unchanged: 0, failed: [] })
+    })
+
+    it('skips a blank Unassigned row instead of failing it', () => {
+      const result = api.applyBatchUpdateImport([row({ productName: nameOf('1001'), batchNumber: 'Unassigned' })])
+      expect(result).toMatchObject({ updated: 0, unchanged: 1, failed: [] })
+    })
   })
 })
