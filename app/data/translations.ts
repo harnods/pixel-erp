@@ -4913,4 +4913,11 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Deleted recurring transactions cannot be restored. Transactions already created from them are kept.": "Transaksi berulang yang dihapus tidak dapat dipulihkan. Transaksi yang sudah dibuat tetap tersimpan.",
   // Shared by every recurring detail page's delete confirm
   "will be permanently deleted. This cannot be undone.": "akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.",
+  // Batch export (ATINV-9083)
+  "Only batches with an empty required attribute": "Hanya batch dengan atribut wajib yang masih kosong",
+  "Required attribute is empty": "Atribut wajib masih kosong",
+  "Attribute Setup": "Pengaturan Atribut",
+  "Batches exported": "Batch berhasil diekspor",
+  "No batches match these filters": "Tidak ada batch yang sesuai dengan filter ini",
 }
+

@@ -248,27 +248,77 @@ export function applyBatchUpdateImport(rows: readonly BatchUpdateRow[], by?: str
   return { total: rows.length, updated, unchanged, failed }
 }
 
-/** The batches of these products as template rows, in the import's own formats — so a
- *  downloaded list can be edited and imported back as-is. Unassigned batches are left
- *  out: they never carry attributes. */
-export function batchUpdateTemplateRows(skus: readonly string[]): BatchUpdateCells[] {
-  const out: BatchUpdateCells[] = []
-  for (const sku of skus) {
-    const product = productIndexRows().find((r) => r.sku === sku)
-    if (!product || !isProductBatchTracked(sku)) continue
-    for (const b of getProductBatches(sku)) {
-      if (b.isUnassigned) continue
-      out.push({
-        productName: product.name,
-        batchNumber: b.batchNo,
-        description: b.description,
-        expiry_date: isoToCell(b.attributes.expiry_date),
-        manufacturing_date: isoToCell(b.attributes.manufacturing_date),
-        best_before_date: isoToCell(b.attributes.best_before_date),
-        supplier: b.attributes.supplier ? vendors.find((v) => v.id === b.attributes.supplier)?.name ?? '' : '',
-        grade: b.attributes.grade ? gradeById(b.attributes.grade)?.name ?? '' : '',
+export interface BatchExportOptions {
+  skus: readonly string[]
+  /** Keep only batches that have a required attribute still empty. */
+  onlyRequiredEmpty: boolean
+}
+export interface BatchExportRow {
+  cells: BatchUpdateCells
+  /** Attributes the product requires that are empty on this batch. */
+  requiredEmpty: BatchAttributeKey[]
+}
+/** One product's attribute set, for the export's "Attribute Setup" sheet. */
+export interface AttributeSetupRow {
+  productName: string
+  attributes: { key: BatchAttributeKey; required: boolean }[]
+}
+export interface BatchExport { rows: BatchExportRow[]; setup: AttributeSetupRow[] }
+
+const byText = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true })
+
+/** Batch-tracked products, by name — what the export's product picker offers. Products
+ *  have no archived state of their own (only batches and warehouses do). */
+export function exportableProductSkus(): string[] {
+  return productIndexRows()
+    .filter((r) => isProductBatchTracked(r.sku))
+    .sort((a, b) => byText(a.name, b.name))
+    .map((r) => r.sku)
+}
+
+/**
+ * The batches of these products as export rows, in the import's own formats — so a
+ * downloaded file can be edited and imported back as-is. Unassigned and archived batches
+ * are left out (the Unassigned batch never carries attributes). Quantity-0 batches stay.
+ * Sorted by product name, then batch number.
+ */
+export function buildBatchExport({ skus, onlyRequiredEmpty }: BatchExportOptions): BatchExport {
+  const rows: BatchExportRow[] = []
+  const setup: AttributeSetupRow[] = []
+  const products = skus
+    .map((sku) => productIndexRows().find((r) => r.sku === sku))
+    .filter((p): p is NonNullable<typeof p> => !!p && isProductBatchTracked(p.sku))
+    .sort((a, b) => byText(a.name, b.name))
+  for (const product of products) {
+    const config = getBatchAttributeConfig(product.sku)
+    const batches = getProductBatches(product.sku)
+      .filter((b) => !b.isUnassigned && !b.archived)
+      .sort((a, b) => byText(a.batchNo, b.batchNo))
+    let exported = 0
+    for (const b of batches) {
+      const requiredEmpty = config.filter((a) => a.required && !b.attributes[a.key]).map((a) => a.key)
+      if (onlyRequiredEmpty && !requiredEmpty.length) continue
+      exported++
+      rows.push({
+        requiredEmpty,
+        cells: {
+          productName: product.name,
+          batchNumber: b.batchNo,
+          description: b.description,
+          expiry_date: isoToCell(b.attributes.expiry_date),
+          manufacturing_date: isoToCell(b.attributes.manufacturing_date),
+          best_before_date: isoToCell(b.attributes.best_before_date),
+          supplier: b.attributes.supplier ? vendors.find((v) => v.id === b.attributes.supplier)?.name ?? '' : '',
+          grade: b.attributes.grade ? gradeById(b.attributes.grade)?.name ?? '' : '',
+        },
       })
     }
+    if (exported) setup.push({ productName: product.name, attributes: config.map((a) => ({ key: a.key, required: !!a.required })) })
   }
-  return out
+  return { rows, setup }
+}
+
+/** Every exportable batch of these products as plain template rows. */
+export function batchUpdateTemplateRows(skus: readonly string[]): BatchUpdateCells[] {
+  return buildBatchExport({ skus, onlyRequiredEmpty: false }).rows.map((r) => r.cells)
 }
