@@ -17,6 +17,12 @@ describe('addAdjustment with batches', () => {
     expect(api.findProductBatch('1001', 'SI-1')?.attributes.supplier).toBe('V002')
   })
 
+  it('a batch line keeps its description, and a new batch is created with it', () => {
+    const adj = api.addAdjustment({ ...base, lines: [{ sku: '1001', qty: 2, batches: [{ batchNo: 'SI-DESC', qty: 2, description: 'North dock lot', attributes: { supplier: 'V002' } }] }] })
+    expect(api.getAdjustment(adj.id)!.lines![0]!.batches![0]!.description).toBe('North dock lot')
+    expect(api.findProductBatch('1001', 'SI-DESC')?.description).toBe('North dock lot')
+  })
+
   it('never overwrites an existing batch attribute', () => {
     api.addAdjustment({ ...base, lines: [{ sku: '1001', qty: 1, batches: [{ batchNo: 'Batch #001', qty: 1, attributes: { supplier: 'V002' } }] }] })
     expect(api.findProductBatch('1001', 'Batch #001')!.attributes.supplier).toBe('V003')

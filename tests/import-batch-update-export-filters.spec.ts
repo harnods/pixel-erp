@@ -72,6 +72,22 @@ describe('Update batches — step 1 export filters', () => {
     expect(toast).toHaveBeenCalledWith('Batches exported')
   })
 
+  it('a failed file write shows an inline error under the button, no toast', async () => {
+    const sku = exportableProductSkus().find((s) => buildBatchExport({ skus: [s], onlyRequiredEmpty: false }).rows.length > 0)!
+    query.value = { sku }
+    write.mockRejectedValueOnce(new Error('disk full'))
+    const w = await mountPage()
+    await downloadBtn(w).trigger('click')
+    await flushPromises()
+    expect(toast).not.toHaveBeenCalled()
+    expect(w.find('[data-devchange="batch-export-write-error"]').text()).toBe('Couldn’t create the file. Try again')
+    // Retrying succeeds and clears the message.
+    await downloadBtn(w).trigger('click')
+    await flushPromises()
+    expect(w.text()).not.toContain('Couldn’t create the file')
+    expect(toast).toHaveBeenCalledWith('Batches exported')
+  })
+
   it('product names are unique among exportable products (name <-> SKU mapping)', () => {
     const names = exportableProductSkus().map((s) => productIndexRows().find((r) => r.sku === s)!.name)
     expect(new Set(names).size).toBe(names.length)

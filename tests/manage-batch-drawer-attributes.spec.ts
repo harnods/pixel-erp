@@ -10,9 +10,10 @@
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { MpAutocomplete } from '@mekari/pixel3'
+import { MpAutocomplete, MpDatePicker } from '@mekari/pixel3'
 import ManageBatchDrawer from '~/components/patterns/ManageBatchDrawer.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { ensureProductBatch } from '~/data/productDetails'
 import { vendors } from '~/data/vendors'
 import '~/data/outgoing'
 
@@ -114,15 +115,57 @@ describe('ManageBatchDrawer — batch attributes', () => {
     await openSelectBatch()
     ;([...document.body.querySelectorAll('.mbd-popover-add-row')].pop() as HTMLElement).click()
     await flushPromises()
-    await w.find('tbody input.mbd-cell-input').setValue('Batch #00002') // seeded record: V002, grade B
+    // The operator picks an expiry first, then types a number that already exists.
+    w.findComponent(MpDatePicker).vm.$emit('update:modelValue', '01/01/2030')
+    await flushPromises()
+    await w.find('tbody input.mbd-cell-input').setValue('Batch #00002') // seeded record: V002, grade B, exp 26/02/2027
     await w.find('td.mbd-td--counted input.mbd-qty-input').setValue('2')
     await flushPromises()
     expect(w.findAllComponents(MpAutocomplete).length).toBe(0)
     const v002 = vendors.find((v) => v.id === 'V002')!.name
     expect(w.find('tbody').text()).toContain(v002)
+    // Expiry is read-only too and shows the batch's own value, not the typed one.
+    expect(w.findAllComponents(MpDatePicker).length).toBe(0)
+    expect(w.find('tbody').text()).toContain('26/02/2027')
+    expect(w.find('tbody').text()).not.toContain('01/01/2030')
     await clickSave(w)
-    const saved = w.emitted('save')![0]![0] as Array<{ attributes?: Record<string, string> }>
+    const saved = w.emitted('save')![0]![0] as Array<{ expiryDate: string; attributes?: Record<string, string> }>
     expect(saved[0]!.attributes).toMatchObject({ supplier: 'V002', grade: 'grade-b', expiry_date: '2027-02-26' })
+    expect(saved[0]!.expiryDate).toBe('2027-02-26')
+    w.unmount()
+  })
+
+  it('a typed number matching a batch with no expiry keeps Expiry fillable', async () => {
+    ensureProductBatch(SKU, 'NOEXP-ATTR-1') // a record with no expiry yet
+    const w = mountDrawer({ kind: 'in-out' })
+    await flushPromises()
+    await openSelectBatch()
+    ;([...document.body.querySelectorAll('.mbd-popover-add-row')].pop() as HTMLElement).click()
+    await flushPromises()
+    await w.find('tbody input.mbd-cell-input').setValue('NOEXP-ATTR-1')
+    await flushPromises()
+    expect(w.findAllComponents(MpDatePicker).length).toBe(1)
+    w.unmount()
+  })
+
+  it('scanning a number recorded only in another warehouse in a transfer adds a new row, not a 0-stock existing one', async () => {
+    // Batch #00051 has a product record (V003) but no lot in wh-001 (and no other SKU's lot there).
+    const w = mountDrawer({ kind: 'transfer' })
+    await flushPromises()
+    const input = document.body.querySelector('.scan-bar-input') as HTMLInputElement
+    input.value = 'Batch #00051'
+    input.dispatchEvent(new Event('input'))
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    // Not the existing record: its vendor and expiry do not ride along.
+    expect(w.find('tbody').text()).not.toContain(vendors.find((v) => v.id === 'V003')!.name)
+    await clickSave(w)
+    const saved = w.emitted('save')?.[0]?.[0] as Array<{ batchNo: string; batchId?: string; expiryDate: string; attributes?: Record<string, string> }> | undefined
+    const row = saved?.find((r) => r.batchNo === 'Batch #00051')
+    expect(row).toBeTruthy()
+    expect(row!.batchId).toBeUndefined()
+    expect(row!.expiryDate).toBe('')
+    expect(row!.attributes?.supplier).toBeUndefined()
     w.unmount()
   })
 

@@ -11,13 +11,14 @@ import {
 } from '~/data/batchAttributes'
 import { vendors } from '~/data/vendors'
 import { activeGrades, gradeById } from '~/data/grades'
-import { formatDateLong } from '~/utils/date'
+import { formatDate, formatDateLong } from '~/utils/date'
 import { useLocale } from '~/composables/useLocale'
 
 export function useBatchAttributeColumns(sku: Ref<string>): {
   keys: ComputedRef<BatchAttributeKey[]>
   label: (k: BatchAttributeKey) => string
   text: (k: BatchAttributeKey, v: BatchAttributeValues) => string
+  optionText: (k: BatchAttributeKey, v: BatchAttributeValues) => string
   options: (k: BatchAttributeKey) => { value: string; label: string }[]
 } {
   const { t } = useLocale()
@@ -34,7 +35,10 @@ export function useBatchAttributeColumns(sku: Ref<string>): {
   const gradeText = (name: string, rank: number) => `${name} (${t('Rank')} ${rank})`
   const gradeOption = (name: string, rank: number) => `${name} · ${t('Rank')} ${rank}`
 
-  function text(k: BatchAttributeKey, v: BatchAttributeValues): string {
+  /** A value as text. Dates read numeric DD/MM/YYYY (MM/YYYY for a month expiry) in a
+   *  table cell, like the Expiry column beside them (rule/format-date); `long` gives the
+   *  DD MMM YYYY form the Select-batch option line uses. */
+  function format(k: BatchAttributeKey, v: BatchAttributeValues, long: boolean): string {
     const value = v[k]
     if (!value) return '—'
     switch (k) {
@@ -46,12 +50,18 @@ export function useBatchAttributeColumns(sku: Ref<string>): {
       case 'expiry_date':
         if (expiryPrecision(value) === 'month') {
           const [y, m] = value.split('-')
-          return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+          return long
+            ? new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+            : `${m}/${y}`
         }
-        return formatDateLong(value)
-      default: return formatDateLong(value)
+        return long ? formatDateLong(value) : formatDate(value)
+      default: return long ? formatDateLong(value) : formatDate(value)
     }
   }
+  /** A table cell's text. */
+  const text = (k: BatchAttributeKey, v: BatchAttributeValues) => format(k, v, false)
+  /** The Select-batch dropdown's second line. */
+  const optionText = (k: BatchAttributeKey, v: BatchAttributeValues) => format(k, v, true)
 
   function options(k: BatchAttributeKey): { value: string; label: string }[] {
     if (k === 'supplier') return vendors.map((v) => ({ value: v.id, label: v.name }))
@@ -59,5 +69,5 @@ export function useBatchAttributeColumns(sku: Ref<string>): {
     return []
   }
 
-  return { keys, label, text, options }
+  return { keys, label, text, optionText, options }
 }

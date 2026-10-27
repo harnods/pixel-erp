@@ -117,7 +117,7 @@ export interface StockAdjustment {
   /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
   memo?: string
   /** User-entered product lines (create form). Absent → demo lines are derived. */
-  lines?: { sku: string; qty: number; prevQty?: number; location?: string; dimensions?: Record<string, string>; batches?: { batchNo: string; qty: number; attributes: BatchAttributeValues }[] }[]
+  lines?: { sku: string; qty: number; prevQty?: number; location?: string; dimensions?: Record<string, string>; batches?: { batchNo: string; qty: number; description?: string; attributes: BatchAttributeValues }[] }[]
   /** Filled when the adjustment is approved (to populate approval log stage 2). */
   approvedAt?: string
   approvedBy?: string
@@ -464,7 +464,7 @@ export interface AdjustmentInput {
   category: AdjustmentCategory
   tags: string[]
   memo?: string
-  lines: { sku: string; qty: number; prevQty?: number; dimensions?: Record<string, string>; batches?: { batchNo: string; qty: number; attributes: BatchAttributeValues }[] }[]
+  lines: { sku: string; qty: number; prevQty?: number; dimensions?: Record<string, string>; batches?: { batchNo: string; qty: number; description?: string; attributes: BatchAttributeValues }[] }[]
   /** WMS Stock count only */
   assignee?: string
   startDate?: string

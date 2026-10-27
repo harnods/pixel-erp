@@ -66,7 +66,10 @@ const selectedProducts = ref<string[]>(
 )
 const onlyRequiredEmpty = ref(false)
 const noMatch = ref(false)
-watch([selectedProducts, onlyRequiredEmpty], () => { noMatch.value = false })
+/** A file write failed (template or error file) — shown inline, the button stays to retry. */
+const templateWriteFailed = ref(false)
+const errorFileWriteFailed = ref(false)
+watch([selectedProducts, onlyRequiredEmpty], () => { noMatch.value = false; templateWriteFailed.value = false })
 
 const templateSkus = computed(() =>
   selectedProducts.value.length ? selectedProducts.value.map((n) => skuByName.get(n)!) : exportSkus,
@@ -86,7 +89,12 @@ async function downloadTemplate() {
   const data = buildBatchExport({ skus: templateSkus.value, onlyRequiredEmpty: onlyRequiredEmpty.value })
   if (!data.rows.length) return void (noMatch.value = true)
   noMatch.value = false
-  await writeBatchExportXlsx(data, 'update-batches-template.xlsx', t)
+  templateWriteFailed.value = false
+  try {
+    await writeBatchExportXlsx(data, 'update-batches-template.xlsx', t)
+  } catch {
+    return void (templateWriteFailed.value = true)
+  }
   successToast(t('Batches exported'))
 }
 
@@ -214,7 +222,9 @@ function importErrorText(e: string): string {
 function downloadErrorFile() {
   if (!result.value) return
   const rows = result.value.failed.map((f) => [String(f.rowNumber), f.productName, f.batchNumber, f.errors.map(importErrorText).join('; ')])
-  void writeSheet('update-batches-errors.xlsx', [t('Row'), t('Product name'), t('Batch number'), t('Errors')], rows)
+  errorFileWriteFailed.value = false
+  writeSheet('update-batches-errors.xlsx', [t('Row'), t('Product name'), t('Batch number'), t('Errors')], rows)
+    .catch(() => { errorFileWriteFailed.value = true })
 }
 
 // ── Scenarios (prototype) ────────────────────────────────────────────────────
@@ -308,6 +318,7 @@ watch(scenario, (s) => {
           </table>
         </div>
 
+        <p v-if="errorFileWriteFailed" class="ibu-error" role="alert" data-devchange="batch-export-write-error">{{ t('Couldn’t create the file. Try again') }}</p>
         <div class="ibu-actions">
           <!-- Not "Cancel": the import already ran, and cancelling would read as undoing
                the rows that landed. Naming the destination says what leaving actually does. -->
@@ -340,6 +351,7 @@ watch(scenario, (s) => {
             </div>
             <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="downloadTemplate">{{ t('Download template') }}</button>
             <p v-if="noMatch" class="ibu-error">{{ t('No batches match these filters') }}</p>
+            <p v-if="templateWriteFailed" class="ibu-error" role="alert" data-devchange="batch-export-write-error">{{ t('Couldn’t create the file. Try again') }}</p>
             <FormatRequirementsAccordion :requirements="formatRequirements" />
           </div>
         </div>

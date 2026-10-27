@@ -195,8 +195,9 @@ const batchDrawerOpen = computed({
 function openBatchDrawer(row: ProductRow, locRow: LocationRow) { batchDrawerSku.value = row.sku; batchDrawerLocRow.value = locRow }
 /** A row's batches across its locations — same number merged, with the attribute snapshot
  *  the drawer recorded (ATINV-9082). Stock in only: batch qty is always positive. */
-function batchesOfRow(r: { locationRows: LocationRow[] }): { batchNo: string; qty: number; attributes: Partial<Record<BatchAttributeKey, string>> }[] {
-  const byNo = new Map<string, { batchNo: string; qty: number; attributes: Partial<Record<BatchAttributeKey, string>> }>()
+type SavedBatchLine = { batchNo: string; qty: number; description?: string; attributes: Partial<Record<BatchAttributeKey, string>> }
+function batchesOfRow(r: { locationRows: LocationRow[] }): SavedBatchLine[] {
+  const byNo = new Map<string, SavedBatchLine>()
   for (const loc of r.locationRows) {
     for (const b of loc.batchLines ?? []) {
       const qty = b.counted ?? 0
@@ -204,7 +205,7 @@ function batchesOfRow(r: { locationRows: LocationRow[] }): { batchNo: string; qt
       const key = b.batchNo.trim().toLowerCase()
       const prev = byNo.get(key)
       if (prev) prev.qty += qty
-      else byNo.set(key, { batchNo: b.batchNo.trim(), qty, attributes: { ...(b.attributes ?? {}), ...(b.expiryDate && !b.attributes?.expiry_date ? { expiry_date: b.expiryDate } : {}) } })
+      else byNo.set(key, { batchNo: b.batchNo.trim(), qty, ...(b.desc?.trim() ? { description: b.desc.trim() } : {}), attributes: { ...(b.attributes ?? {}), ...(b.expiryDate && !b.attributes?.expiry_date ? { expiry_date: b.expiryDate } : {}) } })
     }
   }
   return [...byNo.values()]

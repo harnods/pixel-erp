@@ -4,7 +4,7 @@ import { MpIcon, MpButton } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
-import { batchAttributesFor } from '~/data/productDetails'
+import { batchAttributesFor, findProductBatch } from '~/data/productDetails'
 import type { BatchAttributeKey, BatchAttributeValues } from '~/data/batchAttributes'
 import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
 
@@ -112,7 +112,7 @@ const props = defineProps<{
   hideLocation?: boolean
   /** In/out mode: the batches the adjustment saved. When given, the table shows exactly
    *  these (ATINV-9082) instead of splitting the delta across the warehouse's lots. */
-  savedBatches?: { batchNo: string; qty: number; attributes: Partial<Record<string, string>> }[]
+  savedBatches?: { batchNo: string; qty: number; description?: string; attributes: Partial<Record<string, string>> }[]
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
@@ -178,6 +178,11 @@ function attrsFor(batchNo: string, expiryDate: string, snapshot?: BatchAttribute
   return snapshot && Object.keys(snapshot).length ? snapshot : batchAttributesFor(props.sku, batchNo, expiryDate || undefined)
 }
 function attrText(row: BatchRow, key: BatchAttributeKey) { return attrCols.text(key, row.attributes) }
+/** A saved line's description: its own, else the batch master's, else the demo filler
+ *  (only for a line that carries nothing at all). */
+function descFor(batchNo: string, saved: string | undefined, i: number): string {
+  return saved?.trim() || findProductBatch(props.sku, batchNo)?.description || DEMO_DESCS[i % DEMO_DESCS.length]!
+}
 
 /** Expands one batch entry into one row per destination bin (Storage
  *  location/Put-away qty split, everything else merged via groupIndex/
@@ -243,14 +248,14 @@ function buildRows(): BatchRow[] {
         const picked = pickedMap.get(batchNo)
         const src = picked ?? planned!
         return expandByBin(
-          batchNo, src.expiryDate, src.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, src.unit,
+          batchNo, src.expiryDate, descFor(batchNo, src.desc, i), src.unit,
           planned?.qty ?? 0, picked?.qty ?? 0, picked?.location, picked?.destLocations,
           src.attributes,
         )
       })
     }
     return (props.pickedBatches ?? []).flatMap((b, i) =>
-      expandByBin(b.batchNo, b.expiryDate, b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, b.unit, 0, b.qty, b.location, b.destLocations, b.attributes),
+      expandByBin(b.batchNo, b.expiryDate, descFor(b.batchNo, b.desc, i), b.unit, 0, b.qty, b.location, b.destLocations, b.attributes),
     )
   }
 
@@ -265,7 +270,7 @@ function buildRows(): BatchRow[] {
       return {
         batchNo: sb.batchNo,
         expiryDate: sb.attributes.expiry_date ?? lot?.expiryDate ?? '',
-        desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+        desc: descFor(sb.batchNo, sb.description, i),
         onHand: before, value: sb.qty, plannedValue: 0, verifiedValue: 0, newOnHand: before + sb.qty,
         unit, attributes: attrsFor(sb.batchNo, sb.attributes.expiry_date ?? lot?.expiryDate ?? '', sb.attributes), bin: null, groupIndex: 0, groupSize: 1,
       }

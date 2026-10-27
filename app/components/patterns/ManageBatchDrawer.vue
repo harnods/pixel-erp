@@ -16,7 +16,6 @@ import { VENDOR_MISMATCH_COPY, checkDeliveryBatches, productUsesVendor } from '~
 import { checkDrawerBatches, drawerModeFor } from '~/data/batchDrawerAttributes'
 import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
 import { useLocale } from '~/composables/useLocale'
-import { formatDate } from '~/utils/date'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
@@ -273,13 +272,9 @@ const attrKeys = computed(() => (attrMode.value ? attrCols.keys.value : []))
 const deliveryUsesVendor = computed(() => isDelivery.value && productUsesVendor(props.sku))
 const vendorName = (id: string | undefined) => (id ? vendors.find(v => v.id === id)?.name ?? id : '')
 const attrLabel = attrCols.label
-/** A cell's text. Dates in a table cell stay numeric DD/MM/YYYY like the Expiry
- *  column beside them (rule/format-date); the dropdown's line uses the long form. */
+/** A cell's text (dates numeric DD/MM/YYYY — the composable's cell format). */
 function attrText(row: WorkRow, key: BatchAttributeKey) {
-  const values = effectiveAttrs(row)
-  const v = values[key]
-  if (v && (key === 'manufacturing_date' || key === 'best_before_date')) return formatDate(v)
-  return attrCols.text(key, values)
+  return attrCols.text(key, effectiveAttrs(row))
 }
 /** The row's values with the batch master's NON-EMPTY ones on top — a typed number
  *  that matches an existing batch is that batch, and a transaction never overwrites
@@ -287,6 +282,8 @@ function attrText(row: WorkRow, key: BatchAttributeKey) {
 function effectiveAttrs(row: WorkRow): BatchAttributeValues {
   const own = { ...(row.attributes ?? {}) }
   if (isDelivery.value || !attrMode.value) return own
+  // An issuing drawer's new row is not an existing batch (no stock here) — no master values.
+  if (!isReceivingMode.value && row.isNew) return own
   const master = findProductBatch(props.sku, row.batchNo)?.attributes ?? {}
   for (const [k, v] of Object.entries(master) as [BatchAttributeKey, string | undefined][]) if (v) own[k] = v
   return own
@@ -297,6 +294,13 @@ const isUnassignedNo = (batchNo: string) => batchNo.trim().toLowerCase() === UNA
  *  that batch, so new rows are looked up too. */
 function masterValue(row: WorkRow, key: BatchAttributeKey): string {
   return findProductBatch(props.sku, row.batchNo)?.attributes[key] ?? ''
+}
+/** A NEW row's typed number that matches an existing batch with an expiry: that
+ *  expiry is the batch's, so the cell shows it read-only and the row saves it
+ *  (a transaction never overwrites a value — §5.1). Empty otherwise (cell stays fillable). */
+function lockedExpiry(row: WorkRow): string {
+  if (!row.isNew || !isReceivingMode.value || isDelivery.value || isUnassignedNo(row.batchNo)) return ''
+  return masterValue(row, 'expiry_date')
 }
 /** Whether this row's attribute cell is an input. Delivery keeps its own rules: only a
  *  batch it creates is editable (story 10 fills a vendor-less batch on save). */
@@ -321,7 +325,7 @@ function optionAttrText(batchNo: string, expiryDate: string): string {
   const values: BatchAttributeValues = isDelivery.value
     ? (findProductBatch(props.sku, batchNo)?.attributes ?? {})
     : batchAttributesFor(props.sku, batchNo, expiryDate)
-  return attrKeys.value.map(k => attrCols.text(k, values)).join(' · ')
+  return attrKeys.value.map(k => attrCols.optionText(k, values)).join(' · ')
 }
 /** Story 10 rules 2 + 3, shown against an existing batch the delivery reuses — as an
  *  icon in the Vendor cell with the sentence in its tooltip, so the row keeps one
@@ -749,12 +753,14 @@ function handleDrawerScan(rawValue: string) {
 
   // Genuinely unrecognized code — fall back to a blank row the operator fills in
   // manually (e.g. count mode cataloguing a batch not yet in the system).
-  // A number the product already has a batch record for (another warehouse, or qty 0)
-  // is that existing batch, not a new one (ATINV-9082 §5.1) — its values ride along.
+  // In a receiving drawer, a number the product already has a batch record for
+  // (another warehouse, or qty 0) is that existing batch, not a new one (ATINV-9082
+  // §5.1) — its values ride along. Issuing drawers keep the plain new-row fallback:
+  // they must never treat a batch this warehouse doesn't stock as an existing line.
   newCounter++
   const key = `__new__${newCounter}`
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
-  const known = attrMode.value ? findProductBatch(props.sku, v) : undefined
+  const known = isReceivingMode.value ? findProductBatch(props.sku, v) : undefined
   const knownExpiry = known?.attributes.expiry_date ?? ''
   rows.value.push({
     key,
@@ -1088,7 +1094,7 @@ async function handleSave() {
     return {
       key: r.key,
       batchNo: r.batchNo,
-      expiryDate: r.expiryDate,
+      expiryDate: lockedExpiry(r) || r.expiryDate,
       desc: r.desc,
       onHand: r.onHand,
       counted: r.counted,
@@ -1549,7 +1555,7 @@ function fmtNum(n: number | null): string {
                   <td v-else class="mbd-td mbd-td--muted">{{ expiryText(row) }}</td>
                 </template>
                 <template v-else>
-                  <td v-if="row.isNew" class="mbd-td mbd-td--input mbd-td--datepicker">
+                  <td v-if="row.isNew && !lockedExpiry(row)" class="mbd-td mbd-td--input mbd-td--datepicker">
                     <MpDatePicker
                       use-portal
                       format="DD/MM/YYYY"
@@ -1559,6 +1565,7 @@ function fmtNum(n: number | null): string {
                       @update:model-value="setExpiryDisplay(row, $event as string)"
                     />
                   </td>
+                  <td v-else-if="row.isNew" class="mbd-td mbd-td--muted" data-devchange="batch-drawer-typed-expiry-locked">{{ expiryText({ ...row, expiryDate: lockedExpiry(row) }) }}</td>
                   <td v-else class="mbd-td mbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
                   <td v-if="row.isNew" class="mbd-td mbd-td--input">
                     <input

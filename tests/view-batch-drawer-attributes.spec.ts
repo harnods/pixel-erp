@@ -51,6 +51,27 @@ describe('ViewBatchDrawer attributes', () => {
     expect(c[h.indexOf('Grade')]).toBe('—')
   })
 
+  it('a saved stock in/out line shows its own description, else the batch master\'s', () => {
+    // Batch #001's master description is "Stock untuk gudang utama"; #00002 has none.
+    const w = mount(ViewBatchDrawer, {
+      props: {
+        open: true, sku: '1001', warehouseId: 'wh-001', kind: 'in-out', deltaTotal: 3, productName: 'Green Beans', productImg: '',
+        savedBatches: [
+          { batchNo: 'Batch #00002', qty: 2, description: 'Received from the north dock', attributes: {} },
+          { batchNo: 'Batch #001', qty: 1, attributes: {} },
+        ],
+      },
+    })
+    expect(cells(w, 'Batch #00002')).toContain('Received from the north dock')
+    expect(cells(w, 'Batch #001')).toContain(findProductBatch('1001', 'Batch #001')!.description)
+    expect(w.text()).not.toContain('Ethiopia Yirgacheffe')
+  })
+
+  it('a received line with no description shows the batch master\'s', () => {
+    const w = mountView([{ batchNo: 'Batch #001', expiryDate: '2026-12-01', desc: '', qty: 1, unit: 'Sack' }])
+    expect(cells(w, 'Batch #001')).toContain('Stock untuk gudang utama')
+  })
+
   it('shows the columns in count mode too', () => {
     const w = mount(ViewBatchDrawer, {
       props: { open: true, sku: '1001', warehouseId: 'wh-001', kind: 'count', countedTotal: 4, productName: 'Green Beans', productImg: '' },

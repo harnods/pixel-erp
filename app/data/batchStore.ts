@@ -96,16 +96,25 @@ function buildLotSeedRecords(): BatchRecord[] {
 }
 
 const RECORDS_KEY = 'batch-records-v2'
+/** The store before lot records were seeded. Read once so a user's created batches,
+ *  attribute edits, renames and archive flags survive the bump; saved back as v2. */
+const LEGACY_RECORDS_KEY = 'batch-records-v1'
 const storedRecords = loadSnapshot<BatchRecord>(RECORDS_KEY)
+const legacyRecords = storedRecords ? null : loadSnapshot<BatchRecord>(LEGACY_RECORDS_KEY)
 const records = reactive<BatchRecord[]>(
-  storedRecords ?? SEED_RECORDS.map((r) => ({ ...r, attributes: { ...r.attributes } })),
+  storedRecords ?? legacyRecords ?? SEED_RECORDS.map((r) => ({ ...r, attributes: { ...r.attributes } })),
 )
-// A stored snapshot already contains the lot records; a fresh seed adds them on first use.
+// A v2 snapshot already contains the lot records; a fresh seed or a v1 snapshot gets
+// them on first use. A lot whose number a record already holds is not added twice.
 let lotRecordsSeeded = !!storedRecords
 function ensureLotRecords() {
   if (lotRecordsSeeded) return
   lotRecordsSeeded = true
-  records.push(...buildLotSeedRecords())
+  const taken = new Set(records.map((r) => `${r.sku}|${(r.batchNo ?? '').trim().toLowerCase()}`))
+  const ids = new Set(records.map((r) => r.id))
+  records.push(...buildLotSeedRecords().filter((r) =>
+    !ids.has(r.id) && !taken.has(`${r.sku}|${(r.batchNo ?? '').trim().toLowerCase()}`)))
+  if (legacyRecords) persistRecords()
 }
 function persistRecords() { saveSnapshot(RECORDS_KEY, records) }
 

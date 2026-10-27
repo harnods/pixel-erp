@@ -28,6 +28,20 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'batch-export-write-error',
+    title: 'Batch export: a failed file shows an inline error',
+    description: 'If the template, export or error file can’t be created, an inline message says so under the button (no silent failure). The button stays to retry.',
+    date: '2026-10-28',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue', 'app/components/patterns/BatchExportModal.vue'],
+  },
+  {
+    id: 'batch-drawer-typed-expiry-locked',
+    title: 'Receiving drawer: a typed existing batch keeps its expiry',
+    description: 'Typing a new number that matches an existing batch with an expiry shows that expiry read-only (like its other attributes) and saves it; a batch with no expiry stays fillable.',
+    date: '2026-10-28',
+    files: ['app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
     id: 'view-batch-drawer-attributes',
     title: 'Batch attributes in View batch and Pick batch drawers',
     description:

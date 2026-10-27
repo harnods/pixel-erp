@@ -23,6 +23,8 @@ const { t } = useLocale()
 
 const onlyRequiredEmpty = ref(false)
 const noMatch = ref(false)
+/** The file write failed (rule/form-errors-inline) — Export stays clickable to retry. */
+const writeFailed = ref(false)
 const isExporting = ref(false)
 
 // Fresh state on every open; changing the filter clears a stale error.
@@ -30,18 +32,22 @@ watch(() => props.open, (open) => {
   if (!open) return
   onlyRequiredEmpty.value = false
   noMatch.value = false
+  writeFailed.value = false
 }, { immediate: true })
-watch(onlyRequiredEmpty, () => { noMatch.value = false })
+watch(onlyRequiredEmpty, () => { noMatch.value = false; writeFailed.value = false })
 
 async function exportBatches() {
   if (isExporting.value) return
   const data = buildBatchExport({ skus: [props.sku], onlyRequiredEmpty: onlyRequiredEmpty.value })
+  writeFailed.value = false
   if (!data.rows.length) return void (noMatch.value = true)
   isExporting.value = true
   try {
     await writeBatchExportXlsx(data, `${props.sku}-batches.xlsx`, t)
     successToast(t('Batches exported'))
     emit('close')
+  } catch {
+    writeFailed.value = true
   } finally {
     isExporting.value = false
   }
@@ -63,6 +69,7 @@ async function exportBatches() {
           <MpText class="bem-caption">{{ t('The file uses the Update batches template, so you can edit it and import it back.') }}</MpText>
           <MpCheckbox id="bem-required-empty" :is-checked="onlyRequiredEmpty" @change="onlyRequiredEmpty = !onlyRequiredEmpty">{{ t('Only batches with an empty required attribute') }}</MpCheckbox>
           <p v-if="noMatch" class="bem-error" role="alert">{{ t('No batches match these filters') }}</p>
+          <p v-if="writeFailed" class="bem-error" role="alert" data-devchange="batch-export-write-error">{{ t('Couldn’t create the file. Try again') }}</p>
         </div>
       </MpModalBody>
       <MpModalFooter>

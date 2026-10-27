@@ -44,6 +44,16 @@ describe('BatchExportModal', () => {
     expect(w.emitted('close')).toBeTruthy()
   })
 
+  it('a failed file write shows an inline error and keeps the modal open', async () => {
+    const sku = exportableProductSkus().find((s) => buildBatchExport({ skus: [s], onlyRequiredEmpty: false }).rows.length > 0)!
+    write.mockRejectedValueOnce(new Error('disk full'))
+    const w = await mountModal(sku)
+    await click(btn('Export'))
+    expect(toast).not.toHaveBeenCalled()
+    expect(w.emitted('close')).toBeFalsy()
+    expect(modal().textContent).toContain('Couldn’t create the file. Try again')
+  })
+
   it('shows the no-match error when the checkbox filters everything out', async () => {
     const sku = exportableProductSkus().find((s) => buildBatchExport({ skus: [s], onlyRequiredEmpty: true }).rows.length === 0)!
     expect(sku, 'fixture: product with no required-empty batch').toBeTruthy()
