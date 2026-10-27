@@ -256,12 +256,29 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   <div class="dm-wrapper" data-devchange="dm-step-layout">
     <!-- ── Landing page (step 0) ─────────────────────────────────────────── -->
     <div v-if="showLanding" class="dm-landing">
-      <div class="dm-landing-content">
-        <img :src="dmHeroImg" alt="" class="dm-landing-hero" />
-        <h2 class="dm-landing-title">{{ t('Set up your data') }}</h2>
-        <p class="dm-landing-desc">{{ t('Migrate your existing business data into Mekari Jurnal. Complete each step to transfer your company information, financial records, and transaction history.') }}</p>
+      <div class="dm-landing-hero-card">
+        <div class="dm-landing-left">
+          <h2 class="dm-landing-title">{{ t('Set up your business data in Mekari Jurnal') }}</h2>
+          <p class="dm-landing-desc">{{ t('Migrate your existing company information, financial records, and transaction history. Complete each step to get your account ready.') }}</p>
+          <div class="dm-landing-actions">
+            <MpButton
+              id="dm-start-migration-btn"
+              class="btn-enterprise btn-enterprise--primary dm-landing-cta"
+              @click="startMigration"
+            >
+              {{ t('Start setup') }}
+            </MpButton>
+            <span class="dm-landing-note">{{ t('You can complete steps in any order') }}</span>
+          </div>
+        </div>
+        <div class="dm-landing-right">
+          <img :src="dmHeroImg" alt="" class="dm-landing-hero" />
+        </div>
+      </div>
 
-        <div class="dm-landing-steps">
+      <div class="dm-landing-steps">
+        <h3 class="dm-landing-steps-title">{{ t('What you\'ll set up') }}</h3>
+        <div class="dm-landing-steps-grid">
           <div v-for="(step, idx) in STEPS" :key="step.id" class="dm-landing-step">
             <span class="dm-landing-step-number">{{ idx + 1 }}</span>
             <div class="dm-landing-step-info">
@@ -270,16 +287,6 @@ const stepDone = computed<Record<string, boolean>>(() => ({
             </div>
           </div>
         </div>
-
-        <MpButton
-          id="dm-start-migration-btn"
-          class="btn-enterprise btn-enterprise--primary dm-landing-cta"
-          @click="startMigration"
-        >
-          {{ t('Get started') }}
-        </MpButton>
-
-        <p class="dm-landing-note">{{ t('You can complete these steps in any order and come back anytime to continue.') }}</p>
       </div>
     </div>
 
@@ -689,48 +696,93 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 /* ─── Landing page (step 0) ────────────────────────────────────────────────── */
 .dm-landing {
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: var(--mp-spacing-16) var(--mp-spacing-6);
-  min-height: calc(100vh - 120px);
+  flex-direction: column;
+  gap: var(--mp-spacing-8);
 }
 
-.dm-landing-content {
+.dm-landing-hero-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: var(--mp-spacing-8);
+  padding: var(--mp-spacing-10) var(--mp-spacing-10);
+  background: var(--mp-background-neutral-subtle);
+  border-radius: var(--mp-radii-xl, 16px);
+}
+
+.dm-landing-left {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  max-width: 520px;
-  text-align: center;
-}
-
-.dm-landing-hero {
-  width: 120px;
-  height: auto;
-  margin-bottom: var(--mp-spacing-4);
+  gap: var(--mp-spacing-4);
 }
 
 .dm-landing-title {
   margin: 0;
-  font-size: var(--mp-font-sizes-xl, 20px);
-  font-weight: var(--mp-font-weights-semi-bold);
+  font-size: var(--mp-font-sizes-2xl, 24px);
+  font-weight: var(--mp-font-weights-bold);
   color: var(--mp-text-default);
-  line-height: var(--mp-line-heights-xl);
+  line-height: var(--mp-line-heights-2xl, 32px);
 }
 
 .dm-landing-desc {
-  margin: var(--mp-spacing-2) 0 0;
+  margin: 0;
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
 }
 
+.dm-landing-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-4);
+  margin-top: var(--mp-spacing-2);
+}
+
+.dm-landing-cta {
+  border-radius: var(--mp-radii-full, 999px) !important;
+  padding-left: var(--mp-spacing-6) !important;
+  padding-right: var(--mp-spacing-6) !important;
+}
+
+.dm-landing-note {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-placeholder);
+  line-height: var(--mp-line-heights-sm);
+}
+
+.dm-landing-right {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-landing-hero {
+  max-width: 100%;
+  max-height: var(--mp-sizes-64, 256px);
+  height: auto;
+  object-fit: contain;
+}
+
 .dm-landing-steps {
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-1);
+  align-items: center;
+  gap: var(--mp-spacing-4);
+}
+
+.dm-landing-steps-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+
+.dm-landing-steps-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-3);
   width: 100%;
-  margin-top: var(--mp-spacing-8);
-  text-align: left;
+  max-width: 480px;
 }
 
 .dm-landing-step {
@@ -739,7 +791,8 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
   border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle);
+  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral);
 }
 
 .dm-landing-step-number {
@@ -750,8 +803,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   width: var(--mp-sizes-6, 24px);
   height: var(--mp-sizes-6, 24px);
   border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
@@ -761,7 +813,6 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-0\.5, 2px);
-  padding-top: 1px;
 }
 
 .dm-landing-step-label {
@@ -774,20 +825,6 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-landing-step-hint {
   font-size: var(--mp-font-sizes-sm);
   color: var(--mp-text-secondary);
-  line-height: var(--mp-line-heights-sm);
-}
-
-.dm-landing-cta {
-  margin-top: var(--mp-spacing-8);
-  border-radius: var(--mp-radii-full, 999px) !important;
-  padding-left: var(--mp-spacing-8) !important;
-  padding-right: var(--mp-spacing-8) !important;
-}
-
-.dm-landing-note {
-  margin: var(--mp-spacing-3) 0 0;
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-placeholder);
   line-height: var(--mp-line-heights-sm);
 }
 
