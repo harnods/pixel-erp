@@ -238,19 +238,21 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   <div class="dm-wrapper" data-devchange="dm-step-layout">
     <div class="dm-layout">
       <!-- ── Left: Step list ──────────────────────────────────────────────── -->
-      <nav class="dm-steps" aria-label="Migration steps">
-        <button
-          v-for="(step, idx) in STEPS"
-          :key="step.id"
-          class="dm-step"
-          :class="{ 'dm-step--active': step.id === activeStepId, 'dm-step--done': stepDone[step.id] }"
-          @click="activeStepId = step.id"
-        >
-          <MpIcon v-if="stepDone[step.id]" name="done" variant="fill" size="sm" color="icon.success" />
-          <span v-else class="dm-step-number">{{ idx + 1 }}</span>
-          <span class="dm-step-label">{{ t(step.label) }}</span>
-        </button>
-      </nav>
+      <div class="dm-steps-col">
+        <nav class="dm-steps" aria-label="Migration steps">
+          <button
+            v-for="(step, idx) in STEPS"
+            :key="step.id"
+            class="dm-step"
+            :class="{ 'dm-step--active': step.id === activeStepId, 'dm-step--done': stepDone[step.id] }"
+            @click="activeStepId = step.id"
+          >
+            <MpIcon v-if="stepDone[step.id]" name="done" variant="fill" size="sm" color="icon.success" />
+            <span v-else class="dm-step-number">{{ idx + 1 }}</span>
+            <span class="dm-step-label">{{ t(step.label) }}</span>
+          </button>
+        </nav>
+      </div>
 
       <!-- ── Right: Form ────────────────────────────────────────────────── -->
       <div class="dm-form-area" :class="[activeStepId === 'company-info' ? 'dm-form-area--narrow' : 'dm-form-area--fullbleed']">
@@ -642,17 +644,21 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-layout {
   display: grid;
   grid-template-columns: 240px 1fr;
-  min-height: calc(100vh - 120px);
+  min-height: calc(100vh - 152px);
 }
 
 /* ─── Step list (left) ────────────────────────────────────────────────────── */
+.dm-steps-col {
+  border-right: 1px solid var(--mp-border-default);
+  padding-right: var(--mp-spacing-6);
+}
+
 .dm-steps {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-1);
-  border-right: 1px solid var(--mp-border-default);
-  padding-right: var(--mp-spacing-6);
-  min-height: 100%;
+  position: sticky;
+  top: 56px;
 }
 
 .dm-step {
@@ -706,11 +712,9 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   gap: var(--mp-spacing-5);
   padding-left: var(--mp-spacing-8);
   padding-bottom: 64px;
-  align-self: stretch;
 }
 .dm-form-area--narrow {
   max-width: 780px;
-  align-self: start;
 }
 .dm-form-area--fullbleed {
   padding-left: var(--mp-spacing-6);
