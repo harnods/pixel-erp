@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, reactive, nextTick } from 'vue'
+import { ref, computed, watch, reactive, nextTick, toRef } from 'vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import {
   MpIcon, MpTooltip, MpButton,
@@ -7,13 +7,16 @@ import {
   MpDatePicker, MpAutocomplete, MpInputGroup, MpInputLeftAddon, MpText, css,
 } from '@mekari/pixel3'
 import { productBySku } from '~/data/inventory'
-// Purchase-delivery kind only — batches there are the product's own records, not
-// warehouse stock, and they carry the Batch Attribute set (PRD story 10).
-import { getProductBatches } from '~/data/productDetails'
-import { batchAttributeDef, expiryPrecision, getBatchAttributeConfig, type BatchAttributeKey } from '~/data/batchAttributes'
+// Purchase delivery picks from the product's own batch records; every other kind picks
+// warehouse lots, which are the same batches (product + number, ATINV-9082 §5.1).
+import { getProductBatches, findProductBatch, batchAttributesFor, UNASSIGNED_BATCH_NO } from '~/data/productDetails'
+import { expiryPrecision, type BatchAttributeKey, type BatchAttributeValues } from '~/data/batchAttributes'
 import { vendors } from '~/data/vendors'
-import { activeGrades } from '~/data/grades'
 import { VENDOR_MISMATCH_COPY, checkDeliveryBatches, productUsesVendor } from '~/data/purchaseDeliveryBatches'
+import { checkDrawerBatches, drawerModeFor } from '~/data/batchDrawerAttributes'
+import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
+import { useLocale } from '~/composables/useLocale'
+import { formatDate } from '~/utils/date'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
@@ -39,8 +42,8 @@ export interface CommittedBatch {
   reservedQty?: number
   originLocations?: BatchLocEntry[]
   destLocations?: BatchLocEntry[]
-  /** Purchase delivery only — the batch record this row refers to (absent on a row
-   *  the delivery will create) and the attribute values to save with it. */
+  /** Every kind except count — the batch record this row refers to (absent on a row
+   *  that will create one) and the attribute values to save with it. */
   batchId?: string
   attributes?: Partial<Record<BatchAttributeKey, string>>
 }
@@ -156,6 +159,9 @@ function seedRows(): void {
   activeBin.value = props.initialActiveBin ?? null
   if (props.modelValue.length > 0) {
     rows.value = props.modelValue.map((b, i) => ({
+      // A row saved before it carried attributes (or by a page that doesn't keep
+      // them) picks them up from the batch master; a delivery's rows always carry theirs.
+      ...(props.kind !== 'purchase-delivery' && !b.attributes ? lotAttrs(b.batchNo, b.expiryDate) : {}),
       ...b,
       desc: b.desc || (props.kind === 'purchase-delivery' ? '' : DEMO_DESCS[i % DEMO_DESCS.length]!),
       // A delivery's batch without an id hasn't been created yet — reopening the
@@ -230,21 +236,57 @@ const isPutAway = computed(() => props.kind === 'put-away')
 const isPicking = computed(() => props.kind === 'picking')
 const isDelivery = computed(() => props.kind === 'purchase-delivery')
 
-// ── Purchase delivery: the product's attribute set drives extra columns ──────────
-const deliveryConfig = computed(() => (isDelivery.value ? getBatchAttributeConfig(props.sku) : []))
+// ── Batch attributes (ATINV-9082 §5.1): every kind except count ─────────────────
+// Receiving kinds (in-out, receiving, purchase-delivery) take values for a new batch
+// and for an existing batch's EMPTY attributes; issuing kinds (transfer, put-away,
+// picking) only show them. The product's attribute set drives the extra columns.
+const { t } = useLocale()
+const attrMode = computed(() => drawerModeFor(props.kind ?? 'count'))
+const isReceivingMode = computed(() => attrMode.value === 'receiving')
+const attrCols = useBatchAttributeColumns(toRef(props, 'sku'))
 /** Expiry already has its own column, so only the other attributes add columns. */
-const deliveryAttrKeys = computed(() => deliveryConfig.value.map(a => a.key).filter(k => k !== 'expiry_date'))
+const attrKeys = computed(() => (attrMode.value ? attrCols.keys.value : []))
 const deliveryUsesVendor = computed(() => isDelivery.value && productUsesVendor(props.sku))
-const vendorOptions = vendors.map(v => ({ label: v.name, value: v.id }))
-const gradeOptions = computed(() => activeGrades().map(g => ({ label: `${g.name} (Rank ${g.rank})`, value: g.id })))
 const vendorName = (id: string | undefined) => (id ? vendors.find(v => v.id === id)?.name ?? id : '')
-function attrLabel(key: BatchAttributeKey) { return batchAttributeDef(key).label }
+const attrLabel = attrCols.label
+/** A cell's text. Dates in a table cell stay numeric DD/MM/YYYY like the Expiry
+ *  column beside them (rule/format-date); the dropdown's line uses the long form. */
 function attrText(row: WorkRow, key: BatchAttributeKey) {
   const v = row.attributes?.[key]
-  if (!v) return '—'
-  if (key === 'supplier') return vendorName(v)
-  if (key === 'grade') return gradeOptions.value.find(g => g.value === v)?.label ?? v
-  return v
+  if (v && (key === 'manufacturing_date' || key === 'best_before_date')) return formatDate(v)
+  return attrCols.text(key, row.attributes ?? {})
+}
+const isUnassignedNo = (batchNo: string) => batchNo.trim().toLowerCase() === UNASSIGNED_BATCH_NO.toLowerCase()
+/** The value the batch master already holds — never editable (a transaction only
+ *  fills an empty attribute). A new row holds nothing yet. */
+function masterValue(row: WorkRow, key: BatchAttributeKey): string {
+  if (row.isNew) return ''
+  return findProductBatch(props.sku, row.batchNo)?.attributes[key] ?? ''
+}
+/** Whether this row's attribute cell is an input. Delivery keeps its own rules: only a
+ *  batch it creates is editable (story 10 fills a vendor-less batch on save). */
+function attrEditable(row: WorkRow, key: BatchAttributeKey): boolean {
+  if (!isReceivingMode.value) return false
+  if (isDelivery.value) return row.isNew
+  if (isUnassignedNo(row.batchNo)) return false
+  return !masterValue(row, key)
+}
+/** A lot's row values: the batch master's attributes (or just the lot's expiry when
+ *  it has no record yet) and its record id. Count rows carry none. Reads props, not
+ *  the computeds: seedRows() calls it from the {immediate:true} open watcher, before
+ *  those consts are initialised. */
+function lotAttrs(batchNo: string, expiryDate: string): Pick<CommittedBatch, 'batchId' | 'attributes'> {
+  if (!drawerModeFor(props.kind ?? 'count')) return {}
+  const id = findProductBatch(props.sku, batchNo)?.id
+  return { ...(id ? { batchId: id } : {}), attributes: batchAttributesFor(props.sku, batchNo, expiryDate) }
+}
+/** Second line under a Select-batch option — omitted when the product has no columns. */
+function optionAttrText(batchNo: string, expiryDate: string): string {
+  if (!attrKeys.value.length) return ''
+  const values: BatchAttributeValues = isDelivery.value
+    ? (findProductBatch(props.sku, batchNo)?.attributes ?? {})
+    : batchAttributesFor(props.sku, batchNo, expiryDate)
+  return attrKeys.value.map(k => attrCols.text(k, values)).join(' · ')
 }
 /** Story 10 rules 2 + 3, shown against an existing batch the delivery reuses — as an
  *  icon in the Vendor cell with the sentence in its tooltip, so the row keeps one
@@ -385,7 +427,7 @@ const availableBatches = computed(() => {
     // The Unassigned batch never carries attributes (A5), so it isn't offered here.
     return getProductBatches(props.sku)
       .filter(b => !b.isUnassigned && !inTable.has(b.batchNo))
-      .map(b => ({ batchNo: b.batchNo, expiryDate: b.attributes.expiry_date ?? '' }))
+      .map(b => ({ batchNo: b.batchNo, expiryDate: b.attributes.expiry_date ?? '', attrLine: optionAttrText(b.batchNo, '') }))
   }
   const wh = getWarehouseDetail(props.warehouseId)
   const si = wh?.stock.find(s => s.sku === props.sku)
@@ -394,7 +436,9 @@ const availableBatches = computed(() => {
   // Transfer/picking claim from live availability, not raw on-hand — a batch
   // already fully reserved (by another outbound task, etc.) can't be offered again.
   const eligible = (isTransfer.value || isPicking.value) ? all.filter(b => b.available > 0) : all
-  return eligible.filter(b => !inTable.has(b.batchNo))
+  return eligible
+    .filter(b => !inTable.has(b.batchNo))
+    .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, attrLine: optionAttrText(b.batchNo, b.expiryDate) }))
 })
 
 function addWarehouseBatch(batchNo: string) {
@@ -415,6 +459,7 @@ function addWarehouseBatch(batchNo: string) {
     counted: null,
     unit,
     location: b.location,
+    ...lotAttrs(b.batchNo, b.expiryDate),
     isNew: false,
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
@@ -463,7 +508,7 @@ function addNewBatch() {
     expiryMode: 'date',
     ...(isDelivery.value && deliveryUsesVendor.value && props.vendorId
       ? { attributes: { supplier: props.vendorId } as Partial<Record<BatchAttributeKey, string>> }
-      : isDelivery.value ? { attributes: {} as Partial<Record<BatchAttributeKey, string>> } : {}),
+      : attrMode.value ? { attributes: {} as Partial<Record<BatchAttributeKey, string>> } : {}),
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
   })
@@ -474,6 +519,43 @@ function addNewBatch() {
 function setRowAttr(row: WorkRow, key: BatchAttributeKey, value: string) {
   row.attributes = { ...(row.attributes ?? {}), [key]: value }
   deliveryError.value = ''
+  delete attrErrors.value[`${row.key}:${key}`]
+}
+
+/** A date attribute's picker shows DD/MM/YYYY; the row stores ISO. */
+function attrDateDisplay(row: WorkRow, key: BatchAttributeKey): string {
+  return isoToDisplay(row.attributes?.[key] ?? '')
+}
+
+/** What a row saves and is checked with: its values, plus a new row's typed expiry. */
+function rowAttrValues(r: WorkRow): BatchAttributeValues {
+  return { ...(r.attributes ?? {}), ...(r.isNew && r.expiryDate ? { expiry_date: r.expiryDate } : {}) }
+}
+
+/** Receiving kinds other than delivery (ATINV-9082 §5.1): required attributes filled,
+ *  no two NEW rows with one number. Only populated rows are checked, and each error
+ *  maps back to its row by index (controller ruling R5). Issuing kinds never call it. */
+const attrErrors = ref<Record<string, true>>({})
+function checkReceivingRows(): boolean {
+  attrErrors.value = {}
+  const populated = rows.value.filter(r => r.batchNo.trim())
+  const check = checkDrawerBatches(
+    props.sku, 'receiving',
+    populated.map(r => ({ batchNo: r.batchNo.trim(), attributes: rowAttrValues(r) })),
+  )
+  if (!check.errors.length) { deliveryError.value = ''; return true }
+  for (const e of check.errors) {
+    if (e.code === 'required' && e.key) attrErrors.value[`${populated[e.index]!.key}:${e.key}`] = true
+  }
+  const first = check.errors[0]!
+  const batchNo = populated[first.index]!.batchNo.trim()
+  let msg: string
+  if (first.code === 'required') msg = t('Attribute {attribute} must be filled').replace('{attribute}', attrLabel(first.key!))
+  else if (first.code === 'duplicate-new') msg = t('The same batch is on this line twice')
+  // 'batch-no' — a new number another batch of this product holds.
+  else msg = t('Batch number already taken')
+  deliveryError.value = `${batchNo}: ${msg}`
+  return false
 }
 
 const deliveryError = ref('')
@@ -611,6 +693,7 @@ function handleDrawerScan(rawValue: string) {
         counted: 1,
         unit,
         location: b.location,
+        ...lotAttrs(b.batchNo, b.expiryDate),
         isNew: false,
         originLocRows: [makeLocRow()],
         destLocRows: [makeLocRow()],
@@ -630,19 +713,26 @@ function handleDrawerScan(rawValue: string) {
 
   // Genuinely unrecognized code — fall back to a blank row the operator fills in
   // manually (e.g. count mode cataloguing a batch not yet in the system).
+  // A number the product already has a batch record for (another warehouse, or qty 0)
+  // is that existing batch, not a new one (ATINV-9082 §5.1) — its values ride along.
   newCounter++
   const key = `__new__${newCounter}`
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
+  const known = attrMode.value ? findProductBatch(props.sku, v) : undefined
+  const knownExpiry = known?.attributes.expiry_date ?? ''
   rows.value.push({
     key,
-    batchNo: v,
-    expiryDate: '',
-    expiryDisplay: '',
-    desc: '',
+    batchNo: known?.batchNo ?? v,
+    expiryDate: knownExpiry,
+    expiryDisplay: expiryPrecision(knownExpiry) === 'month'
+      ? `${knownExpiry.split('-')[1]}/${knownExpiry.split('-')[0]}`
+      : isoToDisplay(knownExpiry),
+    desc: known?.description ?? '',
     onHand: 0,
     counted: 1,
     unit,
-    isNew: true,
+    ...(known ? { batchId: known.id, attributes: { ...known.attributes } } : attrMode.value ? { attributes: {} } : {}),
+    isNew: !known,
     originLocRows: [makeLocRow()],
     destLocRows: [makeLocRow()],
   })
@@ -935,7 +1025,7 @@ async function saveBatchLocDrawer() {
 // A delivery has no Description column (it sits under the batch number), so it spans
 // one fewer — an overshoot here adds a phantom, width-less column that swallows the
 // table's spare width and leaves every data row short of the right edge.
-const trailingColspan = computed(() => (isDelivery.value ? 4 : 5) + deliveryAttrKeys.value.length + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
+const trailingColspan = computed(() => (isDelivery.value ? 4 : 5) + attrKeys.value.length + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
 
 // ── Footer actions ────────────────────────────────────────────────────────────────
 const isSaving = ref(false)
@@ -953,6 +1043,7 @@ async function handleSave() {
   }
   showPaLocErrors.value = false
   if (isDelivery.value && !checkDeliveryRows()) return
+  if (isReceivingMode.value && !isDelivery.value && !checkReceivingRows()) return
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   const committed: CommittedBatch[] = rows.value.map(r => {
@@ -970,9 +1061,8 @@ async function handleSave() {
       ...(filledOrigin.length ? { originLocations: filledOrigin.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
       ...(filledDest.length ? { destLocations: filledDest.map(l => ({ locationId: l.locationId, qty: Number(l.qty) })) } : {}),
       ...(r.batchId ? { batchId: r.batchId } : {}),
-      ...(isDelivery.value
-        ? { attributes: r.isNew ? { ...r.attributes, ...(r.expiryDate ? { expiry_date: r.expiryDate } : {}) } : { ...r.attributes } }
-        : {}),
+      // Every kind except count saves the line's attribute snapshot (§5.1).
+      ...(attrMode.value ? { attributes: rowAttrValues(r) } : {}),
     }
   })
   emit('save', committed)
@@ -1181,11 +1271,15 @@ function fmtNum(n: number | null): string {
 
           <!-- ── Put-away: inline split rows per batch ── -->
           <template v-if="isPutAway">
-          <table class="mbd-table mbd-table--putaway">
+          <table
+            class="mbd-table mbd-table--putaway" :class="{ 'mbd-table--attrs': attrKeys.length }"
+            :style="{ '--mbd-attr-count': String(attrKeys.length) }"
+          >
             <colgroup>
               <col class="mbd-col-batch" />
               <col class="mbd-col-expiry" />
               <col class="mbd-col-desc" />
+              <col v-for="k in attrKeys" :key="k" class="mbd-col-attr" />
               <col class="mbd-col-pa-loc" />
               <col class="mbd-col-counted" />
               <col class="mbd-col-unit" />
@@ -1196,6 +1290,10 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Batch</th>
                 <th class="mbd-th">Expiry date</th>
                 <th class="mbd-th">Description</th>
+                <th
+                  v-for="(k, i) in attrKeys" :key="k" class="mbd-th"
+                  :data-devchange="i === 0 ? 'batch-drawer-attributes' : undefined"
+                >{{ attrLabel(k) }}</th>
                 <th class="mbd-th">Storage location</th>
                 <th class="mbd-th mbd-th--num">Put away qty</th>
                 <th class="mbd-th">Unit</th>
@@ -1208,6 +1306,13 @@ function fmtNum(n: number | null): string {
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.batchNo }}</td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ isoToDisplay(row.expiryDate) }}</td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
+                  <!-- Batch attributes — put-away issues stock, so read-only (§5.1). -->
+                  <template v-if="lrIdx === 0">
+                    <td
+                      v-for="k in attrKeys" :key="k" :rowspan="row.destLocRows.length"
+                      class="mbd-td mbd-td--muted mbd-td--merged mbd-td--attr-text"
+                    >{{ attrText(row, k) }}</td>
+                  </template>
                   <!-- Storage location picker -->
                   <td class="mbd-td mbd-td--input mbd-td--pa-loc" :class="{ 'mbd-td--pa-loc-error': paLocMissing(lr) }">
                     <MpPopover :id="`mbd-pa-loc-${lr.id}`" placement="bottom-start" use-portal :is-keep-alive="false" is-close-on-select @close="paCloseLoc(lr)">
@@ -1304,8 +1409,9 @@ function fmtNum(n: number | null): string {
           <!-- ── Other modes: existing table ── -->
           <template v-else>
           <table
-            class="mbd-table" :class="{ 'mbd-table--split': showLocSplit, 'mbd-table--delivery': isDelivery }"
-            :style="isDelivery ? { '--mbd-attr-count': String(deliveryAttrKeys.length) } : undefined"
+            class="mbd-table"
+            :class="{ 'mbd-table--split': showLocSplit, 'mbd-table--delivery': isDelivery, 'mbd-table--attrs': !isDelivery && attrKeys.length }"
+            :style="attrKeys.length ? { '--mbd-attr-count': String(attrKeys.length) } : undefined"
           >
             <colgroup>
               <col class="mbd-col-batch" />
@@ -1313,7 +1419,7 @@ function fmtNum(n: number | null): string {
                    keep their own Description column after the date. -->
               <col class="mbd-col-expiry" />
               <col v-if="!isDelivery" class="mbd-col-desc" />
-              <col v-for="k in deliveryAttrKeys" :key="k" class="mbd-col-attr" />
+              <col v-for="k in attrKeys" :key="k" class="mbd-col-attr" />
               <col v-if="isPicking" class="mbd-col-location" />
               <col v-if="showOnHandColumn" class="mbd-col-num" />
               <col v-if="showPlannedQty" class="mbd-col-num" />
@@ -1327,7 +1433,10 @@ function fmtNum(n: number | null): string {
                 <th class="mbd-th">Batch</th>
                 <th class="mbd-th">Expiry date</th>
                 <th v-if="!isDelivery" class="mbd-th">Description</th>
-                <th v-for="k in deliveryAttrKeys" :key="k" class="mbd-th">{{ attrLabel(k) }}</th>
+                <th
+                  v-for="(k, i) in attrKeys" :key="k" class="mbd-th"
+                  :data-devchange="i === 0 ? 'batch-drawer-attributes' : undefined"
+                >{{ attrLabel(k) }}</th>
                 <th v-if="isPicking" class="mbd-th">Location</th>
                 <th v-if="showOnHandColumn" class="mbd-th mbd-th--num">{{ onHandLabel }}</th>
                 <th v-if="showPlannedQty" class="mbd-th mbd-th--num mbd-th--planned">Qty to pick</th>
@@ -1427,19 +1536,35 @@ function fmtNum(n: number | null): string {
                   <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
                 </template>
 
-                <!-- BATCH ATTRIBUTES (purchase delivery only). A new batch picks its
-                     values here; an existing one shows what it already carries, plus the
+                <!-- BATCH ATTRIBUTES (every kind except count, §5.1). Receiving kinds take
+                     a new batch's values here, and fill an existing batch's EMPTY ones (never
+                     the Unassigned batch); issuing kinds only show them. Delivery adds the
                      vendor note for story 10 rules 2 and 3. -->
-                <td v-for="k in deliveryAttrKeys" :key="k" class="mbd-td" :class="row.isNew ? 'mbd-td--input mbd-td--attr' : 'mbd-td--muted'">
-                  <MpAutocomplete
-                    v-if="row.isNew"
-                    :model-value="row.attributes?.[k] ?? ''"
-                    :data="k === 'supplier' ? vendorOptions : gradeOptions"
-                    label-prop="label" value-prop="value" :is-searchable="k === 'supplier'"
-                    :placeholder="`Select ${attrLabel(k).toLowerCase()}`"
-                    use-portal is-full-width
-                    @update:model-value="setRowAttr(row, k, String($event ?? ''))"
-                  />
+                <td
+                  v-for="k in attrKeys" :key="k" class="mbd-td"
+                  :class="attrEditable(row, k)
+                    ? ['mbd-td--input', 'mbd-td--attr', { 'mbd-td--attr-error': attrErrors[`${row.key}:${k}`], 'mbd-td--datepicker': k === 'manufacturing_date' || k === 'best_before_date' }]
+                    : 'mbd-td--muted mbd-td--attr-text'"
+                >
+                  <template v-if="attrEditable(row, k)">
+                    <MpDatePicker
+                      v-if="k === 'manufacturing_date' || k === 'best_before_date'"
+                      use-portal format="DD/MM/YYYY" value-type="format"
+                      :placeholder="t('Select date')"
+                      :model-value="attrDateDisplay(row, k)"
+                      :class="css({ width: '100%' })"
+                      @update:model-value="setRowAttr(row, k, displayToIso(String($event ?? '')))"
+                    />
+                    <MpAutocomplete
+                      v-else
+                      :model-value="row.attributes?.[k] ?? ''"
+                      :data="attrCols.options(k)"
+                      label-prop="label" value-prop="value" :is-searchable="k === 'supplier'"
+                      :placeholder="k === 'supplier' ? t('Select vendor') : t('Select grade')"
+                      use-portal is-full-width
+                      @update:model-value="setRowAttr(row, k, String($event ?? ''))"
+                    />
+                  </template>
                   <span v-else class="mbd-attr-value">
                     {{ attrText(row, k) }}
                     <!-- Same shape as the batches table's near-expiry warning: icon in the
@@ -1566,7 +1691,11 @@ function fmtNum(n: number | null): string {
                           :key="b.batchNo"
                           @click="addWarehouseBatch(b.batchNo)"
                         >
-                          {{ b.batchNo }} — exp. {{ isoToDisplay(b.expiryDate) }}
+                          <span class="mbd-option">
+                            <span>{{ b.batchNo }} — exp. {{ isoToDisplay(b.expiryDate) }}</span>
+                            <!-- PRD story 15: each batch's attribute values under its number. -->
+                            <span v-if="b.attrLine" class="mbd-option-attrs">{{ b.attrLine }}</span>
+                          </span>
                         </MpPopoverListItem>
                         <MpPopoverListItem v-if="!availableBatches.length" disabled>
                           All batches added
@@ -2199,6 +2328,13 @@ function fmtNum(n: number | null): string {
 
 /* Footer */
 .mbd-col-attr { width: var(--mp-sizes-44, 176px); }
+/* WMS kinds add one 176px column per batch attribute on top of their 1000px floor,
+   so the table scrolls sideways instead of squeezing the text columns. */
+.mbd-table--attrs { min-width: calc(1000px + var(--mbd-attr-count, 0) * var(--mp-sizes-44, 176px)); }
+/* Same invalid-cell treatment as the qty / put-away location cells. */
+.mbd-td--attr-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
+.mbd-option { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.mbd-option-attrs { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .mbd-attr-value { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
 .mbd-attr-flag { display: inline-flex; align-items: center; flex-shrink: 0; cursor: default; }
 .mbd-attr-flag--warning { color: var(--mp-icon-warning, #b76e00); }

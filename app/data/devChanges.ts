@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'batch-drawer-attributes',
+    title: 'Batch attributes in every Manage batch drawer',
+    description:
+      'Stock in/out, transfer and WMS receiving, put-away and picking drawers show the product\'s batch attributes (Vendor, Grade, dates) as columns and under each Select-batch option. Receiving drawers take values for new batches and empty ones, and block Save on an empty required attribute; issuing drawers only show them.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/ManageBatchDrawer.vue', 'app/composables/useBatchAttributeColumns.ts'],
+  },
+  {
     id: 'batch-export-modal',
     title: 'Product Export batches uses the import template',
     description:
