@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import type { BatchAttributeValues } from './batchAttributes'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { workOrders, type WorkOrderStatus, type WorkOrderMaterialReservation } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
@@ -28,7 +29,7 @@ export interface MaterialConsumeReturnRecord {
   /** Which specific batch/serial units this record consumed or returned — only
    *  set for tracked (batch- or serial-managed) products. Used to work out how
    *  much of a work order's material reservation is still unconsumed. */
-  batchSelection?: { batchNo: string; qty: number }[]
+  batchSelection?: { batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
   serialSelection?: string[]
 }
 
@@ -151,7 +152,7 @@ export function remainingReservation(
     for (const s of r.serialSelection ?? []) consumedSerial.add(s)
   }
   const batchSelection = reservation.batchSelection
-    ?.map(b => ({ batchNo: b.batchNo, qty: b.qty - (consumedBatch.get(b.batchNo) ?? 0) }))
+    ?.map(b => ({ ...b, qty: b.qty - (consumedBatch.get(b.batchNo) ?? 0) }))
     .filter(b => b.qty > 0)
   const serialSelection = reservation.serialSelection?.filter(s => !consumedSerial.has(s))
   return { warehouseId: reservation.warehouseId, batchSelection, serialSelection }

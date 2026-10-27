@@ -1,4 +1,5 @@
 import { purchaseDeliveries } from './purchaseDeliveries'
+import type { BatchAttributeValues } from './batchAttributes'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
 import type { PurchaseDelivery, SalesOrderItem } from './types'
@@ -18,7 +19,7 @@ const TAX_LABEL = 'PPN 11%'
 export type PDLineItem = SalesOrderItem & {
   taxLabel: string
   /** Batches that received this line's qty — only on deliveries created in the app. */
-  batches?: { batchId: string; batchNo: string; qty: number; attributes?: Partial<Record<string, string>> }[]
+  batches?: { batchId: string; batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
 }
 
 export interface PDAttachment { name: string; sizeKB: number }

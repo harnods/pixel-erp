@@ -1,3 +1,4 @@
+import type { BatchAttributeValues } from './batchAttributes'
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue' | 'partially-paid'
@@ -329,7 +330,7 @@ export interface PurchaseDeliveryLine {
   discountPct: number
   taxLabel: string
   /** Batch-tracked lines: which batches received the qty (Batch Attribute story 10). */
-  batches?: { batchId: string; batchNo: string; qty: number; attributes?: Partial<Record<string, string>> }[]
+  batches?: { batchId: string; batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
 }
 
 export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'

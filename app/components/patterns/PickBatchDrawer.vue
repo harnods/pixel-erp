@@ -13,7 +13,8 @@ import { batchAttributesFor } from '~/data/productDetails'
 import type { BatchAttributeKey, BatchAttributeValues } from '~/data/batchAttributes'
 import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
 
-export interface PickedBatch { batchNo: string; qty: number }
+/** `attributes` is the snapshot recorded with the pick (ATINV-9082); older picks have none. */
+export interface PickedBatch { batchNo: string; qty: number; attributes?: BatchAttributeValues }
 
 // Batches carry no description in the data model — same representative pool
 // ManageBatchDrawer.vue (the app's warehouse-ops picker) cycles through.
@@ -67,11 +68,13 @@ watch(() => props.open, (isOpen) => {
   const wh = getWarehouseDetail(props.warehouseId)
   const item = wh?.stock.find(s => s.sku === props.sku)
   const qtyByBatch = new Map(props.modelValue.map(b => [b.batchNo, b.qty]))
+  const snapshotByBatch = new Map(props.modelValue.map(b => [b.batchNo, b.attributes]))
   rows.splice(0, rows.length, ...(item?.batches ?? []).map((b, i) => ({
     batchNo: b.batchNo,
     expiryDate: b.expiryDate,
     desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
-    attributes: batchAttributesFor(props.sku, b.batchNo, b.expiryDate),
+    // The saved snapshot wins over the batch master's current values.
+    attributes: snapshotByBatch.get(b.batchNo) ?? batchAttributesFor(props.sku, b.batchNo, b.expiryDate),
     available: b.available,
     qty: qtyByBatch.has(b.batchNo) ? String(qtyByBatch.get(b.batchNo)) : '',
   })))
@@ -100,7 +103,7 @@ function handleSave() {
     saveError.value = `${totalSelected.value} of ${props.targetCount} ${props.unit} specified — that's more than the qty to pick.`
     return
   }
-  const picked: PickedBatch[] = rows.filter(r => num(r.qty) > 0).map(r => ({ batchNo: r.batchNo, qty: num(r.qty) }))
+  const picked: PickedBatch[] = rows.filter(r => num(r.qty) > 0).map(r => ({ batchNo: r.batchNo, qty: num(r.qty), attributes: { ...r.attributes } }))
   emit('save', picked)
   emit('update:open', false)
 }

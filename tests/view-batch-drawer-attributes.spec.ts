@@ -75,3 +75,36 @@ describe('PickBatchDrawer attributes', () => {
     expect(w.findAll('tbody input').length).toBe(w.findAll('tbody tr').length)
   })
 })
+
+describe('PickBatchDrawer snapshot (work order materials)', () => {
+  const lot = { batchNo: 'Batch #00001', qty: 2 }
+  const base = { open: true, productName: 'Green Beans', sku: '1001', warehouseId: 'wh-001', warehouseName: 'WH', unit: 'Sack', targetCount: 2 }
+
+  it('a saved material reservation keeps its snapshot after the batch master Vendor changes', async () => {
+    const details = await import('~/data/productDetails')
+    const master = details.findProductBatch('1001', lot.batchNo)
+    if (master) details.updateBatch('1001', master.id, { attributes: { supplier: 'V005' } })
+    const w = mount(PickBatchDrawer, { props: { ...base, isReadOnly: true, modelValue: [{ ...lot, attributes: { supplier: 'V002' } }] } })
+    const h = w.findAll('thead th').map((th) => th.text())
+    const c = w.find('tbody tr').findAll('td').map((td) => td.text())
+    expect(c[h.indexOf('Vendor')]).toBe(vendorName('V002'))
+  })
+
+  it('save emits the snapshot, and an older pick without one shows the master value', () => {
+    const w = mount(PickBatchDrawer, { props: { ...base, modelValue: [{ ...lot, attributes: { supplier: 'V002' } }] } })
+    ;(w.vm as unknown as { handleSave: () => void }).handleSave()
+    const saved = w.emitted('save')![0]![0] as { batchNo: string; attributes: { supplier?: string } }[]
+    expect(saved[0]!.attributes.supplier).toBe('V002')
+
+    const old = mount(PickBatchDrawer, { props: { ...base, isReadOnly: true, modelValue: [lot] } })
+    expect(old.find('tbody tr').exists()).toBe(true)
+  })
+})
+
+describe('remainingReservation keeps the snapshot', () => {
+  it('carries attributes through', async () => {
+    const { remainingReservation } = await import('~/data/materialConsumeReturn')
+    const r = remainingReservation('wo-none', 'p1', { batchSelection: [{ batchNo: 'B', qty: 3, attributes: { supplier: 'V002' } }] })
+    expect(r.batchSelection![0]!.attributes).toEqual({ supplier: 'V002' })
+  })
+})
