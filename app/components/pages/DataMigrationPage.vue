@@ -703,17 +703,19 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-landing-hero-card {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  align-items: center;
+  align-items: end;
   gap: var(--mp-spacing-8);
-  padding: var(--mp-spacing-10) var(--mp-spacing-10);
+  padding: var(--mp-spacing-10) var(--mp-spacing-10) 0;
   background: var(--mp-background-neutral-subtle);
   border-radius: var(--mp-radii-xl, 16px);
+  overflow: hidden;
 }
 
 .dm-landing-left {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-4);
+  padding-bottom: var(--mp-spacing-10);
 }
 
 .dm-landing-title {
@@ -753,13 +755,12 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 
 .dm-landing-right {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
 }
 
 .dm-landing-hero {
   max-width: 100%;
-  max-height: var(--mp-sizes-64, 256px);
   height: auto;
   object-fit: contain;
 }
