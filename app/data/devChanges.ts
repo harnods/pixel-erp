@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'batch-export-modal',
+    title: 'Product Export batches uses the import template',
+    description:
+      'Exports this product\'s batches in the Update batches template format, with an optional "only batches with an empty required attribute" filter and an inline message when nothing matches.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/BatchExportModal.vue', 'app/components/pages/ProductDetailsPage.vue'],
+  },
+  {
     id: 'batch-export-filters',
     title: 'Export batches from the Update batches page',
     description:

@@ -19,9 +19,7 @@ import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
-import ExportModal from '~/components/patterns/ExportModal.vue'
-import { BATCH_UPDATE_COLUMNS, batchUpdateTemplateRows } from '~/data/batchUpdateImport'
-import { successToast } from '~/utils/toasts'
+import BatchExportModal from '~/components/patterns/BatchExportModal.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
@@ -292,20 +290,8 @@ function openEditBatch(b: ProductBatchSummary) {
   batchFormOpen.value = true
 }
 
-// Export batches (rule/export-modal) — same columns as the Update batches import
-// template, so an export can be edited and imported back.
+// Export batches — same format as the Update batches template, so an export can be edited and imported back.
 const batchExportOpen = ref(false)
-const batchExportColumns = BATCH_UPDATE_COLUMNS.map((c, i) => ({ key: c.key, label: c.label, required: i < 2 }))
-async function exportBatches({ columns }: { columns: string[] }) {
-  batchExportOpen.value = false
-  const picked = BATCH_UPDATE_COLUMNS.filter((c) => columns.includes(c.key))
-  const rows = batchUpdateTemplateRows([product.value!.sku]).map((r) => picked.map((c) => r[c.key]))
-  const XLSX = await import('xlsx')
-  const book = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([picked.map((c) => c.label), ...rows]), 'Batches')
-  XLSX.writeFile(book, `${product.value!.sku}-batches.xlsx`)
-  successToast('Batches exported')
-}
 
 type PrintBarcodeTarget =
   | { kind: 'batch'; batch: ProductBatchSummary }
@@ -1031,16 +1017,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       @close="batchFormOpen = false"
     />
 
-    <ExportModal
+    <BatchExportModal
       v-if="product.trackStockBy === 'Batch'"
       :open="batchExportOpen"
-      title="Export batches"
-      entity-label="batches"
-      scope-note="The Unassigned batch isn't exported — it can't be imported back."
-      :columns="batchExportColumns"
-      :total="batchUpdateTemplateRows([product.sku]).length"
+      :sku="product.sku"
       @close="batchExportOpen = false"
-      @export="exportBatches"
     />
   </div>
 
