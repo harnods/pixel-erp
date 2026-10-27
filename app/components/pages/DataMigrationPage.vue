@@ -761,9 +761,17 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 
 .dm-form-top {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: repeat(12, 1fr);
   gap: var(--mp-spacing-8);
   align-items: start;
+}
+
+.dm-form-top > .dm-form-fields {
+  grid-column: 1 / 7;
+}
+
+.dm-form-top > .dm-logo-upload {
+  grid-column: 7 / -1;
 }
 
 .dm-form-fields {
@@ -844,7 +852,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-4);
-  max-width: 480px;
+  width: 50%;
 }
 
 /* ─── Action bar — sticky full-bleed footer (ed-footer pattern) ─────────── */
