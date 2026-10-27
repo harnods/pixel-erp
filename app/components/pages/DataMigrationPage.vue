@@ -47,6 +47,23 @@ const STEPS: MigrationStep[] = [
 const activeStepId = ref('company-info')
 const activeStep = computed(() => STEPS.find(s => s.id === activeStepId.value)!)
 
+// ─── Landing page (step 0) ──────────────────────────────────────────────────
+const showLanding = ref(true)
+
+const stepHints: Record<string, string> = {
+  'company-info': 'Company name, address, logo, and bank account',
+  'opening-balance': 'Set initial account balances for your chart of accounts',
+  'products': 'Import your product catalog from a spreadsheet',
+  'contacts': 'Import customers and vendors',
+  'sales': 'Import sales invoices and transaction history',
+  'purchases': 'Import purchase invoices and records',
+  'expenses': 'Import expense records',
+}
+
+function startMigration() {
+  showLanding.value = false
+}
+
 // ─── Company info form state ─────────────────────────────────────────────────
 const companySaved = ref(false)
 
@@ -236,7 +253,39 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 
 <template>
   <div class="dm-wrapper" data-devchange="dm-step-layout">
-    <div class="dm-layout">
+    <!-- ── Landing page (step 0) ─────────────────────────────────────────── -->
+    <div v-if="showLanding" class="dm-landing">
+      <div class="dm-landing-content">
+        <div class="dm-landing-icon-wrap">
+          <MpIcon name="company" size="md" color="icon.information" />
+        </div>
+        <h2 class="dm-landing-title">{{ t('Set up your data') }}</h2>
+        <p class="dm-landing-desc">{{ t('Migrate your existing business data into Mekari Jurnal. Complete each step to transfer your company information, financial records, and transaction history.') }}</p>
+
+        <div class="dm-landing-steps">
+          <div v-for="(step, idx) in STEPS" :key="step.id" class="dm-landing-step">
+            <span class="dm-landing-step-number">{{ idx + 1 }}</span>
+            <div class="dm-landing-step-info">
+              <span class="dm-landing-step-label">{{ t(step.label) }}</span>
+              <span class="dm-landing-step-hint">{{ t(stepHints[step.id]) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <MpButton
+          id="dm-start-migration-btn"
+          class="btn-enterprise btn-enterprise--primary dm-landing-cta"
+          @click="startMigration"
+        >
+          {{ t('Get started') }}
+        </MpButton>
+
+        <p class="dm-landing-note">{{ t('You can complete these steps in any order and come back anytime to continue.') }}</p>
+      </div>
+    </div>
+
+    <!-- ── Steps layout ──────────────────────────────────────────────────── -->
+    <div v-else class="dm-layout">
       <!-- ── Left: Step list ──────────────────────────────────────────────── -->
       <nav class="dm-steps" aria-label="Migration steps">
         <button
@@ -624,7 +673,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
     </div>
 
     <!-- Sticky action bar — full-bleed at stage bottom -->
-    <div v-if="activeStepId === 'company-info'" class="dm-action-bar">
+    <div v-if="!showLanding && activeStepId === 'company-info'" class="dm-action-bar">
       <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="save">
         {{ t('Save & continue') }}
       </MpButton>
@@ -636,6 +685,116 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 /* ─── Wrapper ──────────────────────────────────────────────────────────────── */
 .dm-wrapper {
   display: contents;
+}
+
+/* ─── Landing page (step 0) ────────────────────────────────────────────────── */
+.dm-landing {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--mp-spacing-16) var(--mp-spacing-6);
+  min-height: calc(100vh - 120px);
+}
+
+.dm-landing-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 520px;
+  text-align: center;
+}
+
+.dm-landing-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mp-sizes-12, 48px);
+  height: var(--mp-sizes-12, 48px);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-information-subtlest, #e0f2fe);
+  margin-bottom: var(--mp-spacing-4);
+}
+
+.dm-landing-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-xl, 20px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-xl);
+}
+
+.dm-landing-desc {
+  margin: var(--mp-spacing-2) 0 0;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary);
+}
+
+.dm-landing-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-1);
+  width: 100%;
+  margin-top: var(--mp-spacing-8);
+  text-align: left;
+}
+
+.dm-landing-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle);
+}
+
+.dm-landing-step-number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mp-sizes-6, 24px);
+  height: var(--mp-sizes-6, 24px);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-default);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-secondary);
+}
+
+.dm-landing-step-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 1px;
+}
+
+.dm-landing-step-label {
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-md);
+}
+
+.dm-landing-step-hint {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-sm);
+}
+
+.dm-landing-cta {
+  margin-top: var(--mp-spacing-8);
+  border-radius: var(--mp-radii-full, 999px) !important;
+  padding-left: var(--mp-spacing-8) !important;
+  padding-right: var(--mp-spacing-8) !important;
+}
+
+.dm-landing-note {
+  margin: var(--mp-spacing-3) 0 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-placeholder);
+  line-height: var(--mp-line-heights-sm);
 }
 
 /* ─── Two-column layout ───────────────────────────────────────────────────── */
