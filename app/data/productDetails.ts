@@ -906,19 +906,33 @@ export function getBatchWarehouseStock(sku: string, batchNo: string): ProductWar
 /** A receiving transaction's batches reach the batch master (ATINV-9082, spec §5.1):
  *  each line becomes a product batch record when it has none, and its typed values fill
  *  the record's EMPTY attributes — a transaction never overwrites one. Skips blank and
- *  Unassigned numbers and products that aren't batch-tracked. */
+ *  Unassigned numbers and products that aren't batch-tracked. Never throws: a transaction
+ *  must not fail over master data, so a line the master rejects (invalid number) is skipped,
+ *  and an invalid expiry only costs the record its expiry. */
 export function commitDrawerBatches(
   sku: string,
   lines: readonly { batchNo: string; expiryDate?: string; description?: string; attributes?: BatchAttributeValues }[],
   by = CURRENT_USER,
 ): void {
-  if (!productIndexRows().some((r) => r.sku === sku) || !isProductBatchTracked(sku)) return
+  try {
+    if (!productIndexRows().some((r) => r.sku === sku) || !isProductBatchTracked(sku)) return
+  } catch { return }
   for (const l of lines) {
     const no = l.batchNo.trim()
     if (!no || no.toLowerCase() === UNASSIGNED_BATCH_NO.toLowerCase()) continue
     const rawExpiry = l.attributes?.expiry_date || l.expiryDate || ''
     const expiry = /^\d{4}-\d{2}-\d{2}$/.test(rawExpiry) ? rawExpiry : undefined
-    const batch = ensureProductBatch(sku, no, { expiry_date: expiry, description: l.description }, by)
-    if (l.attributes && Object.keys(l.attributes).length) fillEmptyBatchAttributes(sku, batch.id, l.attributes, by)
+    let batch: ProductBatchSummary
+    try {
+      try {
+        batch = ensureProductBatch(sku, no, { expiry_date: expiry, description: l.description }, by)
+      } catch (e) {
+        if (!expiry) throw e
+        batch = ensureProductBatch(sku, no, { description: l.description }, by)
+      }
+    } catch { continue }
+    if (l.attributes && Object.keys(l.attributes).length) {
+      try { fillEmptyBatchAttributes(sku, batch.id, l.attributes, by) } catch { /* keep the record as created */ }
+    }
   }
 }

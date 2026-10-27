@@ -21,4 +21,13 @@ describe('addAdjustment with batches', () => {
     api.addAdjustment({ ...base, lines: [{ sku: '1001', qty: 1, batches: [{ batchNo: 'Batch #001', qty: 1, attributes: { supplier: 'V002' } }] }] })
     expect(api.findProductBatch('1001', 'Batch #001')!.attributes.supplier).toBe('V003')
   })
+
+  it('a line the batch master rejects does not stop the adjustment from saving', () => {
+    const adj = api.addAdjustment({ ...base, lines: [
+      { sku: '1001', qty: 1, batches: [{ batchNo: 'SI-BADDATE', qty: 1, attributes: { expiry_date: '2027-02-31' } }] },
+      { sku: '1001', qty: 2, batches: [{ batchNo: 'SI-OK', qty: 2, attributes: { supplier: 'V002' } }] },
+    ] })
+    expect(api.getAdjustment(adj.id)).toBeDefined()
+    expect(api.findProductBatch('1001', 'SI-OK')?.attributes.supplier).toBe('V002')
+  })
 })
