@@ -6,7 +6,7 @@
  * already-known warehouse batch.
  */
 import { ref, reactive, computed, watch } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import { formatDate } from '~/utils/date'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 
@@ -103,9 +103,9 @@ function handleSave() {
 
       <header class="pbd-header">
         <h2 class="pbd-title">{{ title }}</h2>
-        <button class="pbd-close" type="button" aria-label="Close" @click="handleCancel">
+        <MpButton class="pbd-close" variant="ghost" type="button" aria-label="Close" @click="handleCancel">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <div class="pbd-content">
@@ -175,10 +175,10 @@ function handleSave() {
       </div>
 
       <footer class="pbd-footer">
-        <button v-if="isReadOnly" class="btn-enterprise btn-enterprise--primary" type="button" @click="handleCancel">Close</button>
+        <MpButton v-if="isReadOnly" class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="handleCancel">Close</MpButton>
         <template v-else>
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="handleCancel">Cancel</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="handleSave">Save</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="handleCancel">Cancel</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="handleSave">Save</MpButton>
         </template>
       </footer>
 

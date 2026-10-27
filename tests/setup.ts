@@ -25,7 +25,23 @@
  * English text every spec asserts against. Reactive `locale` via a plain ref so
  * switching is harmless if any component reads it.
  */
-import { ref } from 'vue'
+import { computed, reactive, ref, shallowRef, toRef, toRefs, readonly, watch, watchEffect, nextTick, onMounted, onUnmounted, onBeforeMount, onBeforeUnmount, provide, inject, useSlots, useAttrs, getCurrentInstance } from 'vue'
+
+/**
+ * Nuxt auto-imports Vue's reactivity API into every SFC, so components written
+ * against it use bare `reactive` / `watch` / `computed` with no import line.
+ * Vitest has no auto-import layer, so mounting one of those components throws
+ * "reactive is not defined" before a single assertion runs. Put the real Vue
+ * functions on the global scope — a component that DOES import from 'vue'
+ * still binds to its own import, so this only fills the gap.
+ */
+Object.assign(globalThis, {
+  computed, reactive, ref, shallowRef, toRef, toRefs, readonly,
+  watch, watchEffect, nextTick,
+  onMounted, onUnmounted, onBeforeMount, onBeforeUnmount,
+  provide, inject, useSlots, useAttrs, getCurrentInstance,
+})
+
 const _locale = ref<'en' | 'id'>('en')
 ;(globalThis as unknown as { useLocale: () => unknown }).useLocale = () => ({
   locale: _locale,

@@ -10,20 +10,26 @@
  * Route: /{customers|vendors|other-contacts}/:id — the first segment only picks
  * the breadcrumb; the record is the same either way.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, reactive, watch, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton, MpButtonGroup, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
-import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ErpTagList from '~/components/patterns/ErpTagList.vue'
+import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
-import { salesInvoices } from '~/data/salesInvoices'
+import { getCustomerTransactions, getCustomerTxnSummary, customerIdForContact, type CustomerTransaction } from '~/data/customerTransactions'
+import { vendors } from '~/data/vendors'
 import { formatIDR } from '~/utils/currency'
+
+const toggleAirene = inject<() => void>('toggleAirene')
 
 const props = defineProps<{ orderId: string }>()
 
@@ -79,38 +85,115 @@ const lastUpdatedDisplay = computed(() => {
   return `${t('Last updated by')} ${c.updatedBy} ${t('on')} ${date}, ${time} (GMT+7)`
 })
 
-// ── Transactions tab — sales invoices raised against this contact ─────────────
-// Records join on customer name, so a contact with no matching sales record
-// (e.g. a brand-new one) shows the empty line rather than a fabricated list.
-const transactions = computed(() => {
-  const c = contact.value
-  if (!c) return []
-  const names = [c.displayName, c.companyName].filter(Boolean).map((n) => n.toLowerCase())
-  return salesInvoices
-    .filter((inv) => names.includes(inv.customer.name.toLowerCase()))
-    .slice(0, 20)
+// ── Transactions tab — one ErpTablePage over the customer's unified document
+// list (sales invoices/orders/quotes + credit memos), with KPI tiles + filters.
+// Join is by customer name (sales docs) / resolved id (credit memos); a brand-new
+// contact with no documents shows the empty state. ───────────────────────────
+const txnRows = computed<CustomerTransaction[]>(() => getCustomerTransactions(contact.value))
+const txnSummary = computed(() => getCustomerTxnSummary(contact.value))
+
+const txnColumns: TableColumn[] = [
+  { key: 'date',       label: t('Date'),        kind: 'date',                                   sortType: 'date'   },
+  { key: 'number',     label: t('Number'),      kind: 'number', sortable: true,                 sortType: 'text'   },
+  { key: 'attachment', label: '',               width: '40px',  noHeader: true, align: 'center' },
+  { key: 'dueDate',    label: t('Due date'),    kind: 'date',                                   sortType: 'date'   },
+  { key: 'status',     label: t('Status'),      kind: 'status',                                 sortType: 'text'   },
+  { key: 'balanceDue', label: t('Balance due'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'total',      label: t('Total'),       kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'tags',       label: t('Tags'),        kind: 'tags'                                    },
+]
+
+// Toolbar filters — Transaction type + Status
+const txnType = ref('')
+const typeOptions = computed(() => {
+  if (listSlug.value === 'vendors') {
+    return [
+      { value: 'purchase-invoice', label: t('Purchase invoice') },
+      { value: 'purchase-quote',   label: t('Purchase quote')   },
+      { value: 'debit-memo',       label: t('Debit memo')       },
+    ]
+  }
+  return [
+    { value: 'sales-invoice', label: t('Sales invoice') },
+    { value: 'sales-order',   label: t('Sales order')   },
+    { value: 'sales-quote',   label: t('Sales quote')   },
+    { value: 'credit-memo',   label: t('Credit memo')   },
+  ]
 })
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+function statusLabel(s: string): string { return s.replace(/-/g, ' ').replace(/^\w/, (ch) => ch.toUpperCase()) }
+const statusOptions = computed(() =>
+  [...new Set(txnRows.value.map((r) => r.status))].sort().map((value) => ({ value, label: statusLabel(value) })),
+)
+
+const {
+  search, statusFilter, currentPage, paginated, total, perPage,
+  setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
+} = useTableState(txnRows, {
+  filterFn: (row: CustomerTransaction, s, status) =>
+    row.numberDisplay.toLowerCase().includes(s)
+    && (!status || row.status === status)
+    && (!txnType.value || row.docType === txnType.value),
+})
+watch(txnType, () => setPage(1))
+
+// Column show/hide (first column always on; layout-only `attachment` always rendered)
+const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(txnColumns.map((c) => [c.key, true])))
+const columnItems = computed(() => txnColumns.filter((c) => !c.noHeader).map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 })))
+const visibleColumns = computed<TableColumn[]>(() => txnColumns.filter((c) => c.noHeader || columnVisibility[c.key]))
+function hideColumn(key: string) { columnVisibility[key] = false }
+
+const hasTxnFilter = computed(() => !!statusFilter.value || !!txnType.value)
+function clearTxnFilters() { search.value = ''; statusFilter.value = ''; txnType.value = '' }
+
+function formatDate(iso?: string): string {
+  if (!iso) return ''
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
 }
-/** Related-records column width — from the shared standard, never hardcoded.
- *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
-function colStyle(kind: ColumnKind) {
-  const { minWidth, maxWidth } = columnWidth(kind)
-  return { width: maxWidth, minWidth, maxWidth }
+function overdueDaysLabel(row: CustomerTransaction): string | null {
+  if (row.status !== 'overdue' || !row.dueDate) return null
+  const days = Math.floor((Date.now() - new Date(row.dueDate).getTime()) / 86_400_000)
+  return days > 0 ? `${days} ${days !== 1 ? t('days') : t('day')}` : null
 }
 
 // ── Title-bar actions ─────────────────────────────────────────────────────────
-const CREATE_TRANSACTION_ITEMS = [
-  { label: 'Sales quote',      to: '/sales-quotes'    },
-  { label: 'Sales order',      to: '/sales-orders'    },
-  { label: 'Sales invoice',    to: '/sales-invoices'  },
-  { label: 'Purchase invoice', to: '/purchase-invoices' },
-]
+function vendorIdForContact(c: { displayName?: string; companyName?: string } | undefined): string | undefined {
+  if (!c) return undefined
+  const names = [c.displayName, c.companyName].filter(Boolean).map((n) => n!.toLowerCase())
+  return vendors.find((v) => names.includes(v.name.toLowerCase()))?.id
+}
+
+const isVendorView = computed(() => listSlug.value === 'vendors')
+
+const createTxItems = computed(() => {
+  if (isVendorView.value) {
+    const vendorId = vendorIdForContact(contact.value)
+    return [
+      { label: 'Purchase quote',   to: '/purchase-quotes/new' },
+      { label: 'Purchase invoice', to: '/purchase-invoices'   },
+      { label: 'Debit memo',       to: vendorId ? `/debit-memos/new?vendor=${vendorId}` : '/debit-memos/new' },
+    ]
+  }
+  const custId = customerIdForContact(contact.value)
+  return [
+    { label: 'Sales quote',      to: '/sales-quotes'    },
+    { label: 'Sales order',      to: '/sales-orders'    },
+    { label: 'Sales invoice',    to: '/sales-invoices'  },
+    { label: 'Credit memo',      to: custId ? `/credit-memos/new?customer=${custId}` : '/credit-memos/new' },
+  ]
+})
 const isDeleteModalOpen = ref(false)
 function confirmDelete() {
   deleteContact(props.orderId)
   toast.notify({ variant: 'success', title: t('Contact deleted'), maxWidth: 'max-content' })
+  goBack()
+}
+// A contact with transactions on record can't be deleted (Delete is disabled).
+const canDeleteContact = computed(() => txnRows.value.length === 0)
+
+// Prototype placeholders for the actions menu (no data model yet).
+function soon() {}
+function archiveContact() {
+  toast.notify({ variant: 'success', title: t('Contact archived'), maxWidth: 'max-content' })
   goBack()
 }
 </script>
@@ -135,7 +218,7 @@ function confirmDelete() {
               <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
                   <MpPopoverListItem
-                    v-for="item in CREATE_TRANSACTION_ITEMS" :key="item.label"
+                    v-for="item in createTxItems" :key="item.label"
                     @click="router.push(item.to)"
                   >{{ t(item.label) }}</MpPopoverListItem>
                 </MpPopoverList>
@@ -144,18 +227,26 @@ function confirmDelete() {
 
             <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <button class="cd-kebab" :aria-label="t('More actions')">
+                <MpButton class="cd-kebab" :aria-label="t('More actions')">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                   </svg>
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
-              <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+                <MpPopoverList>
+                  <MpPopoverListItem @click="soon">{{ t('Statement report') }}</MpPopoverListItem>
+                </MpPopoverList>
+                <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
                 <MpPopoverList>
                   <MpPopoverListItem @click="goEdit">{{ t('Edit') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="soon">{{ t('Merge contact') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="soon">{{ t('Add to contact group') }}</MpPopoverListItem>
+                  <MpPopoverListItem @click="archiveContact">{{ t('Archive') }}</MpPopoverListItem>
                   <MpPopoverListItem
-                    :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
-                    @click="isDeleteModalOpen = true"
+                    :is-disabled="!canDeleteContact"
+                    :class="canDeleteContact ? css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' }) : undefined"
+                    @click="canDeleteContact && (isDeleteModalOpen = true)"
                   >{{ t('Delete') }}</MpPopoverListItem>
                 </MpPopoverList>
               </MpPopoverContent>
@@ -289,41 +380,124 @@ function confirmDelete() {
 
           <!-- ─────────── Transactions ─────────── -->
           <MpTabPanel value="transactions">
-            <section class="cd-section cd-section--last">
-              <h2 class="cd-section-title">{{ t('Transactions') }}</h2>
-              <table v-if="transactions.length" class="cd-table">
-                <colgroup>
-                  <col :style="colStyle('date')" />
-                  <col :style="colStyle('number')" />
-                  <col :style="colStyle('status')" />
-                  <col :style="colStyle('amount')" />
-                  <col />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>{{ t('Date') }}</th>
-                    <th>{{ t('Number') }}</th>
-                    <th>{{ t('Status') }}</th>
-                    <th class="cd-td--right">{{ t('Total') }}</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="inv in transactions" :key="inv.id">
-                    <td>{{ formatDate(inv.date) }}</td>
-                    <td>
-                      <a class="cd-link" @click="router.push(`/sales-invoices/${inv.id}`)">
-                        {{ t('Sales Invoice') }} #{{ inv.number }}
-                      </a>
-                    </td>
-                    <td><ErpStatusBadge :status="inv.status" /></td>
-                    <td class="cd-td--right">{{ formatIDR(inv.total) }}</td>
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="cd-empty">{{ t('No transactions yet.') }}</p>
-            </section>
+            <ErpTablePage
+              data-devchange="cd-transactions-tab"
+              :columns="visibleColumns"
+              :rows="(paginated as Record<string, unknown>[])"
+              :total="total"
+              :current-page="currentPage"
+              :per-page="perPage"
+              :sort-key="sortKey"
+              :sort-dir="sortDir"
+              :search="search"
+              filter-empty-label="transaction"
+              :has-active-filter="hasTxnFilter"
+              :has-active-search="!!search"
+              :context-label="(row) => (row as CustomerTransaction).numberDisplay"
+              @page-change="setPage"
+              @per-page-change="setPerPage"
+              @sort="toggleSort"
+              @sort-change="setSort"
+              @hide-column="hideColumn"
+              @clear-filters="clearTxnFilters"
+              @clear-all="clearTxnFilters"
+            >
+              <!-- KPI tiles -->
+              <template #stats>
+                <div class="stats-section">
+                  <div class="stat-card stat-card--bordered">
+                    <div class="stat-title">{{ t('Overdue invoices') }}</div>
+                    <div class="stat-period">{{ t('As of today') }}</div>
+                    <div class="stat-amount stat-amount--danger">{{ formatIDR(txnSummary.overdueAmount) }}</div>
+                    <a v-if="txnSummary.overdueCount" class="stat-link">{{ txnSummary.overdueCount }} {{ txnSummary.overdueCount !== 1 ? t('invoices') : t('invoice') }}</a>
+                  </div>
+                  <div class="stat-card stat-card--bordered">
+                    <div class="stat-title">{{ t('Unpaid invoices') }}</div>
+                    <div class="stat-period">{{ t('As of today') }}</div>
+                    <div class="stat-amount">{{ formatIDR(txnSummary.unpaidAmount) }}</div>
+                    <a v-if="txnSummary.unpaidCount" class="stat-link">{{ txnSummary.unpaidCount }} {{ txnSummary.unpaidCount !== 1 ? t('invoices') : t('invoice') }}</a>
+                  </div>
+                  <div class="stat-card stat-card--bordered">
+                    <div class="stat-title">{{ t('Payment received') }}</div>
+                    <div class="stat-period">{{ t('Last 30 days') }}</div>
+                    <div class="stat-amount">{{ formatIDR(txnSummary.paymentReceived) }}</div>
+                    <a v-if="txnSummary.paymentReceivedCount" class="stat-link">{{ txnSummary.paymentReceivedCount }} {{ txnSummary.paymentReceivedCount !== 1 ? t('invoices') : t('invoice') }}</a>
+                  </div>
+                  <div class="stat-card">
+                    <div class="stat-title">{{ t('Open credits') }}</div>
+                    <div class="stat-period">{{ t('As of today') }}</div>
+                    <div class="stat-amount">{{ formatIDR(txnSummary.openCredits) }}</div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Filter bar -->
+              <template #filters>
+                <div class="filter-left">
+                  <ErpFilterSelect id="cd-txn-type" v-model="txnType" :placeholder="t('Transaction')" :options="typeOptions" />
+                  <ErpFilterSelect id="cd-txn-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
+                </div>
+                <div class="filter-right">
+                  <MpButtonGroup class="filter-btn-group">
+                    <MpTooltip :label="t('Ask Airene')" placement="bottom">
+                      <MpButton class="filter-airene-btn" variant="ghost" left-icon="airene-brand" :aria-label="t('Ask Airene')" is-rounded @click="toggleAirene?.()" />
+                    </MpTooltip>
+                    <ColumnSettingsMenu id="cd-txn-columns" :items="columnItems" :visibility="columnVisibility" />
+                    <MpTooltip :label="t('Export')" placement="bottom">
+                      <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded />
+                    </MpTooltip>
+                  </MpButtonGroup>
+                  <div class="filter-search">
+                    <MpIcon name="search" size="sm" />
+                    <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+                    <MpButton v-if="search" variant="secondary" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
+                  </div>
+                </div>
+              </template>
+
+              <!-- Cells -->
+              <template #cell-date="{ value }">{{ formatDate(value as string) }}</template>
+              <template #cell-number="{ row }">
+                <a class="cell-link cell-text" @click.stop="router.push((row as CustomerTransaction).href)">{{ (row as CustomerTransaction).numberDisplay }}</a>
+              </template>
+              <template #cell-attachment="{ row }">
+                <MpIcon v-if="(row as CustomerTransaction).hasAttachment" name="attachment" size="sm" class="cd-attach-icon" />
+              </template>
+              <template #cell-dueDate="{ value }">{{ formatDate(value as string | undefined) }}</template>
+              <template #cell-status="{ row }">
+                <div class="status-cell">
+                  <ErpStatusBadge :status="(row as CustomerTransaction).status" />
+                  <span v-if="overdueDaysLabel(row as CustomerTransaction)" class="status-sub-label">{{ overdueDaysLabel(row as CustomerTransaction) }}</span>
+                </div>
+              </template>
+              <template #cell-balanceDue="{ row }">
+                <template v-if="(row as CustomerTransaction).balanceDue !== undefined">{{ formatIDR((row as CustomerTransaction).balanceDue as number) }}</template>
+              </template>
+              <template #cell-total="{ value }">{{ formatIDR(value as number) }}</template>
+              <template #cell-tags="{ value }"><ErpTagList :tags="(value as string[])" /></template>
+
+              <!-- Row kebab -->
+              <template #actions="{ row }">
+                <MpPopover :id="`cd-txn-${(row as CustomerTransaction).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                  <MpPopoverTrigger>
+                    <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+                  </MpPopoverTrigger>
+                  <MpPopoverContent class="erp-dropdown-menu">
+                    <MpPopoverList>
+                      <MpPopoverListItem @click="router.push((row as CustomerTransaction).href)">{{ t('View details') }}</MpPopoverListItem>
+                    </MpPopoverList>
+                  </MpPopoverContent>
+                </MpPopover>
+              </template>
+
+              <!-- Full empty state -->
+              <template #empty>
+                <div class="cd-txn-empty">
+                  <p class="cd-txn-empty-title">{{ t('No transactions yet') }}</p>
+                  <p class="cd-txn-empty-desc">{{ t('Transactions raised for this customer will appear here.') }}</p>
+                </div>
+              </template>
+            </ErpTablePage>
           </MpTabPanel>
 
           <!-- ─────────── Files ─────────── -->
@@ -463,24 +637,43 @@ function confirmDelete() {
 }
 .cd-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-/* ── Related-records table (Transactions tab) ── */
-.cd-table { width: 100%; border-collapse: collapse; }
-.cd-table th {
-  height: var(--mp-sizes-7, 28px);
-  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-surface, #f1f5f9);
-  text-align: left; text-transform: uppercase;
-  font-size: 12px; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary);
-  white-space: nowrap;
+/* ── Transactions tab — KPI tiles (shared stat-card pattern) ── */
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch;
 }
-.cd-table td {
-  min-height: var(--mp-sizes-10, 40px);
-  padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-2);
-  border-bottom: 1px solid var(--mp-border-default);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle;
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-amount--danger { color: var(--mp-text-danger); }
+.stat-link { display: inline-flex; width: fit-content; font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }
+.stat-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Transactions tab — filter bar ── */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
+.filter-airene-btn :deep(svg) { color: var(--mp-airene-default, #6938ef); }
+.search-clear-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px; height: 18px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary)); border-radius: var(--mp-radii-full, 999px);
 }
-.cd-table th.cd-td--right,
-.cd-table td.cd-td--right { text-align: right; }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+
+/* ── Transactions tab — cells ── */
+.cd-attach-icon { color: var(--mp-text-subtle); }
+.status-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); width: fit-content; }
+.status-sub-label { font-size: var(--mp-font-sizes-xs, 11px); line-height: var(--mp-line-heights-xs); color: var(--mp-text-danger); padding-left: var(--mp-spacing-1\.5); }
+
+/* Transactions tab — full empty state */
+.cd-txn-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-9) var(--mp-spacing-4); color: var(--mp-text-secondary); }
+.cd-txn-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 1rem); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.cd-txn-empty-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .cd-missing {
   display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-4);

@@ -36,13 +36,13 @@ function goToSettings() {
 <template>
   <MpPopover :id="id" is-manual :is-open="open" use-portal :is-keep-alive="false" placement="bottom-start" @open="open = true" @close="open = false">
     <MpPopoverTrigger>
-      <button
+      <MpButton
         v-tooltip="{ label: t('Values may be restricted to specific users.'), placement: 'top' }"
         type="button" class="edip-trigger" :aria-label="t('Dimensions')"
         @click.stop="open = !open"
       >
         <MpIcon name="security" size="sm" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ width: '360px', padding: '0', overflow: 'hidden' })" @blur="open = false" @escape="open = false">
       <div class="edip-body">
@@ -56,10 +56,10 @@ function goToSettings() {
           {{ t('This information will not appear on your printed invoices and is only visible to you and your team. To manage dimensions, go to Dimensions in Settings.') }}
         </p>
         <div class="edip-actions">
-          <button type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after" @click="goToSettings">
+          <MpButton type="button" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after" @click="goToSettings">
             {{ t('Dimensions settings') }}
             <MpIcon name="newtab" size="sm" />
-          </button>
+          </MpButton>
         </div>
       </div>
     </MpPopoverContent>

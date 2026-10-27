@@ -30,12 +30,21 @@ const { t } = useLocale()
 const rows = computed<CrmActivityEntry[]>(() => crmActivityLog)
 
 const columns: TableColumn[] = [
-  { key: 'date',    label: 'Date',    kind: 'date',   sortable: true, sortType: 'date' },
-  { key: 'user',    label: 'User',    width: '160px', sortable: true, sortType: 'text' },
-  { key: 'action',  label: 'Actions', kind: 'status', sortable: true, sortType: 'text' },
+  // The cell renders formatDateTime ("06/09/2026, 16:40"), which `date` (160px)
+  // clips — that is what the `datetime` kind is for.
+  { key: 'date',    label: 'Date',    kind: 'datetime', sortable: true, sortType: 'date' },
+  // A person's name is a name: the kind, not a hand-set pixel width.
+  { key: 'user',    label: 'User',    kind: 'name',     sortable: true, sortType: 'text' },
+  // No `kind`: ACTIONS is a plain text category, not an ErpStatusBadge, so it
+  // takes the default range rather than a badge column's 128px.
+  // Singular: a row records one action. The filter above stays "Actions" —
+  // that one picks from the whole set.
+  { key: 'action',  label: 'Action',                    sortable: true, sortType: 'text' },
   { key: 'feature', label: 'Feature', sortable: true, sortType: 'text' },
   { key: 'number',  label: 'Number',  kind: 'number' },
-  { key: 'detail',  label: 'Detail',  kind: 'address' },
+  // Plural: an entry can list several changed fields. Flexible because it is
+  // the last column with nothing to its right.
+  { key: 'details', label: 'Details', kind: 'address', flexible: true },
 ]
 
 const actionOptions = CRM_ACTIONS.map((a) => ({ value: a, label: a }))
@@ -139,7 +148,6 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
         filter-empty-label="activity"
         :search="search"
         :has-active-filter="hasActiveFilter"
-        last-column-flexible
         no-row-hover
         @page-change="setPage"
         @per-page-change="setPerPage"
@@ -160,8 +168,8 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
           <div class="filter-right">
             <div class="filter-search">
               <MpIcon name="search" size="sm" />
-              <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search activity')" />
-              <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+              <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+              <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
             </div>
           </div>
         </template>
@@ -180,7 +188,7 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
         </template>
 
         <!-- Detail: labelled old → new edits or plain text; 3 lines + View more/less -->
-        <template #cell-detail="{ row }">
+        <template #cell-details="{ row }">
           <div v-if="(row as unknown as CrmActivityEntry).details.length" class="al-details">
             <div v-for="(d, i) in visibleDetails(row as unknown as CrmActivityEntry)" :key="i" class="al-detail">
               <span v-if="d.label" class="al-detail-label">{{ t(d.label) }}</span>
@@ -189,16 +197,17 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
                 <template v-else>{{ d.text }}</template>
               </span>
             </div>
-            <button
+            <MpButton
               v-if="(row as unknown as CrmActivityEntry).details.length > 3"
               type="button"
+              variant="link"
               class="al-more"
               @click="toggleExpand((row as unknown as CrmActivityEntry).id)"
             >
               {{ expanded.has((row as unknown as CrmActivityEntry).id)
                 ? t('View less')
                 : `+${(row as unknown as CrmActivityEntry).details.length - 3} ${t('more')}` }}
-            </button>
+            </MpButton>
           </div>
           <span v-else class="al-muted">—</span>
         </template>
@@ -234,10 +243,10 @@ function visibleDetails(row: CrmActivityEntry): CrmActivityDetail[] {
               </div>
             </div>
             <footer class="alf-footer">
-              <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetFilters">{{ t('Reset filter') }}</button>
+              <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="resetFilters">{{ t('Reset filter') }}</MpButton>
               <div class="alf-footer-right">
-                <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="filtersOpen = false">{{ t('Cancel') }}</button>
-                <button class="btn-enterprise btn-enterprise--primary" type="button" @click="applyFilters">{{ t('Apply') }}</button>
+                <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="filtersOpen = false">{{ t('Cancel') }}</MpButton>
+                <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="applyFilters">{{ t('Apply') }}</MpButton>
               </div>
             </footer>
           </div>

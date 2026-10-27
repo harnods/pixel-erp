@@ -1129,7 +1129,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
                 <!-- Attached local files (chips) -->
                 <div v-if="attachedFiles.length" class="cw-files">
                   <div v-for="(f, i) in attachedFiles" :key="i" class="cw-file">
-                    <MpIcon :name="f.icon" size="lg" class="cw-file__icon" />
+                    <MpIcon :name="f.icon" size="32px" class="cw-file__icon" />
                     <span class="cw-file__meta">
                       <span class="cw-file__name">{{ f.name }}</span>
                       <span class="cw-file__sub">{{ f.ext }} · {{ f.sizeLabel }}</span>
@@ -1618,7 +1618,7 @@ onBeforeUnmount(() => { if (stepTimer) clearInterval(stepTimer) })
 
           <!-- Empty state (no agents at all) -->
           <div v-else-if="!coworkAgents.filter((a) => agentVisibleToCurrentUser(a)).length" class="cw-agents-empty">
-            <MpIcon name="magic" size="lg" />
+            <MpIcon name="magic" size="32px" />
             <p class="cw-agents-empty__title">No agents yet</p>
             <p class="cw-agents-empty__caption">Start from a curated agent, or build one from scratch.</p>
             <MpButton is-rounded variant="secondary" @click="newAgent">Create agent</MpButton>

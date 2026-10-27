@@ -22,7 +22,7 @@
 -->
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete, css } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpFormControl, MpFormLabel, MpFormErrorMessage, MpAutocomplete, MpButton, css } from '@mekari/pixel3'
 import { applicableDimensions as getApplicableDimensions, type Dimension, type DimensionTransactionType } from '~/data/dimensions'
 
 const props = defineProps<{
@@ -112,8 +112,8 @@ function save() {
         </MpFormControl>
       </div>
       <div class="ebdp-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="closePopover">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" @click="closePopover">{{ t('Cancel') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ t('Save') }}</MpButton>
       </div>
     </MpPopoverContent>
   </MpPopover>
