@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'batch-export-filters',
+    title: 'Export batches from the Update batches page',
+    description:
+      'Step 1 filters by product and by batches missing a required attribute; the file can be edited and imported back.',
+    date: '2026-10-27',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue'],
+  },
+  {
     id: 'dm-step-layout',
     title: 'Data migration step-based layout',
     description:

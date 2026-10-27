@@ -4919,5 +4919,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Attribute Setup": "Pengaturan Atribut",
   "Batches exported": "Batch berhasil diekspor",
   "No batches match these filters": "Tidak ada batch yang sesuai dengan filter ini",
+  "All products": "Semua produk",
+  "The template lists your current batches, ready to edit. Filter it to the batches you want to update.": "Template berisi batch Anda saat ini, siap untuk diubah. Filter untuk memilih batch yang ingin diperbarui.",
 }
 

@@ -16,16 +16,18 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MpButton, MpIcon, MpTextlink } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpIcon, MpTextlink } from '@mekari/pixel3'
 import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
+import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
 import FormatRequirementsAccordion from '~/components/patterns/FormatRequirementsAccordion.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import { productIndexRows } from '~/data/productsIndex'
 import { isProductBatchTracked } from '~/data/productDetails'
 import {
-  BATCH_UPDATE_COLUMNS, applyBatchUpdateImport, batchUpdateTemplateRows, validateBatchUpdateRows,
-  type BatchUpdateCells, type BatchUpdateImportResult, type BatchUpdateRow,
+  BATCH_UPDATE_COLUMNS, applyBatchUpdateImport, buildBatchExport, exportableProductSkus, validateBatchUpdateRows,
+  type BatchUpdateImportResult, type BatchUpdateRow,
 } from '~/data/batchUpdateImport'
+import { writeBatchExportXlsx } from '~/utils/batchExportXlsx'
 import { successToast } from '~/utils/toasts'
 
 const route = useRoute()
@@ -49,9 +51,25 @@ const formatRequirements = computed(() => [
   t('Maximum 1.000 rows per file'),
 ])
 
-// ── Template / error file ────────────────────────────────────────────────────
+// ── Template (current batches, filtered) / error file ───────────────────────
+// MultiSelectDropdown works on plain strings, so the picker holds product names (unique
+// among batch-tracked products) and they are mapped back to SKUs on download.
+const exportSkus = exportableProductSkus()
+const nameBySku = new Map(productIndexRows().map((r) => [r.sku, r.name]))
+const skuByName = new Map(exportSkus.map((s) => [nameBySku.get(s)!, s]))
+const productOptions = exportSkus.map((s) => nameBySku.get(s)!)
+
+/** All products by default, or only the product the page was opened from. An empty
+ *  selection (cleared) also means all products. */
+const selectedProducts = ref<string[]>(
+  product.value && skuByName.has(product.value.name) ? [product.value.name] : [...productOptions],
+)
+const onlyRequiredEmpty = ref(false)
+const noMatch = ref(false)
+watch([selectedProducts, onlyRequiredEmpty], () => { noMatch.value = false })
+
 const templateSkus = computed(() =>
-  product.value ? [product.value.sku] : productIndexRows().filter((r) => isProductBatchTracked(r.sku)).map((r) => r.sku),
+  selectedProducts.value.length ? selectedProducts.value.map((n) => skuByName.get(n)!) : exportSkus,
 )
 
 async function writeSheet(filename: string, header: string[], rows: string[][]) {
@@ -63,11 +81,13 @@ async function writeSheet(filename: string, header: string[], rows: string[][]) 
   XLSX.writeFile(book, filename)
 }
 
-const cellsOf = (r: BatchUpdateCells) => BATCH_UPDATE_COLUMNS.map((c) => r[c.key])
-const headerLabels = () => BATCH_UPDATE_COLUMNS.map((c) => t(c.label))
 
-function downloadTemplate() {
-  void writeSheet('update-batches-template.xlsx', headerLabels(), batchUpdateTemplateRows(templateSkus.value).map(cellsOf))
+async function downloadTemplate() {
+  const data = buildBatchExport({ skus: templateSkus.value, onlyRequiredEmpty: onlyRequiredEmpty.value })
+  if (!data.rows.length) return void (noMatch.value = true)
+  noMatch.value = false
+  await writeBatchExportXlsx(data, 'update-batches-template.xlsx', t)
+  successToast(t('Batches exported'))
 }
 
 // ── Upload ───────────────────────────────────────────────────────────────────
@@ -305,12 +325,21 @@ watch(scenario, (s) => {
           <span class="ibu-step-badge">1</span>
           <div class="ibu-step-body">
             <p class="ibu-step-title">{{ t('Download the template') }}</p>
-            <p class="ibu-step-desc">
-              {{ product
-                ? t('The template lists this product’s batches with their current details, ready to edit.')
-                : t('The template lists the batches of every batch-tracked product, ready to edit.') }}
-            </p>
+            <p class="ibu-step-desc">{{ t('The template lists your current batches, ready to edit. Filter it to the batches you want to update.') }}</p>
+            <div class="ibu-filters" data-devchange="batch-export-filters">
+              <div class="ibu-field">
+                <span class="ibu-field-label">{{ t('Products') }}</span>
+                <MultiSelectDropdown
+                  id="ibu-products" v-model="selectedProducts"
+                  :options="productOptions" :placeholder="t('All products')"
+                  :select-all-label="t('All products')" :all-selected-label="t('All products')"
+                  is-full-width
+                />
+              </div>
+              <MpCheckbox id="ibu-required-empty" :is-checked="onlyRequiredEmpty" @change="onlyRequiredEmpty = !onlyRequiredEmpty">{{ t('Only batches with an empty required attribute') }}</MpCheckbox>
+            </div>
             <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="downloadTemplate">{{ t('Download template') }}</button>
+            <p v-if="noMatch" class="ibu-error">{{ t('No batches match these filters') }}</p>
             <FormatRequirementsAccordion :requirements="formatRequirements" />
           </div>
         </div>
@@ -396,6 +425,9 @@ watch(scenario, (s) => {
   margin: calc(var(--mp-spacing-2) * -1) 0 0;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
 }
+.ibu-filters { display: flex; flex-direction: column; gap: var(--mp-spacing-3); max-width: 360px; }
+.ibu-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.ibu-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ibu-error { margin: calc(var(--mp-spacing-1) * -1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 
 .ibu-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); }
