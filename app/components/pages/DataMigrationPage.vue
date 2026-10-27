@@ -781,9 +781,11 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-landing-steps-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-3);
   width: 100%;
   max-width: 480px;
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  overflow: hidden;
 }
 
 .dm-landing-step {
@@ -791,9 +793,11 @@ const stepDone = computed<Record<string, boolean>>(() => ({
   align-items: flex-start;
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-radius: var(--mp-radii-md);
-  border: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral);
+}
+
+.dm-landing-step + .dm-landing-step {
+  border-top: 1px solid var(--mp-border-default);
 }
 
 .dm-landing-step-number {
