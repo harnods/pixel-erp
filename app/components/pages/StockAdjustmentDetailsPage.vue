@@ -212,6 +212,11 @@ function isSerialTrackedSku(sku: string) { return !!warehouseStockMap.value[sku]
 // ── View batch drawer ──────────────────────────────────────────────────────────
 const viewBatchOpen = ref(false)
 const viewBatchItem = ref<AdjustmentLine | null>(null)
+/** The batches a stock in/out saved for this SKU (ATINV-9082); undefined for older records. */
+function savedBatchesFor(sku: string) {
+  if (isCount.value) return undefined
+  return adjustment.value?.lines?.find(l => l.sku === sku)?.batches
+}
 function openViewBatch(item: AdjustmentLine) {
   viewBatchItem.value = item
   viewBatchOpen.value = true
@@ -1284,6 +1289,7 @@ onUnmounted(() => {
       :product-name="viewBatchItem.product.name"
       :product-img="viewBatchItem.product.img"
       :hide-on-hand="isCount && !isCountedStatus"
+      :saved-batches="savedBatchesFor(viewBatchItem.sku)"
       @update:open="viewBatchOpen = $event"
     />
 

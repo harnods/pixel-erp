@@ -18,6 +18,7 @@ import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { stockLocationPaths } from '~/data/storageLocations'
 import { addAdjustment, accountOptions, IN_OUT_CATEGORIES, stockAdjustments } from '~/data/stockAdjustments'
 import { addWmsAdjustmentSafe } from '~/data/wmsStockAdjustments'
+import type { BatchAttributeKey } from '~/data/batchAttributes'
 import { scrollToFirstError } from '~/utils/form'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 import ErpDimensionTagUpsell from '~/components/patterns/ErpDimensionTagUpsell.vue'
@@ -192,6 +193,22 @@ const batchDrawerOpen = computed({
   set: (v) => { if (!v) batchDrawerLocRow.value = null },
 })
 function openBatchDrawer(row: ProductRow, locRow: LocationRow) { batchDrawerSku.value = row.sku; batchDrawerLocRow.value = locRow }
+/** A row's batches across its locations — same number merged, with the attribute snapshot
+ *  the drawer recorded (ATINV-9082). Stock in only: batch qty is always positive. */
+function batchesOfRow(r: { locationRows: LocationRow[] }): { batchNo: string; qty: number; attributes: Partial<Record<BatchAttributeKey, string>> }[] {
+  const byNo = new Map<string, { batchNo: string; qty: number; attributes: Partial<Record<BatchAttributeKey, string>> }>()
+  for (const loc of r.locationRows) {
+    for (const b of loc.batchLines ?? []) {
+      const qty = b.counted ?? 0
+      if (qty <= 0 || !b.batchNo.trim()) continue
+      const key = b.batchNo.trim().toLowerCase()
+      const prev = byNo.get(key)
+      if (prev) prev.qty += qty
+      else byNo.set(key, { batchNo: b.batchNo.trim(), qty, attributes: { ...(b.attributes ?? {}), ...(b.expiryDate && !b.attributes?.expiry_date ? { expiry_date: b.expiryDate } : {}) } })
+    }
+  }
+  return [...byNo.values()]
+}
 function saveBatchLines(batches: CommittedBatch[]) {
   if (!batchDrawerLocRow.value) return
   batchDrawerLocRow.value.batchLines = batches
@@ -309,6 +326,7 @@ async function handleSave() {
       return sum + parseDelta(loc.delta)
     }, 0),
     ...(Object.keys(r.dimensions).length ? { dimensions: r.dimensions } : {}),
+    ...(isBatchTrackedSku(r.sku) ? { batches: batchesOfRow(r) } : {}),
   }))
   const input = {
     kind: 'in-out' as const,
@@ -563,7 +581,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       </td>
                       <!-- Action column -->
                       <td v-if="isBatchTrackedSku(row.sku)" class="sio-td sio-td--action">
-                        <MpButton variant="link" class="sio-manage-btn" type="button" @click="openBatchDrawer(row, locRow)">Manage batch</MpButton>
+                        <MpButton variant="link" class="sio-manage-btn" type="button" data-devchange="stock-in-batch-attributes" @click="openBatchDrawer(row, locRow)">Manage batch</MpButton>
                       </td>
                       <td v-else-if="isSerialTrackedSku(row.sku)" class="sio-td sio-td--action">
                         <MpButton variant="link" class="sio-manage-btn" type="button" @click="openSerialDrawer(row, locRow)">Manage serial numbers</MpButton>

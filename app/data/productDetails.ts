@@ -902,3 +902,23 @@ export function getBatchWarehouseStock(sku: string, batchNo: string): ProductWar
     })
     .filter((w) => w.onHand > 0)
 }
+
+/** A receiving transaction's batches reach the batch master (ATINV-9082, spec §5.1):
+ *  each line becomes a product batch record when it has none, and its typed values fill
+ *  the record's EMPTY attributes — a transaction never overwrites one. Skips blank and
+ *  Unassigned numbers and products that aren't batch-tracked. */
+export function commitDrawerBatches(
+  sku: string,
+  lines: readonly { batchNo: string; expiryDate?: string; description?: string; attributes?: BatchAttributeValues }[],
+  by = CURRENT_USER,
+): void {
+  if (!productIndexRows().some((r) => r.sku === sku) || !isProductBatchTracked(sku)) return
+  for (const l of lines) {
+    const no = l.batchNo.trim()
+    if (!no || no.toLowerCase() === UNASSIGNED_BATCH_NO.toLowerCase()) continue
+    const rawExpiry = l.attributes?.expiry_date || l.expiryDate || ''
+    const expiry = /^\d{4}-\d{2}-\d{2}$/.test(rawExpiry) ? rawExpiry : undefined
+    const batch = ensureProductBatch(sku, no, { expiry_date: expiry, description: l.description }, by)
+    if (l.attributes && Object.keys(l.attributes).length) fillEmptyBatchAttributes(sku, batch.id, l.attributes, by)
+  }
+}

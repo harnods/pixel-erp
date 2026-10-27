@@ -104,6 +104,9 @@ const props = defineProps<{
    *  to show (a purchase delivery records which batches arrived, not where they
    *  were put). WMS callers leave it off and keep the column. */
   hideLocation?: boolean
+  /** In/out mode: the batches the adjustment saved. When given, the table shows exactly
+   *  these (ATINV-9082) instead of splitting the delta across the warehouse's lots. */
+  savedBatches?: { batchNo: string; qty: number; attributes: Partial<Record<string, string>> }[]
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
@@ -233,6 +236,20 @@ function buildRows(): BatchRow[] {
   const batches = warehouseStock.value?.batches ?? []
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
   const totalOnHand = batches.reduce((s, b) => s + b.onHand, 0)
+
+  if (isInOut.value && props.savedBatches?.length) {
+    return props.savedBatches.map((sb, i) => {
+      const lot = batches.find(l => l.batchNo.toLowerCase() === sb.batchNo.toLowerCase())
+      const before = Math.max(0, (lot?.onHand ?? 0) - sb.qty)
+      return {
+        batchNo: sb.batchNo,
+        expiryDate: sb.attributes.expiry_date ?? lot?.expiryDate ?? '',
+        desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+        onHand: before, value: sb.qty, plannedValue: 0, verifiedValue: 0, newOnHand: before + sb.qty,
+        unit, bin: null, groupIndex: 0, groupSize: 1,
+      }
+    })
+  }
 
   if (isInOut.value) {
     const totalDelta = props.deltaTotal ?? 0

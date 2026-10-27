@@ -3,6 +3,8 @@ import { warehouses } from './warehouses'
 import { warehouseProducts, productBySku, PRODUCTS, type Product } from './inventory'
 import { getWarehouseDetail, applyStockCount, applyStockInOut } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { commitDrawerBatches } from './productDetails'
+import type { BatchAttributeValues } from './batchAttributes'
 import { TODAY } from './master'
 import type { ApprovalLog, ApprovalStage, ApprovalStep } from './warehouseTransfers'
 
@@ -115,7 +117,7 @@ export interface StockAdjustment {
   /** User-entered memo (create form). Absent → a deterministic demo memo is shown. */
   memo?: string
   /** User-entered product lines (create form). Absent → demo lines are derived. */
-  lines?: { sku: string; qty: number; prevQty?: number; location?: string; dimensions?: Record<string, string> }[]
+  lines?: { sku: string; qty: number; prevQty?: number; location?: string; dimensions?: Record<string, string>; batches?: { batchNo: string; qty: number; attributes: BatchAttributeValues }[] }[]
   /** Filled when the adjustment is approved (to populate approval log stage 2). */
   approvedAt?: string
   approvedBy?: string
@@ -462,7 +464,7 @@ export interface AdjustmentInput {
   category: AdjustmentCategory
   tags: string[]
   memo?: string
-  lines: { sku: string; qty: number; prevQty?: number; dimensions?: Record<string, string> }[]
+  lines: { sku: string; qty: number; prevQty?: number; dimensions?: Record<string, string>; batches?: { batchNo: string; qty: number; attributes: BatchAttributeValues }[] }[]
   /** WMS Stock count only */
   assignee?: string
   startDate?: string
@@ -497,6 +499,8 @@ export function addAdjustment(input: AdjustmentInput): StockAdjustment {
     approvedAt: input.approvedAt,
   }
   stockAdjustments.unshift(adj)
+  // Saved batches reach the batch master (ATINV-9082); no save, no batch.
+  for (const l of input.lines) if (l.batches?.length) commitDrawerBatches(l.sku, l.batches)
   persistAdjustments()
   return adj
 }
@@ -535,6 +539,7 @@ export function updateAdjustment(id: string, input: AdjustmentInput): StockAdjus
     memo: input.memo,
     lines: input.lines,
   })
+  for (const l of input.lines) if (l.batches?.length) commitDrawerBatches(l.sku, l.batches)
   persistAdjustments()
   return a
 }

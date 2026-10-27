@@ -517,7 +517,7 @@ function addNewBatch() {
     unit,
     isNew: true,
     expiryMode: 'date',
-    ...(isDelivery.value && deliveryUsesVendor.value && props.vendorId
+    ...((isDelivery.value || isReceiving.value) && productUsesVendor(props.sku) && props.vendorId
       ? { attributes: { supplier: props.vendorId } as Partial<Record<BatchAttributeKey, string>> }
       : attrMode.value ? { attributes: {} as Partial<Record<BatchAttributeKey, string>> } : {}),
     originLocRows: [makeLocRow()],

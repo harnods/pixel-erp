@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'receiving-batch-attributes',
+    title: 'WMS receiving saves batch attributes to the batch master',
+    description:
+      'Finishing receiving creates a product batch for each new batch number and fills its empty attributes; existing values are never overwritten. A new row prefills Vendor from the PO, and existing batches recorded with another vendor ask for one confirmation first.',
+    date: '2026-10-28',
+    files: ['app/data/receivingTasks.ts', 'app/components/pages/ReceiveItemsPage.vue', 'app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'stock-in-batch-attributes',
+    title: 'Stock in saves its batches with their attributes',
+    description:
+      'A saved stock in/out keeps each line\'s batches and creates them in the batch master, filling only empty attributes. The adjustment details batch drawer shows the saved batches.',
+    date: '2026-10-28',
+    files: ['app/data/stockAdjustments.ts', 'app/components/pages/StockInOutFormPage.vue', 'app/components/pages/StockAdjustmentDetailsPage.vue'],
+  },
+  {
     id: 'batch-drawer-attributes',
     title: 'Batch attributes in every Manage batch drawer',
     description:
