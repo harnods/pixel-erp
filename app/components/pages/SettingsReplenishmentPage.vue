@@ -28,6 +28,7 @@ import {
   REPL_DEFAULTS, type ReplenishmentConfig,
 } from '~/data/replenishmentConfig'
 import { recalculateReplenishment, invalidateReplenishmentCaches } from '~/data/replenishment'
+import { startRecalc, type RecalcScope } from '~/data/replenishmentRecalc'
 import { safetyDaysOverrideCount } from '~/data/replenishmentSettings'
 import { productCategories } from '~/data/productCategories'
 
@@ -91,7 +92,9 @@ const PER_CATEGORY_MAPS = [
 
 const categories = computed(() => {
   const src = editing.value ? draft : committed.value
-  const set = new Set<string>()
+  // The persisted list is the source of truth for what is listed; map keys are folded
+  // in so a category that carries a value is always listed even if the list missed it.
+  const set = new Set<string>(src.listedCategories ?? [])
   for (const key of PER_CATEGORY_MAPS) for (const k of Object.keys(src[key])) set.add(k)
   for (const c of extraCategories) set.add(c)
   for (const c of removedCategories) set.delete(c)
@@ -273,6 +276,35 @@ function numericMap(map: Record<string, unknown>, floor: number): Record<string,
   )
 }
 
+/**
+ * What a save changes, so the worklist can recalculate the right rows (engineering RFC):
+ * any company-wide knob → every product; otherwise only the categories whose per-category
+ * default actually changed. A list-only change (adding an empty category) recalculates
+ * nothing. Warehouse-scoped settings live on another page and start their own job.
+ */
+const GLOBAL_CONFIG_KEYS: (keyof ReplenishmentConfig)[] = [
+  'lookbackDays', 'coverageDaysGlobal', 'safetyDaysGlobal', 'coldStartMinDays',
+  'fsnWindowDays', 'fsnFastPct', 'fsnSlowPct', 'volatileCvThreshold',
+  'leadTimeSampleCount', 'leadTimeMinSamples', 'leadTimeOutlierCapDays',
+  'fallbackLeadTimeDays', 'reorderBoundary',
+]
+const PER_CATEGORY_CONFIG_MAPS: (keyof ReplenishmentConfig)[] = [
+  'safetyDaysByCategory', 'coverageDaysByCategory', 'leadTimeByCategory',
+  'leadTimeOutlierCapByCategory', 'lookbackDaysByCategory',
+]
+function recalcScopeFromConfig(prev: ReplenishmentConfig, next: ReplenishmentConfig): RecalcScope | null {
+  if (GLOBAL_CONFIG_KEYS.some((k) => prev[k] !== next[k])) return { kind: 'all' }
+  const changed = new Set<string>()
+  for (const key of PER_CATEGORY_CONFIG_MAPS) {
+    const a = (prev[key] ?? {}) as Record<string, number>
+    const b = (next[key] ?? {}) as Record<string, number>
+    for (const cat of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (a[cat] !== b[cat]) changed.add(cat)
+    }
+  }
+  return changed.size ? { kind: 'category', categories: [...changed] } : null
+}
+
 function save() {
   formError.value = ''
   if (!validate()) {
@@ -300,7 +332,13 @@ function save() {
     coverageDaysByCategory: numericMap(draft.coverageDaysByCategory, 0),
     leadTimeByCategory: numericMap(draft.leadTimeByCategory, 1),
     leadTimeOutlierCapByCategory: numericMap(draft.leadTimeOutlierCapByCategory, 1),
+    // Persist the listed set explicitly (added/removed included), so a category with no
+    // per-category value yet still survives the save and shows in every per-category table.
+    listedCategories: [...categories.value],
   }
+
+  // What this save changes decides which rows the worklist recalculates (engineering RFC).
+  const scope = recalcScopeFromConfig(committed.value, next)
 
   // Submitting: the one allowed lock (loading) while the worklist recalculates.
   saving.value = true
@@ -311,6 +349,9 @@ function save() {
       // leaving the worklist showing numbers from the old policy.
       invalidateReplenishmentCaches()
       recalculateReplenishment('all')
+      // Start the in-progress job the worklist shows (banner + hidden rows) so the
+      // affected numbers can't be used mid-recalculation.
+      if (scope) startRecalc(scope)
     } catch {
       // Save error: inline, and every edit stays in the form.
       saving.value = false
@@ -326,7 +367,7 @@ function save() {
     toast.notify({
       variant: 'success',
       title: t('Replenishment settings saved'),
-      description: t('The worklist has been recalculated'),
+      description: scope ? t('The worklist is being recalculated') : t('The worklist has been recalculated'),
       maxWidth: 'max-content',
     })
   }, 300)
@@ -401,6 +442,7 @@ function goToWorklist() { router.push('/replenishment') }
                 v-if="editing === 'categories'"
                 id="rs-categories"
                 class="rs-field-wide"
+                data-devchange="replenishment-category-persist"
                 :key="categoryTagsKey"
                 :data="categoryTags"
                 :suggestions="productCategories"

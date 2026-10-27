@@ -157,6 +157,13 @@ export const VENDORLESS_SKUS: string[] = CATALOG
 
 /** SKU whose only vendor link is inactive — exercises the deactivated-vendor path. */
 const INACTIVE_ONLY_SKU = CATALOG[11]?.sku ?? ''
+/** Demo: a multi-vendor SKU, in the To-order worklist, whose PREFERRED vendor is
+ *  deactivated. An active alternate remains, so "Preferred vendor is inactive" shows
+ *  without a runtime edit AND the drafting modal can require the requester to pick an
+ *  active vendor before the PR is created (US-019 EH-01). */
+const INACTIVE_PREFERRED_DEMO_SKU = '3004'
+/** Demo: a SKU whose preferred vendor link carries MOQ 0, so "Not set" is visible. */
+const MOQ_NOT_SET_DEMO_SKU = '1005'
 
 /**
  * `hashStr` avalanched before any modulus.
@@ -272,6 +279,22 @@ function buildVendorItems(): VendorItem[] {
       }
     }
   })
+
+  // ── Demo rows for two edge states that otherwise need a runtime action to reach ──
+  // 1) Preferred vendor DEACTIVATED (US-001 EH-01 / D23): one multi-vendor SKU's
+  //    preferred link goes inactive and is marked `wasPreferred`, so the Stock-by-
+  //    warehouses rows (and the worklist) show "Preferred vendor is inactive" and fall
+  //    back to the active alternate. An active alternate always remains.
+  const prefDemo = out.find((v) => v.sku === INACTIVE_PREFERRED_DEMO_SKU && v.isPreferred && v.active)
+  if (prefDemo && out.filter((v) => v.sku === INACTIVE_PREFERRED_DEMO_SKU && v.active).length >= 2) {
+    prefDemo.active = false
+    prefDemo.isPreferred = false
+    prefDemo.wasPreferred = true
+  }
+  // 2) MOQ "Not set" (Rule 20): one SKU's preferred link carries MOQ 0, which reads
+  //    "Not set" on Purchase info and the Vendors tab (0 = not yet agreed).
+  const moqDemo = out.find((v) => v.sku === MOQ_NOT_SET_DEMO_SKU && v.isPreferred && v.active)
+  if (moqDemo) moqDemo.moq = 0
 
   return out
 }

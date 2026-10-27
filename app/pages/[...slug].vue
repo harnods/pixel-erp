@@ -391,10 +391,6 @@ watch(() => [currentPageKey.value, route.query.poTab] as const, ([key, tab]) => 
   if (tab === 'all' || tab === 'awaiting' || tab === 'rejected') purchaseOrdersTab.value = tab
 }, { immediate: true })
 
-// Recalculate lives in the shell's title bar but the state lives in the page, so
-// the click is passed down as a signal (same shape as the other title-bar actions).
-const replenishRecalcSignal = ref(0)
-provide('replenishRecalcSignal', replenishRecalcSignal)
 const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
 const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
 const poDetailOrderId = ref<string | null>(null)
@@ -2081,18 +2077,14 @@ function startResize(e: MouseEvent) {
         <!-- Replenishment: the worklist is DERIVED, so there is no "+ New" primary.
              Recalculate is the primary action, Settings the secondary. -->
         <div v-else-if="currentPageKey === 'Replenishment'" class="page-title-actions">
+          <!-- Engineering RFC: no manual Recalculate button — a settings/SKU change
+               starts recalculation automatically and the worklist shows its progress. -->
           <button
             class="btn-enterprise btn-enterprise--secondary"
             data-devchange="replenishment-import-removed"
             @click="router.push('/replenishment-settings')"
           >
             {{ t('Settings') }}
-          </button>
-          <button
-            class="btn-enterprise btn-enterprise--primary"
-            @click="replenishRecalcSignal++"
-          >
-            {{ t('Recalculate') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">

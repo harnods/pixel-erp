@@ -54,8 +54,14 @@ export interface PrLine {
    * category default and is tagged "estimated lead time".
    */
   newVendorLink: boolean
-  /** Engine recommendation in STOCK units, unrounded (D12). */
+  /** Engine recommendation in STOCK units, unrounded (D12) — what the Request qty
+   *  pre-fills to (the remaining to request when open PRs already cover part). */
   recommendedQty: number
+  /** The full suggested qty from the worklist index (US-005), BEFORE netting any open
+   *  PRs — the same number the worklist "Suggested qty" column shows. */
+  suggestedQty: number
+  /** Still to request = max(0, suggested − already requested on open PRs) (US-030). */
+  remainingQty: number
   /** What will be requested — user-editable (US-020 AC-02). */
   finalQty: number
   /** True once a human has typed over the recommendation (US-022 VR-03). */
@@ -225,12 +231,18 @@ export function planPurchaseRequests(
     if (row.bucket === 'needs-setup') { skipped.push({ ...base, reason: 'needs-setup' }); continue }
     if (row.bucket === 'not-tracked') { skipped.push({ ...base, reason: 'not-tracked' }); continue }
 
-    const chosen = row.key in vendorChoices
+    const userChose = row.key in vendorChoices
+    // US-019 EH-01: when the preferred vendor is inactive, do NOT auto-fall back to
+    // another vendor. Leave the line unsourced so the requester must pick an active
+    // vendor in the drafting modal before the PR can be created (mandatory).
+    const chosen = userChose
       ? vendorChoices[row.key]!
-      : row.vendorItem?.vendorId ?? null
+      : row.inactivePreferredVendor
+        ? null
+        : row.vendorItem?.vendorId ?? null
     const vi = chosen ? vendorItemFor(row.sku, chosen) : null
 
-    const recommendedQty = chosen && chosen !== row.vendorItem?.vendorId
+    const recommendedQty = userChose && chosen !== row.vendorItem?.vendorId
       ? recomputeQtyForVendor(row, chosen)   // vendor swapped → re-size for its lead time
       : requestedQtyFor(row)
     const override = overrides[row.key]
@@ -252,6 +264,12 @@ export function planPurchaseRequests(
     // A chosen vendor with no SKU link is still that vendor (US-019 AC-05).
     const vendorId = chosen ?? null
     const newVendorLink = !!chosen && !vi
+    // "Needed by" = today + lead time (US-020 AC-01), per line (RS-002). Still carried
+    // on the line record (and the PR header date) even though the drafting table no
+    // longer shows it.
+    const requiredDate = requiredDates[row.key] ?? shiftDays(REPL_ASOF_ISO, leadTimeForVendor(row, vendorId).days)
+    // One PR = one vendor × one warehouse (Rule 35/36): same vendor and warehouse are
+    // one request. An unsourced line groups with other unsourced lines.
     const key = `${vendorId ?? UNSOURCED}::${row.warehouseId}`
     const group = groups.get(key) ?? {
       key,
@@ -270,11 +288,11 @@ export function planPurchaseRequests(
       vendorItem: vi ?? null,
       newVendorLink,
       recommendedQty,
+      suggestedQty: row.suggestion.rawQty,
+      remainingQty: Math.max(0, row.remainingToRequest ?? row.suggestion.rawQty),
       finalQty,
       manuallyEdited: override !== undefined && override !== recommendedQty,
-      // "Needed by" = today + lead time (US-020 AC-01), per line (RS-002). On the stock
-      // clock, the same anchor every replenishment number uses.
-      requiredDate: requiredDates[row.key] ?? shiftDays(REPL_ASOF_ISO, leadTimeForVendor(row, vendorId).days),
+      requiredDate,
       ...(fullyRequested ? { fullyRequested: { requested: row.requestedQty, suggested: row.suggestion.rawQty } } : {}),
       unit: row.unit,
       unitCost: vi?.unitCost ?? 0,

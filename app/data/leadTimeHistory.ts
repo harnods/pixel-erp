@@ -255,7 +255,11 @@ function modelledSamples(vendorId: string, sku: string, warehouseId: string, cfg
   // its computed average — and its "Export purchases (CSV)" — cites genuine POs.
   if (CURATED_LEAD_TIME_CELLS.has(`${vendorId}::${sku}::${warehouseId}`)) return []
 
-  const vi = vendorItems.find((v) => v.vendorId === vendorId && v.sku === sku && v.active)
+  // A deactivated PREFERRED vendor keeps its lead-time history: deactivation stops new
+  // orders, it does not erase the vendor's real PO→GR past (US-001). So its history is
+  // still measured until a new preferred vendor is chosen — never silently swapped to
+  // another vendor's lead time.
+  const vi = vendorItems.find((v) => v.vendorId === vendorId && v.sku === sku && (v.active || v.wasPreferred))
   if (!vi) return []
 
   const key = `lt:${vendorId}:${sku}:${warehouseId}`
@@ -331,7 +335,8 @@ function sampleIndex(): Map<string, LeadTimeSample[]> {
   }
   const whs = leadTimeWarehouses()
   for (const vi of vendorItems) {
-    if (!vi.active) continue
+    // Keep a deactivated PREFERRED vendor's history (wasPreferred); skip other inactive links.
+    if (!vi.active && !vi.wasPreferred) continue
     for (const wh of whs) {
       for (const s of modelledSamples(vi.vendorId, vi.sku, wh, cfg)) add(s)
     }

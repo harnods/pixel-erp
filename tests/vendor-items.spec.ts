@@ -75,7 +75,8 @@ describe('vendor terms — valid and per-vendor', () => {
   it('every term is a sane positive number', () => {
     for (const vi of vendorItems) {
       expect(vi.leadTimeDays).toBeGreaterThan(0)
-      expect(vi.moq).toBeGreaterThanOrEqual(1)
+      // 0 = "Not set" (a PR-created link, or the demo link, before terms are agreed).
+      expect(vi.moq).toBeGreaterThanOrEqual(0)
       expect(vi.packSize).toBeGreaterThanOrEqual(1)
       expect(vi.unitsPerPurchaseUnit).toBeGreaterThanOrEqual(1)
       expect(vi.unitCost).toBeGreaterThan(0)
@@ -359,8 +360,10 @@ describe('alternate suppliers — the multi-vendor mix', () => {
         expect(v.active).toBe(true)
         expect(vendorById(v.vendorId)).toBeTruthy()
       }
-      // Exactly one preferred, so the PR flow always has a suggestion to carry.
-      expect(items.filter((v) => v.isPreferred).length).toBe(1)
+      // Exactly one active preferred — or none, when the preferred vendor was
+      // deactivated and the SKU falls back by priority (US-001 EH-01). Never more.
+      const deactivatedPreferred = vendorItems.some((v) => v.sku === p.sku && !v.active && v.wasPreferred)
+      expect(items.filter((v) => v.isPreferred).length).toBe(deactivatedPreferred ? 0 : 1)
     }
   })
 })

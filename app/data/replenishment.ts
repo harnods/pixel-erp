@@ -34,7 +34,6 @@ import { purchaseOrders } from './purchaseOrders'
 import { purchaseRequests } from './purchaseRequests'
 import { getPurchaseOrderDocument } from './purchaseOrderLines'
 import { goodsInTransitInvoiceFor } from './goodsInTransitInvoices'
-import { purchaseReturns, purchaseReturnsForReceiptLine } from './purchaseReturns'
 import { shiftDays } from './master'
 import {
   REPL_ASOF_ISO, getReplenishmentConfig,
@@ -48,7 +47,7 @@ import {
 } from './demandHistory'
 import {
   preferredVendorItem, preferredVendorFor, vendorItemFor, vendorItemsForSku, vendorNameFor, type VendorItem,
-  inactivePreferredVendorFor,
+  inactivePreferredVendorFor, inactivePreferredVendorItem,
 } from './vendorItems'
 import {
   currentRunNo, hasRunHistory, writeRun,
@@ -195,11 +194,6 @@ export interface AtpOnOrderDoc {
    * in transit and the invoice never counts as a receipt for lead time.
    */
   invoicedBeforeReceipt?: string
-  /**
-   * Qty re-opened by a purchase return marked "replacement expected" (RS-009 / Rule
-   * 52), and the return it came from. Already included in `outstanding`.
-   */
-  replacementReturn?: { number: string; qty: number }
 }
 
 export interface AtpResult {
@@ -288,20 +282,16 @@ function onOrderIndex(warehouseId: string) {
   if (hit) return hit
 
   const map = new Map<string, AtpOnOrderDoc[]>()
-  /** Replacement-expected returns already counted through their receipt line. */
-  const reopenedReturns = new Set<string>()
   for (const receipt of receipts) {
     if (receipt.warehouseId !== warehouseId) continue
     if (!OPEN_RECEIPT_STATUSES.has(receipt.status)) continue
 
     const received = receivedSummaryForReceipt(receipt.id)
     for (const line of lineItemsForReceipt(receipt)) {
-      // Rule 52: a return re-opens qty only when a replacement is expected; a plain
-      // return leaves the line received. Never touches lead time.
-      const reopen = purchaseReturnsForReceiptLine(receipt.id, line.sku).find((r) => r.replacementExpected)
-      const reopened = reopen?.qty ?? 0
-      if (reopen) reopenedReturns.add(reopen.number)
-      const outstanding = Math.max(0, line.purchaseQty - (received[line.sku]?.received ?? 0)) + reopened
+      // In-transit = ordered − received, floored at 0. It is only added by an approved
+      // PO or WMS Inbound, and only reduced when the PO is received (PD) or WMS Inbound
+      // completes. A purchase or sales return never touches in-transit.
+      const outstanding = Math.max(0, line.purchaseQty - (received[line.sku]?.received ?? 0))
       if (outstanding <= 0) continue
       const list = map.get(line.sku) ?? []
       list.push({
@@ -315,28 +305,9 @@ function onOrderIndex(warehouseId: string) {
         // so this incoming qty is owned by WMS Inbound (US-029 handover).
         owner: 'wms_inbound',
         invoicedBeforeReceipt: goodsInTransitInvoiceFor(receipt.purchaseNo)?.number,
-        ...(reopen ? { replacementReturn: { number: reopen.number, qty: reopen.qty } } : {}),
       })
       map.set(line.sku, list)
     }
-  }
-
-  // A replacement-expected return whose receipt line could not be regenerated (or whose
-  // receipt is no longer open) still re-opens its qty as incoming (Rule 52).
-  for (const ret of purchaseReturns) {
-    if (!ret.replacementExpected || ret.warehouseId !== warehouseId || reopenedReturns.has(ret.number)) continue
-    const list = map.get(ret.sku) ?? []
-    list.push({
-      receiptId: ret.receiptId,
-      number: ret.receiptNumber,
-      purchaseNo: ret.purchaseNo,
-      eta: ret.date,
-      outstanding: ret.qty,
-      vendorName: ret.vendorName,
-      owner: 'wms_inbound',
-      replacementReturn: { number: ret.number, qty: ret.qty },
-    })
-    map.set(ret.sku, list)
   }
 
   // ── PO-owned In-Transit (US-028 / D25): an approved PO with no WMS inbound ──
@@ -759,8 +730,10 @@ export interface WorklistRow {
   vendor: { id: string; name: string } | null
   vendorItem: VendorItem | null
   /**
-   * The previously preferred vendor, now inactive (US-001 EH-01). Lead time has
-   * fallen back to the next listed vendor; the user should pick a new preferred one.
+   * The previously preferred vendor, now inactive (US-001 EH-01). Lead time STAYS
+   * measured from this (inactive) preferred vendor's own history — it does NOT fall to
+   * another/second vendor (D10 has no vendor-level fallback tier); the user picks a new
+   * preferred vendor to re-base it (US-019 AC-02).
    */
   inactivePreferredVendor: { id: string; name: string } | null
   alternates: VendorItem[]
@@ -803,6 +776,12 @@ export interface WorklistRow {
      * NOT appear on To order); it leaves Needs setup on its own once a first sale lands.
      */
     noDemand: boolean
+    /**
+     * The preferred vendor for this SKU × warehouse has been deactivated and not yet
+     * replaced. Lead time is still measured from that vendor's own history (never a
+     * second vendor); drives the "Preferred vendor inactive" worklist tag.
+     */
+    preferredVendorInactive: boolean
   }
   /** Sort score — urgency, never shown as a column. */
   urgency: number
@@ -829,10 +808,16 @@ export function buildRow(
   const vendorItem = preferredVendorFor(sku, warehouseId) ?? null
   const alternates = vendorItemsForSku(sku).filter((v) => v.vendorId !== vendorItem?.vendorId)
 
-  // Lead time is MEASURED from this vendor+product's PO→receipt history, then falls
-  // down the ladder (US-001 VR-04). It cannot be typed over (US-001 AC-09): a thin cell
-  // takes the category default, then the "Other categories" floor, then Needs setup.
-  const derivedLead = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg, warehouseId)
+  // Lead time is MEASURED from the PREFERRED vendor's own PO→receipt history and stays
+  // bound to that vendor even after it is deactivated — it must NEVER fall to a second /
+  // alternate vendor's lead time (D10 has no vendor-level fallback tier). So resolve the
+  // lead-time vendor as the deactivated-but-preferred vendor when there is one, else the
+  // active preferred; the basis re-bases only when the user picks a new preferred vendor
+  // (US-019 AC-02). It still cannot be typed over (US-001 AC-09): a thin cell takes the
+  // category default, then the "Other categories" floor, then Needs setup.
+  const inactivePref = inactivePreferredVendorFor(sku, warehouseId)
+  const leadTimeVendorId = inactivePref?.vendorId ?? vendorItem?.vendorId ?? null
+  const derivedLead = deriveLeadTime(leadTimeVendorId, sku, cfg, warehouseId)
   // `?? 0` only matters when the ladder resolves to none (the floor is "Not set"):
   // the row is then routed to Needs setup and no quantity is produced, so the 0 is
   // never used to compute an order — it just keeps the display arithmetic finite.
@@ -1023,10 +1008,9 @@ export function buildRow(
 
     vendor: vendorItem ? { id: vendorItem.vendorId, name: vendorNameFor(vendorItem.vendorId) } : null,
     vendorItem,
-    inactivePreferredVendor: (() => {
-      const gone = inactivePreferredVendorFor(sku, warehouseId)
-      return gone ? { id: gone.vendorId, name: vendorNameFor(gone.vendorId) } : null
-    })(),
+    inactivePreferredVendor: inactivePref
+      ? { id: inactivePref.vendorId, name: vendorNameFor(inactivePref.vendorId) }
+      : null,
     alternates,
 
     suggestion,
@@ -1045,6 +1029,7 @@ export function buildRow(
       coveredByInbound,
       verifyInbound,
       noDemand,
+      preferredVendorInactive: inactivePref != null,
     },
     urgency,
     asOf,
@@ -1323,8 +1308,13 @@ export function recommendedMinStock(
 
     // Preferred vendor can differ per warehouse (D23), so resolve it in the loop.
     const vendorItem = preferredVendorFor(sku, wh.id) ?? null
-    // Lead time is measured per warehouse (VR-01), so it is derived inside the loop.
-    const derived = deriveLeadTime(vendorItem?.vendorId ?? null, sku, cfg, wh.id)
+    // Lead time is measured per warehouse (VR-01) from the PREFERRED vendor's history.
+    // If that vendor was deactivated, lead time STILL uses its own history — never the
+    // next (fallback) vendor's — until a new preferred vendor is chosen (same rule as
+    // the worklist buildRow). The fallback vendor only takes over the ORDER, not the calc.
+    const inactivePref = inactivePreferredVendorFor(sku, wh.id)
+    const leadVendorId = inactivePref?.vendorId ?? vendorItem?.vendorId ?? null
+    const derived = deriveLeadTime(leadVendorId, sku, cfg, wh.id)
     const settings = effectiveSettings(sku, wh.id, cfg)
     const velocity = velocityFor(sku, wh.id, cfg, asOf)
     const safetyDays = safetyDaysOverride ?? settings.safetyDays
@@ -1358,8 +1348,10 @@ export function recommendedMinStock(
 
   // Nothing to compute from yet — a brand-new product, or one that has never
   // moved. Report that honestly rather than inventing a floor (US-003 CON-02).
-  // No warehouse to attribute to here, so lead time is the network-aggregate.
-  const derivedAgg = deriveLeadTime(skuVendorItem?.vendorId ?? null, sku, cfg)
+  // No warehouse to attribute to here, so lead time is the network-aggregate — still
+  // the preferred vendor's own history even when it was deactivated (never the next).
+  const inactiveAgg = inactivePreferredVendorItem(sku)
+  const derivedAgg = deriveLeadTime((inactiveAgg?.vendorId ?? skuVendorItem?.vendorId) ?? null, sku, cfg)
   return {
     value: null,
     avgDailySales: 0,

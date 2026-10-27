@@ -9,7 +9,7 @@
  * `~/data/replenishment`, which the tab badges in [...slug].vue also read, so the
  * table and its badge can never disagree.
  */
-import { ref, reactive, computed, onMounted, onUnmounted, watch, inject, type Ref } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, inject } from 'vue'
 import {
   toast, MpBadge, MpIcon, MpTooltip, MpBanner, MpBannerIcon, MpBannerDescription, MpButton, MpButtonGroup,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
@@ -31,10 +31,15 @@ import ReplenishmentFiltersDrawer, {
   type ReplenishmentFiltersValue,
 } from '~/components/patterns/ReplenishmentFiltersDrawer.vue'
 import {
-  replenishmentWorklist, recalculateReplenishment, ensureRunHistory,
+  replenishmentWorklist, ensureRunHistory,
   invalidateReplenishmentCaches, type WorklistRow,
 } from '~/data/replenishment'
-import { lastRun, isRunStale } from '~/data/replenishmentRuns'
+import { lastRun } from '~/data/replenishmentRuns'
+import {
+  startRecalc, activeRecalc, recalcRemainingMs, clearRecalc, recalcJobRevision,
+  isBroadScope, rowMatchesScope,
+} from '~/data/replenishmentRecalc'
+import { replenishmentRevision } from '~/data/replenishmentStore'
 import { setTracked } from '~/data/replenishmentSettings'
 import { createPurchaseRequests, planPurchaseRequests, createPurchaseRequestsFromGroups, BULK_ASYNC_MIN_LINES,
   type BatchedPrResult } from '~/data/replenishmentPurchaseRequest'
@@ -99,61 +104,55 @@ const setupTarget = computed(() => {
     : { path: '/warehouses', label: t('View warehouses') }
 })
 
-// ─── Recalculation ───────────────────────────────────────────────────────────
-// The Recalculate button lives in the shell's title bar, so it signals through a
-// provided ref (same mechanism as the other title-bar actions).
-const recalcSignal = inject<Ref<number> | null>('replenishRecalcSignal', null)
+// ─── Recalculation (engineering RFC) ─────────────────────────────────────────
+// A policy change recalculates the AFFECTED rows over a short window, driven by an
+// in-progress job in the store (replenishmentRecalc.ts). There is no manual
+// "Recalculate" button and no "click Recalculate" stale banner — a save starts the
+// job, the worklist shows it, and it clears itself when the window closes.
 const recalcTick = ref(0)
-const recalculating = ref(false)
 
-/** Set when a recalculation fails — the last good numbers stay on screen (US-013 EH-02). */
-const recalcFailed = ref(false)
-
-function recalculate() {
-  recalculating.value = true
-  recalcFailed.value = false
-  loading.value = true
-  setTimeout(() => {
-    try {
-      invalidateReplenishmentCaches()
-      const result = recalculateReplenishment(isAllWarehouses.value ? 'all' : warehouseId.value)
-      recalcTick.value++
-      toast.notify({
-        variant: 'success',
-        title: t('Replenishment recalculated'),
-        description: `${result.due} ${t('products to order.')}`,
-        maxWidth: 'max-content',
-      })
-    } catch {
-      // Inline, not a toast (rule/form-errors-inline): the previous run is untouched, so
-      // the worklist keeps showing it, flagged — never a blank or half-updated table.
-      recalcFailed.value = true
-    } finally {
-      loading.value = false
-      recalculating.value = false
-    }
-  }, 900)
+// A reactive clock so the active-job computed re-evaluates when the window closes.
+const nowMs = ref(Date.now())
+let recalcTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleRecalcClear() {
+  if (recalcTimer) { clearTimeout(recalcTimer); recalcTimer = null }
+  const remaining = recalcRemainingMs()
+  if (remaining <= 0) return
+  recalcTimer = setTimeout(() => {
+    clearRecalc()
+    invalidateReplenishmentCaches()
+    recalcTick.value++
+    nowMs.value = Date.now()
+  }, remaining + 50)
 }
-if (recalcSignal) watch(recalcSignal, () => recalculate())
+// A job can be started from THIS page (a single-SKU save) or from the Settings page
+// before navigating here; either way pick it up and schedule its close.
+watch(recalcJobRevision, () => { nowMs.value = Date.now(); scheduleRecalcClear() })
+onMounted(() => { nowMs.value = Date.now(); scheduleRecalcClear() })
+onUnmounted(() => { if (recalcTimer) clearTimeout(recalcTimer) })
+
+/** The active recalculation job, or null. */
+const recalcJob = computed(() => {
+  void recalcJobRevision.value
+  return activeRecalc(nowMs.value)
+})
+/** A broad job (company / category / warehouse): header banner + hidden rows. */
+const broadJob = computed(() => (recalcJob.value && isBroadScope(recalcJob.value.scope) ? recalcJob.value : null))
+/** A single SKU × warehouse job: the one row keeps a "Recalculating" tag. */
+const skuJob = computed(() => (recalcJob.value && recalcJob.value.scope.kind === 'sku' ? recalcJob.value : null))
+
+/** Rows hidden right now because their policy is being recalculated (broad job only). */
+function rowHidden(row: { sku: string; warehouseId: string; category: string }): boolean {
+  const job = broadJob.value
+  return !!job && rowMatchesScope(job.scope, row.sku, row.warehouseId, row.category)
+}
+/** The one row carrying a "Recalculating" tag (single-SKU job only). */
+function rowRecalcTag(row: { sku: string; warehouseId: string; category: string }): boolean {
+  const job = skuJob.value
+  return !!job && rowMatchesScope(job.scope, row.sku, row.warehouseId, row.category)
+}
 
 const asOfLabel = computed(() => formatDate(REPL_ASOF_ISO))
-
-/**
- * Stale numbers (US-013 VR-02 / EH-01): no recalculation within the nightly window.
- * The worklist still loads — a banner says so, and "Stale velocity" filters it.
- */
-const isStale = computed(() => {
-  void recalcTick.value
-  return isRunStale(REPL_ASOF_ISO)
-})
-/** One whole sentence per case — a worklist that was never recalculated reads differently. */
-const staleMessage = computed(() => lastRunLabel.value
-  ? tf('Replenishment was last recalculated on {date}. Click the Recalculate button to update demand and suggested qty.', { date: lastRunLabel.value })
-  : t('Replenishment has not been recalculated yet. Click the Recalculate button to update demand and suggested qty.'))
-
-const recalcFailedMessage = computed(() => lastRunLabel.value
-  ? tf('Recalculation failed. The numbers below are from {date}.', { date: lastRunLabel.value })
-  : t('Recalculation failed. No earlier numbers are available.'))
 
 const lastRunLabel = computed(() => {
   void recalcTick.value
@@ -167,6 +166,7 @@ const lastRunLabel = computed(() => {
 // ─── Worklist ────────────────────────────────────────────────────────────────
 const worklist = computed(() => {
   void recalcTick.value // recompute after a recalculation
+  void replenishmentRevision.value // …and after any settings/config write
   return replenishmentWorklist(isAllWarehouses.value ? 'all' : warehouseId.value)
 })
 
@@ -206,34 +206,23 @@ function toSortable(rows: WorklistRow[]): SortableRow[] {
 // "Covered by inbound" (§2.7 / D24, US-004 AC-03) rows are triggered but an open PO
 // already fills them to target. They stay on the To order table — flagged, with a
 // suggested qty of 0 — but are kept out of its count and the stat cards.
-const baseRows = computed<SortableRow[]>(() =>
+const allSortable = computed<SortableRow[]>(() =>
   toSortable([...worklist.value.rows, ...worklist.value.coveredByInbound]),
 )
-
-/**
- * In-transit split by owner (US-028/029): on order (approved PO) vs in WMS inbound,
- * plus how much of it the supplier has already invoiced (Goods-in-Transit, RS-020).
- */
-function inTransitSplitLabel(row: WorklistRow): string {
-  let po = 0
-  let wms = 0
-  let invoiced = 0
-  let replacement = 0
-  for (const d of row.atp.onOrderDocs) {
-    if (d.owner === 'purchase_order') po += d.outstanding
-    else wms += d.outstanding
-    if (d.invoicedBeforeReceipt) invoiced += d.outstanding
-    if (d.replacementReturn) replacement += d.replacementReturn.qty
-  }
-  const parts: string[] = []
-  // The owner split is only worth a sub-line when both owners contribute.
-  if (po && wms) parts.push(`${t('On order')} ${num(po)}`, `${t('WMS inbound')} ${num(wms)}`)
-  // Billed but not received still counts as in transit — say so (Rule 32).
-  if (invoiced) parts.push(`${t('Invoiced, not received')} ${num(invoiced)}`)
-  // A return the vendor will replace is incoming again (RS-009 / Rule 52).
-  if (replacement) parts.push(`${t('Returned, replacement expected')} ${num(replacement)}`)
-  return parts.join(' · ')
-}
+// While a broad recalculation runs, the rows it affects are HIDDEN — their numbers
+// still reflect the old policy, so they must not be shown or used for a PR until the
+// window closes (engineering RFC). A single-SKU job hides nothing (it only tags).
+const baseRows = computed<SortableRow[]>(() => {
+  const job = broadJob.value
+  if (!job) return allSortable.value
+  return allSortable.value.filter((r) => !rowMatchesScope(job.scope, r.sku, r.warehouseId, r.category))
+})
+/** Count of rows being recalculated right now (broad job) — the banner's "N". */
+const recalcCount = computed(() => {
+  const job = broadJob.value
+  if (!job) return 0
+  return allSortable.value.filter((r) => rowMatchesScope(job.scope, r.sku, r.warehouseId, r.category)).length
+})
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
 const filtersOpen = ref(false)
@@ -321,11 +310,6 @@ const {
   search, currentPage, paginated, sorted, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
 } = useTableState<SortableRow>(baseRows, { filterFn: matchesAll })
-
-// Arriving from a product's "View replenishment" (?q=<sku>) opens the worklist already
-// searched to that product.
-const routeQ = useRoute().query.q
-if (typeof routeQ === 'string' && routeQ) search.value = routeQ
 
 /**
  * Stat cards follow the warehouse scope AND every active filter (US-013 AC-01: "from
@@ -697,8 +681,11 @@ function confirmBulkMute() {
 }
 
 function onSettingsSaved() {
+  const row = settingsRow.value
   invalidateReplenishmentCaches()
   recalcTick.value++
+  // A single SKU × warehouse edit (US-013): tag just that row as recalculating.
+  if (row) startRecalc({ kind: 'sku', sku: row.sku, warehouseId: row.warehouseId })
 }
 
 const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
@@ -728,17 +715,12 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Stats + freshness ── -->
     <template #stats>
       <div class="rp-stats-wrap">
-        <!-- US-013 EH-01: stale numbers never block the worklist — they are called out,
-             above the figures they qualify. Icon + description, no title. -->
-        <!-- A failed recalculation (US-013 EH-02): the last good numbers stay, with a retry. -->
-        <MpBanner v-if="recalcFailed" id="rp-recalc-failed-banner" variant="danger" align-items="center" data-devchange="replenishment-recalc-failed">
-          <MpBannerIcon id="rp-recalc-failed-banner-icon" />
-          <MpBannerDescription>{{ recalcFailedMessage }}</MpBannerDescription>
-          <MpBannerLink id="rp-recalc-failed-banner-link"><a href="#" @click.prevent="recalculate">{{ t('Try again') }}</a></MpBannerLink>
-        </MpBanner>
-        <MpBanner v-if="isStale && !recalcFailed" id="rp-stale-banner" variant="warning" align-items="center" data-devchange="replenishment-stale-banner">
-          <MpBannerIcon id="rp-stale-banner-icon" />
-          <MpBannerDescription>{{ staleMessage }}</MpBannerDescription>
+        <!-- Engineering RFC: a policy change recalculates the affected rows over a short
+             window. One header banner names the count; those rows are hidden until it
+             finishes, so stale numbers can never be used to raise a PR. -->
+        <MpBanner v-if="broadJob" id="rp-recalc-progress-banner" variant="information" align-items="center" data-devchange="replenishment-recalc-progress">
+          <MpBannerIcon id="rp-recalc-progress-banner-icon" />
+          <MpBannerDescription>{{ tf('{n} products are being recalculated', { n: recalcCount }) }}</MpBannerDescription>
         </MpBanner>
         <div class="stats-section">
           <div class="stat-card stat-card--bordered">
@@ -775,7 +757,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           <span>{{ t('As of') }} {{ asOfLabel }}</span>
           <span v-if="lastRunLabel" class="rp-freshness-sep">·</span>
           <span v-if="lastRunLabel">{{ t('Last recalculated') }} {{ lastRunLabel }}</span>
-          <span v-if="recalculating">· {{ t('Recalculating…') }}</span>
         </div>
       </div>
     </template>
@@ -890,13 +871,23 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Product ── -->
     <template #cell-productName="{ row }">
       <!-- rule/table-product-cell: 40px photo + name + 2-line clamped description. -->
-      <ProductCell
-        :name="(row as any).productName"
-        :desc="(row as any).productDesc"
-        :image="(row as any).img"
-        linkable
-        @name-click="viewProduct((row as any).sku)"
-      />
+      <div class="rp-prod-cell">
+        <ProductCell
+          :name="(row as any).productName"
+          :desc="(row as any).productDesc"
+          :image="(row as any).img"
+          linkable
+          @name-click="viewProduct((row as any).sku)"
+        />
+        <!-- Engineering RFC: a single SKU × warehouse edit tags just its own row. -->
+        <MpBadge
+          v-if="rowRecalcTag(row as any)"
+          for="tableStatus"
+          type="announcement"
+          class="rp-recalc-tag"
+          data-devchange="replenishment-recalc-row-tag"
+        >{{ t('Recalculating') }}</MpBadge>
+      </div>
     </template>
 
     <!-- ── FSN ── -->
@@ -917,9 +908,16 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         v-if="(row as any).flags.provisional || (row as any).flags.volatile
           || (row as any).flags.leadTimeEstimated
           || (row as any).flags.coveredByInbound
-          || (row as any).flags.belowLeadTime"
+          || (row as any).flags.belowLeadTime
+          || (row as any).flags.preferredVendorInactive"
         class="rp-badges"
       >
+        <!-- Preferred vendor deactivated (US-019 EH-01): lead time is STILL measured from
+             that vendor's own history (never a second vendor); the user should pick a new
+             preferred vendor to re-base it. -->
+        <MpBadge v-if="(row as any).flags.preferredVendorInactive" for="tableStatus" type="warning" data-devchange="replenishment-preferred-vendor-inactive">
+          {{ t('Preferred vendor is inactive') }}
+        </MpBadge>
         <!-- Covered by an open PO/in-transit; if it will still stock out first, the stockout
              wins over the calm label and prompts the user to verify the arrival (§2.7). -->
         <MpBadge v-if="(row as any).flags.coveredByInbound" for="tableStatus" type="announcement" data-devchange="replenishment-covered-by-inbound">
@@ -957,12 +955,7 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- In transit, with the owner split (approved PO vs handed to WMS Inbound) when
          both contribute (US-028/029). -->
     <template #cell-onOrderQty="{ row }">
-      {{ num((row as any).atp.onOrder) }}
-      <span
-        v-if="inTransitSplitLabel(row as any)"
-        class="rp-intransit-sub"
-        :data-devchange="(row as any).atp.onOrderDocs.some((d: any) => d.replacementReturn) ? 'replenishment-purchase-return' : (row as any).atp.onOrderDocs.some((d: any) => d.invoicedBeforeReceipt) ? 'replenishment-goods-in-transit-invoice' : undefined"
-      >{{ inTransitSplitLabel(row as any) }}</span>
+      <span data-devchange="replenishment-in-transit-oneliner">{{ num((row as any).atp.onOrder) }}</span>
     </template>
 
     <!-- Available is the number days-of-cover divides, so it is the one that
@@ -1020,14 +1013,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
     <!-- ── Requested qty (US-030 partial-request tracking) ── -->
     <template #cell-requestedQty="{ row }">
       {{ num((row as any).requestedQty) }}
-      <!-- US-030 AC-05: open requests exceed the suggested qty. -->
-      <MpBadge
-        v-if="(row as any).requestedQty > (row as any).suggestion.rawQty"
-        for="tableStatus"
-        type="announcement"
-        class="rp-over-requested"
-        data-devchange="replenishment-fully-requested"
-      >{{ t('Over-requested') }}</MpBadge>
     </template>
 
     <template #cell-remainingToRequest="{ row }">
@@ -1047,9 +1032,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
             +{{ (row as any).alternates.length }}
             {{ (row as any).alternates.length === 1 ? t('more vendor') : t('more vendors') }}
           </a>
-          <!-- US-001 EH-01: lead time fell back to the next listed vendor. -->
+          <!-- US-019 EH-01: preferred vendor deactivated; lead time is still measured from its own history. -->
           <span v-if="(row as any).inactivePreferredVendor" class="rp-vendor-sub rp-vendor-sub--warning">
-            {{ t('Fallback vendor. Review the preferred vendor') }}
+            {{ t('Preferred vendor is inactive') }}
           </span>
         </div>
       </template>
@@ -1252,6 +1237,10 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 }
 .rp-freshness-sep { color: var(--mp-text-subtle); }
 
+/* Product cell + the single-SKU "Recalculating" tag sitting beside it. */
+.rp-prod-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0; }
+.rp-recalc-tag { flex-shrink: 0; }
+
 /* ── Filter bar (mirrored from CycleCountRecommendationPage) ── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-left: auto; }
@@ -1310,8 +1299,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 .filter-airene-btn :deep(svg) { color: var(--mp-airene-default); }
 .rp-badges { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rp-signal-none { color: var(--mp-text-subtle); }
-.rp-over-requested { margin-top: var(--mp-spacing-1); }
-.rp-intransit-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); white-space: normal; overflow-wrap: anywhere; }
 
 /* Bulk bar guidance when a selection spans warehouses — no cross-warehouse PR. */
 .rp-bulk-info {

@@ -283,7 +283,11 @@ const preferredByWarehouse = computed(() => {
   }[]
   return warehouseStock.value.map((s) => {
     const vi = preferredVendorFor(sku, s.warehouseId)
-    const d = vi ? deriveLeadTime(vi.vendorId, sku, undefined, s.warehouseId) : null
+    // Lead time uses the preferred vendor's own history even when it was deactivated
+    // (US-001) — never the next (fallback) vendor's. The row still SHOWS the ordering
+    // vendor (vi); only the lead-time source stays on the deactivated preferred.
+    const leadVendorId = inactivePreferredVendorFor(sku, s.warehouseId)?.vendorId ?? vi?.vendorId
+    const d = leadVendorId ? deriveLeadTime(leadVendorId, sku, undefined, s.warehouseId) : null
     return {
       warehouseId: s.warehouseId,
       warehouseName: s.warehouseName,
@@ -750,9 +754,11 @@ function whLeadInfo(warehouseId: string): { days: number | null; estimated: bool
   void vendorTick.value
   void replenishmentRevision.value
   const sku = product.value?.sku
+  // Lead time stays on the preferred vendor's own history even when deactivated (never
+  // the next vendor); while editing, follow the draft pick the user is choosing.
   const vendorId = whEditing.value
     ? (whPreferredDraft[warehouseId] || '')
-    : (sku ? (preferredVendorFor(sku, warehouseId)?.vendorId ?? '') : '')
+    : (sku ? (inactivePreferredVendorFor(sku, warehouseId)?.vendorId ?? preferredVendorFor(sku, warehouseId)?.vendorId ?? '') : '')
   if (!sku || !vendorId) return { days: null, estimated: false, basis: '' }
   const d = deriveLeadTime(vendorId, sku, undefined, warehouseId)
   return { days: d.days, estimated: isEstimatedTier(d.tier), basis: estimatedBasis(d.tier) }
@@ -1139,12 +1145,6 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <ContentList
                 :label="t('Due for reorder')"
                 :value="tf('{n} of {total} warehouses', { n: actionRollup.dueCount, total: actionRollup.warehouseCount })"
-              />
-              <!-- US-021 AC-04 / D13a: the ACTION rollup — how much to ask for in total. -->
-              <ContentList
-                v-if="actionRollup.dueCount"
-                :label="t('Total suggested qty')"
-                :value="`${actionRollup.totalSuggestedQty.toLocaleString('id-ID')} ${product.unit}`"
               />
             </template>
             <ContentList v-else :label="t('Due for reorder')" value="—" />
@@ -2079,7 +2079,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                       <template v-else>
                         <span v-if="whPreferredName(s.warehouseId)" class="pd-vendor-name">{{ whPreferredName(s.warehouseId) }}</span>
                         <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
-                        <span v-if="whInactivePreferred(s.warehouseId)" class="pd-cell-sub pd-cell-sub--warning" data-devchange="product-warehouses-inactive-preferred">{{ t('Fallback vendor. Review the preferred vendor') }}</span>
+                        <span v-if="whInactivePreferred(s.warehouseId)" class="pd-cell-sub pd-cell-sub--warning" data-devchange="product-warehouses-inactive-preferred">{{ t('Preferred vendor is inactive') }}</span>
                         <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
                           {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
                           <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ whLeadInfo(s.warehouseId).basis }}</span>

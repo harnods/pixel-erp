@@ -295,3 +295,30 @@ describe('US-030 — requested vs remaining partial-request tracking', () => {
     expect(after.requestedQty).toBe(requestedOpenPrQty(row.sku, row.warehouseId))
   })
 })
+
+describe('planPurchaseRequests — inactive preferred vendor (US-019 EH-01)', () => {
+  // The seeded demo (SKU 3004) deactivates a preferred vendor with an active alternate,
+  // so at least one worklist line carries inactivePreferredVendor.
+  const invRow = worklist.rows.find((r) => r.inactivePreferredVendor)
+
+  it('a demo worklist line exists whose preferred vendor is inactive', () => {
+    expect(invRow).toBeTruthy()
+  })
+
+  it('does NOT auto-fall back to another vendor — the line is unsourced until the user picks', () => {
+    expect(invRow).toBeTruthy()
+    const plan = planPurchaseRequests([invRow!])
+    const line = plan.groups.flatMap((g) => g.lines).find((l) => l.sku === invRow!.sku && l.warehouseId === invRow!.warehouseId)
+    expect(line).toBeTruthy()
+    expect(line!.vendorId).toBeNull()
+  })
+
+  it('an explicit active-vendor choice sources the line to that vendor', () => {
+    expect(invRow).toBeTruthy()
+    const alt = vendorItemsForSku(invRow!.sku)[0] // active links only (inactive preferred is excluded)
+    expect(alt).toBeTruthy()
+    const plan = planPurchaseRequests([invRow!], {}, { [invRow!.key]: alt!.vendorId })
+    const line = plan.groups.flatMap((g) => g.lines).find((l) => l.sku === invRow!.sku && l.warehouseId === invRow!.warehouseId)
+    expect(line!.vendorId).toBe(alt!.vendorId)
+  })
+})

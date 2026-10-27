@@ -52,6 +52,13 @@ export interface ReplenishmentConfig {
   leadTimeOutlierCapByCategory: Record<string, number>
   /** Tier 3 of the lead-time ladder — a per-category default (US-001 AC-04). */
   leadTimeByCategory: Record<string, number>
+  /**
+   * The categories that have their OWN defaults row (US-001 / D21). Persisted so a
+   * category the buyer added stays listed even before it carries any value — map keys
+   * alone can't record that, because an all-inherit category has no entry in any map.
+   * Invariant kept by `getReplenishmentConfig`: every per-category map key is listed.
+   */
+  listedCategories: string[]
   /** Fallback buffer, in days, when no category or SKU override applies. */
   safetyDaysGlobal: number
   safetyDaysByCategory: Record<string, number>
@@ -120,6 +127,9 @@ export const REPL_DEFAULTS: ReplenishmentConfig = {
     Equipment: 21,
     Accessory: 10,
   },
+  // The categories listed out of the box (union of the per-category maps above),
+  // sorted. getReplenishmentConfig() re-derives this to keep map keys ⊆ listed.
+  listedCategories: ['Accessory', 'Equipment', 'Espresso Machine', 'Green Beans', 'Grinder', 'Roasted Beans'],
   safetyDaysGlobal: 7,
   safetyDaysByCategory: {
     'Green Beans': 10,
@@ -160,15 +170,29 @@ function load(): Partial<ReplenishmentConfig> {
 /** Config with defaults filled in for any missing / never-saved key. */
 export function getReplenishmentConfig(): ReplenishmentConfig {
   const saved = load()
+  // Nested values must merge, not replace, or a partial save drops categories.
+  const safetyDaysByCategory = { ...REPL_DEFAULTS.safetyDaysByCategory, ...(saved.safetyDaysByCategory ?? {}) }
+  const coverageDaysByCategory = { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) }
+  const lookbackDaysByCategory = { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) }
+  const leadTimeByCategory = { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) }
+  const leadTimeOutlierCapByCategory = { ...REPL_DEFAULTS.leadTimeOutlierCapByCategory, ...(saved.leadTimeOutlierCapByCategory ?? {}) }
+  // A category is listed if it was saved as listed OR it still carries any per-category
+  // value. Older configs (saved before listedCategories existed) have no list, so it is
+  // derived from the map keys — which is exactly the pre-fix behaviour, now explicit.
+  const fromMaps = new Set<string>()
+  for (const m of [safetyDaysByCategory, coverageDaysByCategory, leadTimeByCategory, leadTimeOutlierCapByCategory]) {
+    for (const k of Object.keys(m)) fromMaps.add(k)
+  }
+  const listedCategories = [...new Set([...(saved.listedCategories ?? []), ...fromMaps])].sort()
   return {
     ...REPL_DEFAULTS,
     ...saved,
-    // Nested values must merge, not replace, or a partial save drops categories.
-    safetyDaysByCategory: { ...REPL_DEFAULTS.safetyDaysByCategory, ...(saved.safetyDaysByCategory ?? {}) },
-    coverageDaysByCategory: { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) },
-    lookbackDaysByCategory: { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) },
-    leadTimeByCategory: { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) },
-    leadTimeOutlierCapByCategory: { ...REPL_DEFAULTS.leadTimeOutlierCapByCategory, ...(saved.leadTimeOutlierCapByCategory ?? {}) },
+    safetyDaysByCategory,
+    coverageDaysByCategory,
+    lookbackDaysByCategory,
+    leadTimeByCategory,
+    leadTimeOutlierCapByCategory,
+    listedCategories,
   }
 }
 

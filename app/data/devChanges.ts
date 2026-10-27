@@ -28,6 +28,78 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-recalc-progress',
+    title: 'Recalculation follows the engineering RFC: in-progress banner + hidden rows, no manual button',
+    description:
+      'The worklist no longer has a manual "Recalculate" button or the (incorrect) "Click the Recalculate button" stale banner — Recalculate never cleared staleness, so it is gone. Instead, a policy change recalculates automatically over a short window: a settings change to the company config or a category default shows one header banner ("N products are being recalculated") and HIDES the affected rows until it finishes, so their old-policy numbers can\'t be used to raise a PR (company-wide change hides all rows; a category change hides that category\'s rows). Editing a single SKU × warehouse instead keeps that one row visible with a "Recalculating" tag. The window is time-based and persists across navigation (Settings → worklist), then clears itself.',
+    date: '2026-10-27',
+    files: ['replenishmentRecalc.ts', 'ReplenishmentPage.vue', 'SettingsReplenishmentPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'replenishment-category-persist',
+    title: 'Settings: an added product category now saves and appears in every per-category table',
+    description:
+      'On the Replenishment settings page, adding a category under "Categories with their own defaults" and clicking Save now persists it — even when it carries no value yet — and it shows as a row in Safety days, Order coverage, Default lead time and Ignore gaps over (inheriting "Other categories" until a value is set). Previously a just-added category vanished on save: the listed set was inferred only from categories that already had a numeric value, and the Save step drops empty values, so an all-inherit category had nothing to persist. The config now stores the listed set explicitly (listedCategories), and the loader keeps every per-category map key listed for older saved configs.',
+    date: '2026-10-27',
+    files: ['replenishmentConfig.ts', 'SettingsReplenishmentPage.vue'],
+  },
+  {
+    id: 'replenishment-pr-inactive-vendor-mandatory',
+    title: 'Create PR: inactive preferred vendor must be replaced before the request is created',
+    description:
+      'When a worklist line\'s preferred vendor is inactive, the "Request to purchase" modal no longer auto-falls back to the next vendor. The line shows a red "Select a vendor" state with "Preferred vendor {name} is inactive. Select an active vendor to create this request", and Create is blocked (inline error "Select an active vendor for N product(s): the preferred vendor is inactive") until the requester picks an active vendor from the dropdown — "Let purchasing source it" does not satisfy it, an active vendor is mandatory. Picking one re-sizes the qty for that vendor\'s lead time and moves the line into that vendor\'s request. Demo: SKU 3004 (Coffee Scale 2kg / 0.1g) in the To-order worklist has its preferred vendor deactivated with an active alternate available. The replenishment calculation still uses the inactive preferred vendor\'s own lead-time history (unchanged).',
+    date: '2026-10-27',
+    files: ['CreatePurchaseRequestModal.vue', 'replenishmentPurchaseRequest.ts', 'vendorItems.ts'],
+  },
+  {
+    id: 'replenishment-inactive-preferred-leadtime',
+    title: 'Deactivated preferred vendor: lead time stays on its own history (never the next vendor)',
+    description:
+      'When a product\'s preferred vendor is deactivated, the replenishment calculation (reorder point, suggested qty, days of cover) keeps measuring lead time from THAT vendor\'s own PO→GR history — it never silently switches to the second-ranked vendor\'s lead time. Deactivation stops new orders; it does not erase the vendor\'s past lead-time history, which persists until a new preferred vendor is chosen. If the preferred vendor has no history at a warehouse, that row goes to Needs setup rather than borrowing another vendor\'s number. Fixed: the product min-stock recommendation path (which used the fallback vendor), the lead-time sample index (which dropped a deactivated vendor\'s history), and the "why" drawer copy (which wrongly said "Lead time comes from the next vendor"). The blank-vendor PR rule is unchanged.',
+    date: '2026-10-26',
+    files: ['replenishment.ts', 'leadTimeHistory.ts', 'SuggestionBreakdownDrawer.vue'],
+  },
+  {
+    id: 'replenishment-pr-grouped',
+    title: 'Create PR: lines grouped by request (1 vendor × warehouse), no dates shown',
+    description:
+      'The "Request to purchase" table groups its lines by purchase request — one vendor × one warehouse (Rule 35/36). Lines that share a vendor and warehouse sit under a single section header naming the request ("Purchase request 2 of 6"), the vendor, warehouse, product count and estimated value, so same-vendor lines (e.g. two "Sagaleh Coffee Supply" lines) read as one request. The drafting table shows no date: the per-line "Required date" column and the header "Needed by" date were removed. The needed-by date is still carried on each line record (default today + lead time) for the created purchase request and its detail page; it is just not shown or edited while drafting. Changing a line\'s vendor moves it to the matching request\'s section.',
+    date: '2026-10-27',
+    files: ['CreatePurchaseRequestModal.vue', 'replenishmentPurchaseRequest.ts'],
+  },
+  {
+    id: 'replenishment-pr-suggested-vs-remaining',
+    title: 'Create PR: Suggested qty is the true suggested; new Remaining qty column',
+    description:
+      'In the "Request to purchase" modal, the Suggested qty column now shows the full suggested qty from the worklist index (row.suggestion.rawQty), not the remaining-to-request figure it used to show. A new "Remaining qty" column sits beside it = max(0, suggested − already requested on open PRs), and the editable Request qty still pre-fills from that remaining. So the three read left to right: Suggested qty · Remaining qty · Request qty.',
+    date: '2026-10-26',
+    files: ['CreatePurchaseRequestModal.vue', 'replenishmentPurchaseRequest.ts'],
+  },
+  {
+    id: 'product-replenishment-total-suggested-removed',
+    title: 'Product info: removed "Total suggested qty"',
+    description:
+      'The product Replenishment info block no longer shows the "Total suggested qty" roll-up (e.g. "156 Bag"); it keeps "Due for reorder" (N of M warehouses). The per-warehouse suggested quantities remain on the Stock-by-warehouses tab and the worklist.',
+    date: '2026-10-23',
+    files: ['ProductDetailsPage.vue'],
+  },
+  {
+    id: 'replenishment-returns-not-in-transit',
+    title: 'In transit: returns no longer affect it (correctness fix)',
+    description:
+      'In-transit is added only by an approved PO and by WMS Inbound, and reduced only when the PO is received (Purchase Delivery) or WMS Inbound completes. A purchase or sales return — including one marked "replacement expected" — no longer re-opens or adds to in-transit, and the engine no longer reads purchase returns at all. The drawer\'s per-document "includes N returned, replacement expected" suffix and the plain-return note were removed with it. (Reverts the RS-009 / Rule 52 behavior.)',
+    date: '2026-10-23',
+    files: ['replenishment.ts', 'SuggestionBreakdownDrawer.vue'],
+  },
+  {
+    id: 'replenishment-in-transit-oneliner',
+    title: 'To order: In transit is one line; Requested qty has no over-requested flag',
+    description:
+      'The In transit qty cell now shows only the total number — the sub-line breakdown (on order / WMS inbound split, "Invoiced, not received", "Returned, replacement expected") was removed, so the column stays a one-liner. The Requested qty cell likewise shows just the number; the "Over-requested" badge was removed. The full in-transit detail still lives in the "View the suggested qty calculation" drawer.',
+    date: '2026-10-23',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
     id: 'product-edit-save-changes',
     title: 'Edit product: the main button says Save changes',
     description:
@@ -50,14 +122,6 @@ export const DEV_CHANGES: DevChange[] = [
       'Two review fixes. Tag chips (shared ErpTagList) no longer show "View 0 more" when a chip merely wraps in a narrow column, and a label too long for its column now stays on one line with an ellipsis (full text on hover) instead of breaking mid-word — seen on the purchase request detail\'s Tags field. And a closed or voided purchase request no longer offers Mark as completed in its row menu.',
     date: '2026-10-20',
     files: ['ErpTagList.vue', 'PurchaseRequestsPage.vue'],
-  },
-  {
-    id: 'products-view-replenishment-row',
-    title: 'Products: row "View replenishment" opens the worklist for that product',
-    description:
-      'From a product row\'s menu, View replenishment now lands on the replenishment worklist already searched to that product\'s SKU, instead of the whole list you then had to search. The Low stock card\'s View replenishment link still opens the full worklist.',
-    date: '2026-10-20',
-    files: ['ProductsPage.vue', 'ReplenishmentPage.vue'],
   },
   {
     id: 'product-warehouses-engine-atp',

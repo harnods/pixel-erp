@@ -37,7 +37,7 @@
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalCloseButton,
   MpButton, MpButtonGroup, MpTextlink, MpInput, MpIcon, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpDatePicker, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import type { WorklistRow } from '~/data/replenishment'
 import {
@@ -45,7 +45,6 @@ import {
 } from '~/data/replenishmentPurchaseRequest'
 import { vendorItemsForSku, vendorNameFor } from '~/data/vendorItems'
 import { vendors } from '~/data/vendors'
-import { REPL_ASOF_ISO } from '~/data/replenishmentConfig'
 import ContentList from '~/components/patterns/ContentList.vue'
 import { formatIDR } from '~/utils/currency'
 
@@ -70,13 +69,16 @@ const { t, tf } = useLocale()
 /** Local, discarded on close — edits never leak out unless the user confirms. */
 const overrides = reactive<Record<string, number>>({})
 const vendorChoices = reactive<Record<string, string | null>>({})
-/** Required dates the requester changed, ISO, keyed by row (RS-002). */
+// Needed-by dates are still carried on each line record (default today + lead time),
+// but the drafting table no longer shows or edits them, so this stays an empty
+// override map — kept only so the confirm payload and plan signature are unchanged.
 const requiredDates = reactive<Record<string, string>>({})
-/** Set by a failed confirm: marks every date cell earlier than the request date. */
-const showDateErrors = ref(false)
 const qtyError = ref('')
 /** Set by a failed confirm: marks every qty cell still at 0 (rule/field-invalid-caption). */
 const showQtyErrors = ref(false)
+/** Set by a failed confirm: marks every line whose inactive preferred vendor has no
+ *  active replacement picked yet (US-019 EH-01). */
+const showVendorErrors = ref(false)
 
 /**
  * Pending "apply new recommendation?" prompts, keyed by row (US-022 AC-03).
@@ -94,7 +96,7 @@ watch(() => props.isOpen, (open) => {
   for (const k of Object.keys(pendingRecommend)) delete pendingRecommend[k]
   qtyError.value = ''
   showQtyErrors.value = false
-  showDateErrors.value = false
+  showVendorErrors.value = false
 })
 
 /** Re-planned live, so changing a vendor visibly re-groups the line. */
@@ -138,6 +140,23 @@ function rowKeyFor(sku: string, warehouseId: string) { return `${sku}::${warehou
 
 function rowFor(rowKey: string): WorklistRow | undefined {
   return props.rows.find((r) => r.key === rowKey)
+}
+
+/**
+ * US-019 EH-01: the line's preferred vendor is inactive AND no active replacement has
+ * been picked yet. The PR can't go to an inactive vendor, so the requester must choose
+ * an active vendor before creating it — picking one (a truthy vendorId) clears this.
+ * "Let purchasing source it" (null) does NOT clear it: an active vendor is mandatory.
+ */
+function needsVendorPick(line: PrLine): boolean {
+  const row = rowFor(rowKeyFor(line.sku, line.warehouseId))
+  if (!row?.inactivePreferredVendor) return false
+  return !vendorChoices[row.key]
+}
+
+/** The now-inactive preferred vendor's name, for the "pick a vendor" message. */
+function inactiveVendorName(line: PrLine): string {
+  return rowFor(rowKeyFor(line.sku, line.warehouseId))?.inactivePreferredVendor?.name ?? ''
 }
 
 /**
@@ -185,26 +204,6 @@ function applyRecommendation(rowKey: string) {
 
 function dismissRecommendation(rowKey: string) {
   delete pendingRecommend[rowKey]
-}
-
-// MpDatePicker speaks DD/MM/YYYY (value-type="format"); the data layer speaks ISO.
-function isoToDmy(iso: string): string {
-  const [y, m, d] = iso.split('-')
-  return `${d}/${m}/${y}`
-}
-function dmyToIso(dmy: string): string {
-  const [d, m, y] = dmy.split('/')
-  return `${y}-${m}-${d}`
-}
-
-/** A required date before the request date cannot be met. */
-function dateIsEarly(iso: string): boolean { return iso < REPL_ASOF_ISO }
-
-function setRequiredDate(rowKey: string, dmy: string) {
-  // Clearing the field goes back to the lead-time default rather than leaving a blank.
-  if (!dmy) delete requiredDates[rowKey]
-  else requiredDates[rowKey] = dmyToIso(dmy)
-  qtyError.value = ''
 }
 
 function setQty(rowKey: string, raw: string) {
@@ -264,10 +263,12 @@ function confirm() {
     qtyError.value = tf('Products with qty 0: {n}. Enter a qty greater than 0', { n: zeroLines })
     return
   }
-  const earlyLines = lines.value.filter(({ line }) => dateIsEarly(line.requiredDate)).length
-  if (earlyLines > 0) {
-    showDateErrors.value = true
-    qtyError.value = tf('Products with a required date before the request date: {n}. Select a later date', { n: earlyLines })
+  // US-019 EH-01: a line whose preferred vendor is inactive cannot be requested until
+  // the requester picks an active vendor for it.
+  const needVendor = lines.value.filter(({ line }) => needsVendorPick(line)).length
+  if (needVendor > 0) {
+    showVendorErrors.value = true
+    qtyError.value = tf('Select an active vendor for {n} product(s): the preferred vendor is inactive', { n: needVendor })
     return
   }
   emit('confirm', { overrides: { ...overrides }, vendorChoices: { ...vendorChoices }, requiredDates: { ...requiredDates } })
@@ -317,10 +318,10 @@ function confirm() {
               <colgroup>
                 <col class="rp-po-col-product">
                 <col class="rp-po-col-vendor">
-                <col class="rp-po-col-qty">
-                <col class="rp-po-col-qty">
+                <col class="rp-po-col-qty"><!-- Suggested qty -->
+                <col class="rp-po-col-qty"><!-- Remaining qty -->
+                <col class="rp-po-col-qty"><!-- Request qty -->
                 <col class="rp-po-col-unit">
-                <col class="rp-po-col-date">
                 <col class="rp-po-col-value">
               </colgroup>
               <thead>
@@ -328,22 +329,36 @@ function confirm() {
                   <th class="rp-po-th">{{ t('Product') }}</th>
                   <th class="rp-po-th">{{ t('Vendor') }}</th>
                   <th class="rp-po-th rp-po-th--num">{{ t('Suggested qty') }}</th>
+                  <th class="rp-po-th rp-po-th--num">{{ t('Remaining qty') }}</th>
                   <th class="rp-po-th rp-po-th--num">{{ t('Request qty') }}</th>
                   <th class="rp-po-th">{{ t('Unit') }}</th>
-                  <th class="rp-po-th" data-devchange="replenishment-pr-line-required-date">{{ t('Required date') }}</th>
                   <th class="rp-po-th rp-po-th--num">{{ t('Estimated value') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="{ line, leadTimeDays, vendorName, warehouseName } in lines" :key="`${line.sku}-${line.warehouseId}`" class="rp-po-tr">
+                <!-- One section per purchase request: lines that share a vendor and
+                     warehouse sit under a single PR header (Rule 35/36 — 1 PR per
+                     vendor per warehouse), so same-vendor lines read as one request. -->
+                <template v-for="(g, gi) in plan.groups" :key="g.key">
+                  <tr class="rp-po-group-tr" data-devchange="replenishment-pr-grouped">
+                    <td class="rp-po-group-td" :colspan="7">
+                      <span class="rp-po-group-label">{{ tf('Purchase request {i} of {n}', { i: gi + 1, n: plan.groups.length }) }}</span>
+                      <span class="rp-po-group-vendor">{{ g.vendorId ? g.vendorName : t('Purchasing to source') }}</span>
+                      <span class="rp-po-group-sub">{{ g.warehouseName }} · {{ tf('{n} products', { n: g.lines.length }) }} · {{ formatIDR(g.estimatedValue) }}</span>
+                    </td>
+                  </tr>
+                  <tr v-for="line in g.lines" :key="`${line.sku}-${line.warehouseId}`" class="rp-po-tr">
                   <td class="rp-po-td">
                     <span class="rp-po-product">{{ line.productName }}</span>
-                    <span class="rp-po-product-sub">{{ line.sku }} · {{ warehouseName }}</span>
+                    <span class="rp-po-product-sub">{{ line.sku }}</span>
                   </td>
 
                   <!-- Vendor: a select-like cell (FormTable.md › Select / Search Cell).
                        Switching re-sizes the qty from that vendor's lead time. -->
-                  <td class="rp-po-td rp-po-td--select">
+                  <td
+                    class="rp-po-td rp-po-td--select"
+                    :class="{ 'rp-po-td--error': showVendorErrors && needsVendorPick(line) }"
+                  >
                     <MpPopover
                       :id="`rp-pr-vendor-${line.sku}-${line.warehouseId}`"
                       is-close-on-select
@@ -354,8 +369,11 @@ function confirm() {
                       <MpPopoverTrigger>
                         <div class="rp-po-vendor-trigger" role="button" tabindex="0">
                           <span class="rp-po-vendor-text">
-                            <span class="rp-po-vendor-name">{{ line.vendorId ? vendorName : t('Purchasing to source') }}</span>
-                            <span class="rp-po-product-sub">{{ tf('Lead time: {n} days', { n: leadTimeDays }) }}</span>
+                            <span
+                              class="rp-po-vendor-name"
+                              :class="{ 'rp-po-vendor-name--empty': needsVendorPick(line) }"
+                            >{{ needsVendorPick(line) ? t('Select a vendor') : (line.vendorId ? g.vendorName : t('Purchasing to source')) }}</span>
+                            <span class="rp-po-product-sub">{{ tf('Lead time: {n} days', { n: g.leadTimeDays }) }}</span>
                           </span>
                           <MpIcon name="chevrons-down" size="sm" class="rp-po-vendor-chevron" />
                         </div>
@@ -396,13 +414,19 @@ function confirm() {
                     <span v-if="line.newVendorLink" class="rp-po-note">
                       {{ tf('New vendor for this product. Lead time is estimated at {n} days. Saving adds this vendor to the product with no MOQ, multiplier or price yet', { n: line.context.leadTimeDays }) }}
                     </span>
-                    <!-- US-019 EH-01: the preferred vendor was deactivated. -->
-                    <span v-if="rowFor(rowKeyFor(line.sku, line.warehouseId))?.inactivePreferredVendor" class="rp-po-note">
-                      {{ t('Preferred vendor is inactive. Using the next vendor by priority. Purchasing will confirm the vendor') }}
+                    <!-- US-019 EH-01: the preferred vendor was deactivated — the requester
+                         must pick an active vendor before this request can be created. -->
+                    <span
+                      v-if="needsVendorPick(line)"
+                      class="rp-po-note rp-po-note--danger"
+                      data-devchange="replenishment-pr-inactive-vendor-mandatory"
+                    >
+                      {{ tf('Preferred vendor {vendor} is inactive. Select an active vendor to create this request', { vendor: inactiveVendorName(line) }) }}
                     </span>
                   </td>
 
-                  <td class="rp-po-td rp-po-td--num">{{ line.recommendedQty }}</td>
+                  <td class="rp-po-td rp-po-td--num">{{ line.suggestedQty }}</td>
+                  <td class="rp-po-td rp-po-td--num" data-devchange="replenishment-pr-suggested-vs-remaining">{{ line.remainingQty }}</td>
                   <td
                     class="rp-po-td rp-po-td--input"
                     :class="{ 'rp-po-td--error': showQtyErrors && line.finalQty <= 0 }"
@@ -443,23 +467,9 @@ function confirm() {
                     </span>
                   </td>
                   <td class="rp-po-td">{{ line.unit }}</td>
-                  <!-- RS-002: when this line is needed. Defaults to today + its lead time. -->
-                  <td
-                    class="rp-po-td rp-po-td--date"
-                    :class="{ 'rp-po-td--error': showDateErrors && dateIsEarly(line.requiredDate) }"
-                  >
-                    <MpDatePicker
-                      :id="`rp-pr-date-${line.sku}-${line.warehouseId}`"
-                      :model-value="isoToDmy(line.requiredDate)"
-                      format="DD/MM/YYYY"
-                      value-type="format"
-                      use-portal
-                      :aria-label="t('Required date')"
-                      @update:model-value="(v: string) => setRequiredDate(rowKeyFor(line.sku, line.warehouseId), v)"
-                    />
-                  </td>
                   <td class="rp-po-td rp-po-td--num">{{ valueLabel(line.finalQty * line.unitCost, line.unitCost) }}</td>
-                </tr>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -531,14 +541,13 @@ function confirm() {
 
 /* Form table — docs/patterns/FormTable.md. */
 .rp-po-table-scroll { overflow-x: auto; }
-.rp-po-table { width: 100%; min-width: 1024px; table-layout: fixed; border-collapse: collapse; }
-/* Seven columns outgrow the xl modal, so the card scrolls sideways instead of
+.rp-po-table { width: 100%; min-width: 1016px; table-layout: fixed; border-collapse: collapse; }
+/* The columns can outgrow the xl modal, so the card scrolls sideways instead of
    squeezing the product name to a word per line. */
 .rp-po-col-product { width: 200px; }
 .rp-po-col-vendor { width: 200px; }
 .rp-po-col-qty { width: 128px; }
 .rp-po-col-unit { width: 64px; }
-.rp-po-col-date { width: 184px; } /* fits DD/MM/YYYY beside the picker's clear + calendar icons */
 .rp-po-col-value { width: 168px; }
 
 /* White header, uppercase, 28px, no vertical dividers
@@ -567,6 +576,22 @@ function confirm() {
 }
 .rp-po-td:last-child { border-right: none; }
 .rp-po-tr:last-child .rp-po-td { border-bottom: none; }
+
+/* PR section header: a full-width band grouping the lines of one purchase
+   request (one vendor × warehouse). */
+.rp-po-group-td {
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-4);
+  background: var(--mp-background-neutral);
+  border-top: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default);
+}
+.rp-po-group-tr:first-child .rp-po-group-td { border-top: none; }
+.rp-po-group-label {
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  text-transform: uppercase; color: var(--mp-text-secondary); margin-right: var(--mp-spacing-2);
+}
+.rp-po-group-vendor { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.rp-po-group-sub { margin-left: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 .rp-po-td--num {
   padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-4);
   text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -574,31 +599,22 @@ function confirm() {
 
 /* Editable cells: white, the cell owns border + focus ring, the control inside is
    borderless and fills the 40px baseline (rule/table-form-cell-no-border). */
-.rp-po-td--input, .rp-po-td--select, .rp-po-td--date { padding: 0; background: var(--mp-background-neutral); position: relative; }
+.rp-po-td--input, .rp-po-td--select { padding: 0; background: var(--mp-background-neutral); position: relative; }
 .rp-po-td--input :deep([class*='input']) {
   width: 100%; height: var(--mp-sizes-10);
   border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
   text-align: right; font-variant-numeric: tabular-nums;
 }
-.rp-po-td--input:focus-within::after, .rp-po-td--select:focus-within::after, .rp-po-td--date:focus-within::after {
+.rp-po-td--input:focus-within::after, .rp-po-td--select:focus-within::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
   border: 1px solid var(--mp-border-bold); pointer-events: none;
 }
-.rp-po-td--input.rp-po-td--error, .rp-po-td--date.rp-po-td--error { background: var(--mp-colors-background-danger); }
+.rp-po-td--input.rp-po-td--error { background: var(--mp-colors-background-danger); }
 .rp-po-td--error::after {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
   border: 1px solid var(--mp-colors-border-danger); pointer-events: none;
 }
 .rp-po-td--error :deep([class*='input']) { background: transparent; }
-/* The date cell's picker fills the cell and drops its own border, like the qty
-   input. Scoped to the input root only: a broad [class*='input'] match would also
-   stretch the calendar addon and push the date out of view. */
-.rp-po-td--date :deep(.mp-datepicker__root) { width: 100%; }
-.rp-po-td--date :deep(.mp-input__control) {
-  height: var(--mp-sizes-10);
-  border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
-  background: transparent;
-}
 
 /* Vendor select trigger — a custom single-root trigger, not a bordered MpSelect. */
 .rp-po-vendor-trigger {
@@ -608,6 +624,8 @@ function confirm() {
 }
 .rp-po-vendor-text { display: flex; flex-direction: column; min-width: 0; }
 .rp-po-vendor-name { overflow-wrap: anywhere; }
+/* No active vendor picked yet — reads as an unfilled field, not a chosen vendor. */
+.rp-po-vendor-name--empty { color: var(--mp-colors-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
 .rp-po-vendor-chevron { flex-shrink: 0; margin-top: var(--mp-spacing-0\.5); }
 .rp-po-td--select .rp-po-note { padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4); }
 
@@ -618,6 +636,7 @@ function confirm() {
   display: block; margin-top: var(--mp-spacing-0\.5);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-warning);
 }
+.rp-po-note--danger { color: var(--mp-colors-text-danger); }
 .rp-po-note--info { padding: var(--mp-spacing-1) var(--mp-spacing-2); color: var(--mp-text-secondary); }
 .rp-po-note--prompt { padding: var(--mp-spacing-1) var(--mp-spacing-2); color: var(--mp-colors-text-information); }
 .rp-po-note-actions { display: flex; gap: var(--mp-spacing-3); }
