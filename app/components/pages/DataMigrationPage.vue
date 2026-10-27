@@ -268,16 +268,18 @@ const stepDone = computed<Record<string, boolean>>(() => ({
               <MpTextarea id="dm-company-address-input" v-model="draft.companyAddress" is-full-width :rows="3" />
             </MpFormControl>
 
-            <MpFormControl id="dm-email" :is-invalid="!!errors.email">
-              <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-              <MpInput id="dm-email-input" v-model="draft.email" is-full-width @update:model-value="clearErr('email')" />
-              <MpFormErrorMessage>{{ errors.email }}</MpFormErrorMessage>
-            </MpFormControl>
+            <div class="dm-form-row">
+              <MpFormControl id="dm-email" :is-invalid="!!errors.email">
+                <MpFormLabel>{{ t('Email') }}</MpFormLabel>
+                <MpInput id="dm-email-input" v-model="draft.email" is-full-width @update:model-value="clearErr('email')" />
+                <MpFormErrorMessage>{{ errors.email }}</MpFormErrorMessage>
+              </MpFormControl>
 
-            <MpFormControl id="dm-phone">
-              <MpFormLabel>{{ t('Phone') }}</MpFormLabel>
-              <MpInput id="dm-phone-input" v-model="draft.phone" is-full-width />
-            </MpFormControl>
+              <MpFormControl id="dm-phone">
+                <MpFormLabel>{{ t('Phone') }}</MpFormLabel>
+                <MpInput id="dm-phone-input" v-model="draft.phone" is-full-width />
+              </MpFormControl>
+            </div>
 
             <MpFormControl id="dm-npwp">
               <MpFormLabel>NPWP</MpFormLabel>
@@ -640,7 +642,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-layout {
   display: grid;
   grid-template-columns: 240px 1fr;
-  align-items: stretch;
+  min-height: calc(100vh - 120px);
 }
 
 /* ─── Step list (left) ────────────────────────────────────────────────────── */
@@ -767,6 +769,12 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-form-fields {
   display: flex;
   flex-direction: column;
+  gap: var(--mp-spacing-4);
+}
+
+.dm-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: var(--mp-spacing-4);
 }
 
