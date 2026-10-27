@@ -5,10 +5,13 @@
  * bar, no bins, no ad-hoc "add new batch" — just type a qty against each real,
  * already-known warehouse batch.
  */
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, toRef } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import { formatDate } from '~/utils/date'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { batchAttributesFor } from '~/data/productDetails'
+import type { BatchAttributeKey, BatchAttributeValues } from '~/data/batchAttributes'
+import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
 
 export interface PickedBatch { batchNo: string; qty: number }
 
@@ -47,7 +50,13 @@ const emit = defineEmits<{
   save: [batches: PickedBatch[]]
 }>()
 
-interface Row { batchNo: string; expiryDate: string; desc: string; available: number; qty: string }
+interface Row { batchNo: string; expiryDate: string; desc: string; attributes: BatchAttributeValues; available: number; qty: string }
+
+// Read-only attribute columns after Expiry (ATINV-9082): the product's attribute set,
+// each lot's values from the batch master (a lot with no record shows only its expiry).
+const attrCols = useBatchAttributeColumns(toRef(props, 'sku'))
+const attrKeys = attrCols.keys
+const attrText = (row: Row, k: BatchAttributeKey) => attrCols.text(k, row.attributes)
 
 const rows = reactive<Row[]>([])
 const search = ref('')
@@ -62,6 +71,7 @@ watch(() => props.open, (isOpen) => {
     batchNo: b.batchNo,
     expiryDate: b.expiryDate,
     desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+    attributes: batchAttributesFor(props.sku, b.batchNo, b.expiryDate),
     available: b.available,
     qty: qtyByBatch.has(b.batchNo) ? String(qtyByBatch.get(b.batchNo)) : '',
   })))
@@ -141,6 +151,7 @@ function handleSave() {
           <table class="pbd-table">
             <colgroup>
               <col style="width: 200px" /><col style="width: 140px" /><col />
+              <col v-for="k in attrKeys" :key="k" style="width: 176px" />
               <col style="width: 110px" /><col style="width: 120px" /><col style="width: 78px" />
             </colgroup>
             <thead>
@@ -148,6 +159,10 @@ function handleSave() {
                 <th class="pbd-th">Batch</th>
                 <th class="pbd-th">Expiry date</th>
                 <th class="pbd-th">Description</th>
+                <th
+                  v-for="(k, i) in attrKeys" :key="k" class="pbd-th"
+                  :data-devchange="i === 0 ? 'view-batch-drawer-attributes' : undefined"
+                >{{ attrCols.label(k) }}</th>
                 <th class="pbd-th pbd-th--right">Available</th>
                 <th class="pbd-th">Qty</th>
                 <th class="pbd-th">Unit</th>
@@ -158,6 +173,7 @@ function handleSave() {
                 <td class="pbd-td pbd-td--muted">{{ row.batchNo }}</td>
                 <td class="pbd-td pbd-td--muted">{{ formatDate(row.expiryDate) }}</td>
                 <td class="pbd-td pbd-td--muted">{{ row.desc }}</td>
+                <td v-for="k in attrKeys" :key="k" class="pbd-td pbd-td--muted">{{ attrText(row, k) }}</td>
                 <td class="pbd-td pbd-td--muted pbd-td--right">{{ row.available }}</td>
                 <td v-if="isReadOnly" class="pbd-td pbd-td--right">{{ row.qty }}</td>
                 <td v-else class="pbd-td pbd-td--input">
@@ -166,7 +182,7 @@ function handleSave() {
                 <td class="pbd-td pbd-td--muted">{{ unit }}</td>
               </tr>
               <tr v-if="!filteredRows.length">
-                <td class="pbd-td pbd-td--empty" colspan="6">{{ isReadOnly ? 'Nothing reserved.' : 'No batches found.' }}</td>
+                <td class="pbd-td pbd-td--empty" :colspan="6 + attrKeys.length">{{ isReadOnly ? 'Nothing reserved.' : 'No batches found.' }}</td>
               </tr>
             </tbody>
           </table>

@@ -139,6 +139,7 @@ watch(lineItems, (items) => {
         counted: b.destLocations?.length ? b.destLocations.reduce((s, d) => s + d.qty, 0) : null,
         unit: b.unit,
         destLocations: b.destLocations,
+        attributes: b.attributes,
       }))
     }
     if (it.serialAssignments?.length) {
@@ -535,6 +536,7 @@ function buildItemsAndAssignments() {
       batchAssignments[r.skuCode] = lines.map(b => ({
         batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.onHand, unit: b.unit,
         destLocations: b.destLocations,
+        attributes: b.attributes,
       }))
       // Exactly ONE completedItems entry per row, always — regardless of how many
       // bins (zero, one, or several) it's actually been assigned to. The real

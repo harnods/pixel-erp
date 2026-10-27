@@ -195,6 +195,7 @@ const taskBatchByKey = computed(() => {
         unit: b.unit,
         location: b.location,
         reservedQty: b.qty,
+        attributes: b.attributes,
       }))
     }
   }
@@ -730,7 +731,7 @@ const viewSerialItem = ref<PickLineItem | null>(null)
 function pickedBatchRowsForItem(item: PickLineItem): PickedBatchRow[] {
   return (batchLinesByKey.value[item.key] ?? [])
     .filter(b => (b.counted ?? 0) > 0)
-    .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit, location: b.location }))
+    .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit, location: b.location, attributes: b.attributes }))
 }
 function pickedSerialRowsForItem(item: PickLineItem): PickedSerialRow[] {
   return serialLinesByKey.value[item.key] ?? []
@@ -858,6 +859,7 @@ function buildAssignments(): PickingAssignments {
     const picks = batches.map(b => ({
       batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc,
       qty: (b.counted ?? 0) || (b.reservedQty ?? 0), unit: b.unit, location: b.location ?? '',
+      attributes: b.attributes,
     })).filter(p => p.qty > 0)
     if (picks.length) batchPicks[key] = picks
   }

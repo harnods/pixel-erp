@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
+import { batchAttributesFor } from '~/data/productDetails'
+import type { BatchAttributeKey, BatchAttributeValues } from '~/data/batchAttributes'
+import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
 
 const DEMO_DESCS = [
   'Ethiopia Yirgacheffe, Grade 1, washed – harvest 2025',
@@ -15,6 +18,9 @@ const DEMO_DESCS = [
 export interface PickedBatchRow {
   batchNo: string; expiryDate: string; desc: string; qty: number; unit: string
   location?: string
+  /** The attribute values saved with this line (snapshot). When absent, the batch master's
+   *  current values are shown instead (ATINV-9082). */
+  attributes?: BatchAttributeValues
   /** Put-away only — this batch's qty split across 2+ destination bins. When
    *  given (and non-empty), the table shows ONE ROW PER BIN instead of a
    *  single combined row (with `location`/`qty` above ignored in favor of
@@ -150,6 +156,8 @@ interface BatchRow {
   newOnHand: number    // only used in in-out mode
   unit: string
   location?: string
+  /** Read-only attribute values for this batch: the line snapshot, else the master's. */
+  attributes: BatchAttributeValues
   /** Put-away only — this row's own bin, when the batch's destination is
    *  split across 2+ of them (one BatchRow per bin instead of one per
    *  batch). Null for every other caller (single location or none at all). */
@@ -161,6 +169,16 @@ interface BatchRow {
   groupSize: number
 }
 
+const attrCols = useBatchAttributeColumns(toRef(props, 'sku'))
+const attrKeys = attrCols.keys
+const attrLabel = attrCols.label
+/** The line's snapshot when it has one, else the batch master's current values (or just
+ *  the lot's expiry when the lot has no record). */
+function attrsFor(batchNo: string, expiryDate: string, snapshot?: BatchAttributeValues): BatchAttributeValues {
+  return snapshot && Object.keys(snapshot).length ? snapshot : batchAttributesFor(props.sku, batchNo, expiryDate || undefined)
+}
+function attrText(row: BatchRow, key: BatchAttributeKey) { return attrCols.text(key, row.attributes) }
+
 /** Expands one batch entry into one row per destination bin (Storage
  *  location/Put-away qty split, everything else merged via groupIndex/
  *  groupSize) — or a single row when there's nothing to split (no
@@ -171,17 +189,19 @@ function expandByBin(
   batchNo: string, expiryDate: string, desc: string, unit: string,
   plannedValue: number, fallbackValue: number, fallbackLocation: string | undefined,
   destLocations: { locationId: string; qty: number }[] | undefined,
+  snapshot?: BatchAttributeValues,
 ): BatchRow[] {
+  const attributes = attrsFor(batchNo, expiryDate, snapshot)
   const bins = (destLocations ?? []).filter((d) => d.qty > 0)
   if (!bins.length) {
     return [{
       batchNo, expiryDate, desc, onHand: 0, value: fallbackValue, plannedValue, verifiedValue: 0, newOnHand: 0,
-      unit, location: fallbackLocation, bin: fallbackLocation ?? null, groupIndex: 0, groupSize: 1,
+      unit, location: fallbackLocation, attributes, bin: fallbackLocation ?? null, groupIndex: 0, groupSize: 1,
     }]
   }
   return bins.map((d, bIdx) => ({
     batchNo, expiryDate, desc, onHand: 0, value: d.qty, plannedValue, verifiedValue: 0, newOnHand: 0,
-    unit, bin: d.locationId, groupIndex: bIdx, groupSize: bins.length,
+    unit, attributes, bin: d.locationId, groupIndex: bIdx, groupSize: bins.length,
   }))
 }
 
@@ -225,11 +245,12 @@ function buildRows(): BatchRow[] {
         return expandByBin(
           batchNo, src.expiryDate, src.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, src.unit,
           planned?.qty ?? 0, picked?.qty ?? 0, picked?.location, picked?.destLocations,
+          src.attributes,
         )
       })
     }
     return (props.pickedBatches ?? []).flatMap((b, i) =>
-      expandByBin(b.batchNo, b.expiryDate, b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, b.unit, 0, b.qty, b.location, b.destLocations),
+      expandByBin(b.batchNo, b.expiryDate, b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, b.unit, 0, b.qty, b.location, b.destLocations, b.attributes),
     )
   }
 
@@ -246,7 +267,7 @@ function buildRows(): BatchRow[] {
         expiryDate: sb.attributes.expiry_date ?? lot?.expiryDate ?? '',
         desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
         onHand: before, value: sb.qty, plannedValue: 0, verifiedValue: 0, newOnHand: before + sb.qty,
-        unit, bin: null, groupIndex: 0, groupSize: 1,
+        unit, attributes: attrsFor(sb.batchNo, sb.attributes.expiry_date ?? lot?.expiryDate ?? '', sb.attributes), bin: null, groupIndex: 0, groupSize: 1,
       }
     })
   }
@@ -265,6 +286,7 @@ function buildRows(): BatchRow[] {
         verifiedValue: 0,
         newOnHand: b.onHand + delta,
         unit,
+        attributes: attrsFor(b.batchNo, b.expiryDate),
         bin: null, groupIndex: 0, groupSize: 1,
       }
     })
@@ -282,6 +304,7 @@ function buildRows(): BatchRow[] {
     verifiedValue: 0,
     newOnHand: 0,
     unit,
+    attributes: attrsFor(b.batchNo, b.expiryDate),
     bin: null, groupIndex: 0, groupSize: 1,
   }))
 }
@@ -403,6 +426,7 @@ function close() { emit('update:open', false) }
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
               <col class="vbd-col-desc" />
+              <col v-for="k in attrKeys" :key="k" class="vbd-col-attr" />
               <col v-if="!isPacking && !hideOnHand" class="vbd-col-num" />
               <template v-if="qtyBeforeLocation">
                 <col v-if="hasPlanned" class="vbd-col-num" />
@@ -422,6 +446,10 @@ function close() { emit('update:open', false) }
                 <th class="vbd-th">{{ t('Batch') }}</th>
                 <th class="vbd-th">{{ t('Expiry date') }}</th>
                 <th class="vbd-th">{{ t('Description') }}</th>
+                <th
+                  v-for="(k, i) in attrKeys" :key="k" class="vbd-th"
+                  :data-devchange="i === 0 ? 'view-batch-drawer-attributes' : undefined"
+                >{{ attrLabel(k) }}</th>
                 <th v-if="!isPacking && !hideOnHand" class="vbd-th vbd-th--num">{{ t('On hand qty') }}</th>
                 <template v-if="qtyBeforeLocation">
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
@@ -446,6 +474,9 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc }}</td>
+                <template v-for="k in attrKeys" :key="k">
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ attrText(row, k) }}</td>
+                </template>
                 <td v-if="!isPacking && !hideOnHand" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
                 <template v-if="qtyBeforeLocation">
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
@@ -468,7 +499,7 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted vbd-td--unit">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="(isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)) + (hasVerifiedCol ? 1 : 0)" class="vbd-td vbd-td--empty">{{ t('No batch data available.') }}</td>
+                <td :colspan="(isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)) + (hasVerifiedCol ? 1 : 0) + attrKeys.length" class="vbd-td vbd-td--empty">{{ t('No batch data available.') }}</td>
               </tr>
             </tbody>
           </table>
@@ -568,6 +599,7 @@ function close() { emit('update:open', false) }
 .vbd-col-expiry  { width: 140px; }
 .vbd-col-desc    { /* flexible */ }
 .vbd-col-loc     { width: 150px; }
+.vbd-col-attr    { width: var(--mp-sizes-44, 176px); }
 .vbd-col-num     { width: 120px; }
 .vbd-col-unit    { width: 78px; }
 

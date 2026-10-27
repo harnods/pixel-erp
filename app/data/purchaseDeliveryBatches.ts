@@ -129,7 +129,8 @@ export function deliveryBatchCheckOk(check: DeliveryBatchCheck): boolean {
   return !check.qtyMismatch && !check.qtyInvalid.length && !check.duplicateBatch.length && !Object.keys(check.rowErrors).length
 }
 
-export interface SavedDeliveryBatch { batchId: string; batchNo: string; qty: number }
+/** `attributes` is the batch's values as stored when the delivery was saved (snapshot, ATINV-9082). */
+export interface SavedDeliveryBatch { batchId: string; batchNo: string; qty: number; attributes?: BatchAttributeInput }
 
 /**
  * On delivery save: create the new batches (rule 1 values already on them) and give
@@ -150,12 +151,12 @@ export function commitDeliveryBatches(
       if (usesVendor && batch && !batch.attributes.supplier) {
         updateBatch(line.sku, b.batchId, { attributes: { supplier: vendorId } }, by)
       }
-      saved.push({ batchId: b.batchId, batchNo: b.batchNo, qty: b.qty })
+      saved.push({ batchId: b.batchId, batchNo: b.batchNo, qty: b.qty, attributes: { ...getProductBatchById(line.sku, b.batchId)?.attributes } })
       continue
     }
     const attributes: BatchAttributeInput = { ...b.attributes }
     const created = createBatch(line.sku, { batchNo: b.batchNo, description: b.description?.trim() || undefined, attributes }, by)
-    if (created.ok) saved.push({ batchId: created.value.id, batchNo: created.value.batchNo, qty: b.qty })
+    if (created.ok) saved.push({ batchId: created.value.id, batchNo: created.value.batchNo, qty: b.qty, attributes: { ...created.value.attributes } })
     else errors[b.key] = created.errors
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, batches: saved }

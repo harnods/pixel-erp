@@ -329,7 +329,7 @@ export interface PurchaseDeliveryLine {
   discountPct: number
   taxLabel: string
   /** Batch-tracked lines: which batches received the qty (Batch Attribute story 10). */
-  batches?: { batchId: string; batchNo: string; qty: number }[]
+  batches?: { batchId: string; batchNo: string; qty: number; attributes?: Partial<Record<string, string>> }[]
 }
 
 export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'

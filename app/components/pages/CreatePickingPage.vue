@@ -598,7 +598,7 @@ async function doCreate() {
 
     const batchChunks = (batchLinesBySku.value[g.sku] ?? [])
       .filter(b => (b.counted ?? 0) > 0)
-      .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, unit: b.unit, location: b.location ?? '', qty: b.counted ?? 0 }))
+      .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, unit: b.unit, location: b.location ?? '', qty: b.counted ?? 0, attributes: b.attributes }))
     let batchIdx = 0
     const serialQueue = serialLinesBySku.value[g.sku] ?? []
     let serialIdx = 0
@@ -620,7 +620,7 @@ async function doCreate() {
           const chunk = batchChunks[batchIdx]!
           const take = Math.min(need, chunk.qty)
           if (take > 0) {
-            picks.push({ batchNo: chunk.batchNo, expiryDate: chunk.expiryDate, desc: chunk.desc, unit: chunk.unit, location: chunk.location, qty: take })
+            picks.push({ batchNo: chunk.batchNo, expiryDate: chunk.expiryDate, desc: chunk.desc, unit: chunk.unit, location: chunk.location, qty: take, attributes: chunk.attributes })
             chunk.qty -= take
             need -= take
           }

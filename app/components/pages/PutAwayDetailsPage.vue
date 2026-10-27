@@ -628,8 +628,8 @@ function fmt(n: number) { return n.toLocaleString('id-ID') }
     qty-before-location
     :qty-to-pick="viewBatchItem.qty"
     :picked-qty="viewBatchItem.stored"
-    :planned-batches="(viewBatchItem.batchLines ?? []).map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.qty, unit: b.unit }))"
-    :picked-batches="(viewBatchItem.batchLines ?? []).map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: (b.destLocations ?? []).reduce((s, d) => s + d.qty, 0), unit: b.unit, destLocations: b.destLocations }))"
+    :planned-batches="(viewBatchItem.batchLines ?? []).map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.qty, unit: b.unit, attributes: b.attributes }))"
+    :picked-batches="(viewBatchItem.batchLines ?? []).map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: (b.destLocations ?? []).reduce((s, d) => s + d.qty, 0), unit: b.unit, destLocations: b.destLocations, attributes: b.attributes }))"
     :product-name="viewBatchItem.productName"
     :product-img="viewBatchItem.image"
     @update:open="viewBatchItem = null"

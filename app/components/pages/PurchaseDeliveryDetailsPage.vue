@@ -52,6 +52,7 @@ const viewBatchRows = computed<PickedBatchRow[]>(() => {
       desc: record?.description ?? '',
       qty: b.qty,
       unit: item.unit,
+      attributes: b.attributes,
     }
   })
 })

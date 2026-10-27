@@ -18,7 +18,7 @@ const TAX_LABEL = 'PPN 11%'
 export type PDLineItem = SalesOrderItem & {
   taxLabel: string
   /** Batches that received this line's qty — only on deliveries created in the app. */
-  batches?: { batchId: string; batchNo: string; qty: number }[]
+  batches?: { batchId: string; batchNo: string; qty: number; attributes?: Partial<Record<string, string>> }[]
 }
 
 export interface PDAttachment { name: string; sizeKB: number }
