@@ -258,7 +258,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
     <div v-if="showLanding" class="dm-landing">
       <div class="dm-landing-hero-card">
         <div class="dm-landing-left">
-          <h2 class="dm-landing-title">{{ t('Set up your business data in Mekari Jurnal') }}</h2>
+          <h2 class="dm-landing-title">{{ t('Set up your business data in Mekari ERP') }}</h2>
           <p class="dm-landing-desc">{{ t('Migrate your existing company information, financial records, and transaction history. Complete each step to get your account ready.') }}</p>
           <div class="dm-landing-actions">
             <MpButton
@@ -719,9 +719,10 @@ const stepDone = computed<Record<string, boolean>>(() => ({
 .dm-landing-title {
   margin: 0;
   font-size: var(--mp-font-sizes-2xl, 24px);
-  font-weight: var(--mp-font-weights-bold);
+  font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
-  line-height: var(--mp-line-heights-2xl, 32px);
+  line-height: var(--mp-sizes-8, 32px);
+  letter-spacing: -0.2px;
 }
 
 .dm-landing-desc {
