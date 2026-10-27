@@ -64,6 +64,16 @@
 | 8 | Batch creation (web) — master data only, qty 0 | **Build** (Phase 3); API not built |
 | 9 | Update Batch via import | **Built** — stepped import page with real row validation; the scenario FAB only adds demo outcomes (Phase 4) |
 | 10 | Vendor attribute in Purchase transactions | **Built** on the Purchase delivery form (Phase 5, D1 lifted). WMS receiving and the purchase invoice flow are not covered. |
+| 11 | Export batches in the import template's format | **Built** — Update batches step 1 filters and the product's Export batches window (Phase 6, ATINV-9083) |
+| 15 | Batch drawers show attributes (Purchase delivery details; purchase invoice receiving) | **Built** for Purchase delivery details (Phase 7). Purchase invoice receiving is not built (§8). |
+| 16 | Sales delivery / Sales invoice batch drawer | **Not built** — no such drawer exists (§8). |
+| 17 | Stock adjustment in/out | **Built** (Phase 7), stock in only: batch qty is always positive, so the issuing half is not reachable. |
+| 18 | Warehouse transfer | **Built** (Phase 7), read-only. Transfer batch lines are not persisted (§8). |
+| 19 | Work order materials | **Built** (Phase 7), read-only, with a snapshot on the saved lines. The finished goods drawer is not built (§8). |
+| 20 | WMS receiving | **Built** (Phase 7): receiving rules, Vendor prefill from the PO, batch created on commit. |
+| 21 | WMS put-away | **Built** (Phase 7), read-only. The task list attribute display (P1) is not built. |
+| 22 | WMS picking | **Built** (Phase 7): suggested and scanned batch attributes side by side. |
+| 23 | WMS packing | **Built** (Phase 7), read-only. Label and packing list print (P1) is not built. |
 
 ---
 
@@ -296,6 +306,51 @@ Originally planned as a separate branch after Phases 0–4; built on `feat/batch
   - Purchase invoice create flow doesn't exist.
   - WMS receiving is unchanged.
 
+### Phase 6 — Batch export (ATINV-9083)
+
+Spec: `docs/superpowers/specs/2026-10-27-batch-attribute-drawers-export-design.md` §4. Goal: users export current batches in the import template's format, find the ones missing a required attribute, fill them in and upload the same file again.
+
+**As built (Phase 6, 27 Oct 2026):**
+- **One shared builder** in `app/data/batchUpdateImport.ts` (`buildBatchExport`) feeds both entry points, and `app/utils/batchExportXlsx.ts` writes the workbook.
+  - **Sheet 1** has the template's columns, one row per batch of non-archived products, sorted by product name then batch number. Zero on-hand batches are included. The Unassigned batch and archived batches are left out.
+  - A required attribute that is empty stays blank and carries a cell note, "Required attribute is empty". An attribute the product doesn't use stays blank.
+  - **Sheet 2, Attribute Setup,** lists each exported product's attributes and which are required. The import reads only the first sheet, so it ignores this one.
+- **Update batches, step 1** now has a **Products** multi-select (all products by default; only the source product when opened with `?sku=`) and an "Only batches with an empty required attribute" checkbox. If the filters match nothing, an inline message shows and no file is written.
+- **Product Stock by batches › Export** opens a small `BatchExportModal` (checkbox, a caption, Cancel and Export). The old `ExportModal` and its column picker are gone, because the file has to keep the template's columns.
+- **Re-upload:** a row that changes nothing is skipped as unchanged, not failed, even when a required attribute is still empty. Unchanged rows are counted in the result and never reach the error file. An unedited export therefore imports with 0 errors.
+  - A case-only edit to a description does count as a change.
+  - A blank Unassigned row is skipped.
+- **Deviations:**
+  - **Products filter component.** `ErpFilterSelect` has no multi mode, so the filter uses the existing `MultiSelectDropdown` (also used by the Inbox filters drawer).
+  - **Delivery.** The file is generated in the browser with a success toast, not as a background process, because the activity popover can't hold files.
+  - **Header row.** Row 1 stays the header. The PRD Helper sheet could not be read (Google sign-in), so today's layout is kept.
+- Tests: `batch-export.spec.ts`, `batch-export-modal.spec.ts`, `import-batch-update-export-filters.spec.ts`, `batch-update-import.spec.ts`.
+
+### Phase 7 — Batch drawers (ATINV-9082)
+
+Spec §5. Goal: every existing batch drawer shows a batch's attributes. Drawers that receive stock can also create a batch with them. Issuing drawers only show them.
+
+**As built (Phase 7, 27–28 Oct 2026):**
+- **One batch master.** A batch is identified by product + batch number, so a warehouse lot and a product batch record with the same number are the same batch.
+  - `findProductBatch`, `batchAttributesFor` and `ensureProductBatch` bridge the two stores. A lot with no record shows its expiry and "—" for the rest.
+  - The demo seed gives lots of the demo SKUs their attribute values. Only SKU 1001 keeps a lot with an empty required Vendor, to show that state; the other demo SKUs require only Expiry, which every lot has.
+- **Attribute columns in `ManageBatchDrawer`** for every kind except count, plus attributes under each Select-batch option (`useBatchAttributeColumns`, `app/data/batchDrawerAttributes.ts`). Columns sit after Description, matching the Manage drawer's own order, so all batch drawers share one order.
+  - Table cells show Grade as "A (Rank 1)"; dropdown options show "A · Rank 1".
+- **Receiving drawers** (stock in/out, WMS receiving):
+  - A new row takes the product's attributes. A required one that is empty blocks Save with an inline error. Two new rows with the same number (case-insensitive) show an inline error.
+  - A typed or scanned number that already exists as a product record is treated as that existing batch: its set values are read-only, and only empty attributes can be filled.
+  - Finishing the transaction creates the batch in the master and fills only empty attributes. A transaction never overwrites a value. The commit never throws, so receiving and stock in always save.
+  - **WMS receiving** prefills Vendor from the receiving task's PO. Existing batches recorded with another vendor get one confirm listing them, and their vendor is not changed.
+  - **Stock in** now keeps each line's batches on the saved adjustment, and the details page shows them.
+- **Issuing drawers** (transfer, put-away, picking, View and Pick drawers, packing, WO materials) show attributes read-only. Empty attributes never block them, and the drawers never run the receiving checks.
+- **Snapshots:** saved put-away, picking, purchase delivery, stock adjustment and WO material lines keep the attributes they were saved with. Details pages show that snapshot, and the current master values when there is none.
+- **Picking:** when the scanned batch differs from the suggested one, both rows show their attribute values, in the existing planned-vs-actual layout.
+- Tests: `batch-identity-bridge.spec.ts`, `batch-drawer-attributes.spec.ts`, `manage-batch-drawer-attributes.spec.ts`, `view-batch-drawer-attributes.spec.ts`, `receiving-batch-attributes.spec.ts`, `stock-in-batch-attributes.spec.ts`.
+- **Known limits:**
+  - A received batch shows its attributes but qty 0 on Stock by batches, because those pages read the product seed rather than warehouse lots (user decision).
+  - The PO vendor is a name only, so the receiving prefill matches only the vendors the demo data shares between POs and the vendor list.
+  - For an existing batch matched by a typed number, the Expiry the operator typed is replaced by the master's at save.
+
 ---
 
 ## 5. Copy (`app/data/translations.ts`)
@@ -372,6 +427,18 @@ Both rounds are answered (§1, A1–A9). Nothing blocks the build. These items a
 | Import error copy for Unassigned batch rows (A7) | Row rejected, with the proposed EN/ID copy in Phase 4 | PM confirming the wording |
 | Grades have no Active/Inactive status (21 Sep 2026) | No status column, no Activate/Deactivate; a grade batches use simply can't be deleted. The PRD's story 3 specifies activate/deactivate, a "1–10 active" limit and a "Grade is not active" import error — the import still rejects inactive grades, but none can become inactive now | PM confirming grades drop the status lifecycle |
 | Renaming a batch that's already used (A9) | **Locked:** the number is read-only once the batch has movements | PM's final call. Unlocking it later is a one-line change to the `batchHasMovements` guard, because the stable batch ID already supports renames. |
+
+
+**Follow-ups from ATINV-9082 / ATINV-9083 (not built):**
+- Sales delivery / Sales invoice batch drawer (story 16).
+- Purchase invoice receiving (story 15).
+- Work order finished goods drawer (story 19).
+- Persisting warehouse transfer batch lines.
+- Stock adjustment issuing via batch (story 17, decrease).
+- Received qty doesn't raise product-batch on-hand. A batch received in WMS or by stock in shows qty 0 on Stock by batches and the batch detail page (user decision, 27 Oct 2026).
+- WMS put-away task list attributes and packing label print (P1).
+- PRD Helper sheet: confirm the header and info rows.
+- The "Product Batch" entry on Other lists › Export & import.
 
 ---
 

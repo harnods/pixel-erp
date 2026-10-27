@@ -587,7 +587,7 @@ function checkReceivingRows(): boolean {
   const batchNo = populated[first.index]!.batchNo.trim()
   let msg: string
   if (first.code === 'required') msg = t('Attribute {attribute} must be filled').replace('{attribute}', attrLabel(first.key!))
-  else if (first.code === 'duplicate-new') msg = t('The same batch is on this line twice')
+  else if (first.code === 'duplicate-new') msg = t('This batch number is on more than one line')
   // 'batch-no' — a new number another batch of this product holds.
   else msg = t('Batch number already taken')
   deliveryError.value = `${batchNo}: ${msg}`
@@ -613,7 +613,7 @@ function checkDeliveryRows(): boolean {
     return false
   }
   if (check.qtyInvalid.length) { deliveryError.value = 'Every batch needs a qty above 0'; return false }
-  if (check.duplicateBatch.length) { deliveryError.value = 'The same batch is on this line twice'; return false }
+  if (check.duplicateBatch.length) { deliveryError.value = t('This batch number is on more than one line'); return false }
   const firstRow = Object.values(check.rowErrors)[0]
   if (firstRow?.length) {
     const e = firstRow[0]!

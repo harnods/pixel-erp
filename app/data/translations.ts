@@ -4205,8 +4205,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Batch changes saved": "Perubahan batch berhasil disimpan",
   "Update batches": "Perbarui batch",
   "Follow these steps to update batch details and attributes from a spreadsheet.": "Ikuti langkah berikut untuk memperbarui detail dan atribut batch dari spreadsheet.",
-  "The template lists this product’s batches with their current details, ready to edit.": "Template berisi batch produk ini beserta detailnya saat ini, siap untuk diubah.",
-  "The template lists the batches of every batch-tracked product, ready to edit.": "Template berisi batch dari semua produk yang dilacak per batch, siap untuk diubah.",
   "Upload the completed template to update your batches.": "Upload template yang sudah diisi untuk memperbarui batch Anda.",
   "Fill in Product name and Batch number exactly as they are in Mekari ERP. Batch numbers can’t be changed through import": "Isi Nama produk dan Nomor batch sesuai data di Mekari ERP. Nomor batch tidak dapat diubah melalui impor",
   "Leave a cell blank to keep its current value, or type null to remove it": "Kosongkan sel untuk mempertahankan nilainya, atau ketik null untuk menghapusnya",
@@ -4267,7 +4265,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "These batches are recorded with a different vendor than this transaction ({deliveryVendor}). The vendor of the batches will not be changed.": "Batch berikut tercatat dengan vendor yang berbeda dari transaksi ini ({deliveryVendor}). Vendor pada batch tidak akan diubah.",
   "Save delivery": "Simpan pengiriman",
   // Manage batch drawer — receiving checks (ATINV-9082)
-  "The same batch is on this line twice": "Batch yang sama ada dua kali di baris ini",
+  "This batch number is on more than one line": "Nomor batch ini ada di lebih dari satu baris",
 
   // ── Access gate (Google @mekari.com login) ──────────────────────────────────
   "Sign in with your @mekari.com Google account to continue.":
@@ -4924,6 +4922,5 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Export batches": "Ekspor batch",
   "The file uses the Update batches template, so you can edit it and import it back.": "File ini memakai template Perbarui batch, sehingga Anda dapat mengubahnya lalu mengimpornya kembali.",
   "All products": "Semua produk",
-  "The template lists your current batches, ready to edit. Filter it to the batches you want to update.": "Template berisi batch Anda saat ini, siap untuk diubah. Filter untuk memilih batch yang ingin diperbarui.",
+  "The template lists your current batches, ready to edit. Filter it to the batches you want to update.": "Template berisi batch Anda saat ini, siap untuk diubah. Gunakan filter untuk memilih batch yang ingin diperbarui.",
 }
-
