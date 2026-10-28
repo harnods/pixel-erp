@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'location-deepest-level',
+    title: 'No "Add sub-location" under a Bin',
+    description:
+      'Bin is the deepest storage level, so the Storage locations menus no longer offer "Add sub-location" on Bin rows (it opened a drawer with an empty Level picker). If the drawer is opened under a Bin anyway, it shows an info banner and a Close button instead of the form.',
+    date: '2026-10-21',
+    files: ['StorageLocationTree.vue', 'WarehouseDetailsPage.vue', 'NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
+    id: 'new-location-drawer-shell',
+    title: 'New / Edit location drawer on the standard drawer shell',
+    description:
+      'The location drawer moved off Pixel MpDrawer onto the shared ErpDrawer Teleport shell (filled header, × close, pinned footer with enterprise Cancel / Save), and Description is now a Pixel MpTextarea. Description is also saved when creating a location (it was only kept on edit).',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
+    id: 'new-location-storage-preference-radio',
+    title: 'Storage preference uses the standard radio list',
+    description:
+      'New / Edit location drawer: Storage preference was two uneven, bordered button-cards with a mint selected fill. It is now the standard MpRadio title + caption list (same as Edit classification), so it reads like every other single-choice field.',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue'],
+  },
+  {
     id: 'row-kebab-icon-visible',
     title: 'Row actions (⋯) icon visible again',
     description:
