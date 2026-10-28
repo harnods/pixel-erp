@@ -50,6 +50,34 @@ the white text automatically, but icons that carry their own fill (e.g.
 whites out fill + stroke of any icon inside a primary button.
 (`erp.css` › `.btn-enterprise--primary :is(.mp-icon, svg)`.)
 
+## 3b. Header icon buttons — icon is always white (`icon.inverse`)
+
+> Full spec: **[global-header-bar.md](global-header-bar.md)** (the whole
+> `ErpHeader` pattern). Rules: `rule/header-icon-inverse`,
+> `rule/header-icon-veil-no-border`.
+
+
+The quick-action icon buttons in the global header (`ErpHeader` — help, inbox,
+upload/`desktop`, and the quick-create `+`) sit on the **dark** header
+(`background.header`, `#142D26`). A Pixel ghost `MpButton` renders its icon in the
+default **dark** icon color, which is invisible/wrong on the dark header, and it
+stays dark on hover (only the bg fill lightens). So these buttons must render the
+glyph with an **explicit `icon.inverse` (white)** color that does **not** change on
+hover/active — only the background fill changes.
+
+- Don't rely on `:left-icon` on a ghost `MpButton` here — the icon inherits the
+  button's dark currentColor.
+- Do render `<MpIcon :name="icon" color="icon.inverse" />` as the button child.
+- **Hover/active fill is a literal translucent white** (`rgba(255,255,255,0.12)`
+  hover, `rgba(255,255,255,0.2)` active/pressed) — a subtle veil over the dark
+  header. Do **not** use the Panda `background.surface.bold.hovered/pressed`
+  tokens here: in this build they resolve to an **opaque near-white** (`#f8f9f9`),
+  which paints a light box on the dark header and washes out the white icon.
+
+The shared `IconButton` (`app/components/IconButton.vue`) already does this, so use
+it for any new header action; the quick-create `+` (`ErpQuickCreateMenu`) uses the
+same `<MpIcon color="icon.inverse" />` pattern.
+
 ## 4. MpSelect — focus / active state
 
 Pixel's default focus/open state is a faint ~16%-alpha hairline. Override: a
@@ -136,6 +164,21 @@ ticked) reads as if there's no checkbox at all. Fixed globally in `erp.css` ›
 `border.default` (`#e3e7e9`) — visible but still clearly muted/inactive.
 
 ---
+
+## 10. Row kebab (`.row-kebab`) — icon collapses to 0px
+
+Pixel's `MpButton` applies **16px left + 16px right** padding (`box-sizing:
+border-box`). About 45 tables render the row `[…]` trigger as
+`<MpButton class="row-kebab">` with a raw inline `<svg width="20">` child (left over
+from the Pixel 3 migration of the old hand-rolled `<button class="row-kebab">`). The
+page's `.row-kebab { width: 32px }` then leaves a **0px content box**, and the svg —
+a shrinkable flex item — renders **0px wide**: the button exists and its menu opens,
+but users see nothing. Fixed globally in `erp.css` › `.row-kebab` (no horizontal
+padding) + `.row-kebab > svg` (`flex-shrink: 0`). erp.css is unlayered, so no
+`!important` is needed; a page whose scoped `.row-kebab` sets its own small padding
+keeps it. Kebabs built with `<MpButton left-icon="menu-kebab">` are unaffected and
+are the preferred form for new code. See `rule/table-row-kebab-icon`; guarded by
+`tests/pixel-police.spec.ts`.
 
 ## Rule of thumb
 

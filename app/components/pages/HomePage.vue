@@ -125,6 +125,7 @@ const reviewTasks = computed<ReviewTask[]>(() => [
 const actionsRequiredCount = computed(() => reviewTasks.value.length)
 function notInPrototype() { infoToast(t('Not in this prototype')) }
 
+// Approve only confirms with a toast for now — the item stays in the list.
 function approve(a: Approval) {
   toast.notify({ variant: 'success', title: t('Approved successfully'), maxWidth: 'max-content' })
 }
@@ -269,14 +270,14 @@ const learn: LearnCard[] = [
 
         <div class="chips">
           <div class="chips__row">
-            <button v-for="a in selectedActions" :key="a.key" class="chip" type="button" @click="runAction(a)">
+            <MpButton v-for="a in selectedActions" :key="a.key" class="chip" type="button" @click="runAction(a)">
               <MpIcon :name="a.icon" size="md" class="chip__icon" />
               {{ a.label }}
-            </button>
-            <button class="chip" type="button" @click="manageActionsOpen = true">
+            </MpButton>
+            <MpButton class="chip" type="button" @click="manageActionsOpen = true">
               <MpIcon name="add" size="md" class="chip__icon" />
               {{ t('Actions') }}
-            </button>
+            </MpButton>
           </div>
         </div>
       </div>
@@ -315,26 +316,26 @@ const learn: LearnCard[] = [
             <div v-if="anomalies.length > 1 && !anomalyExpanded" class="anomaly-peek" aria-hidden="true" />
           </div>
 
-          <button
+          <MpButton
             v-if="anomalies.length > 1"
             class="anomaly-toggle"
             type="button"
+            :left-icon="anomalyExpanded ? 'caret-up' : 'caret-down'"
             @click="anomalyExpanded = !anomalyExpanded"
           >
-            <MpIcon :name="anomalyExpanded ? 'caret-up' : 'caret-down'" size="sm" />
             {{ anomalyExpanded ? t('Show less') : t('Show more') }}
-          </button>
+          </MpButton>
         </div>
 
         <!-- Awaiting approval -->
         <div class="card approvals">
           <div class="approvals__tabs">
-            <button class="apptab" :class="{ 'apptab--active': taskTab === 0 }" type="button" @click="taskTab = 0">
+            <MpButton class="apptab" :class="{ 'apptab--active': taskTab === 0 }" type="button" @click="taskTab = 0">
               {{ t('Awaiting approval') }} <span class="apptab__count" :class="{ 'apptab__count--active': taskTab === 0 }">{{ approvals.length }}</span>
-            </button>
-            <button class="apptab" :class="{ 'apptab--active': taskTab === 1 }" type="button" @click="taskTab = 1">
+            </MpButton>
+            <MpButton class="apptab" :class="{ 'apptab--active': taskTab === 1 }" type="button" @click="taskTab = 1">
               {{ t('Actions required') }} <span class="apptab__count" :class="{ 'apptab__count--active': taskTab === 1 }">{{ actionsRequiredCount }}</span>
-            </button>
+            </MpButton>
           </div>
 
           <div v-if="taskTab === 0" class="approvals__list">
@@ -354,9 +355,9 @@ const learn: LearnCard[] = [
               <MpButton variant="secondary" is-rounded @click.stop="approve(a)">{{ t('Approve') }}</MpButton>
               <MpPopover :id="`home-appr-more-${a.title}`" is-close-on-select use-portal placement="bottom-end">
                 <MpPopoverTrigger>
-                  <button class="appr__kebab" type="button" :aria-label="t('More actions')" @click.stop>
+                  <MpButton class="appr__kebab" type="button" :aria-label="t('More actions')" @click.stop>
                     <MpIcon name="menu-kebab" size="md" />
-                  </button>
+                  </MpButton>
                 </MpPopoverTrigger>
                 <MpPopoverContent>
                   <MpPopoverList>
@@ -384,9 +385,9 @@ const learn: LearnCard[] = [
             <p v-if="!reviewTasks.length" class="appr__empty">{{ t('You have no tasks to review right now') }}</p>
           </div>
 
-          <button v-if="taskTab === 0" class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
+          <MpButton v-if="taskTab === 0" class="approvals__all" type="button" @click="router.push('/warehouse-transfers')">
             {{ t('View all awaiting approvals') }}
-          </button>
+          </MpButton>
         </div>
       </section>
 
@@ -402,14 +403,12 @@ const learn: LearnCard[] = [
               </div>
               <img :src="n.art" alt="" class="wn__art">
               <div class="wn__foot">
-                <button class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</button>
+                <MpButton class="wn__link" type="button" @click="soon(t('Learn more'))">{{ t('Learn more') }}</MpButton>
                 <MpButton variant="secondary" is-rounded @click="soon(t('Try feature'))">{{ t('Try feature') }}</MpButton>
               </div>
             </article>
           </div>
-          <button v-if="whatsNewHasPagination" class="whatsnew__next" type="button" :aria-label="t('Next')" @click="soon(t('More updates'))">
-            <MpIcon name="chevrons-right" size="md" />
-          </button>
+          <MpButton v-if="whatsNewHasPagination" class="whatsnew__next" type="button" :aria-label="t('Next')" left-icon="chevrons-right" @click="soon(t('More updates'))" />
         </div>
         <div v-if="whatsNewHasPagination" class="whatsnew__dots">
           <span class="dot dot--active" />
@@ -433,7 +432,7 @@ const learn: LearnCard[] = [
 
         <div class="card setup">
           <div class="setup__list">
-            <button
+            <MpButton
               v-for="(s, i) in setupSteps"
               :key="s.label"
               class="setup-step"
@@ -448,7 +447,7 @@ const learn: LearnCard[] = [
                 <span class="setup-step__label">{{ s.label }}</span>
                 <span class="setup-step__time">{{ s.time }}</span>
               </span>
-            </button>
+            </MpButton>
           </div>
 
           <div class="setup__detail">
@@ -458,10 +457,9 @@ const learn: LearnCard[] = [
               <p class="setup__sub">{{ currentSetup.sub }}</p>
               <div class="setup__actions">
                 <MpButton variant="primary" is-rounded @click="setupNow">{{ currentSetup.cta }}</MpButton>
-                <button class="btn btn--secondary btn--icon" type="button" @click="soon(t('Watch video'))">
-                  <MpIcon name="play-video" size="md" />
+                <MpButton class="btn btn--secondary btn--icon" type="button" left-icon="play-video" @click="soon(t('Watch video'))">
                   {{ t('Watch video') }}
-                </button>
+                </MpButton>
               </div>
             </div>
             <img :src="currentSetup.illus ?? setupBuilding" alt="" class="setup__illus">
@@ -489,20 +487,20 @@ const learn: LearnCard[] = [
       <section class="sec">
         <h3 class="sec__title">{{ t('Useful links') }}</h3>
         <div class="useful">
-          <button class="useful-link" type="button" @click="toggleAirene()">
+          <MpButton class="useful-link" type="button" @click="toggleAirene()">
             <MpIcon name="chat" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
               <span class="useful-link__title">{{ t('Live chat') }}</span>
               <span class="useful-link__desc">{{ t('Chat with our customer support for any questions or inquiries.') }}</span>
             </span>
-          </button>
-          <button class="useful-link" type="button" @click="soon(t('Help center'))">
+          </MpButton>
+          <MpButton class="useful-link" type="button" @click="soon(t('Help center'))">
             <MpIcon name="book" size="md" class="useful-link__icon" />
             <span class="useful-link__text">
               <span class="useful-link__title">{{ t('Help center') }}</span>
               <span class="useful-link__desc">{{ t('Complete guidelines for features inside Mekari ERP.') }}</span>
             </span>
-          </button>
+          </MpButton>
         </div>
       </section>
     </div>
@@ -513,7 +511,7 @@ const learn: LearnCard[] = [
     <!-- ── Demo scenario FAB ── -->
     <MpPopover id="home-demo-fab" is-close-on-select use-portal placement="top-end">
       <MpPopoverTrigger>
-        <button class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></button>
+        <MpButton class="demo-fab" :aria-label="t('Change scenario state')"><MpIcon name="sliders" size="md" color="icon.inverse" /></MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
         <p class="demo-fab-heading">{{ t('Home version') }}</p>
@@ -557,7 +555,7 @@ const learn: LearnCard[] = [
   width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
   display: inline-flex; align-items: center; justify-content: center;
   border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: #fff; cursor: pointer; z-index: 1200;
+  background: var(--mp-background-inverse, #080d0e); color: var(--mp-colors-white); cursor: pointer; z-index: 1200;
   box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2);
 }
 .demo-fab:hover { opacity: 0.9; }
@@ -706,7 +704,7 @@ const learn: LearnCard[] = [
 .btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .btn--brand {
   background: var(--mp-background-brand-bold, #029861);
-  color: #fff;
+  color: var(--mp-colors-white);
 }
 .btn--brand:hover { background: var(--mp-background-brand-bold-hovered, #0f6d4d); }
 .btn--ghost {
@@ -728,7 +726,7 @@ const learn: LearnCard[] = [
 .anomaly-stack--deck .anomaly {
   position: relative;
   z-index: 2;
-  border: 2px solid #fff;
+  border: 2px solid var(--mp-colors-white);
 }
 .anomaly-peek {
   position: absolute;
@@ -771,7 +769,7 @@ const learn: LearnCard[] = [
   gap: var(--mp-spacing-3);
 }
 .anomaly__head { display: flex; align-items: center; gap: var(--mp-spacing-3); }
-.anomaly__icon { color: #e5810f; flex-shrink: 0; }
+.anomaly__icon { color: var(--mp-colors-warning-default, #e5810f); flex-shrink: 0; }
 .anomaly__title {
   font-size: var(--mp-font-sizes-md);
   font-weight: var(--mp-font-weights-semi-bold);
@@ -901,9 +899,9 @@ const learn: LearnCard[] = [
   display: flex;
   flex-direction: column;
 }
-.wn--green    { --wn-bg: #edf9f2; background: var(--wn-bg); }
-.wn--yellow   { --wn-bg: #FFF9EA; background: var(--wn-bg); }
-.wn--blue     { --wn-bg: #eaf4fc; background: var(--wn-bg); }
+.wn--green    { --wn-bg: var(--mp-colors-success-weaker, #edf9f2); background: var(--wn-bg); }
+.wn--yellow   { --wn-bg: var(--mp-colors-warning-weaker, #FFF9EA); background: var(--wn-bg); }
+.wn--blue     { --wn-bg: var(--mp-colors-info-weaker, #eaf4fc); background: var(--wn-bg); }
 .wn__head { position: relative; z-index: 1; padding: var(--mp-spacing-6) var(--mp-spacing-6) 0; }
 .wn__title {
   margin: 0 0 var(--mp-spacing-2);
@@ -1010,8 +1008,11 @@ const learn: LearnCard[] = [
   max-height: 296px;
   overflow-y: auto;
 }
+/* MpButton centres its content (justify-content: center), which left every step
+   indented by its own text width — pin the check + text to the start edge. */
 .setup-step {
   display: flex;
+  justify-content: flex-start !important;
   align-items: center;
   gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-3);
@@ -1104,7 +1105,7 @@ const learn: LearnCard[] = [
 }
 .learn-tag--blue    { background: #eaf1fd; color: #3d5bcc; }
 .learn-tag--neutral { background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-secondary, #3a4749); }
-.learn-tag--yellow  { background: #fdf6dd; color: #a14a0b; }
+.learn-tag--yellow  { background: var(--mp-colors-warning-weaker, #fdf6dd); color: var(--mp-colors-warning-bolder, #a14a0b); }
 .learn-card__title {
   margin: 0 0 var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-lg);
@@ -1120,15 +1121,24 @@ const learn: LearnCard[] = [
 .learn-card__foot { margin-top: auto; display: flex; justify-content: flex-end; }
 
 /* ── Useful links ─────────────────────────────────────────────────────────── */
+/* Groups share the row equally (fill), exactly 24px apart; wrap below 260px each. */
 .useful {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--mp-spacing-6);
 }
+/* MpButton forces a fixed height, centred content, nowrap and semibold text —
+   reset all four so the description wraps at its max-width in regular weight. */
 .useful-link {
+  flex: 1 1 260px;
+  min-width: 0;
   display: flex;
+  justify-content: flex-start !important;
   align-items: flex-start;
   gap: var(--mp-spacing-4);
+  height: auto !important;
+  white-space: normal !important;
+  font-weight: var(--mp-font-weights-regular, 400) !important;
   background: none;
   border: none;
   padding: 0;
@@ -1138,7 +1148,7 @@ const learn: LearnCard[] = [
 .useful-link__icon { color: var(--mp-text-default, #080d0e); flex-shrink: 0; margin-top: 2px; width: 24px; height: 24px; }
 .useful-link__text { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .useful-link__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.useful-link__desc { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); max-width: 280px; }
+.useful-link__desc { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); line-height: var(--mp-line-heights-md, 20px); color: var(--mp-text-secondary); }
 .useful-link:hover .useful-link__title { text-decoration: underline; }
 
 /* ── Responsive ───────────────────────────────────────────────────────────────

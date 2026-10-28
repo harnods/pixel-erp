@@ -1,7 +1,7 @@
 <!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-quotes/views/PurchaseQuoteShowView.vue + components/show/* -->
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
@@ -10,6 +10,10 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseQuoteDetail } from '~/data/purchaseQuoteDetails'
 import { purchaseQuotes } from '~/data'
 import { infoToast } from '~/utils/toasts'
@@ -39,6 +43,17 @@ function confirmDelete() {
   toast.notify({ variant: 'success', title: `${t('Purchase quote')} ${quote.value.number} ${t('deleted')}`, rootProps: { class: 'toast-enterprise' } })
   router.push('/purchase-quotes')
 }
+const pqActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: notInPrototype },
+    { label: 'Create purchase order', show: quote.value.status === 'open', onClick: () => { router.push('/purchase-orders') } },
+    { label: 'Create purchase invoice', show: quote.value.status === 'open', onClick: notInPrototype },
+    { label: 'Edit', onClick: () => { router.push(`/purchase-quotes/${quote.value.id}/edit`) } },
+    { label: 'Duplicate', onClick: () => { router.push('/purchase-quotes/new') } },
+    { label: 'Void', onClick: notInPrototype },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: quote.value.lastUpdatedAt,
   user: quote.value.lastUpdatedBy,
@@ -173,15 +188,16 @@ function goBack() { router.push('/purchase-quotes') }
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="o in jumpResults"
                     :key="o.id"
                     class="detail-jump-item"
+                    variant="secondary"
                     @click="jumpTo(o.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Purchase Quote') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.vendor.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -220,7 +236,7 @@ function goBack() { router.push('/purchase-quotes') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')" :value="quote.vendor.name" />
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(quote.vendor.name)}`, '_blank')">{{ quote.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -416,53 +432,8 @@ function goBack() { router.push('/purchase-quotes') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Copy link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
-              <template v-if="quote.status === 'open'">
-                <MpPopoverListItem @click="router.push('/purchase-orders')">{{ t('Create purchase order') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="notInPrototype">{{ t('Create purchase invoice') }}</MpPopoverListItem>
-              </template>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="router.push(`/purchase-quotes/${quote.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="router.push('/purchase-quotes/new')">{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="pq-print" />
+        <DetailActionsMenu id="pq-actions" :groups="pqActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -773,8 +744,8 @@ function goBack() { router.push('/purchase-quotes') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

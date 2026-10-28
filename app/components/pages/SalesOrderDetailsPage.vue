@@ -1,8 +1,9 @@
 <!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/orders/views/SalesOrderShowView.vue -->
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
+  MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpToggle,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -11,9 +12,15 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import MarkSalesOrderCompletedModal from '~/components/patterns/MarkSalesOrderCompletedModal.vue'
+import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
-import { salesOrderCompletionRows } from '~/data/salesOrders'
+import { salesOrderCompletionRows, recurringSalesOrders, getRecurringForSalesOrder, persistSalesOrders, persistRecurringSalesOrders } from '~/data/salesOrders'
 import { addProductionRequest } from '~/data/productionRequests'
 
 const props = defineProps<{ orderId: string }>()
@@ -87,6 +94,174 @@ const payments = computed(() => paidAmount.value > 0
 function notInPrototype() {
   toast.notify({ variant: 'success', title: t('Not in this prototype'), rootProps: { class: 'toast-enterprise' } })
 }
+const previewOpen = ref(false)
+const pdfUrl = ref('')
+const PDF_B64 = 'JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNDIwIDI2MF0vQ29udGVudHMgNCAwIFIvUmVzb3VyY2VzPDwvRm9udDw8L0YxIDUgMCBSPj4+Pj4+ZW5kb2JqCjQgMCBvYmo8PC9MZW5ndGggMTIwPj5zdHJlYW0KQlQgL0YxIDIyIFRmIDQwIDIwMCBUZCAoU2FtcGxlIGludm9pY2UgUERGKSBUaiBFVApCVCAvRjEgMTMgVGYgNDAgMTY1IFRkIChQcmV2aWV3IHJlbmRlcmVkIGluIGFuIGlmcmFtZS4pIFRqIEVUCmVuZHN0cmVhbSBlbmRvYmoKNSAwIG9iajw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+ZW5kb2JqCnRyYWlsZXI8PC9Sb290IDEgMCBSPj4='
+if (import.meta.client) {
+  const bytes = Uint8Array.from(atob(PDF_B64), (c) => c.charCodeAt(0))
+  pdfUrl.value = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
+// ─── Recurring info drawer ──────────────────────────────────────────────────
+const sourceOrder = computed(() => salesOrders.find(so => so.id === props.orderId))
+const recurringTemplate = computed(() => {
+  const rid = sourceOrder.value?.recurringId
+  return rid ? getRecurringForSalesOrder(rid) : undefined
+})
+const hasRecurring = computed(() => !!recurringTemplate.value)
+const recurringDrawerOpen = ref(false)
+const recurringEditing = ref(false)
+const isSettingRecurring = ref(false)
+const setRecurringSendAutoEmail = ref(false)
+
+const editRepeatInterval = ref(1)
+const editRepeatUnit = ref('month')
+const editEndRepeat = ref('never')
+const editEndAfterCount = ref(12)
+const editEndOnDate = ref('')
+const editStartDate = ref('')
+
+const repeatUnitOptions = [
+  { label: 'Day(s)', value: 'day' }, { label: 'Week(s)', value: 'week' },
+  { label: 'Month(s)', value: 'month' }, { label: 'Year(s)', value: 'year' },
+]
+const endRepeatOptions = [
+  { label: 'Never', value: 'never' }, { label: 'After', value: 'after' }, { label: 'On', value: 'on' },
+]
+
+function unitLabel(unit: string) {
+  const map: Record<string, string> = { day: 'day(s)', week: 'week(s)', month: 'month(s)', year: 'year(s)' }
+  return map[unit] ?? unit
+}
+function endRepeatLabel(val: string) {
+  const map: Record<string, string> = { never: 'Never', after: 'After', on: 'On' }
+  return map[val] ?? val
+}
+function formatDateDMY(iso: string) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function todayDMY() {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function recurDmyToIso(dmy: string) {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+function openRecurringDrawer() {
+  recurringEditing.value = false
+  isSettingRecurring.value = false
+  recurringDrawerOpen.value = true
+}
+
+function startEditing() {
+  const s = recurringTemplate.value?.schedule
+  if (!s) return
+  editRepeatInterval.value = s.repeatInterval
+  editRepeatUnit.value = s.repeatUnit
+  editEndRepeat.value = s.endRepeat
+  editEndAfterCount.value = s.endAfterCount ?? 12
+  editEndOnDate.value = s.endOnDate ? formatDateDMY(s.endOnDate) : ''
+  editStartDate.value = formatDateDMY(s.startDate)
+  recurringEditing.value = true
+}
+
+function saveEditing() {
+  const tmpl = recurringTemplate.value
+  if (!tmpl?.schedule) return
+  tmpl.schedule.repeatInterval = editRepeatInterval.value
+  tmpl.schedule.repeatUnit = editRepeatUnit.value as 'day' | 'week' | 'month' | 'year'
+  tmpl.schedule.endRepeat = editEndRepeat.value as 'never' | 'after' | 'on'
+  tmpl.schedule.endAfterCount = editEndAfterCount.value
+  const [d2, m2, y2] = editStartDate.value.split('/')
+  tmpl.schedule.startDate = `${y2}-${m2}-${d2}`
+  if (editEndRepeat.value === 'on' && editEndOnDate.value) {
+    const [d3, m3, y3] = editEndOnDate.value.split('/')
+    tmpl.schedule.endOnDate = `${y3}-${m3}-${d3}`
+  }
+  recurringEditing.value = false
+  toast.notify({ variant: 'success', title: t('Recurring settings updated') })
+}
+
+function toggleAutoEmail() {
+  const tmpl = recurringTemplate.value
+  if (tmpl?.schedule) {
+    tmpl.schedule.sendAutoEmail = !tmpl.schedule.sendAutoEmail
+    toast.notify({ variant: 'success', title: t(tmpl.schedule.sendAutoEmail ? 'Automatic email enabled' : 'Automatic email disabled') })
+  }
+}
+
+function openSetRecurringDrawer() {
+  editRepeatInterval.value = 1
+  editRepeatUnit.value = 'month'
+  editEndRepeat.value = 'never'
+  editEndAfterCount.value = 12
+  editEndOnDate.value = ''
+  editStartDate.value = todayDMY()
+  setRecurringSendAutoEmail.value = false
+  isSettingRecurring.value = true
+  recurringEditing.value = false
+  recurringDrawerOpen.value = true
+}
+
+function saveSetRecurring() {
+  const ord = order.value
+  if (!ord) return
+  const newId = `rso-${Date.now()}`
+  recurringSalesOrders.push({
+    id: newId,
+    templateName: `${ord.customer.name} - Recurring`,
+    customer: ord.customer,
+    frequency: `Every ${editRepeatInterval.value} ${editRepeatUnit.value}`,
+    amount: ord.total,
+    nextDate: recurDmyToIso(editStartDate.value),
+    status: 'active',
+    createdCount: 0,
+    schedule: {
+      repeatInterval: editRepeatInterval.value,
+      repeatUnit: editRepeatUnit.value as 'day' | 'week' | 'month' | 'year',
+      endRepeat: editEndRepeat.value as 'never' | 'after' | 'on',
+      endAfterCount: editEndRepeat.value === 'after' ? editEndAfterCount.value : undefined,
+      endOnDate: editEndRepeat.value === 'on' ? recurDmyToIso(editEndOnDate.value) : undefined,
+      startDate: recurDmyToIso(editStartDate.value),
+      sendAutoEmail: setRecurringSendAutoEmail.value,
+    },
+  } as any)
+  persistRecurringSalesOrders()
+  const src = sourceOrder.value
+  if (src) { src.recurringId = newId; persistSalesOrders() }
+  isSettingRecurring.value = false
+  recurringDrawerOpen.value = false
+  toast.notify({ variant: 'success', title: t('Recurring sales order created') })
+}
+
+const soActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: () => { previewOpen.value = true } },
+    // Downstream documents, only while the order still has something to fulfil.
+    { label: 'Create sales delivery', show: isOpenish.value, onClick: () => { router.push({ path: '/sales-deliveries/new', query: { order: order.value.id } }) } },
+    { label: 'Create sales invoice', show: isOpenish.value, onClick: () => { router.push('/sales-invoices/new') } },
+    { label: 'Create progress invoice', show: isOpenish.value, onClick: () => { router.push('/progress-invoice') } },
+    { label: 'Create proforma invoice', show: isOpenish.value, onClick: () => { router.push('/proforma-invoice') } },
+    { label: 'Add payment', show: isOpenish.value, onClick: notInPrototype },
+    { label: 'Send to fulfillment', show: isOpenish.value, onClick: sendToFulfillment },
+    { label: 'Create production request', onClick: handleCreateProductionRequest },
+    { label: 'Mark as completed', onClick: () => { markCompleteOpen.value = true }, show: canMarkCompleted.value },
+  ],
+  [
+    { label: 'Edit', onClick: () => { router.push(`/sales-orders/${order.value.id}/edit`) } },
+    { label: 'Set as recurring', onClick: openSetRecurringDrawer, show: !hasRecurring.value },
+    { label: 'Duplicate', onClick: () => { router.push('/sales-orders/new') } },
+    { label: 'Void', onClick: notInPrototype },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
+
 const activityEntries = computed(() => [{
   date: order.value.lastUpdatedAt,
   user: order.value.lastUpdatedBy,
@@ -234,15 +409,16 @@ function copyLink() {
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="o in jumpResults"
                     :key="o.id"
+                    variant="secondary"
                     class="detail-jump-item"
                     @click="jumpTo(o.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Sales Order') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No orders found') }}</p>
                 </div>
               </div>
@@ -253,6 +429,11 @@ function copyLink() {
 
       <!-- Right-side icon actions — only when the page has an approval flow -->
       <div v-if="hasApproval" class="detail-titlerow-right">
+          <MpTooltip v-if="hasRecurring" id="detail-tt-recurring" :label="t('Recurring settings')" placement="bottom" use-portal>
+            <MpButton class="detail-icon-btn" :aria-label="t('Recurring settings')" @click="openRecurringDrawer">
+              <MpIcon name="refresh" size="md" />
+            </MpButton>
+          </MpTooltip>
           <MpTooltip id="detail-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
             <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
               <MpIcon name="task-todo" size="md" />
@@ -281,7 +462,9 @@ function copyLink() {
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')" :value="order.customer.name" />
+            <ContentList :label="t('Customer')">
+              <a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(order.customer.name)}`, '_blank')">{{ order.customer.name }}</a>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -512,61 +695,8 @@ function copyLink() {
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="copyLink">{{ t('Copy link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
-              <template v-if="isOpenish">
-                <MpPopoverListItem @click="router.push({ path: '/sales-deliveries/new', query: { order: order.id } })">{{ t('Create sales delivery') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="router.push('/progress-invoice')">{{ t('Create progress invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="router.push('/proforma-invoice')">{{ t('Create proforma invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="notInPrototype">{{ t('Add payment') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="sendToFulfillment">{{ t('Send to fulfillment') }}</MpPopoverListItem>
-              </template>
-              <MpPopoverListItem @click="handleCreateProductionRequest">{{ t('Request production') }}</MpPopoverListItem>
-              <!-- Only Open / Partially sent can be completed — hidden for Closed / Voided -->
-              <MpPopoverListItem v-if="canMarkCompleted" @click="markCompleteOpen = true">{{ t('Mark as completed') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="router.push(`/sales-orders/${order.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Set as recurring') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="router.push('/sales-orders/new')">{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="so-print" />
+        <DetailActionsMenu id="so-actions" :groups="soActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -594,6 +724,138 @@ function copyLink() {
       :rows="markCompleteRows"
       @confirm="confirmMarkComplete"
     />
+
+    <FilePreviewModal :open="previewOpen" :src="pdfUrl" :filename="`sales-order-${order.number}.pdf`" @close="previewOpen = false" />
+
+    <!-- ── Recurring settings drawer ── -->
+    <ErpDrawer :is-open="recurringDrawerOpen" :title="isSettingRecurring ? t('Set as recurring') : recurringEditing ? t('Edit recurring settings') : t('Recurring settings')" @close="recurringDrawerOpen = false; isSettingRecurring = false">
+      <template #body>
+        <!-- ── Set as recurring (no template yet) ── -->
+        <template v-if="isSettingRecurring">
+          <MpFormControl id="recur-set-repeat">
+            <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+            <div class="recur-edit-repeat-row">
+              <MpInput id="recur-set-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+              <MpAutocomplete id="recur-set-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-set-end">
+            <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+            <MpAutocomplete id="recur-set-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+            <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+              <MpInput id="recur-set-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+              <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+            </div>
+            <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+              <MpDatePicker id="recur-set-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-set-start">
+            <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+            <MpDatePicker id="recur-set-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </MpFormControl>
+
+          <div class="recur-view-row recur-auto-toggle">
+            <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+            <MpToggle :is-checked="setRecurringSendAutoEmail" @change="setRecurringSendAutoEmail = !setRecurringSendAutoEmail" />
+          </div>
+        </template>
+
+        <template v-else-if="recurringTemplate?.schedule">
+          <!-- ── View mode ── -->
+          <template v-if="!recurringEditing">
+            <div class="recur-view-section">
+              <div class="recur-view-header">
+                <h3 class="recur-view-title">{{ t('Schedule') }}</h3>
+                <MpTextlink @click="startEditing">{{ t('Edit') }}</MpTextlink>
+              </div>
+
+              <div class="recur-view-row">
+                <span class="recur-view-label">{{ t('Repeats every') }}</span>
+                <span class="recur-view-value">{{ recurringTemplate.schedule.repeatInterval }} {{ unitLabel(recurringTemplate.schedule.repeatUnit) }}</span>
+              </div>
+              <div class="recur-view-row">
+                <span class="recur-view-label">{{ t('End repeat') }}</span>
+                <span class="recur-view-value">
+                  {{ endRepeatLabel(recurringTemplate.schedule.endRepeat) }}
+                  <template v-if="recurringTemplate.schedule.endRepeat === 'after'"> — {{ recurringTemplate.schedule.endAfterCount }} {{ t('occurrences') }}</template>
+                  <template v-if="recurringTemplate.schedule.endRepeat === 'on'"> — {{ formatDateDMY(recurringTemplate.schedule.endOnDate!) }}</template>
+                </span>
+              </div>
+              <div class="recur-view-row">
+                <span class="recur-view-label">{{ t('Start date') }}</span>
+                <span class="recur-view-value">{{ formatDateDMY(recurringTemplate.schedule.startDate) }}</span>
+              </div>
+            </div>
+
+            <div class="recur-view-row recur-auto-toggle">
+              <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+              <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+            </div>
+          </template>
+
+          <!-- ── Edit mode ── -->
+          <template v-else>
+            <MpFormControl id="recur-edit-repeat">
+              <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+              <div class="recur-edit-repeat-row">
+                <MpInput id="recur-edit-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+                <MpAutocomplete id="recur-edit-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+              </div>
+            </MpFormControl>
+
+            <MpFormControl id="recur-edit-end">
+              <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+              <MpAutocomplete id="recur-edit-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+              <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+                <MpInput id="recur-edit-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+                <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+              </div>
+              <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+                <MpDatePicker id="recur-edit-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+              </div>
+            </MpFormControl>
+
+            <MpFormControl id="recur-edit-start">
+              <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+              <MpDatePicker id="recur-edit-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+            </MpFormControl>
+
+            <div class="recur-view-row recur-auto-toggle">
+              <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+              <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+            </div>
+          </template>
+
+          <!-- ── Recurring history (view mode only) ── -->
+          <div v-if="!recurringEditing && recurringTemplate.history?.length" class="recur-history-section">
+            <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+            <div class="recur-history-list">
+              <div v-for="entry in recurringTemplate.history" :key="entry.orderNumber" class="recur-history-item">
+                <span class="recur-history-number">Sales Order #{{ entry.orderNumber }}</span>
+                <span class="recur-history-date">{{ formatDateDMY(entry.date) }}</span>
+                <ErpStatusBadge :status="entry.status.toLowerCase()" />
+              </div>
+            </div>
+          </div>
+          <div v-else-if="!recurringEditing" class="recur-history-section">
+            <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+            <p class="recur-history-empty">{{ t('No orders created from this recurring template yet.') }}</p>
+          </div>
+        </template>
+      </template>
+
+      <template v-if="isSettingRecurring" #footer>
+        <button class="btn-enterprise btn-enterprise--ghost" @click="isSettingRecurring = false; recurringDrawerOpen = false">{{ t('Cancel') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="saveSetRecurring">{{ t('Save') }}</button>
+      </template>
+      <template v-else-if="recurringEditing" #footer>
+        <button class="btn-enterprise btn-enterprise--ghost" @click="recurringEditing = false">{{ t('Cancel') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="saveEditing">{{ t('Save changes') }}</button>
+      </template>
+    </ErpDrawer>
   </div>
 </template>
 
@@ -884,8 +1146,8 @@ function copyLink() {
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 
@@ -1015,4 +1277,25 @@ function copyLink() {
 }
 /* Footer buttons use the shared btn-enterprise--{secondary,primary} classes
    (erp.css) — no page-local button styling / hardcoded brand colors. */
+.recur-view-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.recur-view-header { display: flex; align-items: center; justify-content: space-between; }
+.recur-view-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-view-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.recur-view-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 160px; flex-shrink: 0; }
+.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.recur-auto-toggle { padding-top: var(--mp-spacing-2); }
+.recur-edit-repeat-row { display: flex; gap: var(--mp-spacing-2); }
+.recur-edit-num { flex: 0 0 80px; }
+.recur-edit-unit { flex: 1; }
+.recur-edit-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.recur-edit-count { flex: 0 0 80px; }
+.recur-edit-sublabel { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.recur-history-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); padding-top: var(--mp-spacing-4); }
+.recur-history-heading { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-history-list { display: flex; flex-direction: column; }
+.recur-history-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default)); }
+.recur-history-item:last-child { border-bottom: none; }
+.recur-history-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); min-width: 180px; }
+.recur-history-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); flex: 1; }
+.recur-history-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

@@ -9,7 +9,7 @@
  */
 import { computed, ref, nextTick } from 'vue'
 import {
-  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css,
 } from '@mekari/pixel3'
 
 /** `group` (optional) prints a small header above the first option of each run of the same group. */
@@ -33,7 +33,10 @@ const props = withDefaults(defineProps<{
   isDisabled?: boolean
   /** No-match copy. UXW blank-slate pattern: "No matching {object} found". */
   emptyText?: string
-}>(), { width: '176px', isClearable: true, variant: 'field', isDisabled: false, emptyText: 'No results found' })
+  /** Read-only: the menu never opens and the × is withheld. Also used for a
+   *  value forced by another field — a cascade's auto-filled level. */
+  disabled?: boolean
+}>(), { width: '176px', isClearable: true, variant: 'field', isDisabled: false, disabled: false, emptyText: 'No results found' })
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -53,7 +56,9 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-function focusOpen() { if (props.isDisabled) return; if (!open.value) { open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) } }
+// `disabled` (main) and `isDisabled` (WMS cutover cells) mean the same thing.
+const isOff = computed(() => props.disabled || props.isDisabled)
+function focusOpen() { if (isOff.value || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
@@ -64,7 +69,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="[`efs--${variant}`, { 'efs--filled': !!modelValue && isClearable && !open, 'efs--disabled': isDisabled }]" :style="{ '--efs-w': width }">
+  <div class="efs" :class="[`efs--${variant}`, { 'efs--filled': !!modelValue && isClearable && !open && !isOff, 'efs--disabled': isOff, 'efs--full': width === '100%' }]" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -74,7 +79,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="modelValue ? selectedLabel : placeholder"
-            :disabled="isDisabled"
+            :disabled="isOff"
+            :readonly="isOff"
+            :tabindex="isOff ? -1 : undefined"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -99,14 +106,19 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
       </MpPopoverContent>
     </MpPopover>
 
-    <button v-if="modelValue && isClearable && !open" type="button" class="efs-clear" aria-label="Clear" @click.stop="pick('')">
+    <MpButton v-if="modelValue && isClearable && !open && !isOff" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
       <MpIcon name="close" size="sm" />
-    </button>
+    </MpButton>
   </div>
 </template>
 
 <style scoped>
 .efs { position: relative; display: inline-flex; }
+/* width="100%" means "fill the form field". The wrapper is inline-flex, so it
+   sizes to its content and the trigger's own width:100% resolves against that
+   — the field ends up narrower than its label and clips the option text. Making
+   the wrapper block-level is what actually lets 100% reach the FormControl. */
+.efs--full { display: flex; width: 100%; }
 .efs-trigger {
   /* Height + resting border MUST equal MpInput md (rule/select-field-metrics):
      38px tall (--mp-sizes-9.5), border = --mp-colors-border-form (#1d1f2429).
@@ -118,7 +130,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
   border: 1px solid var(--mp-colors-border-form, #1d1f2429);
   border-radius: var(--mp-radii-md); cursor: text;
 }
-.efs-trigger:focus-within { border-color: #8c9596; box-shadow: 0 0 0 1px #8c9596; }
+.efs-trigger:focus-within { border-color: var(--mp-colors-border-bold); box-shadow: 0 0 0 1px var(--mp-colors-border-bold); } /* pixel-police-allow-shadow */
 .efs-input {
   flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); cursor: text;
@@ -137,6 +149,13 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 
 .efs-group { align-self: stretch; width: 100%; box-sizing: border-box; text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); border-top: 1px solid var(--mp-colors-border-default, #e7edf5); }
 .efs-group:first-child { border-top: 0; }
+.efs--disabled .efs-trigger {
+  background: var(--mp-colors-background-disabled, #f5f5f5);
+  border-color: var(--mp-colors-border-form, #1d1f2429);
+  cursor: default; pointer-events: none;
+}
+.efs--disabled .efs-input { color: var(--mp-text-secondary); cursor: default; }
+.efs--disabled .efs-chevron { color: var(--mp-text-disabled, #9ca3af); }
 .efs-empty { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* ── `cell` variant — fills a table cell edge-to-edge ──────────────────────

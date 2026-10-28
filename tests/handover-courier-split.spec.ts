@@ -79,3 +79,39 @@ describe('handoverToCourierBulk — splits a mixed-courier batch into separate s
     expect(getDeliveryTask(a.id)!.shipmentNo).toBe(getDeliveryTask(b.id)!.shipmentNo)
   })
 })
+
+/**
+ * The seeded demo for this flow: five ready-to-ship packages sitting in ONE
+ * warehouse under THREE couriers, so the New shipment screen can be walked as the
+ * operator actually works — scan whatever is in front of you into one draft, save
+ * once, get one document per courier. Guarding the seed as well as the mechanism,
+ * because the demo is only useful if the mix is actually there to scan.
+ */
+describe('seeded demo: one warehouse, mixed couriers, one draft', () => {
+  it('ships five ready-to-ship packages that split 2 / 2 / 1 on save', async () => {
+    await import('~/data/seedCoverage')
+    const { deliveryTasks } = await import('~/data/deliveryTasks')
+
+    const demo = deliveryTasks.filter(t => t.salesNo.startsWith('SHIP-SPLIT-'))
+    expect(demo, 'the split demo should be seeded').toHaveLength(5)
+    expect(demo.every(t => t.status === 'ready to ship')).toBe(true)
+    // One warehouse — a shipment batch never spans two.
+    expect(new Set(demo.map(t => t.warehouseId)).size).toBe(1)
+    // …but three couriers, which is what forces the split.
+    expect(new Set(demo.map(t => t.courier)).size).toBe(3)
+
+    const results = handoverToCourierBulk(demo.map(t => t.id), {
+      assignee: 'Test Operator',
+      transactionDate: '2026-09-18',
+    })
+
+    expect(results).toHaveLength(3)
+    expect(results.map(r => r.shippedCount).sort()).toEqual([1, 2, 2])
+    // Every document is one courier's, and no two share a number.
+    expect(new Set(results.map(r => r.shipmentNo)).size).toBe(3)
+    for (const r of results) {
+      const inDoc = demo.filter(t => t.shipmentNo === r.shipmentNo)
+      expect(new Set(inDoc.map(t => t.courier)).size, r.courier).toBe(1)
+    }
+  })
+})

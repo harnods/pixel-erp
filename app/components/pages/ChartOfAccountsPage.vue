@@ -219,7 +219,7 @@ onMounted(() => { setTimeout(() => { loading.value = false }, 400) })
         <span v-else class="coa-caret-spacer" />
         <span class="cell-link" @click.stop="openDetail(row as unknown as Row)">{{ (row as unknown as Row).code }}</span>
         <MpTooltip v-if="(row as unknown as Row).locked || (row as unknown as Row).isDefault" :label="lockTooltip(row as unknown as Row)" placement="top" use-portal>
-          <span class="coa-lock"><MpIcon name="security" size="sm" color="icon.secondary" /></span>
+          <span class="coa-lock"><MpIcon name="security" size="sm" color="icon.default" /></span>
         </MpTooltip>
       </div>
     </template>

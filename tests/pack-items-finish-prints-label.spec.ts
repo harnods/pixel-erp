@@ -10,6 +10,20 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+
+// jsPDF can't render under happy-dom, so the real generator never resolves and
+// `pdfOpen` never flips — the preview this test is about would never appear.
+// Same stub as tests/package-shipping-details.spec.ts, which covers the other
+// half of this flow: what's under test is the print → preview → navigate
+// sequence, not the PDF bytes.
+// The preview modal renders the doc via doc.output('blob'), so the stub has to
+// answer that much — the PDF's contents are not what this test is about.
+vi.mock('~/utils/shippingLabelPdf', () => ({
+  generateShippingLabelPdf: vi.fn(async (entries: unknown[]) => ({
+    entries,
+    output: (kind: string) => (kind === 'blob' ? new Blob(['%PDF-1.4'], { type: 'application/pdf' }) : ''),
+  })),
+}))
 import PackItemsPage from '~/components/pages/PackItemsPage.vue'
 import { addOutgoing, type OutgoingOrder } from '~/data/outgoing'
 import { addPickingTask, getPickingTask } from '~/data/pickingTasks'

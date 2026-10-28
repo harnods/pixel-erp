@@ -254,14 +254,14 @@ function onContinue() {
               :options="COA_CATEGORIES"
               @update:model-value="(v: string) => (categoryFilter = v)"
             />
-            <button
+            <MpButton
               v-if="hasFilter"
               type="button"
               class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
               @click="clearFilters"
             >
               {{ t('Reset filter') }}
-            </button>
+            </MpButton>
           </div>
 
           <div class="coa-filter-right">
@@ -274,7 +274,7 @@ function onContinue() {
                 :placeholder="`${t('Search code or account name')}...`"
                 :aria-label="t('Search code or account name')"
               >
-              <button
+              <MpButton
                 v-if="search"
                 class="coa-search-clear"
                 type="button"
@@ -282,7 +282,7 @@ function onContinue() {
                 @click="search = ''"
               >
                 <MpIcon name="close" size="sm" />
-              </button>
+              </MpButton>
             </div>
 
             <MpButton variant="tertiary" is-rounded @click="openImport">{{ t('Import') }}</MpButton>
@@ -410,9 +410,9 @@ function onContinue() {
                 <li>{{ t('Upload the completed file below.') }}</li>
               </ul>
 
-              <button type="button" class="btn-enterprise btn-enterprise--secondary">
+              <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary">
                 {{ t('Download template file') }}
-              </button>
+              </MpButton>
 
               <FormatRequirementsAccordion :requirements="coaFormatRequirements" />
 
@@ -447,7 +447,7 @@ function onContinue() {
               </div>
 
               <div v-else-if="importPhase === 'done'" class="coa-import-done">
-                <MpIcon name="check" size="sm" color="icon.positive" />
+                <MpIcon name="check" size="sm" color="icon.success" />
                 <span>{{ importedCount }} {{ t('accounts imported') }}</span>
               </div>
             </div>
@@ -472,15 +472,15 @@ function onContinue() {
 
     <!-- ── Sticky footer (first step — no Back) ── -->
     <footer class="coa-footer">
-      <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">
+      <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="cancel">
         {{ t('Cancel') }}
-      </button>
-      <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">
+      </MpButton>
+      <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="saveDraft">
         {{ t('Save as draft') }}
-      </button>
-      <button type="button" class="btn-enterprise btn-enterprise--primary" @click="onContinue">
+      </MpButton>
+      <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="onContinue">
         {{ t('Continue') }}
-      </button>
+      </MpButton>
     </footer>
   </div>
 </template>

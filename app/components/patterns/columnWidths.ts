@@ -15,6 +15,7 @@
  */
 export type ColumnKind =
   | 'date'     // any date column (created, due, transaction date …)
+  | 'datetime' // a timestamp, optionally stacked over a byline ("by <user>")
   | 'number'   // document / transaction number (often a link)
   | 'name'     // vendor / customer / beneficiary / warehouse / product … any name
   | 'status'   // status column rendered with a badge
@@ -38,7 +39,20 @@ export interface ColWidthRange {
  */
 export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   date:    { minWidth: '160px', maxWidth: '160px' }, // fixed
-  number:  { minWidth: '160px', maxWidth: '240px' },
+  // A timestamp column. Measured, "30/01/2026, 11.00" is 123px and a 160px
+  // column gives 136px of content, so this is NOT about clipping — it is
+  // breathing room for a cell carrying date, time and often a byline under it,
+  // which reads cramped at the bare-date width.
+  datetime: { minWidth: '220px', maxWidth: '220px' }, // fixed
+  // 240 min, not 160. Two things have to fit here at the MINIMUM, because a
+  // saturated table never grows a column past it:
+  //   • the codified "<Module name> #<number>" format (~141px for
+  //     "Sales Invoice #40150"), and
+  //   • up to two trailing status icons in the same cell (2x20px + 8px gap = 48px),
+  //     e.g. the e-faktur and attachment markers on Sales invoices.
+  // 141 + 8 + 48 = 197, plus the cell's 24px padding = 221. 240 clears that with
+  // room to spare; 160 and 200 both truncated the ID format they were meant to show.
+  number:  { minWidth: '240px', maxWidth: '280px' },
   name:    { minWidth: '240px', maxWidth: '280px' },
   status:  { minWidth: '128px', maxWidth: '160px' },
   amount:  { minWidth: '160px', maxWidth: '240px' },

@@ -21,6 +21,9 @@ export interface SalesInvoiceFiltersValue {
   totalMax: string
   tagsComparator: TagsComparator
   tags: string[]
+  /** Faktur's own status — Normal / Pengganti / Diganti / … (taxDocumentStatus). */
+  taxDocStatus: string[]
+  /** What DJP replied — Draft / Processing / Approved / Rejected. */
   djpStatus: string[]
 }
 
@@ -37,6 +40,7 @@ export function emptySalesInvoiceFilters(): SalesInvoiceFiltersValue {
     totalMax: '',
     tagsComparator: 'isAnyOf',
     tags: [],
+    taxDocStatus: [],
     djpStatus: [],
   }
 }
@@ -59,8 +63,11 @@ export function emptySalesInvoiceFilters(): SalesInvoiceFiltersValue {
  * so they render a plain bold field-label rather than sitting inside
  * MpFormControl (which breaks their MpPopoverTrigger's cloneVNode injection).
  *
- * DJP status filters on the invoice's most recent tax document status (or
- * "Not generated" when it has none) — see getTaxDocumentsForInvoice /
+ * Tax document status and DJP status are two separate axes, and both filter on
+ * the invoice's CURRENT tax document (currentTaxDocument), or match nothing when
+ * it has none. Tax document status is the faktur's own status — Normal /
+ * Pengganti / Diganti / Dibatalkan; DJP status is what DJP replied. Keeping them
+ * apart is rule/efaktur-status-axes — see TAX_DOCUMENT_STATUS_LABELS /
  * DJP_STATUS_CONFIG in ~/data/taxDocuments.
  */
 import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
@@ -87,6 +94,7 @@ const props = defineProps<{
   columns: { key: string; label: string }[]
   statusOptions: { value: string; label: string }[]
   tagOptions: string[]
+  taxDocStatusOptions: { value: string; label: string }[]
   djpStatusOptions: { value: string; label: string }[]
   /** Copy overrides (prod parity); defaults keep the original wording. */
   keywordLabel?: string
@@ -98,8 +106,35 @@ const emit = defineEmits<{
   (e: 'apply', v: SalesInvoiceFiltersValue): void
 }>()
 
+const { t } = useLocale()
+
 const draft = reactive<SalesInvoiceFiltersValue>({ ...props.modelValue })
-watch(() => props.isOpen, (open) => { if (open) Object.assign(draft, props.modelValue) })
+
+/**
+ * The two tax checklists collapse; the rest of the drawer doesn't.
+ *
+ * They are the specialist pair — most users never touch them — and with Status
+ * they put 15 checkboxes in a row, which is what made this drawer the longest in
+ * the ERP (4 checklist groups; every other drawer has 2–3). Collapsed they read
+ * as two lines.
+ *
+ * Opened on a filter that is ALREADY applied, so an active filter is never
+ * hidden behind a closed section — that is the one thing collapsing must not do.
+ */
+const taxDocStatusOpen = ref(false)
+const djpStatusOpen = ref(false)
+
+watch(() => props.isOpen, (open) => {
+  if (!open) return
+  Object.assign(draft, props.modelValue)
+  taxDocStatusOpen.value = draft.taxDocStatus.length > 0
+  djpStatusOpen.value = draft.djpStatus.length > 0
+})
+
+/** "2 selected" / "None selected" under a collapsed section's label. */
+function selectedPreview(n: number) {
+  return n === 0 ? t('None selected') : `${n} ${t('selected')}`
+}
 
 function close() { emit('update:isOpen', false) }
 function apply() { emit('apply', { ...draft }); close() }
@@ -107,6 +142,9 @@ function clearAll() { Object.assign(draft, emptySalesInvoiceFilters()) }
 
 function toggleStatus(value: string) {
   draft.status = draft.status.includes(value) ? draft.status.filter((v) => v !== value) : [...draft.status, value]
+}
+function toggleTaxDocStatus(value: string) {
+  draft.taxDocStatus = draft.taxDocStatus.includes(value) ? draft.taxDocStatus.filter((v) => v !== value) : [...draft.taxDocStatus, value]
 }
 function toggleDjpStatus(value: string) {
   draft.djpStatus = draft.djpStatus.includes(value) ? draft.djpStatus.filter((v) => v !== value) : [...draft.djpStatus, value]
@@ -133,229 +171,201 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 </script>
 
 <template>
-  <Transition name="sif-filters">
-    <div v-if="isOpen" class="sif-filters-overlay">
-      <div class="sif-filters-panel" role="dialog" aria-label="All filters">
-        <header class="sif-filters-header">
-          <span class="sif-filters-title">All filters</span>
-          <MpButton class="sif-filters-close" aria-label="Close" @click="close">
-            <MpIcon name="close" size="md" />
-          </MpButton>
-        </header>
-
-        <div class="sif-filters-body">
-          <!-- Keywords — text input with an inline column-scope dropdown suffix. -->
-          <MpFormControl :id="`${id}-keyword-fc`">
-            <MpFormLabel>{{ keywordLabel ?? 'Keywords' }}</MpFormLabel>
-            <div class="sif-keyword">
-              <input
-                v-model="draft.keyword"
-                class="sif-keyword-input"
-                type="text"
-                :placeholder="keywordPlaceholder ?? 'Search keywords...'"
-                @keydown.enter.prevent="apply"
-              >
-              <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
-                <MpPopoverTrigger>
-                  <MpButton class="sif-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
-                    <span class="sif-keyword-scope-label">{{ keywordColumnLabel }}</span>
-                    <MpIcon name="chevrons-down" size="sm" />
-                  </MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="keywordColumnOpen = false" @escape="keywordColumnOpen = false">
-                  <MpPopoverList>
-                    <MpPopoverListItem :is-active="draft.keywordColumn === 'all'" @click="draft.keywordColumn = 'all'">
-                      All columns
-                    </MpPopoverListItem>
-                    <MpPopoverListItem
-                      v-for="col in columns" :key="col.key"
-                      :is-active="draft.keywordColumn === col.key" @click="draft.keywordColumn = col.key"
-                    >
-                      {{ col.label }}
-                    </MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-            </div>
-          </MpFormControl>
-
-          <!-- Transaction date — past-preset range (Today / Last 7 / Last 30 days). -->
-          <div class="sif-field">
-            <span class="sif-field-label">Transaction date</span>
-            <AdvancedDateRangePicker
-              :id="`${id}-transactiondate`" :model-value="draft.transactionDate"
-              is-full-width hide-label placeholder="Select transaction date"
-              @update:model-value="draft.transactionDate = $event"
-            />
-          </div>
-
-          <!-- Due date — forward-looking range (Next 7 / 14 / 30 days). -->
-          <div class="sif-field">
-            <span class="sif-field-label">Due date</span>
-            <AdvancedDateRangePicker
-              :id="`${id}-duedate`" :model-value="draft.dueDate" direction="future"
-              is-full-width hide-label placeholder="Select due date"
-              @update:model-value="draft.dueDate = $event"
-            />
-          </div>
-
-          <div class="sif-field">
-            <span class="sif-field-label">Status</span>
-            <ul class="sif-checklist">
-              <li
-                v-for="opt in statusOptions" :key="opt.value"
-                class="sif-check-item" @click="toggleStatus(opt.value)"
-              >
-                <span @click.stop>
-                  <MpCheckbox :id="`${id}-status-${opt.value}`" :is-checked="draft.status.includes(opt.value)" @change="() => toggleStatus(opt.value)" />
-                </span>
-                <span class="sif-check-label">{{ opt.label }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <!-- DJP status — the invoice's most recent tax document status, or
-               "Not generated" when it has none yet (see getTaxDocumentsForInvoice).
-               Hidden entirely (parent passes an empty list) until at least one
-               invoice on the table has a tax document. -->
-          <div v-if="djpStatusOptions.length" class="sif-field">
-            <span class="sif-field-label">DJP status</span>
-            <ul class="sif-checklist">
-              <li
-                v-for="opt in djpStatusOptions" :key="opt.value"
-                class="sif-check-item" @click="toggleDjpStatus(opt.value)"
-              >
-                <span @click.stop>
-                  <MpCheckbox :id="`${id}-djpstatus-${opt.value}`" :is-checked="draft.djpStatus.includes(opt.value)" @change="() => toggleDjpStatus(opt.value)" />
-                </span>
-                <span class="sif-check-label">{{ opt.label }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <div class="sif-field">
-            <span class="sif-field-label">Total (Rp)</span>
-            <AmountComparatorField
-              :id="`${id}-total`"
-              :comparator="draft.totalComparator"
-              :value="draft.totalValue"
-              :min="draft.totalMin"
-              :max="draft.totalMax"
-              @update:comparator="draft.totalComparator = $event"
-              @update:value="draft.totalValue = $event"
-              @update:min="draft.totalMin = $event"
-              @update:max="draft.totalMax = $event"
-            />
-          </div>
-
-          <!-- Tags — comparator prefix select + typeable tag input (chips), same
-               shape as the Total (Rp) field above. -->
-          <div class="sif-field">
-            <span class="sif-field-label">Tags</span>
-            <div class="sif-tags">
-              <MpPopover
-                :id="`${id}-tags-comparator`" is-manual :is-open="tagsComparatorOpen"
-                use-portal :is-keep-alive="false" placement="bottom-start"
-                @open="tagsComparatorOpen = true" @close="tagsComparatorOpen = false"
-              >
-                <MpPopoverTrigger>
-                  <MpButton class="sif-tags-prefix" @click.stop="tagsComparatorOpen = !tagsComparatorOpen">
-                    <span>{{ TAGS_COMPARATOR_LABELS[draft.tagsComparator] }}</span>
-                    <MpIcon name="chevrons-down" size="sm" />
-                  </MpButton>
-                </MpPopoverTrigger>
-                <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="tagsComparatorOpen = false" @escape="tagsComparatorOpen = false">
-                  <MpPopoverList>
-                    <MpPopoverListItem
-                      v-for="c in TAGS_COMPARATORS" :key="c"
-                      :is-active="c === draft.tagsComparator" @click="selectTagsComparator(c)"
-                    >
-                      {{ TAGS_COMPARATOR_LABELS[c] }}
-                    </MpPopoverListItem>
-                  </MpPopoverList>
-                </MpPopoverContent>
-              </MpPopover>
-              <div class="sif-tags-field">
-                <span v-for="(tag, i) in draft.tags" :key="`${i}-${tag}`" class="sif-tag-chip">
-                  {{ tag }}
-                  <button type="button" class="sif-tag-remove" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
-                    <MpIcon name="close" size="sm" />
-                  </button>
-                </span>
-                <input
-                  :id="`${id}-tags-input`"
-                  v-model="tagDraft"
-                  class="sif-tag-input"
-                  type="text"
-                  placeholder=""
-                  @keydown.enter.prevent="addTag"
-                  @keydown.delete="onTagBackspace"
+  <ErpDrawer :is-open="isOpen" title="All filters" @close="close">
+    <template #body>
+      <!-- Keywords — text input with an inline column-scope dropdown suffix. -->
+      <MpFormControl :id="`${id}-keyword-fc`">
+        <MpFormLabel>{{ keywordLabel ?? 'Keywords' }}</MpFormLabel>
+        <div class="sif-keyword">
+          <input
+            v-model="draft.keyword"
+            class="sif-keyword-input"
+            type="text"
+            :placeholder="keywordPlaceholder ?? 'Search keywords...'"
+            @keydown.enter.prevent="apply"
+          >
+          <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
+            <MpPopoverTrigger>
+              <MpButton class="sif-keyword-scope" @click.stop="keywordColumnOpen = !keywordColumnOpen">
+                <span class="sif-keyword-scope-label">{{ keywordColumnLabel }}</span>
+                <MpIcon name="chevrons-down" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="keywordColumnOpen = false" @escape="keywordColumnOpen = false">
+              <MpPopoverList>
+                <MpPopoverListItem :is-active="draft.keywordColumn === 'all'" @click="draft.keywordColumn = 'all'">
+                  All columns
+                </MpPopoverListItem>
+                <MpPopoverListItem
+                  v-for="col in columns" :key="col.key"
+                  :is-active="draft.keywordColumn === col.key" @click="draft.keywordColumn = col.key"
                 >
-              </div>
-            </div>
+                  {{ col.label }}
+                </MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+      </MpFormControl>
+
+      <!-- Transaction date — past-preset range (Today / Last 7 / Last 30 days). -->
+      <div class="sif-field">
+        <span class="sif-field-label">{{ t('Transaction date') }}</span>
+        <AdvancedDateRangePicker
+          :id="`${id}-transactiondate`" :model-value="draft.transactionDate"
+          is-full-width hide-label placeholder="Select transaction date"
+          @update:model-value="draft.transactionDate = $event"
+        />
+      </div>
+
+      <!-- Due date — forward-looking range (Next 7 / 14 / 30 days). -->
+      <div class="sif-field">
+        <span class="sif-field-label">{{ t('Due date') }}</span>
+        <AdvancedDateRangePicker
+          :id="`${id}-duedate`" :model-value="draft.dueDate" direction="future"
+          is-full-width hide-label placeholder="Select due date"
+          @update:model-value="draft.dueDate = $event"
+        />
+      </div>
+
+      <div class="sif-field">
+        <span class="sif-field-label">{{ t('Status') }}</span>
+        <ul class="sif-checklist">
+          <li
+            v-for="opt in statusOptions" :key="opt.value"
+            class="sif-check-item" @click="toggleStatus(opt.value)"
+          >
+            <span @click.stop>
+              <MpCheckbox :id="`${id}-status-${opt.value}`" :is-checked="draft.status.includes(opt.value)" @change="() => toggleStatus(opt.value)" />
+            </span>
+            <span class="sif-check-label">{{ opt.label }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Tax document status — the faktur's own status on the invoice's current
+           tax document (Normal / Pengganti / Diganti / Dibatalkan). Sits ABOVE
+           DJP status: what the document IS comes before what DJP said about it.
+           Hidden entirely (parent passes an empty list) until at least one
+           invoice on the table has a tax document. -->
+      <div v-if="taxDocStatusOptions.length" class="sif-field sif-field--collapsible">
+        <MpButton type="button" variant="ghost" class="sif-section-head" @click="taxDocStatusOpen = !taxDocStatusOpen">
+          <span class="sif-section-head-text">
+            <span class="sif-field-label">{{ t('Tax document status') }}</span>
+            <span class="sif-section-preview">{{ selectedPreview(draft.taxDocStatus.length) }}</span>
+          </span>
+          <MpIcon name="chevrons-down" size="sm" class="sif-section-chevron" :class="{ 'sif-section-chevron--open': taxDocStatusOpen }" />
+        </MpButton>
+        <ul v-if="taxDocStatusOpen" class="sif-checklist sif-checklist--panel">
+          <li
+            v-for="opt in taxDocStatusOptions" :key="opt.value"
+            class="sif-check-item" @click="toggleTaxDocStatus(opt.value)"
+          >
+            <span @click.stop>
+              <MpCheckbox :id="`${id}-taxdocstatus-${opt.value}`" :is-checked="draft.taxDocStatus.includes(opt.value)" @change="() => toggleTaxDocStatus(opt.value)" />
+            </span>
+            <span class="sif-check-label">{{ opt.label }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- DJP status — what DJP replied about that same document. Hidden on the
+           same condition as Tax document status above. -->
+      <div v-if="djpStatusOptions.length" class="sif-field sif-field--collapsible">
+        <MpButton type="button" variant="ghost" class="sif-section-head" @click="djpStatusOpen = !djpStatusOpen">
+          <span class="sif-section-head-text">
+            <span class="sif-field-label">{{ t('DJP status') }}</span>
+            <span class="sif-section-preview">{{ selectedPreview(draft.djpStatus.length) }}</span>
+          </span>
+          <MpIcon name="chevrons-down" size="sm" class="sif-section-chevron" :class="{ 'sif-section-chevron--open': djpStatusOpen }" />
+        </MpButton>
+        <ul v-if="djpStatusOpen" class="sif-checklist sif-checklist--panel">
+          <li
+            v-for="opt in djpStatusOptions" :key="opt.value"
+            class="sif-check-item" @click="toggleDjpStatus(opt.value)"
+          >
+            <span @click.stop>
+              <MpCheckbox :id="`${id}-djpstatus-${opt.value}`" :is-checked="draft.djpStatus.includes(opt.value)" @change="() => toggleDjpStatus(opt.value)" />
+            </span>
+            <span class="sif-check-label">{{ opt.label }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sif-field">
+        <span class="sif-field-label">{{ t('Total (Rp)') }}</span>
+        <AmountComparatorField
+          :id="`${id}-total`"
+          :comparator="draft.totalComparator"
+          :value="draft.totalValue"
+          :min="draft.totalMin"
+          :max="draft.totalMax"
+          @update:comparator="draft.totalComparator = $event"
+          @update:value="draft.totalValue = $event"
+          @update:min="draft.totalMin = $event"
+          @update:max="draft.totalMax = $event"
+        />
+      </div>
+
+      <!-- Tags — comparator prefix select + typeable tag input (chips), same
+           shape as the Total (Rp) field above. -->
+      <div class="sif-field">
+        <span class="sif-field-label">{{ t('Tags') }}</span>
+        <div class="sif-tags">
+          <MpPopover
+            :id="`${id}-tags-comparator`" is-manual :is-open="tagsComparatorOpen"
+            use-portal :is-keep-alive="false" placement="bottom-start"
+            @open="tagsComparatorOpen = true" @close="tagsComparatorOpen = false"
+          >
+            <MpPopoverTrigger>
+              <MpButton class="sif-tags-prefix" @click.stop="tagsComparatorOpen = !tagsComparatorOpen">
+                <span>{{ TAGS_COMPARATOR_LABELS[draft.tagsComparator] }}</span>
+                <MpIcon name="chevrons-down" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content' })" @blur="tagsComparatorOpen = false" @escape="tagsComparatorOpen = false">
+              <MpPopoverList>
+                <MpPopoverListItem
+                  v-for="c in TAGS_COMPARATORS" :key="c"
+                  :is-active="c === draft.tagsComparator" @click="selectTagsComparator(c)"
+                >
+                  {{ TAGS_COMPARATOR_LABELS[c] }}
+                </MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          <div class="sif-tags-field">
+            <span v-for="(tag, i) in draft.tags" :key="`${i}-${tag}`" class="sif-tag-chip">
+              {{ tag }}
+              <MpButton type="button" class="sif-tag-remove" variant="ghost" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
+                <MpIcon name="close" size="sm" />
+              </MpButton>
+            </span>
+            <input
+              :id="`${id}-tags-input`"
+              v-model="tagDraft"
+              class="sif-tag-input"
+              type="text"
+              placeholder=""
+              @keydown.enter.prevent="addTag"
+              @keydown.delete="onTagBackspace"
+            >
           </div>
         </div>
-
-        <footer class="sif-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">{{ resetLabel ?? 'Reset filter' }}</button>
-          <div class="sif-footer-right">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
-          </div>
-        </footer>
       </div>
-    </div>
-  </Transition>
+    </template>
+
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">{{ resetLabel ?? 'Reset filter' }}</MpButton>
+      <div class="sif-footer-right">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">Apply</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.sif-filters-enter-active { transition: background-color 250ms ease; }
-.sif-filters-leave-active { transition: background-color 250ms ease; }
-.sif-filters-enter-from, .sif-filters-leave-to { background-color: transparent; }
-.sif-filters-enter-active .sif-filters-panel { transition: transform 350ms ease-out; }
-.sif-filters-leave-active .sif-filters-panel { transition: transform 250ms ease-in; }
-.sif-filters-enter-from .sif-filters-panel,
-.sif-filters-leave-to .sif-filters-panel { transform: translateX(calc(100% + 12px)); }
-
-.sif-filters-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
-  display: flex; justify-content: flex-end;
-}
-.sif-filters-panel {
-  margin: var(--mp-spacing-3);
-  width: min(420px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.sif-filters-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.sif-filters-title {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-.sif-filters-close {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important;
-  border: none !important; background: none !important; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.sif-filters-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.sif-filters-body {
-  flex: 1; overflow-y: auto;
-  /* 20px row gap between fields — the standard form field spacing (Form.md). */
-  display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px);
-  padding: var(--mp-spacing-4);
-}
-
 /* Keywords — text input with an inline column-scope dropdown suffix. */
 .sif-keyword {
   display: flex; align-items: center; gap: var(--mp-spacing-3);
@@ -386,6 +396,31 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 
 .sif-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .sif-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+
+/* Collapsible checklist section — same anatomy as EmployeesFiltersDrawer's
+   .ef-scope-* (label + selected preview on the left, chevron right) so the two
+   drawers read the same. The row is an MpButton, not a raw button element
+   (rule/token-no-raw-html), stripped back to a plain full-width row.
+   Angle brackets avoided on purpose: pixel-police scans comment text too. */
+.sif-field--collapsible { gap: 0; }
+.sif-section-head {
+  width: 100% !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-2);
+  padding: 0 !important;
+  min-width: 0 !important;
+  height: auto !important;
+  background: transparent !important;
+  border: none !important;
+  text-align: left;
+}
+.sif-section-head-text { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.sif-section-preview { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.sif-section-chevron { color: var(--mp-text-secondary); transition: transform 150ms; flex-shrink: 0; }
+.sif-section-chevron--open { transform: rotate(180deg); }
+.sif-checklist--panel { margin-top: var(--mp-spacing-2); }
 
 .sif-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .sif-check-item { display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none; }
@@ -426,10 +461,5 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 .sif-tag-input { flex: 1; min-width: var(--mp-sizes-20, 80px); height: var(--mp-sizes-5, 20px); border: none; outline: none; background: transparent; padding: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sif-tag-input::placeholder { color: var(--mp-text-placeholder); }
 
-.sif-filters-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-}
 .sif-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

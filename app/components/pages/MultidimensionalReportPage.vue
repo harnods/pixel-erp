@@ -23,7 +23,7 @@ import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { useAireneBridge } from '~/composables/useAireneBridge'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import {
-  MpIcon, MpTooltip, MpToggle, MpSkeleton, MpSelect,
+  MpButton, MpIcon, MpTooltip, MpToggle, MpSkeleton, MpSelect,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, toast,
 } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
@@ -579,7 +579,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
     <!-- ── Title bar ── -->
     <header v-if="!fullscreen" class="mdr-titlebar">
       <div class="mdr-titlebar-left">
-        <button class="mdr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</button>
+        <MpButton class="mdr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</MpButton>
         <h1 class="mdr-title">{{ t('Multidimensional') }} <span class="mdr-title-cur">(IDR)</span></h1>
       </div>
     </header>
@@ -636,35 +636,34 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
 
           <div class="mdr-btnfield">
             <span class="mdr-field-label mdr-field-label--ghost" aria-hidden="true">&nbsp;</span>
-            <button class="mdr-apply" type="button" @click="applyReport">{{ t('Apply') }}</button>
+            <MpButton class="mdr-apply" type="button" @click="applyReport">{{ t('Apply') }}</MpButton>
           </div>
           <div class="mdr-btnfield">
             <span class="mdr-field-label mdr-field-label--ghost" aria-hidden="true">&nbsp;</span>
-            <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before mdr-allfilters" type="button" @click="drawerOpen = true">
-              <MpIcon name="filter" size="sm" /> {{ t('All filters') }}
+            <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before mdr-allfilters" type="button" left-icon="filter" @click="drawerOpen = true">
+              {{ t('All filters') }}
               <span v-if="activeFilterCount" class="mdr-allfilters-count">{{ activeFilterCount }}</span>
-            </button>
+            </MpButton>
           </div>
         </div>
 
         <div class="mdr-controls-right">
           <MpTooltip id="mdr-airene" :label="t('Ask Airene')" placement="bottom" use-portal>
-            <button class="mdr-icon-btn mdr-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="openAirene">
+            <MpButton class="mdr-icon-btn mdr-icon-btn--airene" type="button" :aria-label="t('Ask Airene')" @click="openAirene">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <path d="M13.6346 10.2855L13.1389 10.2226C11.3824 9.99823 10.0009 8.61408 9.77833 6.85752L9.71892 6.38934C9.62227 5.62234 8.8668 5.10539 8.07142 5.10539C7.28491 5.10539 6.53121 5.60106 6.43013 6.3654L6.36717 6.86107C6.14284 8.61763 4.75869 9.99912 3.00213 10.2217L2.53395 10.2811C1.7501 10.3831 1.25 11.1332 1.25 11.9286C1.25 12.724 1.7235 13.4741 2.51001 13.5699L3.00568 13.6328C4.76224 13.8572 6.14372 15.2413 6.36629 16.9979L6.4257 17.4661C6.52235 18.2641 7.27782 18.75 8.07319 18.75C8.8597 18.75 9.62315 18.2144 9.71448 17.49L9.77744 16.9943C10.0018 15.2378 11.3859 13.8563 13.1425 13.6337L13.6107 13.5743C14.3989 13.4741 14.8946 12.7222 14.8946 11.9268C14.8946 11.1314 14.3998 10.3813 13.6346 10.2855Z" fill="currentColor"/>
                 <path d="M18.1196 3.84006L17.8722 3.80814C16.9943 3.69553 16.3027 3.0039 16.1919 2.12606L16.1626 1.89197C16.1138 1.50803 15.7361 1.25 15.3388 1.25C14.9452 1.25 14.5692 1.49739 14.5178 1.88045L14.4858 2.12784C14.3732 3.00568 13.6816 3.69731 12.8038 3.80814L12.5697 3.83741C12.1777 3.88883 11.9277 4.26391 11.9277 4.66115C11.9277 5.0584 12.1644 5.43436 12.5581 5.48224L12.8055 5.51416C13.6834 5.62678 14.375 6.31841 14.4858 7.19624L14.5151 7.43033C14.563 7.82935 14.9416 8.07231 15.3388 8.07231C15.7325 8.07231 16.1138 7.80452 16.1599 7.44186L16.1919 7.19447C16.3045 6.31663 16.9961 5.625 17.8739 5.51416L18.108 5.4849C18.5026 5.43525 18.75 5.0584 18.75 4.66115C18.75 4.26391 18.5026 3.88883 18.1196 3.84006Z" fill="currentColor"/>
               </svg>
-            </button>
+            </MpButton>
           </MpTooltip>
 
           <ColumnSettingsMenu id="mdr-columns" :items="columnItems" :visibility="colVis" :tooltip="t('Column settings')" />
 
           <MpPopover id="mdr-export" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--secondary mdr-export" type="button">
+              <MpButton class="btn-enterprise btn-enterprise--secondary mdr-export" type="button" left-icon="caret-down">
                 {{ t('Export') }}
-                <MpIcon name="caret-down" size="sm" />
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
               <MpPopoverList>
@@ -680,11 +679,10 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
            switches comparison on (Figma 4836-67530). ── -->
       <div v-if="!fullscreen" class="mdr-comparebar">
         <MpToggle id="mdr-compare" :is-checked="compareOn" @change="onCompareControl" />
-        <button class="mdr-compare-trigger" type="button" @click="compareDrawerOpen = true">
+        <MpButton class="mdr-compare-trigger" type="button" left-icon="caret-down" @click="compareDrawerOpen = true">
           <span :class="{ 'mdr-compare-label': compareOn }">{{ t('Compare') }}{{ compareOn ? ':' : '' }}</span>
           <span v-if="compareOn" class="mdr-compare-basis">{{ compareCaption }}</span>
-          <MpIcon name="caret-down" size="sm" />
-        </button>
+        </MpButton>
       </div>
       <p v-if="!fullscreen && isDemoDimensions" class="mdr-demo-note">
         {{ t('Showing sample dimensions.') }}
@@ -694,17 +692,17 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
       <!-- ── View tabs ── -->
       <div v-if="!fullscreen" class="mdr-viewbar">
         <div class="mdr-views">
-          <button class="mdr-viewtab" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default')">{{ t('Default view') }}</button>
+          <MpButton class="mdr-viewtab" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default')">{{ t('Default view') }}</MpButton>
 
           <template v-for="v in multidimensionalViews" :key="v.id">
             <span v-if="editingViewId === v.id" class="mdr-viewtab mdr-viewtab--editing">
               <input v-model="editViewName" class="mdr-viewtab-input mdr-view-edit" @keydown.enter.prevent="commitEditView" @keydown.esc="cancelEditView" @blur="commitEditView" />
             </span>
             <span v-else class="mdr-viewtab-wrap">
-              <button class="mdr-viewtab" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</button>
+              <MpButton class="mdr-viewtab" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id)">{{ v.name }}</MpButton>
               <MpPopover :id="`mdr-view-${v.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                 <MpPopoverTrigger>
-                  <button class="mdr-view-kebab" type="button" :aria-label="t('View options')"><MpIcon name="menu-kebab" size="sm" /></button>
+                  <MpButton class="mdr-view-kebab" type="button" left-icon="menu-kebab" :aria-label="t('View options')" />
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
                   <MpPopoverList>
@@ -719,13 +717,13 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
           <span v-if="addingView" class="mdr-viewtab mdr-viewtab--editing">
             <input ref="newViewInput" v-model="newViewName" class="mdr-viewtab-input" :placeholder="t('View name')" @keydown.enter.prevent="commitAddView" @keydown.esc="cancelAddView" @blur="commitAddView" />
           </span>
-          <button v-else class="mdr-addview" type="button" @click="startAddView"><MpIcon name="add" size="sm" /> {{ t('Add view') }}</button>
+          <MpButton v-else class="mdr-addview" type="button" left-icon="add" @click="startAddView">{{ t('Add view') }}</MpButton>
 
-          <button class="mdr-allviews" type="button" @click="allViewsOpen = true">{{ t('All views') }}</button>
+          <MpButton class="mdr-allviews" type="button" @click="allViewsOpen = true">{{ t('All views') }}</MpButton>
         </div>
         <div class="mdr-viewbar-right">
           <MpTooltip id="mdr-fs-enter" :label="t('Full screen')" placement="bottom-end" use-portal>
-            <button class="mdr-fs-btn" type="button" :aria-label="t('Full screen')" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
+            <MpButton class="mdr-fs-btn" type="button" left-icon="full-screen" :aria-label="t('Full screen')" @click="fullscreen = true" />
           </MpTooltip>
         </div>
       </div>
@@ -735,7 +733,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
         <div v-if="fullscreen" class="mdr-fs-topbar">
           <span class="mdr-fs-title">{{ t('Multidimensional') }} <span class="mdr-title-cur">(IDR)</span></span>
           <MpTooltip id="mdr-fs-exit" :label="t('Exit full screen')" placement="bottom-end" use-portal>
-            <button class="mdr-fs-btn" type="button" :aria-label="t('Exit full screen')" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
+            <MpButton class="mdr-fs-btn" type="button" left-icon="minimize" :aria-label="t('Exit full screen')" @click="fullscreen = false" />
           </MpTooltip>
         </div>
 
@@ -884,7 +882,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
           <div v-else class="mdr-empty">
             <img src="/illustrations/empty-folder.png" alt="" class="mdr-empty-img" width="240" height="200" />
             <p class="mdr-empty-title">{{ t('No data matches this filter.') }}</p>
-            <button class="mdr-empty-cta" type="button" @click="resetFilters">{{ t('Reset filter') }}</button>
+            <MpButton class="mdr-empty-cta" type="button" @click="resetFilters">{{ t('Reset filter') }}</MpButton>
           </div>
         </template>
       </div>
@@ -914,13 +912,13 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
         <div class="mdr-vd-panel" role="dialog" :aria-label="t('All views')">
           <header class="mdr-vd-head">
             <span class="mdr-vd-title">{{ t('All views') }}</span>
-            <button class="mdr-vd-close" type="button" :aria-label="t('Close')" @click="allViewsOpen = false"><MpIcon name="close" size="md" /></button>
+            <MpButton class="mdr-vd-close" type="button" left-icon="close" :aria-label="t('Close')" @click="allViewsOpen = false" />
           </header>
           <div class="mdr-vd-body">
-            <button class="mdr-view-item" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">{{ t('Default view') }}</button>
+            <MpButton class="mdr-view-item" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">{{ t('Default view') }}</MpButton>
             <div v-for="v in multidimensionalViews" :key="v.id" class="mdr-view-item-row">
-              <button class="mdr-view-item" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</button>
-              <button class="mdr-view-del" type="button" :aria-label="t('Delete')" @click="askDeleteView(v)"><MpIcon name="trash" size="sm" /></button>
+              <MpButton class="mdr-view-item" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</MpButton>
+              <MpButton class="mdr-view-del" type="button" left-icon="trash" :aria-label="t('Delete')" @click="askDeleteView(v)" />
             </div>
             <p v-if="!multidimensionalViews.length" class="mdr-vd-hint">{{ t('Saved views will appear here.') }}</p>
           </div>

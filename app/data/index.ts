@@ -74,6 +74,8 @@ export * from './purchaseInvoiceDetails'
 export * from './purchaseRequestDetails'
 export * from './salesInvoices'
 export * from './salesReports'
+// Credit memo / applied / refund — also overlays credit onto invoice balance+status.
+export * from './creditMemos'
 export * from './salesDeliveries'
 
 // ── Adjustments / transfers / cycle counts ──────────────────────────────────
@@ -112,6 +114,7 @@ export * from './companyTaxes'
 export * from './currencyList'
 export * from './customFields'
 export * from './contactGroups'
+export * from './crmSubscription'
 
 // ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
 export * from './wmsCutover'
@@ -123,6 +126,16 @@ export * from './integrityGuards'
 
 // ── Dashboard ───────────────────────────────────────────────────────────────
 export * from './quickShortcuts'
+
+// ── Other lists — cross-module recurring transactions index ─────────────────
+export * from './recurringTransactions'
+
+// ── Other lists — file manager ──────────────────────────────────────────────
+export * from './fileManager'
+export * from './fileAttachmentHandoff'
+
+// ── Other lists — activity log ──────────────────────────────────────────────
+export * from './activityLog'
 
 // ── Seed status coverage — runs LAST (after every base seed has initialised) so
 // the mock DB has ≥1 record in every inbound/outbound status. ─────────────────

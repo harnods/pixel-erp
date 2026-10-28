@@ -304,6 +304,31 @@ export function onHandForSku(warehouseId: string, sku: string): number {
   return getWarehouseDetail(warehouseId)?.stock.find((s) => s.sku === sku)?.onHand ?? 0
 }
 
+/** The first active warehouse that actually holds allocatable stock — used as a
+ *  sensible default when a form has no warehouse selected yet (some warehouses,
+ *  e.g. the default HQ, carry no assortment). Falls back to the first active. */
+export function firstStockedWarehouseId(): string {
+  const active = warehouses.filter((w) => w.status === 'active')
+  const stocked = active.find((w) => (getWarehouseDetail(w.id)?.stock ?? []).some((s) => s.available > 0))
+  return (stocked ?? active[0])?.id ?? ''
+}
+
+/** Total allocatable units for a SKU across ALL active warehouses — shown in
+ *  product pickers when no specific warehouse is selected. Memoised (built once
+ *  by iterating every warehouse detail) so per-row lookups stay O(1). */
+let _totalAvailableCache: Map<string, number> | null = null
+export function totalAvailableForSku(sku: string): number {
+  if (!_totalAvailableCache) {
+    _totalAvailableCache = new Map()
+    for (const w of warehouses.filter((x) => x.status === 'active')) {
+      for (const s of getWarehouseDetail(w.id)?.stock ?? []) {
+        _totalAvailableCache.set(s.sku, (_totalAvailableCache.get(s.sku) ?? 0) + s.available)
+      }
+    }
+  }
+  return _totalAvailableCache.get(sku) ?? 0
+}
+
 /**
  * Would a stock-out (negative-qty lines) drive any SKU below zero on-hand, or
  * below what's already reserved? `applyStockInOut` silently clamps at 0, which

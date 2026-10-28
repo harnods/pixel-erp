@@ -1,7 +1,7 @@
 <!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/settings/warehouse/views/WarehouseSettingsView.vue -->
 <script setup lang="ts">
 import {
-  MpToggle, MpIcon, MpAutocomplete,
+  MpButton, MpToggle, MpIcon, MpAutocomplete,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
   toast,
@@ -108,14 +108,15 @@ async function saveEdit() {
           <h2 class="ws-section-title">{{ isEditing ? t('Edit warehouse settings') : t('Warehouse settings') }}</h2>
           <p class="ws-section-desc">{{ isEditing ? t('Manage storage layouts, bin locations, and warehouse organization.') : t('Configure how products are stored and tracked across warehouse locations.') }}</p>
         </div>
-        <button
+        <MpButton
           v-if="!isEditing"
+          variant="secondary"
           class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+          left-icon="edit"
           @click="startEdit"
         >
-          <MpIcon name="edit" size="sm" />
           {{ t('Edit') }}
-        </button>
+        </MpButton>
       </div>
 
       <div class="ws-toggle-list">
@@ -198,10 +199,10 @@ async function saveEdit() {
       </div>
 
       <div v-if="isEditing" class="ws-action-bar">
-        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="requestSave">
+        <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" :is-disabled="isSaving" @click="requestCancel">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" :is-disabled="isSaving" @click="requestSave">
           {{ isSaving ? t('Saving…') : t('Save changes') }}
-        </button>
+        </MpButton>
       </div>
     </section>
 
@@ -221,8 +222,8 @@ async function saveEdit() {
           <p class="ws-dialog-body">{{ t('Your changes will not be saved.') }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">{{ t('Keep editing') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">{{ t('Discard') }}</button>
+          <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">{{ t('Keep editing') }}</MpButton>
+          <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="exitEdit">{{ t('Discard') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -270,8 +271,8 @@ async function saveEdit() {
           </p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">{{ t('Keep editing') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">{{ t('Save changes') }}</button>
+          <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">{{ t('Keep editing') }}</MpButton>
+          <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">{{ t('Save changes') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />

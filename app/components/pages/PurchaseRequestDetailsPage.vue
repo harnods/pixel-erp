@@ -9,6 +9,9 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data/purchaseRequests'
 import { infoToast } from '~/utils/toasts'
@@ -48,6 +51,17 @@ function onMarkCompleted() {
 
 const urgencyLabel = computed(() => request.value.urgency.charAt(0).toUpperCase() + request.value.urgency.slice(1))
 
+const prActionGroups = computed<ActionItem[][]>(() => [
+  [
+    // Open / partially processed requests can be completed or turned into a PO.
+    { label: 'Mark as completed', show: isProcessable.value, onClick: onMarkCompleted },
+    { label: 'Edit', onClick: () => { router.push(`/purchase-requests/${request.value.id}/edit`) } },
+    { label: 'Create purchase order', show: isProcessable.value, onClick: onCreatePurchaseOrder },
+    { label: 'Duplicate', onClick: notInPrototype },
+    { label: 'Void', onClick: notInPrototype },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: request.value.lastUpdatedAt,
   user: request.value.lastUpdatedBy,
@@ -343,43 +357,8 @@ function goBack() { router.push('/purchase-requests') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- prod: "Create purchase order" is its own footer button (open / partially processed only) -->
-        <button v-if="isProcessable" class="btn-enterprise btn-enterprise--secondary" @click="onCreatePurchaseOrder">{{ t('Create purchase order') }}</button>
-
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem v-if="isProcessable" @click="onMarkCompleted">{{ t('Mark as completed') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="router.push(`/purchase-requests/${request.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="pr-print" />
+        <DetailActionsMenu id="pr-actions" :groups="prActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -633,8 +612,8 @@ function goBack() { router.push('/purchase-requests') }
   margin-top: var(--mp-spacing-0\.5);
 }
 
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

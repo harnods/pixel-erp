@@ -1,13 +1,10 @@
-<!-- prod-parity: quickbook/app/services/reports/report_authorization_service.rb (purchases_tab) + jurnal-frontend-app/src/pages/reports/index/i18n.json -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
-// Reports → Purchases index (page key 'Purchase report'). Card order follows prod's
-// ERP report list for this tab; titles and descriptions are prod's English copy.
-// Same flush edge-to-edge card grid as every Reports index: cards fill the stage
-// width as an equal-column grid, the last row is padded with empty filler cells so
-// the grid stays a complete rectangle, and the outer right + bottom borders are
-// clipped so the rightmost column never shows a border.
+// Reports → Purchases index (Reports module → Purchases submenu). Same flush
+// edge-to-edge card grid as the Sales reports index (SalesReportsIndexPage) —
+// Pixel 3 DT 2.4 enterprise tokens. No report detail page is built yet, so
+// every "View report" shows the coming-soon toast (same as the other indexes).
 import { infoToast } from '~/utils/toasts'
 const { t } = useLocale()
 const router = useRouter()
@@ -16,21 +13,17 @@ interface ReportCard {
   slug: string
   title: string
   description: string
-  /** Route of the built report; cards without one show "Not in this prototype". */
-  to?: string
-  /** Button label when prod's card action is not "View report". */
-  action?: string
 }
 const reports: ReportCard[] = [
-  { slug: 'purchases-list', title: 'Purchase transaction list', description: 'A chronological history of all purchase transactions including bills, orders, and expenses.', to: '/purchase-report/purchases-list' },
-  { slug: 'purchases-by-vendor', title: 'Purchases by vendor', description: 'Summarizes total spending per supplier. Useful for identifying your key vendors and negotiating better volume discounts.', to: '/purchase-report/purchases-by-vendor' },
-  { slug: 'vendor-balance', title: 'Vendor balance list', description: 'Displays the total outstanding amount you owe to each vendor, including unpaid bills and available vendor credits.' },
-  { slug: 'expense-list', title: 'Expense transaction list', description: 'A simple list of all direct expense claims and payments recorded within a specific period.' },
-  { slug: 'expense-details', title: 'Expenses by account', description: 'Groups your operational expenses by chart of accounts (e.g., Rent, Utilities) to show where your budget is being spent.' },
-  { slug: 'aged-payable', title: 'Aged payables summary', description: 'Shows overdue bills to vendors categorized by days (30, 60, 90+ days). Crucial for managing cash outflows and avoiding late fees.' },
-  { slug: 'purchases-delivery', title: 'Goods received report', description: 'Details all inventory items received from suppliers, cross-referenced with their purchase orders.' },
-  { slug: 'purchases-by-product', title: 'Purchases by product', description: 'Breakdown of quantity and cost of items purchased. Helps analyze procurement trends and changing costs over time.', to: '/purchase-report/purchases-by-product' },
-  { slug: 'purchases-order-completion', title: 'Purchase order status', description: 'Tracks the lifecycle of purchase orders from creation to goods receipt, billing, and final payment.' },
+  { slug: 'aged-payables-summary',     title: 'Aged payables summary',     description: 'Shows overdue bills to vendors categorized by days (30, 60, 90+ days). Crucial for managing cash outflows and avoiding late fees.' },
+  { slug: 'vendor-balance-list',       title: 'Vendor balance list',       description: 'Displays the total outstanding amount you owe to each vendor, including unpaid bills and available vendor credits.' },
+  { slug: 'purchases-by-vendor',       title: 'Purchases by vendor',       description: 'Summarizes total spending per supplier. Useful for identifying your key vendors and negotiating better volume discounts.' },
+  { slug: 'purchases-by-product',      title: 'Purchases by product',      description: 'Breakdown of quantity and cost of items purchased. Helps analyze procurement trends and changing costs over time.' },
+  { slug: 'expenses-by-account',       title: 'Expenses by account',       description: 'Groups your operational expenses by chart of accounts (e.g., Rent, Utilities) to show where your budget is being spent.' },
+  { slug: 'purchase-transaction-list', title: 'Purchase transaction list', description: 'A chronological history of all purchase transactions including bills, orders, and expenses.' },
+  { slug: 'purchase-order-status',     title: 'Purchase order status',     description: 'Tracks the lifecycle of purchase orders from creation to goods receipt, billing, and final payment.' },
+  { slug: 'goods-received-report',     title: 'Goods received report',     description: 'Details all inventory items received from suppliers, cross-referenced with their purchase orders.' },
+  { slug: 'expense-transaction-list',  title: 'Expense transaction list',  description: 'A simple list of all direct expense claims and payments recorded within a specific period.' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
@@ -58,9 +51,17 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
+// Built report detail pages navigate; the rest show a coming-soon toast for now.
+const BUILT: Record<string, string> = {
+  'purchase-transaction-list': '/purchase-report/purchases-list',
+  'purchases-by-vendor': '/purchase-report/purchases-by-vendor',
+  'purchases-by-product': '/purchase-report/purchases-by-product',
+}
 function viewReport(r: ReportCard) {
-  if (r.to) router.push(r.to)
-  else infoToast(t('Not in this prototype'))
+  const to = BUILT[r.slug]
+  if (to) router.push(to)
+  // "Goods Received Report" already ends in "Report" — don't double it in the toast.
+  else infoToast(`${t(r.title)}${/report$/i.test(r.title) ? '' : ' report'} — coming soon`)
 }
 </script>
 
@@ -72,7 +73,7 @@ function viewReport(r: ReportCard) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t(r.action ?? 'View report') }}</MpButton>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />

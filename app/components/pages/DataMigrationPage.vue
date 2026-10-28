@@ -1,369 +1,1161 @@
-<!-- prod-parity-aligned: quickbook/app/views/data_migrations/index.html.haml -->
 <script setup lang="ts">
 /**
- * Settings → Data migration — the landing for bringing legacy data into the ledger.
+ * Settings → Data migration — two-column step-list + form layout.
  *
- * Replaces step 1 of the WMS→Jurnal cutover prototype ("Connect WMS to Jurnal").
- * This is a `pageRegistry` page: it renders INSIDE the shared `.stage`, which
- * already supplies the white surface + 24px padding — so the root adds none.
- * See DESIGN.md → Layout → Stage.
+ * Left column: ordered list of migration modules (Company info, Opening balance,
+ * Products, Contacts, Sales, Purchases, Expenses).
+ * Right column: the form for the active step.
+ *
+ * This is a `pageRegistry` page rendered inside the shared `.stage`.
  */
-import { computed, ref } from 'vue'
-import { infoToast } from '~/utils/toasts'
-import { useRouter } from 'vue-router'
-import { MpProgress, MpIcon } from '@mekari/pixel3'
-import { loadCreated, saveCreated } from '~/data/persist'
-import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import { ref, reactive, computed } from 'vue'
 import {
-  CUTOVER_TOTAL_PRODUCTS,
-  cutoverSetUpCount,
-  cutoverState,
-  furthestCutoverStep,
-} from '~/data/wmsCutover'
+  MpButton, MpIcon, MpInput, MpTextarea,
+  MpFormControl, MpFormLabel, MpFormErrorMessage,
+  MpBanner, MpBannerIcon, MpBannerDescription,
+  MpSpinner,
+  toast,
+} from '@mekari/pixel3'
+import centralPerkLogo from '~/assets/images/central-perk-logo.svg?url'
+import dmHeroImg from '~/assets/images/data-migration-hero.webp'
+import { DEFAULT_COA } from '~/data/wmsCutover'
+import { CATALOG } from '~/data/catalog'
+import { customers } from '~/data/customers'
+import { vendors } from '~/data/vendors'
+import { salesInvoices } from '~/data/salesInvoices'
+import { purchaseInvoices } from '~/data/purchaseInvoices'
+import { bills } from '~/data/bills'
 
 const { t } = useLocale()
-const router = useRouter()
 
-// The WMS→ERP cutover is the "WMS upgrade to ERP" storyline (Scenario menu).
-const { migrationScenario } = useMigrationScenario()
-const isUpgradeScenario = computed(() => migrationScenario.value === 'WMS upgrade to ERP')
+// ─── Step definitions ─────────────────────────────────────────────────────────
+interface MigrationStep {
+  id: string
+  label: string
+  icon: string
+}
 
-const setUpCount = computed(() => cutoverSetUpCount())
-const percent = computed(() => Math.round((setUpCount.value / CUTOVER_TOTAL_PRODUCTS) * 100))
-
-const isStarted = computed(() => setUpCount.value > 0)
-const status = computed(() => (isStarted.value ? 'in progress' : 'not started'))
-
-const conversionDate = computed(() =>
-  new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    .format(new Date(cutoverState.conversionDate)),
-)
-
-// ── Migration center (prod: quickbook data_migrations#index) ──
-// Three numbered groups of steps + a summary card. A step's checkpoint turns
-// green once the user has opened it; checkpoints survive a reload.
-type MigrationStepId = 'company' | 'accounts' | 'products' | 'contacts' | 'sales' | 'purchases' | 'expenses'
-interface MigrationStep { id: MigrationStepId; icon: string; label: string; to: string }
-interface MigrationGroup { no: number; title: string; desc: string; steps: MigrationStep[] }
-
-const CHECKPOINT_KEY = 'data-migration-checkpoints'
-const checkpoints = ref<MigrationStepId[]>(loadCreated<MigrationStepId>(CHECKPOINT_KEY))
-
-const groupsLeft: MigrationGroup[] = [
-  {
-    no: 1, title: t('Company setting'), desc: t('Start using Jurnal by filling the company data'),
-    steps: [{ id: 'company', icon: 'company', label: t('Complete the company data'), to: '/company-profile' }],
-  },
-  {
-    no: 2, title: t('Data master'), desc: t('Prepare your database for daily operations'),
-    steps: [
-      { id: 'accounts', icon: 'bank', label: t('Set up chart of account and conversion balance'), to: '/chart-of-accounts' },
-      { id: 'products', icon: 'products', label: t('Import product'), to: '/export-and-import' },
-      { id: 'contacts', icon: 'contact', label: t('Import contact'), to: '/export-and-import' },
-    ],
-  },
+const STEPS: MigrationStep[] = [
+  { id: 'company-info', label: 'Company info', icon: 'company' },
+  { id: 'opening-balance', label: 'Opening balance', icon: 'wallet' },
+  { id: 'products', label: 'Products', icon: 'product' },
+  { id: 'contacts', label: 'Contacts', icon: 'contact' },
+  { id: 'sales', label: 'Sales', icon: 'sales-invoice' },
+  { id: 'purchases', label: 'Purchases', icon: 'purchase-invoice' },
+  { id: 'expenses', label: 'Expenses', icon: 'expense' },
 ]
-const groupsRight: MigrationGroup[] = [
-  {
-    no: 3, title: t('Transaction'), desc: t('Make sure all your transaction data is complete in Jurnal'),
-    steps: [
-      { id: 'sales', icon: 'sales', label: t('Import sales'), to: '/export-and-import' },
-      { id: 'purchases', icon: 'wallet', label: t('Import purchases'), to: '/export-and-import' },
-      { id: 'expenses', icon: 'expense', label: t('Import expenses'), to: '/export-and-import' },
-    ],
-  },
-]
-const allSteps = [...groupsLeft, ...groupsRight].flatMap(g => g.steps)
-const allChecked = computed(() => allSteps.every(st => checkpoints.value.includes(st.id)))
-const noneChecked = computed(() => checkpoints.value.length === 0)
-const nextStep = computed(() => allSteps.find(st => !checkpoints.value.includes(st.id)))
 
-function openStep(step: MigrationStep) {
-  if (!checkpoints.value.includes(step.id)) {
-    checkpoints.value = [...checkpoints.value, step.id]
-    saveCreated(CHECKPOINT_KEY, checkpoints.value)
+const activeStepId = ref('company-info')
+const activeStep = computed(() => STEPS.find(s => s.id === activeStepId.value)!)
+
+// ─── Landing page (step 0) ──────────────────────────────────────────────────
+const showLanding = ref(true)
+
+const stepHints: Record<string, string> = {
+  'company-info': 'Company name, address, logo, and bank account',
+  'opening-balance': 'Set initial account balances for your chart of accounts',
+  'products': 'Import your product catalog from a spreadsheet',
+  'contacts': 'Import customers and vendors',
+  'sales': 'Import sales invoices and transaction history',
+  'purchases': 'Import purchase invoices and records',
+  'expenses': 'Import expense records',
+}
+
+function startMigration() {
+  showLanding.value = false
+}
+
+// ─── Company info form state ─────────────────────────────────────────────────
+const companySaved = ref(false)
+
+const companyInfo = reactive({
+  companyName: 'PT Central Perk Indonesia',
+  companyAddress: '',
+  email: 'owner@centralperk.co.id',
+  phone: '',
+  npwp: '',
+})
+
+const draft = reactive({
+  companyAddress: companyInfo.companyAddress,
+  email: companyInfo.email,
+  phone: companyInfo.phone,
+  npwp: companyInfo.npwp,
+})
+
+const errors = reactive<Record<string, string>>({})
+const req = (label: string) => `${t('You must fill in')} ${label}`
+function clearErr(field: string) { if (errors[field]) delete errors[field] }
+
+// ─── Logo upload ────────────────────────────────────────────────────────────
+const logoUrl = ref('')
+const logoInputEl = ref<HTMLInputElement | null>(null)
+
+function triggerLogoUpload() {
+  logoInputEl.value?.click()
+}
+
+function onLogoChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const url = URL.createObjectURL(file)
+  logoUrl.value = url
+  toast.notify({ variant: 'success', title: t('Company logo updated'), maxWidth: 'max-content' })
+}
+
+function removeLogo() {
+  logoUrl.value = ''
+  if (logoInputEl.value) logoInputEl.value.value = ''
+}
+
+// ─── Bank account ───────────────────────────────────────────────────────────
+const bank = reactive({
+  bankName: '',
+  accountNo: '',
+  accountName: '',
+})
+
+const draftBank = reactive({ ...bank })
+const errBank = reactive<Record<string, string>>({})
+function clearBankErr(field: string) { if (errBank[field]) delete errBank[field] }
+
+// ─── Opening balance — Chart of Accounts table ─────────────────────────────
+const obSearch = ref('')
+const obStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function generateBalances(): Record<string, { debit: number; credit: number }> {
+  const map: Record<string, { debit: number; credit: number }> = {}
+  for (const row of DEFAULT_COA) {
+    const code = parseInt(row.code.split('-')[0])
+    if (code === 1) {
+      map[row.code] = { debit: Math.round(Math.random() * 50000000 + 1000000), credit: 0 }
+    } else if (code === 2 || code === 3) {
+      map[row.code] = { debit: 0, credit: Math.round(Math.random() * 30000000 + 500000) }
+    } else if (code === 4) {
+      map[row.code] = { debit: 0, credit: Math.round(Math.random() * 20000000 + 1000000) }
+    } else if (code >= 5) {
+      map[row.code] = { debit: Math.round(Math.random() * 10000000 + 100000), credit: 0 }
+    } else {
+      map[row.code] = { debit: 0, credit: 0 }
+    }
   }
-  router.push(step.to)
+  return map
 }
-function startOrContinue() { if (nextStep.value) openStep(nextStep.value) }
-function seeSummary() { infoToast(t('Not in this prototype')) }
 
-function openCutover() {
-  // Resume at the earliest step still incomplete (Chart of accounts → Map
-  // products → Opening balance).
-  router.push(`/data-migration/wms-cutover/${furthestCutoverStep()}`)
+const obBalances = ref<Record<string, { debit: number; credit: number }>>({})
+
+function startOpeningBalance() {
+  obStatus.value = 'running'
+  setTimeout(() => {
+    obBalances.value = generateBalances()
+    obStatus.value = 'done'
+  }, 3000)
 }
+
+function formatCurrency(val: number): string {
+  if (!val) return '—'
+  return val.toLocaleString('id-ID')
+}
+
+const coaRows = computed(() => {
+  const q = obSearch.value.trim().toLowerCase()
+  if (!q) return DEFAULT_COA
+  return DEFAULT_COA.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q))
+})
+
+// ─── Products — Import ────────────────────────────────────────────────────────
+const prodStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startProductImport() {
+  prodStatus.value = 'running'
+  setTimeout(() => {
+    prodStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Contacts — Import ───────────────────────────────────────────────────────
+const contactStatus = ref<'idle' | 'running' | 'done'>('idle')
+const contactCount = computed(() => customers.length + vendors.length)
+
+function startContactImport() {
+  contactStatus.value = 'running'
+  setTimeout(() => {
+    contactStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Sales — Import ──────────────────────────────────────────────────────────
+const salesStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startSalesImport() {
+  salesStatus.value = 'running'
+  setTimeout(() => {
+    salesStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Purchases — Import ──────────────────────────────────────────────────────
+const purchasesStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startPurchasesImport() {
+  purchasesStatus.value = 'running'
+  setTimeout(() => {
+    purchasesStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Expenses — Import ───────────────────────────────────────────────────────
+const expensesStatus = ref<'idle' | 'running' | 'done'>('idle')
+
+function startExpensesImport() {
+  expensesStatus.value = 'running'
+  setTimeout(() => {
+    expensesStatus.value = 'done'
+  }, 3000)
+}
+
+// ─── Save ────────────────────────────────────────────────────────────────────
+function validate(): boolean {
+  for (const k of Object.keys(errors)) delete errors[k]
+  for (const k of Object.keys(errBank)) delete errBank[k]
+
+  if (!draft.email.trim()) errors.email = req(t('email'))
+  if (!draftBank.bankName.trim()) errBank.bankName = req(t('bank name'))
+  if (!draftBank.accountNo.trim()) errBank.accountNo = req(t('account number'))
+  if (!draftBank.accountName.trim()) errBank.accountName = req(t('account name'))
+
+  return Object.keys(errors).length === 0 && Object.keys(errBank).length === 0
+}
+
+function save() {
+  if (!validate()) return
+  Object.assign(companyInfo, {
+    companyAddress: draft.companyAddress,
+    email: draft.email,
+    phone: draft.phone,
+    npwp: draft.npwp,
+  })
+  Object.assign(bank, draftBank)
+  companySaved.value = true
+  toast.notify({ variant: 'success', title: t('Company info saved'), maxWidth: 'max-content' })
+}
+
+// ─── Step completion tracking ───────────────────────────────────────────────
+const stepDone = computed<Record<string, boolean>>(() => ({
+  'company-info': companySaved.value,
+  'opening-balance': obStatus.value === 'done',
+  'products': prodStatus.value === 'done',
+  'contacts': contactStatus.value === 'done',
+  'sales': salesStatus.value === 'done',
+  'purchases': purchasesStatus.value === 'done',
+  'expenses': expensesStatus.value === 'done',
+}))
 </script>
 
 <template>
-  <div class="dm-root">
-    <!-- ── Migration center (prod: data_migrations/_home) ── -->
-    <section class="dm-home">
-      <div class="dm-home-heading">
-        <h2 class="dm-home-title">{{ t('Welcome to the Migration Center!') }}</h2>
-        <p class="dm-home-note">{{ t('Get ease in transferring your data') }}</p>
-      </div>
-      <div class="dm-banner">
-        <MpIcon name="upload" size="md" color="icon.default" aria-hidden="true" />
-        <div class="dm-banner-text">
-          <p class="dm-banner-title">{{ t('Why migrate your data to the Jurnal?') }}</p>
-          <p class="dm-banner-desc">{{ t('To monitor your transactions statistic, compare reports with the previous period, and you can do bookkeeping easier in Jurnal.') }}</p>
+  <div class="dm-wrapper" data-devchange="dm-step-layout">
+    <!-- ── Landing page (step 0) ─────────────────────────────────────────── -->
+    <div v-if="showLanding" class="dm-landing">
+      <div class="dm-landing-hero-card">
+        <div class="dm-landing-left">
+          <h2 class="dm-landing-title">{{ t('Set up your business data in Mekari ERP') }}</h2>
+          <p class="dm-landing-desc">{{ t('Migrate your existing company information, financial records, and transaction history. Complete each step to get your account ready.') }}</p>
+          <div class="dm-landing-actions">
+            <MpButton
+              id="dm-start-migration-btn"
+              class="btn-enterprise btn-enterprise--primary dm-landing-cta"
+              @click="startMigration"
+            >
+              {{ t('Start setup') }}
+            </MpButton>
+            <span class="dm-landing-note">{{ t('You can complete steps in any order') }}</span>
+          </div>
         </div>
-        <button v-if="allChecked" type="button" class="btn-enterprise btn-enterprise--primary" disabled>{{ t('Finish') }}</button>
-        <button v-else type="button" class="btn-enterprise btn-enterprise--primary" @click="startOrContinue">
-          {{ noneChecked ? t('Start now') : t('Continue') }}
+        <div class="dm-landing-right">
+          <img :src="dmHeroImg" alt="" class="dm-landing-hero" />
+        </div>
+      </div>
+
+      <div class="dm-landing-steps">
+        <h3 class="dm-landing-steps-title">{{ t('What you\'ll set up') }}</h3>
+        <div class="dm-landing-steps-grid">
+          <div v-for="(step, idx) in STEPS" :key="step.id" class="dm-landing-step">
+            <span class="dm-landing-step-number">{{ idx + 1 }}</span>
+            <div class="dm-landing-step-info">
+              <span class="dm-landing-step-label">{{ t(step.label) }}</span>
+              <span class="dm-landing-step-hint">{{ t(stepHints[step.id]) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Steps layout ──────────────────────────────────────────────────── -->
+    <div v-else class="dm-layout">
+      <!-- ── Left: Step list ──────────────────────────────────────────────── -->
+      <nav class="dm-steps" aria-label="Migration steps">
+        <button
+          v-for="(step, idx) in STEPS"
+          :key="step.id"
+          class="dm-step"
+          :class="{ 'dm-step--active': step.id === activeStepId, 'dm-step--done': stepDone[step.id] }"
+          @click="activeStepId = step.id"
+        >
+          <MpIcon v-if="stepDone[step.id]" name="done" variant="fill" size="sm" color="icon.success" />
+          <span v-else class="dm-step-number">{{ idx + 1 }}</span>
+          <span class="dm-step-label">{{ t(step.label) }}</span>
         </button>
-      </div>
+      </nav>
 
-      <div class="dm-columns">
-        <div v-for="(col, ci) in [groupsLeft, groupsRight]" :key="ci" class="dm-column">
-          <div v-for="group in col" :key="group.no" class="dm-group">
-            <div class="dm-group-head">
-              <span class="dm-group-no">{{ group.no }}</span>
-              <div>
-                <p class="dm-group-title">{{ group.title }}</p>
-                <p class="dm-group-desc">{{ group.desc }}</p>
+      <!-- ── Right: Form ────────────────────────────────────────────────── -->
+      <div class="dm-form-area" :class="[activeStepId === 'company-info' ? 'dm-form-area--narrow' : 'dm-form-area--fullbleed']">
+      <!-- Company info form -->
+      <template v-if="activeStepId === 'company-info'">
+        <div class="dm-form-top">
+          <div class="dm-form-fields">
+            <MpFormControl id="dm-company-name">
+              <MpFormLabel>{{ t('Company name') }}</MpFormLabel>
+              <MpInput id="dm-company-name-input" :model-value="companyInfo.companyName" is-full-width is-disabled />
+            </MpFormControl>
+
+            <MpFormControl id="dm-company-address">
+              <MpFormLabel>{{ t('Company address') }}</MpFormLabel>
+              <MpTextarea id="dm-company-address-input" v-model="draft.companyAddress" is-full-width :rows="3" />
+            </MpFormControl>
+
+            <div class="dm-form-row">
+              <MpFormControl id="dm-email" :is-invalid="!!errors.email">
+                <MpFormLabel>{{ t('Email') }}</MpFormLabel>
+                <MpInput id="dm-email-input" v-model="draft.email" is-full-width @update:model-value="clearErr('email')" />
+                <MpFormErrorMessage>{{ errors.email }}</MpFormErrorMessage>
+              </MpFormControl>
+
+              <MpFormControl id="dm-phone">
+                <MpFormLabel>{{ t('Phone') }}</MpFormLabel>
+                <MpInput id="dm-phone-input" v-model="draft.phone" is-full-width />
+              </MpFormControl>
+            </div>
+
+            <MpFormControl id="dm-npwp">
+              <MpFormLabel>NPWP</MpFormLabel>
+              <MpInput id="dm-npwp-input" v-model="draft.npwp" is-full-width />
+            </MpFormControl>
+          </div>
+
+          <!-- Logo upload (right side of the form top row) -->
+          <div class="dm-logo-upload">
+            <span class="dm-logo-label">{{ t('Company logo') }}</span>
+            <template v-if="logoUrl">
+              <div class="dm-logo-preview">
+                <img :src="logoUrl" alt="Company logo" class="dm-logo-img" />
               </div>
-            </div>
-            <div class="dm-steps">
-              <div
-                v-for="step in group.steps" :key="step.id" class="dm-step" role="button" tabindex="0"
-                @click="openStep(step)" @keydown.enter="openStep(step)"
-              >
-                <MpIcon :name="step.icon" size="md" color="icon.default" aria-hidden="true" />
-                <span class="dm-step-label">{{ step.label }}</span>
-                <MpIcon
-                  name="done"
-                  size="md"
-                  :class="checkpoints.includes(step.id) ? 'dm-check dm-check--done' : 'dm-check'"
-                  :aria-label="checkpoints.includes(step.id) ? t('Done') : t('Not done')"
-                />
+              <div class="dm-logo-actions">
+                <MpButton variant="secondary" type="button" class="btn-enterprise btn-enterprise--secondary" size="sm" @click="triggerLogoUpload">
+                  {{ t('Change') }}
+                </MpButton>
+                <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" size="sm" @click="removeLogo">
+                  {{ t('Remove') }}
+                </MpButton>
               </div>
+            </template>
+            <div v-else class="dm-logo-actions">
+              <MpButton variant="secondary" type="button" class="btn-enterprise btn-enterprise--secondary" size="sm" @click="triggerLogoUpload">
+                {{ t('Upload') }}
+              </MpButton>
+            </div>
+            <input ref="logoInputEl" type="file" accept="image/png,image/jpeg,image/svg+xml" hidden @change="onLogoChange" /> <!-- pixel-police-allow: hidden file picker, no visible control -->
+          </div>
+        </div>
+
+        <!-- Bank account info -->
+        <div class="dm-divider" />
+
+        <h3 class="dm-subsection-title">{{ t('Bank account info') }}</h3>
+
+        <MpBanner id="dm-bank-info-banner" variant="info">
+          <MpBannerIcon id="dm-bank-info-banner-icon" />
+          <MpBannerDescription id="dm-bank-info-banner-desc">
+            {{ t('You can add more bank accounts in') }} <a href="/company-profile" class="dm-banner-link">{{ t('Settings') }} &rsaquo; {{ t('Company profile') }}</a>. {{ t('Bank account info will appear as payment info on invoices when enabled in the invoice template.') }}
+          </MpBannerDescription>
+        </MpBanner>
+
+        <div class="dm-bank-fields">
+          <MpFormControl id="dm-bank-name" :is-invalid="!!errBank.bankName">
+            <MpFormLabel>{{ t('Bank name') }}</MpFormLabel>
+            <MpInput id="dm-bank-name-input" v-model="draftBank.bankName" is-full-width @update:model-value="clearBankErr('bankName')" />
+            <MpFormErrorMessage>{{ errBank.bankName }}</MpFormErrorMessage>
+          </MpFormControl>
+
+          <MpFormControl id="dm-account-no" :is-invalid="!!errBank.accountNo">
+            <MpFormLabel>{{ t('Account no.') }}</MpFormLabel>
+            <MpInput id="dm-account-no-input" v-model="draftBank.accountNo" is-full-width @update:model-value="clearBankErr('accountNo')" />
+            <MpFormErrorMessage>{{ errBank.accountNo }}</MpFormErrorMessage>
+          </MpFormControl>
+
+          <MpFormControl id="dm-account-name" :is-invalid="!!errBank.accountName">
+            <MpFormLabel>{{ t('Account name') }}</MpFormLabel>
+            <MpInput id="dm-account-name-input" v-model="draftBank.accountName" is-full-width @update:model-value="clearBankErr('accountName')" />
+            <MpFormErrorMessage>{{ errBank.accountName }}</MpFormErrorMessage>
+          </MpFormControl>
+        </div>
+
+      </template>
+
+      <!-- Opening balance step -->
+      <template v-else-if="activeStepId === 'opening-balance'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Set up opening balance') }}</h2>
+          <p class="dm-section-caption">{{ t('Opening balance is used to set balances based on the conversion date, which is the date you start recording in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="obStatus === 'idle'"
+              id="dm-ob-start-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startOpeningBalance"
+            >
+              {{ t('Set up opening balance') }}
+            </MpButton>
+            <div v-else-if="obStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Setting up opening balance...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
+              <span>{{ t('Opening balance has been set up') }}</span>
             </div>
           </div>
-          <div v-if="ci === 1" class="dm-summary">
-            <MpIcon name="doc" size="md" color="icon.default" aria-hidden="true" />
-            <div class="dm-banner-text">
-              <p class="dm-group-title">{{ t('Summary of your migration data!') }}</p>
-              <p class="dm-group-desc">{{ t('Summary of data that you have entered') }}</p>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-ob-info-banner" variant="info">
+              <MpBannerIcon id="dm-ob-info-banner-icon" />
+              <MpBannerDescription id="dm-ob-info-banner-desc">
+                {{ t('You can add new accounts in') }} <a href="/chart-of-accounts" class="dm-banner-link">{{ t('Chart of accounts') }}</a> {{ t('while filling in your opening balances.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+
+        <div class="dm-ob-filter-bar">
+          <div class="dm-ob-filter-left"></div>
+          <div class="dm-ob-filter-right">
+            <div class="filter-search">
+              <MpIcon name="search" size="sm" />
+              <input v-model="obSearch" class="filter-search-input" type="text" :placeholder="t('Search...')" />
             </div>
-            <button type="button" class="btn-enterprise btn-enterprise--secondary" :disabled="noneChecked" @click="seeSummary">{{ t('See summary') }}</button>
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Local-only: connected-system migration sources (WMS upgrade storyline). -->
-    <p v-if="isUpgradeScenario" class="dm-intro">
-      {{ t('Import opening balances and master data from your connected systems. Set up each source below — nothing is posted to your ledger until you publish its opening balance.') }}
-    </p>
-
-    <!-- ── Source: WMS → ERP (upgrade storyline only) ── -->
-    <section v-if="isUpgradeScenario" class="dm-card">
-      <div class="dm-card-head">
-        <div class="dm-card-icon" aria-hidden="true">
-          <MpIcon name="warehouse" size="md" color="icon.default" />
+        <div class="dm-ob-table-wrap">
+          <table class="dm-ob-table">
+            <colgroup>
+              <col>
+              <col class="dm-ob-col--amount">
+              <col class="dm-ob-col--amount">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="dm-ob-th">{{ t('Account code') }}</th>
+                <th class="dm-ob-th dm-ob-th--num">{{ t('Debit') }}</th>
+                <th class="dm-ob-th dm-ob-th--num">{{ t('Credit') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in coaRows" :key="row.code">
+                <td class="dm-ob-td">
+                  <span class="dm-ob-code">{{ row.code }}</span>{{ row.name }}
+                </td>
+                <td class="dm-ob-td dm-ob-td--num" :class="{ 'dm-ob-td--empty': !obBalances[row.code]?.debit }">
+                  {{ formatCurrency(obBalances[row.code]?.debit ?? 0) }}
+                </td>
+                <td class="dm-ob-td dm-ob-td--num" :class="{ 'dm-ob-td--empty': !obBalances[row.code]?.credit }">
+                  {{ formatCurrency(obBalances[row.code]?.credit ?? 0) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div class="dm-card-heading">
-          <div class="dm-card-title-row">
-            <h2 class="dm-card-title">{{ t('WMS inventory and costing') }}</h2>
-            <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
+      </template>
+
+      <!-- Products step -->
+      <template v-else-if="activeStepId === 'products'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import products') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your product data from a spreadsheet to quickly set up your product catalog in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="prodStatus === 'idle'"
+              id="dm-prod-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startProductImport"
+            >
+              {{ t('Import products') }}
+            </MpButton>
+            <div v-else-if="prodStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing products...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
+              <span>{{ CATALOG.length }} {{ t('products have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/product-list?tab=All+products" class="dm-status-link">{{ t('View products') }}</a>
+            </div>
           </div>
-          <p class="dm-card-desc">
-            {{ t('Map each WMS product to an account in your chart of accounts, then import one opening inventory value per account.') }}
-          </p>
-        </div>
-      </div>
 
-      <dl class="dm-meta">
-        <div class="dm-meta-item">
-          <dt class="dm-meta-label">{{ t('Products in WMS') }}</dt>
-          <dd class="dm-meta-value">{{ CUTOVER_TOTAL_PRODUCTS }}</dd>
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-prod-info-banner" variant="info">
+              <MpBannerIcon id="dm-prod-info-banner-icon" />
+              <MpBannerDescription id="dm-prod-info-banner-desc">
+                {{ t('You can also') }} <a href="/product-list/new" class="dm-banner-link">{{ t('add a new product') }}</a> {{ t('directly from the product page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
         </div>
-        <div class="dm-meta-item">
-          <dt class="dm-meta-label">{{ t('Conversion date') }}</dt>
-          <dd class="dm-meta-value">{{ conversionDate }}</dd>
-        </div>
-      </dl>
+      </template>
 
-      <div class="dm-progress">
-        <div class="dm-progress-row">
-          <span class="dm-progress-text">
-            {{ setUpCount }} {{ t('of') }} {{ CUTOVER_TOTAL_PRODUCTS }} {{ t('products mapped') }}
-          </span>
-          <span class="dm-progress-pct">{{ percent }}%</span>
-        </div>
-        <MpProgress :value="String(percent)" size="sm" color="positive" />
-      </div>
+      <!-- Contacts step -->
+      <template v-else-if="activeStepId === 'contacts'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import contacts') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your customer and vendor data to set up your contact list in Jurnal.') }}</p>
 
-      <div class="dm-card-actions">
-        <button type="button" class="btn-enterprise btn-enterprise--primary" @click="openCutover">
-          {{ isStarted ? t('Continue setup') : t('Start setup') }}
-        </button>
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="contactStatus === 'idle'"
+              id="dm-contact-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startContactImport"
+            >
+              {{ t('Import contacts') }}
+            </MpButton>
+            <div v-else-if="contactStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing contacts...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
+              <span>{{ contactCount }} {{ t('contacts have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/customers" class="dm-status-link">{{ t('View contacts') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-contact-info-banner" variant="info">
+              <MpBannerIcon id="dm-contact-info-banner-icon" />
+              <MpBannerDescription id="dm-contact-info-banner-desc">
+                {{ t('You can also') }} <a href="/customers/new" class="dm-banner-link">{{ t('add a new contact') }}</a> {{ t('directly from the contacts page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Sales step -->
+      <template v-else-if="activeStepId === 'sales'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import sales') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your sales invoice data to set up your sales records in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="salesStatus === 'idle'"
+              id="dm-sales-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startSalesImport"
+            >
+              {{ t('Import sales') }}
+            </MpButton>
+            <div v-else-if="salesStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing sales...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
+              <span>{{ salesInvoices.length }} {{ t('sales invoices have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/sales-invoices" class="dm-status-link">{{ t('View sales invoices') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-sales-info-banner" variant="info">
+              <MpBannerIcon id="dm-sales-info-banner-icon" />
+              <MpBannerDescription id="dm-sales-info-banner-desc">
+                {{ t('You can also') }} <a href="/sales-invoices/new" class="dm-banner-link">{{ t('create a new sales invoice') }}</a> {{ t('directly from the sales page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Purchases step -->
+      <template v-else-if="activeStepId === 'purchases'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import purchases') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your purchase invoice data to set up your purchase records in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="purchasesStatus === 'idle'"
+              id="dm-purchases-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startPurchasesImport"
+            >
+              {{ t('Import purchases') }}
+            </MpButton>
+            <div v-else-if="purchasesStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing purchases...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
+              <span>{{ purchaseInvoices.length }} {{ t('purchase invoices have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/purchase-invoices" class="dm-status-link">{{ t('View purchase invoices') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-purchases-info-banner" variant="info">
+              <MpBannerIcon id="dm-purchases-info-banner-icon" />
+              <MpBannerDescription id="dm-purchases-info-banner-desc">
+                {{ t('You can also') }} <a href="/purchase-invoices/new" class="dm-banner-link">{{ t('create a new purchase invoice') }}</a> {{ t('directly from the purchases page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Expenses step -->
+      <template v-else-if="activeStepId === 'expenses'">
+        <div class="dm-ob-header">
+          <h2 class="dm-section-title">{{ t('Import expenses') }}</h2>
+          <p class="dm-section-caption">{{ t('Import your expense data to set up your expense records in Jurnal.') }}</p>
+
+          <div class="dm-ob-action">
+            <MpButton
+              v-if="expensesStatus === 'idle'"
+              id="dm-expenses-import-btn"
+              class="btn-enterprise--primary dm-ob-start-btn"
+              @click="startExpensesImport"
+            >
+              {{ t('Import expenses') }}
+            </MpButton>
+            <div v-else-if="expensesStatus === 'running'" class="dm-ob-status dm-ob-status--running">
+              <MpSpinner class="dm-ob-spinner" />
+              <span>{{ t('Importing expenses...') }}</span>
+            </div>
+            <div v-else class="dm-ob-status dm-ob-status--done">
+              <MpIcon name="done" variant="fill" size="sm" color="icon.success" />
+              <span>{{ bills.length }} {{ t('expenses have been imported') }}</span>
+              <span class="dm-status-separator">·</span>
+              <a href="/expenses" class="dm-status-link">{{ t('View expenses') }}</a>
+            </div>
+          </div>
+
+          <div class="dm-ob-banner-wrap">
+            <MpBanner id="dm-expenses-info-banner" variant="info">
+              <MpBannerIcon id="dm-expenses-info-banner-icon" />
+              <MpBannerDescription id="dm-expenses-info-banner-desc">
+                {{ t('You can also') }} <a href="/expenses/new" class="dm-banner-link">{{ t('create a new expense') }}</a> {{ t('directly from the expenses page.') }}
+              </MpBannerDescription>
+            </MpBanner>
+          </div>
+        </div>
+      </template>
+
+      <!-- Placeholder for other steps -->
+      <template v-else>
+        <div class="dm-placeholder">
+          <MpIcon name="construction" size="48px" color="icon.subtle" />
+          <p class="dm-placeholder-text">{{ t(activeStep.label) }}</p>
+          <p class="dm-placeholder-desc">{{ t('This step is not available yet.') }}</p>
+        </div>
+      </template>
       </div>
-    </section>
+    </div>
+
+    <!-- Sticky action bar — full-bleed at stage bottom -->
+    <div v-if="!showLanding && activeStepId === 'company-info'" class="dm-action-bar">
+      <MpButton variant="primary" type="button" class="btn-enterprise btn-enterprise--primary" @click="save">
+        {{ t('Save & continue') }}
+      </MpButton>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.dm-root {
-  display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-5);
+/* ─── Wrapper ──────────────────────────────────────────────────────────────── */
+.dm-wrapper {
+  display: contents;
 }
 
-.dm-intro {
+/* ─── Landing page (step 0) ────────────────────────────────────────────────── */
+.dm-landing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-8);
+}
+
+.dm-landing-hero-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--mp-spacing-8);
+  padding: 0 var(--mp-spacing-10) 0;
+  background: var(--mp-background-neutral-subtle);
+  border-radius: var(--mp-radii-xl, 16px);
+  overflow: hidden;
+}
+
+.dm-landing-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--mp-spacing-4);
+  padding: var(--mp-spacing-10) 0;
+}
+
+.dm-landing-title {
   margin: 0;
-  max-width: 720px;
+  font-size: var(--mp-font-sizes-2xl, 24px);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  line-height: var(--mp-sizes-8, 32px);
+  letter-spacing: -0.2px;
+}
+
+.dm-landing-desc {
+  margin: 0;
   font-size: var(--mp-font-sizes-md);
   line-height: var(--mp-line-heights-md);
   color: var(--mp-text-secondary);
 }
 
-
-/* Card = 1px border, never a drop-shadow (DESIGN.md → Surfaces & cards). */
-.dm-card {
-  max-width: 720px;
+.dm-landing-actions {
   display: flex;
-  flex-direction: column;
-  gap: var(--mp-spacing-5);
-  padding: var(--mp-spacing-5);
-  background: var(--mp-background-neutral);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-lg);
-}
-
-.dm-card-head {
-  display: flex;
+  align-items: center;
   gap: var(--mp-spacing-4);
-  align-items: flex-start;
+  margin-top: var(--mp-spacing-2);
 }
 
-.dm-card-icon {
-  flex-shrink: 0;
+.dm-landing-cta {
+  border-radius: var(--mp-radii-full, 999px) !important;
+  padding-left: var(--mp-spacing-6) !important;
+  padding-right: var(--mp-spacing-6) !important;
+}
+
+.dm-landing-note {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-placeholder);
+  line-height: var(--mp-line-heights-sm);
+}
+
+.dm-landing-right {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
-  width: var(--mp-sizes-10, 40px);
-  height: var(--mp-sizes-10, 40px);
-  border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle);
 }
 
-.dm-card-heading {
+.dm-landing-hero {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.dm-landing-steps {
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-1);
-  min-width: 0;
-}
-
-.dm-card-title-row {
-  display: flex;
   align-items: center;
-  gap: var(--mp-spacing-2);
-  flex-wrap: wrap;
+  gap: var(--mp-spacing-4);
 }
 
-.dm-card-title {
+.dm-landing-steps-title {
   margin: 0;
   font-size: var(--mp-font-sizes-lg);
   font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-lg);
   color: var(--mp-text-default);
 }
 
-.dm-card-desc {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
+.dm-landing-steps-grid {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 480px;
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  overflow: hidden;
+}
+
+.dm-landing-step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
+  background: var(--mp-background-neutral);
+}
+
+.dm-landing-step + .dm-landing-step {
+  border-top: 1px solid var(--mp-border-default);
+}
+
+.dm-landing-step-number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mp-sizes-6, 24px);
+  height: var(--mp-sizes-6, 24px);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
 }
 
-.dm-meta {
+.dm-landing-step-info {
   display: flex;
-  gap: var(--mp-spacing-8);
-  margin: 0;
+  flex-direction: column;
+  gap: var(--mp-spacing-0\.5, 2px);
 }
 
-.dm-meta-item {
+.dm-landing-step-label {
+  font-size: var(--mp-font-sizes-md);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+  line-height: var(--mp-line-heights-md);
+}
+
+.dm-landing-step-hint {
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+  line-height: var(--mp-line-heights-sm);
+}
+
+/* ─── Two-column layout ───────────────────────────────────────────────────── */
+.dm-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: calc(100vh - 120px);
+}
+
+/* ─── Step list (left) ────────────────────────────────────────────────────── */
+.dm-steps {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-1);
+  border-right: 1px solid var(--mp-border-default);
+  padding-right: var(--mp-spacing-6);
+  min-height: 100%;
 }
 
-.dm-meta-label {
+.dm-step {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2\.5) var(--mp-spacing-3);
+  border: none;
+  border-radius: var(--mp-radii-md);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+.dm-step:hover { background: var(--mp-background-neutral-subtle); }
+.dm-step--active {
+  background: var(--mp-background-neutral-subtle-selected, #e3e7e9);
+}
+.dm-step--active .dm-step-number {
+  background: var(--mp-background-inverse, #080d0e);
+  color: var(--mp-text-inverse, #fff);
+}
+
+.dm-step-number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mp-sizes-6, 24px);
+  height: var(--mp-sizes-6, 24px);
+  border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral-subtle);
   font-size: var(--mp-font-sizes-sm);
-  line-height: var(--mp-line-heights-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
 }
 
-.dm-meta-value {
-  margin: 0;
+.dm-step-label {
   font-size: var(--mp-font-sizes-md);
-  font-weight: var(--mp-font-weights-semi-bold);
-  line-height: var(--mp-line-heights-md);
   color: var(--mp-text-default);
-  font-variant-numeric: tabular-nums;
+  line-height: var(--mp-line-heights-md);
+}
+.dm-step--active .dm-step-label {
+  font-weight: var(--mp-font-weights-semi-bold);
 }
 
-.dm-progress {
+/* ─── Form area (right) ──────────────────────────────────────────────────── */
+.dm-form-area {
   display: flex;
   flex-direction: column;
-  gap: var(--mp-spacing-2);
+  gap: var(--mp-spacing-5);
+  padding-left: var(--mp-spacing-8);
+  padding-bottom: 64px;
+  align-self: stretch;
 }
-
-.dm-progress-row {
+.dm-form-area--narrow {
+  max-width: 780px;
+  align-self: start;
+}
+.dm-form-area--fullbleed {
+  padding-left: var(--mp-spacing-6);
+}
+.dm-ob-header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
+}
+.dm-section-caption {
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-secondary);
+  margin: 0;
+}
+.dm-ob-action {
+  margin-top: var(--mp-spacing-3);
+}
+.dm-ob-banner-wrap {
+  margin-top: var(--mp-spacing-6);
+}
+.dm-ob-start-btn { border-radius: var(--mp-radii-full, 999px) !important; }
+.dm-ob-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+}
+.dm-ob-status--running {
+  color: var(--mp-text-secondary);
+}
+.dm-ob-status--done {
+  color: var(--mp-feedback-success-text, #15803d);
+}
+.dm-ob-spinner { width: var(--mp-sizes-4, 16px); height: var(--mp-sizes-4, 16px); }
+.dm-ob-spinner :deep(svg) { width: var(--mp-sizes-4, 16px); height: var(--mp-sizes-4, 16px); }
+.dm-status-separator {
+  color: var(--mp-text-placeholder);
+  margin: 0 var(--mp-spacing-1);
+}
+.dm-status-link {
+  color: var(--mp-text-link);
+  text-decoration: none;
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+}
+.dm-status-link:hover { text-decoration: underline; }
+
+.dm-form-top {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: var(--mp-spacing-8);
+  align-items: start;
+}
+
+.dm-form-top > .dm-form-fields {
+  grid-column: 1 / 7;
+}
+
+.dm-form-top > .dm-logo-upload {
+  grid-column: 7 / -1;
+}
+
+.dm-form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-4);
+}
+
+.dm-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--mp-spacing-4);
+}
+
+/* ─── Logo upload ────────────────────────────────────────────────────────── */
+.dm-logo-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--mp-spacing-2);
 }
 
-.dm-progress-text,
-.dm-progress-pct {
+.dm-logo-label {
   font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+
+.dm-logo-preview {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.dm-logo-img {
+  height: var(--mp-sizes-16, 64px);
+  width: auto;
+  object-fit: contain;
+  max-width: 200px;
+}
+
+.dm-logo-placeholder {
+  width: var(--mp-sizes-24, 100px);
+  height: var(--mp-sizes-16, 64px);
+  border: 1px dashed var(--mp-border-default);
+  border-radius: var(--mp-radii-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dm-logo-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+}
+
+/* ─── Divider + subsection ───────────────────────────────────────────────── */
+.dm-divider {
+  height: var(--mp-sizes-px, 1px);
+  background: var(--mp-border-default);
+}
+
+.dm-subsection-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+
+.dm-banner-link {
+  color: var(--mp-text-link);
+  text-decoration: underline;
+}
+
+.dm-bank-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mp-spacing-4);
+  width: 50%;
+}
+
+/* ─── Action bar — sticky full-bleed footer (ed-footer pattern) ─────────── */
+.dm-action-bar {
+  position: sticky;
+  bottom: calc(-1 * var(--mp-spacing-20, 80px));
+  margin: auto calc(-1 * var(--mp-spacing-6)) calc(-1 * var(--mp-spacing-20, 80px));
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-3) var(--mp-spacing-6);
+  background: var(--mp-background-stage, #ffffff);
+  border-top: 1px solid var(--mp-border-subtle, #e6e8eb);
+}
+
+/* ─── Opening balance section title ─────────────────────────────────────── */
+.dm-section-title {
+  margin: 0;
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
+}
+
+/* ─── Filter bar ────────────────────────────────────────────────────────── */
+.dm-ob-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mp-spacing-4);
+}
+.dm-ob-filter-left { flex: 1; }
+.dm-ob-filter-right { flex-shrink: 0; }
+.filter-search { display: flex; align-items: center; gap: var(--mp-spacing-2); width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle); }
+.filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.filter-search-input::placeholder { color: var(--mp-text-placeholder, #97a0af); }
+
+/* ─── Opening balance table ─────────────────────────────────────────────── */
+.dm-ob-table-wrap {
+  overflow: hidden;
+}
+.dm-ob-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.dm-ob-col--amount { width: 200px; }
+
+.dm-ob-th {
+  height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-4);
+  text-align: left;
+  vertical-align: middle;
+  background: var(--mp-background-neutral-subtle);
+  border-bottom: 1px solid var(--mp-border-default);
+  font-size: var(--mp-font-sizes-sm);
+  font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-sm);
   color: var(--mp-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--mp-letter-spacings-wide, 0.4px);
+  white-space: nowrap;
+}
+.dm-ob-th:first-child { padding-left: var(--mp-spacing-4); }
+.dm-ob-th--num { text-align: right; }
+
+.dm-ob-td {
+  height: var(--mp-sizes-12, 48px);
+  padding: var(--mp-spacing-2) var(--mp-spacing-4);
+  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral);
+  font-size: var(--mp-font-sizes-md);
+  line-height: var(--mp-line-heights-md);
+  color: var(--mp-text-default);
+  vertical-align: middle;
+}
+.dm-ob-table tbody tr:last-child .dm-ob-td { border-bottom: none; }
+.dm-ob-td:first-child { padding-left: var(--mp-spacing-4); }
+.dm-ob-td--num { text-align: right; font-variant-numeric: tabular-nums; }
+.dm-ob-td--empty { color: var(--mp-text-placeholder); }
+
+.dm-ob-code {
+  color: var(--mp-text-secondary);
+  margin-right: var(--mp-spacing-2);
   font-variant-numeric: tabular-nums;
 }
 
-.dm-card-actions {
+/* ─── Placeholder for unbuilt steps ──────────────────────────────────────── */
+.dm-placeholder {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-16) 0;
+  text-align: center;
 }
 
-/* ── Migration center ── */
-.dm-home { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
-.dm-home-heading { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.dm-home-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); line-height: var(--mp-line-heights-lg); color: var(--mp-text-default); }
-.dm-home-note { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.dm-banner, .dm-summary {
-  display: flex; align-items: center; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-4); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg);
+.dm-placeholder-text {
+  margin: 0;
+  font-size: var(--mp-font-sizes-lg);
+  font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
 }
-.dm-banner-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.dm-banner-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.dm-banner-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.dm-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--mp-spacing-6); }
-.dm-column { display: flex; flex-direction: column; gap: var(--mp-spacing-6); }
-.dm-group { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.dm-group-head { display: flex; gap: var(--mp-spacing-3); align-items: flex-start; }
-.dm-group-no {
-  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral-subtle); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+
+.dm-placeholder-desc {
+  margin: 0;
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-secondary);
 }
-.dm-group-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.dm-group-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
-.dm-steps { display: flex; flex-direction: column; border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-lg); overflow: hidden; }
-.dm-step {
-  display: flex; align-items: center; gap: var(--mp-spacing-3); width: 100%;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4); background: none; border: 0; text-align: left; cursor: pointer;
-  font: inherit; color: var(--mp-text-default);
-}
-.dm-step + .dm-step { border-top: 1px solid var(--mp-border-default); }
-.dm-step:hover { background: var(--mp-background-neutral-subtle); }
-.dm-step-label { flex: 1; font-size: var(--mp-font-sizes-md); }
-.dm-check { color: var(--mp-colors-icon-default); opacity: 0.35; }
-.dm-check--done { color: var(--mp-colors-text-success); opacity: 1; }
 </style>

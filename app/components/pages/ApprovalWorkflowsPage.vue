@@ -2,8 +2,7 @@
 import { computed, ref } from 'vue'
 import {
   MpButton, MpButtonGroup, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  toast, css,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'

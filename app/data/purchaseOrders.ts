@@ -2,7 +2,8 @@ import { reactive } from 'vue'
 import type { PurchaseOrder, PurchaseOrderStatus } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
-import { loadCreated, saveCreated } from './persist'
+import type { RecurringSchedule } from './salesInvoices'
+import { loadCreated, saveCreated, loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * Purchase orders — a deterministic TIME SERIES spanning 1 Jan 2026 → today
@@ -65,7 +66,16 @@ function buildPurchaseOrders(): PurchaseOrder[] {
   return out.reverse() // newest first
 }
 
-export const purchaseOrders: PurchaseOrder[] = reactive(buildPurchaseOrders())
+const K_PO = 'purchase-orders-v1'
+
+export const purchaseOrders: PurchaseOrder[] = reactive<PurchaseOrder[]>(
+  loadSnapshot<PurchaseOrder>(K_PO) ?? buildPurchaseOrders(),
+)
+
+export function persistPurchaseOrders(): void {
+  saveSnapshot(K_PO, purchaseOrders)
+}
+
 
 // User-created orders (New purchase order / Duplicate) survive a reload; the seed is untouched.
 const PO_CREATED_KEY = 'purchase-orders-created'
@@ -73,4 +83,173 @@ for (const o of loadCreated<PurchaseOrder>(PO_CREATED_KEY)) if (!purchaseOrders.
 export function addPurchaseOrder(order: PurchaseOrder): void {
   purchaseOrders.push(order)
   saveCreated(PO_CREATED_KEY, [...loadCreated<PurchaseOrder>(PO_CREATED_KEY).filter(x => x.id !== order.id), order])
+}
+
+// ── Recurring Purchase Orders ──────────────────────────────────────────────────
+
+export interface RecurringPOHistoryEntry {
+  orderNumber: string
+  date: string
+  amount: number
+  status: string
+}
+
+export interface RecurringPOLineItem {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number
+  discountPct: number
+  amount: number
+}
+
+export interface RecurringPOTotals {
+  subtotal: number
+  discountPerLine: number
+  globalDiscount: number
+  taxLabel: string
+  taxAmount: number
+  shippingFee: number
+  total: number
+}
+
+export interface RecurringPurchaseOrder {
+  id: string
+  templateName: string
+  vendor: { id: string; name: string }
+  frequency: string
+  amount: number
+  nextDate: string
+  status: 'active' | 'completed'
+  createdCount: number
+  schedule?: RecurringSchedule
+  history?: RecurringPOHistoryEntry[]
+  email: string[]
+  billingAddress: string
+  shipTo: string
+  paymentTerms: string
+  warehouse: string
+  referenceNo: string
+  tags: string[]
+  lineItems: RecurringPOLineItem[]
+  message: string
+  memo: string
+  totals: RecurringPOTotals
+  lastUpdatedBy: string
+  lastUpdatedAt: string
+}
+
+function recurringPOEmail(name: string): string[] {
+  const slug = name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 12) || 'vendor'
+  return [`hello@${slug}.com`, `finance@${slug}.com`]
+}
+
+const RPO_ADDRESSES = [
+  'Jl. Anggrek No. 25, Kebayoran Baru, Jakarta Selatan, 12130, DKI Jakarta',
+  'Jl. Gatot Subroto Kav. 18, Setiabudi, Jakarta Selatan, 12950, DKI Jakarta',
+  'Jl. Diponegoro No. 4, Menteng, Jakarta Pusat, 10310, DKI Jakarta',
+  'Jl. Asia Afrika No. 8, Sudirman, Jakarta Pusat, 10270, DKI Jakarta',
+]
+const RPO_SHIP_TO = [
+  'Jl. Sindang III/5, Kompleks Pertamina, DKI Jakarta 12820',
+  'Gudang Blok C No. 12, Kawasan Industri Pulogadung, Jakarta Timur',
+  'Jl. Raya Bogor KM 30, Cibinong, Bogor, Jawa Barat',
+  'Ruko Sentra Niaga No. 7, Bintaro, Tangerang Selatan',
+]
+const RPO_WAREHOUSES = ['Default warehouse', 'Cibinong warehouse', 'Pulogadung DC', 'Bandung hub']
+const RPO_PAYMENT_TERMS = ['Net 30', 'Net 14', 'Cash on delivery', 'Net 45']
+
+function buildRecurringPOLineItems(amount: number, idx: number): RecurringPOLineItem[] {
+  const count = 1 + (idx % 4)
+  const items: RecurringPOLineItem[] = []
+  const products = [
+    { product: 'Green Beans Arabica Gayo Grade 1', sku: '1001', description: 'Aceh highlands, fully washed, screen 18, 60 kg jute sack', unit: 'Sack', unitPrice: 3_200_000 },
+    { product: 'Green Beans Robusta Temanggung', sku: '1008', description: 'Central Java, dry process, 60 kg sack', unit: 'Sack', unitPrice: 2_200_000 },
+    { product: 'Espresso Machine Dual Boiler 2-Group', sku: '2001', description: 'Commercial, stainless body, PID control', unit: 'Unit', unitPrice: 85_000_000 },
+    { product: 'Coffee Grinder Single Dose 64mm', sku: '2005', description: 'Single dose, bellows, low retention', unit: 'Unit', unitPrice: 9_800_000 },
+  ]
+  const taxRate = 0.11
+  const baseAmount = Math.round(amount / (1 + taxRate))
+  let remaining = baseAmount
+  for (let i = 0; i < count; i++) {
+    const p = products[i % products.length]!
+    const isLast = i === count - 1
+    const lineAmount = isLast ? remaining : Math.round(baseAmount / count)
+    remaining -= lineAmount
+    const qty = Math.max(1, Math.round(lineAmount / p.unitPrice))
+    items.push({
+      product: p.product,
+      sku: p.sku,
+      description: p.description,
+      qty,
+      unit: p.unit,
+      unitPrice: p.unitPrice,
+      discountPct: 0,
+      amount: lineAmount,
+    })
+  }
+  return items
+}
+
+function buildRecurringPOTotals(amount: number): RecurringPOTotals {
+  const taxRate = 0.11
+  const subtotal = Math.round(amount / (1 + taxRate))
+  const taxAmount = amount - subtotal
+  return { subtotal, discountPerLine: 0, globalDiscount: 0, taxLabel: 'PPN 11%', taxAmount, shippingFee: 0, total: amount }
+}
+
+function buildRecurringPOTemplate(
+  base: { id: string; templateName: string; vendor: typeof vendors[0]; frequency: string; amount: number; nextDate: string; status: 'active' | 'completed'; createdCount: number; schedule: RecurringSchedule; history?: RecurringPOHistoryEntry[] },
+  idx: number,
+): RecurringPurchaseOrder {
+  return {
+    ...base,
+    vendor: base.vendor!,
+    email: recurringPOEmail(base.vendor!.name),
+    billingAddress: RPO_ADDRESSES[idx % RPO_ADDRESSES.length]!,
+    shipTo: RPO_SHIP_TO[idx % RPO_SHIP_TO.length]!,
+    paymentTerms: RPO_PAYMENT_TERMS[idx % RPO_PAYMENT_TERMS.length]!,
+    warehouse: RPO_WAREHOUSES[idx % RPO_WAREHOUSES.length]!,
+    referenceNo: `SI #${30080 + idx}`,
+    tags: idx % 3 === 0 ? ['Import'] : idx % 5 === 0 ? ['Raw material'] : [],
+    lineItems: buildRecurringPOLineItems(base.amount, idx),
+    message: 'This is an automatically generated recurring purchase order.',
+    memo: `Recurring template ${base.id}`,
+    totals: buildRecurringPOTotals(base.amount),
+    lastUpdatedBy: 'Rizal Candra',
+    lastUpdatedAt: simDay(-3),
+  }
+}
+
+const RPO_TEMPLATES: RecurringPurchaseOrder[] = [
+  buildRecurringPOTemplate({ id: 'RPO001', templateName: 'Monthly raw material supply', vendor: vendors[0]!, frequency: 'Monthly', amount: 18_500_000, nextDate: simDay(SIM_SPAN_DAYS + 5), status: 'active', createdCount: 6, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-180), sendAutoEmail: true }, history: [
+    { orderNumber: 'PO-2026-0060', date: simDay(-5), amount: 18_500_000, status: 'Closed' },
+    { orderNumber: 'PO-2026-0055', date: simDay(-35), amount: 18_500_000, status: 'Closed' },
+    { orderNumber: 'PO-2026-0050', date: simDay(-65), amount: 18_500_000, status: 'Closed' },
+  ] }, 0),
+  buildRecurringPOTemplate({ id: 'RPO002', templateName: 'Weekly packaging order', vendor: vendors[1]!, frequency: 'Weekly', amount: 7_200_000, nextDate: simDay(SIM_SPAN_DAYS + 2), status: 'active', createdCount: 24, schedule: { repeatInterval: 1, repeatUnit: 'week', endRepeat: 'never', startDate: simDay(-168), sendAutoEmail: false }, history: [
+    { orderNumber: 'PO-2026-0059', date: simDay(-2), amount: 7_200_000, status: 'Open' },
+    { orderNumber: 'PO-2026-0054', date: simDay(-9), amount: 7_200_000, status: 'Closed' },
+  ] }, 1),
+  buildRecurringPOTemplate({ id: 'RPO003', templateName: 'Quarterly equipment procurement', vendor: vendors[2]!, frequency: 'Quarterly', amount: 63_000_000, nextDate: simDay(SIM_SPAN_DAYS + 30), status: 'active', createdCount: 3, schedule: { repeatInterval: 3, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 8, startDate: simDay(-270), sendAutoEmail: true }, history: [
+    { orderNumber: 'PO-2026-0058', date: simDay(-10), amount: 63_000_000, status: 'Open' },
+  ] }, 2),
+  buildRecurringPOTemplate({ id: 'RPO004', templateName: 'Bi-weekly office supply', vendor: vendors[3]!, frequency: 'Bi-weekly', amount: 9_800_000, nextDate: simDay(SIM_SPAN_DAYS + 8), status: 'active', createdCount: 10, schedule: { repeatInterval: 2, repeatUnit: 'week', endRepeat: 'never', startDate: simDay(-140), sendAutoEmail: false } }, 3),
+  buildRecurringPOTemplate({ id: 'RPO005', templateName: 'Annual maintenance contract', vendor: vendors[4]!, frequency: 'Yearly', amount: 155_000_000, nextDate: simDay(SIM_SPAN_DAYS + 60), status: 'active', createdCount: 1, schedule: { repeatInterval: 1, repeatUnit: 'year', endRepeat: 'never', startDate: simDay(-365), sendAutoEmail: true } }, 4),
+  buildRecurringPOTemplate({ id: 'RPO006', templateName: 'Monthly logistics contract', vendor: vendors[5 % vendors.length]!, frequency: 'Monthly', amount: 12_400_000, nextDate: simDay(SIM_SPAN_DAYS + 12), status: 'completed', createdCount: 12, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 12, startDate: simDay(-365), sendAutoEmail: false } }, 5),
+  buildRecurringPOTemplate({ id: 'RPO007', templateName: 'Weekly utility supply', vendor: vendors[6 % vendors.length]!, frequency: 'Weekly', amount: 5_600_000, nextDate: simDay(SIM_SPAN_DAYS + 1), status: 'active', createdCount: 18, schedule: { repeatInterval: 1, repeatUnit: 'week', endRepeat: 'never', startDate: simDay(-126), sendAutoEmail: true } }, 6),
+  buildRecurringPOTemplate({ id: 'RPO008', templateName: 'Monthly premium blend beans', vendor: vendors[7 % vendors.length]!, frequency: 'Monthly', amount: 28_500_000, nextDate: simDay(SIM_SPAN_DAYS + 15), status: 'active', createdCount: 4, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'on', endOnDate: simDay(365), startDate: simDay(-120), sendAutoEmail: true } }, 7),
+]
+
+const K_RPO = 'recurring-purchase-orders-v1'
+
+export const recurringPurchaseOrders = reactive<RecurringPurchaseOrder[]>(
+  loadSnapshot<RecurringPurchaseOrder>(K_RPO) ?? [...RPO_TEMPLATES],
+)
+export function recurringPurchaseOrdersCount(): number { return recurringPurchaseOrders.filter(r => r.status === 'active').length }
+export function persistRecurringPurchaseOrders(): void { saveSnapshot(K_RPO, recurringPurchaseOrders) }
+export function getRecurringForPurchaseOrder(recurringId: string): RecurringPurchaseOrder | undefined {
+  return recurringPurchaseOrders.find(r => r.id === recurringId)
 }

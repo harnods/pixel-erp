@@ -141,7 +141,7 @@ function confirmRevert() {
     <template #header-periodLabel>
       <span class="cb-th">
         <MpTooltip :label="periodTooltip" placement="top" use-portal>
-          <span class="cb-th-info"><MpIcon name="info" size="sm" color="icon.secondary" /></span>
+          <span class="cb-th-info"><MpIcon name="info" size="sm" color="icon.default" /></span>
         </MpTooltip>
       </span>
     </template>

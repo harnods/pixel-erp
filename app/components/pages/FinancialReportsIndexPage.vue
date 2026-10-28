@@ -9,6 +9,7 @@ import { MpButton } from '@mekari/pixel3'
 // the grid stays a complete rectangle, and the outer right + bottom borders are
 // clipped so the rightmost column never shows a border.
 import { infoToast } from '~/utils/toasts'
+
 const { t } = useLocale()
 const router = useRouter()
 
@@ -36,7 +37,6 @@ const reports: ReportCard[] = [
   { slug: 'multidimensional', title: 'Multidimensional', description: 'Shows your profit & loss for each branch, project, or other dimension in a certain period.', to: '/financial-report/multidimensional' },
 ]
 
-// ── Responsive column count ──────────────────────────────────────────────────
 const MIN_CARD_WIDTH = 260
 const gridEl = ref<HTMLElement | null>(null)
 const cols = ref(4)

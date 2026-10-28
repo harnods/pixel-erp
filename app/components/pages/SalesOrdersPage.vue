@@ -359,9 +359,7 @@ const bulkDeleteTitle = computed(() => bulkSelectedCount.value === 1
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" variant="ghost" class="search-clear-btn" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
         </div>
       </div>
     </template>

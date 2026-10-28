@@ -1,7 +1,7 @@
 <!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/quotes/views/SalesQuoteShowView.vue -->
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
@@ -10,6 +10,11 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getSalesQuoteDetail } from '~/data/salesQuoteDetails'
 import { salesQuotes } from '~/data'
 
@@ -48,6 +53,27 @@ function copyLink() {
   void navigator.clipboard?.writeText(`https://mkrierp.id/${quote.value.id}`).catch(() => {})
   toast.notify({ variant: 'success', title: t('Link copied to clipboard'), rootProps: { class: 'toast-enterprise' } })
 }
+const previewOpen = ref(false)
+const pdfUrl = ref('')
+const PDF_B64 = 'JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNDIwIDI2MF0vQ29udGVudHMgNCAwIFIvUmVzb3VyY2VzPDwvRm9udDw8L0YxIDUgMCBSPj4+Pj4+ZW5kb2JqCjQgMCBvYmo8PC9MZW5ndGggMTIwPj5zdHJlYW0KQlQgL0YxIDIyIFRmIDQwIDIwMCBUZCAoU2FtcGxlIGludm9pY2UgUERGKSBUaiBFVApCVCAvRjEgMTMgVGYgNDAgMTY1IFRkIChQcmV2aWV3IHJlbmRlcmVkIGluIGFuIGlmcmFtZS4pIFRqIEVUCmVuZHN0cmVhbSBlbmRvYmoKNSAwIG9iajw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+ZW5kb2JqCnRyYWlsZXI8PC9Sb290IDEgMCBSPj4='
+if (import.meta.client) {
+  const bytes = Uint8Array.from(atob(PDF_B64), (c) => c.charCodeAt(0))
+  pdfUrl.value = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
+const sqActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: () => { previewOpen.value = true } },
+    // An open quote moves on to an order or invoice, or is declined.
+    { label: 'Create sales order', show: quote.value.status === 'open', onClick: () => { router.push('/sales-orders/new') } },
+    { label: 'Create sales invoice', show: quote.value.status === 'open', onClick: () => { router.push('/sales-invoices/new') } },
+    { label: 'Mark as declined', show: quote.value.status === 'open', onClick: () => { declineOpen.value = true } },
+    { label: 'Edit', onClick: () => { router.push(`/sales-quotes/${quote.value.id}/edit`) } },
+    { label: 'Duplicate', onClick: () => { router.push('/sales-quotes/new') } },
+    { label: 'Void', onClick: notInPrototype },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: quote.value.lastUpdatedAt,
   user: quote.value.lastUpdatedBy,
@@ -182,15 +208,16 @@ function goBack() { router.push('/sales-quotes') }
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="o in jumpResults"
                     :key="o.id"
+                    variant="ghost"
                     class="detail-jump-item"
                     @click="jumpTo(o.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Sales Quote') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No results found') }}</p>
                 </div>
               </div>
@@ -229,7 +256,7 @@ function goBack() { router.push('/sales-quotes') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')" :value="quote.customer.name" />
+            <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(quote.customer.name)}`, '_blank')">{{ quote.customer.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -425,53 +452,8 @@ function goBack() { router.push('/sales-quotes') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="copyLink">{{ t('Copy link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
-              <template v-if="quote.status === 'open'">
-                <MpPopoverListItem @click="router.push('/sales-orders/new')">{{ t('Create sales order') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="declineOpen = true">{{ t('Mark as declined') }}</MpPopoverListItem>
-              </template>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="router.push(`/sales-quotes/${quote.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="router.push('/sales-quotes/new')">{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="sq-print" />
+        <DetailActionsMenu id="sq-actions" :groups="sqActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -500,6 +482,8 @@ function goBack() { router.push('/sales-quotes') }
       :confirm-label="t('Decline')"
       @confirm="confirmDecline"
     />
+
+    <FilePreviewModal :open="previewOpen" :src="pdfUrl" :filename="`sales-quote-${quote.number}.pdf`" @close="previewOpen = false" />
   </div>
 </template>
 
@@ -790,8 +774,8 @@ function goBack() { router.push('/sales-quotes') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

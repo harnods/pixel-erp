@@ -66,18 +66,21 @@ is the point: they *feel* normal, which is exactly why they slip through.
 | `size="sm"` on primary/danger/ghost | drop it (sm = secondary, bulk-bar only) | `rule/btn-sm-secondary-only` |
 | An icon on a danger button | text-only danger | `rule/btn-danger-no-icon` |
 | `left-icon` on any button that isn't `+ New <noun>` | text-only (icon only on create) | `rule/btn-icon-add-only` |
+| Dark/default icon color on a header icon button | white `icon.inverse` via `<MpIcon>` | `rule/header-icon-inverse` |
+| `background.surface.bold.*` token or a visible border on a header icon button's hover | `rgba(255,255,255,.12)` veil, `border:none` | `rule/header-icon-veil-no-border` |
 | A leading icon on a menu item (incl. bulk actions) | text-only menu item | `rule/popover-no-icons` |
 | `left-icon` on a sm button | right-icon dropdown only | `rule/btn-sm-dropdown-only` |
 | `is-full-width` on a button | button hugs content | `rule/btn-no-full-width` |
 | Shipping only the populated success case | design every reachable state | `reachable-states.md` |
 | Placeholder text in an input/textarea | no placeholder; label the field | `rule/input-no-placeholder` |
 | `size="sm"` on a form field | md only (the default) | `rule/form-size-md-only` |
+| Hand-rolled Transaction no. field (or one with no settings gear) | `TransactionNoField` | `rule/form-transaction-no-field` |
 | Extra padding around a checkbox + its label | none; 12px gap is built in | `rule/checkbox-gap-12` |
 | A separate column just for a row checkbox | put it in the first data cell | `rule/table-checkbox-first-cell` |
 | Green/brand active segment, square segmented | pill + `#E2E8F0`/`#165082` active | `rule/segmented-control-pill` |
 | A calendar clipped by an overflow container | portal it (`AdvancedDateRangePicker`) | `rule/date-picker-no-clip` |
 | A hand-rolled preview/scenario FAB on an index page | shared `ScenarioFab` (black, settings icon) | `rule/index-scenario-fab` |
-| `Delete` in a table bulk-actions menu | non-destructive bulk ops only | `rule/bulk-actions-no-delete` |
+| Bulk `Delete` that deletes straight from the bar, or confirms without a count | last item in the Actions dropdown, danger-styled, behind a `ConfirmModal` naming the count | `rule/bulk-actions-delete-confirmed` |
 | A thumbnail rail beside a PDF preview | single-column PDF, no rail | `rule/pdf-preview-modal` |
 | Export wired to a silent download | open `ExportModal` | `rule/export-modal` |
 | Share-via-email as a form-only dialog | `ShareViaEmailModal` (form + PDF preview) | `rule/share-via-email-modal` |
@@ -245,6 +248,28 @@ is the point: they *feel* normal, which is exactly why they slip through.
   signal "not ready" (loading/duplicate-submit lock is the only allowed disable).
   **Why:** disabled buttons hide *why* and give no feedback. **Lint:** review.
 
+## Global header bar — source: `docs/patterns/global-header-bar.md`
+
+The dark 56px app header (`ErpHeader`) on `background.header` (`#142D26`) —
+distinct from the light page title bar. Everything on it reads white.
+
+- **`rule/header-icon-inverse`** — *Do:* a header quick-action icon button renders
+  its glyph **white** via `<MpIcon :name="icon" color="icon.inverse" />` as the
+  button child, and the glyph **stays white** on hover/active. *Don't:* rely on
+  `:left-icon` on a ghost `MpButton` — the icon inherits the button's **dark**
+  currentColor and disappears on the dark header. **Why:** contrast on
+  `background.header`. **Standard = the shared `IconButton`**
+  (`app/components/IconButton.vue`); the quick-create `+` (`ErpQuickCreateMenu`)
+  uses the same pattern. **Lint:** review.
+- **`rule/header-icon-veil-no-border`** — *Do:* a header icon button's hover fill is
+  a **literal translucent white** `rgba(255,255,255,0.12)` (active/pressed
+  `rgba(255,255,255,0.2)`) and it has **`border: none`**. *Don't:* use the Panda
+  `background.surface.bold.hovered/pressed` tokens (they resolve to an **opaque
+  near-white `#f8f9f9`** here — a light box that washes out the white icon), and
+  don't leave the ghost `MpButton`'s 1px border (it shows as an outlined box on
+  hover). **Why:** only the subtle fill should change on the dark header, never a
+  light box or a border. **Lint:** review.
+
 ## Forms & modals — source: `docs/patterns/Form.md`, `docs/patterns/Modal.md`
 
 - **`rule/form-actions-always-present`** — *Do:* footer **Cancel + primary** are
@@ -257,6 +282,13 @@ is the point: they *feel* normal, which is exactly why they slip through.
 - **`rule/form-edit-save-changes`** — *Do:* edit-form primary = **"Save changes"**;
   create-form primary = **"Save"**. **Why:** verb matches the operation. **Lint:**
   review.
+- **`rule/form-transaction-no-field`** — *Do:* render every form's auto-generated
+  **Transaction no.** field with the shared **`TransactionNoField`** component (its
+  label carries a settings gear that opens `NumberFormatSettingsModal`). *Don't:*
+  hand-roll an `MpFormControl` + label + gear + modal, and don't ship a plain
+  disabled "Auto" input with **no** gear. **Why:** one consistent auto-numbering
+  affordance across all transaction forms; see `docs/patterns/Form.md` →
+  "Transaction no. field". **Lint:** review.
 - **`rule/modal-use-mpmodal`** — *Do:* every modal uses Pixel **`MpModal`** (size
   `md`, ghost Cancel + pill confirm). "MpModal has no CSS" is a **myth** — it works.
   **Why:** one modal system. **Lint:** review.
@@ -689,6 +721,14 @@ ERP override wins.
   **only** when the slot holds more than one button. *Don't:* float actions elsewhere, let
   them scroll away, hardcode a per-page `actionsWidth="52px"`, or centre the button. **Why:**
   one reachable, uniform action affordance. **Lint:** review.
+- **`rule/table-row-kebab-icon`** — *Do:* the row `[…]` kebab always shows its three-dot
+  icon — the shared `.row-kebab` override in `erp.css` drops Pixel MpButton's 16px side
+  padding and keeps the icon from shrinking. Prefer `<MpButton left-icon="menu-kebab">` for
+  new kebabs. *Don't:* give a `.row-kebab` page rule horizontal padding ≥ 8px (with a raw
+  inline `<svg>` child it collapses to 0px wide), or re-patch the fix per page. **Why:** a
+  32px MpButton with 16px+16px padding has a 0px content box — the button is clickable but
+  invisible. **Source:** `docs/patterns/pixel-enterprise-overrides.md` §10.
+  **Lint:** `tests/pixel-police.spec.ts`.
 - **`rule/table-form-money-prefix`** — *Do:* a money input in a form-table cell carries a
   **currency prefix addon** (`Rp`) — a gray, semibold segment flush to the left of the
   input inside the same cell (the input has no border of its own). *Don't:* show a bare
@@ -774,6 +814,16 @@ ERP override wins.
   Only the field *set* varies per page. *Don't:* invent a new field control or a native
   `<select>` (`rule/select-erpfilterselect`). **Why:** every filter drawer reads the
   same. **Lint:** review.
+  *Variant — collapsible checklist:* a checklist may collapse behind its own label
+  when a drawer carries **more than 3 checklist groups** (most carry 2–3). The header
+  is the bold label + a **"N selected" / "None selected"** preview + a trailing
+  `chevrons-down` that rotates on open; collapsed is the default, and a section whose
+  filter is **already applied opens automatically** when the drawer opens. Collapse
+  the specialist groups, not the page's primary Status. *Don't:* collapse a group
+  without the selected-count preview, or leave an applied filter shut — a filter the
+  user cannot see is one they cannot clear. **Source:** `EmployeesFiltersDrawer.vue`
+  (`.ef-scope-*`, from Talenta's `PxAllFiltersDrawer`); `SalesInvoiceFiltersDrawer.vue`
+  (the two tax axes). **Lint:** `tests/sales-invoice-filters-tax-axes.spec.ts`.
 - **`rule/filter-drawer-footer`** — *Do:* fixed footer, always three actions: a **ghost
   "Reset filter"** pinned **left** (clears the draft to empty), then **ghost "Cancel"** +
   **primary "Apply"** pinned **right**. Apply commits + closes; Cancel/× discards. *Don't:*
@@ -938,6 +988,12 @@ ERP override wins.
 - **`rule/token-no-raw-html`** — *Do:* use `Mp*` components (or a sanctioned
   `.btn-enterprise` button); no raw `<button>/<input>/<select>/<textarea>`. **Lint:**
   pixel-police.
+  *Writing about it:* `scripts/pixel-police-ci.sh` greps the **raw added lines**, so a
+  COMMENT that merely mentions one of these tags in angle brackets fails CI exactly
+  like real markup would. In prose write "a raw button element", not the bracketed
+  tag — or append `pixel-police-allow` to that line. Note the CI script applies this
+  check to **every** changed `.vue`, while `tests/pixel-police.spec.ts` scopes it to
+  CRM files, so a green local suite does not mean a green CI run for this rule.
 
 ## Copy & terminology — source: `docs/patterns/`, `app/data/translations.ts`
 
@@ -954,6 +1010,39 @@ ERP override wins.
 - **`rule/copy-id-translations`** — *Do:* all strings live in
   `app/data/translations.ts` (English key → Indonesian value) via `t()`. **Lint:**
   review.
+- **`rule/efaktur-status-axes`** — a tax document carries **three independent
+  axes**; never collapse two of them into one label or one field.
+
+  | Axis | Field | UI label (EN / ID) | Values |
+  |---|---|---|---|
+  | Which document is issued | `docKind` (`FK`/`DK`) | Document type / Jenis dokumen | Output tax invoice · Other output document |
+  | The faktur's own status | `kind` + `supersededAs`, read via `taxDocumentStatus()` | Tax document status / Status dokumen pajak | Normal · Replacement (Pengganti) · Cancellation (Pembatalan) · Replaced (Diganti) · Cancelled (Dibatalkan) · Return note (Nota retur) |
+  | What DJP replied | `status` | DJP status / Status DJP | — · Draft · Processing at DJP · Approved by DJP · Rejected by DJP |
+
+  *Do:* keep `DJP_STATUS_CONFIG` to replies only, and derive the faktur's status
+  with `taxDocumentStatus()`. A superseded faktur keeps `status: 'approved'` — DJP
+  approved it and never said otherwise — and carries `supersededAs`, so it reads
+  **Diganti / Approved by DJP** at the same time.
+  *Do:* render **DJP status as a badge** (`ErpStatusBadge` + `DJP_STATUS_CONFIG`) and
+  **Tax document status as plain text** (`TAX_DOCUMENT_STATUS_LABELS`, which carries
+  no tone by design). One classifies the document, the other reports a state that
+  changes and needs watching — badging both puts two chips in one row competing for
+  the same attention, and there is no good or bad way for a faktur to be a Pengganti.
+  Its index column still takes `kind: 'status'`: the 128–160 range is sized for short
+  status labels, badge or not.
+  *Don't:* put `Replaced` / `Cancelled` on the DJP axis; don't head the faktur-status
+  column **"Type"** (it collides with the Create drawer's "Document type"); don't
+  offer **Pembetulan / Dibetulkan** anywhere — a faktur is corrected ONLY by issuing
+  a pengganti, and "pembetulan" is a state on SPT and Bukti Potong, not on a faktur.
+  **Why:** the three answer different questions, and a filter that mixes them makes
+  "show me everything DJP rejected" unanswerable.
+  **Source:** PER-11/PJ/2025 Lampiran huruf D — **D.2.b.2)** (kode status: 00 normal,
+  01.. pengganti ke-N), **D.5.a/D.5.f** (correction only via pengganti),
+  **D.6** (pembatalan; the faktur stays on file), **D.2.b.3)b)** (NSFP issued on
+  "persetujuan dari Direktorat Jenderal Pajak").
+  **Lint:** `tests/tax-documents.spec.ts`, `tests/sales-invoice-filters-tax-axes.spec.ts`,
+  `tests/sales-invoice-tax-document-tab.spec.ts`,
+  `tests/sales-invoices-tax-status-column.spec.ts`.
 - **`rule/no-page-description-subtitle`** — *Do:* a page (or section) shows its
   **title** and goes straight to content. *Don't:* add a descriptive subtitle/lead
   paragraph under the title that explains **what the page is for** (e.g. "Group
@@ -1038,12 +1127,28 @@ Every list/index page shares the same demo scaffolding and bulk-bar rules.
   it from a `loading` flag the page holds true until the initial (mock) fetch
   resolves. *Don't:* flash an empty table or a spinner-only screen on first paint.
   **Why:** consistent perceived-performance across the app. **Lint:** review.
-- **`rule/bulk-actions-no-delete`** — *Do:* the table **bulk-actions** bar (the
-  secondary-sm "Actions" dropdown) lists non-destructive batch operations only.
-  *Don't:* put **Delete** (or any hard-destructive action) in the bulk menu.
-  **Why:** bulk delete from a multi-select is too easy to trigger by accident;
-  deletion stays a per-record action behind its own confirm. **Lint:** review
-  (grep bulk-actions slot for `Delete`).
+- **`rule/bulk-actions-delete-confirmed`** — *Do:* a table **bulk-actions** bar
+  may offer **Delete**, and it is **always** behind a confirm. Put it **last** in
+  the secondary-sm "Actions" dropdown, styled destructive
+  (`class="row-menu-item--danger"`), wired to an `ask*`/`open*` handler that opens
+  a `ConfirmModal` (`variant="danger"`) naming **how many records** will go and
+  saying the deletion cannot be undone; the delete itself happens only in the
+  modal's `confirm` handler. On success, deselect the rows and toast the count.
+  *Don't:* delete straight from the bulk bar, ship a bulk Delete control wired to
+  nothing, or confirm with a message that doesn't say how many records are
+  affected. **Why:** bulk delete from a multi-select is easy to trigger by
+  accident, so the count in the confirm is the safety net — not the absence of
+  the action, which the modules genuinely need. **History:** this rule used to
+  read `rule/bulk-actions-no-delete` ("non-destructive batch operations only").
+  It was overruled: 15 index pages ship bulk Delete, every one behind a
+  confirm. The rule now describes what the app does. **Lint:** review — grep
+  bulk-actions slots for `Delete` and check each one reaches a `ConfirmModal`.
+  **Where the module soft-deletes** (Bill of materials, Warehouses) the bulk
+  action is **Archive**, matching the row menu — never label it Delete when
+  nothing is actually deleted. **Known gaps:** Delete sits inside the Actions
+  dropdown on `CrmDealsPage`, `FileManagerPage`, `SalesOrdersPage` and
+  `SalesDeliveriesPage`; the other ten render it as a standalone secondary-sm
+  button beside the dropdown — the older form, which new pages should not copy.
 
 ## Patterns — shared modals & drawers (print · share · copy link · export)
 

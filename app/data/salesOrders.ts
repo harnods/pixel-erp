@@ -1,7 +1,10 @@
+import { reactive } from 'vue'
 import type { SalesOrder, SalesOrderItem, SalesOrderStatus } from './types'
 import { CATALOG } from './catalog'
-import { customers } from './customers'
-import { loadCreated, saveCreated } from './persist'
+import { customers, EXPORT_CUSTOMER_ID } from './customers'
+import type { RecurringSchedule } from './salesInvoices'
+import { SIM_SPAN_DAYS, simDay } from './simClock'
+import { loadCreated, saveCreated, loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * Mock sales orders for a wholesale + retail coffee business
@@ -16,7 +19,11 @@ import { loadCreated, saveCreated } from './persist'
 /** Customers come from the shared master (`customers.ts`) — same ids the WMS
  *  outbound module uses, so a sales order and its dispatch resolve to one
  *  company. Sales orders only need id + name here. */
-const CUSTOMERS: { id: string; name: string }[] = customers.map((c) => ({ id: c.id, name: c.name }))
+// Positional assignment, same as salesInvoices.ts — the export customer stays
+// out so adding it never shifts an existing order's buyer.
+const CUSTOMERS: { id: string; name: string }[] = customers
+  .filter((c) => c.id !== EXPORT_CUSTOMER_ID)
+  .map((c) => ({ id: c.id, name: c.name }))
 
 const STATUSES: SalesOrderStatus[] = ['open', 'partially processed', 'closed', 'voided']
 
@@ -201,7 +208,17 @@ const CONTRACT_ORDERS: SalesOrder[] = [
   ]),
 ]
 
-export const salesOrders: SalesOrder[] = [...build(), ...CONTRACT_ORDERS]
+const K_SO = 'sales-orders-v1'
+
+export const salesOrders: SalesOrder[] = reactive<SalesOrder[]>(
+  loadSnapshot<SalesOrder>(K_SO) ?? [...build(), ...CONTRACT_ORDERS],
+)
+// A snapshot saved before the contract orders existed still gets them.
+for (const o of CONTRACT_ORDERS) if (!salesOrders.some(x => x.id === o.id)) salesOrders.push(o)
+
+export function persistSalesOrders(): void {
+  saveSnapshot(K_SO, salesOrders)
+}
 
 // User-created orders (New sales order form) survive a reload — appended after the seed.
 const CREATED_KEY = 'sales-orders-created'
@@ -225,3 +242,162 @@ export function awaitingSalesOrders(): SalesOrder[] {
   return salesOrders.filter(r => r.number % 7 === 0)
 }
 export function awaitingSalesOrdersCount(): number { return awaitingSalesOrders().length }
+
+// ── Recurring Sales Orders ──────────────────────────────────────────────────
+
+export interface RecurringSOHistoryEntry {
+  orderNumber: number
+  date: string
+  amount: number
+  status: string
+}
+
+export interface RecurringSOLineItem {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number
+  discountPct: number
+  amount: number
+}
+
+export interface RecurringSalesOrder {
+  id: string
+  templateName: string
+  customer: { id: string; name: string }
+  frequency: string
+  amount: number
+  nextDate: string
+  status: 'active' | 'completed'
+  createdCount: number
+  schedule?: RecurringSchedule
+  history?: RecurringSOHistoryEntry[]
+  email: string[]
+  billingAddress: string
+  shipTo: string
+  paymentTerms: string
+  warehouse: string
+  referenceNo: string
+  tags: string[]
+  lineItems: RecurringSOLineItem[]
+  message: string
+  memo: string
+  totals: SalesOrderTotals
+  lastUpdatedBy: string
+  lastUpdatedAt: string
+}
+
+function recurringSOEmail(name: string): string[] {
+  const slug = name.toLowerCase().replace(/[^a-z]/g, '').slice(0, 12) || 'customer'
+  return [`hello@${slug}.com`, `finance@${slug}.com`]
+}
+
+const RSO_ADDRESSES = [
+  'Jl. Anggrek No. 25, Kebayoran Baru, Jakarta Selatan, 12130, DKI Jakarta',
+  'Jl. Gatot Subroto Kav. 18, Setiabudi, Jakarta Selatan, 12950, DKI Jakarta',
+  'Jl. Diponegoro No. 4, Menteng, Jakarta Pusat, 10310, DKI Jakarta',
+  'Jl. Asia Afrika No. 8, Sudirman, Jakarta Pusat, 10270, DKI Jakarta',
+]
+const RSO_SHIP_TO = [
+  'Jl. Sindang III/5, Kompleks Pertamina, DKI Jakarta 12820',
+  'Gudang Blok C No. 12, Kawasan Industri Pulogadung, Jakarta Timur',
+  'Jl. Raya Bogor KM 30, Cibinong, Bogor, Jawa Barat',
+  'Ruko Sentra Niaga No. 7, Bintaro, Tangerang Selatan',
+]
+const RSO_WAREHOUSES = ['Default warehouse', 'Cibinong warehouse', 'Pulogadung DC', 'Bandung hub']
+const RSO_PAYMENT_TERMS = ['Net 30', 'Net 14', 'Cash on delivery', 'Net 45']
+
+function buildRecurringSOLineItems(amount: number, idx: number): RecurringSOLineItem[] {
+  const count = 1 + (idx % 4)
+  const items: RecurringSOLineItem[] = []
+  const products = [
+    { product: 'Green Beans Arabica Gayo Grade 1', sku: '1001', description: 'Aceh highlands, fully washed, screen 18, 60 kg jute sack', unit: 'Sack', unitPrice: 3_200_000 },
+    { product: 'Green Beans Robusta Temanggung', sku: '1008', description: 'Central Java, dry process, 60 kg sack', unit: 'Sack', unitPrice: 2_200_000 },
+    { product: 'Espresso Machine Dual Boiler 2-Group', sku: '2001', description: 'Commercial, stainless body, PID control', unit: 'Unit', unitPrice: 85_000_000 },
+    { product: 'Coffee Grinder Single Dose 64mm', sku: '2005', description: 'Single dose, bellows, low retention', unit: 'Unit', unitPrice: 9_800_000 },
+  ]
+  const taxRate = 0.11
+  const baseAmount = Math.round(amount / (1 + taxRate))
+  let remaining = baseAmount
+  for (let i = 0; i < count; i++) {
+    const p = products[i % products.length]!
+    const isLast = i === count - 1
+    const lineAmount = isLast ? remaining : Math.round(baseAmount / count)
+    remaining -= lineAmount
+    const qty = Math.max(1, Math.round(lineAmount / p.unitPrice))
+    items.push({
+      product: p.product,
+      sku: p.sku,
+      description: p.description,
+      qty,
+      unit: p.unit,
+      unitPrice: p.unitPrice,
+      discountPct: 0,
+      amount: lineAmount,
+    })
+  }
+  return items
+}
+
+function buildRecurringSOTotals(amount: number): SalesOrderTotals {
+  const taxRate = 0.11
+  const subtotal = Math.round(amount / (1 + taxRate))
+  const taxAmount = amount - subtotal
+  return { subtotal, discountPerLine: 0, globalDiscount: 0, taxLabel: 'PPN 11%', taxAmount, shippingFee: 0, total: amount }
+}
+
+function buildRecurringSOTemplate(
+  base: { id: string; templateName: string; customer: typeof CUSTOMERS[0]; frequency: string; amount: number; nextDate: string; status: 'active' | 'completed'; createdCount: number; schedule: RecurringSchedule; history?: RecurringSOHistoryEntry[] },
+  idx: number,
+): RecurringSalesOrder {
+  return {
+    ...base,
+    customer: base.customer!,
+    email: recurringSOEmail(base.customer!.name),
+    billingAddress: RSO_ADDRESSES[idx % RSO_ADDRESSES.length]!,
+    shipTo: RSO_SHIP_TO[idx % RSO_SHIP_TO.length]!,
+    paymentTerms: RSO_PAYMENT_TERMS[idx % RSO_PAYMENT_TERMS.length]!,
+    warehouse: RSO_WAREHOUSES[idx % RSO_WAREHOUSES.length]!,
+    referenceNo: `PO #${20080 + idx}`,
+    tags: idx % 3 === 0 ? ['B2B'] : idx % 5 === 0 ? ['VIP'] : [],
+    lineItems: buildRecurringSOLineItems(base.amount, idx),
+    message: 'Thank you for your continued business. This is an automatically generated recurring order.',
+    memo: `Recurring template ${base.id}`,
+    totals: buildRecurringSOTotals(base.amount),
+    lastUpdatedBy: 'Rizal Candra',
+    lastUpdatedAt: simDay(-3),
+  }
+}
+
+const RSO_TEMPLATES: RecurringSalesOrder[] = [
+  buildRecurringSOTemplate({ id: 'RSO001', templateName: 'Monthly coffee supply', customer: CUSTOMERS[0]!, frequency: 'Monthly', amount: 12_000_000, nextDate: simDay(SIM_SPAN_DAYS + 5), status: 'active', createdCount: 6, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-180), sendAutoEmail: true }, history: [
+    { orderNumber: 10190, date: simDay(-5), amount: 12_000_000, status: 'Closed' },
+    { orderNumber: 10160, date: simDay(-35), amount: 12_000_000, status: 'Closed' },
+    { orderNumber: 10130, date: simDay(-65), amount: 12_000_000, status: 'Closed' },
+  ] }, 0),
+  buildRecurringSOTemplate({ id: 'RSO002', templateName: 'Weekly espresso delivery', customer: CUSTOMERS[1]!, frequency: 'Weekly', amount: 4_500_000, nextDate: simDay(SIM_SPAN_DAYS + 2), status: 'active', createdCount: 24, schedule: { repeatInterval: 1, repeatUnit: 'week', endRepeat: 'never', startDate: simDay(-168), sendAutoEmail: false }, history: [
+    { orderNumber: 10189, date: simDay(-2), amount: 4_500_000, status: 'Open' },
+    { orderNumber: 10180, date: simDay(-9), amount: 4_500_000, status: 'Closed' },
+  ] }, 1),
+  buildRecurringSOTemplate({ id: 'RSO003', templateName: 'Quarterly equipment lease', customer: CUSTOMERS[2]!, frequency: 'Quarterly', amount: 44_000_000, nextDate: simDay(SIM_SPAN_DAYS + 30), status: 'active', createdCount: 3, schedule: { repeatInterval: 3, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 8, startDate: simDay(-270), sendAutoEmail: true }, history: [
+    { orderNumber: 10188, date: simDay(-10), amount: 44_000_000, status: 'Open' },
+  ] }, 2),
+  buildRecurringSOTemplate({ id: 'RSO004', templateName: 'Bi-weekly roast batch', customer: CUSTOMERS[3]!, frequency: 'Bi-weekly', amount: 8_900_000, nextDate: simDay(SIM_SPAN_DAYS + 8), status: 'active', createdCount: 10, schedule: { repeatInterval: 2, repeatUnit: 'week', endRepeat: 'never', startDate: simDay(-140), sendAutoEmail: false } }, 3),
+  buildRecurringSOTemplate({ id: 'RSO005', templateName: 'Annual maintenance', customer: CUSTOMERS[4]!, frequency: 'Yearly', amount: 98_000_000, nextDate: simDay(SIM_SPAN_DAYS + 60), status: 'active', createdCount: 1, schedule: { repeatInterval: 1, repeatUnit: 'year', endRepeat: 'never', startDate: simDay(-365), sendAutoEmail: true } }, 4),
+  buildRecurringSOTemplate({ id: 'RSO006', templateName: 'Monthly bean subscription', customer: CUSTOMERS[5]!, frequency: 'Monthly', amount: 6_800_000, nextDate: simDay(SIM_SPAN_DAYS + 12), status: 'completed', createdCount: 12, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 12, startDate: simDay(-365), sendAutoEmail: false } }, 5),
+  buildRecurringSOTemplate({ id: 'RSO007', templateName: 'Weekly pastry supply', customer: CUSTOMERS[6]!, frequency: 'Weekly', amount: 3_200_000, nextDate: simDay(SIM_SPAN_DAYS + 1), status: 'active', createdCount: 18, schedule: { repeatInterval: 1, repeatUnit: 'week', endRepeat: 'never', startDate: simDay(-126), sendAutoEmail: true } }, 6),
+  buildRecurringSOTemplate({ id: 'RSO008', templateName: 'Monthly premium blend', customer: CUSTOMERS[7]!, frequency: 'Monthly', amount: 23_750_000, nextDate: simDay(SIM_SPAN_DAYS + 15), status: 'active', createdCount: 4, schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'on', endOnDate: simDay(365), startDate: simDay(-120), sendAutoEmail: true } }, 7),
+]
+
+const K_RSO = 'recurring-sales-orders-v1'
+
+export const recurringSalesOrders = reactive<RecurringSalesOrder[]>(
+  loadSnapshot<RecurringSalesOrder>(K_RSO) ?? [...RSO_TEMPLATES],
+)
+export function recurringSalesOrdersCount(): number { return recurringSalesOrders.filter(r => r.status === 'active').length }
+export function persistRecurringSalesOrders(): void { saveSnapshot(K_RSO, recurringSalesOrders) }
+export function getRecurringForSalesOrder(recurringId: string): RecurringSalesOrder | undefined {
+  return recurringSalesOrders.find(r => r.id === recurringId)
+}

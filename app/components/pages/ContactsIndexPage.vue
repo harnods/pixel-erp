@@ -355,9 +355,9 @@ function lastUpdated(iso: string) {
     <template #actions="{ row }">
       <MpPopover :id="`contact-actions-${(row as unknown as Contact).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="row-kebab" :aria-label="t('Row actions')">
+          <MpButton class="row-kebab" :aria-label="t('Row actions')">
             <MpIcon name="menu-kebab" size="md" />
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>

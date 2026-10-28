@@ -179,14 +179,16 @@ Reuse as-is; do not redesign per module.
      stretch full-width). The document-**number** column gets **View details** on hover
      (see [ErpTablePage.md → Row hover actions](ErpTablePage.md#row-hover-actions--view-details--open-preview)).
 9. **Footer action bar**: bottom-right, two dropdown buttons — secondary
-   **`Print & share ▾`** + primary **`Actions ▾`** (both `MpPopover`). Standard items
-   (a `*` row is a divider):
-   - **Actions**: `Preview` · *—* · `Edit` · `Set as recurring` · `Duplicate` · `Void` ·
-     `Delete`.
-   - **Print & share**: `Print PDF` · `Print dot matrix` · *—* · `Share via WhatsApp` ·
-     `Share via email` · `Copy link`.
+   **`Print & share ▾`** + primary **`Actions ▾`**. Use the reusable pattern
+   components — **do not hand-roll** the popover per page:
+   - **[`PrintShareMenu`](PrintShareMenu.md)** — fixed items: `Print PDF` · `Print dot
+     matrix` · *—* · `Share via WhatsApp` · `Share via email` · `Copy link`.
+   - **[`DetailActionsMenu`](DetailActionsMenu.md)** — configurable grouped items with
+     dividers, conditional visibility, disabled+tooltip, and destructive styling. Standard
+     items (a `*` row is a divider): `Preview` · *—* · `Edit` · `Set as recurring` ·
+     `Duplicate` · `Void` · `Delete`.
 
-   The exact items can differ per module → confirm when generating (B-10).
+   The exact Actions items can differ per module → confirm when generating (B-10).
 
 **Token / spacing reference** (Figma `pxl-space-*` → project `--mp-*`):
 
@@ -305,4 +307,4 @@ Differences from the transaction layout:
 - [ ] Notes + totals two-column block (Message/Memo/Attachment | totals summary).
 - [ ] Last-updated metadata line.
 - [ ] Tabs (`MpTabs`, green underline) + each tab's related-records table.
-- [ ] Footer action bar: secondary `Print & share ▾` + primary `Actions ▾` (`MpPopover`).
+- [ ] Footer action bar: `<PrintShareMenu>` + `<DetailActionsMenu>` (see [DetailActionsMenu.md](DetailActionsMenu.md), [PrintShareMenu.md](PrintShareMenu.md)).

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 
 export interface BatchReservationRow { salesNo: string; orderNumber: string; qty: number }
 
@@ -28,9 +28,9 @@ function close() { emit('update:open', false) }
 
       <header class="brd-header">
         <h2 class="brd-title">Batch reservations (temporary design)</h2>
-        <button class="brd-close" type="button" aria-label="Close" @click="close">
+        <MpButton class="brd-close" variant="ghost" type="button" aria-label="Close" @click="close">
           <MpIcon name="close" size="md" />
-        </button>
+        </MpButton>
       </header>
 
       <div class="brd-content">

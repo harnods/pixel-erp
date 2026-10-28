@@ -8,7 +8,7 @@ const { t } = useLocale()
 <template>
   <div class="dnp">
     <div class="dnp__card">
-      <MpIcon name="dashboard" size="lg" class="dnp__icon" />
+      <MpIcon name="dashboard" size="32px" class="dnp__icon" />
       <p class="dnp__title">{{ t('Not in this prototype') }}</p>
     </div>
   </div>

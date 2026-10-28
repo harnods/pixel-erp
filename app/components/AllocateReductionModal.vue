@@ -209,8 +209,7 @@ function handleConfirm() {
   background: var(--mp-background-danger-subtle, #FCEEED);
   border-bottom-color: var(--mp-border-danger, #E2483D);
 }
-.al-td--err:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-danger, #E2483D); }
-.al-td--err:focus-within::after { content: none; }
+.al-td--err:focus-within::after { border-color: var(--mp-border-danger, #E2483D); }
 .al-td--err :deep([class*='input']) { background: transparent; }
 
 .al-taskno { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }

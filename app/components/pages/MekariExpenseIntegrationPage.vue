@@ -63,7 +63,7 @@ const footer = css({
     </div>
 
     <div :class="footer">
-      <MpIcon name="help" size="sm" color="icon.secondary" />
+      <MpIcon name="help" size="sm" color="icon.default" />
       <MpText size="body" color="text.default">{{ COPY.helpPrefix }}</MpText>
       <span class="cell-link" role="button" @click="openMarketplace">{{ COPY.helpLink }}</span>
       <MpText size="body" color="text.default">{{ COPY.helpSuffix }}</MpText>

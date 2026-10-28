@@ -1,17 +1,31 @@
 <!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-invoices/views/PurchaseInvoiceShowView.vue -->
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+  MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpToggle,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseInvoiceDetail } from '~/data/purchaseInvoiceDetails'
-import { purchaseInvoices } from '~/data/purchaseInvoices'
+import { purchaseInvoices, recurringPurchaseInvoices, getRecurringForPurchaseInvoice, persistPurchaseInvoices, persistRecurringPurchaseInvoices } from '~/data/purchaseInvoices'
+import {
+  vendorAvailableDebit, applicationsForInvoice, applicationLabel,
+} from '~/data/debitMemos'
+import {
+  paymentsForInvoice as purchasePaymentsForInvoice, paymentLabel as purchasePaymentLabel,
+  cashAccountLabel as ppCashAccountLabel,
+} from '~/data/purchasePayments'
 import { infoToast } from '~/utils/toasts'
 import BudgetPIDetailSection from '~/components/patterns/BudgetPIDetailSection.vue'
 
@@ -41,13 +55,194 @@ function confirmDelete() {
 // Tabs only appear once they have something to show (prod: Payment, Linked
 // transactions, Purchase return, Landed cost, Debit memo — each gated on data).
 const hasLinkedTransactions = computed(() => invoice.value.linkedTransactions.length > 0)
-const hasPayments = computed(() => invoice.value.payments.length > 0)
-const hasAnyTab = computed(() => hasLinkedTransactions.value || hasPayments.value)
-const paidTotal = computed(() => invoice.value.payments.reduce((s, p) => s + p.amountPaid, 0))
-const balanceDue = computed(() => invoice.value.amount - paidTotal.value)
 const isPaid = computed(() => invoice.value.status === 'paid')
 function notInPrototype() { infoToast(t('Not in this prototype')) }
 
+// Payment rows = cash payments + debit-memo applications.
+interface PaymentRow { date: string; number: string; applicationId?: string; paymentId?: string; method: string; account: string; reference: string; amount: number }
+const debitApplications = computed(() => applicationsForInvoice(invoice.value.id))
+const purchasePaymentRows = computed(() => purchasePaymentsForInvoice(invoice.value.id))
+const paymentRows = computed<PaymentRow[]>(() => {
+  const cash: PaymentRow[] = purchasePaymentRows.value.map(({ payment, amount }) => ({
+    date: payment.date, number: purchasePaymentLabel(payment.number), paymentId: payment.id,
+    method: payment.paymentMethod, account: ppCashAccountLabel(payment.depositToAccountId),
+    reference: payment.referenceNo || '—', amount,
+  }))
+  const debit: PaymentRow[] = debitApplications.value.map(({ application, amount }) => ({
+    date: application.date, number: applicationLabel(application.number), applicationId: application.id,
+    method: t('Debit memo'), account: '—', reference: '—', amount,
+  }))
+  return [...debit, ...cash].sort((a, b) => b.date.localeCompare(a.date))
+})
+const hasPayments = computed(() => paymentRows.value.length > 0)
+const hasDebitApplied = computed(() => invoice.value.debitApplied > 0)
+
+// Debit memo: available debit and apply action
+const availableDebit = computed(() => vendorAvailableDebit(invoice.value.vendor.id))
+const canApplyDebit = computed(() => invoice.value.balance > 0 && availableDebit.value > 0)
+const canAddPayment = computed(() => invoice.value.balance > 0)
+function goToAddPayment() { router.push(`/purchase-invoices/${invoice.value.id}/add-payment`) }
+const applyDebitModalOpen = ref(false)
+function goToApplyDebitForm() {
+  applyDebitModalOpen.value = false
+  router.push(`/purchase-invoices/${invoice.value.id}/apply-debit-memo`)
+}
+onMounted(() => { if (invoice.value && canApplyDebit.value) applyDebitModalOpen.value = true })
+
+// ─── Recurring info drawer ──────────────────────────────────────────────────
+const sourceInvoice = computed(() => purchaseInvoices.find(pi => pi.id === props.orderId))
+const recurringTemplate = computed(() => {
+  const rid = sourceInvoice.value?.recurringId
+  return rid ? getRecurringForPurchaseInvoice(rid) : undefined
+})
+const hasRecurring = computed(() => !!recurringTemplate.value)
+const recurringDrawerOpen = ref(false)
+const recurringEditing = ref(false)
+const isSettingRecurring = ref(false)
+const setRecurringSendAutoEmail = ref(false)
+
+const editRepeatInterval = ref(1)
+const editRepeatUnit = ref('month')
+const editEndRepeat = ref('never')
+const editEndAfterCount = ref(12)
+const editEndOnDate = ref('')
+const editStartDate = ref('')
+
+const repeatUnitOptions = [
+  { label: 'Day(s)', value: 'day' }, { label: 'Week(s)', value: 'week' },
+  { label: 'Month(s)', value: 'month' }, { label: 'Year(s)', value: 'year' },
+]
+const endRepeatOptions = [
+  { label: 'Never', value: 'never' }, { label: 'After', value: 'after' }, { label: 'On', value: 'on' },
+]
+
+function unitLabel(unit: string) {
+  const map: Record<string, string> = { day: 'day(s)', week: 'week(s)', month: 'month(s)', year: 'year(s)' }
+  return map[unit] ?? unit
+}
+function endRepeatLabel(val: string) {
+  const map: Record<string, string> = { never: 'Never', after: 'After', on: 'On' }
+  return map[val] ?? val
+}
+function formatDateDMY(iso: string) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function todayDMY() {
+  const d = new Date()
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function recurDmyToIso(dmy: string) {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+function openRecurringDrawer() {
+  recurringEditing.value = false
+  isSettingRecurring.value = false
+  recurringDrawerOpen.value = true
+}
+
+function openSetRecurringDrawer() {
+  editRepeatInterval.value = 1
+  editRepeatUnit.value = 'month'
+  editEndRepeat.value = 'never'
+  editEndAfterCount.value = 12
+  editEndOnDate.value = ''
+  editStartDate.value = todayDMY()
+  setRecurringSendAutoEmail.value = false
+  isSettingRecurring.value = true
+  recurringEditing.value = false
+  recurringDrawerOpen.value = true
+}
+
+function saveSetRecurring() {
+  const inv = invoice.value
+  if (!inv) return
+  const newId = `rpi-${Date.now()}`
+  recurringPurchaseInvoices.push({
+    id: newId,
+    templateName: `${inv.vendor.name} - Recurring`,
+    vendor: inv.vendor,
+    frequency: `Every ${editRepeatInterval.value} ${editRepeatUnit.value}`,
+    amount: inv.total,
+    nextDate: recurDmyToIso(editStartDate.value),
+    status: 'active',
+    createdCount: 0,
+    schedule: {
+      repeatInterval: editRepeatInterval.value,
+      repeatUnit: editRepeatUnit.value as 'day' | 'week' | 'month' | 'year',
+      endRepeat: editEndRepeat.value as 'never' | 'after' | 'on',
+      endAfterCount: editEndRepeat.value === 'after' ? editEndAfterCount.value : undefined,
+      endOnDate: editEndRepeat.value === 'on' ? recurDmyToIso(editEndOnDate.value) : undefined,
+      startDate: recurDmyToIso(editStartDate.value),
+      sendAutoEmail: setRecurringSendAutoEmail.value,
+    },
+  } as any)
+  persistRecurringPurchaseInvoices()
+  const src = sourceInvoice.value
+  if (src) { src.recurringId = newId; persistPurchaseInvoices() }
+  isSettingRecurring.value = false
+  recurringDrawerOpen.value = false
+  toast.notify({ variant: 'success', title: t('Recurring purchase invoice created') })
+}
+
+function startEditing() {
+  const s = recurringTemplate.value?.schedule
+  if (!s) return
+  editRepeatInterval.value = s.repeatInterval
+  editRepeatUnit.value = s.repeatUnit
+  editEndRepeat.value = s.endRepeat
+  editEndAfterCount.value = s.endAfterCount ?? 12
+  editEndOnDate.value = s.endOnDate ? formatDateDMY(s.endOnDate) : ''
+  editStartDate.value = formatDateDMY(s.startDate)
+  recurringEditing.value = true
+}
+
+function saveEditing() {
+  const tmpl = recurringTemplate.value
+  if (!tmpl?.schedule) return
+  tmpl.schedule.repeatInterval = editRepeatInterval.value
+  tmpl.schedule.repeatUnit = editRepeatUnit.value as 'day' | 'week' | 'month' | 'year'
+  tmpl.schedule.endRepeat = editEndRepeat.value as 'never' | 'after' | 'on'
+  tmpl.schedule.endAfterCount = editEndAfterCount.value
+  const [d2, m2, y2] = editStartDate.value.split('/')
+  tmpl.schedule.startDate = `${y2}-${m2}-${d2}`
+  if (editEndRepeat.value === 'on' && editEndOnDate.value) {
+    const [d3, m3, y3] = editEndOnDate.value.split('/')
+    tmpl.schedule.endOnDate = `${y3}-${m3}-${d3}`
+  }
+  recurringEditing.value = false
+  toast.notify({ variant: 'success', title: t('Recurring settings updated') })
+}
+
+function toggleAutoEmail() {
+  const tmpl = recurringTemplate.value
+  if (tmpl?.schedule) {
+    tmpl.schedule.sendAutoEmail = !tmpl.schedule.sendAutoEmail
+    toast.notify({ variant: 'success', title: t(tmpl.schedule.sendAutoEmail ? 'Automatic email enabled' : 'Automatic email disabled') })
+  }
+}
+
+const piActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: notInPrototype },
+    { label: 'Create purchase return', show: isPaid.value, onClick: notInPrototype },
+    { label: 'Create landed cost', show: isPaid.value, onClick: notInPrototype },
+    { label: 'Edit', onClick: () => { router.push(`/purchase-invoices/${invoice.value.id}/edit`) } },
+    { label: 'Duplicate', onClick: notInPrototype },
+    { label: 'Set as recurring', onClick: openSetRecurringDrawer, show: !hasRecurring.value },
+    { label: 'Add payment', show: canAddPayment.value, onClick: goToAddPayment },
+    { label: 'Apply debit memo', show: canApplyDebit.value, onClick: goToApplyDebitForm },
+  ],
+  [
+    { label: 'Void', onClick: notInPrototype },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: invoice.value.lastUpdatedAt,
   user: invoice.value.lastUpdatedBy,
@@ -182,15 +377,16 @@ function goBack() { router.push('/purchase-invoices') }
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="inv in jumpResults"
                     :key="inv.id"
+                    variant="secondary"
                     class="detail-jump-item"
                     @click="jumpTo(inv.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Purchase Invoice') }} #{{ inv.number }}</span>
                     <span class="detail-jump-item-customer">{{ inv.vendor.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -201,6 +397,11 @@ function goBack() { router.push('/purchase-invoices') }
 
       <!-- Right-side icon actions — only when the page has an approval flow -->
       <div v-if="hasApproval" class="detail-titlerow-right">
+          <MpTooltip v-if="hasRecurring" id="detail-tt-recurring" :label="t('Recurring settings')" placement="bottom" use-portal>
+            <MpButton class="detail-icon-btn" :aria-label="t('Recurring settings')" @click="openRecurringDrawer">
+              <MpIcon name="refresh" size="md" />
+            </MpButton>
+          </MpTooltip>
           <MpTooltip id="detail-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
             <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
               <MpIcon name="task-todo" size="md" />
@@ -229,7 +430,7 @@ function goBack() { router.push('/purchase-invoices') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')" :value="invoice.vendor.name" />
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(invoice.vendor.name)}`, '_blank')">{{ invoice.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -239,7 +440,7 @@ function goBack() { router.push('/purchase-invoices') }
           <div class="detail-primary-total-wrap">
             <div class="detail-primary-total">
               <span class="detail-total-label">{{ t('Balance due') }}</span>
-              <span class="detail-total-amount">{{ formatIDR(balanceDue) }}</span>
+              <span class="detail-total-amount">{{ formatIDR(invoice.balance) }}</span>
             </div>
             <MpTextlink id="detail-view-journal" as="a" class="detail-journal-link" @click.prevent="notInPrototype">{{ t('View journal entry') }}</MpTextlink>
           </div>
@@ -381,13 +582,22 @@ function goBack() { router.push('/purchase-invoices') }
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.amount) }}</span>
           </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Less: Payment') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(paidTotal) }}</span>
+          <div v-if="invoice.cashPaid > 0" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.cashPaid) }}</span>
           </div>
+          <div v-if="hasDebitApplied" class="detail-total-row" data-devchange="pinv-less-debit-memo">
+            <span class="detail-total-row-label">{{ t('Less: Debit Memo') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.debitApplied) }}</span>
+          </div>
+          <div v-if="invoice.cashPaid === 0 && !hasDebitApplied" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(0) }}</span>
+          </div>
+          <div class="detail-total-rule" />
           <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Balance due') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(balanceDue) }}</span>
+            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Balance due') }}</span>
+            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.balance) }}</span>
           </div>
         </div>
       </section>
@@ -397,39 +607,14 @@ function goBack() { router.push('/purchase-invoices') }
 
       <!-- ── Tabs — only the ones with content to show ── -->
       <MpTabs
-        v-if="hasAnyTab"
+        v-if="hasLinkedTransactions || hasPayments"
         :key="invoice.id" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs"
       >
         <MpTabList>
-          <MpTab v-if="hasPayments" id="detail-tab-payment" value="payment">{{ t('Payment') }}</MpTab>
           <MpTab v-if="hasLinkedTransactions" id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
+          <MpTab v-if="hasPayments" id="detail-tab-payments" value="payments">{{ t('Payments') }}</MpTab>
         </MpTabList>
         <MpTabPanels>
-          <MpTabPanel v-if="hasPayments" value="payment">
-            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
-            <table class="detail-linked">
-              <thead>
-                <tr>
-                  <th class="detail-th">{{ t('Date') }}</th>
-                  <th class="detail-th">{{ t('Number') }}</th>
-                  <th class="detail-th">{{ t('Payment method') }}</th>
-                  <th class="detail-th">{{ t('Account') }}</th>
-                  <th class="detail-th">{{ t('Reference no.') }}</th>
-                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(pay, i) in invoice.payments" :key="i" class="detail-item-row">
-                  <td class="detail-td">{{ formatDateNumeric(pay.date) }}</td>
-                  <td class="detail-td"><a class="cell-link cell-text" @click.prevent="notInPrototype">{{ pay.number }}</a></td>
-                  <td class="detail-td">{{ pay.paymentMethod }}</td>
-                  <td class="detail-td">{{ pay.account }}</td>
-                  <td class="detail-td">{{ pay.referenceNo }}</td>
-                  <td class="detail-td detail-td--num">{{ formatIDR(pay.amountPaid) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </MpTabPanel>
           <MpTabPanel v-if="hasLinkedTransactions" value="linked">
             <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
@@ -459,81 +644,51 @@ function goBack() { router.push('/purchase-invoices') }
               </tbody>
             </table>
           </MpTabPanel>
+
+          <MpTabPanel v-if="hasPayments" value="payments" data-devchange="pinv-payments-tab">
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
+            <table class="detail-linked">
+              <colgroup>
+                <col class="detail-linked-col--date" />
+                <col class="detail-linked-col--number" />
+                <col />
+                <col />
+                <col />
+                <col class="detail-linked-col--amount" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Payment method') }}</th>
+                  <th class="detail-th">{{ t('Account') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(p, i) in paymentRows" :key="i" class="detail-item-row">
+                  <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
+                  <td class="detail-td">
+                    <a v-if="p.paymentId" class="cell-link cell-text" @click="router.push(`/purchase-payments/${p.paymentId}`)">{{ p.number }}</a>
+                    <a v-else-if="p.applicationId" class="cell-link cell-text" @click="router.push(`/debit-memo-applications/${p.applicationId}`)">{{ p.number }}</a>
+                    <span v-else class="detail-td--muted">{{ p.number }}</span>
+                  </td>
+                  <td class="detail-td">{{ p.method }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.account }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.reference }}</td>
+                  <td class="detail-td detail-td--num">{{ formatIDR(p.amount) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </MpTabPanel>
         </MpTabPanels>
       </MpTabs>
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) — prod: Print PDF | WhatsApp / email / copy link -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Copy transaction link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Paid: plain "Actions" dropdown. Open/overdue: "Pay" split button (prod
-             ButtonActionPopover) — main segment pays, chevron opens the same list. -->
-        <MpPopover v-if="isPaid" id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Create purchase return') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Create landed cost') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem @click="router.push(`/purchase-invoices/${invoice.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-        <div v-else class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="notInPrototype">
-            {{ t('Pay') }}
-          </button>
-          <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-            <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList>
-                <MpPopoverListItem @click="notInPrototype">{{ t('Preview') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="notInPrototype">{{ t('Create purchase return') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="notInPrototype">{{ t('Apply debit memo') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="notInPrototype">{{ t('Create landed cost') }}</MpPopoverListItem>
-              </MpPopoverList>
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem @click="router.push(`/purchase-invoices/${invoice.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="notInPrototype">{{ t('Duplicate') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-        </div>
+        <PrintShareMenu id="pi-print" />
+        <DetailActionsMenu id="pi-actions" :groups="piActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -546,6 +701,22 @@ function goBack() { router.push('/purchase-invoices') }
       :entries="activityEntries"
       @close="activityOpen = false"
     />
+
+    <!-- Apply debit memo proactive prompt (mirrors credit memo on SalesInvoiceDetailsPage) -->
+    <MpModal
+      id="apply-debit-confirm" :is-open="applyDebitModalOpen" size="md" :is-centered="false" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="applyDebitModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Apply debit memo?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>{{ t('The vendor has') }} {{ formatIDR(availableDebit) }} {{ t('in available debit.') }}</MpModalBody>
+        <MpModalFooter>
+          <MpButton variant="ghost" is-rounded @click="applyDebitModalOpen = false">{{ t('Not now') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="goToApplyDebitForm">{{ t('Apply debit memo') }}</MpButton>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
     <ConfirmModal
       v-model:is-open="deleteOpen"
@@ -562,6 +733,136 @@ function goBack() { router.push('/purchase-invoices') }
     <p class="detail-notfound-desc">{{ t('This purchase invoice may have been deleted or the link is invalid.') }}</p>
     <MpButton variant="secondary" is-rounded @click="router.push('/purchase-invoices')">{{ t('Back to purchase invoices') }}</MpButton>
   </div>
+
+  <!-- ── Recurring settings drawer ── -->
+  <ErpDrawer :is-open="recurringDrawerOpen" :title="isSettingRecurring ? t('Set as recurring') : recurringEditing ? t('Edit recurring settings') : t('Recurring settings')" @close="recurringDrawerOpen = false; isSettingRecurring = false">
+    <template #body>
+      <!-- ── Set as recurring (no template yet) ── -->
+      <template v-if="isSettingRecurring">
+        <MpFormControl id="recur-set-repeat">
+          <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+          <div class="recur-edit-repeat-row">
+            <MpInput id="recur-set-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+            <MpAutocomplete id="recur-set-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+          </div>
+        </MpFormControl>
+
+        <MpFormControl id="recur-set-end">
+          <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+          <MpAutocomplete id="recur-set-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+          <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+            <MpInput id="recur-set-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+            <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+          </div>
+          <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+            <MpDatePicker id="recur-set-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </div>
+        </MpFormControl>
+
+        <MpFormControl id="recur-set-start">
+          <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+          <MpDatePicker id="recur-set-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+        </MpFormControl>
+
+        <div class="recur-view-row recur-auto-toggle">
+          <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+          <MpToggle :is-checked="setRecurringSendAutoEmail" @change="setRecurringSendAutoEmail = !setRecurringSendAutoEmail" />
+        </div>
+      </template>
+
+      <template v-else-if="recurringTemplate?.schedule">
+        <!-- ── View mode ── -->
+        <template v-if="!recurringEditing">
+          <div class="recur-view-section">
+            <div class="recur-view-header">
+              <h3 class="recur-view-title">{{ t('Schedule') }}</h3>
+              <MpTextlink @click="startEditing">{{ t('Edit') }}</MpTextlink>
+            </div>
+
+            <div class="recur-view-row">
+              <span class="recur-view-label">{{ t('Repeats every') }}</span>
+              <span class="recur-view-value">{{ recurringTemplate.schedule.repeatInterval }} {{ unitLabel(recurringTemplate.schedule.repeatUnit) }}</span>
+            </div>
+            <div class="recur-view-row">
+              <span class="recur-view-label">{{ t('End repeat') }}</span>
+              <span class="recur-view-value">
+                {{ endRepeatLabel(recurringTemplate.schedule.endRepeat) }}
+                <template v-if="recurringTemplate.schedule.endRepeat === 'after'"> — {{ recurringTemplate.schedule.endAfterCount }} {{ t('occurrences') }}</template>
+                <template v-if="recurringTemplate.schedule.endRepeat === 'on'"> — {{ formatDateDMY(recurringTemplate.schedule.endOnDate!) }}</template>
+              </span>
+            </div>
+            <div class="recur-view-row">
+              <span class="recur-view-label">{{ t('Start date') }}</span>
+              <span class="recur-view-value">{{ formatDateDMY(recurringTemplate.schedule.startDate) }}</span>
+            </div>
+          </div>
+
+          <div class="recur-view-row recur-auto-toggle">
+            <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+            <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+          </div>
+        </template>
+
+        <!-- ── Edit mode ── -->
+        <template v-else>
+          <MpFormControl id="recur-edit-repeat">
+            <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+            <div class="recur-edit-repeat-row">
+              <MpInput id="recur-edit-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+              <MpAutocomplete id="recur-edit-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-edit-end">
+            <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+            <MpAutocomplete id="recur-edit-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+            <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+              <MpInput id="recur-edit-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+              <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+            </div>
+            <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+              <MpDatePicker id="recur-edit-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-edit-start">
+            <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+            <MpDatePicker id="recur-edit-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </MpFormControl>
+
+          <div class="recur-view-row recur-auto-toggle">
+            <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+            <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+          </div>
+        </template>
+
+        <!-- ── Recurring history (view mode only) ── -->
+        <div v-if="!recurringEditing && recurringTemplate.history?.length" class="recur-history-section">
+          <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+          <div class="recur-history-list">
+            <div v-for="entry in recurringTemplate.history" :key="entry.invoiceNumber" class="recur-history-item">
+              <span class="recur-history-number">{{ t('Purchase Invoice') }} #{{ entry.invoiceNumber }}</span>
+              <span class="recur-history-date">{{ formatDateDMY(entry.date) }}</span>
+              <ErpStatusBadge :status="entry.status.toLowerCase()" />
+            </div>
+          </div>
+        </div>
+        <div v-else-if="!recurringEditing" class="recur-history-section">
+          <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+          <p class="recur-history-empty">{{ t('No invoices created from this recurring template yet.') }}</p>
+        </div>
+      </template>
+    </template>
+
+    <template v-if="isSettingRecurring" #footer>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="isSettingRecurring = false; recurringDrawerOpen = false">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" @click="saveSetRecurring">{{ t('Save') }}</button>
+    </template>
+    <template v-else-if="recurringEditing" #footer>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="recurringEditing = false">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" @click="saveEditing">{{ t('Save changes') }}</button>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
@@ -861,12 +1162,13 @@ function goBack() { router.push('/purchase-invoices') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 .detail-linked-col--stage  { width: 160px; }
 .detail-linked-col--actions { width: 52px; }
+.detail-linked-col--amount { width: 200px; }
 
 .row-kebab {
   display: flex !important;
@@ -1032,4 +1334,28 @@ function goBack() { router.push('/purchase-invoices') }
   border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
   border-left: 1px solid rgba(255, 255, 255, 0.3);
 }
+
+.recur-view-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.recur-view-header { display: flex; align-items: center; justify-content: space-between; }
+.recur-view-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-view-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.recur-view-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 160px; flex-shrink: 0; }
+.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.recur-auto-toggle { padding-top: var(--mp-spacing-2); }
+
+.recur-edit-repeat-row { display: flex; gap: var(--mp-spacing-2); }
+.recur-edit-num { flex: 0 0 80px; }
+.recur-edit-unit { flex: 1; }
+.recur-edit-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.recur-edit-count { flex: 0 0 80px; }
+.recur-edit-sublabel { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+.recur-history-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); padding-top: var(--mp-spacing-4); }
+.recur-history-heading { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-history-list { display: flex; flex-direction: column; }
+.recur-history-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default)); }
+.recur-history-item:last-child { border-bottom: none; }
+.recur-history-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); min-width: 180px; }
+.recur-history-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); flex: 1; }
+.recur-history-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

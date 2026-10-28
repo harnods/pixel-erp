@@ -1,7 +1,7 @@
 <!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-deliveries/views/PurchaseDeliveryShowView.vue -->
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
@@ -10,6 +10,10 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseDeliveryDetail } from '~/data/purchaseDeliveryDetails'
 import { purchaseDeliveries } from '~/data'
 import { infoToast } from '~/utils/toasts'
@@ -35,6 +39,22 @@ function confirmDelete() {
   toast.notify({ variant: 'success', title: t('Purchase delivery deleted'), rootProps: { class: 'toast-enterprise' } })
   router.push('/purchase-deliveries')
 }
+const pdActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: notInPrototype },
+    // Bills from here while the delivery is still unbilled.
+    { label: 'Create purchase invoice', show: isOpenForBilling.value, onClick: createInvoice },
+  ],
+  [
+    // A delivery already in fulfillment can only be viewed there.
+    { label: 'Edit', show: !inFulfillment.value, onClick: () => { router.push(`/purchase-deliveries/${delivery.value.id}/edit`) } },
+    { label: 'View in fulfillment', show: inFulfillment.value, onClick: notInPrototype },
+    { label: 'Set as recurring', onClick: notInPrototype },
+    { label: 'Duplicate', onClick: notInPrototype },
+    { label: 'Void', onClick: notInPrototype },
+    { label: 'Delete', show: !inFulfillment.value, onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: delivery.value.lastUpdatedAt,
   user: delivery.value.lastUpdatedBy,
@@ -173,15 +193,16 @@ const inFulfillment = computed(() => delivery.value.fulfillmentStatus === 'in tr
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="o in jumpResults"
                     :key="o.id"
+                    variant="secondary"
                     class="detail-jump-item"
                     @click="jumpTo(o.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Purchase Delivery') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.vendor.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -227,7 +248,7 @@ const inFulfillment = computed(() => delivery.value.fulfillmentStatus === 'in tr
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')" :value="delivery.vendor.name" />
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(delivery.vendor.name)}`, '_blank')">{{ delivery.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -389,57 +410,8 @@ const inFulfillment = computed(() => delivery.value.fulfillmentStatus === 'in tr
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share — prod: Print PDF + Share via email -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="notInPrototype">{{ t('Share via email') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Open for billing: "Create purchase invoice" split button (prod
-             ButtonActionPopover); otherwise a plain "Actions" dropdown. -->
-        <div v-if="isOpenForBilling" class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="createInvoice">
-            {{ t('Create purchase invoice') }}
-          </button>
-          <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-            <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList>
-                <MpPopoverListItem v-if="!inFulfillment" @click="router.push(`/purchase-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="!inFulfillment" @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="inFulfillment" @click="notInPrototype">{{ t('View in fulfillment') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-        </div>
-        <MpPopover v-else id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="router.push(`/purchase-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="pd-print" />
+        <DetailActionsMenu id="pd-actions" :groups="pdActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -750,8 +722,8 @@ const inFulfillment = computed(() => delivery.value.fulfillmentStatus === 'in tr
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 

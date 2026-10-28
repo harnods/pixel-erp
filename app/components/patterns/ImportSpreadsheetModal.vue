@@ -7,7 +7,7 @@
  * rule/import-modal (MpModal md + description + shared ErpDropzone + Cancel/Upload
  * footer shown once a file is staged).
  */
-import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpTextlink } from '@mekari/pixel3'
+import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpTextlink, MpButton } from '@mekari/pixel3'
 import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 
 const props = withDefaults(defineProps<{
@@ -64,8 +64,8 @@ function doUpload() {
       </MpModalBody>
       <MpModalFooter v-if="files.length">
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="handleClose">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="doUpload">{{ t('Upload') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="handleClose">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="doUpload">{{ t('Upload') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

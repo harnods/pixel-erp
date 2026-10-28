@@ -1,6 +1,9 @@
 import { computeTotals, salesOrders, type SalesOrderTotals } from './salesOrders'
 import { salesDeliveries } from './salesDeliveries'
 import { salesInvoices } from './salesInvoices'
+import { getSalesInvoiceEdit } from './salesInvoiceEdits'
+import { invoiceCreditApplied } from './creditMemos'
+import { invoiceCashReceived, paymentsForInvoice, paymentLabel, cashAccountLabel } from './paymentsReceived'
 import { CATALOG } from './catalog'
 import type { SalesInvoice, SalesOrderItem, SILineItem } from './types'
 
@@ -62,7 +65,12 @@ export interface SalesInvoiceDetail extends SalesInvoice {
   memo: string
   attachments: SIAttachment[]
   totals: SalesOrderTotals
+  /** Every settlement = cash + credit memo applied (amountPaid + balance === total). */
   amountPaid: number
+  /** Cash collected (seed payments). */
+  cashPaid: number
+  /** Credit memo applied to this invoice (Credit Memo Applied docs). */
+  creditApplied: number
   payments: SIPayment[]
   lastUpdatedBy: string
   lastUpdatedAt: string
@@ -196,8 +204,8 @@ function buildLinked(inv: SalesInvoice, idx: number): SILinkedTxn[] {
         { date: addDays(inv.date, -4), type: 'Sales Order',    number: `#${10090 + idx}`, status: 'closed'    },
         { date: addDays(inv.date, -1), type: 'Sales Delivery', number: `#${30000 + idx}`, status: 'delivered' },
       ]
-  if (inv.balance === 0) {
-    linked.push({ date: addDays(inv.dueDate, -2), type: 'Payment Receipt', number: `#${50000 + idx}`, status: 'paid' })
+  for (const { payment } of paymentsForInvoice(inv.id)) {
+    linked.push({ date: payment.date, type: 'Payment Received', number: `#${payment.number}`, status: 'paid' })
   }
   return linked
 }
@@ -216,16 +224,18 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
   // order-level discount, which lands the tax base exactly on targetBase
   const globalDiscount = real ? 0 : items.reduce((s, it) => s + it.amount, 0) - targetBase
   const totals = computeTotals(items, globalDiscount, 0, base.hasPpn ? undefined : 0)
-  const amountPaid = base.total - base.balance
+  const creditApplied = invoiceCreditApplied(base.id)
+  const actualCash = invoiceCashReceived(base.id)
+  const impliedSettlement = Math.max(0, base.total - base.balance - creditApplied)
+  const cashPaid = Math.max(actualCash, impliedSettlement)
+  const amountPaid = cashPaid + creditApplied
 
-  const payments: SIPayment[] = amountPaid > 0
-    ? [{
-        date: addDays(base.dueDate, -2),
-        method: pick(PAYMENT_METHODS, idx),
-        reference: `TRF-${String(700000 + idx * 13)}`,
-        amount: amountPaid,
-      }]
-    : []
+  const payments: SIPayment[] = paymentsForInvoice(base.id).map(({ payment, amount }) => ({
+    date: payment.date,
+    method: 'Bank transfer',
+    reference: paymentLabel(payment.number),
+    amount,
+  }))
 
   return {
     ...base,
@@ -241,6 +251,8 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
     attachments: [{ name: `${base.number}-Signed.pdf`, sizeKB: 78 }],
     totals,
     amountPaid,
+    cashPaid,
+    creditApplied,
     payments,
     lastUpdatedBy: 'Rizal Candra',
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
@@ -251,9 +263,60 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
   }
 }
 
-/** Look up a full detail record by SalesInvoice id; falls back to the first invoice. */
-export function getSalesInvoiceDetail(id: string): SalesInvoiceDetail {
+/**
+ * Apply the user's edit overlay (salesInvoiceEdits.ts) on top of the generated
+ * detail. Totals are RECOMPUTED from the edited line items rather than trusted
+ * from the overlay, so the header total, the tax base and the line rows can
+ * never disagree — which is exactly what PRD-05's change detection diffs on.
+ */
+function applyEdit(detail: SalesInvoiceDetail, id: string): SalesInvoiceDetail {
+  const edit = getSalesInvoiceEdit(id)
+  if (!edit) return detail
+
+  // Mixed per-line tax rates aren't modeled (the seed generator applies one rate
+  // to the whole invoice) — any PPN-bearing line makes the invoice PPN-bearing.
+  const hasPpn = edit.lineItems.some(it => /^ppn/i.test(it.taxLabel))
+  const totals = computeTotals(edit.lineItems, edit.globalDiscount, edit.shippingFee, hasPpn ? undefined : 0)
+  const amountPaid = Math.min(detail.amountPaid, totals.total)
+
+  return {
+    ...detail,
+    customer: { ...edit.customer },
+    date: edit.date,
+    dueDate: edit.dueDate,
+    hasPpn,
+    email: [...edit.email],
+    billingAddress: edit.billingAddress,
+    shipTo: edit.shipTo,
+    paymentTerms: edit.paymentTerms,
+    referenceNo: edit.referenceNo,
+    warehouse: edit.warehouse,
+    tags: [...edit.tags],
+    lineItems: edit.lineItems.map(it => ({ ...it })),
+    itemCount: edit.lineItems.length,
+    message: edit.message,
+    memo: edit.memo,
+    attachments: edit.attachments.map(a => ({ ...a })),
+    hasAttachment: edit.attachments.length > 0,
+    totals,
+    total: totals.total,
+    amountPaid,
+    balance: totals.total - amountPaid,
+    lastUpdatedBy: edit.editedBy,
+    lastUpdatedAt: edit.editedAt,
+  }
+}
+
+/**
+ * Look up a full detail record by SalesInvoice id; falls back to the first invoice.
+ *
+ * Pass `{ pristine: true }` for the invoice as originally issued, with the user's
+ * edit overlay left off — the "before" side of PRD-05's tax change detection when
+ * an issued tax document predates this feature and carries no snapshot of its own.
+ */
+export function getSalesInvoiceDetail(id: string, opts: { pristine?: boolean } = {}): SalesInvoiceDetail {
   const i = salesInvoices.findIndex(inv => inv.id === id)
   const idx = i >= 0 ? i : 0
-  return buildDetail(salesInvoices[idx]!, idx)
+  const detail = buildDetail(salesInvoices[idx]!, idx)
+  return opts.pristine ? detail : applyEdit(detail, detail.id)
 }

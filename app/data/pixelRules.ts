@@ -32,6 +32,10 @@ export const RULE_MEANINGS: Record<string, string> = {
   'rule/btn-save-toast': 'A save/submit/delete shows a success toast — UXW copy "[Object] saved".',
   'rule/btn-no-disabled-validation': 'Never disable for validation — keep clickable, error inline.',
 
+  // Global header bar
+  'rule/header-icon-inverse': 'A header icon button renders its glyph white via <MpIcon color="icon.inverse"> (not :left-icon) and stays white on hover/active — on the dark background.header a ghost button\'s default dark icon would disappear. Use the shared IconButton.',
+  'rule/header-icon-veil-no-border': 'A header icon button\'s hover fill is a literal translucent white rgba(255,255,255,.12) (active .2) with border:none — never the Panda background.surface.bold.* token (resolves to opaque near-white #f8f9f9, a light box) and never a visible border.',
+
   // Forms & inputs
   'rule/form-actions-always-present': 'Footer Cancel + primary are always rendered.',
   'rule/form-errors-inline': 'Validation errors render inline, never as a toast.',
@@ -177,7 +181,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   // Index pages & shared modal/drawer patterns
   'rule/index-scenario-fab': 'Every index page uses the shared ScenarioFab (black settings FAB, bottom-right) → MpPopover scenarios (Default, Empty state); never hand-roll the preview FAB.',
   'rule/index-first-load-skeleton': 'Every index page shows a skeleton on first load (ErpTablePage loading flag) — never an empty flash or spinner-only.',
-  'rule/bulk-actions-no-delete': 'The bulk-actions "Actions" dropdown holds non-destructive ops only — never Delete (deletion stays a per-record confirm).',
+  'rule/bulk-actions-delete-confirmed': 'Bulk Delete is allowed, always behind a ConfirmModal naming how many records go — last in the "Actions" dropdown, danger-styled. Never delete straight from the bar.',
   'rule/pdf-preview-modal': 'Print/preview via shared PdfPreviewModal: single-column PDF, no thumbnail rail; footer = Open template settings (left) + Print PDF (right, prints not downloads).',
   'rule/share-via-email-modal': 'Share via email = shared ShareViaEmailModal: left email form + right single-column PDF preview (no thumbnail).',
   'rule/copy-link-drawer': 'Copy link = shared CopyLinkDrawer (custom Teleport drawer shell), never a modal or silent toast.',

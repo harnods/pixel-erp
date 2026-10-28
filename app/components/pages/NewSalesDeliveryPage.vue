@@ -29,6 +29,7 @@ import { deliveredByLine, derivedQty, lineLock, releaseInputBasis, canReleaseInp
 import { lockDate } from '~/data/closeBooks'
 import ReleaseInputBasisModal from '~/components/patterns/ReleaseInputBasisModal.vue'
 import { useSalesDeliveryViewAs } from '~/composables/useSalesDeliveryViewAs'
+import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -480,7 +481,10 @@ function fmtPlain(n: number) {
 // ── Notes + attachments ───────────────────────────────────────────────────────
 const message = ref('')
 const memo    = ref('')
-const attachments = ref<{ name: string; sizeKB: number }[]>([])
+// Seeded from the File manager's "Add file › Create a new transaction"
+// hand-off, so the form opens with those files already attached. Reading it
+// clears it, so a later visit starts empty. Empty on every other entry.
+const attachments = ref<{ name: string; sizeKB: number }[]>(takePendingAttachments())
 function iconForFile(name: string): 'pdf' | 'excel-document' | 'word-document' | 'doc' {
   if (name.endsWith('.pdf')) return 'pdf'
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return 'excel-document'
@@ -1242,7 +1246,11 @@ function onSave() {
   border: none; border-radius: 0;
   box-shadow: var(--mp-shadows-none, none); /* pixel-police-allow-shadow: removing the default shadow */
 }
-.si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.si-td--input { position: relative; }
+.si-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 /* The CELL is the field, as on the BOM form: white, the full row height, its
    control docked to the top. Rows grow past 40px (the ordered-quantity caption,
    the percentage preview), so a 40px control alone left a dead band under it —

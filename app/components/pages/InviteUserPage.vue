@@ -1,34 +1,71 @@
 <!-- prod-parity-aligned: jurnal-frontend-app/src/pages/settings/pages/user-management/invite/user_invite.vue -->
 <script setup lang="ts">
 /**
- * Settings › Users & roles → "Invite user" (also serves "Edit access" for an
+ * Settings › Users & roles → "Invite user" (also serves "Edit user" for an
  * existing user, at /users-and-roles/:id/edit).
  *
  * Benchmarked on Jurnal's Invite user page. ERP deviations from that mockup, all
  * driven by RULES.md (the rule beats the mockup — see the authority hierarchy):
  *  • Jurnal's native select element for Days / Start hour / End hour becomes an
  *    ErpFilterSelect (rule/select-erpfilterselect).
- *  • The Invite button is never disabled while preconditions are unmet — an
- *    unsatisfied requirement surfaces inline (rule/btn-no-disabled-validation,
- *    rule/form-errors-inline, rule/form-actions-always-present).
+ *  • The Invite user / Save button is never disabled while preconditions are
+ *    unmet — an unsatisfied requirement surfaces inline (rule/btn-no-disabled-validation,
+ *    rule/form-errors-inline, rule/form-actions-always-present). Its labels follow
+ *    the CRM add-on spec ("Invite user" / "Save"), which wins over
+ *    rule/form-edit-save-changes ("Save changes") for this page.
  *  • The "Terms for selecting roles" side card is a bordered surface, no shadow
  *    (rule/surface-border-no-shadow).
  *  • Existing/Custom is an in-stage detail tab → MpTabs (docs/patterns/tabs.md §2).
+ *
+ * CRM access & seats (PRD "CRM Access and CRM User Seats in ERP" + the Invite /
+ * Edit user CRM add-on spec):
+ *  • CRM is one more row in the Existing role list, but it maps to user.crmRole
+ *    (not systemRoleIds) and its state is kept outside the tabs, so it combines
+ *    with Ultimate and any custom role (US-011). Shown only when the company has
+ *    the CRM add-on (US-001); read-only once it expired.
+ *  • Ticking CRM shows a "CRM access level" radio pair — CRM Basic / CRM
+ *    Administrator (internal crmRole 'basic' / 'admin'), Administrator by default.
+ *  • Options that would be blocked on save are disabled UP FRONT, with the reason
+ *    inline and on hover: CRM (no seat left / over quota / expired), CRM
+ *    Administrator (no Administrator seat left → Basic auto-selected) and the ERP
+ *    roles (ERP limit full — CRM stays selectable). Counts come from the SAVED
+ *    users, so an option the user already holds is never disabled (Administrator
+ *    → Basic is always allowed; unticking frees a seat). This disables option
+ *    controls only — the footer actions stay enabled (rule/form-actions-always-present).
+ *  • Both limits are still checked on save, server-style, as a safety net; a
+ *    block names WHICH limit and links Contact Sales.
+ *  • Seat usage lives in its own right-column card above "Selected roles"; once
+ *    any role is ticked / unticked it reads "Seat usage (after saving)" with the
+ *    counts after this user is saved (US-002).
+ *  • A CRM-only user (CRM role, no ERP role) doesn't use an ERP seat (US-010).
+ *  • Demo: the scenario FAB's "Invite / Edit states" pre-fill this form for the
+ *    spec's 12 states (useInviteEditStates).
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import {
   MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
-  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpCheckbox, MpBadge,
-  MpButton, MpIcon, MpTooltip,
+  MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpCheckbox, MpRadio, MpBadge, MpTag,
+  MpButton, MpIcon,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import SeatContactSalesModal, { type SeatContactTopic } from '~/components/patterns/SeatContactSalesModal.vue'
+import SeatUsageSummary from '~/components/patterns/SeatUsageSummary.vue'
+import CrmSeatsScenarioFab from '~/components/patterns/CrmSeatsScenarioFab.vue'
+import DisabledReasonTooltip from '~/components/patterns/DisabledReasonTooltip.vue'
 import { successToast } from '~/utils/toasts'
 import {
   ACCESS_DAY_OPTIONS, ACCESS_HOUR_OPTIONS, ACCESS_TIME_LIMIT_NOTE, ROLE_SELECTION_TERMS,
   SYSTEM_ROLES, customRoles, emptyAccessTimeLimit, getAccountUser,
-  addAccountUser, updateAccountUser, grantedFeatureCount, systemRolesFor,
+  addAccountUser, updateAccountUser, deleteAccountUser, grantedFeatureCount, systemRolesFor,
   type AccessTimeLimit, type SystemRole,
 } from '~/data/usersRoles'
+import {
+  SEAT_BLOCK_MESSAGES, ERP_FULL_NOTE, isSeatLimitBlock, crmRoleLabel, crmOptionNote,
+  type CrmRole, type CrmOptionNote,
+} from '~/data/crmSubscription'
+import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
+import { useInviteEditStates, type InviteFormPrefill } from '~/composables/useInviteEditStates'
 
 // id from the catch-all route: 'invite' → create, an existing user id → edit.
 const props = defineProps<{ orderId?: string }>()
@@ -43,6 +80,12 @@ const { t } = useLocale()
 const { projectAccountingEnabled } = useApprovalWorkflowScenario()
 const existingRoles = computed(() => systemRolesFor(projectAccountingEnabled.value))
 
+const {
+  mode: crmMode, crmVisible,
+  state: crmState, checkSave, previewView, formGate,
+} = useCrmSubscriptionScenario()
+const { pendingPrefill } = useInviteEditStates()
+
 // ─── Form state ─────────────────────────────────────────────────────────────
 const name = ref('')
 const email = ref('')
@@ -56,21 +99,112 @@ const selectedCustomRoles = ref<string[]>([])
 const roleAuthority = reactive<Record<string, string[]>>({})
 /** roleId → access-limitation checkbox. */
 const roleLimitation = reactive<Record<string, boolean>>({})
-/** roleId → full-access (module administrator) checkbox. */
-const roleFullAccess = reactive<Record<string, boolean>>({})
 const isListManager = ref(false)
+
+// ─── CRM role (standalone — not an Existing/Custom role) ───────────────────
+const crmOn = ref(false)
+/** "CRM access level" radio — CRM Administrator (default) / CRM Basic. Only read while crmOn. */
+const crmLevel = ref<CrmRole>('admin')
+/** The Owner always holds CRM Administrator; editing them can't change it. */
+const isOwnerUser = ref(false)
+/** The user's CRM role as saved — kept untouched while CRM is hidden (renewal restores it). */
+const savedCrmRole = ref<CrmRole | null>(null)
+const crmLocked = computed(() => isOwnerUser.value || crmMode.value === 'read-only')
+/** The CRM row expands like the Existing roles above (open by default). */
+const crmExpanded = ref(true)
+/** CRM row description lines — verbatim from the CRM add-on spec. */
+const CRM_DESCRIPTION = [
+  'Use Mekari CRM from the product switcher.',
+  'CRM Basic: use CRM without CRM Settings.',
+  'CRM Administrator: use CRM, including CRM Settings.',
+  'Detailed CRM permissions are set in CRM.',
+]
+
+// ─── What the form may offer, before saving (proactive disabling) ──────────
+/** Gates from the SAVED users — an option the edited user already holds is never blocked. */
+const gate = computed(() => formGate(isEdit.value ? props.orderId! : null))
+/**
+ * Why the CRM checkbox is disabled, or null. Read-only (expired) applies to
+ * everyone; the seat limits only to a user who isn't ticked — an already-ticked
+ * CRM always stays untickable.
+ */
+const crmBlockedReason = computed(() => {
+  const reason = gate.value.crm
+  if (!reason) return null
+  if (reason === 'crm-read-only') return reason
+  return crmOn.value ? null : reason
+})
+const crmNote = computed<CrmOptionNote | null>(() =>
+  crmBlockedReason.value ? crmOptionNote(crmBlockedReason.value, gate.value.overQuota) : null)
+/** CRM Administrator is unavailable (Administrator seats full) — CRM Basic is still fine. */
+const adminBlocked = computed(() => !crmLocked.value && !!gate.value.admin && !gate.value.crm)
+const adminNote = computed(() => (adminBlocked.value ? crmOptionNote(gate.value.admin!, gate.value.overQuota) : null))
+/** ERP limit full and this user has no ERP seat yet → unticked ERP roles are disabled. */
+const erpBlocked = computed(() => !!gate.value.erp)
+function erpRoleDisabled(on: boolean) { return erpBlocked.value && !on }
+/** The level ticking CRM starts at: Administrator (spec default) unless only Basic is left. */
+function defaultCrmLevel(): CrmRole { return adminBlocked.value ? 'basic' : 'admin' }
+// Only Basic seats left → CRM Basic is selected for the admin (never for a user
+// who already is CRM Administrator: their own seat keeps Administrator open).
+watch([adminBlocked, crmOn], ([blocked, on]) => {
+  if (blocked && on && crmLevel.value === 'admin' && savedCrmRole.value !== 'admin') crmLevel.value = 'basic'
+}, { immediate: true })
+
+// ─── "Seat usage" card (right column, above Selected roles) ────────────────────
+/** Counts AFTER saving this user with the roles ticked now — updates live. */
+const seatPreview = computed(() => previewView(isEdit.value ? props.orderId! : null, {
+  systemRoleIds: selectedSystemRoles.value,
+  customRoleIds: selectedCustomRoles.value,
+  crmRole: crmRoleToSave(),
+}))
+/** Any role ticked / unticked → the card reads "Seat usage (after saving)". */
+const rolesTouched = ref(false)
+
+// ─── "Selected roles" card (right column, as in production) ──────────────────
+/** Existing chips: ticked system roles, then the CRM tier ("CRM Basic" / "CRM Administrator"). */
+const selectedExistingChips = computed(() => [
+  ...existingRoles.value.filter((r) => isSystemRoleOn(r.id)).map((r) => t(r.name)),
+  ...(crmVisible.value && crmRoleChoice.value ? [t(crmRoleLabel(crmRoleChoice.value))] : []),
+])
+const selectedCustomChips = computed(() =>
+  customRoles.filter((r) => isCustomRoleOn(r.id)).map((r) => r.name))
+const crmRoleChoice = computed<CrmRole | null>(() => (crmOn.value ? crmLevel.value : null))
 
 /** Which role accordions are expanded — all open by default, as in Jurnal. */
 const expanded = reactive<Record<string, boolean>>(
   Object.fromEntries(SYSTEM_ROLES.map((r) => [r.id, true])),
 )
-const termsOpen = ref(true)
+// Collapsed by default, as in production.
+const termsOpen = ref(false)
 const activeRoleTab = ref(0)
 
 /** Edit route pointing at a user that no longer exists — a real reachable state. */
 const notFound = ref(false)
 
-onMounted(() => {
+/**
+ * (Re)load the form: blank for an invite, the user's saved access for an edit.
+ * Runs on every id change — the catch-all route reuses this component between
+ * /users-and-roles/invite and /:id/edit — and before a demo-state pre-fill.
+ */
+function loadForm() {
+  name.value = ''
+  email.value = ''
+  applyTimeLimit.value = false
+  Object.assign(timeLimit, emptyAccessTimeLimit())
+  selectedSystemRoles.value = []
+  selectedCustomRoles.value = []
+  for (const key of Object.keys(roleAuthority)) delete roleAuthority[key]
+  for (const key of Object.keys(roleLimitation)) delete roleLimitation[key]
+  isListManager.value = false
+  isOwnerUser.value = false
+  savedCrmRole.value = null
+  crmOn.value = false
+  crmLevel.value = 'admin'
+  crmExpanded.value = true
+  activeRoleTab.value = 0
+  rolesTouched.value = false
+  notFound.value = false
+  clearErrors()
   if (!isEdit.value) return
   const user = getAccountUser(props.orderId!)
   if (!user) { notFound.value = true; return }
@@ -79,20 +213,42 @@ onMounted(() => {
   selectedSystemRoles.value = [...user.systemRoleIds]
   selectedCustomRoles.value = [...user.customRoleIds]
   isListManager.value = user.isListManager
+  isOwnerUser.value = user.isOwner
+  savedCrmRole.value = user.crmRole
+  crmOn.value = user.isOwner || !!user.crmRole
+  crmLevel.value = user.isOwner || user.crmRole !== 'basic' ? 'admin' : 'basic'
   if (user.timeLimit) {
     applyTimeLimit.value = true
     Object.assign(timeLimit, user.timeLimit)
   }
   if (user.customRoleIds.length && !user.systemRoleIds.length) activeRoleTab.value = 1
-})
+}
+
+/** Demo-state pre-fill (scenario FAB › Invite / Edit states) on top of a fresh form. */
+function applyPrefill(prefill: InviteFormPrefill | undefined) {
+  if (!prefill) return
+  if (prefill.systemRoleIds) selectedSystemRoles.value = [...prefill.systemRoleIds]
+  if (prefill.customRoleNames) {
+    selectedCustomRoles.value = customRoles.filter((r) => prefill.customRoleNames!.includes(r.name)).map((r) => r.id)
+  }
+  if (prefill.crm && crmVisible.value && !crmBlockedReason.value) {
+    crmOn.value = true
+    crmLevel.value = prefill.crm === 'default' || (prefill.crm === 'admin' && adminBlocked.value) ? defaultCrmLevel() : prefill.crm
+  }
+  if (prefill.tab) activeRoleTab.value = prefill.tab === 'custom' ? 1 : 0
+  rolesTouched.value = !!(prefill.systemRoleIds?.length || prefill.customRoleNames?.length || prefill.crm)
+}
+
 
 // ─── Role selection ─────────────────────────────────────────────────────────
 function toggleSystemRole(role: SystemRole, on: boolean) {
   selectedSystemRoles.value = on
     ? [...new Set([...selectedSystemRoles.value, role.id])]
     : selectedSystemRoles.value.filter((id) => id !== role.id)
-  if (!on) { delete roleAuthority[role.id]; delete roleLimitation[role.id]; delete roleFullAccess[role.id] }
+  if (!on) { delete roleAuthority[role.id]; delete roleLimitation[role.id] }
+  rolesTouched.value = true
   roleError.value = ''
+  erpSeatError.value = ''
 }
 function isSystemRoleOn(id: string) { return selectedSystemRoles.value.includes(id) }
 
@@ -100,18 +256,32 @@ function toggleCustomRole(id: string, on: boolean) {
   selectedCustomRoles.value = on
     ? [...new Set([...selectedCustomRoles.value, id])]
     : selectedCustomRoles.value.filter((v) => v !== id)
+  rolesTouched.value = true
   roleError.value = ''
+  erpSeatError.value = ''
+}
+
+function toggleCrm(on: boolean) {
+  crmOn.value = on
+  // Ticking CRM starts as CRM Administrator (spec default), or CRM Basic when only
+  // Basic seats are left. An edited user's saved level comes back as-is.
+  if (on) crmLevel.value = savedCrmRole.value ?? defaultCrmLevel()
+  rolesTouched.value = true
+  roleError.value = ''
+  crmSeatError.value = ''
+  erpSeatError.value = ''
+}
+function pickCrmLevel(level: CrmRole) {
+  if (level === 'admin' && adminBlocked.value) return
+  crmLevel.value = level
+  rolesTouched.value = true
+  crmSeatError.value = ''
 }
 function isCustomRoleOn(id: string) { return selectedCustomRoles.value.includes(id) }
 
 function toggleAuthorityOption(roleId: string, value: string, on: boolean) {
   const current = roleAuthority[roleId] ?? []
   roleAuthority[roleId] = on ? [...new Set([...current, value])] : current.filter((v) => v !== value)
-}
-
-/** The permission bullets to show — swaps to fullAccessPermissions once ticked. */
-function permissionsFor(role: SystemRole): string[] {
-  return roleFullAccess[role.id] && role.fullAccessPermissions ? role.fullAccessPermissions : role.permissions
 }
 
 /**
@@ -130,8 +300,31 @@ const emailError = ref('')
 const roleError = ref('')
 const timeError = ref('')
 const isSaving = ref(false)
+/** Seat-limit blocks — inline in the section whose choice hit the limit. */
+const erpSeatError = ref('')
+const crmSeatError = ref('')
+const erpSeatErrorIsLimit = ref(false)
+const crmSeatErrorIsLimit = ref(false)
+const contactSalesOpen = ref(false)
+const contactSalesTopic = ref<SeatContactTopic>('crm-seats')
+function openContactSales(topic: SeatContactTopic) {
+  contactSalesTopic.value = topic
+  contactSalesOpen.value = true
+}
+/** Editing away every ERP role AND the CRM role → offer to remove the user instead (US-010 AC-06). */
+const removeInsteadOpen = ref(false)
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function clearErrors() {
+  nameError.value = ''
+  emailError.value = ''
+  roleError.value = ''
+  timeError.value = ''
+  erpSeatError.value = ''
+  crmSeatError.value = ''
+  removeInsteadOpen.value = false
+}
 
 function validate(): boolean {
   nameError.value = name.value.trim() ? '' : t('You must fill in user name')
@@ -139,9 +332,11 @@ function validate(): boolean {
   else if (!EMAIL_RE.test(email.value.trim())) emailError.value = t('Enter email based on format. Example: name@email.com')
   else emailError.value = ''
 
-  roleError.value = (selectedSystemRoles.value.length || selectedCustomRoles.value.length)
+  const hasErpRole = selectedSystemRoles.value.length > 0 || selectedCustomRoles.value.length > 0
+  const hasCrm = crmVisible.value ? crmOn.value : !!savedCrmRole.value
+  roleError.value = hasErpRole || hasCrm
     ? ''
-    : t('You must select at least 1 role')
+      : crmVisible.value ? t('Select at least one ERP role or the CRM role') : t('You must select at least 1 role')
 
   timeError.value = applyTimeLimit.value && timeLimit.startHour >= timeLimit.endHour
     ? t('End hour must be later than start hour')
@@ -150,19 +345,57 @@ function validate(): boolean {
   return !nameError.value && !emailError.value && !roleError.value && !timeError.value
 }
 
+/** The CRM role to save. While CRM is hidden (no add-on) the stored role is left as-is. */
+function crmRoleToSave(): CrmRole | null {
+  if (!crmVisible.value) return savedCrmRole.value
+  return crmRoleChoice.value
+}
+
 async function save() {
-  if (!validate()) return
-  isSaving.value = true
-  await new Promise((r) => setTimeout(r, 500))
+  erpSeatError.value = ''
+  crmSeatError.value = ''
+  if (!validate()) {
+    // An existing user stripped of every ERP role and CRM → remove them instead.
+    if (isEdit.value && roleError.value && !nameError.value && !emailError.value) {
+      roleError.value = ''
+      removeInsteadOpen.value = true
+    }
+    return
+  }
 
   const payload = {
     name: name.value.trim(),
     email: email.value.trim(),
     systemRoleIds: [...selectedSystemRoles.value],
     customRoleIds: [...selectedCustomRoles.value],
+    crmRole: crmRoleToSave(),
     isListManager: isListManager.value,
     timeLimit: applyTimeLimit.value && !timeLimitBlockedBy.value ? { ...timeLimit } : null,
   }
+
+  // Both limits are checked on every save, whichever screen the role comes from
+  // (US-003 AC-06). Nothing is saved when either blocks.
+  const seat = checkSave(isEdit.value ? props.orderId! : null, payload)
+  if (seat.erp) {
+    erpSeatError.value = t(SEAT_BLOCK_MESSAGES[seat.erp])
+      + (crmVisible.value && crmMode.value === 'active' && !isEdit.value ? ` ${t('You can still invite this user with the CRM role only.')}` : '')
+    erpSeatErrorIsLimit.value = isSeatLimitBlock(seat.erp)
+  }
+  if (seat.crm) {
+    activeRoleTab.value = 0 // the CRM row (and its block message) lives in the Existing list
+    crmSeatError.value = t(SEAT_BLOCK_MESSAGES[seat.crm])
+    crmSeatErrorIsLimit.value = isSeatLimitBlock(seat.crm)
+  }
+  if (seat.erp || seat.crm) {
+    // The CRM section sits below a long role list — bring the block into view.
+    await nextTick()
+    const el = document.querySelector('[data-test-id="inv-erp-seat-error"], [data-test-id="inv-crm-seat-error"]')
+    el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    return
+  }
+
+  isSaving.value = true
+  await new Promise((r) => setTimeout(r, 500))
 
   if (isEdit.value) {
     updateAccountUser(props.orderId!, payload)
@@ -176,6 +409,34 @@ async function save() {
 }
 
 function goBack() { router.push('/users-and-roles') }
+
+function removeUserInstead() {
+  if (!isEdit.value) return
+  deleteAccountUser(props.orderId!)
+  successToast(t('User deleted'))
+  goBack()
+}
+
+// Last, so every ref above exists before the immediate first run.
+watch(() => props.orderId, loadForm, { immediate: true })
+// A pending demo state is consumed by the page showing its route (this page may
+// already be mounted, or mount after the FAB navigates here).
+watch([pendingPrefill, () => props.orderId], ([req]) => {
+  if (!req) return
+  const matches = req.state.route === 'edit'
+    ? isEdit.value && props.orderId === req.state.userId
+    : req.state.route === 'invite' && !isEdit.value
+  if (!matches) return
+  loadForm()
+  applyPrefill(req.state.prefill)
+  pendingPrefill.value = null
+  // Bring what the state is about into view — the CRM row sits below a long role list.
+  const focus = activeRoleTab.value !== 0 ? null
+    : crmVisible.value && (crmOn.value || crmNote.value)
+    ? '[data-test-id="inv-crm-row"]'
+    : erpBlocked.value ? '[data-test-id="inv-erp-note"]' : null
+  if (focus) nextTick(() => document.querySelector(focus)?.scrollIntoView?.({ block: 'center' }))
+}, { immediate: true })
 </script>
 
 <template>
@@ -184,7 +445,7 @@ function goBack() { router.push('/users-and-roles') }
     <div class="inv-titlebar">
       <div class="inv-titlebar-left">
         <MpButton variant="textLink" class="inv-breadcrumb" @click="goBack">{{ t('Users & roles') }}</MpButton>
-        <h1 class="inv-title">{{ isEdit ? t('Edit user') : t('Invite user') }}</h1>
+        <h1 class="inv-title" data-test-id="inv-title">{{ isEdit ? t('Edit user') : t('Invite user') }}</h1>
       </div>
     </div>
 
@@ -287,9 +548,9 @@ function goBack() { router.push('/users-and-roles') }
 
           <!-- ── Role ── -->
           <section class="inv-section">
-            <h2 class="inv-section-title">
-              {{ t('Role') }}<span class="inv-required">*</span>
-            </h2>
+            <div class="inv-section-head">
+              <h2 class="inv-section-title">{{ t('Role') }}<span class="inv-required">*</span></h2>
+            </div>
 
             <MpTabs id="inv-role-tabs" v-model="activeRoleTab" is-manual variant-color="green">
               <MpTabList>
@@ -305,6 +566,10 @@ function goBack() { router.push('/users-and-roles') }
               <MpTabPanels>
                 <!-- ── Existing roles ── -->
                 <MpTabPanel value="existing">
+                  <!-- ERP limit full → ERP roles can't be added (CRM still can). Reason inline + on hover. -->
+                  <p v-if="erpBlocked" class="inv-option-note inv-option-note--list" data-devchange="crm-invite-edit-disabled-options" data-test-id="inv-erp-note">
+                    <MpIcon name="info" size="sm" />{{ t(ERP_FULL_NOTE) }}
+                  </p>
                   <ul class="inv-roles">
                     <li v-for="role in existingRoles" :key="role.id" class="inv-role">
                       <div class="inv-role-head">
@@ -316,47 +581,26 @@ function goBack() { router.push('/users-and-roles') }
                           :aria-expanded="expanded[role.id]"
                           @click="expanded[role.id] = !expanded[role.id]"
                         />
-                        <MpCheckbox
-                          :id="`inv-role-${role.id}`"
-                          :is-checked="isSystemRoleOn(role.id)"
-                          @change="(on: boolean) => toggleSystemRole(role, on)"
+                        <DisabledReasonTooltip
+                          :id="`inv-role-${role.id}-reason`"
+                          :reason="erpRoleDisabled(isSystemRoleOn(role.id)) ? t(ERP_FULL_NOTE) : null"
                         >
-                          <span class="inv-role-name">{{ t(role.name) }}</span>
-                        </MpCheckbox>
+                          <MpCheckbox
+                            :id="`inv-role-${role.id}`"
+                            :is-checked="isSystemRoleOn(role.id)"
+                            :is-disabled="erpRoleDisabled(isSystemRoleOn(role.id))"
+                            @change="(on: boolean) => toggleSystemRole(role, on)"
+                          >
+                            <span class="inv-role-name">{{ t(role.name) }}</span>
+                          </MpCheckbox>
+                        </DisabledReasonTooltip>
                       </div>
 
                       <div v-if="expanded[role.id]" class="inv-role-body">
-                        <!-- Full access (module administrator) — sits ABOVE the permission
-                             bullets since ticking it swaps which bullets are shown below. -->
-                        <div v-if="role.fullAccessOption" class="inv-subgroup">
-                          <span class="inv-subgroup-label">{{ t('Full access') }}</span>
-                          <MpCheckbox
-                            :id="`inv-full-${role.id}`"
-                            :is-checked="!!roleFullAccess[role.id]"
-                            :is-disabled="!isSystemRoleOn(role.id)"
-                            @change="(on: boolean) => roleFullAccess[role.id] = on"
-                          >
-                            <span class="inv-full-access-label">
-                              {{ t(role.fullAccessOption) }}
-                              <MpTooltip
-                                :id="`inv-full-tt-${role.id}`"
-                                :label="t('Without full access, the user can\'t open CRM Reports or Settings. A CRM Administrator manages module permissions from Settings › Users & roles.')"
-                                placement="top" use-portal
-                              >
-                                <span class="inv-full-access-info"><MpIcon name="info" size="sm" /></span>
-                              </MpTooltip>
-                            </span>
-                          </MpCheckbox>
+                        <!-- Plain description lines, no bullets — as in production. -->
+                        <div class="inv-desc-lines">
+                          <p v-for="p in role.permissions" :key="p">{{ t(p) }}</p>
                         </div>
-
-                        <ul class="inv-permissions" :class="{ 'inv-permissions--indented': role.fullAccessOption }">
-                          <li v-for="p in permissionsFor(role)" :key="p">{{ t(p) }}</li>
-                        </ul>
-
-                        <!-- CRM record scope is managed in CRM, not limited here. -->
-                        <p v-if="role.id === 'crm' && !roleFullAccess[role.id]" class="inv-crm-note">
-                          {{ t('New activated users only get access to their own records.') }}
-                        </p>
 
                         <!-- Default sales / purchasing authority -->
                         <div v-if="role.authorityGroup" class="inv-subgroup">
@@ -373,10 +617,8 @@ function goBack() { router.push('/users-and-roles') }
                           </div>
                         </div>
 
-                        <!-- Access limitation — only relevant for a role that ISN'T full
-                             access (a full-access/admin user can't sensibly be restricted
-                             to only their own records). -->
-                        <div v-if="role.accessLimitation && !roleFullAccess[role.id]" class="inv-subgroup">
+                        <!-- Access limitation -->
+                        <div v-if="role.accessLimitation" class="inv-subgroup">
                           <span class="inv-subgroup-label">{{ t('Access limitation') }}</span>
                           <MpCheckbox
                             :id="`inv-limit-${role.id}`"
@@ -387,24 +629,121 @@ function goBack() { router.push('/users-and-roles') }
                         </div>
                       </div>
                     </li>
+
+                    <!-- CRM — one more row in the Existing list (where the old \`crm\` system
+                         role sat), but it maps to user.crmRole, not systemRoleIds, so seats
+                         count separately: CRM only → CRM seat, no ERP seat. Its state lives
+                         outside the tabs, so it combines with Ultimate and custom roles. -->
+                    <li v-if="crmVisible" class="inv-role" data-devchange="crm-user-seats-invite-crm-role" data-test-id="inv-crm-row">
+                      <div class="inv-role-head">
+                        <MpButton
+                          variant="ghost"
+                          class="inv-role-toggle"
+                          :left-icon="crmExpanded ? 'caret-down' : 'caret-right'"
+                          :aria-label="crmExpanded ? t('Collapse') : t('Expand')"
+                          :aria-expanded="crmExpanded"
+                          @click="crmExpanded = !crmExpanded"
+                        />
+                        <DisabledReasonTooltip id="inv-crm-reason" :reason="crmNote ? t(crmNote.full) : null">
+                          <MpCheckbox
+                            id="inv-crm"
+                            data-test-id="inv-crm-checkbox"
+                            :is-checked="crmOn"
+                            :is-disabled="crmLocked || !!crmBlockedReason"
+                            @change="toggleCrm"
+                          >
+                            <span class="inv-role-name">{{ t('CRM') }}</span>
+                          </MpCheckbox>
+                        </DisabledReasonTooltip>
+                      </div>
+                      <!-- Why CRM can't be ticked (or changed) — inline, next to the checkbox. -->
+                      <p v-if="crmNote" class="inv-option-note" data-devchange="crm-invite-edit-disabled-options" data-test-id="inv-crm-note">
+                        <MpIcon name="info" size="sm" />
+                        <span>
+                          {{ t(crmNote.before) }}
+                          <template v-if="crmNote.link">
+                            <a class="inv-link" data-test-id="inv-crm-note-link" @click="openContactSales(crmBlockedReason === 'crm-read-only' ? 'crm-addon' : 'crm-seats')">{{ t(crmNote.link) }}</a>
+                            {{ t(crmNote.after) }}
+                          </template>
+                        </span>
+                      </p>
+
+                      <div v-if="crmExpanded" class="inv-role-body">
+                        <div class="inv-desc-lines" data-test-id="inv-crm-description">
+                          <p v-for="p in CRM_DESCRIPTION" :key="p">{{ t(p) }}</p>
+                        </div>
+
+                        <!-- "CRM access level" — shown once CRM is ticked. CRM Administrator is
+                             the default; it is disabled (with the reason inline + on hover) when no
+                             Administrator seat is left, and CRM Basic is picked instead. -->
+                        <div v-if="crmOn" class="inv-subgroup" data-test-id="inv-crm-level">
+                          <span class="inv-subgroup-label">{{ t('CRM access level') }}</span>
+                          <div class="inv-radio-stack">
+                            <MpRadio
+                              id="inv-crm-basic" name="inv-crm-level" value="basic"
+                              data-test-id="inv-crm-basic-radio"
+                              :is-checked="crmLevel === 'basic'"
+                              :is-disabled="crmLocked"
+                              @change="pickCrmLevel('basic')"
+                            >{{ t('CRM Basic') }}</MpRadio>
+                            <DisabledReasonTooltip id="inv-crm-admin-reason" :reason="adminNote ? t(adminNote.full) : null">
+                              <MpRadio
+                                id="inv-crm-admin" name="inv-crm-level" value="admin"
+                                data-test-id="inv-crm-admin-radio"
+                                :is-checked="crmLevel === 'admin'"
+                                :is-disabled="crmLocked || adminBlocked"
+                                @change="pickCrmLevel('admin')"
+                              >
+                                {{ t('CRM Administrator') }}
+                                <template v-if="adminNote" #description>
+                                  <span data-test-id="inv-crm-admin-note">{{ t(adminNote.full) }}</span>
+                                </template>
+                              </MpRadio>
+                            </DisabledReasonTooltip>
+                          </div>
+                        </div>
+
+                        <p v-if="isOwnerUser" class="inv-crm-note">
+                          {{ t('The Owner always has CRM Administrator access and holds 1 included seat.') }}
+                        </p>
+                      </div>
+                      <!-- Block message next to the row that caused it. -->
+                      <p v-if="crmSeatError" class="inv-inline-error inv-crm-error" data-test-id="inv-crm-seat-error">
+                        {{ crmSeatError }}
+                        <a v-if="crmSeatErrorIsLimit" class="inv-link" @click="openContactSales('crm-seats')">{{ t('Contact Sales') }}</a>
+                      </p>
+                    </li>
                   </ul>
                 </MpTabPanel>
 
                 <!-- ── Custom roles ── -->
                 <MpTabPanel value="custom">
+                  <p v-if="erpBlocked && customRoles.length" class="inv-option-note inv-option-note--list" data-test-id="inv-erp-note-custom">
+                    <MpIcon name="info" size="sm" />{{ t(ERP_FULL_NOTE) }}
+                  </p>
+                  <p v-if="crmVisible" class="inv-seat-line inv-custom-crm-hint" data-test-id="inv-custom-crm-hint">
+                    {{ t('CRM access is set in Existing role.') }}
+                    <template v-if="crmRoleChoice">{{ t('Selected') }}: {{ t(crmRoleLabel(crmRoleChoice)) }}.</template>
+                  </p>
                   <ul v-if="customRoles.length" class="inv-roles">
                     <li v-for="role in customRoles" :key="role.id" class="inv-role">
                       <div class="inv-role-head">
-                        <MpCheckbox
-                          :id="`inv-custom-${role.id}`"
-                          :is-checked="isCustomRoleOn(role.id)"
-                          @change="(on: boolean) => toggleCustomRole(role.id, on)"
+                        <DisabledReasonTooltip
+                          :id="`inv-custom-${role.id}-reason`"
+                          :reason="erpRoleDisabled(isCustomRoleOn(role.id)) ? t(ERP_FULL_NOTE) : null"
                         >
-                          <span class="inv-role-name">{{ role.name }}</span>
-                          <template #description>
-                            {{ role.description || t('No description') }}
-                          </template>
-                        </MpCheckbox>
+                          <MpCheckbox
+                            :id="`inv-custom-${role.id}`"
+                            :is-checked="isCustomRoleOn(role.id)"
+                            :is-disabled="erpRoleDisabled(isCustomRoleOn(role.id))"
+                            @change="(on: boolean) => toggleCustomRole(role.id, on)"
+                          >
+                            <span class="inv-role-name">{{ role.name }}</span>
+                            <template #description>
+                              {{ role.description || t('No description') }}
+                            </template>
+                          </MpCheckbox>
+                        </DisabledReasonTooltip>
                       </div>
                       <p class="inv-custom-meta">
                         {{ grantedFeatureCount(role.grants) }}
@@ -426,6 +765,10 @@ function goBack() { router.push('/users-and-roles') }
             </MpTabs>
 
             <p v-if="roleError" class="inv-inline-error">{{ roleError }}</p>
+            <p v-if="erpSeatError" class="inv-inline-error" data-test-id="inv-erp-seat-error">
+              {{ erpSeatError }}
+              <a v-if="erpSeatErrorIsLimit" class="inv-link" @click="openContactSales('erp-seats')">{{ t('Contact Sales') }}</a>
+            </p>
           </section>
 
           <div class="inv-divider" />
@@ -438,26 +781,58 @@ function goBack() { router.push('/users-and-roles') }
               :is-checked="isListManager"
               @change="(on: boolean) => isListManager = on"
             >
-              {{ t('List manager') }}
-              <template #description>{{ t('Can edit and delete data on the pages their roles can view.') }}</template>
+              {{ t('List Manager (can edit and delete data)') }}
             </MpCheckbox>
           </section>
 
           <!-- ── Footer actions — always present, never disabled by validation ── -->
           <div class="inv-actions erp-action-footer">
             <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">
-              {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Invite')) }}
+            <MpButton variant="primary" is-rounded :is-disabled="isSaving" data-test-id="inv-save" @click="save">
+              {{ isSaving ? t('Saving…') : (isEdit ? t('Save') : t('Invite user')) }}
             </MpButton>
           </div>
         </div>
 
-        <!-- ── Side card: terms for selecting roles ── -->
-        <aside class="inv-aside">
+        <!-- ── Right column (sticky), as in production: "Selected roles" summary +
+             collapsible "Terms for selecting roles". ── -->
+        <aside class="inv-aside" data-devchange="crm-user-seats-invite-selected-roles">
+          <!-- Seat usage — same card style as Selected roles, above it so the counts
+               stay visible while picking roles. Live "after saving" preview. -->
+          <div class="inv-card" data-devchange="crm-user-seats-invite-summary" data-test-id="inv-seat-card">
+            <p class="inv-card-title" data-test-id="inv-seat-title">
+              {{ t('Seat usage') }}
+              <span v-if="rolesTouched" class="inv-card-hint" data-test-id="inv-seat-after-saving">{{ t('(after saving)') }}</span>
+            </p>
+            <SeatUsageSummary :view="seatPreview" :billing-down="crmState.billing === 'down'" layout="stacked" />
+            <p class="inv-seat-help">
+              {{ t('Need more ERP or CRM seats?') }}
+              <a class="inv-link" data-test-id="inv-seat-contact-sales" @click="openContactSales('seats')">{{ t('Contact Sales.') }}</a>
+            </p>
+          </div>
+
+          <div class="inv-card" data-test-id="inv-selected-roles">
+            <p class="inv-card-title">{{ t('Selected roles') }}</p>
+            <div class="inv-selected-group">
+              <p class="inv-selected-label">{{ t('Existing') }}</p>
+              <div v-if="selectedExistingChips.length" class="inv-chips" data-test-id="inv-selected-existing">
+                <MpTag v-for="c in selectedExistingChips" :key="c">{{ c }}</MpTag>
+              </div>
+              <p v-else class="inv-selected-empty">-</p>
+            </div>
+            <div class="inv-selected-group">
+              <p class="inv-selected-label">{{ t('Custom') }}</p>
+              <div v-if="selectedCustomChips.length" class="inv-chips" data-test-id="inv-selected-custom">
+                <MpTag v-for="c in selectedCustomChips" :key="c">{{ c }}</MpTag>
+              </div>
+              <p v-else class="inv-selected-empty">-</p>
+            </div>
+          </div>
+
           <div class="inv-terms">
             <MpButton
               variant="ghost" class="inv-terms-head"
-              :right-icon="termsOpen ? 'caret-down' : 'caret-right'"
+              :right-icon="termsOpen ? 'chevrons-up' : 'chevrons-down'"
               :aria-expanded="termsOpen"
               @click="termsOpen = !termsOpen"
             >
@@ -465,11 +840,27 @@ function goBack() { router.push('/users-and-roles') }
             </MpButton>
             <ul v-if="termsOpen" class="inv-terms-list">
               <li v-for="term in ROLE_SELECTION_TERMS" :key="term">{{ t(term) }}</li>
+              <li v-if="crmVisible" data-test-id="inv-terms-crm">{{ t('CRM can be combined with any role, including Ultimate and custom roles. It uses a CRM seat, not an ERP seat, unless the user also has an ERP role.') }}</li>
             </ul>
           </div>
         </aside>
       </div>
     </div>
+
+    <SeatContactSalesModal v-model:is-open="contactSalesOpen" id="inv-contact-sales" :topic="contactSalesTopic" />
+
+    <!-- No ERP role and no CRM role left → remove the user instead (US-010 AC-06). -->
+    <ConfirmModal
+      v-model:is-open="removeInsteadOpen"
+      :title="t('Delete this user instead?')"
+      :description="t('A user needs at least one ERP role or the CRM role. To take away all of their access, delete them from the company. Their transactions stay in the account.')"
+      :confirm-label="t('Delete user')"
+      :cancel-label="t('Keep editing')"
+      @confirm="removeUserInstead"
+    />
+
+    <!-- Demo: the spec's 12 Invite / Edit states first, then the CRM add-on (Billing) presets. -->
+    <CrmSeatsScenarioFab primary="states" />
   </div>
 </template>
 
@@ -510,7 +901,26 @@ function goBack() { router.push('/users-and-roles') }
 
 .inv-layout { display: flex; align-items: flex-start; gap: var(--mp-spacing-6); }
 .inv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-6); max-width: 880px; }
-.inv-aside { flex: 0 0 320px; position: sticky; top: 0; }
+.inv-aside { flex: 0 0 320px; position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+/* Plain role-description lines (production has no bullets here). */
+.inv-desc-lines { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.inv-desc-lines p { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default); }
+/* "Selected roles" card — bordered surface, no shadow (rule/surface-border-no-shadow). */
+.inv-card {
+  display: flex; flex-direction: column; gap: var(--mp-spacing-4);
+  padding: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md, 6px);
+}
+.inv-card-title {
+  padding-bottom: var(--mp-spacing-3); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+.inv-selected-group { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.inv-selected-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.inv-selected-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.inv-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
+.inv-card-hint { margin-left: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); }
+.inv-seat-help { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 /* ── Sections ── */
 .inv-section { display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); }
@@ -567,42 +977,34 @@ function goBack() { router.push('/users-and-roles') }
   margin-top: var(--mp-spacing-2); padding-left: var(--mp-spacing-11, 44px);
 }
 /* The global reset strips list-style, so bullets must be re-declared. */
-.inv-permissions {
-  list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-4);
-  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
-}
-/* Roles with a Full access checkbox above the bullets (e.g. CRM): the DOT of
-   each bullet lines up under the checkbox's label text ("Full access to
-   all..."), not under the checkbox box itself — measured offset (checkbox
-   box + its internal gap) from the shared left margin. Custom bullet (not
-   list-style) so the dot's exact x-position is controllable. */
-.inv-permissions--indented {
-  list-style: none; margin-left: 28px; padding-left: 0;
-}
-.inv-permissions--indented li { position: relative; padding-left: var(--mp-spacing-4); }
-.inv-permissions--indented li::before {
-  content: ''; position: absolute; left: 0; top: 0.55em;
-  width: 4px; height: 4px; border-radius: 50%; background: var(--mp-text-secondary, #3a4749);
-}
-.inv-permissions li {
-  display: list-item;
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-secondary);
-}
 
-.inv-crm-note {
-  margin: var(--mp-spacing-3) 0 0;
-  font-size: var(--mp-font-sizes-sm);
-  color: var(--mp-text-secondary);
-  line-height: var(--mp-line-heights-md);
-}
-.inv-permissions--indented + .inv-crm-note { margin-left: var(--mp-spacing-4); }
 .inv-subgroup { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .inv-subgroup-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .inv-subgroup-options { display: flex; align-items: center; gap: var(--mp-spacing-5, 20px); flex-wrap: wrap; }
 
-.inv-full-access-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
-.inv-full-access-info { display: inline-flex; color: var(--mp-icon-subtle, var(--mp-text-secondary)); cursor: help; }
+/* ── Seat usage — one compact helper line per pool (no card, no bars) ── */
+.inv-seat-line { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.inv-link { color: var(--mp-text-link); cursor: pointer; }
+.inv-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── CRM role ── */
+.inv-section-head { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+/* CRM row — Owner note (grey helper text). */
+.inv-radio-stack { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.inv-crm-error { margin-top: var(--mp-spacing-2); padding-left: var(--mp-spacing-7, 28px); }
+.inv-custom-crm-hint { padding: var(--mp-spacing-3) 0 0; }
+.inv-crm-note { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-md); }
+/* Why an option is disabled — small secondary helper line with an info icon,
+   aligned under the role name (rule/type-no-italic: size + colour, no italic). */
+.inv-option-note {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
+  margin-top: var(--mp-spacing-2); padding-left: var(--mp-spacing-7, 28px);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
+}
+.inv-option-note--list { margin-top: var(--mp-spacing-3); padding-left: 0; }
+.inv-option-note :deep(svg) { flex-shrink: 0; margin-top: 2px; }
+/* The CRM Administrator radio carries its helper as a description → top-align (rule/checkbox-multiline-top). */
+.inv-radio-stack :deep(.mp-radio__root) { align-items: flex-start; }
 
 .inv-custom-meta {
   margin-top: var(--mp-spacing-1); padding-left: var(--mp-spacing-6);

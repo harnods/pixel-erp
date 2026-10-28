@@ -19,7 +19,7 @@ Build Pixel 3 UI with a low-noise workflow: verify setup, map the UI, validate p
 - **Theme**: Enterprise only (Token v2.4). Never use Light mode values.
 - **Framework**: Nuxt 4, `srcDir: 'app/'`, `ssr: false`
 - **Pattern docs**: `docs/patterns/*.md` — always read before building anything new
-- **Existing patterns**: `ErpTablePage`, `ErpFilterBar`, `ErpStatusBadge`, `ErpPagination`
+- **Existing patterns**: `ErpTablePage`, `ErpFilterBar`, `ErpStatusBadge`, `ErpPagination`, `DetailActionsMenu`, `PrintShareMenu`
 - **Page recipes**: `docs/patterns/page-recipes.md` — index / form / detail page templates
 - **Static assets**: import SVGs from `~/assets/images/` with `?url`, not from `public/`
 - **Design tests**: `tests/design/` — Vitest, CSS source parsing, no browser needed

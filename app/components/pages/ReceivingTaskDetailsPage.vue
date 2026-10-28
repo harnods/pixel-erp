@@ -2,7 +2,7 @@
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSpinner,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpTooltip, MpIcon, MpButton,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   css, toast,
 } from '@mekari/pixel3'
@@ -366,33 +366,33 @@ function goBack() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">{{ t('Receiving') }}</button>
+        <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ t('Receiving') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ task.taskNo }}</h1>
           <ErpStatusBadge :status="localStatus" badge-for="additionalInformation" size="md" />
           <MpPopover id="rcvgd-jump" use-portal :is-keep-alive="false" placement="bottom-start">
             <MpPopoverTrigger>
-              <button class="detail-jump-chevron" :aria-label="t('Switch task')">
+              <MpButton variant="secondary" class="detail-jump-chevron" :aria-label="t('Switch task')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="detail-jump">
                 <div class="detail-jump-search-wrap">
                   <input v-model="jumpSearch" class="detail-jump-search" type="text" :placeholder="t('Search...')" />
-                  <button v-if="jumpSearch" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
+                  <MpButton v-if="jumpSearch" variant="secondary" class="search-clear-btn search-clear-btn--overlay" type="button" :aria-label="t('Clear search')" @click="jumpSearch = ''">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="t in jumpResults" :key="t.id" class="detail-jump-item" @click="jumpTo(t.id)">
+                  <MpButton v-for="t in jumpResults" :key="t.id" variant="secondary" class="detail-jump-item" @click="jumpTo(t.id)">
                     <span class="detail-jump-item-number">{{ t.taskNo }}</span>
                     <span class="detail-jump-item-customer">{{ t.purchaseNo }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No tasks found.') }}</p>
                 </div>
               </div>
@@ -420,7 +420,7 @@ function goBack() {
       <span class="rcvgd-rearrange-banner-text">
         {{ t('This task is flagged Needs re-arrangement — view the changes before it can start') }}
       </span>
-      <button class="btn-enterprise rcvgd-rearrange-banner-btn" type="button" @click="openViewChanges">{{ t('View changes') }}</button>
+      <MpButton variant="secondary" class="btn-enterprise rcvgd-rearrange-banner-btn" type="button" @click="openViewChanges">{{ t('View changes') }}</MpButton>
     </div>
 
     <!-- ── Scrollable stage ── -->
@@ -443,7 +443,7 @@ function goBack() {
             The purchase order behind this task ({{ task.purchaseNo }}) was canceled. This task can no longer be continued.
           </template>
         </span>
-        <button class="rcvgd-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
+        <MpButton variant="secondary" class="rcvgd-cancel-banner-btn" type="button" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</MpButton>
       </div>
 
       <!-- ── Summary grid ── -->
@@ -506,11 +506,11 @@ function goBack() {
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="itemSearch" class="rcvgd-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="itemSearch" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
+            <MpButton v-if="itemSearch" variant="secondary" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="itemSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
         <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
@@ -562,14 +562,10 @@ function goBack() {
                 <td class="detail-td detail-td--action">
                   <template v-if="localStatus !== 'open'">
                     <MpTooltip v-if="isBatchTrackedSku(item.skuCode)" :id="`rtd-tt-batch-${item.skuCode}`" :label="t('View batch')" placement="top" use-portal>
-                      <button class="rtd-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(item)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton variant="secondary" class="rtd-view-btn" type="button" left-icon="competencies" :aria-label="t('View batch')" @click="openViewBatch(item)" />
                     </MpTooltip>
                     <MpTooltip v-else-if="isSerialTrackedSku(item.skuCode)" :id="`rtd-tt-serial-${item.skuCode}`" :label="t('View serial number')" placement="top" use-portal>
-                      <button class="rtd-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(item)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton variant="secondary" class="rtd-view-btn" type="button" left-icon="competencies" :aria-label="t('View serial number')" @click="openViewSerial(item)" />
                     </MpTooltip>
                   </template>
                 </td>
@@ -696,21 +692,21 @@ function goBack() {
       <!-- Change assignee — the escape hatch when the holder has lost access to the
            company. Manager-only (or an operator with LM access), and only while the
            task is still Open / In Progress. -->
-      <button v-if="canChangeAssignee" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</button>
-      <button class="detail-btn detail-btn--secondary" @click="printReceivingSlip">{{ t('Print receiving slip') }}</button>
+      <MpButton v-if="canChangeAssignee" variant="secondary" class="btn-enterprise detail-btn detail-btn--secondary" @click="reassignOpen = true">{{ t('Change assignee') }}</MpButton>
+      <MpButton variant="secondary" class="detail-btn detail-btn--secondary" @click="printReceivingSlip">{{ t('Print receiving slip') }}</MpButton>
       <!-- Cancel task is an order-level action → it lives in the primary action's
            split-button dropdown, never as a standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
         <div v-if="canCancel" class="detail-split-btn">
           <MpTooltip v-if="needsRearrangement" id="rcvgd-start-tt-split" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
-            <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" disabled>{{ t('Start receiving') }}</button>
+            <MpButton variant="primary" class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" is-disabled>{{ t('Start receiving') }}</MpButton>
           </MpTooltip>
-          <button v-else class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
+          <MpButton v-else variant="primary" class="btn-enterprise detail-btn detail-btn--primary detail-split-btn__main" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</MpButton>
           <MpPopover id="rcvgd-actions-open" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
@@ -718,29 +714,29 @@ function goBack() {
           </MpPopover>
         </div>
         <MpTooltip v-else-if="needsRearrangement" id="rcvgd-start-tt-solo" :label="t('Cannot start receiving. Apply the changes first.')" placement="top" use-portal>
-          <button class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" disabled>{{ t('Start receiving') }}</button>
+          <MpButton variant="primary" class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled" is-disabled>{{ t('Start receiving') }}</MpButton>
         </MpTooltip>
-        <button v-else class="btn-enterprise detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</button>
+        <MpButton v-else variant="primary" class="btn-enterprise detail-btn detail-btn--primary" @click="startReceivingAndNavigate">{{ t('Start receiving') }}</MpButton>
       </template>
       <template v-else-if="localStatus === 'in progress'">
         <div v-if="canCancel" class="detail-split-btn">
-          <button class="detail-btn detail-btn--primary detail-split-btn__main" @click="continueReceiving">{{ t('Continue receiving') }}</button>
+          <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__main" @click="continueReceiving">{{ t('Continue receiving') }}</MpButton>
           <MpPopover id="rcvgd-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
+              <MpButton variant="primary" class="detail-btn detail-btn--primary detail-split-btn__chevron" :aria-label="t('More actions')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList><MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="askCancel">{{ t('Cancel task') }}</MpPopoverListItem></MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <button v-else class="detail-btn detail-btn--primary" @click="continueReceiving">{{ t('Continue receiving') }}</button>
+        <MpButton v-else variant="primary" class="detail-btn detail-btn--primary" @click="continueReceiving">{{ t('Continue receiving') }}</MpButton>
       </template>
-      <button v-else-if="localStatus === 'pending put-away'" class="detail-btn detail-btn--primary" @click="createPutAway">
+      <MpButton v-else-if="localStatus === 'pending put-away'" variant="primary" class="detail-btn detail-btn--primary" @click="createPutAway">
         {{ t('Create put-away') }}
-      </button>
+      </MpButton>
     </footer>
 
     <!-- ── Cancel confirmation ── -->
@@ -752,8 +748,8 @@ function goBack() {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</button>
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="cancelOpen = false">{{ t('Keep task') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmCancel">{{ t('Cancel task') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -777,8 +773,8 @@ function goBack() {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">{{ t('Review') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</button>
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="ackCancelOpen = false">{{ t('Review') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmAcknowledgeCancel">{{ t('Acknowledge') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -818,7 +814,7 @@ function goBack() {
         </MpModalBody>
         <MpModalFooter>
           <div class="modal-footer-btns">
-            <button class="btn-enterprise btn-enterprise--primary" @click="proceedRearrangementChanges">{{ t('Apply changes') }}</button>
+            <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary" @click="proceedRearrangementChanges">{{ t('Apply changes') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -838,7 +834,7 @@ function goBack() {
   <!-- Not found fallback -->
   <div v-else class="rcvgd-not-found">
     <p>{{ t('Receiving task not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to Receiving') }}</button>
+    <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">{{ t('Back to Receiving') }}</MpButton>
   </div>
 
   <ViewBatchDrawer

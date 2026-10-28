@@ -48,6 +48,12 @@ export default defineNuxtConfig({
     "/**": { headers: { "cache-control": "no-cache" } },
   },
 
+  components: [
+    { path: '~/components/patterns', pathPrefix: false },
+    { path: '~/components/pages', pathPrefix: false },
+    { path: '~/components' },
+  ],
+
   build: {
     transpile: ['@ds/proto-review'],
   },
@@ -60,6 +66,8 @@ export default defineNuxtConfig({
     "@/assets/css/erp.css",
     // Shared chrome for the full-bleed CRM list pages (title bar/filter/table/tags).
     "@/assets/css/crm-page.css",
+    // Shared shell for the Credit memo flow detail + form pages.
+    "@/assets/css/credit-memo.css",
   ],
   postcss: {
     plugins: {

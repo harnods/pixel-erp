@@ -1,6 +1,6 @@
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
-export type InvoiceStatus    = 'paid' | 'open' | 'overdue'
+export type InvoiceStatus    = 'paid' | 'open' | 'overdue' | 'partially-paid'
 export type BillStatus       = 'open' | 'paid' | 'unpaid' | 'overdue' | 'draft'
 /** 'bill' reviews as an Expense; 'invoice' as a Purchase invoice; 'receipt' as
  *  a Payment receipt; 'bank_statement' as a Cash management bank statement;
@@ -79,6 +79,7 @@ export interface SalesInvoice {
    */
   items?: SalesOrderItem[]
   deliveryId?: string
+  recurringId?: string
 }
 
 export interface PurchaseInvoice {
@@ -88,10 +89,13 @@ export interface PurchaseInvoice {
   date: string
   dueDate: string
   amount: number
+  total: number
+  balance: number
   status: InvoiceStatus
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+  recurringId?: string
 }
 
 export interface BillAttachment {
@@ -150,6 +154,7 @@ export interface Bill {
   payment?: BillPayment
   /** true once the payment has been matched against a bank transaction */
   reconciled?: boolean
+  recurringId?: string
 }
 
 export interface ReviewFile {
@@ -218,6 +223,7 @@ export interface SalesOrder {
   items: SalesOrderItem[]
   globalDiscount: number                  // IDR, order-level discount
   shippingFee: number                     // IDR
+  recurringId?: string
 }
 
 /** A requested line on a purchase request — the source rows a purchase order
@@ -364,4 +370,5 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  recurringId?: string
 }

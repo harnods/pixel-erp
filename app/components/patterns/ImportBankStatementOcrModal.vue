@@ -4,7 +4,7 @@
  * management account detail page. Dummy only: file selection/removal is real,
  * but "Upload" doesn't actually scan anything — it just toasts and closes.
  */
-import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay } from '@mekari/pixel3'
+import { MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay, MpButton } from '@mekari/pixel3'
 import ErpDropzone from '~/components/patterns/ErpDropzone.vue'
 import { startBankStatementReview } from '~/data'
 
@@ -63,8 +63,8 @@ function doUpload() {
       </MpModalBody>
       <MpModalFooter v-if="files.length">
         <div class="modal-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="handleClose">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="doUpload">{{ t('Upload') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="handleClose">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="doUpload">{{ t('Upload') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

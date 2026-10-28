@@ -40,12 +40,25 @@ fail=0
 # Only .vue files that changed in the range. `while read` (not mapfile) so this
 # runs on the CI runner's bash and older local bash alike; process substitution
 # keeps `fail` in the current shell.
+# Files exempt from the product-UI rules: deliberately off-system dev/meta tooling
+# (not customer-facing ERP chrome), which legitimately uses floating overlays,
+# shadows, and bespoke controls. Keep this list tiny and dev-tools-only.
+is_exempt_file() {
+  case "$1" in
+    */DevChangesOverlay.vue) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
   [[ -f "$f" ]] || continue   # skip deletions
+  if is_exempt_file "$f"; then continue; fi
 
   # Added lines only: keep '+' lines, drop the '+++ b/file' header, strip the '+'.
-  added="$(git diff --unified=0 "$BASE"...HEAD -- "$f" | grep '^+' | grep -v '^+++' | sed 's/^+//')"
+  # A line carrying a trailing `pixel-police-allow` comment opts out of ALL checks
+  # (the sanctioned escape hatch for a justified, one-off deviation).
+  added="$(git diff --unified=0 "$BASE"...HEAD -- "$f" | grep '^+' | grep -v '^+++' | sed 's/^+//' | grep -v 'pixel-police-allow')"
   [[ -z "$added" ]] && continue
 
   file_msgs=""

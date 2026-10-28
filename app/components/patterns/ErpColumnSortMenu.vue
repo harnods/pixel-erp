@@ -12,7 +12,7 @@
  *   • Clicking the already-active direction clears the sort (emits key '').
  */
 import {
-  MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent,
+  MpButton, MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 
@@ -42,13 +42,13 @@ function onSortOpt(dir: 'asc' | 'desc') {
     is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start"
   >
     <MpPopoverTrigger>
-      <button
+      <MpButton
         class="erp-sort-btn"
         :class="{ 'erp-sort-btn--active': sortKey === colKey }"
-        aria-label="Sort column" @click.stop
+        aria-label="Sort column" variant="ghost" @click.stop
       >
         <MpIcon name="sort-default" size="16px" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
       <MpPopoverList>

@@ -80,7 +80,7 @@ async function submit() {
                   <div class="da-label">
                     <span>{{ t(f.label) }}</span>
                     <MpTooltip :label="t(f.tooltip)" placement="top">
-                      <span class="da-help"><MpIcon name="help" size="sm" color="icon.secondary" /></span>
+                      <span class="da-help"><MpIcon name="help" size="sm" color="icon.default" /></span>
                     </MpTooltip>
                   </div>
                   <template v-if="isEditing && !f.lockedReason">

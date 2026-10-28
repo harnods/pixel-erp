@@ -857,16 +857,15 @@ function onSendToFulfillment() {
 
         <!-- ── Footer (scrolls with content, not sticky) ── -->
         <footer class="po-form-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="onCancel">Cancel</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="onCancel">Cancel</MpButton>
 
-          <button class="btn-enterprise btn-enterprise--secondary" @click="onSave">Save &amp; close</button>
+          <MpButton class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="onSave">Save &amp; close</MpButton>
 
           <MpPopover id="po-save-share-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary">
+              <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" right-icon="chevrons-down">
                 Save &amp; share
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -878,9 +877,7 @@ function onSendToFulfillment() {
 
           <MpPopover id="po-menu" use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" aria-label="More actions">
-                <MpIcon name="menu-kebab" size="sm" />
-              </button>
+              <MpButton class="btn-enterprise btn-enterprise--ghost btn-enterprise--icon" variant="ghost" aria-label="More actions" left-icon="menu-kebab" />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
@@ -1100,7 +1097,11 @@ function onSendToFulfillment() {
   border-radius: 0; border-color: transparent; background: transparent;
   box-shadow: var(--mp-shadows-none, none) !important; /* pixel-police-allow-shadow: strip inner control chrome so the cell owns the ring */
 }
-.pit-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pit-td--input { position: relative; }
+.pit-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pit-td--dimensions { padding: 0; }
 .pit-num-input :deep(input) { text-align: right; }
 

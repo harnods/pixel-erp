@@ -251,7 +251,7 @@ function handleSave() {
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goBack">Work Order #{{ wo.number.split('-').pop() }}</button>
+        <MpButton class="detail-breadcrumb" @click="goBack">Work Order #{{ wo.number.split('-').pop() }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New material record</h1>
         </div>
@@ -456,7 +456,7 @@ function handleSave() {
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="router.push('/work-orders')">Work orders</button>
+        <MpButton class="detail-breadcrumb" @click="router.push('/work-orders')">Work orders</MpButton>
         <div class="detail-titlerow-left"><h1 class="detail-title">Work order not found</h1></div>
       </div>
     </header>
@@ -567,7 +567,11 @@ function handleSave() {
    content — input alone, or input+hint+link — within that reserved space. */
 .mr-td--input { padding: 0; vertical-align: middle; white-space: normal; height: 64px; }
 .mr-td--input :deep([class*='input']) { border-radius: 0; border-color: transparent; }
-.mr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.mr-td--input { position: relative; }
+.mr-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 /* Disabled (nothing to return) — fill the whole cell like the locked columns
    beside it, instead of a gray input floating on the cell's own white background. */
 .mr-td--input-disabled { background: var(--mp-background-neutral-subtle); }

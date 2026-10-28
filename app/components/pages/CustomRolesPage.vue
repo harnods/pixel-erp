@@ -17,6 +17,7 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CustomRoleDrawer from '~/components/patterns/CustomRoleDrawer.vue'
+import CrmSeatsScenarioFab from '~/components/patterns/CrmSeatsScenarioFab.vue'
 import { successToast } from '~/utils/toasts'
 import {
   customRoles, deleteCustomRole, addCustomRole, grantedFeatureCount,
@@ -190,6 +191,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Add / edit custom role drawer ── -->
   <CustomRoleDrawer id="custom-role-drawer" :is-open="isOpen" :role-id="editingId" @close="close" />
+
+  <!-- Demo: CRM add-on presets + the Invite / Edit states (state 12 opens the drawer above). -->
+  <CrmSeatsScenarioFab />
 
   <!-- ── Delete confirmation ── -->
   <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"

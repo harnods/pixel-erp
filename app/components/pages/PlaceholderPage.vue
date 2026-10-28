@@ -1,40 +1,37 @@
 <script setup lang="ts">
+import { MpText, css } from '@mekari/pixel3'
+
 const { t } = useLocale()
 const { currentPageKey } = useNavigation()
+
+const pageClass = css({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100%',
+  minHeight: '240px',
+})
+
+const contentClass = css({ textAlign: 'center' })
+
+const labelClass = css({
+  fontSize: 'lg',
+  fontWeight: 'semiBold',
+  color: 'text.default',
+  marginBottom: '2',
+})
+
+const hintClass = css({
+  fontSize: 'md',
+  color: 'text.subtle',
+})
 </script>
 
 <template>
-  <div class="placeholder-page">
-    <div class="placeholder-content">
-      <p class="placeholder-label">{{ currentPageKey }}</p>
-      <p class="placeholder-hint">{{ t('Page content goes here.') }}</p>
+  <div :class="pageClass">
+    <div :class="contentClass">
+      <MpText :class="labelClass">{{ currentPageKey }}</MpText>
+      <MpText :class="hintClass">{{ t('Page content goes here.') }}</MpText>
     </div>
   </div>
 </template>
-
-<style scoped>
-.placeholder-page {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  min-height: 240px;
-}
-
-.placeholder-content {
-  text-align: center;
-}
-
-.placeholder-label {
-  font-size: 18px;            /* custom — not in token scale (between lg=16px and xl=20px) */
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-  margin: 0 0 var(--mp-spacing-2);
-}
-
-.placeholder-hint {
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-subtle);
-  margin: 0;
-}
-</style>

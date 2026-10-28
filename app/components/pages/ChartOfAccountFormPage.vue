@@ -223,7 +223,7 @@ function leave() {
                     <span>{{ t('Set this account a part of another account') }}</span>
                   </label>
                   <MpTooltip :label="t('Tick the box if you want to make this account a sub-account or a header account of another account with the same category.')" placement="top" use-portal>
-                    <span class="cof-info"><MpIcon name="info" size="sm" color="icon.secondary" /></span>
+                    <span class="cof-info"><MpIcon name="info" size="sm" color="icon.default" /></span>
                   </MpTooltip>
                 </div>
                 <div v-if="partOfAnother" class="cof-nested">

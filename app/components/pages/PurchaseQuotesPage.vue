@@ -29,7 +29,7 @@ const { t } = useLocale()
 // ─── Column definitions ───────────────────────────────────────────────────────
 const columns: TableColumn[] = [
   { key: 'date',           label: t('Date'),            kind: 'date',                                sortType: 'date'   },
-  { key: 'number',         label: t('Number'),          kind: 'number', sortable: true,                sortType: 'number' },
+  { key: 'number',         label: t('Number'),          width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true,                sortType: 'number' },
   { key: 'vendorName',     label: t('Vendor'),          kind: 'name', sortable: true,                sortType: 'text'   },
   { key: 'expirationDate', label: t('Expiration date'),  kind: 'date',                                sortType: 'date'   },
   { key: 'status',         label: t('Status'),          kind: 'status',                                sortType: 'text'   },
@@ -291,9 +291,7 @@ const exportColumns = computed(() => [
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
         </div>
       </div>
     </template>

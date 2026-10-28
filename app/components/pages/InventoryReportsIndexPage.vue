@@ -28,7 +28,7 @@ const reports: ReportCard[] = [
   { slug: 'inventory-valuation', title: 'Inventory valuation', description: 'Shows the stock movement of each product based on current stock and its value in a certain period.', to: '/inventory-report/inventory-valuation' },
   { slug: 'inventory-details', title: 'Inventory details', description: 'Shows a list of products with their movements and ending quantities.' },
   { slug: 'serial-number-product-quantity', title: 'Serial numbered product quantity', description: 'Showing the available quantity and stock on hand of products with serial numbers based on a specific date or period.' },
-  { slug: 'dual-unit', title: 'Dual Unit Inventory', description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.', to: '/inventory-report/dual-unit' },
+  { slug: 'dual-unit', title: 'Dual unit inventory', description: 'Stock mutation and on-hand stock in both base and secondary inventory unit, per batch. For products using a secondary inventory unit.', to: '/inventory-report/dual-unit' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────

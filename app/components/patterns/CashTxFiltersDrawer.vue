@@ -104,78 +104,55 @@ const CASH_FLOW_OPTIONS = [
 </script>
 
 <template>
-  <Transition name="ctf">
-    <div v-if="isOpen" class="ctf-overlay">
-      <div class="ctf-panel" role="dialog" aria-label="All filters">
-        <header class="ctf-header">
-          <span class="ctf-title">All filters</span>
-          <MpButton class="ctf-close" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></MpButton>
-        </header>
-
-        <div class="ctf-body">
-          <!-- Cash flow -->
-          <div class="ctf-field">
-            <span class="ctf-field-label">Cash flow</span>
-            <ul class="ctf-checklist">
-              <li v-for="opt in CASH_FLOW_OPTIONS" :key="opt.value" class="ctf-check-item" @click="toggle('cashFlow', opt.value)">
-                <span @click.stop><MpCheckbox :id="`${id}-flow-${opt.value}`" :is-checked="draft.cashFlow.includes(opt.value)" @change="() => toggle('cashFlow', opt.value)" /></span>
-                <span class="ctf-check-label">{{ opt.label }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <!-- Amount -->
-          <div class="ctf-field">
-            <span class="ctf-field-label">Amount</span>
-            <AmountComparatorField
-              :id="`${id}-amount`"
-              :comparator="draft.amountComparator" :value="draft.amountValue" :min="draft.amountMin" :max="draft.amountMax"
-              @update:comparator="draft.amountComparator = $event"
-              @update:value="draft.amountValue = $event"
-              @update:min="draft.amountMin = $event"
-              @update:max="draft.amountMax = $event"
-            />
-          </div>
-
-          <!-- Status (only for accounts that have a statement) -->
-          <div v-if="statusOptions && statusOptions.length" class="ctf-field">
-            <span class="ctf-field-label">Status</span>
-            <ul class="ctf-checklist">
-              <li v-for="opt in statusOptions" :key="opt.value" class="ctf-check-item" @click="toggle('status', opt.value)">
-                <span @click.stop><MpCheckbox :id="`${id}-status-${opt.value}`" :is-checked="draft.status.includes(opt.value)" @change="() => toggle('status', opt.value)" /></span>
-                <span class="ctf-check-label">{{ opt.label }}</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <footer class="ctf-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
-          <div class="ctf-footer-right">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
-          </div>
-        </footer>
+  <ErpDrawer :is-open="isOpen" title="All filters" @close="close">
+    <template #body>
+      <!-- Cash flow -->
+      <div class="ctf-field">
+        <span class="ctf-field-label">Cash flow</span>
+        <ul class="ctf-checklist">
+          <li v-for="opt in CASH_FLOW_OPTIONS" :key="opt.value" class="ctf-check-item" @click="toggle('cashFlow', opt.value)">
+            <span @click.stop><MpCheckbox :id="`${id}-flow-${opt.value}`" :is-checked="draft.cashFlow.includes(opt.value)" @change="() => toggle('cashFlow', opt.value)" /></span>
+            <span class="ctf-check-label">{{ opt.label }}</span>
+          </li>
+        </ul>
       </div>
-    </div>
-  </Transition>
+
+      <!-- Amount -->
+      <div class="ctf-field">
+        <span class="ctf-field-label">Amount</span>
+        <AmountComparatorField
+          :id="`${id}-amount`"
+          :comparator="draft.amountComparator" :value="draft.amountValue" :min="draft.amountMin" :max="draft.amountMax"
+          @update:comparator="draft.amountComparator = $event"
+          @update:value="draft.amountValue = $event"
+          @update:min="draft.amountMin = $event"
+          @update:max="draft.amountMax = $event"
+        />
+      </div>
+
+      <!-- Status (only for accounts that have a statement) -->
+      <div v-if="statusOptions && statusOptions.length" class="ctf-field">
+        <span class="ctf-field-label">Status</span>
+        <ul class="ctf-checklist">
+          <li v-for="opt in statusOptions" :key="opt.value" class="ctf-check-item" @click="toggle('status', opt.value)">
+            <span @click.stop><MpCheckbox :id="`${id}-status-${opt.value}`" :is-checked="draft.status.includes(opt.value)" @change="() => toggle('status', opt.value)" /></span>
+            <span class="ctf-check-label">{{ opt.label }}</span>
+          </li>
+        </ul>
+      </div>
+    </template>
+
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">Reset filter</MpButton>
+      <div class="ctf-footer-right">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">Apply</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.ctf-enter-active, .ctf-leave-active { transition: background-color 250ms ease; }
-.ctf-enter-from, .ctf-leave-to { background-color: transparent; }
-.ctf-enter-active .ctf-panel { transition: transform 350ms ease-out; }
-.ctf-leave-active .ctf-panel { transition: transform 250ms ease-in; }
-.ctf-enter-from .ctf-panel, .ctf-leave-to .ctf-panel { transform: translateX(calc(100% + 12px)); }
-
-.ctf-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.ctf-panel { margin: var(--mp-spacing-3); width: min(420px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-.ctf-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
-.ctf-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.ctf-close { display: inline-flex !important; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px) !important; height: var(--mp-sizes-9, 36px) !important; min-width: 0 !important; border: none !important; background: none !important; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); }
-.ctf-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.ctf-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
 .ctf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .ctf-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ctf-checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
@@ -183,6 +160,5 @@ const CASH_FLOW_OPTIONS = [
 .ctf-check-item { display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none; }
 .ctf-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-.ctf-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); padding: var(--mp-spacing-3) var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .ctf-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

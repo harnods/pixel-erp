@@ -3,28 +3,52 @@
     <!-- Main nav (52px collapsed, 216px expanded) -->
     <nav class="sidebar" :class="{ 'is-expanded': navExpanded, 'arrow-left': arrowPointsLeft }" aria-label="Main navigation">
       <!-- Toggle -->
-      <div class="sidebar-header">
-        <button class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
+      <div class="sidebar-header" data-devchange="sidebar-collapsed-tooltip">
+        <MpButton variant="ghost" class="sidebar-toggle" @click="handleToggle" title="Toggle sidebar">
           <img :src="toggleIcon" alt="Toggle sidebar" />
-        </button>
+        </MpButton>
       </div>
 
       <!-- Nav groups -->
       <div v-for="(group, gi) in navGroups" :key="gi" class="nav-group">
-        <button
-          v-for="item in group"
-          :key="item.name"
-          class="nav-item"
-          :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
-          :title="t(item.name)"
-          @click="() => handleNavClick(item)"
-          @mouseenter="(e) => handleItemMouseEnter(e, item)"
-          @mouseleave="scheduleClose"
-        >
-          <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
-          <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
-          <span class="nav-label">{{ t(item.name) }}</span>
-        </button>
+        <template v-for="item in group" :key="item.name">
+          <!-- Collapsed rail: styled Pixel tooltip on hover. Rendered only when a
+               tooltip is wanted (see navItemTooltip) so an excluded/active item
+               carries no tooltip node at all — avoids a stale empty tooltip box. -->
+          <MpTooltip
+            v-if="navItemTooltip(item)"
+            :id="`erp-nav-tt-${item.name}`"
+            :label="navItemTooltip(item)!"
+            placement="right"
+            use-portal
+          >
+            <MpButton
+              variant="ghost"
+              class="nav-item"
+              :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+              @click="() => handleNavClick(item)"
+              @mouseenter="(e) => handleItemMouseEnter(e, item)"
+              @mouseleave="scheduleClose"
+            >
+              <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+              <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+              <span class="nav-label">{{ t(item.name) }}</span>
+            </MpButton>
+          </MpTooltip>
+          <MpButton
+            v-else
+            variant="ghost"
+            class="nav-item"
+            :class="{ active: activeItem === item.name, 'is-flyout-open': flyoutItem?.name === item.name }"
+            @click="() => handleNavClick(item)"
+            @mouseenter="(e) => handleItemMouseEnter(e, item)"
+            @mouseleave="scheduleClose"
+          >
+            <img :src="`https://cdn.mekari.design/icons/${item.iconLine ?? item.icon + '-outline'}.svg`" class="nav-icon-line" alt="" />
+            <img :src="`https://cdn.mekari.design/icons/${item.iconFill ?? item.icon + '-fill'}.svg`" class="nav-icon-fill" alt="" />
+            <span class="nav-label">{{ t(item.name) }}</span>
+          </MpButton>
+        </template>
       </div>
     </nav>
 
@@ -40,7 +64,8 @@
             <template v-for="sub in group" :key="sub.label">
               <!-- Accordion item (e.g. Fixed assets): expandable header + children -->
               <template v-if="sub.children">
-                <button
+                <MpButton
+                  variant="ghost"
                   class="panel-item panel-item--accordion"
                   :class="{ 'is-open': isAccordionOpen(sub) }"
                   @click="handlePanelAccordionClick(sub)"
@@ -49,22 +74,24 @@
                   <svg class="panel-accordion-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                   </svg>
-                </button>
-                <button
+                </MpButton>
+                <MpButton
                   v-for="child in sub.children"
                   v-show="isAccordionOpen(sub)"
                   :key="child.label"
+                  variant="ghost"
                   class="panel-item panel-item--child"
                   :class="{ active: activePanelSubItem === child.label }"
                   @click="handlePanelSubItemClick(child)"
                 >
                   <span>{{ t(child.label) }}</span>
                   <MpBadge v-if="child.count != null" class="panel-item-count" for="additionalInformation" type="warning" size="sm">{{ child.count }}</MpBadge>
-                </button>
+                </MpButton>
               </template>
               <!-- Plain item -->
-              <button
+              <MpButton
                 v-else
+                variant="ghost"
                 class="panel-item"
                 :class="{ active: activePanelSubItem === sub.label }"
                 @click="handlePanelSubItemClick(sub)"
@@ -83,7 +110,7 @@
                   class="panel-item-icon panel-item-icon--settings"
                   alt=""
                 />
-              </button>
+              </MpButton>
             </template>
           </template>
         </div>
@@ -102,9 +129,10 @@
     >
       <template v-for="(group, gi) in flyoutGroups" :key="gi">
         <div class="submenu-group" :class="{ 'has-border': gi < flyoutGroups.length - 1 }">
-          <button
+          <MpButton
             v-for="sub in group"
             :key="sub.label"
+            variant="ghost"
             class="submenu-item"
             :class="{ active: activePanelSubItem === sub.label }"
             @click="handleFlyoutSubItemClick(sub)"
@@ -112,7 +140,7 @@
             <span>{{ t(sub.label) }}</span>
             <img v-if="sub.iconType === 'shortcut'" :src="shortcutIcon" class="submenu-item-icon submenu-item-icon--shortcut" alt="" />
             <img v-else-if="sub.iconType === 'settings'" :src="settingsIcon" class="submenu-item-icon" alt="" />
-          </button>
+          </MpButton>
         </div>
       </template>
     </div>
@@ -120,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpIcon, MpBadge } from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpTooltip, MpButton } from '@mekari/pixel3'
 import toggleIconUrl from '~/assets/images/sidebar-toggle.svg?url'
 import shortcutIconUrl from '~/assets/images/shortcut-icon.svg?url'
 import { receiptCountsByStage } from '~/data/receipts'
@@ -312,6 +340,26 @@ const flyoutGroups = computed<SubItem[][]>(
   () => flyoutItem.value?.submenu ?? (flyoutItem.value?.panelSubmenu as SubItem[][] | undefined) ?? [],
 )
 
+// Collapsed-rail hover tooltip (Pixel MpTooltip component). Only relevant while the
+// nav is collapsed to icons — once expanded the label is already visible next to
+// the icon. Suppressed in two cases:
+//  1. The item reveals a flyout on hover (a `submenu`, or a `panelSubmenu` that
+//     opted into a hover preview via flyoutOnHover, e.g. Reports). The flyout
+//     already names the section, and a tooltip would collide with it.
+//  2. The active item that owns a level-2 panel — its panel is already open and
+//     naming it, so a tooltip would be redundant.
+// A panel-only item that shows nothing on hover (e.g. Inventory, Settings) still
+// gets the tooltip when it isn't the active one.
+function navItemTooltip(item: NavItem) {
+  if (navExpanded.value) return undefined
+  const opensFlyout = !!item.submenu || (!!item.panelSubmenu && !!item.flyoutOnHover)
+  if (opensFlyout) return undefined
+  const hasLevel2 = !!(item.submenu || item.panelSubmenu)
+  const isActive = activeItem.value === item.name
+  if (isActive && hasLevel2) return undefined
+  return t(item.name)
+}
+
 // ─── Nav data ────────────────────────────────────────────────────────────────
 
 // Settings level-2 panel — shared so WMS Standalone shows the same Settings list as ERP.
@@ -400,6 +448,10 @@ const erpNavGroups: NavItem[][] = [
         { label: 'Purchases', to: 'Purchase report' },
         { label: 'Inventory', to: 'Inventory report' },
         { label: 'WMS', to: 'WMS report' },
+        // Reports › Tax is the index of tax reports (card grid, same as Sales /
+        // Inventory / WMS). VAT reconciliation is one of its cards — it lives
+        // here rather than under Accounting because it *is* a tax report: it
+        // reads ERP records against DJP Coretax, it doesn't post anything.
         { label: 'Tax', to: 'Tax report' },
         { label: 'Cash & bank', to: 'Cash & bank report' },
         { label: 'Production', to: 'Production report' },
@@ -412,7 +464,10 @@ const erpNavGroups: NavItem[][] = [
       submenu: [
         [
           { label: 'Cash management' },
-          { label: 'Reconciliations' },
+          // VAT reconciliation is NOT here — it sits under Reports › Tax. It
+          // reconciles ERP records against DJP Coretax and posts nothing, so it
+          // reads as a tax report, and "Reconciliations" next to Cash management
+          // would have read as *bank* reconciliation (its meaning in Jurnal).
           { label: 'Consolidation' },
           { label: 'Chart of accounts' },
           { label: 'Close books' },
@@ -762,33 +817,14 @@ const xpmNavGroups: NavItem[][] = [
   ],
 ]
 
-// Mekari Buzz (Marketing tool) nav — Campaigns + Assets. Assets carries a level-2
-// panel (same UI as ERP's Reports/Settings) with Branding + Photo stocks.
-const buzzNavGroups: NavItem[][] = [
-  [
-    { name: 'Home', icon: 'home' },
-    { name: 'Campaigns', icon: 'promo', to: 'Buzz campaigns' },
-  ],
-  [
-    {
-      name: 'Assets', icon: 'products',
-      panelSubmenu: [[
-        { label: 'Branding', to: 'Buzz branding' },
-        { label: 'Photo stocks', to: 'Buzz photo stocks' },
-      ]],
-    },
-  ],
-]
-
 // Active scenario drives which nav is shown. WMS Ops + Ops 2 share the trimmed
-// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav; Buzz
-// uses the Marketing nav; ERP uses the ERP nav.
+// Ops menu; WMS Standalone uses the full WMS nav; XPM uses the Expense nav;
+// ERP uses the ERP nav.
 const { activeScenario } = useScenario()
 const navGroups = computed<NavItem[][]>(() => {
   if (activeScenario.value === 'WMS Ops' || activeScenario.value === 'WMS Ops 2') return wmsOpsNavGroups.value
   if (activeScenario.value.startsWith('WMS')) return wmsStandaloneNavGroups.value
   if (activeScenario.value === 'XPM') return xpmNavGroups
-  if (activeScenario.value === 'BUZZ') return buzzNavGroups
   return erpNavGroups
 })
 
@@ -955,6 +991,19 @@ const SECTION_PARENT: Record<string, string> = {
   'Put away': 'Inbound delivery',
   // /payroll-runs/:id is a payroll run record; anchor it under Accounting › Payroll inbox.
   'Payroll runs': 'Payroll inbox',
+  // The whole VAT reconciliation module hangs off Reports › Tax — the index is
+  // a card on that page, and everything else is reached from inside the index
+  // (a masa row → its workspace; the title bar → the rules). None of them has a
+  // menu entry, so without this they'd snap the sidebar to Home. Every key maps
+  // straight to 'Tax report': the lookup is single-hop, so pointing the inner
+  // pages at 'Vat reconciliation' (itself off-nav now) would resolve to nothing.
+  'Vat reconciliation': 'Tax report',
+  'Faktur keluaran': 'Tax report',
+  'Faktur masukan': 'Tax report',
+  'Matching rules': 'Tax report',
+  'Unmatched and discrepancies': 'Tax report',
+  'Payments received': 'Sales invoices',
+  'Purchase payments': 'Purchase invoices',
 }
 
 watch([currentPageKey, activeSectionOverride, () => route.path, () => route.query.tab, () => route.query.innerTab], ([urlKey, override]) => {
@@ -1406,7 +1455,7 @@ function cancelClose() {
 .panel-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .panel-item.active {
-  background-color: #E2E8F0;
+  background-color: var(--mp-background-neutral-pressed, #E2E8F0);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-link, #165082);
 }
@@ -1530,7 +1579,7 @@ function cancelClose() {
 .submenu-item:hover { background-color: var(--mp-background-neutral-subtle-hovered); }
 
 .submenu-item.active {
-  background-color: #E2E8F0;
+  background-color: var(--mp-background-neutral-pressed, #E2E8F0);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-link, #165082);
 }
