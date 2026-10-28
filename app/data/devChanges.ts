@@ -28,6 +28,87 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-user-seats-list-type',
+    title: 'Type = account type (Member / Partner)',
+    description:
+      'The User list Type column and the "All types" filter now use production\'s account types, Member (briefcase) and Partner (team), taken from jurnal-frontend-app user_management (button_filter_type). Partner users — e.g. the company\'s outside accountant — are not counted against the ERP user limit.',
+    date: '2026-10-28',
+    files: ['UsersListPage.vue', 'usersRoles.ts', 'crmSubscription.ts'],
+  },
+  {
+    id: 'crm-user-seats-invite-selected-roles',
+    title: 'Selected roles + Terms (Invite / Edit user)',
+    description:
+      'Right column matched to production: a sticky "Selected roles" card listing the ticked Existing roles (including the CRM tier, e.g. "CRM Basic") and Custom roles (or "-"), above a collapsible "Terms for selecting roles" card that now also states how CRM combines with Ultimate / custom roles and how ERP and CRM seats are used.',
+    date: '2026-10-28',
+    files: ['InviteUserPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-invite-crm-role',
+    title: 'CRM row on Invite / Edit user (production layout)',
+    description:
+      'CRM is a row in the Existing role list, matched to production: caret + CRM checkbox, five plain description lines, and a "Default crm authority" radio pair — CRM Basic (default, as in prod) / CRM Manager (the Administrator-capable tier). It is stored as the user\'s CRM role, not an ERP role, so CRM-only takes a CRM seat and no ERP seat; ERP roles + CRM take both. Ticking Ultimate never clears CRM, and the choice is kept on the Custom role tab, so custom role + CRM works. Read-only once CRM expired; locked for the Owner. A CRM block message sits inside the CRM row. PRD US-001, US-003, US-010, US-011.',
+    files: ['InviteUserPage.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-invite-summary',
+    title: 'Seat usage card on Invite / Edit user',
+    description:
+      'A "Seat usage" card in the right column, above Selected roles (same card style): ERP users and CRM users as total · used · left, and for CRM where the seats come from (5 included · Basic add-ons · Manager add-ons, or N trial seats), "CRM Manager: x of y used" (· N over), and either "Up to N can be CRM Manager" or "Remaining N seats are for CRM Basic only". The numbers update live as roles are ticked, marked "(after saving)". The CRM part hides without the CRM add-on. "Need more ERP or CRM seats? Contact Sales." opens the Contact Sales dialog. This is now the only place seat counts are shown — the User list title bar has no Seat usage button, as in prod. PRD US-002, US-010.',
+    files: ['InviteUserPage.vue', 'SeatUsageSummary.vue', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+
+  {
+    id: 'crm-user-seats-list-banners',
+    title: 'Seat state banners on the User list',
+    description:
+      'Only when they apply: over quota (everyone keeps access, new access is blocked — points to the Seat usage card on Invite / Edit user and to Contact Sales), CRM expired (read-only) and Billing down (last confirmed seats, or "try again later" when nothing was ever confirmed). PRD US-006, US-008.',
+    date: '2026-10-27',
+    files: ['UsersListPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-list-column',
+    title: 'Role chips include the CRM tier',
+    description:
+      'The Role column (matched to production) shows the ERP role chips, then the CRM tier ("CRM Basic" / "CRM Manager"), then "List manager". A CRM-only user shows only the CRM chip; the Owner shows "Owner" and, with CRM active, "CRM Manager". Replaces the separate CRM access column. Deleting a user or cancelling an invite frees their CRM seat. PRD US-004, US-005.',
+    files: ['UsersListPage.vue'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-custom-role-note',
+    title: 'No CRM inside custom roles',
+    description:
+      'The CRM category and the "Access to CRM module" row are gone from the custom-role permission matrix — CRM is given only through the CRM role on the user, which combines with any custom role. PRD US-011 AC-04.',
+    date: '2026-10-27',
+    files: ['CustomRoleDrawer.vue', 'usersRoles.ts'],
+  },
+  {
+    id: 'crm-user-seats-product-switcher',
+    title: 'CRM in the product switcher',
+    description:
+      'CRM is always listed. It opens CRM only when the company has the CRM add-on and you hold the CRM role; otherwise it lands on a CRM page that offers Contact Sales (no add-on) or says to ask your admin (no CRM role). PRD US-013.',
+    date: '2026-10-27',
+    files: ['ErpProductSwitcher.vue', 'ErpNavbarGroup.vue', 'CrmLandingPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-landing',
+    title: 'CRM landing page',
+    description:
+      'Where the product switcher sends users who can\'t open CRM: what CRM is plus Contact Sales without the add-on, "You don\'t have CRM access" without the CRM role, or "try again later" while Billing can\'t confirm. Content is a placeholder; the CRM team owns the real landing page. PRD US-013.',
+    date: '2026-10-27',
+    files: ['CrmLandingPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'crm-user-seats-scenario-fab',
+    title: 'CRM add-on scenarios (demo)',
+    description:
+      'The Users & roles scenario button switches the mock Billing between No CRM, Trial, Essential, seat add-on only, expired, Billing down and ERP-limit-full, includes the PRD §3b "Owner + 5 CRM Managers" example (8 total · 6 used, CRM Manager 6 of 6 → Basic only; leaving the preset restores the seed), steps the Basic / Manager add-ons and the ERP limit up and down (step an add-on below usage to simulate a seat reduction), previews a user without the CRM role, and lists the defaults assumed for the PRD\'s open questions.',
+    date: '2026-10-27',
+    files: ['CrmSeatsScenarioFab.vue', 'ScenarioFab.vue', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
     id: 'dm-step-layout',
     title: 'Data migration step-based layout',
     description:
