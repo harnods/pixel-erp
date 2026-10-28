@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpButton, MpButtonGroup, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   toast, css,
 } from '@mekari/pixel3'
@@ -34,17 +34,27 @@ function goEdit(id: string) { router.push(`/approval-workflows/${id}/edit`) }
 // ─── Column definitions ────────────────────────────────────────────────────
 // Description rides under the workflow name (secondary line) so the eight facts fit
 // a 1440 stage without horizontal scroll.
+// Widths come from each column's kind (rule/table-column-kind); every column sorts on
+// the value it shows, so the keys point at the derived fields on Row below.
 const columns: TableColumn[] = [
-  { key: 'name',            label: 'Workflow name',     kind: 'name', sortType: 'text' },
-  { key: 'appliesTo',       label: 'Applies to',        width: '144px', sortType: 'text' },
-  { key: 'minAmount',       label: 'Amount higher than', kind: 'amount', align: 'right', sortType: 'number' },
-  { key: 'levels',          label: 'Levels',            width: '96px' },
-  // Identity + status get fixed widths sized to their header/badge so neither truncates
-  // ("Transaction created by" needs 190px; the Inactive badge ~88px).
-  { key: 'createdBy',       label: 'Transaction created by', width: '192px' },
-  { key: 'status',          label: 'Status',            width: '104px', sortType: 'text' },
-  { key: 'lastUpdated',     label: 'Last updated',      kind: 'date' },
+  { key: 'name',          label: 'Workflow name',          kind: 'name',   sortType: 'text' },
+  { key: 'appliesToText', label: 'Applies to',                             sortType: 'text' },
+  { key: 'minAmount',     label: 'Amount higher than',     kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'levelCount',    label: 'Levels',                                 sortType: 'number' },
+  { key: 'createdByText', label: 'Transaction created by',                 sortType: 'text' },
+  { key: 'status',        label: 'Status',                 kind: 'status', sortType: 'text' },
+  { key: 'date',          label: 'Last updated',           kind: 'date',   sortType: 'date' },
 ]
+
+/** A rule plus the values its cells show, for sorting and the default newest-first order. */
+type Row = ApprovalWorkflowRule & {
+  appliesToText: string
+  levelCount: number
+  createdByText: string
+  status: 'active' | 'inactive'
+  /** updatedAt — `date` is what useTableState sorts newest-first by default. */
+  date: string
+}
 
 function appliesToText(row: ApprovalWorkflowRule) {
   if (row.appliesTo === 'project') return `${t('Project action')} · ${t(projectActionLabel(row.projectAction))}`
@@ -65,16 +75,23 @@ function levelsText(row: ApprovalWorkflowRule) {
 }
 
 // ─── Table state ────────────────────────────────────────────────────────────
-const rows = computed<ApprovalWorkflowRule[]>(() => approvalWorkflows)
+const rows = computed<Row[]>(() => approvalWorkflows.map((r) => ({
+  ...r,
+  appliesToText: appliesToText(r),
+  levelCount: r.levels.length,
+  createdByText: createdByText(r),
+  status: r.isActive ? 'active' : 'inactive',
+  date: r.updatedAt,
+})))
 
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<ApprovalWorkflowRule>(rows, {
+} = useTableState<Row>(rows, {
   perPage: 25,
   filterFn: (row, s, status) => {
-    const matchesSearch = row.name.toLowerCase().includes(s) || appliesToText(row).toLowerCase().includes(s)
-    const matchesStatus = !status || (row.isActive ? 'active' : 'inactive') === status
+    const matchesSearch = row.name.toLowerCase().includes(s) || row.appliesToText.toLowerCase().includes(s)
+    const matchesStatus = !status || row.status === status
     return matchesSearch && matchesStatus
   },
 })
@@ -156,22 +173,23 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
       <div class="filter-right">
         <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <MpIcon name="search" size="sm" />
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpIcon name="close" size="sm" />
+          </button>
         </div>
       </div>
     </template>
 
     <!-- ── Cell: Workflow name ── -->
     <template #cell-name="{ value, row }">
-      <a class="cell-link" @click.stop="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ value }}</a>
+      <span class="cell-link" @click.stop="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ value }}</span>
       <span v-if="(row as unknown as ApprovalWorkflowRule).description" class="cell-sub">{{ (row as unknown as ApprovalWorkflowRule).description }}</span>
     </template>
 
     <!-- ── Cell: Transaction type ── -->
-    <template #cell-appliesTo="{ row }">
+    <template #cell-appliesToText="{ row }">
       <span class="cell-truncate">{{ appliesToText(row as unknown as ApprovalWorkflowRule) }}</span>
     </template>
 
@@ -181,12 +199,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Cell: Approval levels ── -->
-    <template #cell-levels="{ row }">
+    <template #cell-levelCount="{ row }">
       {{ levelsText(row as unknown as ApprovalWorkflowRule) }}
     </template>
 
     <!-- ── Cell: Created by ── -->
-    <template #cell-createdBy="{ row }">
+    <template #cell-createdByText="{ row }">
       {{ createdByText(row as unknown as ApprovalWorkflowRule) }}
     </template>
 
@@ -196,7 +214,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Cell: Last updated ── -->
-    <template #cell-lastUpdated="{ row }">
+    <template #cell-date="{ row }">
       <div class="cell-last-updated">
         <span class="cell-last-updated__date">{{ formatUpdatedAt((row as unknown as ApprovalWorkflowRule).updatedAt) }}</span>
         <span class="cell-last-updated__by">{{ (row as unknown as ApprovalWorkflowRule).updatedBy }}</span>
@@ -326,6 +344,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   outline: none;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;
+  border: none !important; background: none !important; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px) !important;
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .cell-link {
   display: block;
