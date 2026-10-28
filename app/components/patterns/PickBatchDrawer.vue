@@ -9,7 +9,7 @@ import { ref, reactive, computed, watch, toRef } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import { formatDate } from '~/utils/date'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { batchAttributesFor } from '~/data/productDetails'
+import { batchAttributesFor, findProductBatch } from '~/data/productDetails'
 import type { BatchAttributeKey, BatchAttributeValues } from '~/data/batchAttributes'
 import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
 
@@ -59,6 +59,20 @@ const attrCols = useBatchAttributeColumns(toRef(props, 'sku'))
 const attrKeys = attrCols.keys
 const attrText = (row: Row, k: BatchAttributeKey) => attrCols.text(k, row.attributes)
 
+/** A lot's description: its batch record's (an empty one stays empty and renders "—"),
+ *  else, only for a seeded lot with no record, the demo filler. */
+function lotDesc(batchNo: string, i: number): string {
+  const rec = findProductBatch(props.sku, batchNo)
+  return rec ? rec.description : DEMO_DESCS[i % DEMO_DESCS.length]!
+}
+
+// Column widths in px — mirror the <col> widths in the template. Description is the one
+// width-less column, so the table's floor is the rendered columns plus a Description
+// floor; below it the wrap scrolls instead of collapsing Description to zero width.
+const COL_PX = { batch: 200, expiry: 140, desc: 240, attr: 176, available: 110, qty: 120, unit: 78 }
+const tableMinWidth = computed(() => COL_PX.batch + COL_PX.expiry + COL_PX.desc
+  + attrKeys.value.length * COL_PX.attr + COL_PX.available + COL_PX.qty + COL_PX.unit)
+
 const rows = reactive<Row[]>([])
 const search = ref('')
 const saveError = ref('')
@@ -72,7 +86,7 @@ watch(() => props.open, (isOpen) => {
   rows.splice(0, rows.length, ...(item?.batches ?? []).map((b, i) => ({
     batchNo: b.batchNo,
     expiryDate: b.expiryDate,
-    desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+    desc: lotDesc(b.batchNo, i),
     // The saved snapshot wins over the batch master's current values.
     attributes: snapshotByBatch.get(b.batchNo) ?? batchAttributesFor(props.sku, b.batchNo, b.expiryDate),
     available: b.available,
@@ -151,7 +165,7 @@ function handleSave() {
         </div>
 
         <div class="pbd-table-wrap">
-          <table class="pbd-table">
+          <table class="pbd-table" data-devchange="batch-drawer-desc-column-fit" :style="{ minWidth: `${tableMinWidth}px` }">
             <colgroup>
               <col style="width: 200px" /><col style="width: 140px" /><col />
               <col v-for="k in attrKeys" :key="k" style="width: 176px" />
@@ -175,7 +189,7 @@ function handleSave() {
               <tr v-for="row in filteredRows" :key="row.batchNo" class="pbd-tr" :class="{ 'pbd-tr--static': isReadOnly }">
                 <td class="pbd-td pbd-td--muted">{{ row.batchNo }}</td>
                 <td class="pbd-td pbd-td--muted">{{ formatDate(row.expiryDate) }}</td>
-                <td class="pbd-td pbd-td--muted">{{ row.desc }}</td>
+                <td class="pbd-td pbd-td--muted">{{ row.desc || '—' }}</td>
                 <td v-for="k in attrKeys" :key="k" class="pbd-td pbd-td--muted">{{ attrText(row, k) }}</td>
                 <td class="pbd-td pbd-td--muted pbd-td--right">{{ row.available }}</td>
                 <td v-if="isReadOnly" class="pbd-td pbd-td--right">{{ row.qty }}</td>
@@ -222,7 +236,9 @@ function handleSave() {
 }
 .pbd-panel {
   margin: var(--mp-spacing-3);
-  width: min(1000px, calc(100% - 24px));
+  /* Same width as the Manage batch drawer: with attribute columns the table needs
+     ~1240px, and at 1000px the editable Qty column sat off-screen behind a scroll. */
+  width: min(1400px, calc(100% - 24px));
   height: calc(100% - 24px);
   display: flex; flex-direction: column;
   background: var(--mp-background-stage, #fff);

@@ -178,11 +178,25 @@ function attrsFor(batchNo: string, expiryDate: string, snapshot?: BatchAttribute
   return snapshot && Object.keys(snapshot).length ? snapshot : batchAttributesFor(props.sku, batchNo, expiryDate || undefined)
 }
 function attrText(row: BatchRow, key: BatchAttributeKey) { return attrCols.text(key, row.attributes) }
-/** A saved line's description: its own, else the batch master's, else the demo filler
- *  (only for a line that carries nothing at all). */
+/** A line's description: its own, else the batch master's — an empty one stays empty
+ *  and renders "—". Only a seeded lot with no batch record borrows the demo filler. */
 function descFor(batchNo: string, saved: string | undefined, i: number): string {
-  return saved?.trim() || findProductBatch(props.sku, batchNo)?.description || DEMO_DESCS[i % DEMO_DESCS.length]!
+  if (saved?.trim()) return saved.trim()
+  const rec = findProductBatch(props.sku, batchNo)
+  return rec ? rec.description : DEMO_DESCS[i % DEMO_DESCS.length]!
 }
+
+// Column widths in px — mirror the .vbd-col-* rules in <style>. Description is the one
+// width-less column, so the table's floor is the rendered columns plus a Description
+// floor; below it the wrap scrolls instead of collapsing Description to zero width.
+const COL_PX = { batch: 170, expiry: 140, desc: 180, attr: 176, loc: 150, num: 144, unit: 78 }
+const tableMinWidth = computed(() => {
+  const showLoc = isPacking.value && !isVerify.value && !props.hideLocation
+  const nums = (!isPacking.value && !props.hideOnHand ? 1 : 0) + (hasPlanned.value ? 1 : 0) + 1
+    + (hasVerifiedCol.value ? 1 : 0) + (isInOut.value ? 1 : 0)
+  return COL_PX.batch + COL_PX.expiry + COL_PX.desc + attrKeys.value.length * COL_PX.attr
+    + (showLoc ? COL_PX.loc : 0) + nums * COL_PX.num + COL_PX.unit
+})
 
 /** Expands one batch entry into one row per destination bin (Storage
  *  location/Put-away qty split, everything else merged via groupIndex/
@@ -284,7 +298,7 @@ function buildRows(): BatchRow[] {
       return {
         batchNo: b.batchNo,
         expiryDate: b.expiryDate,
-        desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+        desc: descFor(b.batchNo, undefined, i),
         onHand: b.onHand,
         value: delta,
         plannedValue: 0,
@@ -302,7 +316,7 @@ function buildRows(): BatchRow[] {
   return batches.map((b, i) => ({
     batchNo: b.batchNo,
     expiryDate: b.expiryDate,
-    desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+    desc: descFor(b.batchNo, undefined, i),
     onHand: b.onHand,
     value: totalOnHand > 0 ? Math.round((b.onHand / totalOnHand) * counted) : 0,
     plannedValue: 0,
@@ -426,7 +440,7 @@ function close() { emit('update:open', false) }
 
         <!-- Table -->
         <div class="vbd-table-wrap">
-          <table class="vbd-table" :class="{ 'vbd-table--split': isSplit }">
+          <table class="vbd-table" data-devchange="batch-drawer-desc-column-fit" :class="{ 'vbd-table--split': isSplit }" :style="{ minWidth: `${tableMinWidth}px` }">
             <colgroup>
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
@@ -478,7 +492,7 @@ function close() { emit('update:open', false) }
               <tr v-for="row in rows" :key="`${row.batchNo}::${row.bin ?? ''}::${row.groupIndex}`" class="vbd-tr">
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
-                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc }}</td>
+                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc || '—' }}</td>
                 <template v-for="k in attrKeys" :key="k">
                   <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ attrText(row, k) }}</td>
                 </template>
@@ -605,7 +619,7 @@ function close() { emit('update:open', false) }
 .vbd-col-desc    { /* flexible */ }
 .vbd-col-loc     { width: 150px; }
 .vbd-col-attr    { width: var(--mp-sizes-44, 176px); }
-.vbd-col-num     { width: 120px; }
+.vbd-col-num     { width: 144px; } /* fits the widest header, "NEW ON HAND QTY" (118px text + 24px padding) */
 .vbd-col-unit    { width: 78px; }
 
 .vbd-th {

@@ -28,6 +28,18 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'batch-drawer-desc-column-fit',
+    title: 'Batch drawers: Description keeps its own column',
+    description:
+      'In the Manage batch (stock in/out, transfer, put-away, picking, receiving), work order batch and View batch drawers, the Description column no longer collapses to zero width when attribute columns are added — the table scrolls sideways instead, so Description never overlaps Vendor. View batch qty columns are wide enough for "New on hand qty". A batch with no description shows "—" instead of demo text.',
+    date: '2026-10-28',
+    files: [
+      'app/components/patterns/ManageBatchDrawer.vue',
+      'app/components/patterns/PickBatchDrawer.vue',
+      'app/components/patterns/ViewBatchDrawer.vue',
+    ],
+  },
+  {
     id: 'batch-export-write-error',
     title: 'Batch export: a failed file shows an inline error',
     description: 'If the template, export or error file can’t be created, an inline message says so under the button (no silent failure). The button stays to retry.',

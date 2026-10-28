@@ -132,6 +132,13 @@ const DEMO_DESCS = [
   'Single origin, certified organic, lot #B12',
 ]
 
+/** A warehouse lot's description: its batch record's (an empty one stays empty — the
+ *  cell shows "—"), else, only for a seeded lot with no record, the demo filler. */
+function lotDesc(batchNo: string, idx: number): string {
+  const rec = findProductBatch(props.sku, batchNo)
+  return rec ? rec.description : DEMO_DESCS[idx % DEMO_DESCS.length]!
+}
+
 function isoToDisplay(iso: string): string {
   if (!iso) return ''
   const [y, m, d] = iso.split('-')
@@ -162,7 +169,9 @@ function seedRows(): void {
       // them) picks them up from the batch master; a delivery's rows always carry theirs.
       ...(props.kind !== 'purchase-delivery' && !b.attributes ? lotAttrs(b.batchNo, b.expiryDate) : {}),
       ...b,
-      desc: b.desc || (props.kind === 'purchase-delivery' ? '' : DEMO_DESCS[i % DEMO_DESCS.length]!),
+      // A saved line keeps its own description, else the batch master's — never the demo
+      // filler, which would then be saved back as if someone had typed it.
+      desc: b.desc || (props.kind === 'purchase-delivery' ? '' : (findProductBatch(props.sku, b.batchNo)?.description ?? '')),
       // A delivery's batch without an id hasn't been created yet — reopening the
       // drawer must keep it editable, not freeze it into a read-only row.
       isNew: props.kind === 'purchase-delivery' && !b.batchId,
@@ -218,7 +227,7 @@ function appendUnpickedPlannedRows(): void {
     const lot = lots.find(l => l.batchNo === p.batchNo)
     if (!lot) continue
     rows.value.push({
-      key: lot.batchNo, batchNo: lot.batchNo, expiryDate: lot.expiryDate, desc: DEMO_DESCS[rows.value.length % DEMO_DESCS.length]!,
+      key: lot.batchNo, batchNo: lot.batchNo, expiryDate: lot.expiryDate, desc: lotDesc(lot.batchNo, rows.value.length),
       onHand: lot.onHand, counted: null, unit: lot.unit ?? '', location: lot.location,
       ...lotAttrs(lot.batchNo, lot.expiryDate),
       isNew: false,
@@ -493,7 +502,7 @@ function addWarehouseBatch(batchNo: string) {
     batchNo: b.batchNo,
     expiryDate: b.expiryDate,
     expiryDisplay: isoToDisplay(b.expiryDate),
-    desc: DEMO_DESCS[idx % DEMO_DESCS.length]!,
+    desc: lotDesc(b.batchNo, idx),
     onHand: (isTransfer.value || isPicking.value) ? b.available : b.onHand,
     counted: null,
     unit,
@@ -728,7 +737,7 @@ function handleDrawerScan(rawValue: string) {
         batchNo: b.batchNo,
         expiryDate: b.expiryDate,
         expiryDisplay: isoToDisplay(b.expiryDate),
-        desc: DEMO_DESCS[idx % DEMO_DESCS.length]!,
+        desc: lotDesc(b.batchNo, idx),
         onHand: (isTransfer.value || isPicking.value) ? b.available : b.onHand,
         counted: 1,
         unit,
@@ -1069,6 +1078,24 @@ async function saveBatchLocDrawer() {
 // table's spare width and leaves every data row short of the right edge.
 const trailingColspan = computed(() => (isDelivery.value ? 4 : 5) + attrKeys.value.length + (isPicking.value ? 1 : 0) + (showOnHandColumn.value ? 1 : 0) + (showAfterStats.value ? 1 : 0) + (showPlannedQty.value ? 1 : 0))
 
+// Column widths in px — mirror the .mbd-col-* rules in <style>. Description is the one
+// width-less column (it absorbs spare width under table-layout:fixed), so it gets
+// NOTHING when the pinned columns alone fill the table. The table's floor is therefore
+// the sum of the columns this kind actually renders plus a Description floor; below
+// it the wrap scrolls sideways instead of collapsing Description to zero width.
+const COL_PX = { batch: 240, expiry: 172, desc: 240, attr: 176, location: 160, num: 150, counted: 160, after: 175, unit: 78, del: 44, paLoc: 300 }
+const tableMinWidth = computed(() => {
+  const attrs = attrKeys.value.length * COL_PX.attr
+  if (isPutAway.value) return COL_PX.batch + COL_PX.expiry + COL_PX.desc + attrs + COL_PX.paLoc + COL_PX.counted + COL_PX.unit + COL_PX.del
+  return COL_PX.batch + COL_PX.expiry + COL_PX.desc + attrs
+    + (isPicking.value ? COL_PX.location : 0)
+    + (showOnHandColumn.value ? COL_PX.num : 0)
+    + (showPlannedQty.value ? COL_PX.num : 0)
+    + COL_PX.counted
+    + (showAfterStats.value ? COL_PX.after : 0)
+    + COL_PX.unit + COL_PX.del
+})
+
 // ── Footer actions ────────────────────────────────────────────────────────────────
 const isSaving = ref(false)
 const isSavingLoc = ref(false)
@@ -1315,7 +1342,7 @@ function fmtNum(n: number | null): string {
           <template v-if="isPutAway">
           <table
             class="mbd-table mbd-table--putaway" :class="{ 'mbd-table--attrs': attrKeys.length }"
-            :style="{ '--mbd-attr-count': String(attrKeys.length) }"
+            :style="{ '--mbd-attr-count': String(attrKeys.length), '--mbd-min-width': `${tableMinWidth}px` }"
           >
             <colgroup>
               <col class="mbd-col-batch" />
@@ -1331,7 +1358,7 @@ function fmtNum(n: number | null): string {
               <tr>
                 <th class="mbd-th">Batch</th>
                 <th class="mbd-th">Expiry date</th>
-                <th class="mbd-th">Description</th>
+                <th class="mbd-th" data-devchange="batch-drawer-desc-column-fit">Description</th>
                 <th
                   v-for="(k, i) in attrKeys" :key="k" class="mbd-th"
                   :data-devchange="i === 0 ? 'batch-drawer-attributes' : undefined"
@@ -1347,7 +1374,7 @@ function fmtNum(n: number | null): string {
                 <tr v-for="(lr, lrIdx) in row.destLocRows" :key="lr.id" class="mbd-tr" :class="{ 'mbd-tr--scanned': lastScannedKey === row.key }">
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.batchNo }}</td>
                   <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ isoToDisplay(row.expiryDate) }}</td>
-                  <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc }}</td>
+                  <td v-if="lrIdx === 0" :rowspan="row.destLocRows.length" class="mbd-td mbd-td--muted mbd-td--merged">{{ row.desc || '—' }}</td>
                   <!-- Batch attributes — put-away issues stock, so read-only (§5.1). -->
                   <template v-if="lrIdx === 0">
                     <td
@@ -1453,7 +1480,9 @@ function fmtNum(n: number | null): string {
           <table
             class="mbd-table"
             :class="{ 'mbd-table--split': showLocSplit, 'mbd-table--delivery': isDelivery, 'mbd-table--attrs': !isDelivery && attrKeys.length }"
-            :style="attrKeys.length ? { '--mbd-attr-count': String(attrKeys.length) } : undefined"
+            :style="isDelivery
+              ? (attrKeys.length ? { '--mbd-attr-count': String(attrKeys.length) } : undefined)
+              : { '--mbd-attr-count': String(attrKeys.length), '--mbd-min-width': `${tableMinWidth}px` }"
           >
             <colgroup>
               <col class="mbd-col-batch" />
@@ -1474,7 +1503,7 @@ function fmtNum(n: number | null): string {
               <tr>
                 <th class="mbd-th">Batch</th>
                 <th class="mbd-th">Expiry date</th>
-                <th v-if="!isDelivery" class="mbd-th">Description</th>
+                <th v-if="!isDelivery" class="mbd-th" data-devchange="batch-drawer-desc-column-fit">Description</th>
                 <th
                   v-for="(k, i) in attrKeys" :key="k" class="mbd-th"
                   :data-devchange="i === 0 ? 'batch-drawer-attributes' : undefined"
@@ -1576,7 +1605,7 @@ function fmtNum(n: number | null): string {
                       @input="row.desc = ($event.target as HTMLInputElement).value"
                     />
                   </td>
-                  <td v-else class="mbd-td mbd-td--muted">{{ row.desc }}</td>
+                  <td v-else class="mbd-td mbd-td--muted">{{ row.desc || '—' }}</td>
                 </template>
 
                 <!-- BATCH ATTRIBUTES (every kind except count, §5.1). Receiving kinds take
@@ -2071,7 +2100,8 @@ function fmtNum(n: number | null): string {
 }
 .mbd-table {
   width: 100%; table-layout: fixed; border-collapse: collapse; border-spacing: 0;
-  min-width: 1000px;
+  /* Set per kind from the rendered columns (tableMinWidth); 1000px only as a fallback. */
+  min-width: var(--mbd-min-width, 1000px);
 }
 .mbd-col-batch   { width: 240px; }
 .mbd-col-expiry  { width: 172px; }
@@ -2371,9 +2401,8 @@ function fmtNum(n: number | null): string {
 
 /* Footer */
 .mbd-col-attr { width: var(--mp-sizes-44, 176px); }
-/* WMS kinds add one 176px column per batch attribute on top of their 1000px floor,
-   so the table scrolls sideways instead of squeezing the text columns. */
-.mbd-table--attrs { min-width: calc(1000px + var(--mbd-attr-count, 0) * var(--mp-sizes-44, 176px)); }
+/* WMS kinds' floor (--mbd-min-width) already counts one 176px column per batch
+   attribute, so the table scrolls sideways instead of squeezing Description to zero. */
 /* Same invalid-cell treatment as the qty / put-away location cells. */
 .mbd-td--attr-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .mbd-option { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
