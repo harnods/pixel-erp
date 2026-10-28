@@ -314,6 +314,33 @@ height and focus area.
 Use an inline caption only when there is enough vertical room and it does not
 break the row rhythm.
 
+### Two-band cells
+
+When a cell must show information **under** its value — a derived figure, a
+progress line, the reason a control is locked — split it into two bands instead
+of letting text float under the control:
+
+- **Control band** — 40px, the control or value docked to the top, on the same
+  text line as every other cell in the row.
+- **Info band** — below a `1px solid var(--mp-border-default)` rule, padded
+  `8px 12px`, captions at 12px / 16px line-height / `--mp-text-secondary`.
+
+Every two-band cell in a row puts its rule at the same height (40px), so the
+captions in neighbouring cells read across as one line. A two-band **column**
+keeps its rule on every row it applies to, even when that row has nothing to say
+— a rule that appears and disappears as values change reads as layout jitter.
+Rows the bands don't apply to (e.g. an ad-hoc line with no source order) carry
+none. The cell itself is the field
+surface (white, full row height, focus ring on the cell), so a control in a row
+made tall by its neighbours does not leave a dead band under it.
+
+Read-only cells use the same bands (the value in the control band, right-aligned
+for numbers), so a calculated column lines up with the editable ones beside it.
+
+**Source:** the sales delivery form's ordered quantity, input method and
+percentage columns (`NewSalesDeliveryPage.vue`). First use — no earlier table in
+the app carried text under an in-cell control; review when a second table needs it.
+
 Error copy follows [Form.md → Error message copy](Form.md#error-message-copy).
 
 ---

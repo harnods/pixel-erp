@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { salesOrders } from '~/data/salesOrders'
 import {
   salesDeliveries, deliveredByLine, derivedQty, lineInputBasis,
-  lineLock, releaseInputBasis, inputBasisReleases,
+  lineLock, releaseInputBasis, inputBasisReleases, isInClosedPeriod,
 } from '~/data/salesDeliveries'
 
 const order = () => salesOrders.find(o => o.id === 'SO101')!
@@ -187,5 +187,49 @@ describe('the over-delivery limit (OD-005)', () => {
 
   it('has nothing left to give on a closed line', () => {
     expect(remaining('SO103', 0)).toBe(0)
+  })
+})
+
+describe('Fill remaining (OD-006)', () => {
+  const remainingAll = (orderId: string) => {
+    const o = salesOrders.find(x => x.id === orderId)!
+    const d = deliveredByLine(orderId)
+    return o.items.map((it, i) => it.qty - (d[i] ?? 0))
+  }
+
+  it('fills a non-round balance exactly, closing the order at 100% (E-03)', () => {
+    const o = salesOrders.find(x => x.id === 'SO102')!
+    const rem = remainingAll('SO102')
+    // Delivered + filled = ordered, on every line, with nothing left over.
+    rem.forEach((r, i) => expect((deliveredByLine('SO102')[i] ?? 0) + r).toBeCloseTo(o.items[i]!.qty, 9))
+  })
+
+  it('can never breach the limit, because it IS the limit (R-14)', () => {
+    remainingAll('SO101').forEach(r => expect(r).toBeGreaterThanOrEqual(0))
+  })
+
+  it('records a percent-locked line as the percentage its balance represents', () => {
+    const o = salesOrders.find(x => x.id === 'SO101')!
+    const r = remainingAll('SO101')[1]!
+    expect(Math.round((r / o.items[1]!.qty) * 100 * 1e6) / 1e6).toBe(27)
+  })
+})
+
+describe('editing follows the same rules (OD-010)', () => {
+  it('re-checks the limit against everything ELSE delivered (R-17)', () => {
+    // SD103 is the only tranche on SO102's service line. Excluding it while it is
+    // being edited leaves the whole lot available, not half of it.
+    expect(deliveredByLine('SO102')[0]).toBeCloseTo(0.5, 6)
+    expect(deliveredByLine('SO102', 'SD103')[0] ?? 0).toBe(0)
+    // Excluding one SO101 tranche still counts the other.
+    expect(deliveredByLine('SO101', 'SD102')[1]).toBeCloseTo(6.4, 6)
+  })
+
+  it('refuses a delivery inside the Close books lock (R-19)', () => {
+    const lock = '2026-06-30'
+    expect(isInClosedPeriod({ date: '2026-03-02' }, lock)).toBe(true)   // SD101
+    expect(isInClosedPeriod({ date: '2026-06-30' }, lock)).toBe(true)   // the lock day itself
+    expect(isInClosedPeriod({ date: '2026-07-20' }, lock)).toBe(false)  // SD103
+    expect(isInClosedPeriod({ date: '2026-03-02' }, null)).toBe(false)  // no lock at all
   })
 })

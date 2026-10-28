@@ -128,7 +128,9 @@ const CONTRACT_DELIVERIES: SalesDelivery[] = [
   },
   {
     id: 'SD103', number: 20103, customer: { id: 'C003', name: 'Hotel Mulia Senayan' },
-    date: '2026-04-20', fulfillmentStatus: 'partially delivered', billingStatus: 'unbilled',
+    // After the Q2 period lock (2026-06-30), so this is the editable tranche;
+    // SD101/SD102 fall inside locked periods and show no Edit (R-19).
+    date: '2026-07-20', fulfillmentStatus: 'partially delivered', billingStatus: 'unbilled',
     total: 100_000_000, tags: ['Contract'], orderId: 'SO102',
     items: [SRV(0, 'Jasa pemeliharaan', 'SRV-MTN', 'Termin 1 — 50%', derivedQty(1, 50), 'percent', 50)],
   },
@@ -149,10 +151,12 @@ export const salesDeliveries: SalesDelivery[] = [...build(), ...CONTRACT_DELIVER
  * same number or they can disagree. Percent is always against the ORDERED
  * quantity, never the remaining balance (R-02), so the caller supplies it.
  */
-export function deliveredByLine(orderId: string): Record<number, number> {
+export function deliveredByLine(orderId: string, excludeDeliveryId?: string): Record<number, number> {
   const out: Record<number, number> = {}
   for (const d of salesDeliveries) {
-    if (d.orderId !== orderId || !d.items) continue
+    // Editing a delivery re-checks the limit against everything ELSE delivered —
+    // counting the delivery being edited would block it against itself (R-17).
+    if (d.orderId !== orderId || !d.items || d.id === excludeDeliveryId) continue
     for (const l of d.items) out[l.orderLineIndex] = (out[l.orderLineIndex] ?? 0) + l.qty
   }
   return out
@@ -202,6 +206,12 @@ export function lineInputBasis(orderId: string, orderLineIndex: number): 'percen
  * requires it to be permissioned (R-16), and that requirement is recorded here
  * rather than silently dropped.
  */
+/** Whether a delivery sits inside a closed accounting period (R-19). Uses the
+ *  Close books lock date — the same one every other posted document respects. */
+export function isInClosedPeriod(d: Pick<SalesDelivery, 'date'>, lock: string | null): boolean {
+  return !!lock && d.date <= lock
+}
+
 export function canReleaseInputBasis(): boolean {
   return true
 }

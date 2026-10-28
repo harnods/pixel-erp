@@ -45,13 +45,13 @@ function confirm() {
     :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="close">
     <MpModalContent>
       <MpModalHeader>
-        {{ t('Release input mode') }}
+        {{ t('Release input method') }}
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
         <div class="rib-body">
-          <MpText>{{ lineLabel }} {{ t('is locked to Percent by') }} {{ lockedBy }}.</MpText>
-          <MpText>{{ t('Releasing it is permanent. The line becomes Quantity and cannot go back to Percent.') }}</MpText>
+          <MpText>{{ lineLabel }} {{ t('is locked to Percentage by') }} {{ lockedBy }}.</MpText>
+          <MpText>{{ t('Releasing it is permanent. The line becomes Quantity and cannot go back to Percentage.') }}</MpText>
           <MpFormControl :id="`rib-reason-${uid}`" is-required :is-invalid="!!error">
             <MpFormLabel>{{ t('Reason for release') }}</MpFormLabel>
             <MpTextarea :id="`rib-reason-input-${uid}`" v-model="reason" :maxlength="REASON_MAX" :rows="3"

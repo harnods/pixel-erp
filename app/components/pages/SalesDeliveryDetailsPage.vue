@@ -13,6 +13,8 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 import { salesDeliveries } from '~/data'
+import { isInClosedPeriod } from '~/data/salesDeliveries'
+import { lockDate } from '~/data/closeBooks'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -27,6 +29,10 @@ const hasApproval = true
 
 const router = useRouter()
 function notInPrototype() { infoToast(t('Not in this prototype')) }
+
+/** R-19 — a delivery inside a closed accounting period is not editable, and the
+ *  option is not offered at all (PRD UX flow), rather than offered and refused. */
+const editLocked = computed(() => !!delivery.value && isInClosedPeriod(delivery.value, lockDate()))
 const delivery = computed(() => getSalesDeliveryDetail(props.orderId))
 
 const activityOpen = ref(false)
@@ -412,7 +418,7 @@ function goBack() { router.push('/sales-deliveries') }
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <MpPopoverListItem @click="router.push(`/sales-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="!editLocked" @click="router.push(`/sales-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
@@ -435,7 +441,7 @@ function goBack() { router.push('/sales-deliveries') }
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
             <MpPopoverList>
-              <MpPopoverListItem @click="router.push(`/sales-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="!editLocked" @click="router.push(`/sales-deliveries/${delivery.id}/edit`)">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
             </MpPopoverList>
             <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
