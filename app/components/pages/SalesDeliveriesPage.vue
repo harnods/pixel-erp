@@ -417,7 +417,7 @@ function confirmBulkDelete() {
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="navigateTo(`/sales-deliveries/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="(row as Row).billingStatus === 'unbilled'" @click="navigateTo('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).billingStatus === 'unbilled'" @click="navigateTo({ path: '/sales-invoices/new', query: { delivery: (row as Row).id } })">{{ t('Create sales invoice') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>

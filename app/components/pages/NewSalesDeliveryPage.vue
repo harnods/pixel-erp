@@ -25,9 +25,10 @@ import {
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
 import { salesOrders } from '~/data/salesOrders'
-import { deliveredByLine, derivedQty, lineLock, releaseInputBasis, canReleaseInputBasis, isInClosedPeriod } from '~/data/salesDeliveries'
+import { deliveredByLine, derivedQty, lineLock, releaseInputBasis, canReleaseInputBasis, isInClosedPeriod, isFullyDelivered } from '~/data/salesDeliveries'
 import { lockDate } from '~/data/closeBooks'
 import ReleaseInputBasisModal from '~/components/patterns/ReleaseInputBasisModal.vue'
+import { useSalesDeliveryViewAs } from '~/composables/useSalesDeliveryViewAs'
 import type { SalesDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -55,6 +56,13 @@ const editing = computed(() => {
 })
 /** A delivery inside a closed accounting period cannot be edited (R-19). */
 const editLocked = computed(() => !!editing.value && isInClosedPeriod(editing.value, lockDate()))
+
+/**
+ * Nothing left to deliver on the source order — every line at 100%. A NEW delivery
+ * has nothing to draw down, so the table gives way to an empty state (PRD UX flow ›
+ * Empty state). An edit is unaffected: it re-checks against everything else.
+ */
+const nothingLeft = computed(() => !editing.value && !!sourceOrder.value && isFullyDelivered(sourceOrder.value))
 
 const sourceOrder = computed(() => {
   const id = editing.value?.orderId ?? String(route.query.order ?? '')
@@ -189,6 +197,9 @@ const MODE_OPTIONS = computed(() => [
  * cannot track on its own.
  */
 const lockBump = ref(0)
+/** Who is acting — the prototype's View as switch in the header (R-16). */
+const { currentUser: actingUser } = useSalesDeliveryViewAs()
+const mayRelease = computed(() => canReleaseInputBasis(actingUser.value))
 function lockOf(item: LineItem) {
   void lockBump.value
   return sourceOrder.value && item.orderLineIndex !== null
@@ -209,7 +220,7 @@ const releaseLockedBy = computed(() => {
 function doRelease(reason: string) {
   const item = releaseTarget.value
   if (!item || !sourceOrder.value || item.orderLineIndex === null) return
-  if (!releaseInputBasis(sourceOrder.value.id, item.orderLineIndex, 'Rizal Candra', reason)) return
+  if (!releaseInputBasis(sourceOrder.value.id, item.orderLineIndex, actingUser.value, reason)) return
   lockBump.value += 1
   toast.notify({ variant: 'success', title: t('Input method released'), rootProps: { class: 'toast-enterprise' } })
 }
@@ -527,6 +538,9 @@ function onSave() {
   // A closed-period delivery is not editable at all; the banner already says so,
   // and save refuses rather than writing past the lock (R-19).
   if (editLocked.value) return
+  // Nothing to deliver — the empty state already says so; Save stays present but
+  // writes nothing (CLAUDE.md › Form & modal actions, never disabled).
+  if (nothingLeft.value) return
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   // On edit this re-runs the same limit check against everything else delivered (R-17).
   if (!validate()) return
@@ -708,7 +722,15 @@ function onSave() {
           <MpButton id="sd-fill-remaining" is-rounded variant="tertiary" @click="fillRemaining">{{ t('Fill remaining') }}</MpButton>
         </div>
 
-        <div class="si-items-scroll">
+        <div v-if="nothingLeft" class="empty-full sd-nothing-left">
+          <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
+          <p class="empty-full-title">{{ t('No items left to deliver') }}</p>
+          <p class="empty-full-desc">{{ t('Every line on this sales order has been delivered in full.') }}</p>
+          <MpButton id="sd-view-order" class="sd-empty-cta" is-rounded variant="secondary"
+            @click="router.push(`/sales-orders/${sourceOrder!.id}`)">{{ t('View sales order') }}</MpButton>
+        </div>
+
+        <div v-else class="si-items-scroll">
           <table class="si-items-table">
             <colgroup>
               <col class="si-col-drag" />
@@ -807,13 +829,15 @@ function onSave() {
                     <span class="sd-lock sd-band-info sd-caption">
                       <template v-if="lockOf(item)">
                       {{ t('Locked by') }} {{ t('Sales Delivery') }} #{{ lockOf(item)!.number }}.
-                      <MpTextlink v-if="canReleaseInputBasis()" :id="`f-release-${item._key}`" as="a"
+                      <MpTextlink v-if="mayRelease" :id="`f-release-${item._key}`" as="a"
                         class="sd-lock-release" @click.prevent="releaseTarget = item"
                       >
                         <!-- Sized on a span: Pixel's unstyled-button font rule lives in a
                              cascade layer and outranks any page-level override on the <a>. -->
                         <span class="sd-lock-release-label">{{ t('Release') }}</span>
                       </MpTextlink>
+                      <!-- Says who can, rather than leaving the way out unexplained (R-16). -->
+                      <template v-else>{{ t('Only a finance manager can release it.') }}</template>
                       </template>
                     </span>
                   </template>
@@ -1118,6 +1142,12 @@ function onSave() {
 .sd-lock-release { margin-left: var(--mp-spacing-0\.5); vertical-align: baseline; }
 .sd-lock-release-label { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); }
 /* The reset strips list-style, so a bulleted list needs both back (CLAUDE.md). */
+/* Empty state — same shape as the module's index (rule/empty-state-structure). */
+.sd-nothing-left { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-8) 0; }
+.sd-nothing-left .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.sd-nothing-left .empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sd-nothing-left .empty-full-desc { margin: var(--mp-spacing-0\.5) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.sd-empty-cta { margin-top: var(--mp-spacing-4); }
 .sd-over-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-5); }
 .sd-over-list li { display: list-item; }
 .si-datepicker { width: 100%; }

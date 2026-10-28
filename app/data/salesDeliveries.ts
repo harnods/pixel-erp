@@ -227,30 +227,50 @@ export function lineLock(orderId: string, orderLineIndex: number): { id: string;
   return locking ? { id: locking.id, number: locking.number, date: locking.date } : null
 }
 
+/**
+ * Whether every line of an order has been delivered in full — the state where
+ * there is nothing left to deliver against it (PRD UX flow › Empty state).
+ * Tolerance matches the over-delivery check: six-decimal arithmetic.
+ */
+export function isFullyDelivered(order: { id: string; items: { qty: number }[] }): boolean {
+  const d = deliveredByLine(order.id)
+  return order.items.length > 0 && order.items.every((it, i) => (d[i] ?? 0) >= it.qty - 1e-6)
+}
+
 /** The input mode a line is locked to, or null when it is still free. */
 export function lineInputBasis(orderId: string, orderLineIndex: number): 'percent' | null {
   return lineLock(orderId, orderLineIndex) ? 'percent' : null
 }
 
-/**
- * Whether the current user may release a lock. The prototype has no sales
- * permission model, so this is the single place a real check would go — the PRD
- * requires it to be permissioned (R-16), and that requirement is recorded here
- * rather than silently dropped.
- */
+/** Prototype demo reset — clears every release, so the seeded locks return. */
+export function resetInputBasisReleases(): void {
+  inputBasisReleases.splice(0)
+  saveCreated(RELEASE_KEY, inputBasisReleases)
+}
+
 /** Whether a delivery sits inside a closed accounting period (R-19). Uses the
  *  Close books lock date — the same one every other posted document respects. */
 export function isInClosedPeriod(d: Pick<SalesDelivery, 'date'>, lock: string | null): boolean {
   return !!lock && d.date <= lock
 }
 
-export function canReleaseInputBasis(): boolean {
-  return true
+/**
+ * Whether a user may release a lock (R-16 — permission-gated). The acting user
+ * comes from the prototype's View as switch (useSalesDeliveryViewAs): the finance
+ * manager can release, the sales admin cannot. A function of the user, so a real
+ * permission check slots in here without touching any caller.
+ */
+export function canReleaseInputBasis(user: { canReleaseInputBasis: boolean }): boolean {
+  return user.canReleaseInputBasis
 }
 
 /** Release a PERCENT lock — one way, reason required, written to the trail (R-16). */
-export function releaseInputBasis(orderId: string, orderLineIndex: number, by: string, reason: string): boolean {
-  if (!canReleaseInputBasis()) return false
+export function releaseInputBasis(
+  orderId: string, orderLineIndex: number,
+  user: { name: string; canReleaseInputBasis: boolean }, reason: string,
+): boolean {
+  if (!canReleaseInputBasis(user)) return false
+  const by = user.name
   if (!reason.trim()) return false
   if (isReleased(orderId, orderLineIndex)) return false
   const entry: InputBasisRelease = { orderId, orderLineIndex, by, reason: reason.trim(), date: new Date().toISOString().slice(0, 10) }

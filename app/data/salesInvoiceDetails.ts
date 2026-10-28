@@ -1,4 +1,5 @@
-import { computeTotals, type SalesOrderTotals } from './salesOrders'
+import { computeTotals, salesOrders, type SalesOrderTotals } from './salesOrders'
+import { salesDeliveries } from './salesDeliveries'
 import { salesInvoices } from './salesInvoices'
 import { CATALOG } from './catalog'
 import type { SalesInvoice, SalesOrderItem, SILineItem } from './types'
@@ -183,10 +184,18 @@ function buildItems(idx: number, count: number, targetBase: number): SalesOrderI
  *  - a settled invoice (balance 0) additionally shows its payment receipt
  */
 function buildLinked(inv: SalesInvoice, idx: number): SILinkedTxn[] {
-  const linked: SILinkedTxn[] = [
-    { date: addDays(inv.date, -4), type: 'Sales Order',    number: `#${10090 + idx}`, status: 'closed'    },
-    { date: addDays(inv.date, -1), type: 'Sales Delivery', number: `#${30000 + idx}`, status: 'delivered' },
-  ]
+  // The delivery this invoice bills, when it was raised from one — and its order.
+  const sd = inv.deliveryId ? salesDeliveries.find(d => d.id === inv.deliveryId) : null
+  const so = sd?.orderId ? salesOrders.find(o => o.id === sd.orderId) : null
+  const linked: SILinkedTxn[] = sd
+    ? [
+        ...(so ? [{ date: so.date, type: 'Sales Order', number: `#${so.number}`, status: so.status }] : []),
+        { date: sd.date, type: 'Sales Delivery', number: `#${sd.number}`, status: sd.fulfillmentStatus },
+      ]
+    : [
+        { date: addDays(inv.date, -4), type: 'Sales Order',    number: `#${10090 + idx}`, status: 'closed'    },
+        { date: addDays(inv.date, -1), type: 'Sales Delivery', number: `#${30000 + idx}`, status: 'delivered' },
+      ]
   if (inv.balance === 0) {
     linked.push({ date: addDays(inv.dueDate, -2), type: 'Payment Receipt', number: `#${50000 + idx}`, status: 'paid' })
   }
@@ -194,14 +203,18 @@ function buildLinked(inv: SalesInvoice, idx: number): SILinkedTxn[] {
 }
 
 function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
+  // An invoice raised from a delivery carries its real lines — render those, at
+  // the quantities invoiced (six decimals where a percentage produced them).
+  // Everything else is synthesised to land on the index total.
+  const real = !!base.items?.length
   // No-PPN invoices have nothing to back tax out of — the items sum straight
   // to the invoice total, and computeTotals runs at a 0% rate so taxAmount
   // lands on exactly Rp0 (not just visually hidden).
   const targetBase = base.hasPpn ? baseForTotal(base.total) : base.total
-  const items = buildItems(idx, Math.max(1, base.itemCount), targetBase)
+  const items = real ? base.items! : buildItems(idx, Math.max(1, base.itemCount), targetBase)
   // the closing line overshoots slightly (see buildItems) — booked as the
   // order-level discount, which lands the tax base exactly on targetBase
-  const globalDiscount = items.reduce((s, it) => s + it.amount, 0) - targetBase
+  const globalDiscount = real ? 0 : items.reduce((s, it) => s + it.amount, 0) - targetBase
   const totals = computeTotals(items, globalDiscount, 0, base.hasPpn ? undefined : 0)
   const amountPaid = base.total - base.balance
 

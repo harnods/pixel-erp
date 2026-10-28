@@ -71,6 +71,14 @@ export interface SalesInvoice {
   /** false for a small subset of invoices — those carry no PPN component at
    *  all, so "Create tax document" has nothing to document and is hidden. */
   hasPpn: boolean
+  /**
+   * Set when the invoice is raised from a sales delivery: the lines as invoiced
+   * (quantities to six decimals, as delivered) and the delivery they bill. The
+   * detail page renders these instead of synthesised lines — the downstream view
+   * TS-004 of the percentage-based delivery plan needs.
+   */
+  items?: SalesOrderItem[]
+  deliveryId?: string
 }
 
 export interface PurchaseInvoice {

@@ -396,7 +396,9 @@ function paymentAccount(method: string) { return method === 'Cash' ? t('Cash') :
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.qty }}</td>
+              <!-- Six decimals at most, decimal comma: a delivered 5,28 unit must not
+                   print as "5.28" or round to 5 (percentage-based delivery, TS-004). -->
+              <td class="detail-td detail-td--num">{{ it.qty.toLocaleString('id-ID', { maximumFractionDigits: 6 }) }}</td>
               <td class="detail-td">{{ it.unit }}</td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>

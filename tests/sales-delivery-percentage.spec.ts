@@ -12,9 +12,16 @@ import { describe, it, expect } from 'vitest'
 import { salesOrders } from '~/data/salesOrders'
 import {
   salesDeliveries, deliveredByLine, derivedQty, lineInputBasis,
-  lineLock, releaseInputBasis, inputBasisReleases, isInClosedPeriod, cumulativeAt,
+  lineLock, releaseInputBasis, inputBasisReleases, isInClosedPeriod, cumulativeAt, isFullyDelivered,
 } from '~/data/salesDeliveries'
 import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
+import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
+import { salesInvoices } from '~/data/salesInvoices'
+import type { SalesInvoice } from '~/data/types'
+import { SALES_DELIVERY_VIEW_AS_USERS } from '~/composables/useSalesDeliveryViewAs'
+
+const FINANCE = SALES_DELIVERY_VIEW_AS_USERS.finance
+const ADMIN = SALES_DELIVERY_VIEW_AS_USERS.admin
 
 const order = () => salesOrders.find(o => o.id === 'SO101')!
 
@@ -113,26 +120,32 @@ describe('the input basis lock (OD-003)', () => {
     expect(lineLock('SO102', 1)).toBeNull()
   })
 
+  it('lets only the finance manager release a lock (R-16 — permission-gated)', () => {
+    expect(releaseInputBasis('SO101', 1, ADMIN, 'Sales admin trying')).toBe(false)
+    expect(lineLock('SO101', 1)).not.toBeNull()                       // still locked
+    expect(inputBasisReleases.some(r => r.by === ADMIN.name)).toBe(false)
+  })
+
   it('releases one line without touching its siblings, and only once (R-16)', () => {
     expect(lineLock('SO101', 1)).not.toBeNull()
 
-    expect(releaseInputBasis('SO101', 1, 'Rizal Candra', 'Contract renegotiated')).toBe(true)
+    expect(releaseInputBasis('SO101', 1, FINANCE, 'Contract renegotiated')).toBe(true)
     expect(lineLock('SO101', 1)).toBeNull()        // released line is free
     expect(lineLock('SO101', 0)).not.toBeNull()    // its sibling is not
     expect(lineInputBasis('SO101', 1)).toBeNull()
 
     // One way: a second release is a no-op, and there is no path back to percent.
-    expect(releaseInputBasis('SO101', 1, 'Rizal Candra', 'Again')).toBe(false)
+    expect(releaseInputBasis('SO101', 1, FINANCE, 'Again')).toBe(false)
     expect(inputBasisReleases.filter(r => r.orderId === 'SO101' && r.orderLineIndex === 1)).toHaveLength(1)
   })
 
   it('refuses a release with no reason, and writes the reason to the trail', () => {
-    expect(releaseInputBasis('SO101', 0, 'Rizal Candra', '   ')).toBe(false)
+    expect(releaseInputBasis('SO101', 0, FINANCE, '   ')).toBe(false)
     expect(lineLock('SO101', 0)).not.toBeNull()
 
-    expect(releaseInputBasis('SO101', 0, 'Rizal Candra', 'Customer switched to unit pricing')).toBe(true)
+    expect(releaseInputBasis('SO101', 0, FINANCE, 'Customer switched to unit pricing')).toBe(true)
     const entry = inputBasisReleases.find(r => r.orderId === 'SO101' && r.orderLineIndex === 0)!
-    expect(entry.by).toBe('Rizal Candra')
+    expect(entry.by).toBe(FINANCE.name)
     expect(entry.reason).toBe('Customer switched to unit pricing')
   })
 })
@@ -258,5 +271,52 @@ describe('the audit trail on the detail page (TS-001)', () => {
 
   it('leaves the generated deliveries\' synthesised lines alone', () => {
     expect(getSalesDeliveryDetail('SD001').lineItems.every(l => !l.audit)).toBe(true)
+  })
+})
+
+describe('nothing left to deliver (fully-delivered state)', () => {
+  const order = (id: string) => salesOrders.find(o => o.id === id)!
+
+  it('is true only once every line reaches its ordered quantity', () => {
+    expect(isFullyDelivered(order('SO103'))).toBe(true)    // 1 of 1 lot
+    expect(isFullyDelivered(order('SO101'))).toBe(false)   // 27% still owed
+    expect(isFullyDelivered(order('SO102'))).toBe(false)   // Mixed — one line untouched
+  })
+
+  it('is false for an order with no deliveries at all', () => {
+    expect(isFullyDelivered(order('SO001'))).toBe(false)
+  })
+})
+
+describe('decimal quantities downstream — invoice from a delivery (TS-004)', () => {
+  // What NewSalesInvoicePage saves when raised from SD102: the delivery's own
+  // lines at the order's prices, quantities as delivered.
+  const fromDelivery = (): SalesInvoice => {
+    const lines = getSalesDeliveryDetail('SD102').lineItems
+    return {
+      id: 'SI-TS004', number: 49999, customer: { id: 'C015', name: 'Distributor Sentra Boga' },
+      date: '2026-04-07', dueDate: '2026-05-07', total: 366_300_000, balance: 366_300_000,
+      status: 'open', itemCount: lines.length, hasPpn: true, deliveryId: 'SD102',
+      items: lines.map(l => ({ product: l.product, sku: l.sku, description: l.description, qty: l.qty,
+        unit: l.unit, unitPrice: l.unitPrice, discountPct: l.discountPct, amount: l.amount })),
+    }
+  }
+
+  it('carries 5,28 unit through to the invoice without rounding it', () => {
+    salesInvoices.push(fromDelivery())
+    try {
+      const d = getSalesInvoiceDetail('SI-TS004')
+      expect(d.lineItems.map(l => l.qty)).toEqual([0.33, 5.28])        // not 0 and 5, not 1 and 6
+      expect(d.lineItems.map(l => l.amount)).toEqual([198_000_000, 132_000_000])
+      expect(d.totals.subtotal).toBe(330_000_000)
+      expect(d.totals.total).toBe(366_300_000)                           // the delivery's own total
+      expect(d.linkedTransactions.map(l => l.number)).toEqual(['#10190', '#20102'])
+    } finally {
+      salesInvoices.splice(salesInvoices.findIndex(i => i.id === 'SI-TS004'), 1)
+    }
+  })
+
+  it('matches the delivery\'s total, so billing a tranche bills exactly what was delivered', () => {
+    expect(fromDelivery().total).toBe(salesDeliveries.find(d => d.id === 'SD102')!.total)
   })
 })

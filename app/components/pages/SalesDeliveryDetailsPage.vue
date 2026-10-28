@@ -433,7 +433,7 @@ function goBack() { router.push('/sales-deliveries') }
 
         <!-- Unbilled: "Create sales invoice" primary split button; invoiced: plain Actions dropdown -->
         <div v-if="delivery.billingStatus === 'unbilled'" class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="router.push('/sales-invoices/new')">
+          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="router.push({ path: '/sales-invoices/new', query: { delivery: delivery.id } })">
             {{ t('Create sales invoice') }}
           </button>
           <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">

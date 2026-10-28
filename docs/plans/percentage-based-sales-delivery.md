@@ -1,6 +1,7 @@
 <!-- Source PRD: https://jurnal.atlassian.net/wiki/spaces/PD/pages/51347456437/ERP+PRD+Percentage-Based+Sales+Delivery
      Confluence page ID: 51347456437 · Space: PD · PRD status: DRAFT / Validation
      Plan written: 2026-10-27 against branch project-accounting-v2 @ 0557346c
+     Status updated: 2026-10-28 — built in 018d0a6e, 382f2d4a, d56ba1ff and the commit after.
      This is an implementation plan for the prototype, not a mirror of the PRD. -->
 
 # Percentage-Based Sales Delivery — implementation plan
@@ -14,20 +15,39 @@ result into the existing quantity field, to six decimals.
 derived_quantity = sales_order_line.ordered_quantity × (input_value ÷ 100)
 ```
 
-## Where the prototype stands today
+## Status
 
-Nothing from the PRD is built. More importantly, **the prerequisite is missing**:
+| Item | State | Where |
+| --- | --- | --- |
+| Wave 0 — order → delivery link | **Built** | `types.ts` (`SDDeliveryLine`, `orderId`/`items`, `'partially delivered'`), `salesDeliveries.ts` (selectors, contract seed), `salesOrders.ts` (SO101–SO103), both *Create sales delivery* entry points |
+| OD-001 input method | **Built** | in-cell `MpAutocomplete`, Quantity / Percentage |
+| OD-002 live preview | **Built** | quantity above amount, shown from 0% |
+| OD-003 basis lock + release | **Built** | `ReleaseInputBasisModal`; release gated on the acting user — a prototype *View as* switch (`useSalesDeliveryViewAs`) between a sales admin, who cannot release, and a finance manager, who can |
+| OD-004 progress so far, `Mixed` | **Built** | Qty ordered cell + *Delivered so far* header field |
+| OD-005 over-delivery error | **Built** | checked on save, entries preserved |
+| OD-006 Fill remaining | **Built** | |
+| OD-010 edit rules | **Built** | `/sales-deliveries/:id/edit`; closed period via Close books `lockDate()` |
+| TS-001 audit trail | **Built** | delivery detail: Input method, Delivered qty, Cumulative |
+| Fully-delivered state | **Built** | empty state in the form; *Create sales delivery* hidden on the index |
+| TS-002 import · TS-003 API | Out of scope | no import pipeline, no backend |
+| TS-004 decimals downstream | **Prototype slice built** | invoice from a delivery (`?delivery=`) carries the delivered quantities; invoice detail shows them to six decimals |
+| "Mixed after a return" seed | **Not built** | the prototype has no sales return document; SO102 shows `Mixed` from an undelivered line instead |
 
-| Today | Needed |
-| --- | --- |
-| `NewSalesDeliveryPage.vue` columns: Product · Description · Qty ordered · Qty delivered · Unit | a per-line mode control, derived qty, line value, delivered-so-far |
-| **Qty ordered renders a literal `-`** — the comment says "from the source sales order (none here)" | the real ordered quantity, per line |
-| `Create sales delivery` on `SalesOrdersPage.vue:425` and `SalesOrderDetailsPage.vue:549` pushes to `/sales-deliveries/new` with **no order id** | the order id carried through, lines prefilled |
-| `SalesDelivery` (`types.ts:275`) has no `items`, no order reference | lines, an order link, and the delivered-to-date roll-up |
-| `salesDeliveryDetails.ts` **synthesises** line items from the delivery total | real lines that trace to an order |
+Deviations from the plan as first written, all deliberate:
 
-So OD-004 (progress so far) and OD-005 (over-delivery error) are not "UI work on
-top of existing data" — the data they read does not exist yet.
+- **OD-001 is a select, not a segmented control** — the in-cell `MpAutocomplete`
+  the Unit column and the BOM's Allocation method use. Options are *Quantity /
+  Percentage* ("Percentage" matches the BOM).
+- **OD-002 stacks** the quantity above the amount and shows from 0%, so the line
+  never jumps when the first digit lands.
+- **Two-band cells** — every column with text under its value splits into a 40px
+  control band and an info band under a 1px rule. A new pattern, documented in
+  `docs/patterns/FormTable.md`.
+- `deliveredByLine` and the other selectors live in **`salesDeliveries.ts`**, not
+  `salesOrders.ts` — putting them with the orders would have made an import cycle.
+- The status is **`'partially delivered'`**, matching the badge's `partially *` family.
+- Fully delivered **hides** *Create sales delivery* rather than disabling it — the
+  order detail page's existing convention, and `rule/btn-no-disabled-validation`.
 
 ## Wave 0 — the order → delivery link (not in the PRD, blocks everything)
 
@@ -66,18 +86,19 @@ The PRD's own ordering, adjusted for this prototype. OD-001 is a hard gate.
 
 ### Per feature
 
-**OD-001 — per-line input mode** (`NewSalesDeliveryPage.vue`)
-`MpSegmentedControl` with Quantity / Percent, per line, Quantity preselected on a
-line with no prior delivery. Not a hand-rolled chip pair — `rule/segmented-control-pill`,
-and `erp.css` already supplies the ERP pill override (#E2E8F0 / #165082). A new
-`Mode` column goes between Qty ordered and Qty delivered; when Percent is active
-the Qty delivered cell becomes a percent input with a `%` right addon
-(`MpInputRightAddon has-background`, as on the New project form).
+**OD-001 — per-line input method** (`NewSalesDeliveryPage.vue`)
+*As built:* an in-cell `MpAutocomplete` with Quantity / Percentage in an
+**Input method** column between Qty ordered and Qty delivered, Quantity
+preselected on a line with no prior delivery. When Percentage is active the Qty
+delivered cell becomes a percent input with a `%` right addon
+(`MpInputRightAddon has-background`). First drafted as an `MpSegmentedControl`;
+replaced on review to match the table's other in-cell controls.
 
 **OD-002 — live preview** (S)
 Under the percent input, show the derived quantity and the line value as the user
-types: `6,400000 unit · Rp160.000.000`. Decimal comma, `formatIdr` for the money
-(`rule/format-idr`). Not a tooltip — it must be readable while typing.
+types — *as built*, stacked: `6,4 unit` then `Rp160.000.000,00`, from 0%. Decimal
+comma, up to six decimals with trailing zeros trimmed. Not a tooltip — it must be
+readable while typing.
 
 **OD-003 — input basis lock** (R-08 → R-10, R-16)
 First delivery on a line sets `input_basis`; Percent locks, Quantity does not.
@@ -125,7 +146,7 @@ deferred reconciliation view read from it later.
 | --- | --- |
 | TS-002 Delivery import with percent | the prototype has no import pipeline; the Import menu is chrome. Build only if the demo needs it. |
 | TS-003 Delivery API with percent | no backend. |
-| TS-004 Decimal quantity downstream | **the PRD's highest-risk item** and mostly a backend concern. In the prototype, verify that 6,4 survives display and arithmetic in the invoice, return and stock views without silent rounding — that is the part this repo can actually show. |
+| TS-004 Decimal quantity downstream | **the PRD's highest-risk item** and mostly a backend concern. *Prototype slice built 2026-10-28:* *Create sales invoice* on a contract delivery now prefills the invoice with the delivery's own lines at the order's prices; the saved invoice keeps those lines and its detail page shows them to six decimals with the decimal comma (SD102 → 0,33 lot · 5,28 unit · Rp330.000.000 before PPN, exactly the delivery's total). Still out of reach: returns, credit notes and stock views, which have no delivery-backed data in the prototype. Known gap: native number inputs show a decimal **point** (`5.28`) while the rest of the UI uses the comma — app-wide input behaviour, not specific to this feature. |
 
 Also out of scope per the PRD itself: percentage on proforma / invoice / return /
 sales order, amount input, retention, billing plans, a correction document, the
@@ -139,7 +160,10 @@ reconciliation view and the residual list.
 2. **TQ-01 — tax point.** Unresolved whether a percentage delivery is *penyerahan*
    for PPN. Until the tax team rules, a percentage delivery must behave **exactly
    as a quantity delivery does today** for faktur. Build nothing on an assumption.
-3. **E-04 — truncation direction** at the sixth decimal. Pick one and write it down.
+3. **E-04 — truncation direction** at the sixth decimal. *Decided:* truncate toward
+   zero (`Math.trunc`), never round up — a derived quantity can never overshoot
+   the order by a rounding hair. Fill remaining sets the exact balance directly, so
+   truncation never strands a residual. Covered in `tests/sales-delivery-percentage.spec.ts`.
 4. **Q3 — batch-tracked countable items.** Unresolved.
 
 The PRD is **DRAFT**, status Validation, with no user interviews run and Figma TBD.

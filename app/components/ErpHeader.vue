@@ -40,6 +40,8 @@
       <PayrollViewAsSwitcher v-if="isPayrollScreen" />
       <!-- Project accounting prototype: who submits (PM) and who approves. -->
       <ProjectViewAsSwitcher v-if="isProjectScreen" />
+      <!-- Sales delivery prototype: who may release a Percentage lock (R-16). -->
+      <SalesDeliveryViewAsSwitcher v-if="isSalesDeliveryScreen" />
       <!-- Demo layer (app/tours), not a product requirement. One Guided tours
            menu for every module, always in this spot (ERP screens, not WMS). -->
       <TourLauncher v-if="!isWms" />
@@ -105,6 +107,7 @@ const PAYROLL_SCREENS = new Set([
 const isPayrollScreen = computed(
   () => PAYROLL_SCREENS.has(currentPageKey.value) || /^\/payroll-/.test(route.path),
 );
+const isSalesDeliveryScreen = computed(() => route.path.startsWith('/sales-deliveries'))
 const isProjectScreen = computed(
   () => currentPageKey.value === 'Project accounting' || route.path.startsWith('/project-accounting'),
 );

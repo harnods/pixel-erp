@@ -1,5 +1,6 @@
 import { salesDeliveries, cumulativeAt } from './salesDeliveries'
 import { salesOrders } from './salesOrders'
+import { salesInvoices } from './salesInvoices'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
 import type { SalesDelivery, SalesOrderItem } from './types'
@@ -135,6 +136,9 @@ function buildLinked(delivery: SalesDelivery, idx: number): SDLinkedTxn[] {
         status: 'closed',
       }
   if (delivery.billingStatus !== 'invoiced') return [order]
+  // An invoice actually raised from this delivery — link that one, not an invented number.
+  const billed = salesInvoices.find(inv => inv.deliveryId === delivery.id)
+  if (billed) return [order, { date: billed.date, type: 'Sales Invoice', number: `#${billed.number}`, status: billed.status }]
   const invoice: SDLinkedTxn = {
     date: addDays(delivery.date, 1),
     type: 'Sales Invoice',

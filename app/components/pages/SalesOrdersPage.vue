@@ -23,7 +23,14 @@ import type { AmountComparator } from '~/components/patterns/AmountComparatorFie
 import { salesOrders, awaitingSalesOrders } from '~/data'
 import { salesOrderCompletionRows, type SalesOrderCompletionRow } from '~/data/salesOrders'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
+import { isFullyDelivered } from '~/data/salesDeliveries'
 import type { SalesOrder } from '~/data'
+
+/** Whether an order has nothing left to deliver (percentage-based delivery plan). */
+function fullyDelivered(id: string): boolean {
+  const o = salesOrders.find(x => x.id === id)
+  return !!o && isFullyDelivered(o)
+}
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -422,7 +429,9 @@ const bulkDeleteTitle = computed(() => bulkSelectedCount.value === 1
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as Row).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="router.push({ path: '/sales-deliveries/new', query: { order: (row as Row).id } })">{{ t('Create sales delivery') }}</MpPopoverListItem>
+            <!-- Hidden, not disabled, once nothing is left to deliver — the same
+                 convention as the order detail page's status-gated actions. -->
+            <MpPopoverListItem v-if="!fullyDelivered((row as Row).id)" @click="router.push({ path: '/sales-deliveries/new', query: { order: (row as Row).id } })">{{ t('Create sales delivery') }}</MpPopoverListItem>
             <MpPopoverListItem @click="router.push('/sales-invoices/new')">{{ t('Create sales invoice') }}</MpPopoverListItem>
             <!-- Only Open / Partially processed can be completed — hidden for Closed / Voided -->
             <MpPopoverListItem v-if="canMarkCompleted((row as Row).status)" @click="openMarkComplete(row as Row)">{{ t('Mark as completed') }}</MpPopoverListItem>
