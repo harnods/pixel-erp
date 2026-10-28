@@ -2,72 +2,97 @@
 /**
  * Settings › Users & roles → "User list" tab.
  *
- * Benchmarked on Jurnal's User management list; rebuilt on the ERP standards —
- * ErpTablePage + useTableState (rule/table-use-erptablepage), semantic column
- * kinds (rule/table-column-kind), ErpFilterSelect for the filters
- * (rule/select-erpfilterselect), and the full reachable-state set (loading
- * skeleton, never-had-data empty, filtered-empty).
+ * Matched to PRODUCTION (app.erp.mekari.com › Settings › User management): columns
+ * User name · Role · Access time limits (i) · Status · Type (briefcase + "Member"),
+ * a sticky per-row "Actions ▾" secondary dropdown, "All types" / "All status"
+ * filters and a "Search user" box. Built on ErpTablePage + useTableState
+ * (rule/table-use-erptablepage) with semantic column kinds, and the full
+ * reachable-state set (loading skeleton, never-had-data empty, filtered-empty).
+ * The Owner row's Actions only offers View details (can't be edited or removed).
  *
- * The Owner row is deliberately action-less: the account holder can't be
- * deactivated or removed from inside the product (rule: permission-gated actions
- * are hidden, not disabled-without-reason).
+ * CRM seats (PRD "CRM Access and CRM User Seats in ERP"): the CRM tier is a chip
+ * in the Role column ("CRM Basic" / "CRM Manager"), after the ERP role chips —
+ * no separate column. Everyday ERP / CRM seat counts live in the "Seat usage"
+ * card on Invite / Edit user (no title-bar button, as in prod); the #stats slot
+ * only renders STATE banners — over quota (US-006), expired (read-only,
+ * US-001 AC-04) and Billing down (US-008). Seats are derived from the user list,
+ * so deleting a user or cancelling an invite frees theirs automatically (US-005).
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   MpIcon, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpButton, MpButtonGroup, css,
+  MpButton,
+  MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import UserViewDrawer from '~/components/patterns/UserViewDrawer.vue'
+import SeatContactSalesModal from '~/components/patterns/SeatContactSalesModal.vue'
+import CrmSeatsScenarioFab from '~/components/patterns/CrmSeatsScenarioFab.vue'
 import { successToast } from '~/utils/toasts'
 import {
-  accountUsers, userRoleNames, userRoleTypes, userRoleTypeLabels, timeLimitText,
+  accountUsers, userRoleNames, timeLimitText, ACCOUNT_TYPE_OPTIONS, accountTypeOf,
   deleteAccountUser, setAccountUserStatus, type AccountUser,
 } from '~/data/usersRoles'
+import { effectiveCrmRole, crmRoleLabel, SEAT_BLOCK_MESSAGES } from '~/data/crmSubscription'
+import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
 
 const { t } = useLocale()
 const router = useRouter()
+
+const {
+  mode: crmMode, crmVisible, crmSummary, isOverQuota, state: crmState,
+} = useCrmSubscriptionScenario()
+const contactSalesOpen = ref(false)
+const contactSalesTopic = ref<'erp-seats' | 'crm-seats'>('crm-seats')
+function openContactSales(topic: 'erp-seats' | 'crm-seats') {
+  contactSalesTopic.value = topic
+  contactSalesOpen.value = true
+}
+/** A seat banner applies (over quota / expired / Billing down) — otherwise no #stats row at all. */
+const crmBannerVisible = computed(() =>
+  isOverQuota.value || crmMode.value === 'read-only' || crmMode.value === 'unknown'
+  || (crmVisible.value && crmState.billing === 'down'))
 
 function goEdit(user: AccountUser) {
   if (user.isOwner) return
   router.push(`/users-and-roles/${user.id}/edit`)
 }
 
-// ─── Columns — Name, Role, List manager, Access time, Status, Type, Join date by
-// default; Last active is optional (hidden), toggleable from Column settings. ──
-const baseColumns: TableColumn[] = [
-  { key: 'name',        label: 'Name',        kind: 'name',    sortType: 'text' },
-  { key: 'roles',       label: 'Role',        kind: 'tags' },
-  { key: 'listManager', label: 'List manager', sortType: 'text' },
-  { key: 'timeLimit',   label: 'Access time', kind: 'address', sortType: 'text' },
-  { key: 'status',      label: 'Status',      kind: 'status',  sortType: 'text' },
-  { key: 'type',        label: 'Type',        kind: 'tags' },
-  { key: 'joinedAt',    label: 'Join date',   kind: 'date',    sortType: 'date' },
+// ─── Columns — matched to production (app.erp.mekari.com › User management):
+// User name · Role · Access time limits (i) · Status · Type, plus the sticky
+// per-row "Actions ▾". List manager is a chip in Role (as in prod), and the CRM
+// tier is a chip there too — no separate CRM column. ──
+const columns: TableColumn[] = [
+  { key: 'name',      label: 'User name',          kind: 'name',    sortType: 'text' },
+  { key: 'roles',     label: 'Role',               kind: 'tags' },
+  { key: 'timeLimit', label: 'Access time limits', kind: 'address' },
+  { key: 'status',    label: 'Status',             kind: 'status' },
+  { key: 'type',      label: 'Type',               sortType: 'text' },
 ]
-const optionalColumns: TableColumn[] = [
-  { key: 'lastActive',  label: 'Last active', kind: 'date', sortType: 'date' },
-]
-const allCols: TableColumn[] = [...baseColumns, ...optionalColumns]
-const columnVisibility = reactive<Record<string, boolean>>(
-  Object.fromEntries(allCols.map((c) => [c.key, baseColumns.some((b) => b.key === c.key)])),
-)
-const columnItems = allCols.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
-const columns = computed<TableColumn[]>(() => allCols.filter((c) => columnVisibility[c.key]))
+
+/** Role chips, prod order: ERP roles (Owner → "Owner"), the CRM tier, then List manager. */
+function roleChips(user: AccountUser): string[] {
+  const crm = crmVisible.value ? crmRoleOf(user) : null
+  const chips = userRoleNames(user).map((n) => t(n))
+  if (crm) chips.push(t(crmRoleLabel(crm)))
+  if (user.isListManager && !user.isOwner) chips.push(t('List manager'))
+  return chips
+}
 
 // ─── Filters ────────────────────────────────────────────────────────────────
 // Two independent selects, so `useTableState`'s single statusFilter drives Status
-// and the role type keeps its own ref.
+// and the account type keeps its own ref.
 const typeFilter = ref('')
-const TYPE_OPTIONS = [
-  { value: 'owner',    label: t('Owner') },
-  { value: 'existing', label: t('Existing role') },
-  { value: 'custom',   label: t('Custom role') },
-]
+// Production's account types (jurnal-frontend-app user_management › button_filter_type):
+// "All types" (the placeholder) / Member / Partner — the same values the Type column shows.
+const TYPE_OPTIONS = ACCOUNT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) }))
+/** Type column icon, as in prod: Member → briefcase, Partner → team. */
+const TYPE_ICON: Record<string, string> = { member: 'briefcase', partner: 'team' }
+function crmRoleOf(user: AccountUser) { return effectiveCrmRole(user) }
 const STATUS_OPTIONS = [
   { value: 'active',   label: t('Active') },
   { value: 'invited',  label: t('Invited') },
@@ -75,8 +100,9 @@ const STATUS_OPTIONS = [
 ]
 
 const rows = computed<AccountUser[]>(() =>
-  // Named-entity table → alphabetical by name (rule/table-default-sort-alpha).
-  [...accountUsers].sort((a, b) => a.name.localeCompare(b.name)),
+  // Owner pinned first, as in production; then alphabetical by name
+  // (rule/table-default-sort-alpha — prod's Owner-first wins over it).
+  [...accountUsers].sort((a, b) => Number(b.isOwner) - Number(a.isOwner) || a.name.localeCompare(b.name)),
 )
 
 const {
@@ -89,9 +115,9 @@ const {
       !s ||
       row.name.toLowerCase().includes(s) ||
       row.email.toLowerCase().includes(s) ||
-      userRoleNames(row).some((r) => r.toLowerCase().includes(s))
+      roleChips(row).some((r) => r.toLowerCase().includes(s))
     const matchesStatus = !status || row.status === status
-    const matchesType = !typeFilter.value || userRoleTypes(row).includes(typeFilter.value as never)
+    const matchesType = !typeFilter.value || accountTypeOf(row) === typeFilter.value
     return matchesSearch && matchesStatus && matchesType
   },
 })
@@ -122,16 +148,14 @@ function viewDetails(user: AccountUser) { viewTarget.value = user }
 const deleteTarget = ref<AccountUser | null>(null)
 function confirmDelete() {
   if (!deleteTarget.value) return
+  // A removed user / cancelled invite frees their CRM seat (US-005 AC-02/03).
+  const heldCrmSeat = crmVisible.value && !!crmRoleOf(deleteTarget.value)
   deleteAccountUser(deleteTarget.value.id)
-  successToast(t('User deleted'))
+  successToast(heldCrmSeat ? t('User deleted. Their CRM seat is free again.') : t('User deleted'))
   deleteTarget.value = null
 }
 
-// ─── Formatting ─────────────────────────────────────────────────────────────
-function formatDate(iso: string | null): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-}
+// ─── Empty state ────────────────────────────────────────────────────────────
 
 const emptyIllustration = '/illustrations/empty-folder.png'
 </script>
@@ -146,6 +170,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :sort-key="sortKey"
     :sort-dir="sortDir"
     :loading="loading"
+    actions-width="136px"
     :has-active-search="!!search"
     :has-active-filter="!!statusFilter || !!typeFilter"
     filter-empty-label="user"
@@ -155,11 +180,53 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     @sort-change="setSort"
     @clear-filters="resetFilters"
   >
+    <!-- ── Seat STATES only (over quota / expired / Billing down) — the everyday
+         ERP / CRM counts live in the title bar's "Seat usage" dialog. ── -->
+    <template v-if="crmBannerVisible" #stats>
+      <div class="usr-quota-row" data-devchange="crm-user-seats-list-banners" data-test-id="usr-seat-banners">
+        <MpBanner v-if="isOverQuota" id="usr-crm-over-quota" variant="warning" data-test-id="usr-over-quota-banner">
+          <MpBannerIcon id="usr-crm-over-quota-icon" />
+          <MpBannerTitle>
+            <template v-if="crmSummary.overTotal">
+              {{ t('Your company is') }} {{ crmSummary.overTotal }} {{ crmSummary.overTotal === 1 ? t('CRM seat over quota') : t('CRM seats over quota') }}
+            </template>
+            <template v-else>
+              {{ t('Your company is') }} {{ crmSummary.overAdmin }} {{ crmSummary.overAdmin === 1 ? t('CRM Manager seat over quota') : t('CRM Manager seats over quota') }}
+            </template>
+          </MpBannerTitle>
+          <MpBannerDescription>
+            {{ crmSummary.overTotal
+              ? t('Everyone keeps their CRM access, but you can\'t give CRM access to anyone new until usage fits.')
+              : t('Everyone keeps their CRM access, but you can\'t make anyone new a CRM Manager until usage fits. CRM Basic can still be given while seats are left.') }}
+            {{ t('See Seat usage when inviting or editing a user.') }}
+            <a class="usr-link" @click="openContactSales('crm-seats')">{{ t('Contact Sales') }}</a>
+          </MpBannerDescription>
+        </MpBanner>
+        <MpBanner v-else-if="crmMode === 'read-only'" id="usr-crm-expired" variant="warning">
+          <MpBannerIcon id="usr-crm-expired-icon" />
+          <MpBannerTitle>{{ t('Your CRM add-on has expired') }}</MpBannerTitle>
+          <MpBannerDescription>
+            {{ t('CRM access is kept and shown read-only. It works again unchanged when CRM is renewed.') }}
+            <a class="usr-link" @click="openContactSales('crm-seats')">{{ t('Contact Sales') }}</a>
+          </MpBannerDescription>
+        </MpBanner>
+        <MpBanner v-else-if="crmMode === 'unknown'" id="usr-crm-billing-unknown" variant="warning">
+          <MpBannerIcon id="usr-crm-billing-unknown-icon" />
+          <MpBannerDescription>{{ t(SEAT_BLOCK_MESSAGES['billing-unknown']) }} {{ t('Existing CRM access is not affected.') }}</MpBannerDescription>
+        </MpBanner>
+        <MpBanner v-else-if="crmVisible && crmState.billing === 'down'" id="usr-crm-billing-down" variant="info">
+          <MpBannerIcon id="usr-crm-billing-down-icon" />
+          <MpBannerDescription>{{ t("Billing can't be reached right now, so these are the last confirmed CRM seats.") }}</MpBannerDescription>
+        </MpBanner>
+      </div>
+    </template>
+
     <!-- ── Filter bar: Type + Status | tools + search ── -->
     <template #filters>
       <div class="filter-left">
         <ErpFilterSelect
           id="usr-type-filter"
+          data-devchange="crm-user-seats-list-type"
           v-model="typeFilter"
           :placeholder="t('All types')"
           :options="TYPE_OPTIONS"
@@ -175,15 +242,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </div>
 
       <div class="filter-right">
-        <!-- Tool icons: ghost icon-only MpButtons in one group (rule/filter-bar-icon-group),
-             each tooltipped and aria-labelled (rule/btn-icon-tooltip). -->
-        <MpButtonGroup class="filter-btn-group">
-          <ColumnSettingsMenu id="usr-columns" :items="columnItems" :visibility="columnVisibility" />
-        </MpButtonGroup>
-
         <div class="filter-search">
           <MpIcon name="search" size="md" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search user')">
           <MpButton
             v-if="search" variant="ghost" class="filter-search-clear"
             left-icon="close" :aria-label="t('Clear search')" @click="search = ''"
@@ -195,28 +256,28 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Name + email ── -->
     <template #cell-name="{ row }">
       <div class="usr-identity">
+        <!-- Every name is a link, as in prod; the Owner (not editable) opens details. -->
         <span
-          v-if="!(row as unknown as AccountUser).isOwner"
           class="cell-link"
-          @click.stop="goEdit(row as unknown as AccountUser)"
+          @click.stop="(row as unknown as AccountUser).isOwner ? viewDetails(row as unknown as AccountUser) : goEdit(row as unknown as AccountUser)"
         >{{ (row as unknown as AccountUser).name }}</span>
-        <span v-else class="usr-name">{{ (row as unknown as AccountUser).name }}</span>
         <span class="usr-email">{{ (row as unknown as AccountUser).email }}</span>
       </div>
     </template>
 
-    <!-- ── Roles ── -->
+    <!-- ── Role chips: ERP roles, then the CRM tier, then List manager (prod) ── -->
     <template #cell-roles="{ row }">
-      <ErpTagList :tags="userRoleNames(row as unknown as AccountUser)" />
+      <span data-devchange="crm-user-seats-list-column" :data-test-id="`usr-roles-${(row as unknown as AccountUser).id}`">
+        <ErpTagList v-if="roleChips(row as unknown as AccountUser).length" :tags="roleChips(row as unknown as AccountUser)" />
+        <span v-else class="usr-muted">-</span>
+      </span>
     </template>
 
-    <!-- ── List manager ── -->
-    <template #cell-listManager="{ row }">
-      <span v-if="(row as unknown as AccountUser).isListManager" class="usr-yes">
-        <MpIcon name="check" size="sm" />
-        {{ t('Yes') }}
-      </span>
-      <span v-else class="usr-muted">—</span>
+    <!-- ── Access time limits header (i) ── -->
+    <template #header-timeLimit>
+      <MpTooltip id="usr-time-limit-tt" :label="t('The days and hours this user can sign in. Times are in GMT+7.')" placement="top" use-portal>
+        <span class="usr-info"><MpIcon name="info" size="sm" /></span>
+      </MpTooltip>
     </template>
 
     <!-- ── Access time ── -->
@@ -229,47 +290,42 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <ErpStatusBadge :status="(row as unknown as AccountUser).status" />
     </template>
 
-    <!-- ── Type — Owner / Existing role / Custom role ── -->
+    <!-- ── Type — account type, as in prod: briefcase + "Member" / team + "Partner" ── -->
     <template #cell-type="{ row }">
-      <ErpTagList :tags="userRoleTypeLabels(row as unknown as AccountUser)" />
+      <span class="usr-type" :data-test-id="`usr-type-${(row as unknown as AccountUser).id}`">
+        <MpIcon :name="TYPE_ICON[accountTypeOf(row as unknown as AccountUser)]" size="sm" />
+        {{ t(ACCOUNT_TYPE_OPTIONS.find((o) => o.value === accountTypeOf(row as unknown as AccountUser))!.label) }}
+      </span>
     </template>
 
-    <!-- ── Join date ── -->
-    <template #cell-joinedAt="{ row }">
-      {{ formatDate((row as unknown as AccountUser).joinedAt) }}
-    </template>
-
-    <!-- ── Last active (optional column) ── -->
-    <template #cell-lastActive="{ row }">
-      {{ formatDate((row as unknown as AccountUser).lastActiveAt) }}
-    </template>
-
-    <!-- ── Actions kebab — hidden for the Owner row (nothing is permitted) ── -->
+    <!-- ── Per-row "Actions ▾" (sticky right column), as in prod. The Owner only
+         gets View details — the account holder can't be edited or removed. ── -->
     <template #actions="{ row }">
       <MpPopover
-        v-if="!(row as unknown as AccountUser).isOwner"
         :id="`usr-actions-${(row as unknown as AccountUser).id}`"
         is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
       >
         <MpPopoverTrigger>
-          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
+          <MpButton variant="secondary" is-rounded right-icon="chevrons-down" :data-test-id="`usr-actions-${(row as unknown as AccountUser).id}`">{{ t('Actions') }}</MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as AccountUser)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem @click="goEdit(row as unknown as AccountUser)">{{ t('Edit') }}</MpPopoverListItem>
-            <MpPopoverListItem
-              v-if="(row as unknown as AccountUser).status === 'invited'"
-              @click="resendInvitation(row as unknown as AccountUser)"
-            >{{ t('Resend invitation') }}</MpPopoverListItem>
-            <MpPopoverListItem
-              v-if="(row as unknown as AccountUser).status === 'inactive'"
-              @click="reactivate(row as unknown as AccountUser)"
-            >{{ t('Reactivate') }}</MpPopoverListItem>
-            <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
-              @click="deleteTarget = (row as unknown as AccountUser)"
-            >{{ t('Delete') }}</MpPopoverListItem>
+            <template v-if="!(row as unknown as AccountUser).isOwner">
+              <MpPopoverListItem @click="goEdit(row as unknown as AccountUser)">{{ t('Edit') }}</MpPopoverListItem>
+              <MpPopoverListItem
+                v-if="(row as unknown as AccountUser).status === 'invited'"
+                @click="resendInvitation(row as unknown as AccountUser)"
+              >{{ t('Resend invitation') }}</MpPopoverListItem>
+              <MpPopoverListItem
+                v-if="(row as unknown as AccountUser).status === 'inactive'"
+                @click="reactivate(row as unknown as AccountUser)"
+              >{{ t('Reactivate') }}</MpPopoverListItem>
+              <MpPopoverListItem
+                :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+                @click="deleteTarget = (row as unknown as AccountUser)"
+              >{{ t('Delete') }}</MpPopoverListItem>
+            </template>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -312,6 +368,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       </MpModalHeader>
       <MpModalBody>
         {{ t('Deleted user cannot be restored. Their transactions stay in the account.') }}
+        <template v-if="crmVisible && deleteTarget && crmRoleOf(deleteTarget)">
+          {{ t('Their CRM seat becomes free. CRM records they created are kept.') }}
+        </template>
       </MpModalBody>
       <MpModalFooter>
         <MpButton variant="ghost" is-rounded @click="deleteTarget = null">{{ t('Cancel') }}</MpButton>
@@ -320,6 +379,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <SeatContactSalesModal v-model:is-open="contactSalesOpen" id="usr-contact-sales" :topic="contactSalesTopic" />
+
+  <!-- Demo: CRM add-on states, add-on quantities, ERP limit (rule/index-scenario-fab). -->
+  <CrmSeatsScenarioFab />
 </template>
 
 <style scoped>
@@ -327,7 +391,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-left: auto; }
 
-.filter-btn-group { display: flex; align-items: center; }
 
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
@@ -347,6 +410,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   width: var(--mp-sizes-5, 20px) !important; height: var(--mp-sizes-5, 20px) !important;
   min-width: 0 !important; padding: 0 !important; color: var(--mp-text-subtle);
 }
+
+/* ── Seat-state banners (over quota / expired / Billing down) ── */
+.usr-quota-row { display: flex; flex-direction: column; gap: var(--mp-spacing-3); padding-bottom: var(--mp-spacing-4); }
+.usr-link { margin-left: var(--mp-spacing-1); color: var(--mp-text-link); cursor: pointer; }
+.usr-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.usr-type { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); color: var(--mp-text-default); }
+.usr-info { display: inline-flex; color: var(--mp-icon-subtle, var(--mp-text-secondary)); cursor: help; }
 
 /* ── Cells ── */
 .usr-identity { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
