@@ -34,8 +34,15 @@ const appliesTo = ref<ApprovalAppliesTo>('transaction')
 // like the pre-Project-action version (transaction type only). Force back to 'transaction' if
 // the flag flips off mid-edit so a hidden 'project' selection can't be silently submitted.
 watch(projectAccountingEnabled, (enabled) => {
-  if (!enabled) appliesTo.value = 'transaction'
+  if (!enabled && !savedProjectAction.value) appliesTo.value = 'transaction'
 })
+// A saved rule that already uses projects keeps those fields when the component is off,
+// so saving never quietly turns a Project action rule into a transaction rule, or widens
+// a rule scoped to some projects to every project.
+const savedProjectAction = ref(false)
+const savedProjectScope = ref(false)
+const appliesToOn = computed(() => projectAccountingEnabled.value || savedProjectAction.value)
+const projectScopeOn = computed(() => projectAccountingEnabled.value || savedProjectAction.value || savedProjectScope.value)
 const transactionType = ref<ApprovalTransactionType | ''>('')
 const projectAction = ref<ProjectAction | ''>('')
 const projectScope = ref<'all' | 'some'>('all')
@@ -46,7 +53,7 @@ const minAmount = ref<number | null>(0)
 // action is selected. Transaction path is unchanged; each Project action shows its own set.
 const showAmountField = computed(() => amountFieldVisible(appliesTo.value, projectAction.value))
 const amountLabel = computed(() => t(amountFieldLabel(appliesTo.value, projectAction.value)))
-const showProjectScopeField = computed(() => projectScopeFieldVisible(appliesTo.value, projectAction.value))
+const showProjectScopeField = computed(() => projectScopeOn.value && projectScopeFieldVisible(appliesTo.value, projectAction.value))
 const createdByScope = ref<'all' | 'some'>('all')
 const createdByUsers = ref<DataInterface[]>([])
 const applyToDraft = ref(true)
@@ -103,6 +110,8 @@ onMounted(() => {
   if (!isEdit.value) return
   const rule = getApprovalWorkflowById(props.orderId!)
   if (!rule) return
+  savedProjectAction.value = rule.appliesTo === 'project'
+  savedProjectScope.value = rule.projectScope === 'some'
   name.value = rule.name
   description.value = rule.description ?? ''
   appliesTo.value = rule.appliesTo
@@ -177,7 +186,7 @@ async function save() {
     appliesTo: appliesTo.value,
     transactionType: appliesTo.value === 'transaction' ? (transactionType.value as ApprovalTransactionType) : '',
     projectAction: appliesTo.value === 'project' ? (projectAction.value as ProjectAction) : '',
-    projectScope: projectScope.value,
+    projectScope: showProjectScopeField.value ? projectScope.value : 'all',
     projectIds: showProjectScopeField.value && projectScope.value === 'some' ? projectTagDataToIds(someProjects.value) : [],
     minAmount: showAmountField.value ? minAmount.value : null,
     createdByScope: appliesTo.value === 'transaction' ? createdByScope.value : 'all',
@@ -242,7 +251,7 @@ async function save() {
             <!-- Only shown when the Project Accounting billing component exists for this
                  tenant (Settings > Approval workflows demo FAB) — otherwise the form behaves
                  like the pre-Project-action version (Transaction type only, no selector). -->
-            <MpFormControl v-if="projectAccountingEnabled" id="awf-applies-to">
+            <MpFormControl v-if="appliesToOn" id="awf-applies-to">
               <MpFormLabel>{{ t('Applies to') }}</MpFormLabel>
               <div class="caw-radio-group caw-radio-group--inline">
                 <MpRadio id="awf-applies-to-transaction" name="awf-applies-to" value="transaction" v-model="appliesTo">
