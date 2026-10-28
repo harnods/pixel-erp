@@ -14,7 +14,8 @@ import { describe, expect, it } from 'vitest'
 import {
   checkCrmChange, checkErpChange, crmAccessMode, crmCapacity, crmSeatSummary, crmUsage,
   defaultCrmSubscriptionState, effectiveCrmSnapshot, erpSeatSummary, erpUsage, seatUsageView, usesErpSeat,
-  crmSeatBreakdown, formatCrmSeatBreakdown,
+  crmSeatBreakdown, formatCrmSeatBreakdown, formatCrmCapacityLine, formatCrmUpToLine, formatCrmUsageLine,
+  crmOptionNote, crmRoleLabel,
   type CrmBillingSnapshot, type CrmRole, type CrmSubscriptionState, type SeatHolder,
 } from '~/data/crmSubscription'
 import {
@@ -381,54 +382,102 @@ describe('Seat usage card content per state', () => {
   })
 })
 
-// ─── Seat pool breakdown (why "Up to N can be CRM Manager") ─────────────────
-// UI label: CRM Manager = the Administrator-capable tier (internal crmRole 'admin').
+// ─── Seat usage card lines (Invite / Edit user CRM add-on spec) ─────────────
+// UI label: CRM Administrator = internal crmRole 'admin'.
 
-describe('CRM seat breakdown strings (Seat usage card)', () => {
+describe('CRM seat lines (Seat usage card)', () => {
   const trialSnap = (seats: number): CrmBillingSnapshot =>
     ({ package: 'trial', includedSeats: 5, basicAddons: 0, adminAddons: 0, trialSeats: seats })
-  const lines = (users: SeatHolder[], snap: CrmBillingSnapshot) =>
-    formatCrmSeatBreakdown(crmSeatBreakdown(snap, crmSeatSummary(crmUsage(users), crmCapacity(snap))))
+  const lines = (users: SeatHolder[], snap: CrmBillingSnapshot) => {
+    const sum = crmSeatSummary(crmUsage(users), crmCapacity(snap))
+    return formatCrmSeatBreakdown({
+      ...crmSeatBreakdown(snap, sum), total: sum.total, used: sum.used, left: sum.left, over: sum.overTotal, adminLeft: sum.adminLeft,
+    })
+  }
   // The demo default seed: Owner + Administrator + 2 Basic.
   const seed = [owner, crmUser('admin'), crmUser('basic'), crmUser('basic', [])]
   const prd = [owner, ...times(5, () => crmUser('admin'))] // Owner + 5 Administrators
 
-  it('default: "5 included", Administrator 2 of 5', () => {
+  it('default: "5 total · 4 used · 1 left", "5 included", "Up to 1 can be CRM Administrator"', () => {
     expect(lines(seed, essential(0, 0))).toEqual({
-      capacity: '5 included', admin: 'CRM Manager: 2 of 5 used', basicOnly: null,
+      usage: { text: '5 total · 4 used · 1 left', isOver: false },
+      capacity: '5 included',
+      upTo: 'Up to 1 can be CRM Administrator',
     })
   })
 
-  it('+1 Basic add-on grows the total only (Administrator stays 2 of 5)', () => {
-    expect(lines(seed, essential(1, 0))).toEqual({
-      capacity: '5 included · 1 Basic add-on', admin: 'CRM Manager: 2 of 5 used', basicOnly: null,
+  it('never has a "CRM Administrator: N of M used" line', () => {
+    expect(Object.values(lines(seed, essential(2, 1))).join(' ')).not.toMatch(/of \d+ used/)
+  })
+
+  describe('capacity line — add-ons appended only when they exist', () => {
+    const cap = (basic: number, admin: number) =>
+      formatCrmCapacityLine({ kind: 'essential', included: 5, basic, admin })
+    it('no add-ons → "5 included"', () => expect(cap(0, 0)).toBe('5 included'))
+    it('the spec example → "5 included + 2 Basic, + 1 Administrator add-on"', () =>
+      expect(cap(2, 1)).toBe('5 included + 2 Basic, + 1 Administrator add-on'))
+    it('Basic only, plural → "5 included + 2 Basic add-ons"', () => expect(cap(2, 0)).toBe('5 included + 2 Basic add-ons'))
+    it('Basic only, singular → "5 included + 1 Basic add-on"', () => expect(cap(1, 0)).toBe('5 included + 1 Basic add-on'))
+    it('Administrator only → "5 included + 1 Administrator add-on"', () =>
+      expect(cap(0, 1)).toBe('5 included + 1 Administrator add-on'))
+    it('the noun agrees with the last count → "+ 1 Basic, + 2 Administrator add-ons"', () =>
+      expect(cap(1, 2)).toBe('5 included + 1 Basic, + 2 Administrator add-ons'))
+  })
+
+  describe('"Up to N can be CRM Administrator" — hidden at 0', () => {
+    it('null when no Administrator seat is left', () => expect(formatCrmUpToLine(0)).toBeNull())
+    it('shows N otherwise', () => {
+      expect(formatCrmUpToLine(1)).toBe('Up to 1 can be CRM Administrator')
+      expect(formatCrmUpToLine(3)).toBe('Up to 3 can be CRM Administrator')
+    })
+    it('PRD example (Owner + 5 Administrators, 6 of 6): hidden though 2 seats are left', () => {
+      const l = lines(prd, essential(2, 1))
+      expect(l.usage.text).toBe('8 total · 6 used · 2 left')
+      expect(l.upTo).toBeNull()
+    })
+    it('hidden when the CRM seats are used up', () => {
+      expect(lines([...seed, crmUser('basic')], essential(0, 0)).upTo).toBeNull()
     })
   })
 
-  it('+1 Administrator add-on grows both (Administrator 2 of 6)', () => {
-    expect(lines(seed, essential(0, 1))).toEqual({
-      capacity: '5 included · 1 Manager add-on', admin: 'CRM Manager: 2 of 6 used', basicOnly: null,
+  describe('over quota → "N over" in the warning colour', () => {
+    it('"5 total · 7 used · 2 over" after a reduction', () => {
+      const users = [...seed, ...times(3, () => crmUser('basic'))]
+      expect(lines(users, essential(0, 0)).usage).toEqual({ text: '5 total · 7 used · 2 over', isOver: true })
     })
-  })
-
-  it('PRD example (Owner + 5 Administrators, +2 Basic +1 Administrator): Administrator full, 2 seats Basic only', () => {
-    expect(lines(prd, essential(2, 1))).toEqual({
-      capacity: '5 included · 2 Basic add-ons · 1 Manager add-on',
-      admin: 'CRM Manager: 6 of 6 used',
-      basicOnly: 'Remaining 2 seats are for CRM Basic only',
+    it('"3 total · 4 used · 1 over" and no "left" part', () => {
+      const u = formatCrmUsageLine({ total: 3, used: 4, left: 0, over: 1 })
+      expect(u).toEqual({ text: '3 total · 4 used · 1 over', isOver: true })
     })
-  })
-
-  it('Administrator over quota: "6 of 5 used · 1 over", the 1 seat left is Basic only', () => {
-    expect(lines(prd, essential(2, 0))).toEqual({
-      capacity: '5 included · 2 Basic add-ons',
-      admin: 'CRM Manager: 6 of 5 used · 1 over',
-      basicOnly: 'Remaining 1 seat is for CRM Basic only',
+    it('exactly full is "0 left", not over', () => {
+      expect(formatCrmUsageLine({ total: 5, used: 5, left: 0, over: 0 })).toEqual({ text: '5 total · 5 used · 0 left', isOver: false })
     })
   })
 
   it('trial: "5 trial seats" instead of included / add-ons', () => {
     expect(lines(seed, trialSnap(5)).capacity).toBe('5 trial seats')
     expect(lines([owner], trialSnap(1)).capacity).toBe('1 trial seat')
+  })
+})
+
+describe('why a CRM option is disabled (inline note + tooltip copy)', () => {
+  it('no CRM seat left', () => {
+    expect(crmOptionNote('crm-full', false)).toEqual({
+      full: 'No CRM seats left. Contact Sales to add seats.', before: 'No CRM seats left.', link: 'Contact Sales', after: 'to add seats.',
+    })
+  })
+  it('over quota', () => {
+    expect(crmOptionNote('crm-full', true).full).toBe('Remove CRM from some users or contact Sales to add seats.')
+    expect(crmOptionNote('crm-full', true).link).toBe('contact Sales')
+  })
+  it('CRM expired', () => {
+    expect(crmOptionNote('crm-read-only', false).full).toBe('CRM subscription has ended. Contact Sales to renew.')
+  })
+  it('no Administrator seat left (radio helper, no link)', () => {
+    expect(crmOptionNote('crm-admin-full', false)).toMatchObject({ full: 'No CRM Administrator seat left', link: null })
+  })
+  it('labels the levels CRM Administrator / CRM Basic', () => {
+    expect(crmRoleLabel('admin')).toBe('CRM Administrator')
+    expect(crmRoleLabel('basic')).toBe('CRM Basic')
   })
 })

@@ -520,7 +520,8 @@ export const ROLE_NAME_MAX = 60
 
 // v2: the seed was resized to fit the default package (ERP 10 users, CRM Essential
 // 5 seats) — a bumped key keeps an older saved demo from masking the new default.
-const CUSTOM_ROLES_KEY = 'users-roles-custom-roles-v2'
+// v3: "Product only" joined the seed (Invite / Edit state 4: custom role + CRM).
+const CUSTOM_ROLES_KEY = 'users-roles-custom-roles-v3'
 // v3: a Partner user joined the seed.
 const ACCOUNT_USERS_KEY = 'users-roles-account-users-v3'
 
@@ -574,6 +575,18 @@ const CUSTOM_ROLE_SEED: CustomRole[] = [
     },
     assignedUsers: 1,
     updatedAt: '2026-07-30T11:05:00+07:00',
+    updatedBy: 'Rizal Candra',
+  },
+  {
+    id: 'cr-4',
+    name: 'Product only',
+    description: 'Maintains the product list and product settings. No transactions or reports.',
+    grants: {
+      'inv-products': ['view', 'create', 'edit'],
+      'set-inventory.product-settings': ['view', 'edit'],
+    },
+    assignedUsers: 0,
+    updatedAt: '2026-10-28T10:00:00+07:00',
     updatedBy: 'Rizal Candra',
   },
 ]
@@ -883,6 +896,26 @@ export function setAccountUserCrmRoles(roles: Record<string, CrmRole | null>): v
     const user = getAccountUser(id)
     if (user && !user.isOwner) user.crmRole = role
   }
+  persistAccountUsers()
+}
+
+/**
+ * Demo presets only — add fully-formed users with fixed ids (skipping ids that
+ * already exist), and remove them again. Kept apart from addAccountUser so a
+ * preset never advances the invite id sequence.
+ */
+export function addPresetAccountUsers(users: AccountUser[]): void {
+  for (const u of users) if (!getAccountUser(u.id)) accountUsers.push(structuredClone(u))
+  bumpAssignedUserCounts()
+  persistAccountUsers()
+}
+
+export function removeAccountUsers(ids: string[]): void {
+  for (const id of ids) {
+    const i = accountUsers.findIndex((u) => u.id === id)
+    if (i >= 0) accountUsers.splice(i, 1)
+  }
+  bumpAssignedUserCounts()
   persistAccountUsers()
 }
 

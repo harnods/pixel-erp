@@ -11,7 +11,7 @@
  * The Owner row's Actions only offers View details (can't be edited or removed).
  *
  * CRM seats (PRD "CRM Access and CRM User Seats in ERP"): the CRM tier is a chip
- * in the Role column ("CRM Basic" / "CRM Manager"), after the ERP role chips —
+ * in the Role column ("CRM Basic" / "CRM Administrator"), after the ERP role chips —
  * no separate column. Everyday ERP / CRM seat counts live in the "Seat usage"
  * card on Invite / Edit user (no title-bar button, as in prod); the #stats slot
  * only renders STATE banners — over quota (US-006), expired (read-only,
@@ -191,13 +191,13 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               {{ t('Your company is') }} {{ crmSummary.overTotal }} {{ crmSummary.overTotal === 1 ? t('CRM seat over quota') : t('CRM seats over quota') }}
             </template>
             <template v-else>
-              {{ t('Your company is') }} {{ crmSummary.overAdmin }} {{ crmSummary.overAdmin === 1 ? t('CRM Manager seat over quota') : t('CRM Manager seats over quota') }}
+              {{ t('Your company is') }} {{ crmSummary.overAdmin }} {{ crmSummary.overAdmin === 1 ? t('CRM Administrator seat over quota') : t('CRM Administrator seats over quota') }}
             </template>
           </MpBannerTitle>
           <MpBannerDescription>
             {{ crmSummary.overTotal
               ? t('Everyone keeps their CRM access, but you can\'t give CRM access to anyone new until usage fits.')
-              : t('Everyone keeps their CRM access, but you can\'t make anyone new a CRM Manager until usage fits. CRM Basic can still be given while seats are left.') }}
+              : t('Everyone keeps their CRM access, but you can\'t make anyone new a CRM Administrator until usage fits. CRM Basic can still be given while seats are left.') }}
             {{ t('See Seat usage when inviting or editing a user.') }}
             <a class="usr-link" @click="openContactSales('crm-seats')">{{ t('Contact Sales') }}</a>
           </MpBannerDescription>

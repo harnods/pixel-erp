@@ -17,15 +17,21 @@ import {
   seatUsageView, type SeatHolder, type SeatUsageView,
   type CrmRole, type CrmBlockReason, type CrmSubscriptionState, type CrmBillingSnapshot,
 } from '~/data/crmSubscription'
-import { accountUsers, getAccountUser, setAccountUserCrmRoles } from '~/data/usersRoles'
+import {
+  accountUsers, getAccountUser, setAccountUserCrmRoles, addPresetAccountUsers, removeAccountUsers,
+  type AccountUser,
+} from '~/data/usersRoles'
 
 export interface CrmScenarioPreset { value: string; label: string }
 
 /** FAB presets — each is a full Billing state, so switching is deterministic. */
 export const CRM_SCENARIO_PRESETS: CrmScenarioPreset[] = [
   { value: 'essential', label: 'CRM Essential (5 seats)' },
-  { value: 'essential-addons', label: 'CRM Essential + 2 Basic + 1 Manager add-on' },
-  { value: 'prd-admins', label: 'Owner + 5 CRM Managers (PRD example)' },
+  { value: 'essential-addons', label: 'CRM Essential + 2 Basic + 1 Administrator add-on' },
+  { value: 'prd-admins', label: 'Owner + 5 CRM Administrators (PRD example)' },
+  { value: 'crm-full', label: 'No CRM seats left (5 of 5 used)' },
+  { value: 'basic-only', label: 'Only CRM Basic seats left (+ 2 Basic add-ons)' },
+  { value: 'over-quota', label: 'Over quota (7 used of 5)' },
   { value: 'reduced', label: 'Seats reduced to 3 (over quota)' },
   { value: 'trial', label: 'CRM Free Trial (5 seats)' },
   { value: 'trial-no-count', label: 'CRM Free Trial (no seat count)' },
@@ -35,7 +41,7 @@ export const CRM_SCENARIO_PRESETS: CrmScenarioPreset[] = [
   { value: 'none', label: 'No CRM' },
   { value: 'billing-down', label: 'Billing down (last confirmed)' },
   { value: 'billing-down-never', label: 'Billing down (never confirmed)' },
-  { value: 'erp-full', label: 'ERP user limit full' },
+  { value: 'erp-full', label: 'ERP user limit full (10 of 10)' },
 ]
 
 function presetState(value: string): CrmSubscriptionState {
@@ -44,6 +50,9 @@ function presetState(value: string): CrmSubscriptionState {
   const s: CrmSubscriptionState = { ...base, preset: value }
   switch (value) {
     case 'essential-addons': s.snapshot = snap({ basicAddons: 2, adminAddons: 1 }); break
+    // 5 included + 2 Basic add-ons = 7 seats, 5 Administrator-capable. Users
+    // (applyPreset) fill the 5 Administrator seats → only Basic seats are left.
+    case 'basic-only': s.snapshot = snap({ basicAddons: 2 }); break
     // PRD §3b "Owner + 5 Administrators": 8 total · 6 used · 2 left, Administrator
     // 6 of 6 → the 2 seats left are Basic only. Users are set in applyPreset.
     case 'prd-admins': s.snapshot = snap({ basicAddons: 2, adminAddons: 1 }); break
@@ -62,17 +71,64 @@ function presetState(value: string): CrmSubscriptionState {
     case 'none': s.snapshot = snap({ package: 'none' }); break
     case 'billing-down': s.billing = 'down'; break
     case 'billing-down-never': s.billing = 'down'; s.confirmedAt = null; break
-    case 'erp-full': s.erpUserLimit = erpUsage(accountUsers); break
+    // The ERP limit stays 10; applyPreset adds two pending ERP invites → 10 of 10.
+    case 'erp-full': break
   }
   return s
 }
 
 /**
- * Seed users the PRD-example preset makes CRM Administrator (with the Owner and
- * Fajar, already an Administrator, that's Owner + 5). All of them already hold
- * an ERP seat or are CRM-only, so the ERP count stays 8 of 10.
+ * Seed CRM roles each preset changes (user id → role), on top of the default
+ * seed (Owner + Fajar CRM Administrator, Bayu + Dewi CRM Basic = 4 of 5). All of
+ * these users already use an ERP seat or are CRM-only, so ERP stays 8 of 10.
  */
-export const PRD_EXAMPLE_ADMIN_IDS = ['au-3', 'au-5', 'au-9', 'au-12']
+const PRESET_CRM_ROLES: Record<string, Record<string, CrmRole>> = {
+  // Owner + 5 CRM Administrators (PRD §3b): 8 total · 6 used, Administrator 6 of 6.
+  'prd-admins': { 'au-3': 'admin', 'au-5': 'admin', 'au-9': 'admin', 'au-12': 'admin' },
+  // + Cinta as CRM Basic → 5 total · 5 used · 0 left.
+  'crm-full': { 'au-3': 'basic' },
+  // Owner + 4 CRM Administrators fill the 5 Administrator-capable seats; the 2
+  // Basic add-on seats are left → 7 total · 5 used · 2 left, Basic only.
+  'basic-only': { 'au-3': 'admin', 'au-5': 'admin', 'au-12': 'admin' },
+  // + 3 CRM Basic users after a reduction → 5 total · 7 used · 2 over.
+  'over-quota': { 'au-2': 'basic', 'au-3': 'basic', 'au-9': 'basic' },
+}
+
+/** Users a preset adds to the seed — removed again by any other preset. */
+const PRESET_USERS: Record<string, AccountUser[]> = {
+  // Two pending ERP invites → ERP 10 total · 10 used · 0 left (CRM unchanged).
+  'erp-full': [
+    {
+      id: 'au-demo-1', name: 'Gita Pratiwi', email: 'gita.pratiwi@mekari.com', isOwner: false,
+      systemRoleIds: ['sales'], customRoleIds: [], crmRole: null, isListManager: false, timeLimit: null,
+      status: 'invited', lastActiveAt: null, joinedAt: '2026-10-27',
+    },
+    {
+      id: 'au-demo-2', name: 'Joko Susilo', email: 'joko.susilo@mekari.com', isOwner: false,
+      systemRoleIds: ['stockist'], customRoleIds: [], crmRole: null, isListManager: false, timeLimit: null,
+      status: 'invited', lastActiveAt: null, joinedAt: '2026-10-27',
+    },
+  ],
+}
+
+/** Seed users the PRD-example preset makes CRM Administrator (with the Owner and Fajar: Owner + 5). */
+export const PRD_EXAMPLE_ADMIN_IDS = Object.keys(PRESET_CRM_ROLES['prd-admins']!)
+
+/**
+ * What the Invite / Edit form may offer BEFORE saving (the spec's proactive
+ * disabling). Counts come from the saved users, so the user's own saved seat is
+ * included and an option they already hold is never blocked:
+ *  - crm    can CRM be ticked at all (as CRM Basic)? read-only → always blocked
+ *  - admin  can CRM Administrator be picked?
+ *  - erp    can ERP roles be ticked (only gated for a user without an ERP seat yet)?
+ */
+export interface FormOptionGate {
+  crm: CrmBlockReason | null
+  admin: CrmBlockReason | null
+  erp: 'erp-full' | null
+  /** CRM usage is above the total (after a reduction) — picks the over-quota note. */
+  overQuota: boolean
+}
 
 export interface SeatCheckResult {
   erp: 'erp-full' | null
@@ -101,11 +157,18 @@ export function useCrmSubscriptionScenario() {
     // Undo whatever a previous preset did to seed users first, so every preset
     // starts from the default seed.
     if (crmSubscription.crmRoleOverlay) setAccountUserCrmRoles(crmSubscription.crmRoleOverlay)
+    if (crmSubscription.presetUserIds?.length) removeAccountUsers(crmSubscription.presetUserIds)
     const next = presetState(value)
-    if (value === 'prd-admins') {
-      const ids = PRD_EXAMPLE_ADMIN_IDS.filter((id) => getAccountUser(id))
+    const roles = PRESET_CRM_ROLES[value]
+    if (roles) {
+      const ids = Object.keys(roles).filter((id) => getAccountUser(id))
       next.crmRoleOverlay = Object.fromEntries(ids.map((id) => [id, getAccountUser(id)!.crmRole]))
-      setAccountUserCrmRoles(Object.fromEntries(ids.map((id) => [id, 'admin' as CrmRole])))
+      setAccountUserCrmRoles(Object.fromEntries(ids.map((id) => [id, roles[id]!])))
+    }
+    const users = PRESET_USERS[value]
+    if (users) {
+      addPresetAccountUsers(users)
+      next.presetUserIds = users.map((u) => u.id)
     }
     setCrmSubscription(next)
   }
@@ -168,6 +231,21 @@ export function useCrmSubscriptionScenario() {
       snapshot.value,
     )
   }
+  /** Which options the Invite / Edit form offers for `userId` (null = a new invite). */
+  function formGate(userId: string | null): FormOptionGate {
+    const current = userId ? getAccountUser(userId) : undefined
+    const saved = current ? effectiveCrmRole(current) : null
+    const crm = mode.value === 'read-only'
+      ? 'crm-read-only'
+      : checkCrmChange(saved, saved ?? 'basic', usage.value, capacity.value, mode.value)
+    return {
+      crm,
+      admin: checkCrmChange(saved, 'admin', usage.value, capacity.value, mode.value),
+      erp: checkErpChange(current ? usesErpSeat(current) : false, true, erpUsed.value, crmSubscription.erpUserLimit, crmSubscription.erpOnTrial),
+      overQuota: crmSummary.value.overTotal > 0,
+    }
+  }
+
   /** The Seat usage view for the saved users (no pending change). */
   const currentView = computed(() => seatUsageView(mode.value, crmSummary.value, erpSummary.value, snapshot.value))
 
@@ -178,6 +256,6 @@ export function useCrmSubscriptionScenario() {
     crmVisible, isTrial, isOverQuota, currentUserHasCrmRole,
     presets: CRM_SCENARIO_PRESETS,
     applyPreset, setBasicAddons, setAdminAddons, setErpUserLimit, setViewAsNoCrmRole,
-    checkSave,
+    checkSave, formGate,
   }
 }

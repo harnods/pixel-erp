@@ -47,9 +47,8 @@ import { loadSnapshot, saveSnapshot } from './persist'
 export type CrmPackage = 'none' | 'trial' | 'essential' | 'seat-addon-only' | 'expired'
 
 /**
- * ERP's CRM role tier. Internal ids stay 'admin' / 'basic' (the PRD's CRM
- * Administrator / CRM Basic); the UI uses production's labels — "CRM Manager"
- * (the Administrator-capable tier, with CRM Settings) and "CRM Basic".
+ * ERP's CRM role tier — "CRM Administrator" (with CRM Settings) / "CRM Basic"
+ * (without). Internal ids are 'admin' / 'basic'.
  */
 export type CrmRole = 'admin' | 'basic'
 
@@ -87,6 +86,11 @@ export interface CrmSubscriptionState {
    * so the default seed (ERP 8/10, CRM 4/5) returns. null = nothing changed.
    */
   crmRoleOverlay: Record<string, CrmRole | null> | null
+  /**
+   * Demo only — ids of users a preset ADDED to the seed (e.g. two pending ERP
+   * invites to fill the ERP limit). Applying any other preset removes them.
+   */
+  presetUserIds?: string[] | null
 }
 
 /** How the CRM role behaves in the role editor for the current company. */
@@ -144,6 +148,7 @@ export function defaultCrmSubscriptionState(): CrmSubscriptionState {
     viewAsNoCrmRole: false,
     preset: 'essential',
     crmRoleOverlay: null,
+    presetUserIds: null,
   }
 }
 
@@ -317,7 +322,7 @@ export function erpSeatSummary(used: number, limit: number, erpOnTrial: boolean)
 export const SEAT_BLOCK_MESSAGES: Record<CrmBlockReason | 'erp-full', string> = {
   'erp-full': 'Your ERP user limit is full. Remove ERP roles from another user, or contact Sales to add ERP seats.',
   'crm-full': 'No CRM seats left. Remove CRM access from another user, or contact Sales to add CRM seats.',
-  'crm-admin-full': 'No CRM Manager seats left. Choose CRM Basic instead, or contact Sales to add CRM Manager seats.',
+  'crm-admin-full': 'No CRM Administrator seats left. Choose CRM Basic instead, or contact Sales to add CRM Administrator seats.',
   'crm-read-only': "Your CRM add-on has expired, so CRM access can't be changed. Existing access is kept until CRM is renewed.",
   'billing-unknown': "We can't check your CRM seats right now. Try again later.",
   'crm-unavailable': "Your company doesn't have the CRM add-on.",
@@ -396,33 +401,81 @@ export function seatUsageView(
 }
 
 /**
- * The breakdown as display lines. `t` translates the word fragments (numbers
- * are interpolated around them, so the copy keys stay stable):
- *   capacity  "5 included · 2 Basic add-ons · 1 Manager add-on"  (0-parts omitted)
- *             "5 trial seats"                                           (trial)
- *   admin     "CRM Manager: 2 of 6 used"  /  "… · 1 over"
- *   basicOnly "Remaining 2 seats are for CRM Basic only"  (or null)
+ * The CRM row of the Seat usage card as display lines. `t` translates the word
+ * fragments (numbers are interpolated around them, so the copy keys stay stable):
+ *   usage     "5 total · 4 used · 1 left"  /  over quota "5 total · 7 used · 2 over" (isOver → warning colour)
+ *   capacity  "5 included"  /  "5 included + 2 Basic, + 1 Administrator add-on"  (add-on parts only when > 0)
+ *             "5 trial seats"                                                     (trial)
+ *   upTo      "Up to 1 can be CRM Administrator"  — null when 0 (hidden)
+ * The add-on noun agrees with the LAST count ("+ 2 Basic, + 1 Administrator
+ * add-on", "+ 2 Basic add-ons"), as in the spec's example.
  */
-export function formatCrmSeatBreakdown(b: CrmSeatBreakdown, t: (en: string) => string = (x) => x) {
-  const n = (count: number, one: string, many: string) => `${count} ${t(count === 1 ? one : many)}`
-  const capacity = b.source.kind === 'trial'
-    ? n(b.source.seats, 'trial seat', 'trial seats')
-    : [
-        `${b.source.included} ${t('included')}`,
-        ...(b.source.basic ? [n(b.source.basic, 'Basic add-on', 'Basic add-ons')] : []),
-        ...(b.source.admin ? [n(b.source.admin, 'Manager add-on', 'Manager add-ons')] : []),
-      ].join(' · ')
-  const admin = `${t('CRM Manager')}: ${b.adminUsed} ${t('of')} ${b.adminTotal} ${t('used')}`
-    + (b.adminOver ? ` · ${b.adminOver} ${t('over')}` : '')
-  const basicOnly = b.basicOnly
-    ? `${t('Remaining')} ${b.basicOnly} ${t(b.basicOnly === 1 ? 'seat is for CRM Basic only' : 'seats are for CRM Basic only')}`
-    : null
-  return { capacity, admin, basicOnly }
+export function formatCrmUsageLine(
+  crm: { total: number; used: number; left: number; over: number },
+  t: (en: string) => string = (x) => x,
+): { text: string; isOver: boolean } {
+  const head = `${crm.total} ${t('total')} · ${crm.used} ${t('used')}`
+  return crm.over > 0
+    ? { text: `${head} · ${crm.over} ${t('over')}`, isOver: true }
+    : { text: `${head} · ${crm.left} ${t('left')}`, isOver: false }
 }
+
+export function formatCrmCapacityLine(source: CrmSeatBreakdown['source'], t: (en: string) => string = (x) => x): string {
+  if (source.kind === 'trial') return `${source.seats} ${t(source.seats === 1 ? 'trial seat' : 'trial seats')}`
+  const addons: { n: number; label: string }[] = [
+    ...(source.basic ? [{ n: source.basic, label: 'Basic' }] : []),
+    ...(source.admin ? [{ n: source.admin, label: 'Administrator' }] : []),
+  ]
+  const included = `${source.included} ${t('included')}`
+  if (!addons.length) return included
+  const last = addons[addons.length - 1]!
+  return `${included} ${addons.map((a) => `+ ${a.n} ${t(a.label)}`).join(', ')} ${t(last.n === 1 ? 'add-on' : 'add-ons')}`
+}
+
+export function formatCrmUpToLine(adminLeft: number, t: (en: string) => string = (x) => x): string | null {
+  return adminLeft > 0 ? `${t('Up to')} ${adminLeft} ${t('can be CRM Administrator')}` : null
+}
+
+export function formatCrmSeatBreakdown(
+  crm: CrmSeatBreakdown & { total: number; used: number; left: number; over: number; adminLeft: number },
+  t: (en: string) => string = (x) => x,
+) {
+  return {
+    usage: formatCrmUsageLine(crm, t),
+    capacity: formatCrmCapacityLine(crm.source, t),
+    upTo: formatCrmUpToLine(crm.adminLeft, t),
+  }
+}
+
+/**
+ * Why a CRM option on Invite / Edit user is disabled, as an inline note with an
+ * optional "Contact Sales" link (`before` + link + `after`) and the same text as
+ * one sentence (`full`) for the hover tooltip. Shown proactively — before the
+ * admin can tick something that would be blocked on save.
+ */
+export interface CrmOptionNote { full: string; before: string; link: string | null; after: string }
+
+export function crmOptionNote(reason: CrmBlockReason, overQuota: boolean): CrmOptionNote {
+  switch (reason) {
+    case 'crm-read-only':
+      return { full: 'CRM subscription has ended. Contact Sales to renew.', before: 'CRM subscription has ended.', link: 'Contact Sales', after: 'to renew.' }
+    case 'crm-full':
+      return overQuota
+        ? { full: 'Remove CRM from some users or contact Sales to add seats.', before: 'Remove CRM from some users or', link: 'contact Sales', after: 'to add seats.' }
+        : { full: 'No CRM seats left. Contact Sales to add seats.', before: 'No CRM seats left.', link: 'Contact Sales', after: 'to add seats.' }
+    case 'crm-admin-full':
+      return { full: 'No CRM Administrator seat left', before: 'No CRM Administrator seat left', link: null, after: '' }
+    default:
+      return { full: SEAT_BLOCK_MESSAGES[reason], before: SEAT_BLOCK_MESSAGES[reason], link: null, after: '' }
+  }
+}
+
+/** Inline note + tooltip on ERP role checkboxes while the ERP limit is full. */
+export const ERP_FULL_NOTE = 'No ERP seats left'
 
 /** Display label for a CRM role — the CRM access column / chips. */
 export function crmRoleLabel(role: CrmRole | null): string {
-  if (role === 'admin') return 'CRM Manager'
+  if (role === 'admin') return 'CRM Administrator'
   if (role === 'basic') return 'CRM Basic'
   return ''
 }
