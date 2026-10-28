@@ -1686,10 +1686,9 @@ watch(reviewChip, () => { setReviewPage(1) })
 .detail-summary { display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .content-list-grid {
   display: grid;
-  /* Four even columns on the stat cards' rhythm above, three of them filled —
-     not the invoice page's 318px lead column, which aligns to a line-item table
-     this page does not have. */
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  /* SalesInvoiceDetailsPage's grid: a 318px lead column and four equal ones; the
+     three fields fill the first three, so the columns keep the invoice's widths. */
+  grid-template-columns: minmax(0, 318px) repeat(4, minmax(0, 1fr));
   column-gap: var(--mp-spacing-6);
   row-gap: 0;
 }
