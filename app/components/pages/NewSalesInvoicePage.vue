@@ -30,12 +30,13 @@ import {
   customers, products, salesInvoices,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
+import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesInvoice, SILineItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { saveSalesInvoiceEdit } from '~/data/salesInvoiceEdits'
-import { getApprovedTaxDocument, generateChangeDrafts, type TaxDocument } from '~/data/taxDocuments'
+import { getApprovedTaxDocument, generateChangeDrafts, updateTaxDocumentStatus, type TaxDocument } from '~/data/taxDocuments'
 import {
   buildTaxSnapshot, detectTaxChanges, resolveTaxAction,
   type DetectedTaxChange, type SalesInvoiceTaxSnapshot, type TaxAction,
@@ -313,7 +314,10 @@ function fmtPlain(n: number) {
 // ── Notes + attachments ───────────────────────────────────────────────────────
 const message = ref('')
 const memo    = ref('')
-const attachments = ref<{ name: string; sizeKB: number }[]>([])
+// Seeded from the File manager's "Add file › Create a new transaction"
+// hand-off, so the form opens with those files already attached. Reading it
+// clears it, so a later visit starts empty. Empty on every other entry.
+const attachments = ref<{ name: string; sizeKB: number }[]>(takePendingAttachments())
 function iconForFile(name: string): 'pdf' | 'excel-document' | 'word-document' | 'doc' {
   if (name.endsWith('.pdf')) return 'pdf'
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return 'excel-document'
@@ -525,25 +529,40 @@ function commitEdit() {
 }
 
 /** Confirmed from the review drawer — save, then raise whatever DJP needs. */
-function onTaxReviewConfirm() {
+/**
+ * @param submit  "Save & submit to DJP" rather than "Save as draft".
+ *
+ * A cancellation generates TWO documents — the Cancellation itself and the fresh
+ * Normal faktur for the corrected transaction — and submitting sends BOTH. DJP
+ * imposes no ordering between them (PER-11/PJ/2025 Lampiran D.6 requires only
+ * that the cancelled faktur stays on file), and a button that says "submit"
+ * while quietly holding one of the two back would be lying about what it did.
+ */
+function onTaxReviewConfirm(submit: boolean) {
   commitEdit()
   const source = approvedTaxDoc.value
   const action = taxReviewAction.value
 
   // Explicit over `!== 'none'`: TaxAction also covers 'return-note', which an
   // edit can never resolve to and generateChangeDrafts must never be handed.
+  let generated: TaxDocument[] = []
   if (source && (action === 'replacement' || action === 'cancellation')) {
-    generateChangeDrafts({
+    generated = generateChangeDrafts({
       source, action, changes: taxReviewChanges.value,
       date: todayDMY(),
       invoiceSnapshot: editedSnapshot(),
     })
+    if (submit) generated.forEach(d => updateTaxDocumentStatus(d.id, 'awaiting-approval'))
   }
 
   taxReviewOpen.value = false
   toast.notify({
     variant: 'success',
-    title: action === 'none' ? t('Sales invoice updated') : t('Sales invoice updated and tax document draft generated'),
+    title: action === 'none'
+      ? t('Sales invoice updated')
+      : submit
+        ? t('Sales invoice updated and tax document submitted to DJP')
+        : t('Sales invoice updated and tax document draft generated'),
     rootProps: { class: 'toast-enterprise' },
   })
   // Land on the Tax document tab when there is a new draft waiting to be reviewed.
@@ -1433,7 +1452,7 @@ function onSave() {
    --mp-spacing-5: that token resolves to 20.8px here (rem-based). */
 .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
 .si-note-field { display: flex; flex-direction: column; }
-.si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+.si-field-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 /* char-counter on the label row (rule/input-char-counter) */
 .si-lbl-row { display: flex; align-items: baseline; justify-content: space-between; }
 .si-counter { font-size: var(--mp-font-sizes-sm, 0.75rem); color: var(--mp-text-secondary); }

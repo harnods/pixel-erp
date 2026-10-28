@@ -31,7 +31,7 @@ import {
   type DetectedTaxChange, type TaxAction,
 } from '~/data/taxDocumentChanges'
 import {
-  formatTaxDocumentNumber, formatTaxDocumentKind, type TaxDocument,
+  formatTaxDocumentNumber, TAX_DOCUMENT_STATUS_LABELS, taxDocumentStatus, type TaxDocument,
 } from '~/data/taxDocuments'
 
 const props = defineProps<{
@@ -46,7 +46,9 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
-  (e: 'confirm'): void
+  /** `submit` = send the generated documents to DJP straight away, instead of
+   *  leaving them as drafts on the Tax document tab. */
+  (e: 'confirm', submit: boolean): void
 }>()
 
 const { t } = useLocale()
@@ -75,11 +77,26 @@ const generatedDrafts = computed<string[]>(() => {
   return []
 })
 
-/** Why the generated records aren't with DJP yet — different promise per trigger:
- *  an edit's drafts are ours to submit, a return note is the buyer's to send. */
-const generatedNote = computed(() => isReturn.value
-  ? 'Nothing is submitted to DJP. The return note is added to the Tax document tab so the invoice shows what is still outstanding.'
-  : 'Drafts are not sent to DJP automatically. Review them on the Tax document tab and submit when ready.')
+/**
+ * Whether this action can go to DJP from here at all.
+ *
+ * A return note never can — the buyer issues the nota retur, we only record that
+ * we are waiting on it — and 'none' generates nothing to send. So those keep the
+ * single confirm button; only replacement/cancellation get the draft/submit pair
+ * that the Create tax document drawer has.
+ */
+const canSubmitToDjp = computed(() =>
+  !isReturn.value && (props.action === 'replacement' || props.action === 'cancellation'),
+)
+
+/** What happens to the generated records — spelled out per trigger, because the
+ *  promise differs: an edit's drafts are ours to submit, a return note is the
+ *  buyer's to send. */
+const generatedNote = computed(() => {
+  if (isReturn.value) return 'Nothing is submitted to DJP. The return note is added to the Tax document tab so the invoice shows what is still outstanding.'
+  if (canSubmitToDjp.value) return 'Save as draft to review on the Tax document tab first, or submit to DJP now.'
+  return 'Drafts are not sent to DJP automatically. Review them on the Tax document tab and submit when ready.'
+})
 
 /**
  * Ghost button — "back to editing" only makes sense if you were editing.
@@ -91,7 +108,7 @@ const generatedNote = computed(() => isReturn.value
 const dismissLabel = computed(() => (isReturn.value ? 'Close' : 'Back to editing'))
 
 function close() { emit('update:isOpen', false) }
-function confirm() { emit('confirm') }
+function confirm(submit = false) { emit('confirm', submit) }
 </script>
 
 <template>
@@ -122,7 +139,7 @@ function confirm() { emit('confirm') }
               <MpText size="h3" weight="semiBold" class="tir-section-title">{{ t('Approved tax document') }}</MpText>
               <div class="tir-summary">
                 <ContentList :label="t('Number')" :value="formatTaxDocumentNumber(sourceDocument)" />
-                <ContentList :label="t('Type')" :value="t(formatTaxDocumentKind(sourceDocument))" />
+                <ContentList :label="t('Tax document status')" :value="t(TAX_DOCUMENT_STATUS_LABELS[taxDocumentStatus(sourceDocument)])" />
                 <ContentList :label="t('Tax document date')" :value="sourceDocument.date" />
               </div>
             </section>
@@ -203,11 +220,22 @@ function confirm() { emit('confirm') }
             </section>
           </div>
 
+          <!-- Draft / submit pair mirrors CreateTaxDocumentDrawer, so raising a
+               correction offers the same choice as raising the original faktur.
+               Both always rendered, never disabled. -->
           <div class="tir-footer">
             <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="close">
               {{ t(dismissLabel) }}
             </button>
-            <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirm">
+            <template v-if="canSubmitToDjp">
+              <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="confirm(false)">
+                {{ t('Save as draft') }}
+              </button>
+              <button type="button" class="btn-enterprise btn-enterprise--primary" @click="confirm(true)">
+                {{ t('Save & submit to DJP') }}
+              </button>
+            </template>
+            <button v-else type="button" class="btn-enterprise btn-enterprise--primary" @click="confirm(false)">
               {{ t(config.confirmLabel) }}
             </button>
           </div>

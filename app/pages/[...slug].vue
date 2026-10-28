@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpTooltip, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
@@ -30,7 +30,7 @@ import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
 import { awaitingApprovalCount } from '~/data/warehouseTransfers'
-import { awaitingSalesInvoicesCount } from '~/data/salesInvoices'
+import { awaitingSalesInvoicesCount, recurringSalesInvoicesCount } from '~/data/salesInvoices'
 import { awaitingSalesOrdersCount } from '~/data/salesOrders'
 import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
 import { bills } from '~/data/bills'
@@ -110,7 +110,13 @@ const vatFinalizeState = computed(() => {
 })
 
 const titleBreadcrumb = computed(() => MODULE_PARENT[currentPageKey.value] ?? null)
+/** Pages whose H1 differs from their sidebar label — matched to production
+ *  (Settings › "Users & Roles" opens a page titled "User management"). */
+const PAGE_TITLE_OVERRIDES: Record<string, string> = {
+  'Users and roles': 'User management',
+}
 const resolvedPageTitle = computed(() => {
+  if (PAGE_TITLE_OVERRIDES[currentPageKey.value]) return PAGE_TITLE_OVERRIDES[currentPageKey.value]!
   const entry = MODULE_PARENT[currentPageKey.value]
   return entry ? (entry.title ?? currentPageKey.value) : pageTitle.value
 })
@@ -156,6 +162,9 @@ const pageRegistry: Record<string, Component> = {
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
+  'Recurring transactions': defineAsyncComponent(() => import('~/components/pages/RecurringTransactionsPage.vue')),
+  'File manager':      defineAsyncComponent(() => import('~/components/pages/FileManagerPage.vue')),
+  'Activity log':      defineAsyncComponent(() => import('~/components/pages/ActivityLogPage.vue')),
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
@@ -203,6 +212,7 @@ const pageRegistry: Record<string, Component> = {
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
   'Sales settings':     defineAsyncComponent(() => import('~/components/pages/SettingsSalesPage.vue')),
   'Purchase settings':  defineAsyncComponent(() => import('~/components/pages/SettingsPurchasePage.vue')),
+  'Inventory settings': defineAsyncComponent(() => import('~/components/pages/SettingsInventoryPage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
   // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
   // The page itself is served by its tabs (User list / Custom role) — this entry
@@ -258,11 +268,30 @@ const pageRegistry: Record<string, Component> = {
 
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
+const RecurringSalesInvoicesPage = asyncPage(() => import('~/components/pages/RecurringSalesInvoicesPage.vue'))
+const RecurringSalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/RecurringSalesInvoiceDetailsPage.vue'))
+const RecurringSalesOrdersPage = asyncPage(() => import('~/components/pages/RecurringSalesOrdersPage.vue'))
+const RecurringSalesOrderDetailsPage = asyncPage(() => import('~/components/pages/RecurringSalesOrderDetailsPage.vue'))
 const SalesQuoteDetailsPage = asyncPage(() => import('~/components/pages/SalesQuoteDetailsPage.vue'))
 const SalesDeliveryDetailsPage = asyncPage(() => import('~/components/pages/SalesDeliveryDetailsPage.vue'))
 const PurchaseQuoteDetailsPage = asyncPage(() => import('~/components/pages/PurchaseQuoteDetailsPage.vue'))
 const PurchaseDeliveryDetailsPage = asyncPage(() => import('~/components/pages/PurchaseDeliveryDetailsPage.vue'))
 const PurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/PurchaseInvoiceDetailsPage.vue'))
+const RecurringPurchaseInvoicesPage = asyncPage(() => import('~/components/pages/RecurringPurchaseInvoicesPage.vue'))
+const RecurringPurchaseInvoiceDetailsPage = asyncPage(() => import('~/components/pages/RecurringPurchaseInvoiceDetailsPage.vue'))
+const NewRecurringPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseInvoicePage.vue'))
+const RecurringPurchaseOrdersPage = asyncPage(() => import('~/components/pages/RecurringPurchaseOrdersPage.vue'))
+const RecurringPurchaseOrderDetailsPage = asyncPage(() => import('~/components/pages/RecurringPurchaseOrderDetailsPage.vue'))
+const RecurringBillsPage = asyncPage(() => import('~/components/pages/RecurringBillsPage.vue'))
+const RecurringBillDetailsPage = asyncPage(() => import('~/components/pages/RecurringBillDetailsPage.vue'))
+const NewRecurringReceiveMoneyPage = asyncPage(() => import('~/components/pages/NewRecurringReceiveMoneyPage.vue'))
+const NewRecurringSpendMoneyPage = asyncPage(() => import('~/components/pages/NewRecurringSpendMoneyPage.vue'))
+const NewRecurringInternalTransferPage = asyncPage(() => import('~/components/pages/NewRecurringInternalTransferPage.vue'))
+const NewRecurringReceivePaymentPage = asyncPage(() => import('~/components/pages/NewRecurringReceivePaymentPage.vue'))
+const NewRecurringPurchasePaymentPage = asyncPage(() => import('~/components/pages/NewRecurringPurchasePaymentPage.vue'))
+const NewRecurringGeneralJournalPage = asyncPage(() => import('~/components/pages/NewRecurringGeneralJournalPage.vue'))
+
+const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages/NewRecurringPurchaseOrderPage.vue'))
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
@@ -362,16 +391,26 @@ const VatReconciliationUnmatchedPage = asyncPage(() => import('~/components/page
 // Both faktur sides scope themselves from ?tab= (Needs attention / All faktur).
 const VatReconciliationWorkspacePage = asyncPage(() => import('~/components/pages/VatReconciliationWorkspacePage.vue'))
 const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
+// /get-crm — where the product switcher sends users who can't open CRM (no CRM
+// add-on → Contact Sales; no CRM role → ask your admin). Deliberately NOT under
+// /crm so the ERP shell (not the CRM sidebar) renders around it.
+const CrmLandingPage = asyncPage(() => import('~/components/pages/CrmLandingPage.vue'))
 // The "New custom role" title-bar button lives here, but the drawer it opens is
 // rendered inside CustomRolesPage — the two talk through this shared intent.
 const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
+/** "Add custom role" works from both tabs (as in prod): the drawer lives on the
+ *  Custom role tab, so switch there first, then open it. */
+function addCustomRole() {
+  if (activeTab.value !== 'Custom role') selectTab('Custom role')
+  openCustomRoleCreate()
+}
 const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
 const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
 // built with; port to real routes if/when it needs deep-linking). ──────────────
-const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected'>('all')
+const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected' | 'recurring'>('all')
 provide('purchaseOrdersTab', purchaseOrdersTab)
 const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
 const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
@@ -431,6 +470,10 @@ watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr])
     poFormRejectionBanner.value = null
   }
 }, { immediate: true })
+// Sync PO custom tab from ?tab=Recurring+orders (used by recurring PO pages on navigate-back)
+watch(() => [currentPageKey.value, route.query.tab] as const, ([key, tab]) => {
+  if (key === 'Purchase orders' && tab === 'Recurring orders') purchaseOrdersTab.value = 'recurring'
+}, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
@@ -477,6 +520,8 @@ const CRM_PAGES: Record<string, Component> = {
   'settings':  CrmSettingsPage,
 }
 const NewSalesInvoicePage = asyncPage(() => import('~/components/pages/NewSalesInvoicePage.vue'))
+const NewRecurringSalesInvoicePage = asyncPage(() => import('~/components/pages/NewRecurringSalesInvoicePage.vue'))
+const NewRecurringSalesOrderPage = asyncPage(() => import('~/components/pages/NewRecurringSalesOrderPage.vue'))
 const ApplyCreditMemoPage = asyncPage(() => import('~/components/pages/ApplyCreditMemoPage.vue'))
 const CreditMemoDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoDetailsPage.vue'))
 const CreditMemoAppliedDetailsPage = asyncPage(() => import('~/components/pages/CreditMemoAppliedDetailsPage.vue'))
@@ -537,6 +582,7 @@ const { trigger: triggerXpm } = useXpmActions()
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  if (segs[0] === 'get-crm') return { component: CrmLandingPage, id: '' }
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {
@@ -708,6 +754,25 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'expenses' && segs[2] === 'payment-details') {
     return { component: PlaceholderPage, id: segs[1]! }
   }
+  // /recurring-transactions/new/:type and /recurring-transactions/:id/edit →
+  // the six cash/journal types own no form or detail page yet, so the type
+  // picker and the row's Edit land on the placeholder.
+  if (segs.length >= 3 && segs[0] === 'recurring-transactions' && segs[1] === 'new') {
+    if (segs[2] === 'receive-money') return { component: NewRecurringReceiveMoneyPage, id: 'new' }
+    if (segs[2] === 'spend-money') return { component: NewRecurringSpendMoneyPage, id: 'new' }
+    if (segs[2] === 'internal-transfer') return { component: NewRecurringInternalTransferPage, id: 'new' }
+    if (segs[2] === 'receive-payment') return { component: NewRecurringReceivePaymentPage, id: 'new' }
+    if (segs[2] === 'purchase-payment') return { component: NewRecurringPurchasePaymentPage, id: 'new' }
+    if (segs[2] === 'journal-entry') return { component: NewRecurringGeneralJournalPage, id: 'new' }
+    return { component: PlaceholderPage, id: segs[2]! }
+  }
+  if (segs.length >= 3 && segs[0] === 'recurring-transactions' && segs[2] === 'edit') {
+    return { component: PlaceholderPage, id: segs[1]! }
+  }
+  // /expenses/recurring/:id → recurring expense template detail
+  if (segs.length >= 3 && segs[0] === 'expenses' && segs[1] === 'recurring') {
+    return { component: RecurringBillDetailsPage, id: segs[2]! }
+  }
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {
     return { component: BillDetailsPage, id: segs[1]! }
@@ -851,6 +916,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'delivery') {
     return { component: DeliveryTaskDetailsPage, id: segs[1] }
   }
+  // /sales-orders/recurring/new → New recurring sales order form
+  if (segs.length >= 3 && segs[0] === 'sales-orders' && segs[1] === 'recurring' && segs[2] === 'new') {
+    return { component: NewRecurringSalesOrderPage, id: 'new' }
+  }
+  // /sales-orders/recurring/:id → recurring sales order detail
+  if (segs.length >= 3 && segs[0] === 'sales-orders' && segs[1] === 'recurring' && segs[2] !== 'new') {
+    return { component: RecurringSalesOrderDetailsPage, id: segs[2] }
+  }
   // /sales-orders/new → create form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-orders' && segs[1] === 'new') {
     return { component: NewSalesOrderPage, id: 'new' }
@@ -861,6 +934,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'sales-orders') {
     return { component: SalesOrderDetailsPage, id: segs[1] }
+  }
+  // /purchase-orders/recurring/new → New recurring purchase order form
+  if (segs.length >= 3 && segs[0] === 'purchase-orders' && segs[1] === 'recurring' && segs[2] === 'new') {
+    return { component: NewRecurringPurchaseOrderPage, id: 'new' }
+  }
+  // /purchase-orders/recurring/:id → recurring purchase order detail
+  if (segs.length >= 3 && segs[0] === 'purchase-orders' && segs[1] === 'recurring' && segs[2] !== 'new') {
+    return { component: RecurringPurchaseOrderDetailsPage, id: segs[2] }
   }
   // /purchase-quotes/{new,:id/edit,:id}
   if (segs.length >= 2 && segs[0] === 'purchase-quotes' && segs[1] === 'new') {
@@ -908,9 +989,17 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'apply-debit-memo') {
     return { component: ApplyDebitMemoPage, id: segs[1] }
   }
+  // /purchase-invoices/recurring/new → New recurring purchase invoice form
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[1] === 'recurring' && segs[2] === 'new') {
+    return { component: NewRecurringPurchaseInvoicePage, id: 'new' }
+  }
+  // /purchase-invoices/recurring/:id → recurring purchase invoice detail
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[1] === 'recurring' && segs[2] !== 'new') {
+    return { component: RecurringPurchaseInvoiceDetailsPage, id: segs[2] }
+  }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'
-      && !['awaiting-approval', 'dropbox', 'new'].includes(segs[1]!)) {
+      && !['awaiting-approval', 'dropbox', 'new', 'recurring'].includes(segs[1]!)) {
     return { component: PurchaseInvoiceDetailsPage, id: segs[1] }
   }
   // /sales-quotes/new → create form (must precede the :id match)
@@ -935,6 +1024,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-deliveries') {
     return { component: SalesDeliveryDetailsPage, id: segs[1] }
   }
+  // /sales-invoices/recurring/new → New recurring sales invoice form
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[1] === 'recurring' && segs[2] === 'new') {
+    return { component: NewRecurringSalesInvoicePage, id: 'new' }
+  }
   // /sales-invoices/new → New sales invoice form (must precede the :id match)
   if (segs.length >= 2 && segs[0] === 'sales-invoices' && segs[1] === 'new') {
     return { component: NewSalesInvoicePage, id: 'new' }
@@ -958,6 +1051,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /payments-received/:id → Payment received detail
   if (segs.length >= 2 && segs[0] === 'payments-received') {
     return { component: PaymentReceivedDetailsPage, id: segs[1] }
+  }
+  // /sales-invoices/recurring/:id → recurring sales invoice detail
+  if (segs.length >= 3 && segs[0] === 'sales-invoices' && segs[1] === 'recurring' && segs[2] !== 'new') {
+    return { component: RecurringSalesInvoiceDetailsPage, id: segs[2] }
   }
   // /sales-invoices/:id → sales invoice detail
   if (segs.length >= 2 && segs[0] === 'sales-invoices') {
@@ -1179,11 +1276,11 @@ const pageTabs: Record<string, string[]> = {
   'Outbound delivery': ['Requests', 'Picking', 'Packing', 'Ready to ship', 'Shipments'],
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
-  'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox'],
-  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox'],
+  'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox', 'Recurring expenses'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox', 'Recurring invoices'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
-  'Sales invoices': ['All sales invoices', 'Awaiting approval'],
-  'Sales orders': ['All sales orders', 'Awaiting approval'],
+  'Sales invoices': ['All sales invoices', 'Awaiting approval', 'Recurring invoices'],
+  'Sales orders': ['All sales orders', 'Awaiting approval', 'Recurring orders'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
@@ -1260,10 +1357,14 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   // Sales modules — the Awaiting approval tab badges its own deterministic queue.
   if (currentPageKey.value === 'Sales invoices') {
-    const n = awaitingSalesInvoicesCount(); return n ? { 'Awaiting approval': n } : {}
+    const out: Record<string, number> = {}
+    const n = awaitingSalesInvoicesCount(); if (n) out['Awaiting approval'] = n
+    return out
   }
   if (currentPageKey.value === 'Sales orders') {
-    const n = awaitingSalesOrdersCount(); return n ? { 'Awaiting approval': n } : {}
+    const out: Record<string, number> = {}
+    const n = awaitingSalesOrdersCount(); if (n) out['Awaiting approval'] = n
+    return out
   }
   if (currentPageKey.value === 'Sales quotes') {
     const n = awaitingSalesQuotesCount(); return n ? { 'Awaiting approval': n } : {}
@@ -1459,8 +1560,8 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
   // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
-  'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']! },
-  'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']! },
+  'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']!, 'Recurring invoices': RecurringSalesInvoicesPage },
+  'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']!, 'Recurring orders': RecurringSalesOrdersPage },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
@@ -1496,6 +1597,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Bills': BillsIndexPage,
     'Awaiting Approval': BillsAwaitingApprovalPage,
     'Dropbox': BillsReviewFilesPage,
+    'Recurring expenses': RecurringBillsPage,
   },
   // Purchase invoices reuses the same review-files table over its own queue —
   // the `surface` prop swaps both the data and the review route.
@@ -1503,6 +1605,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'All purchase invoices': PurchaseInvoicesPage,
     'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
     'Dropbox': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
+    'Recurring invoices': RecurringPurchaseInvoicesPage,
   },
   // Awaiting approval reuses the Expenses approval-queue table (Approve button +
   // task/comment icons), context-adapted to purchase requests.
@@ -1600,6 +1703,12 @@ provide('courierAddSignal', courierAddSignal)
 // (it knows which role list is active), so signal it the same way.
 const contactAddSignal = ref(0)
 provide('contactAddSignal', contactAddSignal)
+// Recurring transactions' title-bar button opens the type picker inside the page.
+const recurringTxnNewSignal = ref(0)
+provide('recurringTxnNewSignal', recurringTxnNewSignal)
+// File manager's title-bar button opens the Add file drawer inside the page.
+const fileManagerAddSignal = ref(0)
+provide('fileManagerAddSignal', fileManagerAddSignal)
 const isContactsIndex = computed(() =>
   ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
 // Type-specific create label for the contacts index page-title button.
@@ -1933,12 +2042,25 @@ function startResize(e: MouseEvent) {
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="newSalesInvoice">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New sales invoice
-          </button>
+          <MpPopover id="si-create-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before btn-enterprise--icon-after">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                {{ t('New sales invoice') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="newSalesInvoice">{{ t('New sales invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/sales-invoices/recurring/new')">{{ t('New recurring sales invoice') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <div v-else-if="currentPageKey === 'Cowork tasks'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push({ path: '/cowork', query: { focus: '1' } })">
@@ -2013,12 +2135,25 @@ function startResize(e: MouseEvent) {
           <button class="btn-enterprise btn-enterprise--secondary">
             {{ t('Import') }}
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New sales order
-          </button>
+          <MpPopover id="so-create-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before btn-enterprise--icon-after">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                {{ t('New sales order') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem>{{ t('New sales order') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/sales-orders/recurring/new')">{{ t('New recurring sales order') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary">
@@ -2161,6 +2296,22 @@ function startResize(e: MouseEvent) {
             {{ t('Save changes') }}
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'File manager'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="fileManagerAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('Add file') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Recurring transactions'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="recurringTxnNewSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New recurring transaction') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Approval workflows'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/approval-workflows/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2178,15 +2329,23 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <!-- Settings → Users & roles: the create action follows the active tab. -->
+        <!-- Settings › Users & roles — production's title bar, same on both tabs:
+             (?) help · Add custom role · Invite user. Seat counts live in the
+             Invite / Edit user "Seat usage" card. -->
         <div v-else-if="currentPageKey === 'Users and roles'" class="page-title-actions">
+          <MpTooltip id="usr-help-tt" :label="t('Help')" placement="bottom" use-portal>
+            <MpButton
+              variant="secondary" is-rounded left-icon="help" class="usr-help-btn"
+              :aria-label="t('Help')" data-test-id="usr-help"
+              @click="infoToast(t('Users & roles help — coming soon'))"
+            />
+          </MpTooltip>
           <MpButton
-            v-if="activeTab === 'Custom role'"
-            variant="primary" is-rounded left-icon="add"
-            @click="openCustomRoleCreate()"
-          >{{ t('New custom role') }}</MpButton>
+            variant="secondary" is-rounded data-test-id="usr-add-custom-role"
+            @click="addCustomRole()"
+          >{{ t('Add custom role') }}</MpButton>
           <MpButton
-            v-else
-            variant="primary" is-rounded left-icon="add"
+            variant="primary" is-rounded data-test-id="usr-invite-user"
             @click="router.push('/users-and-roles/invite')"
           >{{ t('Invite user') }}</MpButton>
         </div>
@@ -2300,12 +2459,25 @@ function startResize(e: MouseEvent) {
             </div>
           </div>
 
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            New purchase invoice
-          </button>
+          <MpPopover id="pi-create-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before btn-enterprise--icon-after">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                {{ t('New purchase invoice') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem>{{ t('New purchase invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/purchase-invoices/recurring/new')">{{ t('New recurring purchase invoice') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <div v-else-if="currentPageKey === 'Expenses'" class="page-title-actions">
           <!-- Import button + dropdown -->
@@ -2515,6 +2687,13 @@ function startResize(e: MouseEvent) {
           Rejected
           <MpBadge class="page-tab-count" for="additionalInformation" size="sm" type="warning">{{ poRejectedCount }}</MpBadge>
         </button>
+        <button
+          class="page-tab"
+          :class="{ 'page-tab--active': purchaseOrdersTab === 'recurring' }"
+          @click="purchaseOrdersTab = 'recurring'"
+        >
+          Recurring orders
+        </button>
       </div>
 
       <!-- Status tabs (below the title, outside the stage) — hidden when there's
@@ -2575,6 +2754,7 @@ function startResize(e: MouseEvent) {
           <p class="tab-stage-placeholder__title">{{ tabLabel(activeTab) }}</p>
           <p class="tab-stage-placeholder__desc">Page content goes here.</p>
         </div>
+        <component v-else-if="currentPageKey === 'Purchase orders' && purchaseOrdersTab === 'recurring'" :is="RecurringPurchaseOrdersPage" />
         <component v-else :is="currentComponent" />
       </div>
       </template>
@@ -2948,6 +3128,10 @@ function startResize(e: MouseEvent) {
   flex-shrink: 0;
 }
 
+.usr-help-btn {
+  min-width: 0 !important; width: 40px !important; height: 40px !important;
+  padding: 0 !important; border-radius: var(--mp-radii-full, 999px) !important; justify-content: center;
+}
 .page-title-actions {
   display: flex;
   align-items: center;

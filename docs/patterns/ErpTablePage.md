@@ -183,6 +183,7 @@ actions `[...]` column stays flush right. Fixed types set min = max.
 | `kind` | Min width | Max width | Use for |
 | ------ | --------- | --------- | ------- |
 | `date` | **160px** | **160px** (fixed) | Any date column (created, transaction, etc.) — `DD/MM/YYYY` |
+| `datetime` | **220px** | **220px** (fixed) | A timestamp, optionally stacked over a `by <user>` byline — `DD/MM/YYYY, HH:mm`. Wider than `date` for breathing room, not because `date` clips: a timestamp measures ~123px against the 136px a 160px column allows. Use it for **new** timestamp columns. It is deliberately NOT applied across the board: 43 existing `date` columns render a timestamp and none of them clips, so moving them would widen a column on ~40 index pages for consistency alone — reviewed and left as they are. |
 | `number` | **240px** | **280px** | Document / transaction number (often a link). 240 min because the cell must fit the codified `<Module name> #<number>` format (~141px) **plus up to two trailing status icons** (48px) and 24px padding = 221px — at the minimum, since a saturated table never grows a column past it. |
 | `name` | **240px** | **280px** | Vendor / customer / beneficiary / warehouse / product — any entity name |
 | `status` | **128px** | **160px** | Status column rendered with a badge (`ErpStatusBadge`) |
@@ -246,16 +247,29 @@ interface TableColumn {
 
 **Width resolution order** (`colStyle`): explicit `width` → pinned exactly (min =
 max = width); otherwise the `kind`'s range (or `default` when `kind` is unset). The
-table uses `table-layout: auto` so these min/max ranges are honoured, plus a
+table uses `table-layout: fixed` with a
 flexible spacer column that soaks up leftover width — keeping the caps intact and
-the sticky actions `[...]` column flush right. The spacer sits before the first
-`isTrailingAction` column when present, else right before the actions slot.
+the sticky actions `[...]` column flush right.
+
+**`flexible: true` on a column** hands that column the leftover width instead of
+the spacer, uncapped (it still never drops below its `kind`'s min), and the spacer
+is then not rendered. Use it for a free-text column with nothing to its right — a
+Details / Description column on a table with no actions — where the slack reads
+better in the cell than in an empty spacer. At most one per table. Everything else
+still holds its max: on Activity log at 1920px, Details goes 240 → 368 and DATE,
+USER, ACTION, FEATURE and NUMBER stay exactly where they were.
+
+**The spacer is ALWAYS rendered** otherwise, whether or not the table has actions.
+It is what makes the caps hold: under `table-layout: fixed` a surplus is shared out
+across the columns, pushing every one past its declared max, so something has to
+absorb it. A read-only table (no `#actions` slot, no `isTrailingAction`) needs that
+just as much as one with a kebab — it simply has nothing to push right. When the
+columns already fill the table the spacer collapses to 0.
 
 **The action column is ALWAYS flush right, pushed by exactly one spacer column** —
 whether that action is the `[...]` kebab (`#actions` slot) OR a trailing button such
-as "View details" (`isTrailingAction: true`). The spacer is inserted whenever there
-is an `#actions` slot **or** any `isTrailingAction` column, so a table with only a
-"View details" button (no kebab) still pushes it to the far right. Give the
+as "View details" (`isTrailingAction: true`). The spacer sits before the first
+`isTrailingAction` column when present, else after all data columns. Give the
 trailing-action column `align: 'right'` so the button hugs the edge inside its cell.
 
 ## Slots

@@ -28,6 +28,131 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-user-seats-list-type',
+    title: 'Type = account type (Member / Partner)',
+    description:
+      'The User list Type column and the "All types" filter now use production\'s account types, Member (briefcase) and Partner (team), taken from jurnal-frontend-app user_management (button_filter_type). Partner users — e.g. the company\'s outside accountant — are not counted against the ERP user limit.',
+    date: '2026-10-28',
+    files: ['UsersListPage.vue', 'usersRoles.ts', 'crmSubscription.ts'],
+  },
+  {
+    id: 'crm-user-seats-invite-selected-roles',
+    title: 'Selected roles + Terms (Invite / Edit user)',
+    description:
+      'Right column matched to production: a sticky "Selected roles" card listing the ticked Existing roles (including the CRM tier, e.g. "CRM Basic") and Custom roles (or "-"), above a collapsible "Terms for selecting roles" card that now also states how CRM combines with Ultimate / custom roles and how ERP and CRM seats are used.',
+    date: '2026-10-28',
+    files: ['InviteUserPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-invite-crm-role',
+    title: 'CRM row on Invite / Edit user (production layout)',
+    description:
+      'CRM is a row in the Existing role list, matched to production: caret + CRM checkbox, five plain description lines, and a "Default crm authority" radio pair — CRM Basic (default, as in prod) / CRM Manager (the Administrator-capable tier). It is stored as the user\'s CRM role, not an ERP role, so CRM-only takes a CRM seat and no ERP seat; ERP roles + CRM take both. Ticking Ultimate never clears CRM, and the choice is kept on the Custom role tab, so custom role + CRM works. Read-only once CRM expired; locked for the Owner. A CRM block message sits inside the CRM row. PRD US-001, US-003, US-010, US-011.',
+    files: ['InviteUserPage.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-invite-summary',
+    title: 'Seat usage card on Invite / Edit user',
+    description:
+      'A "Seat usage" card in the right column, above Selected roles (same card style): ERP users and CRM users as total · used · left, and for CRM where the seats come from (5 included · Basic add-ons · Manager add-ons, or N trial seats), "CRM Manager: x of y used" (· N over), and either "Up to N can be CRM Manager" or "Remaining N seats are for CRM Basic only". The numbers update live as roles are ticked, marked "(after saving)". The CRM part hides without the CRM add-on. "Need more ERP or CRM seats? Contact Sales." opens the Contact Sales dialog. This is now the only place seat counts are shown — the User list title bar has no Seat usage button, as in prod. PRD US-002, US-010.',
+    files: ['InviteUserPage.vue', 'SeatUsageSummary.vue', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+
+  {
+    id: 'crm-user-seats-list-banners',
+    title: 'Seat state banners on the User list',
+    description:
+      'Only when they apply: over quota (everyone keeps access, new access is blocked — points to the Seat usage card on Invite / Edit user and to Contact Sales), CRM expired (read-only) and Billing down (last confirmed seats, or "try again later" when nothing was ever confirmed). PRD US-006, US-008.',
+    date: '2026-10-27',
+    files: ['UsersListPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-list-column',
+    title: 'Role chips include the CRM tier',
+    description:
+      'The Role column (matched to production) shows the ERP role chips, then the CRM tier ("CRM Basic" / "CRM Manager"), then "List manager". A CRM-only user shows only the CRM chip; the Owner shows "Owner" and, with CRM active, "CRM Manager". Replaces the separate CRM access column. Deleting a user or cancelling an invite frees their CRM seat. PRD US-004, US-005.',
+    files: ['UsersListPage.vue'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-custom-role-note',
+    title: 'No CRM inside custom roles',
+    description:
+      'The CRM category and the "Access to CRM module" row are gone from the custom-role permission matrix — CRM is given only through the CRM role on the user, which combines with any custom role. PRD US-011 AC-04.',
+    date: '2026-10-27',
+    files: ['CustomRoleDrawer.vue', 'usersRoles.ts'],
+  },
+  {
+    id: 'crm-user-seats-product-switcher',
+    title: 'CRM in the product switcher',
+    description:
+      'CRM is always listed. It opens CRM only when the company has the CRM add-on and you hold the CRM role; otherwise it lands on a CRM page that offers Contact Sales (no add-on) or says to ask your admin (no CRM role). PRD US-013.',
+    date: '2026-10-27',
+    files: ['ErpProductSwitcher.vue', 'ErpNavbarGroup.vue', 'CrmLandingPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-landing',
+    title: 'CRM landing page',
+    description:
+      'Where the product switcher sends users who can\'t open CRM: what CRM is plus Contact Sales without the add-on, "You don\'t have CRM access" without the CRM role, or "try again later" while Billing can\'t confirm. Content is a placeholder; the CRM team owns the real landing page. PRD US-013.',
+    date: '2026-10-27',
+    files: ['CrmLandingPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'crm-user-seats-scenario-fab',
+    title: 'CRM add-on scenarios (demo)',
+    description:
+      'The Users & roles scenario button switches the mock Billing between No CRM, Trial, Essential, seat add-on only, expired, Billing down and ERP-limit-full, includes the PRD §3b "Owner + 5 CRM Managers" example (8 total · 6 used, CRM Manager 6 of 6 → Basic only; leaving the preset restores the seed), steps the Basic / Manager add-ons and the ERP limit up and down (step an add-on below usage to simulate a seat reduction), previews a user without the CRM role, and lists the defaults assumed for the PRD\'s open questions.',
+    date: '2026-10-27',
+    files: ['CrmSeatsScenarioFab.vue', 'ScenarioFab.vue', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
+    id: 'dm-step-layout',
+    title: 'Data migration step-based layout',
+    description:
+      'Settings → Data migration now uses a two-column layout with an ordered step list on the left (Company info, Opening balance, Products, Contacts, Sales, Purchases, Expenses) and the active step form on the right. Company info step is fully built.',
+    date: '2026-10-26',
+    files: ['DataMigrationPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'recurring-receive-money-form',
+    title: 'New recurring receive money form',
+    description:
+      'The Receive money option in the Recurring transactions type picker now opens a real form instead of the placeholder (Bank deposit was renamed to Receive money). Layout follows the Cash management "New receive money" design: Deposit to + Payer + Total, the recurring schedule, transaction no./reference/tags, the Account-Description-Tax-Amount line items, message/memo/attachment and the Subtotal/PPN/Total breakdown. Shell and table are the InternalTransferFormPage and New expense patterns verbatim (docs/patterns/FormTable.md), not new components. Saving creates a Receive money template whose payer becomes the index\'s Name.',
+    date: '2026-10-23',
+    files: ['NewRecurringReceiveMoneyPage.vue', 'recurringTransactions.ts', '[...slug].vue'],
+  },
+  {
+    id: 'recurring-transactions-index',
+    title: 'Recurring transactions index (Other lists)',
+    description:
+      'Other lists > Recurring transactions is now a real index instead of a placeholder. It aggregates every recurring template across all 11 transaction types — the five that own a module store (sales invoice/order, purchase invoice/order, expense) plus six cash/journal types seeded here. Name shows the customer/vendor, as on every module recurring list, and links to that module\'s recurring detail page where one exists. Filter by transaction type and status on the left, search on the right; each row has a [...] menu with Edit and Delete, and selecting rows reveals a bulk Delete — both behind a confirm. The title bar\'s + New recurring transaction opens a type picker.',
+    date: '2026-10-23',
+    files: ['RecurringTransactionsPage.vue', 'recurringTransactions.ts', '[...slug].vue'],
+  },
+  {
+    id: 'recurring-bulk-delete',
+    title: 'Bulk delete on recurring index pages',
+    description:
+      'Selecting rows on any recurring index (sales invoices, sales orders, purchase invoices, purchase orders, expenses) now reveals a Delete action in the shared ErpTablePage bulk bar. Delete is a dedicated button beside the Actions dropdown, behind its own confirm modal (rule/bulk-actions-delete-confirmed). Deleting persists and the selection clears.',
+    date: '2026-10-22',
+    files: [
+      'RecurringSalesInvoicesPage.vue', 'RecurringSalesOrdersPage.vue',
+      'RecurringPurchaseInvoicesPage.vue', 'RecurringPurchaseOrdersPage.vue',
+      'RecurringBillsPage.vue', 'salesInvoices.ts',
+    ],
+  },
+  {
+    id: 'rbill-detail-template',
+    title: 'Recurring expense template detail',
+    description:
+      'The recurring expense detail now mirrors the expense detail page as a template — beneficiary + total, meta grid (next expense, start date, repeats every, end repeat, frequency, category, generated, tags), account line items, memo and the Subtotal/PPN/Total breakdown — with recurring history below. Matches the pattern already used by recurring sales invoices, sales orders, purchase invoices and purchase orders.',
+    date: '2026-10-22',
+    files: ['RecurringBillDetailsPage.vue', 'bills.ts'],
+  },
+  {
     id: 'location-deepest-level',
     title: 'No "Add sub-location" under a Bin',
     description:
@@ -58,6 +183,14 @@ export const DEV_CHANGES: DevChange[] = [
       'Row kebab buttons on ~45 tables (warehouses, storage locations, products, receipts, picking, packing, CRM, BOM, work orders…) rendered an invisible 0px icon — Pixel MpButton padding squeezed the 20px svg out of the 32px button. One global erp.css override restores the three-dot icon everywhere.',
     date: '2026-10-21',
     files: ['erp.css', 'WarehousesPage.vue', 'pixel-enterprise-overrides.md'],
+  },
+  {
+    id: 'settings-inventory-page',
+    title: 'Settings > Inventory page',
+    description:
+      'New Inventory settings page following the Sales settings pattern: Product settings with hover Edit → inline edit (costing method, stock-info / barcode / variant / serial / batch toggles) and Batch reminders (expiry email toggle). Inventory costing method is locked (disabled field + hint) once inventory transactions exist, since changing it would alter COGS on posted documents.',
+    date: '2026-10-16',
+    files: ['SettingsInventoryPage.vue'],
   },
   {
     id: 'settings-purchase-page',
@@ -778,6 +911,86 @@ export const DEV_CHANGES: DevChange[] = [
       'The table on the custom module index page now shows ALL properties as columns instead of only those placed in layout sections.',
     date: '2026-09-30',
     files: ['CrmGenericModulePage.vue'],
+  },
+  {
+    id: 'rsi-schedule-fields',
+    title: 'New recurring sales invoice form',
+    description:
+      'A new form page for creating recurring sales invoices, with fields for repeat interval/unit, end repeat options, start date, next transaction date, and automatic email sending.',
+    date: '2026-10-22',
+    files: ['NewRecurringSalesInvoicePage.vue'],
+  },
+  {
+    id: 'si-set-as-recurring',
+    title: 'Set as recurring action',
+    description:
+      'Row action in All sales invoices to convert an invoice into a recurring template via a drawer with repeats every, end repeat, start date, and send automatic email fields.',
+    date: '2026-10-22',
+    files: ['SalesInvoicesPage.vue'],
+  },
+  {
+    id: 'si-detail-recurring-btn',
+    title: 'Recurring settings on invoice detail',
+    description:
+      'Icon button in the invoice detail title bar (visible for invoices linked to a recurring template). Opens a drawer showing the schedule (view/edit), auto-email toggle, and recurring history.',
+    date: '2026-10-22',
+    files: ['SalesInvoiceDetailsPage.vue'],
+  },
+  {
+    id: 'file-manager-index',
+    title: 'File manager index',
+    description:
+      'Other lists \u203a File manager: every file attached anywhere in the account, with Page and Number filters, search, and row actions. A file with no transaction number has no page yet, so its row offers Attach to an existing transaction / Create a new transaction; an attached file offers Change page instead.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'fileManager.ts'],
+  },
+  {
+    id: 'file-manager-drop',
+    title: 'Drag & drop to upload',
+    description:
+      'Dropping files anywhere on the File manager page uploads them straight away \u2014 no modal, no staging step. They land unattached, so each new row offers Attach to an existing transaction from its row menu. Reuses GlobalFileDropOverlay.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'GlobalFileDropOverlay.vue'],
+  },
+  {
+    id: 'file-manager-add-drawer',
+    title: 'Add file drawer',
+    description:
+      'Add file in the File manager title bar now opens a drawer: stage the files, then either attach them to an existing transaction (Page + transaction number, both read from the real module stores) or pick the transaction to create. Continue routes to that create form with the files already attached. Only pages whose form has an Attachment field are offered under Create.',
+    date: '2026-10-23',
+    files: ['AddFileDrawer.vue', 'FileManagerPage.vue', 'fileAttachmentHandoff.ts'],
+  },
+  {
+    id: 'file-manager-bulk-actions',
+    title: 'File manager bulk actions',
+    description:
+      'Selecting rows shows one secondary-sm Actions dropdown holding the same four entries as the row menu: Download, Attach to an existing transaction, Create a new transaction, Delete. Attach and Create reuse the Add file drawer in its existing-files mode, so the Application section behaves identically however it is reached.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'AddFileDrawer.vue'],
+  },
+  {
+    id: 'bom-bulk-archive',
+    title: 'Bulk archive on Bill of materials',
+    description:
+      'The bulk bar on the BOM index shipped a Delete button wired to no handler — selecting rows and pressing it did nothing. It now archives the selection behind a confirm that names how many BOMs go, and is labelled Archive, because this module has no hard delete: the row menu archives too and an archived BOM stays reachable via Show archived BOM. Rows already archived are left out of the count.',
+    date: '2026-10-23',
+    files: ['BillOfMaterialsIndexPage.vue'],
+  },
+  {
+    id: 'activity-log-index',
+    title: 'Activity log index',
+    description:
+      'Other lists \u203a Activity log: the company-wide audit trail (Figma Other-Lists 4215-21752) as DATE \u00b7 USER \u00b7 ACTIONS \u00b7 FEATURE \u00b7 NUMBER \u00b7 DETAIL. An update reads old \u2192 new; a busy entry shows three lines plus a "+N more" toggle. Filter by Actions, Feature, or All filters (date range + user), and search across every column. Same table the CRM already renders from the same Figma node, contextualised for ERP modules.',
+    date: '2026-10-23',
+    files: ['ActivityLogPage.vue', 'activityLog.ts'],
+  },
+  {
+    id: 'mp-upload-change-payload',
+    title: 'Upload fields stage what you pick',
+    description:
+      'MpUpload emits the native Event (ev.target.files), but 17 attachment fields typed their handler as a FileList, so nothing was ever staged — the picked file silently vanished. All of them now accept both shapes.',
+    date: '2026-10-23',
+    files: ['AddFileDrawer.vue', 'NewCreditMemoPage.vue', 'SpendMoneyPage.vue'],
   },
 ]
 

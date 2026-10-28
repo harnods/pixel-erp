@@ -5,16 +5,30 @@
  * scenario). Clicking opens the product popover (Figma node 4143:3732): a company
  * header + the product list (ERP / HR / CRM / Tax / Trip & expense / Sales channel
  * / POS). ERP/HR/CRM/Tax navigate; the rest are placeholders.
+ *
+ * CRM is ALWAYS listed (PRD US-013). It opens /crm only when the company has
+ * the CRM add-on and the signed-in user holds the CRM role; otherwise it lands
+ * on /get-crm (Contact Sales without the add-on, "ask your admin" without the
+ * role, "try again later" while Billing can't be confirmed).
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
+import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
 
 const router = useRouter()
 const route = useRoute()
 const { activeScenario, setScenario } = useScenario()
+const { mode: crmMode, currentUserHasCrmRole } = useCrmSubscriptionScenario()
+
+/** Where the CRM entry goes for this company + user. Expired CRM still opens
+ *  CRM — read-only handling there is CRM's own (PRD A4). */
+const crmTarget = computed(() =>
+  (crmMode.value === 'active' || crmMode.value === 'read-only') && currentUserHasCrmRole.value
+    ? '/crm'
+    : '/get-crm')
 
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
@@ -41,7 +55,7 @@ const products: Product[] = [
 const activeKey = computed(() =>
   activeScenario.value === 'XPM' ? 'XPM'
     : isHrPath(route.path) ? 'HR'
-    : route.path.startsWith('/crm') ? 'CRM'
+    : route.path.startsWith('/crm') || route.path.startsWith('/get-crm') ? 'CRM'
     : route.path.startsWith('/tax') ? 'Tax'
     : 'ERP')
 
@@ -51,7 +65,7 @@ function choose(p: Product) {
     // Set the scenario BEFORE navigating so the sidebar + Home render the right
     // product on the first paint (ERP for ERP/HR/CRM/Tax, XPM for Spend management).
     if (p.scenario && p.scenario !== activeScenario.value) setScenario(p.scenario)
-    router.push(p.to)
+    router.push(p.key === 'CRM' ? crmTarget.value : p.to)
   } else {
     infoToast(`${p.label} — coming soon`)
   }
@@ -105,6 +119,8 @@ onUnmounted(() => { document.removeEventListener('mousedown', onDocClick); docum
             :class="{ 'ps-item--active': p.key === activeKey }"
             type="button"
             role="menuitem"
+            :data-test-id="`ps-item-${p.key}`"
+            :data-devchange="p.key === 'CRM' ? 'crm-user-seats-product-switcher' : undefined"
             @click="choose(p)"
           >
             <span class="ps-item-icon">
