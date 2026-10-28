@@ -176,7 +176,7 @@ export const SYSTEM_ROLES: SystemRole[] = [
   },
   {
     id: 'project-manager',
-    name: 'Project Manager',
+    name: 'Project manager',
     requiresProjectAccounting: true,
     permissions: [
       'Create and set up projects, including budget and milestones.',
@@ -232,7 +232,7 @@ export function getSystemRole(id: string): SystemRole | undefined {
 /**
  * The existing roles this tenant can actually assign. Pass whether the Project
  * Accounting billing component is installed (useApprovalWorkflowScenario) —
- * without it, Project Manager is dropped from the picker.
+ * without it, Project manager is dropped from the picker.
  */
 export function systemRolesFor(hasProjectAccounting: boolean): SystemRole[] {
   return SYSTEM_ROLES.filter((r) => !r.requiresProjectAccounting || hasProjectAccounting)

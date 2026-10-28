@@ -12,6 +12,7 @@ import {
   authorityActionsFor, authorityFeaturesFor, authorityRowKeys, customRoles,
   getCustomRole, getSystemRole, systemRolesFor, userRoleNames, userRoleTypes,
 } from '~/data/usersRoles'
+import { ID_TRANSLATIONS } from '~/data/translations'
 
 describe('authority feature catalogue', () => {
   it('has unique feature ids and unique row keys across the whole matrix', () => {
@@ -66,13 +67,13 @@ describe('Project Accounting is gated on the billing component', () => {
   })
 })
 
-describe('Project Manager is a predefined (existing) role', () => {
+describe('Project manager is a predefined (existing) role', () => {
   const pm = getSystemRole('project-manager')
 
   it('lives in the existing-role catalogue, not in custom roles', () => {
     expect(pm).toBeDefined()
-    expect(pm!.name).toBe('Project Manager')
-    expect(customRoles.some((r) => r.name === 'Project Manager')).toBe(false)
+    expect(pm!.name).toBe('Project manager')
+    expect(customRoles.some((r) => r.name === 'Project manager')).toBe(false)
   })
 
   it('describes what it can do and can be access-limited and time-limited', () => {
@@ -91,9 +92,18 @@ describe('Project Manager is a predefined (existing) role', () => {
   it('reads as an Existing role — not Custom — on a user who holds it', () => {
     const holder = accountUsers.find((u) => u.systemRoleIds.includes('project-manager'))
     expect(holder, 'no seeded user carries the role, so the list never shows it').toBeDefined()
-    expect(userRoleNames(holder!)).toContain('Project Manager')
+    expect(userRoleNames(holder!)).toContain('Project manager')
     expect(userRoleTypes(holder!)).toContain('existing')
     expect(userRoleTypes(holder!)).not.toContain('custom')
+  })
+})
+
+describe('Project accounting copy is translated (rule/copy-id-translations)', () => {
+  it('has an Indonesian string for the role and every permission row', () => {
+    const pa = AUTHORITY_FEATURES.find((f) => f.id === 'project-accounting')!
+    const pm = getSystemRole('project-manager')!
+    const strings = [pm.name, ...pm.permissions, pm.accessLimitation!, pa.label, ...pa.subfeatures.map((s) => s.label)]
+    for (const s of strings) expect(ID_TRANSLATIONS[s], `no translation for "${s}"`).toBeTruthy()
   })
 })
 

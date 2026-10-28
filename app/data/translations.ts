@@ -3333,15 +3333,14 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "All authority": "Semua wewenang",
   "all": "semua",
   // Project Accounting authority (billing component)
-  "Project Accounting": "Project Accounting",
-  "Project Manager": "Project Manager",
+  "Project accounting": "Project accounting",
   "Create and set up projects, including budget and milestones.":
     "Membuat dan menyiapkan proyek, termasuk anggaran dan milestone.",
   "View and record project costs.": "Melihat dan mencatat biaya proyek.",
   "View and submit revenue recognition and project billing.":
     "Melihat dan mengirim pengakuan pendapatan dan penagihan proyek.",
-  "Create and submit variation orders and other change requests.":
-    "Membuat dan mengirim variation order dan permintaan perubahan lainnya.",
+  "Create and submit addenda to the project contract.":
+    "Membuat dan mengirim adendum kontrak proyek.",
   "View all project health and profitability reports.":
     "Melihat semua laporan kesehatan dan profitabilitas proyek.",
   "Edit and delete project data if ticking List manager.":
@@ -3351,7 +3350,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Project setup": "Penyiapan proyek",
   "Cost tracking": "Pelacakan biaya",
   "Recognition and billing": "Pengakuan dan penagihan",
-  "Change management": "Manajemen perubahan",
+  "Addenda": "Adendum",
   "Project health": "Kesehatan proyek",
   "Pick a feature on the left, then grant what this role can do with it.":
     "Pilih fitur di sebelah kiri, lalu tentukan yang bisa dilakukan peran ini.",

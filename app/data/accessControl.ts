@@ -31,18 +31,18 @@ export const accessUsers: AccessUser[] = [
   { id: 'U13', name: 'Indah Permata',       roles: ['Cash management'] },
   { id: 'U14', name: 'Jessie Tan',          roles: ['Stockist', 'Production', 'Ultimate'] },
   { id: 'U15', name: 'Joko',                roles: ['Stockist'] },
-  // Project Managers. The names match the PMs already on the seeded projects
+  // Project managers. The names match the PMs already on the seeded projects
   // in projectAccounting.ts, so picking one here lines up with the existing data.
-  { id: 'U16', name: 'Rina Wulandari',      roles: ['Project Manager'] },
-  { id: 'U17', name: 'Yoga Prasetyo',       roles: ['Project Manager'] },
-  { id: 'U18', name: 'Made Ardika',         roles: ['Project Manager', 'Accountant'] },
-  { id: 'U19', name: 'Dewi Kusuma',         roles: ['Project Manager'] },
+  { id: 'U16', name: 'Rina Wulandari',      roles: ['Project manager'] },
+  { id: 'U17', name: 'Yoga Prasetyo',       roles: ['Project manager'] },
+  { id: 'U18', name: 'Made Ardika',         roles: ['Project manager', 'Accountant'] },
+  { id: 'U19', name: 'Dewi Kusuma',         roles: ['Project manager'] },
 ]
 
 export const accessRoles: string[] = [
   'Owner',
   'Ultimate',
-  'Project Manager',
+  'Project manager',
   'Administrator',
   'Accountant',
   'Reports',
@@ -58,7 +58,7 @@ export const accessRoles: string[] = [
  * project form lists only users holding one of these — a team member is
  * assigned separately and carries no such restriction.
  */
-export const PROJECT_LEAD_ROLES = ['Owner', 'Ultimate', 'Project Manager']
+export const PROJECT_LEAD_ROLES = ['Owner', 'Ultimate', 'Project manager']
 
 export function projectLeadUsers(): AccessUser[] {
   return accessUsers.filter((u) => u.roles.some((r) => PROJECT_LEAD_ROLES.includes(r)))
