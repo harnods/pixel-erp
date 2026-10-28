@@ -12,8 +12,9 @@ import { describe, it, expect } from 'vitest'
 import { salesOrders } from '~/data/salesOrders'
 import {
   salesDeliveries, deliveredByLine, derivedQty, lineInputBasis,
-  lineLock, releaseInputBasis, inputBasisReleases, isInClosedPeriod,
+  lineLock, releaseInputBasis, inputBasisReleases, isInClosedPeriod, cumulativeAt,
 } from '~/data/salesDeliveries'
+import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 
 const order = () => salesOrders.find(o => o.id === 'SO101')!
 
@@ -231,5 +232,31 @@ describe('editing follows the same rules (OD-010)', () => {
     expect(isInClosedPeriod({ date: '2026-06-30' }, lock)).toBe(true)   // the lock day itself
     expect(isInClosedPeriod({ date: '2026-07-20' }, lock)).toBe(false)  // SD103
     expect(isInClosedPeriod({ date: '2026-03-02' }, null)).toBe(false)  // no lock at all
+  })
+})
+
+describe('the audit trail on the detail page (TS-001)', () => {
+  it('shows each tranche at the cumulative it reached, not today\'s progress', () => {
+    expect(cumulativeAt('SO101', 1, 'SD101')).toBeCloseTo(6.4, 6)   // 40% once SD101 posted
+    expect(cumulativeAt('SO101', 1, 'SD102')).toBeCloseTo(11.68, 6) // 73% once SD102 posted
+  })
+
+  it('renders a contract delivery from its real lines, with how each was entered', () => {
+    const d = getSalesDeliveryDetail('SD102')
+    const panel = d.lineItems.find(l => l.sku === 'PNL-16')!
+    expect(panel.qty).toBe(5.28)
+    expect(panel.unitPrice).toBe(25_000_000)                         // the order's price
+    expect(panel.audit).toMatchObject({ inputMode: 'percent', inputValue: 33, orderedQty: 16 })
+    expect(panel.audit!.cumulativeQty / panel.audit!.orderedQty * 100).toBeCloseTo(73, 6)
+    expect(d.linkedTransactions[0]!.number).toBe('#10190')           // the real sales order
+  })
+
+  it('prices a contract delivery from its lines, PPN included, so index and detail agree', () => {
+    // SD101: 0,4 lot × 600.000.000 + 6,4 unit × 25.000.000 = 400.000.000, + 11%.
+    expect(salesDeliveries.find(d => d.id === 'SD101')!.total).toBe(444_000_000)
+  })
+
+  it('leaves the generated deliveries\' synthesised lines alone', () => {
+    expect(getSalesDeliveryDetail('SD001').lineItems.every(l => !l.audit)).toBe(true)
   })
 })

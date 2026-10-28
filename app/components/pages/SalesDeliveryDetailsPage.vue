@@ -59,6 +59,30 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)               // show 10 by default
 const loadingMore = ref(false)
 const visibleItems = computed(() => delivery.value.lineItems.slice(0, shownCount.value))
+
+/**
+ * TS-001 — the audit trail. A contract delivery shows how each quantity was
+ * arrived at: the input method and the figure typed, the derived quantity, and
+ * how far the order line stood once this delivery posted. Generated deliveries
+ * have no order line behind them, so their table stays as it was.
+ */
+const hasAudit = computed(() => delivery.value.lineItems.some(it => !!it.audit))
+/** Six decimals at most, trailing zeros trimmed, decimal comma — as entered. */
+function formatQty(n: number): string {
+  return n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 6 })
+}
+function formatPct(n: number): string {
+  return `${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
+}
+function methodLabel(it: (typeof delivery.value.lineItems)[number]): string {
+  const a = it.audit
+  if (!a) return ''
+  return a.inputMode === 'percent' ? `${t('Percentage')} (${formatPct(a.inputValue)})` : t('Quantity')
+}
+function cumulativeLabel(it: (typeof delivery.value.lineItems)[number]): string {
+  const a = it.audit
+  return a && a.orderedQty > 0 ? formatPct((a.cumulativeQty / a.orderedQty) * 100) : ''
+}
 const hasMoreItems = computed(() => shownCount.value < delivery.value.lineItems.length)
 // progressive pagination kicks in past the default page → the table becomes a
 // bordered, internally-scrolling panel
@@ -275,8 +299,10 @@ function goBack() { router.push('/sales-deliveries') }
             <tr>
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
+              <th v-if="hasAudit" class="detail-th">{{ t('Input method') }}</th>
               <th class="detail-th detail-th--num">{{ t('Delivered qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
+              <th v-if="hasAudit" class="detail-th detail-th--num">{{ t('Cumulative') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -290,8 +316,12 @@ function goBack() { router.push('/sales-deliveries') }
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.qty }}</td>
+              <!-- What was typed: "Percentage (33%)", or Quantity when the figure IS the qty. -->
+              <td v-if="hasAudit" class="detail-td">{{ methodLabel(it) }}</td>
+              <td class="detail-td detail-td--num">{{ formatQty(it.qty) }}</td>
               <td class="detail-td">{{ it.unit }}</td>
+              <!-- The order line's progress once THIS delivery posted, not today's. -->
+              <td v-if="hasAudit" class="detail-td detail-td--num">{{ cumulativeLabel(it) }}</td>
             </tr>
           </tbody>
         </table>

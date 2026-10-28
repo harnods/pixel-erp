@@ -3646,6 +3646,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // Percentage-based sales delivery (OD-001). "Percent" is the input mode, not a
   // measurement — "Persen" reads as the mode the way the contract states it.
   "Input method": "Metode input",
+  "Cumulative": "Kumulatif",
   "Edit sales delivery": "Ubah pengiriman penjualan",
   "Sales delivery changes saved": "Perubahan pengiriman penjualan disimpan",
   "This delivery is in a closed period": "Pengiriman ini berada di periode yang ditutup",

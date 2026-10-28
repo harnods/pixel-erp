@@ -1,4 +1,5 @@
-import { salesDeliveries } from './salesDeliveries'
+import { salesDeliveries, cumulativeAt } from './salesDeliveries'
+import { salesOrders } from './salesOrders'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
 import type { SalesDelivery, SalesOrderItem } from './types'
@@ -15,7 +16,16 @@ import type { SalesDelivery, SalesOrderItem } from './types'
 const TAX_RATE = 0.11
 const TAX_LABEL = 'PPN 11%'
 
-export type SDLineItem = SalesOrderItem & { taxLabel: string }
+export type SDLineItem = SalesOrderItem & {
+  taxLabel: string
+  /**
+   * TS-001 — set only on a contract delivery's real lines. How the quantity was
+   * arrived at (method + the figure typed) and how far the order line stood once
+   * this delivery posted. Absent on the generated deliveries, whose lines are
+   * synthesised and have no order line to measure against.
+   */
+  audit?: { inputMode: 'qty' | 'percent'; inputValue: number; orderedQty: number; cumulativeQty: number }
+}
 
 export interface SDAttachment { name: string; sizeKB: number }
 
@@ -115,12 +125,15 @@ function buildItems(delivery: SalesDelivery, idx: number): SDLineItem[] {
  * the resulting sales invoice.
  */
 function buildLinked(delivery: SalesDelivery, idx: number): SDLinkedTxn[] {
-  const order: SDLinkedTxn = {
-    date: addDays(delivery.date, -2),
-    type: 'Sales Order',
-    number: `#${10090 + idx}`,
-    status: 'closed',
-  }
+  const real = delivery.orderId ? salesOrders.find(o => o.id === delivery.orderId) : null
+  const order: SDLinkedTxn = real
+    ? { date: real.date, type: 'Sales Order', number: `#${real.number}`, status: real.status }
+    : {
+        date: addDays(delivery.date, -2),
+        type: 'Sales Order',
+        number: `#${10090 + idx}`,
+        status: 'closed',
+      }
   if (delivery.billingStatus !== 'invoiced') return [order]
   const invoice: SDLinkedTxn = {
     date: addDays(delivery.date, 1),
@@ -131,8 +144,41 @@ function buildLinked(delivery: SalesDelivery, idx: number): SDLinkedTxn[] {
   return [order, invoice]
 }
 
+/**
+ * A contract delivery has real lines tied to its sales order, so it shows those —
+ * at the order's prices — rather than invented coffee lines. This is what makes
+ * the audit trail possible: the page can say "33% typed, 5,28 unit, 73% to date"
+ * about the actual tranche.
+ */
+function realItems(base: SalesDelivery): SDLineItem[] | null {
+  const order = base.orderId ? salesOrders.find(o => o.id === base.orderId) : null
+  if (!order || !base.items?.length) return null
+  return base.items.map((l) => {
+    const line = order.items[l.orderLineIndex]
+    const unitPrice = line?.unitPrice ?? 0
+    const discountPct = line?.discountPct ?? 0
+    return {
+      product: l.product,
+      sku: l.sku,
+      description: l.description,
+      qty: l.qty,
+      unit: l.unit,
+      unitPrice,
+      discountPct,
+      amount: Math.round(l.qty * unitPrice * (1 - discountPct / 100)),
+      taxLabel: TAX_LABEL,
+      audit: {
+        inputMode: l.inputMode,
+        inputValue: l.inputValue,
+        orderedQty: line?.qty ?? 0,
+        cumulativeQty: cumulativeAt(order.id, l.orderLineIndex, base.id),
+      },
+    }
+  })
+}
+
 function buildDetail(base: SalesDelivery, idx: number): SalesDeliveryDetail {
-  const lineItems = buildItems(base, idx)
+  const lineItems = realItems(base) ?? buildItems(base, idx)
   const subtotal = lineItems.reduce((s, it) => s + it.amount, 0)
   const totals: SalesOrderTotals = {
     subtotal,

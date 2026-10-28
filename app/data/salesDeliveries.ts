@@ -1,5 +1,6 @@
 import type { SalesDelivery, SDDeliveryLine, FulfillmentStatus, BillingStatus } from './types'
 import { loadCreated, saveCreated } from './persist'
+import { salesOrders } from './salesOrders'
 
 /**
  * Mock sales deliveries for a wholesale + retail coffee business
@@ -142,7 +143,38 @@ const CONTRACT_DELIVERIES: SalesDelivery[] = [
   },
 ]
 
-export const salesDeliveries: SalesDelivery[] = [...build(), ...CONTRACT_DELIVERIES]
+/**
+ * A contract delivery's total comes from its own lines at the order's prices, plus
+ * PPN 11% — the same tax-inclusive basis as every generated delivery — so the index
+ * row and the detail page land on one number. The figures in the seed above are
+ * placeholders and get replaced here.
+ */
+function priced(d: SalesDelivery): SalesDelivery {
+  const order = salesOrders.find(o => o.id === d.orderId)
+  if (!order || !d.items) return d
+  const preTax = d.items.reduce((sum, l) => {
+    const line = order.items[l.orderLineIndex]
+    return sum + (line ? l.qty * line.unitPrice * (1 - line.discountPct / 100) : 0)
+  }, 0)
+  return { ...d, total: Math.round(preTax + Math.round(preTax * 0.11)) }
+}
+
+export const salesDeliveries: SalesDelivery[] = [...build(), ...CONTRACT_DELIVERIES.map(priced)]
+
+/**
+ * TS-001. How far a line had gone once THIS delivery posted — the cumulative
+ * quantity across this order's deliveries up to and including this one, in date
+ * order (id breaks a same-day tie). This is the "new cumulative percentage" the
+ * audit trail shows, which differs from the line's progress today.
+ */
+export function cumulativeAt(orderId: string, orderLineIndex: number, deliveryId: string): number {
+  const self = salesDeliveries.find(d => d.id === deliveryId)
+  if (!self) return 0
+  const key = (d: SalesDelivery) => `${d.date}|${d.id}`
+  return salesDeliveries
+    .filter(d => d.orderId === orderId && d.items && key(d) <= key(self))
+    .reduce((sum, d) => sum + d.items!.filter(l => l.orderLineIndex === orderLineIndex).reduce((a, l) => a + l.qty, 0), 0)
+}
 
 /**
  * Delivered-to-date per sales order line, keyed by the line's index in
