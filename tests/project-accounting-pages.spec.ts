@@ -24,7 +24,7 @@ import { useTableState } from '~/composables/useTableState'
 import { useProjectViewAs } from '~/composables/useProjectViewAs'
 import {
   engagements, findEngagement, revenue, openEntries, daysAgo, methodLabel, closeHint, canClose, pendingVos,
-  approvalFor, closeHint, TODAY,
+  approvalFor, closeHint, TODAY, submitMilestoneVerification, approveRequest, unverifyMilestone,
 } from '~/data/projectAccounting'
 
 // ── Nuxt auto-imports that vitest has no layer for ───────────────────────────
@@ -348,6 +348,34 @@ describe('ProjectEngagementDetailsPage — one tree per recognition method', () 
     expect(e.approvalLog!.at(-1)).toMatchObject({ action: 'milestone-verification', refId: 'm1', decision: 'approved', by: 'Rizal Candra' })
     setViewAs('pm')
     w.unmount()
+  })
+})
+
+describe('ProjectEngagementDetailsPage — review fixes', () => {
+  it('names the ERP user who recorded a verification, not the signer on the form', async () => {
+    const res = submitMilestoneVerification('e7', 'm2', { date: TODAY, verifiedBy: 'Site inspector', document: null }, 'Rina Wulandari')
+    if (res.status !== 'pending') throw new Error('expected a pending verification')
+    expect(approveRequest('e7', res.approval.id, 'Rizal Candra')).toBe(true)
+    const w = await mountPage(ProjectEngagementDetailsPage, { orderId: 'e7' })
+    const header = w.find('.detail-updated').text()
+    expect(header).toContain('Last updated by Rizal Candra')
+    expect(header).not.toContain('Site inspector')
+    w.unmount()
+    unverifyMilestone('e7', 'm2')
+  })
+
+  it('shows milestone weights with a decimal comma and the same decimals on every row', async () => {
+    routeQuery.tab = 'setup'
+    const e = findEngagement('e7')!
+    const saved = e.milestones!.map(m => m.pct)
+    e.milestones!.forEach((m, i) => { m.pct = [38.095238, 28.571429, 33.333333][i] ?? m.pct })
+    const w = await mountPage(ProjectEngagementDetailsPage, { orderId: 'e7' })
+    const text = w.text()
+    expect(text).toContain('38,10%')
+    expect(text).toContain('28,57%')
+    expect(text).not.toMatch(/\d\.\d+%/)
+    w.unmount()
+    e.milestones!.forEach((m, i) => { m.pct = saved[i]! })
   })
 })
 

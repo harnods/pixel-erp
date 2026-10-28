@@ -49,7 +49,7 @@ import {
   projectStatusKey, projectStatusLabel, approvalFor, canDecide, submitMilestoneVerification,
   approveRequest, rejectRequest, closeSummary, reopenEngagement, projectedMargin, billingStatusOf,
   verificationApprovalPreview, canReopen,
-  formatIdr, formatIdrShort, formatIdrSigned,
+  formatIdr, formatIdrShort, formatIdrSigned, formatPct,
   type Engagement, type EngagementStage, type CostEntry, type CostDecision, type Addendum,
   type PendingApproval, type MilestoneVerificationInput, type BudgetReportRow, type BillingStatus,
 } from '~/data/projectAccounting'
@@ -596,13 +596,15 @@ function verifiedLine(m: { verifiedAt?: string | null; verifiedBy?: string | nul
 const outputMilestones = computed(() => {
   const e = engagement.value
   if (!e?.milestones) return []
+  // Two decimals on every row once any weight has them, so the column lines up.
+  const fixed = e.milestones.some(m => !Number.isInteger(Math.round(m.pct * 100) / 100))
   return e.milestones.map((m) => {
     const awaitingInvoice = m.verified && !m.invId
     const approval = approvalFor(e, 'milestone-verification', m.id)
     return {
       id: m.id,
       label: m.label,
-      pct: `${Math.round(m.pct * 100) / 100}%`,
+      pct: formatPct(m.pct, fixed ? 2 : 0, fixed),
       amountNum: m.verified ? m.recognized : Math.round((e.contractValue * m.pct) / 100),
       amount: m.verified ? formatIdr(m.recognized) : formatIdr((e.contractValue * m.pct) / 100),
       statusLabel: approval ? t('Pending approval') : m.invId ? t('Invoiced') : m.verified ? t('Awaiting invoice') : t('Not verified'),
@@ -632,7 +634,7 @@ function doConfirmWeights() {
   const ok = confirmWeights(e.id, weightDraft.value)
   if (!ok) {
     const sum = weightDraft.value.reduce((a, w) => a + (Number(w.pct) || 0), 0)
-    weightError.value = `${t('Weights total')} ${sum}%. ${t('Adjust them to total 100%')}`
+    weightError.value = `${t('Weights total')} ${formatPct(sum, 2)}. ${t('Adjust them to total 100%')}`
     return
   }
   weightError.value = ''
@@ -760,7 +762,7 @@ const marginSub = computed(() => {
   const e = engagement.value
   if (!e) return ''
   const rev = revenue(e)
-  return rev > 0 ? `${((margin.value / rev) * 100).toFixed(0)}% ${t('of revenue recognized')}` : t('No revenue recognized yet')
+  return rev > 0 ? `${formatPct((margin.value / rev) * 100)} ${t('of revenue recognized')}` : t('No revenue recognized yet')
 })
 const projected = computed(() => engagement.value ? projectedMargin(engagement.value) : { value: null, pct: null })
 
@@ -837,7 +839,14 @@ const activityEntries = computed<ActivityEntry[]>(() => {
     if (v.status === 'Rejected') out.push({ date: v.date, user: v.rejectedBy ?? '', activity: t('Rejected addendum'), details: v.rejectReason ? [{ label: t('Reason'), value: v.rejectReason }] : [] })
   })
   ;(e.milestones ?? []).filter(m => m.verified).forEach((m) => {
-    out.push({ date: m.verifiedAt ?? TODAY, user: m.verifiedBy ?? '', activity: t('Verified milestone'), details: [{ label: t('Milestone'), value: m.label }, { label: t('Revenue recognized'), value: formatIdr(m.recognized) }, ...(m.document ? [{ label: t('Document'), value: m.document }] : [])] })
+    // The ERP user who recorded it; verifiedBy is the signer named on the form, not a user.
+    out.push({ date: m.verifiedAt ?? TODAY, user: m.recordedBy || e.pm, activity: t('Verified milestone'), details: [{ label: t('Milestone'), value: m.label }, { label: t('Revenue recognized'), value: formatIdr(m.recognized) }, ...(m.verifiedBy ? [{ label: t('Verified by'), value: m.verifiedBy }] : []), ...(m.document ? [{ label: t('Document'), value: m.document }] : [])] })
+  })
+  // Addendum decisions are already logged from the addendum itself.
+  ;(e.approvalLog ?? []).filter(l => l.action !== 'addendum').forEach((l) => {
+    const milestone = l.refId ? e.milestones?.find(m => m.id === l.refId) : undefined
+    const what = l.action === 'milestone-verification' ? 'milestone verification' : 'project'
+    out.push({ date: l.date, user: l.by, activity: t(`${l.decision === 'approved' ? 'Approved' : 'Rejected'} ${what}`), details: [...(milestone ? [{ label: t('Milestone'), value: milestone.label }] : []), ...(l.reason ? [{ label: t('Reason'), value: l.reason }] : [])] })
   })
   ;(e.approvals ?? []).forEach((a) => {
     out.push({ date: a.submittedAt, user: a.submittedBy, activity: t('Sent for approval'), details: [{ label: t('Rule'), value: a.ruleName }, { label: t('Approvers'), value: a.approvers.join(', ') }] })
@@ -850,7 +859,8 @@ const activityEntries = computed<ActivityEntry[]>(() => {
     out.push({ date: r.date, user: r.by, activity: t('Reopened project'), details: [{ label: t('Reason'), value: r.reason }] })
   })
   if (e.closedAt) out.push({ date: e.closedAt, user: e.closedBy ?? '', activity: t('Closed project'), details: [] })
-  return out.sort((a, b) => b.date.localeCompare(a.date))
+  // Same-day entries keep the order they happened in, latest first.
+  return out.map((x, i) => ({ x, i })).sort((a, b) => b.x.date.localeCompare(a.x.date) || b.i - a.i).map(({ x }) => x)
 })
 const lastActivity = computed(() => activityEntries.value[0])
 
@@ -1521,7 +1531,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                 <div class="stat-card">
                   <p class="stat-title">{{ t('Projected margin at completion') }}</p>
                   <p class="stat-period">
-                    {{ projected.value === null ? t('No budget to project from') : projected.pct === null ? t('Contract value less expected cost') : `${projected.pct.toFixed(0)}% ${engagement.method === 'tm' ? t('of projected revenue') : t('of contract value')}` }}
+                    {{ projected.value === null ? t('No budget to project from') : projected.pct === null ? t('Contract value less expected cost') : `${formatPct(projected.pct)} ${engagement.method === 'tm' ? t('of projected revenue') : t('of contract value')}` }}
                   </p>
                   <p class="stat-amount pa-num">{{ projected.value === null ? '—' : formatIdrSigned(projected.value) }}</p>
                 </div>

@@ -149,7 +149,7 @@ const pa1: TourStep[] = [
     target: 'pa-margin',
     title: 'Project health shows the margin so far and what blocks closing.',
     body: 'Margin is revenue recognized less cost incurred. The gate below says what still stands between the job and closing it.',
-    watch: 'Margin to date Rp145.000.000,00, 15% of revenue recognized. The gate reads Not ready to close: the loading dock addendum is still pending, and two of the three milestones are still to be verified.',
+    watch: 'Margin to date Rp145.000.000,00, 15,1% of revenue recognized. The gate reads Not ready to close: the loading dock addendum is still pending, and two of the three milestones are still to be verified.',
     placement: 'bottom',
   },
 ]
@@ -309,7 +309,7 @@ const pa3: TourStep[] = [
     find: () => live('pa-scope-pending') ?? live('pa-contract-milestones'),
     title: 'Rizal Candra approves. Nothing already agreed is restated.',
     body: 'Separate new work is accounted for from now on. Each existing milestone keeps the money it was worth, so its weight shrinks against the larger contract, and the added work needs a milestone of its own.',
-    watch: 'Add a milestone for the added work: Rp120.000.000,00 of separate work. The three milestones now weigh 38.1%, 28.57% and 28.57%, still Rp960.000.000,00, Rp720.000.000,00 and Rp720.000.000,00.',
+    watch: 'Add a milestone for the added work: Rp120.000.000,00 of separate work. The three milestones now weigh 38,10%, 28,57% and 28,57%, still Rp960.000.000,00, Rp720.000.000,00 and Rp720.000.000,00.',
     placement: 'bottom',
   },
   {
@@ -318,7 +318,7 @@ const pa3: TourStep[] = [
     target: 'pa-contract-milestones',
     title: 'The loading dock bays get their own milestone.',
     body: 'The new milestone takes the weight the restatement left over. The weights add up to the whole contract again.',
-    watch: 'Loading dock bays handed over: 4.76%, Rp120.000.000,00, Not verified.',
+    watch: 'Loading dock bays handed over: 4,76%, Rp120.000.000,00, Not verified.',
     placement: 'top',
   },
   {

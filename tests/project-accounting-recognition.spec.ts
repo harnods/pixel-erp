@@ -33,7 +33,7 @@ import {
   invoiceLineAmount, invoiceLineTax, draftWeightSum, methodLabel,
   approveRequest, rejectRequest, approvalFor, pendingVos, submitMilestoneVerification,
   projectStatusLabel, projectStatusKey, resubmitEngagement, draftFromEngagement, formatIdrSigned,
-  reopenEngagement, canReopen, billingStatusOf,
+  reopenEngagement, canReopen, billingStatusOf, formatPct,
   TODAY, type EngagementDraft, type RecognitionMethod,
 } from '~/data/projectAccounting'
 
@@ -173,6 +173,18 @@ describe('formatIdrSigned', () => {
   it('leaves a positive and zero unsigned', () => {
     expect(formatIdrSigned(1_000)).toBe('Rp1.000,00')
     expect(formatIdrSigned(0)).toBe('Rp0,00')
+  })
+})
+
+describe('formatPct', () => {
+  it('uses a decimal comma and keeps a small share from reading as 0%', () => {
+    expect(formatPct((48_000 / 16_848_000) * 100)).toBe('0,3%')
+    expect(formatPct(15)).toBe('15%')
+  })
+
+  it('prints a fixed number of decimals when asked, so a column lines up', () => {
+    expect([38.095238, 28.571429, 4.761905, 40].map(n => formatPct(n, 2, true)))
+      .toEqual(['38,10%', '28,57%', '4,76%', '40,00%'])
   })
 })
 
@@ -516,7 +528,7 @@ describe('milestones', () => {
     const e = make('output', { value: '100000000', milestones: [{ id: 'd1', label: 'A', pct: '100' }] })
     const res = submitMilestoneVerification(e.id, 'd1', { date: '2026-08-01', verifiedBy: 'Site inspector', document: 'BAST-1.pdf' }, PM)
     expect(res).toEqual({ status: 'verified', amount: 100_000_000 })
-    expect(e.milestones![0]).toMatchObject({ verified: true, recognized: 100_000_000, verifiedAt: '2026-08-01', verifiedBy: 'Site inspector', document: 'BAST-1.pdf' })
+    expect(e.milestones![0]).toMatchObject({ verified: true, recognized: 100_000_000, verifiedAt: '2026-08-01', verifiedBy: 'Site inspector', recordedBy: PM, document: 'BAST-1.pdf' })
   })
 })
 
@@ -537,8 +549,9 @@ describe('milestone verification approval — Cikarang (e7)', () => {
     expect(approveRequest('e7', res.approval.id, PM)).toBe(false)
     expect(approveRequest('e7', res.approval.id, APPROVER)).toBe(true)
     expect(revenue(e) - before).toBe(720_000_000)
-    expect(e.milestones!.find(m => m.id === 'm2')).toMatchObject({ verified: true, recognized: 720_000_000, verifiedAt: '2026-08-02', verifiedBy: 'Site inspector', document: 'BAST-014.pdf' })
+    expect(e.milestones!.find(m => m.id === 'm2')).toMatchObject({ verified: true, recognized: 720_000_000, verifiedAt: '2026-08-02', verifiedBy: 'Site inspector', recordedBy: PM, document: 'BAST-014.pdf' })
     unverifyMilestone('e7', 'm2')
+    expect(e.milestones!.find(m => m.id === 'm2')!.recordedBy).toBeNull()
     expect(revenue(e)).toBe(before)
   })
 

@@ -73,6 +73,8 @@ export interface Milestone {
   /** Set when verified: date, who verified, supporting document. */
   verifiedAt?: string | null
   verifiedBy?: string | null
+  /** The ERP user who recorded the verification — verifiedBy is the signer named on the form. */
+  recordedBy?: string | null
   document?: string | null
   id: string
   label: string
@@ -527,6 +529,14 @@ const IDR = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR',
 /** "Rp9.000.000,00" — DESIGN.md → Number format (IDR). The replace drops Intl's space. */
 export function formatIdr(n: number): string {
   return IDR.format(Math.round(n || 0)).replace(/^(Rp)\s/, '$1')
+}
+
+/**
+ * A percentage in Indonesian format (comma decimal). `decimals` caps the
+ * decimals; `fixed` always prints them, so a column of weights lines up.
+ */
+export function formatPct(n: number, decimals = 1, fixed = false): string {
+  return `${new Intl.NumberFormat('id-ID', { minimumFractionDigits: fixed ? decimals : 0, maximumFractionDigits: decimals }).format(n || 0)}%`
 }
 
 /** Same currency, no decimals — for dense inline notes like a per-hour rate. */
@@ -1118,6 +1128,7 @@ export function unverifyMilestone(id: string, mid: string): boolean {
   m.recognized = 0
   m.verifiedAt = null
   m.verifiedBy = null
+  m.recordedBy = null
   m.document = null
   persist()
   return true
@@ -1368,12 +1379,13 @@ export function lastDecision(e: Engagement, action: ProjectApprovalAction, refId
   return [...(e.approvalLog ?? [])].reverse().find(l => l.action === action && l.refId === refId)
 }
 
-function applyVerification(e: Engagement, mid: string, info: MilestoneVerificationInput): number {
+function applyVerification(e: Engagement, mid: string, info: MilestoneVerificationInput, recordedBy: string): number {
   const amount = verifyMilestone(e.id, mid)
   const m = e.milestones?.find(x => x.id === mid)
   if (!amount || !m) return 0
   m.verifiedAt = info.date
   m.verifiedBy = info.verifiedBy.trim() || null
+  m.recordedBy = recordedBy
   m.document = info.document?.trim() || null
   return amount
 }
@@ -1395,7 +1407,7 @@ export function submitMilestoneVerification(id: string, mid: string, info: Miles
     persist()
     return { status: 'pending', approval }
   }
-  const done = applyVerification(e, mid, info)
+  const done = applyVerification(e, mid, info, submittedBy.trim() || e.pm)
   persist()
   return done ? { status: 'verified', amount: done } : { status: 'blocked' }
 }
@@ -1412,7 +1424,7 @@ export function approveRequest(id: string, approvalId: string, approver: string)
   dropApproval(e, a.id)
   if (a.action === 'milestone-verification' && a.refId) {
     const info = a.verification ?? { date: TODAY, verifiedBy: a.submittedBy, document: null }
-    if (!applyVerification(e, a.refId, info)) { e.approvals = [...(e.approvals ?? []), a]; return false }
+    if (!applyVerification(e, a.refId, info, a.submittedBy)) { e.approvals = [...(e.approvals ?? []), a]; return false }
   } else if (a.action === 'addendum' && a.refId) {
     const vo = e.vos.find(v => v.id === a.refId)
     if (!vo || vo.status !== 'Pending') { e.approvals = [...(e.approvals ?? []), a]; return false }
