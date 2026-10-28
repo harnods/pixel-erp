@@ -307,7 +307,9 @@ async function save() {
                 />
               </MpInputGroup>
               <MpFormHelpText>
-                {{ t('Enter the smallest value if you want to create more than one rule for the same transaction type') }}
+                {{ appliesTo === 'project'
+                  ? t('Enter the smallest value if you want to create more than one rule for the same action type')
+                  : t('Enter the smallest value if you want to create more than one rule for the same transaction type') }}
               </MpFormHelpText>
             </MpFormControl>
 
@@ -333,7 +335,7 @@ async function save() {
                   :is-show-suggestions="true"
                   :is-enable-create-new-tag="false"
                   :is-show-icon-chevron-down="true"
-                  :placeholder="t('Select project(s)')"
+                  :placeholder="t('Select projects')"
                   :is-invalid="projectsError"
                   @change="(data: DataInterface[]) => { someProjects = data; if (data.length > 0) projectsError = false }"
                 />
@@ -395,7 +397,7 @@ async function save() {
               </div>
 
               <MpFormControl :id="`awf-level-match-${idx}`">
-                <MpFormLabel>{{ t('Transaction requires approval from') }}</MpFormLabel>
+                <MpFormLabel>{{ appliesTo === 'project' ? t('Action requires approval from') : t('Transaction requires approval from') }}</MpFormLabel>
                 <div class="caw-radio-group caw-radio-group--inline">
                   <MpRadio :id="`awf-level-match-${idx}-any`" :name="`awf-level-match-${idx}`" value="any" v-model="level.matchType">
                     {{ t('Any') }}
@@ -427,10 +429,10 @@ async function save() {
           <MpButton class="caw-add-level-btn" variant="secondary" left-icon="add" is-rounded @click="addLevel">{{ t('Add approver level') }}</MpButton>
         </div>
 
-        <div class="caw-divider" />
-
-        <!-- ── Section: Apply workflow ── -->
-        <div class="caw-section">
+        <!-- ── Section: Apply workflow ── Transaction path only: no project action
+             has a saved draft for it to apply to, so it is omitted (not shown-disabled). -->
+        <div v-if="appliesTo === 'transaction'" class="caw-divider" />
+        <div v-if="appliesTo === 'transaction'" class="caw-section">
           <div class="caw-toggle-row">
             <MpToggle
               id="awf-apply-to-draft"

@@ -27,7 +27,7 @@ watch(() => props.isOpen, (open) => { if (open) { reason.value = ''; error.value
 function close() { emit('update:isOpen', false) }
 function confirm() {
   const r = reason.value.trim()
-  if (!r) { error.value = t('Enter a reason for reopening'); return }
+  if (!r) { error.value = t('You must fill in reason for reopening'); return }
   emit('confirm', r)
   close()
 }

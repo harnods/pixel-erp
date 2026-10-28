@@ -191,7 +191,7 @@ async function enterStep(r: Running) {
       kind: 'intro',
       caption: `${tour.code} · ${m} steps · ${tour.persona}`,
       title: tour.name,
-      body: `${tour.blurb} Starting this tour resets the session sample data and sets View as to ${tour.role}. Anything you changed in this session is lost.`,
+      body: `${tour.blurb} Starting this tour resets the session sample data${tour.keepsViewAs ? '' : ` and sets View as to ${tour.role}`}. Anything you changed in this session is lost.`,
       nextLabel: 'Reset and start',
       backLabel: 'Cancel',
     }, null, null)

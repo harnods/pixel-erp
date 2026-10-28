@@ -24,19 +24,31 @@ export type PanelKind = 'intro' | 'step' | 'waiting' | 'closing'
  * Indonesian figures use dots as thousand separators (Rp1.850.000.000,00), so
  * only a stop with whitespace after it ends a sentence. A semicolon joining a
  * clause long enough to stand alone also starts a line; a short tail stays put
- * rather than becoming an orphan.
+ * rather than becoming an orphan. A short sentence the copy wrote keeps its own
+ * line ("Billed to date Rp0,00."), since it is no orphan.
  */
 export function clauses(text: string): string[] {
   const out: string[] = []
+  // Whether the last line's closing stop came from the split, not the copy.
+  let addedStop = false
   for (const sentence of text.split(/(?<=\.)\s+/)) {
     const parts = sentence.split(/;\s+/)
     parts.forEach((part, i) => {
       const t = part.trim()
       if (!t) return
-      if (out.length && t.length < 25) { out[out.length - 1] += `; ${t}`; return }
+      if (i > 0 && out.length && t.length < 25) {
+        // Rejoin the clause it was cut from: drop the stop the split added,
+        // and put it back after the tail if the tail has none.
+        const prev = out[out.length - 1]!
+        const tailStopped = /[.!?]$/.test(t)
+        out[out.length - 1] = `${addedStop ? prev.slice(0, -1) : prev}; ${t}${addedStop && !tailStopped ? '.' : ''}`
+        addedStop = addedStop && !tailStopped
+        return
+      }
       // A clause promoted to its own line is a sentence: it opens with a
       // capital and closes with a stop, or it reads as cut off.
-      const stopped = /[.!?]$/.test(t) || parts.length === 1 ? t : `${t}.`
+      addedStop = !/[.!?]$/.test(t) && parts.length > 1
+      const stopped = addedStop ? `${t}.` : t
       out.push(i > 0 ? stopped.charAt(0).toUpperCase() + stopped.slice(1) : stopped)
     })
   }

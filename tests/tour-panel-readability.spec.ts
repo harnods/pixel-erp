@@ -52,6 +52,24 @@ describe('clauses: one sentence per line', () => {
     }
   })
 
+  it('rejoins a short semicolon tail without the stop the split added', () => {
+    expect(clauses('A site sign-off earns 40% of the contract; the invoice is filled from the milestone; payment is recorded; Project health shows the margin.'))
+      .toEqual(['A site sign-off earns 40% of the contract.', 'The invoice is filled from the milestone; payment is recorded.', 'Project health shows the margin.'])
+  })
+
+  it('keeps a short sentence on its own line', () => {
+    expect(clauses('Revenue recognized Rp960.000.000,00. Billed to date Rp0,00. This invoice Rp960.000.000,00.'))
+      .toEqual(['Revenue recognized Rp960.000.000,00.', 'Billed to date Rp0,00.', 'This invoice Rp960.000.000,00.'])
+  })
+
+  it('never prints a stop straight before a semicolon', () => {
+    for (const t of allTours()) {
+      for (const text of [t.blurb, t.closing, ...t.steps.flatMap((s) => [s.body, s.watch, s.action])].filter(Boolean) as string[]) {
+        for (const line of clauses(text)) expect(line, `${t.code}: ${line}`).not.toContain('.;')
+      }
+    }
+  })
+
   it('keeps every line short enough to read at a glance', () => {
     for (const { tour, s } of steps) {
       for (const text of [s.body, s.watch].filter(Boolean) as string[]) {

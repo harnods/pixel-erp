@@ -296,7 +296,7 @@ const pa3: TourStep[] = [
     target: 'pa-addenda',
     find: () => rowWith(DOCK_REASON) ?? live('pa-addenda'),
     title: 'On the warehouse, an addendum is waiting for approval.',
-    body: 'Two loading dock bays are a separate structure priced on their own, so this addendum is separate new work. The change is above Rp25.000.000,00, so the Addendum rule sends it to an approver, and the contract value does not move until he decides.',
+    body: 'Two loading dock bays are a separate structure priced on their own, so this addendum is separate new work. The change is above Rp25.000.000,00, so the Addendum rule sends it to an approver, and the contract value does not move until the approver decides.',
     watch: 'Rp2.400.000.000,00 to Rp2.520.000.000,00, Separate new work, Pending approval: Addendum Rule 001, submitted by Rina Wulandari, waiting for Rizal Candra. A pending addendum blocks closing.',
     placement: 'top',
   },
@@ -351,6 +351,7 @@ export const PROJECT_TOURS: AssetTour[] = [
     steps: pa1,
     onReset: reset,
     applyRole: noRole,
+    keepsViewAs: true,
   },
   {
     id: 'pa2',
@@ -363,6 +364,7 @@ export const PROJECT_TOURS: AssetTour[] = [
     steps: pa2,
     onReset: reset,
     applyRole: noRole,
+    keepsViewAs: true,
   },
   {
     id: 'pa3',
@@ -375,6 +377,7 @@ export const PROJECT_TOURS: AssetTour[] = [
     steps: pa3,
     onReset: reset,
     applyRole: noRole,
+    keepsViewAs: true,
   },
 ]
 

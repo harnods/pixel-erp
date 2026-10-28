@@ -86,6 +86,8 @@ describe('demo-layer contract', () => {
       expect(t.onReset).toBeTypeOf('function')
       // No View as in this module: the runner must not fall back to the asset roles.
       expect(t.applyRole).toBeTypeOf('function')
+      // …and the intro card must not promise a View as switch it never makes.
+      expect(t.keepsViewAs).toBe(true)
       for (const s of t.steps) {
         expect(s.action, s.title).toBeUndefined()
         expect(s.role, s.title).toBeUndefined()
@@ -98,6 +100,8 @@ describe('demo-layer contract', () => {
       const all = [t.name, t.blurb, t.closing, ...t.steps.map(copyOf)].join(' ')
       expect(all).not.toMatch(/\u2014|prototype|\bengine\b|\bdesign\b|undefined/i)
       expect(all).not.toMatch(/\bMVP\b|\bNaN\b|\[object Object\]/)
+      // People are named or referred to by role, never by a gendered pronoun.
+      expect(all).not.toMatch(/\b(he|she|him|her|his|hers)\b/i)
     })
   }
   it('every label a step quotes is on a product screen', () => {

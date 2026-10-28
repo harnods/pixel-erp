@@ -62,6 +62,8 @@ export interface AssetTour {
   /** A tour outside the asset module brings its own reset and View as (the budget tour). */
   onReset?: () => void
   applyRole?: (role: string) => void
+  /** The steps name who acts themselves and never switch View as (the project tours). */
+  keepsViewAs?: boolean
 }
 
 const EXPORT_NOTE = 'The tour stops here, on the screen before the export itself.'

@@ -67,8 +67,8 @@ const approverText = computed(() => {
 function close() { emit('update:isOpen', false) }
 function confirm() {
   const iso = displayToIso(date.value)
-  dateError.value = iso ? '' : t('Select the verification date')
-  verifierError.value = verifiedBy.value.trim() ? '' : t('Enter who verified the milestone')
+  dateError.value = iso ? '' : t('You must select verification date')
+  verifierError.value = verifiedBy.value.trim() ? '' : t('You must fill in verified by')
   if (dateError.value || verifierError.value) return
   emit('confirm', { date: iso, verifiedBy: verifiedBy.value.trim(), document: documentName.value.trim() || null })
   close()

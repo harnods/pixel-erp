@@ -1022,7 +1022,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                 </thead>
                 <tbody>
                   <tr v-for="v in voRows" :key="v.id">
-                    <td class="pa-td pa-td--muted">{{ v.date }}</td>
+                    <td class="pa-td">{{ v.date }}</td>
                     <td class="pa-td pa-td--wrap">
                       {{ v.reason }}
                       <div class="pa-chip-row">
@@ -1450,7 +1450,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                       {{ m.label }}
                       <div v-if="m.sub" class="pa-tiny">{{ m.sub }}</div>
                     </td>
-                    <td class="pa-td pa-td--muted">{{ m.invoice || '—' }}</td>
+                    <td class="pa-td">{{ m.invoice || '—' }}</td>
                     <td class="pa-td pa-td--num">{{ m.amount }}</td>
                     <td class="pa-td">
                       <ErpStatusBadge :status="m.statusKey" :label="m.statusLabel" />
@@ -1488,9 +1488,9 @@ watch(reviewChip, () => { setReviewPage(1) })
                 </thead>
                 <tbody>
                   <tr v-for="i in engagement.invoices" :key="i.id">
-                    <td class="pa-td pa-td--muted">{{ i.id }}</td>
+                    <td class="pa-td">{{ i.id }}</td>
                     <td class="pa-td">{{ i.label }}</td>
-                    <td class="pa-td pa-td--muted">{{ formatDate(i.date) }}</td>
+                    <td class="pa-td">{{ formatDate(i.date) }}</td>
                     <td class="pa-td pa-td--num">{{ formatIdr(i.amount) }}</td>
                     <td class="pa-td">
                       <ErpStatusBadge
@@ -1761,7 +1761,6 @@ watch(reviewChip, () => { setReviewPage(1) })
    middle (rule/table-cell-padding-align). :has keeps it per row, not per cell. */
 .pa-table tr:has(.pa-tiny) .pa-td { vertical-align: top; }
 .pa-td--num { text-align: right; font-variant-numeric: tabular-nums; padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4); }
-.pa-td--muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
 .pa-td--strong { font-weight: var(--mp-font-weights-semi-bold); }
 .pa-td[data-tone='adverse'] { color: var(--mp-text-danger); }
 .pa-td--wrap { white-space: normal; }
