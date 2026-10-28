@@ -149,7 +149,7 @@ const pa1: TourStep[] = [
     target: 'pa-margin',
     title: 'Project health shows the margin so far and what blocks closing.',
     body: 'Margin is revenue recognized less cost incurred. The gate below says what still stands between the job and closing it.',
-    watch: 'Margin to date Rp145.000.000,00, 15,1% of revenue recognized. The gate reads Not ready to close: the loading dock addendum is still pending, and two of the three milestones are still to be verified.',
+    watch: 'Margin to date Rp145.000.000,00, 15,1% of revenue recognized. The gate reads Not ready to close: Approve or reject every pending addendum before closing.',
     placement: 'bottom',
   },
 ]
@@ -244,7 +244,7 @@ const pa2: TourStep[] = [
     target: 'pa-margin',
     title: 'Project health shows what the two old lines cost.',
     body: 'Charged in full, the work would have made a margin of Rp3.360.000,00. Waiving the margin on one old line and not charging the other gave almost all of it away.',
-    watch: 'Margin to date Rp48.000,00 on revenue of Rp16.848.000,00. The gate reads Ready to close: every line is reviewed, invoiced and paid.',
+    watch: 'Margin to date Rp48.000,00 on revenue of Rp16.848.000,00. The gate reads Ready to close: Revenue is final, every invoice is paid and no addendum is pending.',
     placement: 'bottom',
   },
 ]

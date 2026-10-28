@@ -163,6 +163,9 @@ describe('PA-1 quotes the figures the module computes', () => {
         expect(P.canClose(e)).toBe(false)
         expect(P.pendingVos(e)).toHaveLength(1)
         expect(ms.filter((m) => !m.verified).length).toBe(2)
+        // The gate is quoted as the page shows it, not paraphrased.
+        expect(tour('PA-1').steps[8]!.watch).toContain(`Not ready to close: ${P.closeHint(e)}`)
+        expect(tour('PA-1').steps[8]!.watch).toContain(`${P.formatPct(((P.revenue(e) - P.actualCost(e)) / P.revenue(e)) * 100)} of revenue recognized`)
       }
       return [...base, ...ms.map((m) => (P.formatIdr((e.contractValue * m.pct) / 100))), ...e.entries.map((x) => x.amount), e.budget! - P.actualCost(e), 0]
     })
@@ -211,6 +214,7 @@ describe('PA-2 quotes the figures the module computes', () => {
       if (i === 8) {
         expect(P.canClose(e)).toBe(true)
         expect(P.revenue(e) - P.actualCost(e)).toBe(48_000)
+        expect(tour('PA-2').steps[8]!.watch).toContain(`Ready to close: ${P.closeHint(e)}`)
       }
       return [P.actualCost(e), gross, openVal, old, P.revenue(e), readyAmt, P.billed(e), P.collected(e), Math.abs(P.wipNet(e)),
         P.revenue(e) - P.actualCost(e), gross - P.actualCost(e), e.feeEstimate, e.budget!, P.entryFinal(ob), P.entryAmount(ob), P.entryAmount(sp)]
