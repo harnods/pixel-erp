@@ -5,11 +5,12 @@
  * state banners). Kept as its own component so the rows stay unit-mountable.
  *
  *   ERP users   10 total · 8 used · 2 left             (ERP trial → "No limit on trial")
- *   CRM users    5 total · 4 used · 1 left             (· N over quota)
- *                5 included · 1 Basic add-on · 1 Manager add-on   (trial: "5 trial seats")
- *                CRM Manager: 2 of 5 used                          (· N over)
- *                Up to 1 can be CRM Manager  — or "Remaining N seats are for CRM Basic only"
+ *   CRM users    5 total · 4 used · 1 left             (over quota: "5 total · 7 used · 2 over", warning colour)
+ *                5 included                            (+ "+ 2 Basic, + 1 Administrator add-on" when add-ons exist;
+ *                                                       trial: "5 trial seats")
+ *                Up to 1 can be CRM Administrator      (hidden when 0)
  *                (expired / Billing-down variants)
+ * No "CRM Administrator: N of M used" line — the spec drops it.
  *
  * Pure presentation of `seatUsageView()` (crmSubscription.ts); the caller decides
  * which counts to pass (current, or the Invite form's "after saving" preview).
@@ -28,7 +29,7 @@ const props = withDefaults(defineProps<{
 }>(), { billingDown: false, layout: 'rows' })
 
 const { t } = useLocale()
-/** Capacity / CRM Manager / Basic-only lines — why "Up to N" is what it is. */
+/** Usage / capacity / "Up to N" lines (crmSubscription.formatCrmSeatBreakdown). */
 const breakdown = computed(() =>
   props.view.crm?.kind === 'usage' ? formatCrmSeatBreakdown(props.view.crm, t) : null)
 </script>
@@ -47,11 +48,14 @@ const breakdown = computed(() =>
       <span class="sus-label">{{ t('CRM users') }}</span>
       <span class="sus-value">
         <template v-if="view.crm.kind === 'usage'">
-          <span>{{ view.crm.total }} {{ t('total') }} · {{ view.crm.used }} {{ t('used') }} · {{ view.crm.left }} {{ t('left') }}<template v-if="view.crm.over"> · {{ view.crm.over }} {{ t('over quota') }}</template></span>
-          <span v-if="breakdown" class="sus-sub" data-test-id="seat-usage-crm-capacity">{{ breakdown.capacity }}</span>
-          <span v-if="breakdown" class="sus-sub" data-test-id="seat-usage-crm-admin">{{ breakdown.admin }}</span>
-          <span v-if="breakdown?.basicOnly" class="sus-sub" data-test-id="seat-usage-crm-basic-only">{{ breakdown.basicOnly }}</span>
-          <span v-else-if="view.crm.left > 0" class="sus-sub">{{ t('Up to') }} {{ view.crm.adminLeft }} {{ t('can be CRM Manager') }}</span>
+          <template v-if="breakdown">
+            <span
+              :class="{ 'sus-over': breakdown.usage.isOver }"
+              data-test-id="seat-usage-crm-usage"
+            >{{ breakdown.usage.text }}</span>
+            <span class="sus-sub" data-test-id="seat-usage-crm-capacity">{{ breakdown.capacity }}</span>
+            <span v-if="breakdown.upTo" class="sus-sub" data-test-id="seat-usage-crm-upto">{{ breakdown.upTo }}</span>
+          </template>
           <span v-if="billingDown" class="sus-sub">{{ t('Last confirmed by Billing.') }}</span>
         </template>
         <template v-else-if="view.crm.kind === 'expired'">
@@ -76,4 +80,6 @@ const breakdown = computed(() =>
 .sus-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .sus-value { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .sus-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+/* Over quota — the usage line reads in the warning colour. */
+.sus-over { color: var(--mp-colors-text-warning, #a14a0b); }
 </style>

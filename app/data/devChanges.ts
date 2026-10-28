@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'crm-invite-edit-disabled-options',
+    title: 'Invite / Edit user: options disabled up front, with the reason',
+    description:
+      'Instead of failing on save, options that would be blocked are disabled before the admin picks them, with the reason inline and on hover: CRM ("No CRM seats left. Contact Sales to add seats." / over quota "Remove CRM from some users or contact Sales to add seats." / expired "CRM subscription has ended. Contact Sales to renew."), CRM Administrator ("No CRM Administrator seat left" — CRM Basic is selected instead) and the ERP roles ("No ERP seats left" — CRM stays selectable). Counts come from the saved users, so an option the user already holds is never disabled: Administrator → Basic is always allowed and unticking CRM frees a seat. The save-time seat check stays as a safety net.',
+    date: '2026-10-28',
+    files: ['InviteUserPage.vue', 'DisabledReasonTooltip.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
+    id: 'crm-invite-edit-states-fab',
+    title: 'Invite / Edit states (demo)',
+    description:
+      'The scenario button now lists the 12 states of the Invite / Edit user CRM spec (default, CRM-only Administrator, Ultimate + Basic, custom role + Basic, no CRM seat, only Basic seats, ERP full, no CRM, edit user, over quota, expired, custom role editor). Each sets the mock Billing and pre-fills the form, opens Edit user, or opens the custom-role drawer. Picking state 1 restores the default seed. On the User list and Custom role pages the same section sits below the Billing presets.',
+    date: '2026-10-28',
+    files: ['CrmSeatsScenarioFab.vue', 'useInviteEditStates.ts', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
     id: 'crm-user-seats-list-type',
     title: 'Type = account type (Member / Partner)',
     description:
@@ -39,15 +55,15 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-user-seats-invite-selected-roles',
     title: 'Selected roles + Terms (Invite / Edit user)',
     description:
-      'Right column matched to production: a sticky "Selected roles" card listing the ticked Existing roles (including the CRM tier, e.g. "CRM Basic") and Custom roles (or "-"), above a collapsible "Terms for selecting roles" card that now also states how CRM combines with Ultimate / custom roles and how ERP and CRM seats are used.',
+      'Right column matched to production: a sticky "Selected roles" card listing the ticked Existing roles (including the CRM tier, e.g. "CRM Administrator") and Custom roles (or "-"), above a collapsible "Terms for selecting roles" card with one CRM line: CRM combines with any role, including Ultimate and custom roles, and uses a CRM seat, not an ERP seat, unless the user also has an ERP role.',
     date: '2026-10-28',
     files: ['InviteUserPage.vue'],
   },
   {
     id: 'crm-user-seats-invite-crm-role',
-    title: 'CRM row on Invite / Edit user (production layout)',
+    title: 'CRM row on Invite / Edit user',
     description:
-      'CRM is a row in the Existing role list, matched to production: caret + CRM checkbox, five plain description lines, and a "Default crm authority" radio pair — CRM Basic (default, as in prod) / CRM Manager (the Administrator-capable tier). It is stored as the user\'s CRM role, not an ERP role, so CRM-only takes a CRM seat and no ERP seat; ERP roles + CRM take both. Ticking Ultimate never clears CRM, and the choice is kept on the Custom role tab, so custom role + CRM works. Read-only once CRM expired; locked for the Owner. A CRM block message sits inside the CRM row. PRD US-001, US-003, US-010, US-011.',
+      'CRM is a row in the Existing role list: caret + CRM checkbox and four description lines ("Use Mekari CRM from the product switcher." / CRM Basic / CRM Administrator / "Detailed CRM permissions are set in CRM."). Ticking it shows a "CRM access level" radio pair — CRM Basic / CRM Administrator, Administrator by default (updated 2026-10-28). It is stored as the user\'s CRM role, not an ERP role, so CRM-only takes a CRM seat and no ERP seat; ERP roles + CRM take both. Ticking Ultimate never clears CRM, and the choice is kept on the Custom role tab, so custom role + CRM works. Read-only once CRM expired; locked for the Owner. A CRM block message sits inside the CRM row. PRD US-001, US-003, US-010, US-011.',
     files: ['InviteUserPage.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
     date: '2026-10-27',
   },
@@ -55,7 +71,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-user-seats-invite-summary',
     title: 'Seat usage card on Invite / Edit user',
     description:
-      'A "Seat usage" card in the right column, above Selected roles (same card style): ERP users and CRM users as total · used · left, and for CRM where the seats come from (5 included · Basic add-ons · Manager add-ons, or N trial seats), "CRM Manager: x of y used" (· N over), and either "Up to N can be CRM Manager" or "Remaining N seats are for CRM Basic only". The numbers update live as roles are ticked, marked "(after saving)". The CRM part hides without the CRM add-on. "Need more ERP or CRM seats? Contact Sales." opens the Contact Sales dialog. This is now the only place seat counts are shown — the User list title bar has no Seat usage button, as in prod. PRD US-002, US-010.',
+      'A "Seat usage" card in the right column, above Selected roles (same card style): ERP users and CRM users as total · used · left ("5 total · 7 used · 2 over" in the warning colour when over quota), where the CRM seats come from ("5 included", "+ 2 Basic, + 1 Administrator add-on" only when add-ons exist, or N trial seats) and "Up to N can be CRM Administrator" (hidden at 0). As soon as a role is ticked or unticked the title reads "Seat usage (after saving)" and the numbers show the result after saving (updated 2026-10-28). The CRM part hides without the CRM add-on. "Need more ERP or CRM seats? Contact Sales." opens the Contact Sales dialog. This is now the only place seat counts are shown — the User list title bar has no Seat usage button, as in prod. PRD US-002, US-010.',
     files: ['InviteUserPage.vue', 'SeatUsageSummary.vue', 'useCrmSubscriptionScenario.ts'],
     date: '2026-10-27',
   },
@@ -72,7 +88,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-user-seats-list-column',
     title: 'Role chips include the CRM tier',
     description:
-      'The Role column (matched to production) shows the ERP role chips, then the CRM tier ("CRM Basic" / "CRM Manager"), then "List manager". A CRM-only user shows only the CRM chip; the Owner shows "Owner" and, with CRM active, "CRM Manager". Replaces the separate CRM access column. Deleting a user or cancelling an invite frees their CRM seat. PRD US-004, US-005.',
+      'The Role column (matched to production) shows the ERP role chips, then the CRM tier ("CRM Basic" / "CRM Administrator"), then "List manager". A CRM-only user shows only the CRM chip; the Owner shows "Owner" and, with CRM active, "CRM Administrator". Replaces the separate CRM access column. Deleting a user or cancelling an invite frees their CRM seat. PRD US-004, US-005.',
     files: ['UsersListPage.vue'],
     date: '2026-10-27',
   },
@@ -104,7 +120,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-user-seats-scenario-fab',
     title: 'CRM add-on scenarios (demo)',
     description:
-      'The Users & roles scenario button switches the mock Billing between No CRM, Trial, Essential, seat add-on only, expired, Billing down and ERP-limit-full, includes the PRD §3b "Owner + 5 CRM Managers" example (8 total · 6 used, CRM Manager 6 of 6 → Basic only; leaving the preset restores the seed), steps the Basic / Manager add-ons and the ERP limit up and down (step an add-on below usage to simulate a seat reduction), previews a user without the CRM role, and lists the defaults assumed for the PRD\'s open questions.',
+      'The Users & roles scenario button switches the mock Billing between No CRM, Trial, Essential, seat add-on only, expired, Billing down and ERP-limit-full, includes the PRD §3b "Owner + 5 CRM Administrators" example (8 total · 6 used, Administrator 6 of 6 → Basic only; leaving the preset restores the seed), no-CRM-seat-left, Basic-only and over-quota presets, steps the Basic / Administrator add-ons and the ERP limit up and down (step an add-on below usage to simulate a seat reduction), previews a user without the CRM role, and lists the defaults assumed for the PRD\'s open questions.',
     date: '2026-10-27',
     files: ['CrmSeatsScenarioFab.vue', 'ScenarioFab.vue', 'useCrmSubscriptionScenario.ts'],
   },

@@ -92,8 +92,8 @@ function setExistingRole(wrapper: ReturnType<typeof mount>, on: boolean, roleId 
 
 async function clickInvite(wrapper: ReturnType<typeof mount>) {
   vi.useFakeTimers()
-  const btn = wrapper.findAll('button').find((b) => b.text() === 'Invite')
-  expect(btn, 'Invite button').toBeDefined()
+  const btn = wrapper.findAll('button').find((b) => b.text() === 'Invite user')
+  expect(btn, 'Invite user button').toBeDefined()
   await btn!.trigger('click')
   await vi.advanceTimersByTimeAsync(600)
   vi.useRealTimers()
@@ -124,49 +124,54 @@ describe('CRM section visibility (US-001)', () => {
     const seats = cardRow(wrapper, 'seat-usage-crm')
     // Default demo: Owner + 3 CRM users on CRM Essential (5 included seats).
     expect(seats).toContain('5 total · 4 used · 1 left')
-    expect(seats).toContain('Up to 1 can be CRM Manager')
+    expect(seats).toContain('Up to 1 can be CRM Administrator')
     wrapper.unmount()
   })
 })
 
-describe('"Default crm authority" radios (production layout)', () => {
-  it('are disabled until CRM is ticked, then CRM Basic is selected by default (as in prod)', async () => {
+describe('"CRM access level" radios (CRM add-on spec)', () => {
+  it('appear only once CRM is ticked, with CRM Administrator selected by default', async () => {
     const wrapper = await mountInvite()
     const radio = (id: string) => wrapper.find(`input[data-test-id="${id}"]`).element as HTMLInputElement
-    expect(radio('inv-crm-basic-radio').disabled).toBe(true)
-    expect(radio('inv-crm-manager-radio').disabled).toBe(true)
+    expect(wrapper.find('[data-test-id="inv-crm-level"]').exists()).toBe(false)
     tick(wrapper, 'inv-crm-checkbox')
     await flushPromises()
-    expect(radio('inv-crm-basic-radio').checked).toBe(true)
-    expect(radio('inv-crm-manager-radio').checked).toBe(false)
-    expect(radio('inv-crm-manager-radio').disabled).toBe(false)
+    expect(wrapper.find('[data-test-id="inv-crm-level"]').text()).toMatch(/^CRM access level\s*CRM Basic\s*CRM Administrator$/)
+    expect(radio('inv-crm-admin-radio').checked).toBe(true)
+    expect(radio('inv-crm-basic-radio').checked).toBe(false)
+    expect(radio('inv-crm-basic-radio').disabled).toBe(false)
+    expect(radio('inv-crm-admin-radio').disabled).toBe(false)
     wrapper.unmount()
   })
 
-  it('renders the CRM row like production: five plain description lines, then "Default crm authority"', async () => {
+  it('describes CRM in the four spec lines, with no permission bullets', async () => {
     const wrapper = await mountInvite()
     const row = wrapper.find('[data-test-id="inv-crm-row"]')
-    const text = row.text()
-    expect(text).toContain('View and create deals, contacts, and companies assigned to you.')
-    expect(text).toContain('Edit and delete your own deals, contacts, and companies.')
-    expect(text).toContain('CRM Manager extends these permissions to all CRM deals, contacts, and companies')
-    expect(text).toContain('Default crm authority')
+    const lines = row.findAll('[data-test-id="inv-crm-description"] p').map((p) => p.text())
+    expect(lines).toEqual([
+      'Use Mekari CRM from the product switcher.',
+      'CRM Basic: use CRM without CRM Settings.',
+      'CRM Administrator: use CRM, including CRM Settings.',
+      'Detailed CRM permissions are set in CRM.',
+    ])
     expect(row.find('li li').exists(), 'no bullets inside the row').toBe(false)
-    expect(text).not.toContain('Full access')
+    expect(row.text()).not.toContain('CRM Manager')
+    expect(row.text()).not.toContain('Default crm authority')
     wrapper.unmount()
   })
 
-  it('shows the CRM tier in the "Selected roles" card next to the ticked Existing roles', async () => {
+  it('shows the CRM level in the "Selected roles" card next to the ticked Existing roles', async () => {
     const wrapper = await mountInvite()
     setExistingRole(wrapper, true, 'ultimate')
     tick(wrapper, 'inv-crm-checkbox')
     await flushPromises()
     const existing = wrapper.find('[data-test-id="inv-selected-existing"]').text()
     expect(existing).toContain('Ultimate')
-    expect(existing).toContain('CRM Basic')
-    pick(wrapper, 'inv-crm-manager-radio')
+    expect(existing).toContain('CRM Administrator')
+    pick(wrapper, 'inv-crm-basic-radio')
     await flushPromises()
-    expect(wrapper.find('[data-test-id="inv-selected-existing"]').text()).toContain('CRM Manager')
+    expect(wrapper.find('[data-test-id="inv-selected-existing"]').text()).toContain('CRM Basic')
+    expect(wrapper.find('[data-test-id="inv-selected-existing"]').text()).not.toContain('CRM Administrator')
     wrapper.unmount()
   })
 })
@@ -195,7 +200,7 @@ describe('CRM is a row in the Existing role list (US-011)', () => {
     await clickInvite(wrapper)
     const added = accountUsers.find((u) => u.email === 'utami.wulan@mekari.com')
     expect(added?.systemRoleIds).toEqual(['ultimate'])
-    expect(added?.crmRole).toBe('basic') // CRM Basic is the default tier
+    expect(added?.crmRole).toBe('admin') // CRM Administrator is the default level
     wrapper.unmount()
   })
 
@@ -217,70 +222,82 @@ describe('CRM is a row in the Existing role list (US-011)', () => {
     const added = accountUsers.find((u) => u.email === 'kurnia.sari@mekari.com')
     expect(added?.customRoleIds).toEqual(['cr-2'])
     expect(added?.systemRoleIds).toEqual([])
-    expect(added?.crmRole).toBe('basic')
+    expect(added?.crmRole).toBe('admin')
     wrapper.unmount()
   })
 })
 
-describe('blocked saves name the limit and point to Contact Sales (US-002 AC-03/04)', () => {
-  it('blocks a new CRM user when the CRM seats are used up', async () => {
-    billing({}, { includedSeats: 3 }) // 3 seats, 4 used → over quota
+describe('blocked options are disabled up front; the save check stays as a safety net (US-002 AC-03/04)', () => {
+  const input = (w: ReturnType<typeof mount>, sel: string) => w.find(sel).element as HTMLInputElement
+
+  it('disables CRM for a new user when the CRM seats are used up, with the reason inline', async () => {
+    billing({}, { includedSeats: 4 }) // 4 seats, 4 used → full
+    const wrapper = await mountInvite()
+    expect(input(wrapper, 'input[data-test-id="inv-crm-checkbox"]').disabled).toBe(true)
+    expect(wrapper.find('[data-test-id="inv-crm-note"]').text()).toMatch(/No CRM seats left\.\s*Contact Sales\s*to add seats\./)
+    wrapper.unmount()
+  })
+
+  it('still blocks on save when the seats ran out after CRM was ticked — and never traps the ticked box', async () => {
     const before = accountUsers.length
     const wrapper = await mountInvite()
     await fillUser(wrapper, 'Sari Indah', 'sari.indah@mekari.com')
     tick(wrapper, 'inv-crm-checkbox')
     await flushPromises()
+    billing({}, { includedSeats: 3 }) // Billing reports fewer seats while the form is open
+    await flushPromises()
+    expect(input(wrapper, 'input[data-test-id="inv-crm-checkbox"]').disabled, 'ticked CRM stays untickable').toBe(false)
     await clickInvite(wrapper)
     const err = wrapper.find('[data-test-id="inv-crm-seat-error"]')
-    expect(err.exists()).toBe(true)
     expect(err.text()).toContain('No CRM seats left')
     expect(err.text()).toContain('Contact Sales')
     expect(accountUsers.length).toBe(before) // nothing saved
     wrapper.unmount()
   })
 
-  it('blocks CRM Manager but not CRM Basic when only the CRM Manager limit is full (US-003 AC-07)', async () => {
-    // 2 included + 5 Basic add-ons = 7 total, 2 Manager-capable (Owner + 1 seeded CRM Manager).
+  it('disables CRM Administrator (not CRM Basic) when only the Administrator limit is full, and picks Basic (US-003 AC-07)', async () => {
+    // 2 included + 5 Basic add-ons = 7 total, 2 Administrator-capable (Owner + Fajar).
     billing({}, { includedSeats: 2, basicAddons: 5, adminAddons: 0 })
     const wrapper = await mountInvite()
     await fillUser(wrapper, 'Sari Indah', 'sari.indah@mekari.com')
     tick(wrapper, 'inv-crm-checkbox')
     await flushPromises()
-    pick(wrapper, 'inv-crm-manager-radio')
-    await flushPromises()
+    expect(input(wrapper, 'input[data-test-id="inv-crm-admin-radio"]').disabled).toBe(true)
+    expect(input(wrapper, 'input[data-test-id="inv-crm-basic-radio"]').checked).toBe(true)
+    expect(wrapper.find('[data-test-id="inv-crm-admin-note"]').text()).toBe('No CRM Administrator seat left')
     await clickInvite(wrapper)
-    expect(wrapper.find('[data-test-id="inv-crm-seat-error"]').text()).toContain('No CRM Manager seats left')
-
-    // Choose CRM Basic → saves.
-    pick(wrapper, 'inv-crm-basic-radio')
-    await flushPromises()
-    await clickInvite(wrapper)
-    const added = accountUsers.find((u) => u.email === 'sari.indah@mekari.com')
-    expect(added?.crmRole).toBe('basic')
+    expect(accountUsers.find((u) => u.email === 'sari.indah@mekari.com')?.crmRole).toBe('basic')
     wrapper.unmount()
   })
 
-  it('blocks an ERP invite when the ERP limit is full, but a CRM-only invite still saves (US-010 AC-03)', async () => {
+  it('disables the ERP roles when the ERP limit is full, but a CRM-only invite still saves (US-010 AC-03)', async () => {
     billing({ erpUserLimit: erpUsage(accountUsers) })
     const wrapper = await mountInvite()
     await fillUser(wrapper, 'Budi Santoso', 'budi.santoso@mekari.com')
-    setExistingRole(wrapper, true)
-    await flushPromises()
-    await clickInvite(wrapper)
-    const erpErr = wrapper.find('[data-test-id="inv-erp-seat-error"]')
-    expect(erpErr.exists()).toBe(true)
-    expect(erpErr.text()).toContain('ERP user limit is full')
-    expect(accountUsers.some((u) => u.email === 'budi.santoso@mekari.com')).toBe(false)
-
-    // Swap the ERP role for CRM only → uses a CRM seat, not an ERP one.
-    setExistingRole(wrapper, false)
-    tick(wrapper, 'inv-crm-checkbox') // CRM Basic is the default tier
+    expect(input(wrapper, 'input#inv-role-accountant').disabled).toBe(true)
+    expect(wrapper.find('[data-test-id="inv-erp-note"]').text()).toBe('No ERP seats left')
+    expect(input(wrapper, 'input[data-test-id="inv-crm-checkbox"]').disabled).toBe(false)
+    tick(wrapper, 'inv-crm-checkbox')
     await flushPromises()
     await clickInvite(wrapper)
     const added = accountUsers.find((u) => u.email === 'budi.santoso@mekari.com')
     expect(added).toBeDefined()
     expect(added!.systemRoleIds).toEqual([])
-    expect(added!.crmRole).toBe('basic')
+    expect(added!.crmRole).toBe('admin')
+    wrapper.unmount()
+  })
+
+  it('still blocks an ERP invite on save when the ERP limit filled up after the role was ticked', async () => {
+    const wrapper = await mountInvite()
+    await fillUser(wrapper, 'Budi Santoso', 'budi.santoso@mekari.com')
+    setExistingRole(wrapper, true)
+    await flushPromises()
+    billing({ erpUserLimit: erpUsage(accountUsers) })
+    await flushPromises()
+    expect(input(wrapper, 'input#inv-role-accountant').disabled, 'ticked ERP role stays untickable').toBe(false)
+    await clickInvite(wrapper)
+    expect(wrapper.find('[data-test-id="inv-erp-seat-error"]').text()).toContain('ERP user limit is full')
+    expect(accountUsers.some((u) => u.email === 'budi.santoso@mekari.com')).toBe(false)
     wrapper.unmount()
   })
 })
@@ -295,14 +312,14 @@ describe('"Seat usage" card on Invite / Edit user (US-002)', () => {
     wrapper.unmount()
   })
 
-  it('shows ERP and CRM users, the seat breakdown and the CRM Manager headroom (default 10 / 5)', async () => {
+  it('shows ERP and CRM users, where the CRM seats come from and the Administrator headroom (default 10 / 5)', async () => {
     const wrapper = await mountInvite()
     expect(cardRow(wrapper, 'seat-usage-erp')).toMatch(/ERP users\s*10 total · 8 used · 2 left/)
     const crm = cardRow(wrapper, 'seat-usage-crm')
     expect(crm).toMatch(/CRM users\s*5 total · 4 used · 1 left/)
-    expect(crm).toContain('5 included')
-    expect(crm).toContain('CRM Manager: 2 of 5 used')
-    expect(crm).toContain('Up to 1 can be CRM Manager')
+    expect(cardRow(wrapper, 'seat-usage-crm-capacity')).toBe('5 included')
+    expect(crm).not.toMatch(/of \d+ used/) // no "CRM Administrator: N of 5 used" line
+    expect(cardRow(wrapper, 'seat-usage-crm-upto')).toBe('Up to 1 can be CRM Administrator')
     expect(wrapper.find('[data-test-id="inv-seat-card"]').text()).toContain('Need more ERP or CRM seats?')
     expect(wrapper.find('[data-test-id="inv-seat-after-saving"]').exists()).toBe(false)
     wrapper.unmount()
@@ -310,7 +327,7 @@ describe('"Seat usage" card on Invite / Edit user (US-002)', () => {
 
   it('previews the counts live "(after saving)" as roles are ticked', async () => {
     const wrapper = await mountInvite()
-    tick(wrapper, 'inv-crm-checkbox') // CRM Basic, CRM only → CRM seat, no ERP seat
+    tick(wrapper, 'inv-crm-checkbox') // CRM Administrator, CRM only → CRM seat, no ERP seat
     await flushPromises()
     expect(cardRow(wrapper, 'seat-usage-crm')).toContain('5 total · 5 used · 0 left')
     expect(cardRow(wrapper, 'seat-usage-crm')).not.toContain('Up to 0')
@@ -348,11 +365,12 @@ describe('Contact Sales covers ERP seats too', () => {
     wrapper.unmount()
   })
 
-  it('an ERP-limit block offers Contact Sales for ERP seats', async () => {
-    billing({ erpUserLimit: erpUsage(accountUsers) })
+  it('an ERP-limit block (save-time safety net) offers Contact Sales for ERP seats', async () => {
     const wrapper = await mountInvite()
     await fillUser(wrapper, 'Rina Putri', 'rina.putri@mekari.com')
     setExistingRole(wrapper, true)
+    await flushPromises()
+    billing({ erpUserLimit: erpUsage(accountUsers) }) // limit filled while the form was open
     await flushPromises()
     await clickInvite(wrapper)
     const err = wrapper.find('[data-test-id="inv-erp-seat-error"]')
@@ -365,34 +383,28 @@ describe('Contact Sales covers ERP seats too', () => {
   })
 })
 
-describe('"Owner + 5 CRM Managers (PRD example)" preset', () => {
+describe('"Owner + 5 CRM Administrators (PRD example)" preset', () => {
   const { applyPreset, crmSummary } = useCrmSubscriptionScenario()
   afterEach(() => applyPreset('essential'))
 
-  it('sets 8 total · 6 used · 2 left with CRM Manager 6 of 6, and the card says the rest is Basic only', async () => {
+  it('sets 8 total · 6 used · 2 left with Administrator 6 of 6, so the "Up to" line is hidden', async () => {
     applyPreset('prd-admins')
     expect(crmSummary.value).toMatchObject({ total: 8, used: 6, left: 2, adminLeft: 0, adminUsed: 6, adminTotal: 6 })
     expect(erpUsage(accountUsers)).toBe(8) // ERP stays within its limit of 10
     const wrapper = await mountInvite()
-    expect(wrapper.find('[data-test-id="seat-usage-crm-admin"]').text()).toContain('CRM Manager: 6 of 6 used')
-    expect(wrapper.find('[data-test-id="seat-usage-crm-basic-only"]').text()).toContain('Remaining 2 seats are for CRM Basic only')
+    expect(cardRow(wrapper, 'seat-usage-crm-capacity')).toBe('5 included + 2 Basic, + 1 Administrator add-on')
+    expect(cardRow(wrapper, 'seat-usage-crm-upto')).toBe('')
     wrapper.unmount()
   })
 
-  it('blocks a new CRM Manager, allows CRM Basic', async () => {
+  it('disables a new CRM Administrator, auto-selects and saves CRM Basic', async () => {
     applyPreset('prd-admins')
     const wrapper = await mountInvite()
     await fillUser(wrapper, 'Prima Dewa', 'prima.dewa@mekari.com')
     tick(wrapper, 'inv-crm-checkbox')
     await flushPromises()
-    pick(wrapper, 'inv-crm-manager-radio')
-    await flushPromises()
-    await clickInvite(wrapper)
-    expect(wrapper.find('[data-test-id="inv-crm-seat-error"]').text()).toContain('No CRM Manager seats left')
-    expect(accountUsers.some((u) => u.email === 'prima.dewa@mekari.com')).toBe(false)
-
-    pick(wrapper, 'inv-crm-basic-radio') // → CRM Basic
-    await flushPromises()
+    expect((wrapper.find('input[data-test-id="inv-crm-admin-radio"]').element as HTMLInputElement).disabled).toBe(true)
+    expect((wrapper.find('input[data-test-id="inv-crm-basic-radio"]').element as HTMLInputElement).checked).toBe(true)
     await clickInvite(wrapper)
     expect(accountUsers.find((u) => u.email === 'prima.dewa@mekari.com')?.crmRole).toBe('basic')
     wrapper.unmount()
@@ -461,8 +473,9 @@ describe('User list matches production (Role chips carry the CRM tier)', () => {
   it('shows the CRM tier as a Role chip after the ERP roles', async () => {
     const wrapper = await mountList()
     expect(roles(wrapper, 'au-1')).toContain('Owner')
-    expect(roles(wrapper, 'au-1')).toContain('CRM Manager') // Owner always holds CRM Manager
-    expect(roles(wrapper, 'au-10')).toMatch(/Ultimate[\s\S]*CRM Manager/)
+    expect(roles(wrapper, 'au-1')).toContain('CRM Administrator') // Owner always holds CRM Administrator
+    expect(roles(wrapper, 'au-10')).toMatch(/Ultimate[\s\S]*CRM Administrator/)
+    expect(wrapper.text()).not.toContain('CRM Manager')
     expect(roles(wrapper, 'au-12').trim()).toBe('CRM Basic') // CRM-only user: only the CRM chip
     expect(roles(wrapper, 'au-9')).toMatch(/Administrator[\s\S]*List manager/)
     expect(roles(wrapper, 'au-9')).not.toContain('CRM')

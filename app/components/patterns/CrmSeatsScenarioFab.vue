@@ -10,32 +10,58 @@
  *
  * Shared by UsersListPage, CustomRolesPage and InviteUserPage so the state is
  * flippable from every Users & roles surface.
+ *
+ * It also carries the "Invite / Edit states" section — the 12 states of the
+ * Invite / Edit user CRM add-on spec (useInviteEditStates). Each sets the mock
+ * Billing AND pre-fills the form (or opens Edit user / the custom-role drawer).
+ * `primary="states"` (Invite / Edit user) lists those first and the Billing
+ * presets below; the default lists Billing first, as on the User list.
  */
 import { computed } from 'vue'
-import { MpButton, MpCheckbox } from '@mekari/pixel3'
+import { MpButton, MpCheckbox, MpPopoverList, MpPopoverListItem } from '@mekari/pixel3'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
+import { useInviteEditStates } from '~/composables/useInviteEditStates'
 import { crmPackageLabel } from '~/data/crmSubscription'
 import { useLocale } from '~/composables/useLocale'
+
+const props = withDefaults(defineProps<{ primary?: 'billing' | 'states' }>(), { primary: 'billing' })
 
 const { t } = useLocale()
 const {
   state, presets, applyPreset, setBasicAddons, setAdminAddons, setErpUserLimit, setViewAsNoCrmRole,
 } = useCrmSubscriptionScenario()
+const { states, activeInviteState, selectInviteState, clearInviteState } = useInviteEditStates()
 
-const scenarios = computed(() => [
+const billingScenarios = computed(() => [
   ...presets.map((p) => ({ value: p.value, label: t(p.label) })),
   ...(state.preset === 'custom' ? [{ value: 'custom', label: t('Custom (adjusted below)') }] : []),
 ])
+const stateScenarios = computed(() => states.map((s) => ({ value: s.value, label: t(s.label) })))
+const billingHeading = computed(() => `${t('CRM add-on (Billing)')} · ${t(crmPackageLabel(state.snapshot.package))}`)
+const statesHeading = computed(() => t('Invite / Edit states'))
 
-function onPick(value: string) { if (value !== 'custom') applyPreset(value) }
+function onPickBilling(value: string) {
+  if (value === 'custom') return
+  applyPreset(value)
+  clearInviteState()
+}
+function onPickState(value: string) { selectInviteState(value) }
+
+/** The list ScenarioFab renders itself; the other one goes in its slot. */
+const main = computed(() => props.primary === 'states'
+  ? { value: activeInviteState.value, scenarios: stateScenarios.value, heading: statesHeading.value, pick: onPickState }
+  : { value: state.preset, scenarios: billingScenarios.value, heading: billingHeading.value, pick: onPickBilling })
+const second = computed(() => props.primary === 'states'
+  ? { id: 'billing', value: state.preset, scenarios: billingScenarios.value, heading: billingHeading.value, pick: onPickBilling }
+  : { id: 'states', value: activeInviteState.value, scenarios: stateScenarios.value, heading: statesHeading.value, pick: onPickState })
 
 /** Add-ons only exist on CRM Essential (no add-ons during the trial — PRD point 9). */
 const addonsEditable = computed(() => state.snapshot.package === 'essential' || state.snapshot.package === 'expired')
 
 const STEPPERS = computed(() => [
   { id: 'basic', label: t('Basic seat add-ons'), value: state.snapshot.basicAddons, set: setBasicAddons, enabled: addonsEditable.value },
-  { id: 'admin', label: t('Manager seat add-ons'), value: state.snapshot.adminAddons, set: setAdminAddons, enabled: addonsEditable.value },
+  { id: 'admin', label: t('Administrator seat add-ons'), value: state.snapshot.adminAddons, set: setAdminAddons, enabled: addonsEditable.value },
   { id: 'erp', label: t('ERP user limit'), value: state.erpUserLimit, set: setErpUserLimit, enabled: true },
 ])
 
@@ -51,13 +77,26 @@ const DEFAULTS = [
 
 <template>
   <ScenarioFab
-    :model-value="state.preset"
-    :scenarios="scenarios"
-    :heading="`${t('CRM add-on (Billing)')} · ${t(crmPackageLabel(state.snapshot.package))}`"
+    :model-value="main.value"
+    :scenarios="main.scenarios"
+    :heading="main.heading"
     :aria-label="t('Change CRM scenario')"
-    @update:model-value="onPick"
+    @update:model-value="main.pick"
   >
     <div class="csf" data-devchange="crm-user-seats-scenario-fab">
+      <div class="csf-section" :data-test-id="`csf-section-${second.id}`" data-devchange="crm-invite-edit-states-fab">
+        <p class="csf-heading">{{ second.heading }}</p>
+        <MpPopoverList>
+          <MpPopoverListItem
+            v-for="s in second.scenarios"
+            :key="s.value"
+            :is-active="s.value === second.value"
+            :data-test-id="`csf-${second.id}-${s.value}`"
+            @click="second.pick(s.value)"
+          >{{ s.label }}</MpPopoverListItem>
+        </MpPopoverList>
+      </div>
+
       <div v-for="s in STEPPERS" :key="s.id" class="csf-row">
         <span class="csf-label">{{ s.label }}</span>
         <div class="csf-stepper">
@@ -99,6 +138,8 @@ const DEFAULTS = [
 
 <style scoped>
 .csf { display: flex; flex-direction: column; gap: var(--mp-spacing-3); width: 320px; }
+.csf-section { margin: calc(-1 * var(--mp-spacing-3)) calc(-1 * var(--mp-spacing-3)) 0; padding-bottom: var(--mp-spacing-2); border-bottom: 1px solid var(--mp-border-default, #e3e7e9); }
+.csf-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .csf-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); }
 .csf-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .csf-stepper { display: flex; align-items: center; gap: var(--mp-spacing-2); }
