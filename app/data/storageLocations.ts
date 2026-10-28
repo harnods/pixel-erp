@@ -32,6 +32,12 @@ export function defaultTypeForLevel(level: string): LocType {
 /** The level labels (master data). Also used to populate the level picker. */
 export const STORAGE_LEVELS = ['Floor', 'Zone', 'Aisle', 'Row', 'Rack', 'Shelf', 'Bin']
 
+/** A location can only have sub-locations when a deeper level exists (Bin is the deepest). */
+export function canHaveSubLocation(level: string): boolean {
+  const i = STORAGE_LEVELS.indexOf(level)
+  return i >= 0 && i < STORAGE_LEVELS.length - 1
+}
+
 const NAME_POOLS: Record<string, string[]> = {
   Floor:  ['Ground Floor', 'First Floor', 'Second Floor', 'Mezzanine', 'Basement'],
   Zone:   ['Dry Zone', 'Cold Zone', 'Bulk Zone', 'Receiving Zone', 'Dispatch Zone', 'Quarantine Zone'],
@@ -300,14 +306,14 @@ export function findLocation(warehouseId: string, locId: string): { node: LocNod
   return walk(getStorageTree(warehouseId), [])
 }
 
-interface NewLoc { level: string; name: string; type: LocType }
+interface NewLoc { level: string; name: string; type: LocType; description?: string }
 export function addRootLocation(warehouseId: string, data: NewLoc): void {
-  getStorageTree(warehouseId).push({ id: newId(), level: data.level, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
+  getStorageTree(warehouseId).push({ id: newId(), level: data.level, name: data.name, type: data.type, description: data.description ?? '', skuQty: 0, skuStart: 0, children: [] })
   persist()
 }
 export function addSubLocation(warehouseId: string, parentId: string, data: NewLoc): void {
   const parent = findNode(getStorageTree(warehouseId), parentId)
-  if (parent) parent.children.push({ id: newId(), level: data.level, name: data.name, type: data.type, skuQty: 0, skuStart: 0, children: [] })
+  if (parent) parent.children.push({ id: newId(), level: data.level, name: data.name, type: data.type, description: data.description ?? '', skuQty: 0, skuStart: 0, children: [] })
   persist()
 }
 /** Edit an existing location's level, name, type and description. */
