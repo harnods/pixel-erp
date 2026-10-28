@@ -168,7 +168,7 @@ function handleSave() {
           <table class="pbd-table" data-devchange="batch-drawer-desc-column-fit" :style="{ minWidth: `${tableMinWidth}px` }">
             <colgroup>
               <col style="width: 200px" /><col style="width: 140px" /><col />
-              <col v-for="k in attrKeys" :key="k" style="width: 176px" />
+              <col v-for="k in attrKeys" :key="k" class="pbd-col-attr" />
               <col style="width: 110px" /><col style="width: 120px" /><col style="width: 78px" />
             </colgroup>
             <thead>
@@ -221,6 +221,7 @@ function handleSave() {
 </template>
 
 <style scoped>
+.pbd-col-attr { width: var(--mp-sizes-44, 176px); }
 .pbd-enter-active,
 .pbd-leave-active { transition: background-color 250ms ease; }
 .pbd-enter-from, .pbd-leave-to { background-color: transparent; }
