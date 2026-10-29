@@ -101,6 +101,7 @@ export * from './employees'
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 export * from './approvalWorkflows'
+export * from './crmSubscription'
 
 // ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
 export * from './wmsCutover'
