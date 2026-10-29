@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * ReleaseInputBasisModal — releases a sales order line from its PERCENT input
- * basis (PRD OD-003 / R-16).
+ * ReleaseInputBasisModal — releases a sales order from its PERCENT input basis
+ * (PRD OD-003 / R-16). The input method is one choice per delivery, so the lock
+ * and its release cover the whole order.
  *
- * The release is one way: the line becomes Quantity permanently. That is why the
+ * The release is one way: the order's deliveries become Quantity permanently. That is why the
  * reason is required and the warning is explicit rather than a passing note —
  * there is no undo, and the trail is the only record of why the basis changed.
  * Closes only via ×, like every other ERP modal.
@@ -13,7 +14,7 @@ import {
   MpButton, MpButtonGroup, MpText, MpFormControl, MpFormLabel, MpFormErrorMessage, MpTextarea,
 } from '@mekari/pixel3'
 
-const props = defineProps<{ isOpen: boolean; lineLabel: string; lockedBy: string }>()
+const props = defineProps<{ isOpen: boolean; subject: string; lockedBy: string }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
   (e: 'confirm', reason: string): void
@@ -50,8 +51,8 @@ function confirm() {
       </MpModalHeader>
       <MpModalBody>
         <div class="rib-body">
-          <MpText>{{ lineLabel }} {{ t('is locked to Percentage by') }} {{ lockedBy }}.</MpText>
-          <MpText>{{ t('Releasing it is permanent. The line becomes Quantity and cannot go back to Percentage.') }}</MpText>
+          <MpText>{{ subject }} {{ t('is locked to Percentage by') }} {{ lockedBy }}.</MpText>
+          <MpText>{{ t('Releasing it is permanent. Deliveries on this sales order become Quantity and cannot go back to Percentage.') }}</MpText>
           <MpFormControl :id="`rib-reason-${uid}`" is-required :is-invalid="!!error">
             <MpFormLabel>{{ t('Reason for release') }}</MpFormLabel>
             <MpTextarea :id="`rib-reason-input-${uid}`" v-model="reason" :maxlength="REASON_MAX" :rows="3"

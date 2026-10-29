@@ -195,13 +195,15 @@ export function deliveredByLine(orderId: string, excludeDeliveryId?: string): Re
 }
 
 /**
- * OD-003. A released lock is permanent and one way: the line becomes QTY forever
- * (R-16). Releases are user actions, so they persist like any other created
- * record rather than being regenerated with the seed.
+ * OD-003. A released lock is permanent and one way: the ORDER's deliveries become
+ * QTY for good (R-16). Releases are user actions, so they persist like any other
+ * created record rather than being regenerated with the seed.
  */
 export interface InputBasisRelease {
   orderId: string
-  orderLineIndex: number
+  /** Set only on releases saved before the method moved to the whole table;
+   *  a whole-order release has none. */
+  orderLineIndex?: number
   by: string
   reason: string
   date: string
@@ -209,20 +211,21 @@ export interface InputBasisRelease {
 const RELEASE_KEY = 'sales-delivery-basis-releases'
 export const inputBasisReleases: InputBasisRelease[] = loadCreated<InputBasisRelease>(RELEASE_KEY)
 
-function isReleased(orderId: string, orderLineIndex: number): boolean {
-  return inputBasisReleases.some(r => r.orderId === orderId && r.orderLineIndex === orderLineIndex)
+function isReleased(orderId: string): boolean {
+  return inputBasisReleases.some(r => r.orderId === orderId && r.orderLineIndex === undefined)
 }
 
 /**
- * The delivery that locked a line to PERCENT, or null when the line is free
- * (R-08 → R-10). Only PERCENT locks — a line first delivered by quantity stays
- * open to either mode. Returns the FIRST delivery by date, because that is the
- * one that set the basis and the one the hint has to name.
+ * The delivery that locked an ORDER to PERCENT, or null when the order is free
+ * (R-08 → R-10). The input method is one choice for the whole delivery, so once
+ * any delivery on the order used percent, every later one does too. Only PERCENT
+ * locks — an order first delivered by quantity stays open to either method.
+ * Returns the FIRST such delivery by date: it set the basis, and the hint names it.
  */
-export function lineLock(orderId: string, orderLineIndex: number): { id: string; number: number; date: string } | null {
-  if (isReleased(orderId, orderLineIndex)) return null
+export function orderLock(orderId: string): { id: string; number: number; date: string } | null {
+  if (isReleased(orderId)) return null
   const locking = salesDeliveries
-    .filter(d => d.orderId === orderId && d.items?.some(l => l.orderLineIndex === orderLineIndex && l.inputMode === 'percent'))
+    .filter(d => d.orderId === orderId && d.items?.some(l => l.inputMode === 'percent'))
     .sort((a, b) => a.date.localeCompare(b.date))[0]
   return locking ? { id: locking.id, number: locking.number, date: locking.date } : null
 }
@@ -237,9 +240,9 @@ export function isFullyDelivered(order: { id: string; items: { qty: number }[] }
   return order.items.length > 0 && order.items.every((it, i) => (d[i] ?? 0) >= it.qty - 1e-6)
 }
 
-/** The input mode a line is locked to, or null when it is still free. */
-export function lineInputBasis(orderId: string, orderLineIndex: number): 'percent' | null {
-  return lineLock(orderId, orderLineIndex) ? 'percent' : null
+/** The input method an order is locked to, or null when it is still free. */
+export function orderInputBasis(orderId: string): 'percent' | null {
+  return orderLock(orderId) ? 'percent' : null
 }
 
 /** Prototype demo reset — clears every release, so the seeded locks return. */
@@ -264,16 +267,16 @@ export function canReleaseInputBasis(user: { canReleaseInputBasis: boolean }): b
   return user.canReleaseInputBasis
 }
 
-/** Release a PERCENT lock — one way, reason required, written to the trail (R-16). */
+/** Release an order's PERCENT lock — one way, reason required, written to the trail (R-16). */
 export function releaseInputBasis(
-  orderId: string, orderLineIndex: number,
+  orderId: string,
   user: { name: string; canReleaseInputBasis: boolean }, reason: string,
 ): boolean {
   if (!canReleaseInputBasis(user)) return false
   const by = user.name
   if (!reason.trim()) return false
-  if (isReleased(orderId, orderLineIndex)) return false
-  const entry: InputBasisRelease = { orderId, orderLineIndex, by, reason: reason.trim(), date: new Date().toISOString().slice(0, 10) }
+  if (isReleased(orderId)) return false
+  const entry: InputBasisRelease = { orderId, by, reason: reason.trim(), date: new Date().toISOString().slice(0, 10) }
   inputBasisReleases.push(entry)
   saveCreated(RELEASE_KEY, inputBasisReleases)
   return true

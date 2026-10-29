@@ -107,10 +107,15 @@ function formatQty(n: number): string {
 function formatPct(n: number): string {
   return `${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
 }
-function methodLabel(it: (typeof delivery.value.lineItems)[number]): string {
+/** OD-001 — one input method per delivery, shown once above the lines. */
+const deliveryMethod = computed(() => {
+  const a = delivery.value.lineItems.find(it => !!it.audit)?.audit
+  return a ? (a.inputMode === 'percent' ? t('Percentage') : t('Quantity')) : ''
+})
+/** What was typed on a line in Percentage — "33%" under the quantity it produced. */
+function typedPct(it: (typeof delivery.value.lineItems)[number]): string {
   const a = it.audit
-  if (!a) return ''
-  return a.inputMode === 'percent' ? `${t('Percentage')} (${formatPct(a.inputValue)})` : t('Quantity')
+  return a && a.inputMode === 'percent' ? formatPct(a.inputValue) : ''
 }
 function cumulativeLabel(it: (typeof delivery.value.lineItems)[number]): string {
   const a = it.audit
@@ -327,13 +332,16 @@ function goBack() { router.push('/sales-deliveries') }
 
       <!-- ── Line items table (read-only) — auto lazy-load, internal scroll ── -->
       <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
+        <!-- One input method for the whole delivery (OD-001), above the lines. -->
+        <div v-if="deliveryMethod" class="sd-detail-method" data-devchange="sd-input-method-table">
+          <ContentList :label="t('Input method')" :value="deliveryMethod" />
+        </div>
         <div ref="itemsScrollEl" class="detail-items-scroll">
         <table class="detail-items">
           <thead>
             <tr>
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
-              <th v-if="hasAudit" class="detail-th">{{ t('Input method') }}</th>
               <th class="detail-th detail-th--num">{{ t('Delivered qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
               <th v-if="hasAudit" class="detail-th detail-th--num">{{ t('Cumulative') }}</th>
@@ -350,9 +358,11 @@ function goBack() { router.push('/sales-deliveries') }
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <!-- What was typed: "Percentage (33%)", or Quantity when the figure IS the qty. -->
-              <td v-if="hasAudit" class="detail-td">{{ methodLabel(it) }}</td>
-              <td class="detail-td detail-td--num">{{ formatQty(it.qty) }}</td>
+              <!-- The quantity posted; in Percentage, what was typed sits under it. -->
+              <td class="detail-td detail-td--num">
+                {{ formatQty(it.qty) }}
+                <span v-if="typedPct(it)" class="sd-detail-typed">{{ typedPct(it) }}</span>
+              </td>
               <td class="detail-td">{{ it.unit }}</td>
               <!-- The order line's progress once THIS delivery posted, not today's. -->
               <td v-if="hasAudit" class="detail-td detail-td--num">{{ cumulativeLabel(it) }}</td>
@@ -722,6 +732,8 @@ function goBack() { router.push('/sales-deliveries') }
 }
 /* table scrolls internally past ~10 rows so the page doesn't grow unbounded */
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.sd-detail-method { margin-bottom: var(--mp-spacing-2); }
+.sd-detail-typed { display: block; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
 /* header stays visible while the body scrolls */
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: var(--mp-sizes-px, 1px); }

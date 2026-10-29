@@ -20,20 +20,30 @@ derived_quantity = sales_order_line.ordered_quantity × (input_value ÷ 100)
 | Item | State | Where |
 | --- | --- | --- |
 | Wave 0 — order → delivery link | **Built** | `types.ts` (`SDDeliveryLine`, `orderId`/`items`, `'partially delivered'`), `salesDeliveries.ts` (selectors, contract seed), `salesOrders.ts` (SO101–SO103), both *Create sales delivery* entry points |
-| OD-001 input method | **Built** | in-cell `MpAutocomplete`, Quantity / Percentage |
+| OD-001 input method | **Built** | one `ErpFilterSelect` above the table, Quantity / Percentage, for the whole delivery (revised 2026-10-29) |
 | OD-002 live preview | **Built** | quantity above amount, shown from 0% |
-| OD-003 basis lock + release | **Built** | `ReleaseInputBasisModal`; release gated on the acting user — a prototype *View as* switch (`useSalesDeliveryViewAs`) between a sales admin, who cannot release, and a finance manager, who can |
+| OD-003 basis lock + release | **Built** | per sales order (revised 2026-10-29); `ReleaseInputBasisModal`; release gated on the acting user — a prototype *View as* switch (`useSalesDeliveryViewAs`) between a sales admin, who cannot release, and a finance manager, who can |
 | OD-004 progress so far, `Mixed` | **Built** | Qty ordered cell + *Delivered so far* header field |
 | OD-005 over-delivery error | **Built** | checked on save, entries preserved |
 | OD-006 Fill remaining | **Built** | |
 | OD-010 edit rules | **Built** | `/sales-deliveries/:id/edit`; closed period via Close books `lockDate()` |
-| TS-001 audit trail | **Built** | delivery detail: Input method, Delivered qty, Cumulative |
+| TS-001 audit trail | **Built** | delivery detail: Input method once above the lines, typed % under each Delivered qty, Cumulative |
 | Fully-delivered state | **Built** | empty state in the form; *Create sales delivery* hidden on the index |
 | TS-002 import · TS-003 API | Out of scope | no import pipeline, no backend |
 | TS-004 decimals downstream | **Prototype slice built** | invoice from a delivery (`?delivery=`) carries the delivered quantities; invoice detail shows them to six decimals |
 | "Mixed after a return" seed | **Not built** | the prototype has no sales return document; SO102 shows `Mixed` from an undelivered line instead |
 
 Deviations from the plan as first written, all deliberate:
+
+- **Revised 2026-10-29 — the input method is one choice per delivery, not per
+  line** (product decision, Daniel). The method is a dropdown above the table,
+  aligned left; Qty delivered is still typed per line. Consequences:
+  - the lock is per **sales order** — once any delivery on it used Percentage,
+    every later one is Percentage — and Release unlocks the whole order;
+  - a hand-added line (no ordered qty) in Percentage takes a base qty typed in
+    its Qty ordered cell, and the percentage applies to that;
+  - the delivery detail page shows the method once above the lines and the typed
+    % under each delivered qty, instead of a per-line column.
 
 - **OD-001 is a select, not a segmented control** — the in-cell `MpAutocomplete`
   the Unit column and the BOM's Allocation method use. Options are *Quantity /
@@ -86,8 +96,10 @@ The PRD's own ordering, adjusted for this prototype. OD-001 is a hard gate.
 
 ### Per feature
 
-**OD-001 — per-line input method** (`NewSalesDeliveryPage.vue`)
-*As built:* an in-cell `MpAutocomplete` with Quantity / Percentage in an
+**OD-001 — input method** (`NewSalesDeliveryPage.vue`)
+*Revised 2026-10-29:* one `ErpFilterSelect` (Quantity / Percentage) above the
+table, aligned left, sets every line; the per-line column below is gone.
+*As first built:* an in-cell `MpAutocomplete` with Quantity / Percentage in an
 **Input method** column between Qty ordered and Qty delivered, Quantity
 preselected on a line with no prior delivery. When Percentage is active the Qty
 delivered cell becomes a percent input with a `%` right addon
@@ -101,7 +113,7 @@ comma, up to six decimals with trailing zeros trimmed. Not a tooltip — it must
 readable while typing.
 
 **OD-003 — input basis lock** (R-08 → R-10, R-16)
-First delivery on a line sets `input_basis`; Percent locks, Quantity does not.
+*Revised 2026-10-29: per order — the first Percentage delivery on an order locks the whole order (`orderLock`).* First delivery on a line sets `input_basis`; Percent locks, Quantity does not.
 When locked, the Quantity segment is **visibly disabled with a hint naming the
 delivery that set the lock** — the PRD is explicit that it is disabled, not hidden.
 *This is a deliberate deviation from `rule/btn-no-disabled-validation`*: that rule

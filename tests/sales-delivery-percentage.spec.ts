@@ -11,8 +11,8 @@
 import { describe, it, expect } from 'vitest'
 import { salesOrders } from '~/data/salesOrders'
 import {
-  salesDeliveries, deliveredByLine, derivedQty, lineInputBasis,
-  lineLock, releaseInputBasis, inputBasisReleases, isInClosedPeriod, cumulativeAt, isFullyDelivered,
+  salesDeliveries, deliveredByLine, derivedQty, orderInputBasis,
+  orderLock, releaseInputBasis, inputBasisReleases, isInClosedPeriod, cumulativeAt, isFullyDelivered,
 } from '~/data/salesDeliveries'
 import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
@@ -82,15 +82,17 @@ describe('deliveredByLine — one source for delivered-to-date', () => {
   })
 })
 
-describe('lineInputBasis — only percent locks a line (R-08 → R-10)', () => {
-  it('locks a line first delivered by percent', () => {
-    expect(lineInputBasis('SO101', 0)).toBe('percent')
-    expect(lineInputBasis('SO101', 1)).toBe('percent')
+describe('orderInputBasis — only percent locks an order (R-08 → R-10)', () => {
+  it('locks an order once any delivery on it used percent', () => {
+    expect(orderInputBasis('SO101')).toBe('percent')
+    // SO102 has one percent tranche, on its service line — the whole order is locked,
+    // machine line included: the method is one choice per delivery (OD-001).
+    expect(orderInputBasis('SO102')).toBe('percent')
   })
 
-  it('leaves an undelivered line free', () => {
-    // SO102's machine line has no tranche yet.
-    expect(lineInputBasis('SO102', 1)).toBeNull()
+  it('leaves an order with no percent delivery free', () => {
+    const free = salesOrders.find(o => !salesDeliveries.some(d => d.orderId === o.id))!
+    expect(orderInputBasis(free.id)).toBeNull()
   })
 })
 
@@ -111,42 +113,41 @@ describe('the seeded contract deliveries', () => {
 
 describe('the input basis lock (OD-003)', () => {
   it('names the FIRST delivery by date as the one that set the lock (R-08)', () => {
-    // SD101 is 2026-03-02, SD102 is 2026-04-06 — both percent on line 0.
-    expect(lineLock('SO101', 0)?.id).toBe('SD101')
-    expect(lineLock('SO101', 0)?.number).toBe(20101)
+    // SD101 is 2026-03-02, SD102 is 2026-04-06 — both percent.
+    expect(orderLock('SO101')?.id).toBe('SD101')
+    expect(orderLock('SO101')?.number).toBe(20101)
   })
 
-  it('leaves an undelivered line unlocked (R-10)', () => {
-    expect(lineLock('SO102', 1)).toBeNull()
+  it('leaves an order with no deliveries unlocked (R-10)', () => {
+    const free = salesOrders.find(o => !salesDeliveries.some(d => d.orderId === o.id))!
+    expect(orderLock(free.id)).toBeNull()
   })
 
   it('lets only the finance manager release a lock (R-16 — permission-gated)', () => {
-    expect(releaseInputBasis('SO101', 1, ADMIN, 'Sales admin trying')).toBe(false)
-    expect(lineLock('SO101', 1)).not.toBeNull()                       // still locked
+    expect(releaseInputBasis('SO102', ADMIN, 'Sales admin trying')).toBe(false)
+    expect(orderLock('SO102')).not.toBeNull()                        // still locked
     expect(inputBasisReleases.some(r => r.by === ADMIN.name)).toBe(false)
   })
 
-  it('releases one line without touching its siblings, and only once (R-16)', () => {
-    expect(lineLock('SO101', 1)).not.toBeNull()
-
-    expect(releaseInputBasis('SO101', 1, FINANCE, 'Contract renegotiated')).toBe(true)
-    expect(lineLock('SO101', 1)).toBeNull()        // released line is free
-    expect(lineLock('SO101', 0)).not.toBeNull()    // its sibling is not
-    expect(lineInputBasis('SO101', 1)).toBeNull()
-
-    // One way: a second release is a no-op, and there is no path back to percent.
-    expect(releaseInputBasis('SO101', 1, FINANCE, 'Again')).toBe(false)
-    expect(inputBasisReleases.filter(r => r.orderId === 'SO101' && r.orderLineIndex === 1)).toHaveLength(1)
+  it('refuses a release with no reason', () => {
+    expect(releaseInputBasis('SO102', FINANCE, '   ')).toBe(false)
+    expect(orderLock('SO102')).not.toBeNull()
   })
 
-  it('refuses a release with no reason, and writes the reason to the trail', () => {
-    expect(releaseInputBasis('SO101', 0, FINANCE, '   ')).toBe(false)
-    expect(lineLock('SO101', 0)).not.toBeNull()
+  it('releases the whole order, once, and writes the reason to the trail (R-16)', () => {
+    expect(releaseInputBasis('SO102', FINANCE, 'Customer switched to unit pricing')).toBe(true)
+    expect(orderLock('SO102')).toBeNull()
+    expect(orderInputBasis('SO102')).toBeNull()
+    expect(orderLock('SO101')).not.toBeNull()       // other orders keep their lock
 
-    expect(releaseInputBasis('SO101', 0, FINANCE, 'Customer switched to unit pricing')).toBe(true)
-    const entry = inputBasisReleases.find(r => r.orderId === 'SO101' && r.orderLineIndex === 0)!
+    const entry = inputBasisReleases.find(r => r.orderId === 'SO102')!
     expect(entry.by).toBe(FINANCE.name)
     expect(entry.reason).toBe('Customer switched to unit pricing')
+    expect(entry.orderLineIndex).toBeUndefined()
+
+    // One way: a second release is a no-op, and there is no path back to percent.
+    expect(releaseInputBasis('SO102', FINANCE, 'Again')).toBe(false)
+    expect(inputBasisReleases.filter(r => r.orderId === 'SO102')).toHaveLength(1)
   })
 })
 
