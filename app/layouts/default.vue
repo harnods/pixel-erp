@@ -12,6 +12,10 @@ import { isHrPath } from '~/utils/hrRoutes'
 const route = useRoute()
 const isHr = computed(() => isHrPath(route.path))
 const isCrm = computed(() => route.path.startsWith('/crm'))
+// No CRM access → the /crm route shows the paywall full-bleed, with NO level-1
+// sidebar at all (not even the ERP one). See useCrmAccess + CrmPaywallPage.
+const { hasCrmAccess } = useCrmAccess()
+const crmPaywall = computed(() => isCrm.value && !hasCrmAccess.value)
 // The product-switcher rail is opt-in (top-right user menu → "Show ERP Menu").
 const { showProductMenu } = useProductMenu()
 // A report page can request a chrome-less full-screen view (header + nav hidden).
@@ -25,8 +29,8 @@ const { isReportFullscreen } = useReportFullscreen()
       <template v-if="!isReportFullscreen">
         <ErpNavbarGroup v-if="showProductMenu" />
         <HrSidebar v-if="isHr" />
-        <CrmSidebar v-else-if="isCrm" />
-        <ErpSidebar v-else />
+        <CrmSidebar v-else-if="isCrm && !crmPaywall" />
+        <ErpSidebar v-else-if="!crmPaywall" />
       </template>
       <div class="content-area">
         <slot />

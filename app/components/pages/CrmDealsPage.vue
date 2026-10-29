@@ -19,6 +19,8 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   MpTabs, MpTabList, MpTab,
 } from '@mekari/pixel3'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import type { CrmStatus } from '~/composables/useCrmAccess'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -49,6 +51,10 @@ import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmRepo
 
 const { t } = useLocale()
 const router = useRouter()
+// CRM access — the prototype scenario FAB (bottom-right) flips this; anything other
+// than 'active' makes the /crm router swap in CrmPaywallPage (see [...slug].vue +
+// useCrmAccess), with the face picked by the status.
+const { crmStatus, setCrmStatus } = useCrmAccess()
 // The page title mirrors the Deals module name (renamable in module settings).
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 
@@ -876,6 +882,20 @@ const toggleAirene = inject<() => void>('toggleAirene')
       :selected-count="selectedCount"
       @close="exportOpen = false"
       @export="onExport"
+    />
+
+    <!-- Prototype scenario FAB — flip the CRM state. "Trial expired" / "No access"
+         swap the whole /crm route to the matching paywall face (full-bleed, no CRM
+         sidebar); the paywall brings access back. -->
+    <ScenarioFab
+      :model-value="crmStatus"
+      :aria-label="t('Change CRM access')"
+      :scenarios="[
+        { label: t('CRM access'), value: 'active' },
+        { label: t('Trial expired'), value: 'expired' },
+        { label: t('No access (paywall)'), value: 'none' },
+      ]"
+      @update:model-value="(v: string) => setCrmStatus(v as CrmStatus)"
     />
   </div>
 </template>

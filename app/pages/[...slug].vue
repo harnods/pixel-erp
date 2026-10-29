@@ -55,6 +55,8 @@ const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
 const { dimensionsActivated } = useDimensionsActivation()
 const { requestDimensionCreate } = useDimensionsFormDrawer()
+// Gate for the CRM (Qontak) app — when off, every /crm route renders the paywall.
+const { hasCrmAccess } = useCrmAccess()
 const route = useRoute()
 const router = useRouter()
 
@@ -459,6 +461,7 @@ watch(() => [currentPageKey.value, route.query.tab] as const, ([key, tab]) => {
   if (key === 'Purchase orders' && tab === 'Recurring orders') purchaseOrdersTab.value = 'recurring'
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const CrmPaywallPage = asyncPage(() => import('~/components/pages/CrmPaywallPage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
@@ -569,6 +572,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {
+    // No CRM access → the paywall takes over every /crm route. Reactive on
+    // hasCrmAccess, so the paywall CTA (which flips it on) swaps straight to the
+    // real workspace without a route change.
+    if (!hasCrmAccess.value) return { component: CrmPaywallPage, id: '' }
     const sub = segs[1] ?? ''
     const id = segs[2]
     // /crm/contacts → Contacts list; /crm/contacts/:id → contact detail.

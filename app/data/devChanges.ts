@@ -879,6 +879,14 @@ export const DEV_CHANGES: DevChange[] = [
     date: '2026-10-23',
     files: ['AddFileDrawer.vue', 'NewCreditMemoPage.vue', 'SpendMoneyPage.vue'],
   },
+  {
+    id: 'crm-paywall',
+    title: 'CRM paywall — first-run + trial-expired',
+    description:
+      'A tenant without active CRM access hits a full-bleed paywall on every /crm route (no level-1 CRM sidebar). Access is a shared status (useCrmAccess: active / none / expired, persisted, default active). Two faces: "none" is the educational first-run page (hero → value props with filled green/tosca/blue icons → how it works → feedback); "expired" is the trial-ended page (data-safe reassurance + Contact sales / Schedule a demo, no re-education, no pricing). Flip states from the scenario FAB (CRM access / Trial expired / No access) on the Deals page or the paywall; the router swaps instantly, no reload.',
+    date: '2026-10-29',
+    files: ['CrmPaywallPage.vue', 'useCrmAccess.ts', '[...slug].vue', 'CrmDealsPage.vue', 'default.vue'],
+  },
 ]
 
 const byId = new Map(DEV_CHANGES.map(c => [c.id, c]))
