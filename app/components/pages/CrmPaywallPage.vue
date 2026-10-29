@@ -313,7 +313,7 @@ const fabScenarios = [
    one `color` drives the glyph. Tokens with hex fallbacks keep the tints working
    even where a semantic token isn't defined. */
 .vp-icon {
-  width: 48px; height: 48px; flex-shrink: 0;
+  width: var(--mp-sizes-12, 48px); height: var(--mp-sizes-12, 48px); flex-shrink: 0;
   border-radius: var(--mp-radii-xl, 12px);
   display: inline-flex; align-items: center; justify-content: center;
 }
