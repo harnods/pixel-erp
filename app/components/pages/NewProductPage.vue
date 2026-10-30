@@ -17,7 +17,7 @@ import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data
 import { productActionRollup } from '~/data/replenishment'
 import { categoryDefaultChanges, type CategoryDefaultField } from '~/data/replenishmentConfig'
 import { getProductTaxInfo, setProductTaxInfo } from '~/data/productsIndex'
-import { productCategories } from '~/data/productCategories'
+import { productCategories, addProductCategory } from '~/data/productCategories'
 
 const { t, tf } = useLocale()
 
@@ -41,9 +41,21 @@ const hasVariants = ref(false)
 const name = ref('')
 const sku = ref('')
 const barcode = ref('')
-const category = ref('')
-/** The category the product had when the form opened (edit mode) — what a change is measured against. */
-const savedCategory = ref('')
+// A product can belong to several categories (like production). One is the MAIN
+// (primary) category — it drives the replenishment defaults. The user picks it
+// (mirrors the "Primary contact" single-select toggle in CrmCompanyForm); if unset
+// or no longer selected, it falls back to the first category.
+const categories = ref<string[]>([])
+const mainCategory = ref('')
+const primaryCategory = computed(() =>
+  (mainCategory.value && categories.value.includes(mainCategory.value))
+    ? mainCategory.value
+    : (categories.value[0] ?? ''),
+)
+/** Single-select: turning one on moves the main category (CrmCompanyForm.setPrimary pattern). */
+function setMainCategory(cat: string) { mainCategory.value = cat; categoryError.value = '' }
+/** The primary category the product had when the form opened (edit mode) — what a change is measured against. */
+const savedPrimaryCategory = ref('')
 const unit = ref('Pcs')
 const description = ref('')
 const photoDataUrl = ref('')
@@ -99,8 +111,9 @@ onMounted(async () => {
   if (!p) return
   name.value = p.name
   sku.value = p.sku
-  category.value = p.category
-  savedCategory.value = p.category
+  categories.value = p.categories?.length ? [...p.categories] : (p.category ? [p.category] : [])
+  mainCategory.value = p.category || categories.value[0] || ''
+  savedPrimaryCategory.value = p.category
   unit.value = p.unit
   description.value = p.desc
   photoDataUrl.value = p.img
@@ -153,8 +166,9 @@ const FIELD_LABELS: Record<CategoryDefaultField, string> = {
   ignoreGapsOverDays: 'Ignore gaps over',
 }
 const categoryChangeNotice = computed(() => {
-  if (!isEdit.value || !savedCategory.value || !category.value) return ''
-  const changes = categoryDefaultChanges(savedCategory.value, category.value)
+  // Only the PRIMARY category drives replenishment defaults, so the warning tracks it.
+  if (!isEdit.value || !savedPrimaryCategory.value || !primaryCategory.value) return ''
+  const changes = categoryDefaultChanges(savedPrimaryCategory.value, primaryCategory.value)
   if (!changes.length) return ''
   const part = (c: (typeof changes)[number]) => {
     const v = (n: number | null) => (n === null ? t('Not set') : tf('{n} days', { n }))
@@ -170,7 +184,60 @@ const categoryChangeNotice = computed(() => {
  * safety-days field was removed, which left the Category field with no options (so an
  * existing product opened with it blank and a new one could not pick one).
  */
-const categoryOptions = computed(() => productCategories.map((c) => ({ label: c, value: c })))
+// ── Category multi-select (custom combobox, like production) ──────────────────
+// Chips in the field (the MAIN one tinted green, click to change it) + a dropdown of
+// TICKBOXES to add/remove, with inline "New category". Built from MpPopover + MpCheckbox
+// (same popover mechanics as MultiSelectDropdown.vue) because MpInputTag has no checkbox
+// list and MpSelect renders the OS dropdown (rule/select-erpfilterselect).
+const categoryOpen = ref(false)
+const catQuery = ref('')
+const catTriggerWrap = ref<HTMLElement | null>(null)
+const catTriggerWidth = ref(0)
+let catResizeObserver: ResizeObserver | null = null
+onMounted(() => {
+  catResizeObserver = new ResizeObserver(([entry]) => { catTriggerWidth.value = entry.contentRect.width })
+  if (catTriggerWrap.value) catResizeObserver.observe(catTriggerWrap.value)
+})
+onUnmounted(() => { catResizeObserver?.disconnect(); catResizeObserver = null })
+
+/** Options that match the typed filter (case-insensitive); empty query shows all. */
+const filteredCategoryOptions = computed(() => {
+  const q = catQuery.value.trim().toLowerCase()
+  return q ? productCategories.filter((c) => c.toLowerCase().includes(q)) : [...productCategories]
+})
+/** A typed name that is not an existing category can be created inline. */
+const canCreateCategory = computed(() => {
+  const n = catQuery.value.trim()
+  return !!n && !productCategories.some((c) => c.toLowerCase() === n.toLowerCase())
+})
+
+/** Keep the main category valid after any change to the selected set. */
+function syncMainCategory() {
+  if (!mainCategory.value || !categories.value.includes(mainCategory.value)) {
+    mainCategory.value = categories.value[0] ?? ''
+  }
+}
+function toggleCategory(opt: string) {
+  categories.value = categories.value.includes(opt)
+    ? categories.value.filter((c) => c !== opt)
+    : [...categories.value, opt]
+  syncMainCategory()
+  if (categories.value.length) categoryError.value = ''
+}
+function removeCategory(c: string) {
+  categories.value = categories.value.filter((x) => x !== c)
+  syncMainCategory()
+}
+function createCategory() {
+  const n = catQuery.value.trim()
+  if (!n) return
+  if (!productCategories.some((c) => c.toLowerCase() === n.toLowerCase())) addProductCategory(n)
+  const canonical = productCategories.find((c) => c.toLowerCase() === n.toLowerCase()) ?? n
+  if (!categories.value.includes(canonical)) categories.value = [...categories.value, canonical]
+  syncMainCategory()
+  categoryError.value = ''
+  catQuery.value = ''
+}
 
 /** Whether the per-warehouse breakdown under "Due for reorder" is expanded. */
 const dueDetailsOpen = ref(false)
@@ -311,7 +378,8 @@ function setDemoState(s: DemoState) {
     name.value = ''
     sku.value = ''
     barcode.value = ''
-    category.value = ''
+    categories.value = []
+    mainCategory.value = ''
     unit.value = 'Pcs'
     description.value = ''
     photoDataUrl.value = ''
@@ -336,7 +404,8 @@ function setDemoState(s: DemoState) {
     name.value = 'Kopi Arabika Gayo 250g'
     sku.value = 'COF-ARB-250'
     barcode.value = '8991234567890'
-    category.value = categoryOptions.value[0]?.value ?? ''
+    categories.value = categoryOptions.value[0] ? [categoryOptions.value[0].value] : []
+    mainCategory.value = categories.value[0] ?? ''
     unit.value = 'Pcs'
     description.value = 'Single-origin arabica coffee beans from Gayo highlands, medium roast, 250g pack.'
     trackStock.value = true
@@ -385,7 +454,7 @@ function validate(): boolean {
     if (dup) skuError.value = t('SKU already taken')
   }
 
-  if (!category.value) categoryError.value = t('You must select category')
+  if (!categories.value.length) categoryError.value = t('You must select category')
   if (!unit.value) unitError.value = t('You must select base unit')
 
   return !(nameError.value || skuError.value || categoryError.value || unitError.value)
@@ -399,7 +468,9 @@ function buildPayload(): Omit<Product, 'id'> {
     name: name.value.trim(),
     desc: description.value.trim(),
     img: photoDataUrl.value,
-    category: category.value,
+    // The main category leads the list, so `category` (primary) always equals categories[0].
+    category: primaryCategory.value,
+    categories: [primaryCategory.value, ...categories.value.filter((c) => c !== primaryCategory.value)].filter(Boolean),
     unit: unit.value,
     sellPrice,
     buyPrice,
@@ -415,7 +486,8 @@ function resetForm() {
   name.value = ''
   sku.value = ''
   barcode.value = ''
-  category.value = ''
+  categories.value = []
+  mainCategory.value = ''
   unit.value = 'Pcs'
   description.value = ''
   photoDataUrl.value = ''
@@ -604,16 +676,85 @@ onUnmounted(() => { footerObserver?.disconnect() })
                 </MpFormControl>
               </div>
 
-              <!-- Category -->
+              <!-- Category — multi-select with tickboxes + chips (like production). -->
               <MpFormControl id="np-category" is-required :is-invalid="!!categoryError">
                 <MpFormLabel>{{ t('Category') }}</MpFormLabel>
-                <MpAutocomplete
-                  id="np-category-ac" v-model="category" :data="categoryOptions" label-prop="label" value-prop="value"
-                  :placeholder="t('Select category')" is-searchable use-portal is-full-width :is-invalid="!!categoryError"
-                  @update:model-value="categoryError = ''"
-                />
+                <div ref="catTriggerWrap" class="np-cat-wrap">
+                  <MpPopover
+                    id="np-category-ac"
+                    is-manual
+                    :is-open="categoryOpen"
+                    use-portal
+                    :is-keep-alive="false"
+                    placement="bottom-start"
+                    data-devchange="product-main-category"
+                    @open="categoryOpen = true"
+                    @close="categoryOpen = false"
+                  >
+                    <MpPopoverTrigger>
+                      <!-- Field shows the selected categories as chips; the MAIN one is green. -->
+                      <div
+                        class="np-cat-field"
+                        :class="{ 'np-cat-field--invalid': !!categoryError }"
+                        role="button"
+                        tabindex="0"
+                        @click.stop="categoryOpen = !categoryOpen"
+                      >
+                        <div class="np-cat-chips">
+                          <span
+                            v-for="c in categories"
+                            :key="c"
+                            class="np-cat-chip"
+                            :class="{ 'np-cat-chip--main': categories.length > 1 && c === primaryCategory }"
+                            :title="categories.length > 1 ? t('Make this the main category') : ''"
+                            @click.stop="setMainCategory(c)"
+                          >
+                            {{ c }}
+                            <button
+                              type="button"
+                              class="np-cat-chip-x"
+                              :aria-label="`${t('Remove')} ${c}`"
+                              @click.stop="removeCategory(c)"
+                            ><MpIcon name="close" size="sm" /></button>
+                          </span>
+                          <span v-if="!categories.length" class="np-cat-placeholder">{{ t('Select category') }}</span>
+                        </div>
+                        <MpIcon name="chevrons-down" size="sm" class="np-cat-chevron" />
+                      </div>
+                    </MpPopoverTrigger>
+                    <MpPopoverContent
+                      :class="css({ padding: '4px', maxHeight: '300px', overflowY: 'auto', borderRadius: '12px' })"
+                      :style="catTriggerWidth ? { width: `${catTriggerWidth}px` } : undefined"
+                      @blur="categoryOpen = false"
+                      @escape="categoryOpen = false"
+                    >
+                      <div class="np-cat-search">
+                        <MpInput id="np-cat-search" v-model="catQuery" :placeholder="t('Search or add category')" is-full-width />
+                      </div>
+                      <ul class="np-cat-list">
+                        <li v-for="opt in filteredCategoryOptions" :key="opt" class="np-cat-opt" @click="toggleCategory(opt)">
+                          <span @click.stop>
+                            <MpCheckbox :id="`np-cat-${opt}`" :is-checked="categories.includes(opt)" @change="() => toggleCategory(opt)" />
+                          </span>
+                          <span class="np-cat-opt-label">{{ opt }}</span>
+                        </li>
+                        <li v-if="canCreateCategory" class="np-cat-opt np-cat-create" @click="createCategory">
+                          <MpIcon name="add" size="sm" />
+                          <span class="np-cat-opt-label">{{ tf('Add "{name}"', { name: catQuery.trim() }) }}</span>
+                        </li>
+                        <li v-if="!filteredCategoryOptions.length && !canCreateCategory" class="np-cat-empty">
+                          {{ t('No categories found') }}
+                        </li>
+                      </ul>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </div>
                 <MpFormErrorMessage>{{ categoryError }}</MpFormErrorMessage>
-                <!-- Moving an existing product to another category can move its reorder point. -->
+                <!-- The MAIN category chip is green; click a chip to change it. It drives replenishment. -->
+                <span v-if="categories.length > 1" class="np-field-hint">
+                  {{ t('Tap a category to make it the main one (green). The main category sets replenishment defaults.') }}
+                </span>
+                <!-- Moving an existing product to another PRIMARY category can move its reorder point. -->
                 <MpBanner
                   v-if="categoryChangeNotice"
                   id="np-category-change-banner"
@@ -1053,6 +1194,51 @@ onUnmounted(() => { footerObserver?.disconnect() })
 }
 /* MpTextlink pins 14px with a layered !important; scale it to the 12px caption. */
 .np-field-link { margin-left: var(--mp-spacing-1); zoom: calc(12 / 14); }
+
+/* ── Category combobox: chips field + tickbox dropdown (like production) ── */
+.np-cat-wrap { display: block; width: 100%; }
+/* The trigger field matches MpInput md metrics (rule/select-field-metrics): 38px min,
+   --mp-colors-border-form resting border. Grows taller as chips wrap. */
+.np-cat-field {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  min-height: var(--mp-sizes-9\.5, 38px); width: 100%;
+  padding: var(--mp-spacing-1) var(--mp-spacing-3);
+  background: var(--mp-colors-background-neutral, #fff);
+  border: 1px solid var(--mp-colors-border-form, #1d1f2429); border-radius: var(--mp-radii-md);
+  cursor: pointer;
+}
+.np-cat-field--invalid { border-color: var(--mp-colors-border-danger); }
+.np-cat-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-1\.5); flex: 1; min-width: 0; padding: var(--mp-spacing-1) 0; }
+.np-cat-placeholder { color: var(--mp-text-placeholder); font-size: var(--mp-font-sizes-md); }
+.np-cat-chevron { flex-shrink: 0; color: var(--mp-text-subtle); }
+
+/* A selected-category chip; the MAIN one is tinted green (no icon). */
+.np-cat-chip {
+  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
+  padding: var(--mp-spacing-0\.5) var(--mp-spacing-2); border-radius: var(--mp-radii-sm);
+  background: var(--mp-colors-background-neutral-subtle, #f8f9f9); color: var(--mp-colors-text-default);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); white-space: nowrap; cursor: pointer;
+}
+.np-cat-chip--main {
+  background: var(--mp-colors-background-success);
+  box-shadow: inset 0 0 0 1px var(--mp-colors-border-success); /* pixel-police-allow-shadow: 1px green ring marks the main chip, not a drop shadow */
+  color: var(--mp-colors-text-success);
+}
+.np-cat-chip-x { display: inline-flex; align-items: center; background: none; border: none; padding: 0; color: inherit; cursor: pointer; }
+.np-cat-chip-x:hover { opacity: 0.7; }
+
+.np-cat-search { padding: var(--mp-spacing-1) var(--mp-spacing-1) var(--mp-spacing-2); }
+.np-cat-list { list-style: none; margin: 0; padding: 0; }
+.np-cat-opt {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-2\.5); border-radius: var(--mp-radii-sm);
+  cursor: pointer; user-select: none;
+}
+.np-cat-opt:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.np-cat-opt-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.np-cat-create { color: var(--mp-colors-text-success); }
+.np-cat-create .np-cat-opt-label { color: var(--mp-colors-text-success); font-weight: var(--mp-font-weights-semi-bold); }
+.np-cat-empty { padding: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 
 /* Label + its info affordance, so the icon sits on the text baseline rather
    than hanging off the end of the control. */

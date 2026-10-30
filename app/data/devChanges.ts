@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'product-main-category',
+    title: 'Products: tickbox multi-select categories; tap a chip to set the main (primary) one',
+    description:
+      'The Category field is a multi-select combobox like production: selected categories show as chips in the field, and the dropdown is a list of TICKBOXES (checked = selected) with a search box and inline "New category". The main category is set by tapping its chip — the main chip is tinted green (no icon) — keeping the control compact even with many categories. The main category is what replenishment reads for this product\'s defaults (safety days, order coverage, default lead time); on save it is moved to the front of the list so it stays the primary, and removing the current main falls back to the first remaining category. Built from MpPopover + MpCheckbox (MpInputTag has no tickbox list; MpSelect renders the OS dropdown).',
+    date: '2026-10-30',
+    files: ['NewProductPage.vue'],
+  },
+  {
+    id: 'product-multi-category',
+    title: 'Products: a product can belong to multiple categories (like production), with a primary',
+    description:
+      'The New/Edit product form\'s Category field is now a multi-select (chips + checkbox suggestions + inline "New category"), matching current ERP production where a product can carry several categories (e.g. Finish Good + Product Component). One category is the PRIMARY (chosen via the Main category picker) — it is what replenishment reads for this product\'s defaults, so the engine stays unambiguous; the "changing the category changes replenishment defaults" warning tracks the primary. All categories show (comma-separated) in the products list Category column and on the product detail page. The product model keeps `category` as the primary for backward compatibility and adds `categories[]` for the full list.',
+    date: '2026-10-30',
+    files: ['NewProductPage.vue', 'inventory.ts', 'productsIndex.ts', 'ProductsPage.vue', 'ProductDetailsPage.vue'],
+  },
+  {
     id: 'replenishment-recalc-progress',
     title: 'Recalculation follows the engineering RFC: in-progress banner + hidden rows, no manual button',
     description:

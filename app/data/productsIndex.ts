@@ -8,7 +8,7 @@
 import { reactive } from 'vue'
 import { warehouses } from './warehouses'
 import { getWarehouseDetail } from './warehouseDetails'
-import { PRODUCTS } from './inventory'
+import { PRODUCTS, productCategoriesOf } from './inventory'
 import { customProducts } from './customProducts'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { GOODS_CLASSIFICATION_CODES } from './taxClassificationCodes'
@@ -84,7 +84,10 @@ export interface ProductIndexRow {
   barcode: string
   /** false only for the synthetic placeholder barcode — no real one was ever set */
   barcodeAssigned: boolean
+  /** Primary category (single) — drives batch/serial, DJP, sort and filters. */
   category: string
+  /** All categories (primary first), for display. A product can belong to several. */
+  categories: string[]
   productType: ProductType
   unit: string
   onHand: number
@@ -209,7 +212,10 @@ export function productIndexRows(warehouseIds?: string[]): ProductIndexRow[] {
       sku: p.sku,
       barcode: overlayBarcode ?? p.barcode ?? s?.barcode ?? String(8_991_000_000_000 + i),
       barcodeAssigned: !!p.barcode || !!overlayBarcode,
+      // `category` stays the PRIMARY (single) — batch/serial detection, DJP lookup, sort
+      // and filters all read one category. `categories` carries the full list for display.
       category: p.category,
+      categories: productCategoriesOf(p),
       // "Not tracked" means not tracked in inventory at all (e.g. a service item) —
       // every current product is a real stocked good, so all are "tracked" for now.
       productType: 'single-tracked',

@@ -368,7 +368,7 @@ const activityEntries = computed<ActivityEntry[]>(() => {
     details: [
       { label: 'Name', value: p.name },
       { label: 'SKU', value: p.sku },
-      { label: 'Category', value: p.category },
+      { label: 'Category', value: (p.categories?.length ? p.categories : [p.category]).join(', ') },
     ],
   }]
 })
@@ -1108,7 +1108,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <div class="pd-field-col" style="width: 368px">
             <ContentList label="SKU" :value="product.sku" />
             <ContentList label="Barcode" :value="product.barcode" />
-            <ContentList label="Category" :value="product.category" />
+            <ContentList label="Category" :value="(product.categories?.length ? product.categories : [product.category]).join(', ')" />
             <ContentList label="Base unit" :value="product.unit" />
             <ContentList label="Description">
               <ClampText :text="product.desc" :lines="2" />

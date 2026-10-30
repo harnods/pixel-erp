@@ -491,6 +491,9 @@ function closeExportModal() { exportModalOpen.value = false }
       />
     </template>
 
+    <!-- A product can belong to several categories (primary first), like production. -->
+    <template #cell-category="{ row }">{{ ((row as ProductIndexRow).categories?.length ? (row as ProductIndexRow).categories : [(row as ProductIndexRow).category]).join(', ') }}</template>
+
     <!-- ── Cell: quantity columns ── -->
     <template #cell-onHand="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>
     <template #cell-reserved="{ value }">{{ (value as number).toLocaleString('id-ID') }}</template>
