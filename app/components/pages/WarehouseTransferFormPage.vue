@@ -16,6 +16,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
 import { resolveMisplacedSerials } from '~/data/wmsStockAdjustments'
@@ -77,19 +78,15 @@ function availableFor(sku: string): number { return originStockMap.value.get(sku
 function onHandFor(sku: string): number | undefined { return destStockMap.value.get(sku)?.onHand }
 
 // ── Batch / serial detection (mirrors StockInOut logic) ────────────────────────────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
 function isBatchTrackedSku(sku: string): boolean {
   const si = originStockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 function isSerialTrackedSku(sku: string): boolean {
   const si = originStockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 
 // ── Product line rows ──────────────────────────────────────────────────────────────

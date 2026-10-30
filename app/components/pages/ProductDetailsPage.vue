@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, MpButtonGroup, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -18,10 +18,18 @@ import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
+import BatchExportModal from '~/components/patterns/BatchExportModal.vue'
 import {
   getProductDetail, getProductTransactions, getProductWarehouseStock, getProductBatches, getProductSerialStock,
   getProductAllSerials, type ProductBatchSummary,
 } from '~/data/productDetails'
+import {
+  getBatchAttributeConfig, batchAttributeConfigActivity, batchAttributeDef, formatExpiry,
+  type BatchAttributeSetting,
+} from '~/data/batchAttributes'
+import { gradeById } from '~/data/grades'
+import { vendors } from '~/data/vendors'
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
@@ -99,16 +107,50 @@ function formatQty(n: number, unit: string) {
   return `${n.toLocaleString('id-ID')} ${unit}`
 }
 function formatDate(iso: string) {
-  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
+  // A batch can have no expiry (the Unassigned batch, or an optional Expiry left
+  // empty) — Intl throws "Invalid time value" on an invalid Date, so render "—".
+  const d = new Date(iso)
+  if (!iso || Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
 }
 const createdLabel = computed(() => product.value ? formatDateTimeLong(product.value.createdAt) : '')
 
 // ── Activity log ───────────────────────────────────────────────────────────────
 const activityOpen = ref(false)
+
+/** A batch attribute set as one line: "Expiry date (required), Vendor, Grade". */
+function formatAttributeSet(settings: readonly { key: string; required: boolean }[]): string {
+  if (!settings.length) return '—'
+  return settings
+    // Optional chaining: a failed attempt can carry a key that isn't in the catalog.
+    .map(s => `${batchAttributeDef(s.key as BatchAttributeSetting['key'])?.label ?? s.key}${s.required ? ' (required)' : ''}`)
+    .join(', ')
+}
+const batchAttributesLabel = computed(() => (product.value ? formatAttributeSet(getBatchAttributeConfig(product.value.sku)) : ''))
+
+const ATTRIBUTE_ERROR_TEXT: Record<string, string> = {
+  'too-many': 'More than 3 attributes',
+  duplicate: 'Same attribute selected twice',
+  'unknown-key': 'Attribute is not in the catalog',
+}
+
 const activityEntries = computed<ActivityEntry[]>(() => {
   const p = product.value
   if (!p) return []
-  return [{
+  // Batch attribute set changes (Batch Attribute PRD story 6a), newest first —
+  // failed attempts included, shown as old → new like any other edit.
+  const attributeChanges: ActivityEntry[] = batchAttributeConfigActivity(p.sku).map(e => ({
+    date: e.date,
+    user: e.user,
+    activity: e.outcome === 'success' ? 'Updated batch attributes' : 'Failed to update batch attributes',
+    details: [
+      { label: 'Batch attributes', value: `${formatAttributeSet(e.previous)} → ${formatAttributeSet(e.next)}` },
+      ...(e.outcome === 'failed'
+        ? [{ label: 'Result', value: `Failed — ${e.errors.map(c => ATTRIBUTE_ERROR_TEXT[c] ?? c).join('; ')}` }]
+        : []),
+    ],
+  }))
+  return [...attributeChanges, {
     date: p.createdAt,
     user: p.createdBy,
     activity: 'Created',
@@ -211,6 +253,46 @@ function viewBatch(batchNo: string) {
   router.push(`/product-list/${product.value.sku}/batches/${encodeURIComponent(batchNo)}`)
 }
 
+// ── Batch attributes in the batches table + New / Edit batch (Batch Attribute Phase 3) ──
+/** One column per attribute on the product, in its order. */
+const batchAttributeColumns = computed(() =>
+  product.value
+    ? getBatchAttributeConfig(product.value.sku).map(a => ({ key: a.key, label: batchAttributeDef(a.key).label }))
+    : [],
+)
+/** An attribute as a table cell. Stored values are raw (vendor id, grade id, ISO date),
+ *  so this names them; table dates stay numeric (rule/format-date). */
+function batchAttributeCell(b: ProductBatchSummary, key: BatchAttributeSetting['key']): string {
+  const value = b.attributes[key]
+  if (!value) return '—'
+  switch (key) {
+    case 'expiry_date': return formatExpiry(value)
+    case 'manufacturing_date':
+    case 'best_before_date': return formatDate(value)
+    case 'supplier': return vendors.find(v => v.id === value)?.name ?? value
+    case 'grade': {
+      const grade = gradeById(value)
+      return grade ? `${grade.name} (Rank ${grade.rank})` : value
+    }
+    default: return value
+  }
+}
+
+const batchFormOpen = ref(false)
+/** null = New batch; a batch id = Edit that batch. */
+const batchFormBatchId = ref<string | null>(null)
+function openNewBatch() {
+  batchFormBatchId.value = null
+  batchFormOpen.value = true
+}
+function openEditBatch(b: ProductBatchSummary) {
+  batchFormBatchId.value = b.id
+  batchFormOpen.value = true
+}
+
+// Export batches — same format as the Update batches template, so an export can be edited and imported back.
+const batchExportOpen = ref(false)
+
 type PrintBarcodeTarget =
   | { kind: 'batch'; batch: ProductBatchSummary }
   | { kind: 'sku' }
@@ -223,8 +305,9 @@ function printBatchBarcode(b: ProductBatchSummary) {
   printBarcodeOptionsOpen.value = true
 }
 // Print one barcode per batch currently listed (respects the archived toggle + search).
+// The Unassigned batch has no barcode — it isn't a physical lot — so it's skipped.
 function printAllBatchBarcodes() {
-  const batches = filteredBatches.value
+  const batches = filteredBatches.value.filter(b => b.barcode)
   if (!batches.length) return
   printBarcodeTarget.value = { kind: 'batches', batches: [...batches] }
   printBarcodeOptionsOpen.value = true
@@ -372,6 +455,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <!-- Product type is an ERP concept — every WMS Standalone product is single. -->
             <ContentList v-if="!isWms" label="Product type" :value="product.productType" />
             <ContentList label="Track stock by" :value="product.trackStockBy" />
+            <ContentList v-if="product.trackStockBy === 'Batch'" label="Batch attributes" :value="batchAttributesLabel" />
             <ContentList v-if="!isWms" label="Default inventory account">
               <span v-if="isMigrationPending">—</span>
               <a v-else class="pd-link">{{ product.defaultInventoryAccount }}</a>
@@ -581,12 +665,46 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 
           <!-- Stock by batches (batch-tracked products) -->
           <MpTabPanel v-if="product.trackStockBy === 'Batch'" value="batches">
-            <div class="pd-filter-bar pd-filter-bar--end">
+            <!-- rule/filter-bar-anatomy: left group | right group. Deviation, asked for by
+                 design: Print all barcode sits to the RIGHT of the search pill rather than
+                 search being last, and the archived filter sits with the tools. -->
+            <div class="pd-filter-bar">
+              <div class="pd-filter-left">
+                <!-- rule/filter-bar-action-tertiary: the create action is the black tertiary
+                     button. It leads the left group so it lines up with the table below. -->
+                <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNewBatch">New batch</MpButton>
+              </div>
               <div class="pd-filter-right">
                 <MpCheckbox
                   id="pd-show-archived-batches" :is-checked="showArchivedBatches"
                   @change="showArchivedBatches = !showArchivedBatches"
                 >Show archived batches</MpCheckbox>
+                <!-- rule/filter-bar-icon-group: ghost icon tools in one group, directly left
+                     of the search pill. Export = download, Import = upload
+                     (names checked against the Pixel library, rule/icon-pixel-library). -->
+                <MpButtonGroup>
+                  <MpTooltip id="tt-pd-batch-export" label="Export" placement="bottom" use-portal>
+                    <MpButton
+                      variant="ghost" is-rounded left-icon="download"
+                      aria-label="Export" @click="batchExportOpen = true"
+                    />
+                  </MpTooltip>
+                  <!-- rule/btn-dropdown-mppopover: Import opens a menu of import types. No
+                       MpTooltip here — a tooltip wrapper breaks a popover trigger
+                       (rule/btn-icon-tooltip's kebab exception); the aria-label names it. -->
+                  <MpPopover id="pd-batch-import" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                    <MpPopoverTrigger>
+                      <MpButton variant="ghost" is-rounded left-icon="upload" aria-label="Import" />
+                    </MpPopoverTrigger>
+                    <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
+                      <MpPopoverList>
+                        <MpPopoverListItem
+                          @click="router.push({ path: '/product-list/import-batches', query: { sku: product.sku } })"
+                        >Update batches from spreadsheet</MpPopoverListItem>
+                      </MpPopoverList>
+                    </MpPopoverContent>
+                  </MpPopover>
+                </MpButtonGroup>
                 <div class="pd-search">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -614,7 +732,11 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
               <table class="pd-table">
                 <colgroup>
                   <col style="width: 140px" />
-                  <col style="width: 130px" />
+                  <!-- One column per batch attribute on the product (Batch Attribute Phase 3). -->
+                  <col
+                    v-for="c in batchAttributeColumns" :key="c.key"
+                    :class="c.key === 'supplier' ? 'pd-col-attr pd-col-attr--vendor' : 'pd-col-attr'"
+                  />
                   <col style="width: 220px" />
                   <col style="width: 110px" />
                   <col style="width: 110px" />
@@ -625,7 +747,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <thead>
                   <tr>
                     <th class="pd-th">Number</th>
-                    <th class="pd-th">Expiration date</th>
+                    <th v-for="c in batchAttributeColumns" :key="c.key" class="pd-th">{{ c.label }}</th>
                     <th class="pd-th">Description</th>
                     <th class="pd-th pd-th--num">On hand</th>
                     <th class="pd-th pd-th--num">Reserved</th>
@@ -635,19 +757,25 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="b in pagedBatches" :key="b.batchNo" class="pd-tr">
+                  <!-- Keyed by the stable batch id, so a renamed batch keeps its row. -->
+                  <tr v-for="b in pagedBatches" :key="b.id" class="pd-tr">
                     <td class="pd-td">
                       <a class="cell-link cell-text" @click.stop="viewBatch(b.batchNo)">{{ b.batchNo }}</a>
                     </td>
-                    <td class="pd-td">
-                      <span class="pd-expiry-cell" :class="{ 'pd-expiry-cell--danger': isExpiryWarning(b.expiryDate) }">
-                        {{ formatDate(b.expiryDate) }}
+                    <td v-for="c in batchAttributeColumns" :key="c.key" class="pd-td">
+                      <!-- Expiry keeps its near-expiry warning; a month expiry counts as its last day. -->
+                      <span
+                        v-if="c.key === 'expiry_date' && b.attributes.expiry_date"
+                        class="pd-expiry-cell" :class="{ 'pd-expiry-cell--danger': isExpiryWarning(b.expiryDate) }"
+                      >
+                        {{ batchAttributeCell(b, c.key) }}
                         <MpTooltip v-if="isExpiryWarning(b.expiryDate)" :id="`pd-tt-exp-${b.batchNo}`" :label="expiryTooltip(b.expiryDate)" placement="top" use-portal>
                           <span class="pd-expiry-warn" @click.stop><MpIcon name="warning-triangle" size="sm" /></span>
                         </MpTooltip>
                       </span>
+                      <template v-else>{{ batchAttributeCell(b, c.key) }}</template>
                     </td>
-                    <td class="pd-td">{{ b.description }}</td>
+                    <td class="pd-td">{{ b.description || '—' }}</td>
                     <td class="pd-td pd-td--num">{{ b.onHand.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ b.reserved.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ b.available.toLocaleString('id-ID') }}</td>
@@ -664,7 +792,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
                             <MpPopoverListItem @click="viewBatch(b.batchNo)">View details</MpPopoverListItem>
-                            <MpPopoverListItem @click="printBatchBarcode(b)">Print barcode</MpPopoverListItem>
+                            <!-- The Unassigned batch can't be edited (PM answer A5). -->
+                            <MpPopoverListItem v-if="!b.isUnassigned" @click="openEditBatch(b)">Edit</MpPopoverListItem>
+                            <MpPopoverListItem v-if="!b.isUnassigned" @click="printBatchBarcode(b)">Print barcode</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>
                       </MpPopover>
@@ -675,8 +805,15 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </div>
             <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No batches</p>
-              <p class="empty-full-desc">Batches will appear here.</p>
+              <!-- Search-not-matched differs from first-run (docs/design/reachable-states.md). -->
+              <template v-if="batchSearch.trim()">
+                <p class="empty-full-title">"{{ batchSearch.trim() }}" not found</p>
+                <p class="empty-full-desc">Recheck the keywords you have typed and try searching again.</p>
+              </template>
+              <template v-else>
+                <p class="empty-full-title">No batches</p>
+                <p class="empty-full-desc">Batches will appear here.</p>
+              </template>
             </div>
 
             <ErpPagination
@@ -869,6 +1006,23 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       title="Barcode preview"
       @close="barcodePreviewOpen = false"
     />
+
+    <!-- New batch / Edit batch — the list re-reads getProductBatches, so a saved batch
+         shows up (or updates) in the Stock by batches table on its own. -->
+    <BatchFormModal
+      v-if="product.trackStockBy === 'Batch'"
+      :open="batchFormOpen"
+      :sku="product.sku"
+      :batch-id="batchFormBatchId"
+      @close="batchFormOpen = false"
+    />
+
+    <BatchExportModal
+      v-if="product.trackStockBy === 'Batch'"
+      :open="batchExportOpen"
+      :sku="product.sku"
+      @close="batchExportOpen = false"
+    />
   </div>
 
   <div v-else class="detail-page">
@@ -884,7 +1038,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -913,7 +1067,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -950,7 +1104,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-image-col { flex-shrink: 0; width: 172px; }
 .pd-image {
   width: 172px; height: 172px; object-fit: cover; border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); border: 1px solid var(--mp-border-subtle, #e5e7e7);
 }
 .pd-field-col { display: flex; flex-direction: column; }
 .pd-field-col--flex { flex: 1; min-width: 0; }
@@ -978,11 +1132,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-filter-bar--end { justify-content: flex-end; }
 .pd-filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .pd-filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+/* Batch attribute columns (Stock by batches) — Vendor names need more room than dates and grades. */
+.pd-col-attr { width: var(--mp-sizes-36, 144px); }
+.pd-col-attr--vendor { width: var(--mp-sizes-56, 224px); }
 .pd-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   min-width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral); color: var(--mp-text-subtle);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-subtle);
 }
 .pd-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); min-width: 0; }
 .pd-search-input::placeholder { color: var(--mp-text-placeholder); }
@@ -993,7 +1150,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.pd-search-clear:hover { background: var(--mp-background-neutral-hovered); }
+.pd-search-clear:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Tables (ErpTablePage header/row spec, raw table — mirrors WarehouseDetailsPage's tab tables) ── */
 .pd-table-scroll { overflow-x: auto; }
@@ -1001,24 +1158,24 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .pd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral, #ffffff);
 }
 .pd-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
 .pd-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .pd-tx-number { color: var(--mp-text-default); }
 .row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
-.pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered); }
+.row-kebab:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
+.pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Number / Warehouse cells — the value links to the record's detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

@@ -26,7 +26,7 @@ import {
 import { getPackingForOrder } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
 import { stockLocationPaths } from '~/data/storageLocations'
-import { productBySku } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { resolveScan, notifyScanError, sameCode } from '~/utils/scan'
@@ -141,8 +141,6 @@ const locationOptions = computed(() => {
 })
 
 // ── Batch / serial helpers (same heuristic as receiving / put-away) ────────────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(task.value?.warehouseId ?? '')
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -150,14 +148,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 // The drawer's "onHand" field doubles as "Available qty" for picking (never raw on
 // hand) — a batch already claimed by another order can't be offered again here.
@@ -199,6 +195,7 @@ const taskBatchByKey = computed(() => {
         unit: b.unit,
         location: b.location,
         reservedQty: b.qty,
+        attributes: b.attributes,
       }))
     }
   }
@@ -734,7 +731,7 @@ const viewSerialItem = ref<PickLineItem | null>(null)
 function pickedBatchRowsForItem(item: PickLineItem): PickedBatchRow[] {
   return (batchLinesByKey.value[item.key] ?? [])
     .filter(b => (b.counted ?? 0) > 0)
-    .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit, location: b.location }))
+    .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit, location: b.location, attributes: b.attributes }))
 }
 function pickedSerialRowsForItem(item: PickLineItem): PickedSerialRow[] {
   return serialLinesByKey.value[item.key] ?? []
@@ -862,6 +859,7 @@ function buildAssignments(): PickingAssignments {
     const picks = batches.map(b => ({
       batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc,
       qty: (b.counted ?? 0) || (b.reservedQty ?? 0), unit: b.unit, location: b.location ?? '',
+      attributes: b.attributes,
     })).filter(p => p.qty > 0)
     if (picks.length) batchPicks[key] = picks
   }

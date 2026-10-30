@@ -5,22 +5,21 @@ import { loadSnapshot, saveSnapshot } from "./persist";
 import { receipts, persistReceipts, type Receipt } from "./receipts";
 import { lineItemsForReceipt } from "./receiptLineItems";
 import { TODAY } from "./master";
-import { CATALOG } from "./catalog";
 import { getWarehouseConfig } from "./warehouseConfig";
 import {
   applyStockInOut, registerNewBatch, receiveNewSerials, unregisterBatch, removeReceivedSerials, binForSku,
 } from "./warehouseDetails";
+import { commitDrawerBatches } from "./productDetails";
+import { vendors } from "./vendors";
+import type { BatchAttributeValues } from "./batchAttributes";
 import { addWmsAdjustment } from "./wmsStockAdjustments";
-
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment']);
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans']);
-const SKU_CATEGORY = new Map(CATALOG.map((p) => [p.sku, p.category]));
+import { isProductBatchTracked, isProductSerialTracked } from "./trackStockBy";
 
 function isSerialSku(sku: string): boolean {
-  return SERIAL_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+  return isProductSerialTracked(sku);
 }
 function isBatchSku(sku: string): boolean {
-  return BATCH_CATS.has(SKU_CATEGORY.get(sku) ?? '');
+  return isProductBatchTracked(sku);
 }
 
 /** Generate deterministic serial numbers for seed receiving data. */
@@ -59,6 +58,8 @@ export interface ReceivingBatchLine {
   desc: string;
   qty: number;
   unit: string;
+  /** Batch attribute snapshot recorded in the Manage batch drawer (ATINV-9082). */
+  attributes?: BatchAttributeValues;
 }
 
 /** One SKU line within a receiving task. */
@@ -768,6 +769,28 @@ export function completeReceivingOnPoCancel(taskId: string): void {
   persistTasks();
 }
 
+/** The vendor id of the PO a receiving task belongs to. The receipt carries the vendor
+ *  by name only, so it is matched to the vendor master by name; undefined when the task,
+ *  the vendor or the match is missing. */
+export function receivingTaskVendorId(taskId: string): string | undefined {
+  const t = getReceivingTask(taskId);
+  if (!t) return undefined;
+  const name = receipts.find((r) => r.id === t.receiptId)?.vendor;
+  return name ? vendors.find((v) => v.name === name)?.id : undefined;
+}
+
+/** Received batches reach the batch master (ATINV-9082): new numbers become product
+ *  batch records, typed attributes fill empty ones. Idempotent, so it is safe on both
+ *  the put-away-disabled commit and the end-of-receiving path. */
+function commitReceivedBatchMaster(t: ReceivingTask): void {
+  for (const it of t.items) {
+    if (it.receivedQty <= 0 || !it.batchLines?.length) continue;
+    commitDrawerBatches(it.sku, it.batchLines.filter((b) => b.qty > 0).map((b) => ({
+      batchNo: b.batchNo, expiryDate: b.expiryDate, description: b.desc, attributes: b.attributes,
+    })));
+  }
+}
+
 /**
  * Commit a receiving task's items into REAL, tracked on-hand stock — the
  * put-away-disabled equivalent of what endPutAway() does for a real put-away
@@ -777,6 +800,7 @@ export function completeReceivingOnPoCancel(taskId: string): void {
  * later PO cancellation cascade knows there's real stock to reverse.
  */
 function commitReceivingStock(t: ReceivingTask): void {
+  commitReceivedBatchMaster(t);
   for (const it of t.items) {
     if (it.receivedQty <= 0) continue;
     if (it.batchLines?.length) {
@@ -926,6 +950,9 @@ export function endReceiving(
   // Put-away disabled → there's no separate put-away step left to commit the
   // goods to on-hand, so receiving itself must do it right here.
   if (!putAwayEnabled) commitReceivingStock(t);
+  // With put-away on, stock waits for put-away, but the batch master records what
+  // was received now (attributes would otherwise be lost between the two steps).
+  else commitReceivedBatchMaster(t);
   persistTasks();
   recomputeReceiptStatus(t.receiptId);
 }

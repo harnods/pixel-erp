@@ -27,6 +27,13 @@ import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { PurchaseDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
+import { getProductBatches, isProductBatchTracked } from '~/data/productDetails'
+import {
+  VENDOR_MISMATCH_COPY, checkDeliveryBatches, commitDeliveryBatches, deliveryBatchCheckOk, deliveryVendorMismatches, followDeliveryVendor,
+  type DeliveryBatchAllocation, type DeliveryBatchLine, type SavedDeliveryBatch,
+} from '~/data/purchaseDeliveryBatches'
 
 const router = useRouter()
 const { t } = useLocale()
@@ -81,8 +88,30 @@ function onTagsChange(data: DataInterface[])  { tagsList.value = data }
 // vendor master actually carries (there's no address on the record).
 function onVendorChange(id: unknown) {
   vendorError.value = false
+  const next = String(id ?? '')
+  // Batches already set up follow the vendor, so changing it asks first (story 10).
+  if (committedVendorId.value && next !== committedVendorId.value && items.value.some(it => it.batches.length)) {
+    vendorChangeOpen.value = true
+    return
+  }
+  applyVendor(next)
+}
+
+// The vendor the line batches currently follow — a cancelled change reverts to it.
+const committedVendorId = ref('')
+const vendorChangeOpen = ref(false)
+function applyVendor(id: string) {
+  committedVendorId.value = id
+  // New batches that still follow the delivery take the new vendor (story 10, rule 1).
+  items.value.forEach(it => { if (it.batches.length) it.batches = followDeliveryVendor(it.sku, it.batches, id) })
   const v = vendors.find(x => x.id === id)
   if (v?.email && !emailTags.value.length) emailTags.value = toTagData([v.email])
+}
+// ConfirmModal emits confirm before closing, so a confirmed change is already
+// committed here and only a cancel reverts.
+function onVendorChangeModal(open: boolean) {
+  vendorChangeOpen.value = open
+  if (!open) vendorId.value = committedVendorId.value
 }
 
 // ── Line items ────────────────────────────────────────────────────────────────
@@ -98,11 +127,70 @@ interface LineItem {
   taxLabel: string
   productError: boolean
   qtyError: boolean
+  /** Batch-tracked products: how the qty splits across batches (Batch Attribute story 10). */
+  batches: DeliveryBatchAllocation[]
+  batchError: boolean
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
 
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
+
+// ── Line batches (Manage batch drawer) ───────────────────────────────────────
+const isBatchLine = (item: LineItem) => !!item.sku && isProductBatchTracked(item.sku)
+const batchDrawerKey = ref<number | null>(null)
+const batchDrawerItem = computed(() => items.value.find(it => it._key === batchDrawerKey.value))
+function lineBatchInput(item: LineItem): DeliveryBatchLine {
+  return { sku: item.sku, productName: item.product, qty: item.qty, batches: item.batches }
+}
+/** New batch numbers for the same product on the delivery's other lines. */
+function otherNewBatchNos(item: LineItem): string[] {
+  return items.value
+    .filter(o => o._key !== item._key && o.sku === item.sku)
+    .flatMap(o => o.batches.filter(b => !b.batchId).map(b => b.batchNo))
+}
+/** The shared drawer speaks CommittedBatch; the delivery rules speak
+ *  DeliveryBatchAllocation. Map between the two here. */
+const batchDrawerModel = computed<CommittedBatch[]>(() => {
+  const item = batchDrawerItem.value
+  if (!item) return []
+  const records = getProductBatches(item.sku)
+  return item.batches.map(b => {
+    // An existing batch reads its description from the record; a new one carries
+    // what was typed for it, so reopening the drawer shows both.
+    const record = b.batchId ? records.find(r => r.id === b.batchId) : undefined
+    return {
+      key: b.key,
+      ...(b.batchId ? { batchId: b.batchId } : {}),
+      batchNo: b.batchNo,
+      expiryDate: b.attributes?.expiry_date ?? '',
+      desc: record ? record.description : (b.description ?? ''),
+      onHand: 0,
+      counted: b.qty,
+      unit: item.unit,
+      attributes: { ...(record?.attributes ?? {}), ...b.attributes },
+    }
+  })
+})
+
+function onBatchesSaved(batches: CommittedBatch[]) {
+  const item = batchDrawerItem.value
+  if (!item) return
+  item.batches = batches.map(b => ({
+    key: b.key,
+    ...(b.batchId ? { batchId: b.batchId } : {}),
+    batchNo: b.batchNo.trim(),
+    qty: b.counted ?? 0,
+    attributes: { ...b.attributes },
+    ...(b.batchId ? {} : { description: b.desc ?? '' }),
+    // A vendor the user moved off the delivery's stops following it (story 10, rule 1).
+    vendorEdited: !b.batchId && !!b.attributes?.supplier && b.attributes.supplier !== vendorId.value,
+  }))
+  item.batchError = false
+}
+function batchSummary(item: LineItem): string {
+  return item.batches.length === 1 ? t('1 batch') : t('{n} batches').replace('{n}', String(item.batches.length))
+}
 function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
 }
@@ -122,6 +210,9 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
   item.unit = p.unit
   item.unitPrice = p.price
   item.productError = false
+  // Batches belong to the product — a different product starts over.
+  item.batches = []
+  item.batchError = false
   openProductRow.value = null
 }
 
@@ -140,6 +231,8 @@ function selectNewProduct(p: typeof products[number]) {
     taxLabel: 'PPN 11%',
     productError: false,
     qtyError: false,
+    batches: [],
+    batchError: false,
   })
   newRowSearch.value = ''
   openProductRow.value = null
@@ -175,7 +268,7 @@ const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.
 
 // Banner above the table whenever any line cell is flagged — same convention as
 // NewExpensePage's line-items error banner.
-const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError))
+const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError || it.batchError))
 const noItemsError = ref(false)   // set on save attempt with zero line items (inline, not a toast)
 
 // ── Totals ────────────────────────────────────────────────────────────────────
@@ -237,6 +330,12 @@ function validate(): boolean {
   items.value.forEach(it => {
     if (!it.product) { it.productError = true; ok = false }
     if (!(it.qty > 0)) { it.qtyError = true; ok = false }
+    if (it.product && it.qty > 0 && isBatchLine(it)) {
+      // Batches added before a vendor was picked pick it up now (story 10, rule 1).
+      it.batches = followDeliveryVendor(it.sku, it.batches, vendorId.value)
+      it.batchError = !deliveryBatchCheckOk(checkDeliveryBatches(lineBatchInput(it), otherNewBatchNos(it)))
+      if (it.batchError) ok = false
+    }
   })
   return ok
 }
@@ -254,11 +353,53 @@ function nextDeliveryId(): string {
 
 function onCancel() { router.push('/purchase-deliveries') }
 
+// Existing batches from another vendor — one confirmation for all of them (story 10, rule 2).
+const mismatchOpen = ref(false)
+const mismatchText = ref('')
+/** One line per batch when several mismatch; empty for a single one, which keeps
+ *  the PRD's sentence whole rather than splitting it into a one-item list. */
+const mismatchItems = ref<string[]>([])
+
 function onSave() {
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
   if (!validate()) return
+  const mismatches = deliveryVendorMismatches(items.value.filter(isBatchLine).map(lineBatchInput), vendorId.value)
+  if (mismatches.length) {
+    const deliveryVendor = vendors.find(v => v.id === vendorId.value)?.name ?? ''
+    const one = mismatches[0]!
+    if (mismatches.length === 1) {
+      // One batch keeps the PRD's sentence exactly as written.
+      mismatchText.value = `${one.batchNo} (${one.productName}): ${t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', one.vendorName).replace('{deliveryVendor}', deliveryVendor)}`
+      mismatchItems.value = []
+    } else {
+      // Repeating that sentence per batch buries the list. The shared half is said
+      // once, and each batch contributes only what differs — its own vendor.
+      mismatchText.value = t('These batches are recorded with a different vendor than this transaction ({deliveryVendor}). The vendor of the batches will not be changed.')
+        .replace('{deliveryVendor}', deliveryVendor)
+      mismatchItems.value = mismatches.map(m => `${m.batchNo} (${m.productName}) — ${m.vendorName}`)
+    }
+    mismatchOpen.value = true
+    return
+  }
+  commitSave()
+}
+
+function commitSave() {
+  // Create new batches and fill vendor-less ones (rules 1 + 3). Checked in validate(),
+  // so a failure here only means the batches changed meanwhile — flag the line.
+  const savedBatches = new Map<number, SavedDeliveryBatch[]>()
+  for (const it of items.value.filter(isBatchLine)) {
+    const result = commitDeliveryBatches(lineBatchInput(it), vendorId.value)
+    if (!result.ok) { it.batchError = true; return }
+    savedBatches.set(it._key, result.batches)
+  }
   const vendor = vendors.find(v => v.id === vendorId.value)!
   const delivery: PurchaseDelivery = {
+    lines: items.value.map(it => ({
+      product: it.product, sku: it.sku, description: it.description, qty: it.qty, unit: it.unit,
+      unitPrice: it.unitPrice, discountPct: it.discountPct, taxLabel: it.taxLabel,
+      ...(savedBatches.has(it._key) ? { batches: savedBatches.get(it._key) } : {}),
+    })),
     id: nextDeliveryId(),
     number: nextDeliveryNumber(),
     vendor: { id: vendor.id, name: vendor.name },
@@ -483,7 +624,7 @@ function onSave() {
                   <MpInput v-model="item.description" is-full-width />
                 </td>
 
-                <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.qtyError }">
+                <td class="si-td si-td--input si-td--border si-td--qty" :class="{ 'si-td--error': item.qtyError }">
                   <MpTooltip
                     v-if="item.qtyError" :id="`si-qty-tt-${item._key}`"
                     :label="t('Qty must be more than 0')" placement="top" use-portal
@@ -495,6 +636,14 @@ function onSave() {
                   </MpTooltip>
                   <MpInput v-else type="number" :model-value="item.qty" is-full-width
                     @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                  <!-- Batch-tracked products split the qty across batches in a drawer
+                       (rule/drawer-open-via-manage) — the link sits under the qty it
+                       splits, as on the work order's raw materials table. -->
+                  <template v-if="isBatchLine(item)">
+                    <span v-if="item.batchError" class="si-tracked-hint si-tracked-hint--error">{{ t('Check the batches for this line') }}</span>
+                    <span v-else-if="item.batches.length" class="si-tracked-hint">{{ batchSummary(item) }}</span>
+                    <a :id="`si-batch-${item._key}`" class="si-tracking" @click.prevent="batchDrawerKey = item._key">{{ t('Manage batch') }}</a>
+                  </template>
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
@@ -710,6 +859,34 @@ function onSave() {
       :existing-formats="txNoFormats"
       @save="onNoFormatSave"
     />
+
+    <!-- The shared WMS batch drawer, in its purchase-delivery kind. -->
+    <ManageBatchDrawer
+      v-if="batchDrawerItem"
+      :open="batchDrawerKey !== null"
+      :sku="batchDrawerItem.sku"
+      warehouse-id=""
+      kind="purchase-delivery"
+      :vendor-id="vendorId"
+      :target-count="batchDrawerItem.qty"
+      :model-value="batchDrawerModel"
+      @update:open="(v) => { if (!v) batchDrawerKey = null }"
+      @save="onBatchesSaved"
+    />
+
+    <ConfirmModal
+      :is-open="vendorChangeOpen" :title="t('Change vendor?')"
+      :description="t('New batches on this delivery will use the new vendor. Existing batches keep their own vendor.')"
+      :confirm-label="t('Change vendor')" :is-danger="false"
+      @update:is-open="onVendorChangeModal" @confirm="applyVendor(vendorId)"
+    />
+
+    <ConfirmModal
+      :is-open="mismatchOpen" :title="t('Save with batches from another vendor?')" :description="mismatchText"
+      :items="mismatchItems"
+      :confirm-label="t('Save delivery')" :is-danger="false"
+      @update:is-open="(v) => { mismatchOpen = v }" @confirm="commitSave"
+    />
   </div>
 </template>
 
@@ -828,13 +1005,19 @@ function onSave() {
 .si-items-scroll { overflow-x: auto; }
 
 .si-items-table {
-  width: 100%; min-width: 1340px;
+  width: 100%; min-width: 1404px;
   table-layout: fixed; border-collapse: collapse; border-spacing: 0;
 }
 .si-col-drag     { width: 44px; }
 .si-col-product  { width: 280px; }
 .si-col-desc     { width: auto; }
-.si-col-qty      { width: 64px; }
+/* Wide enough for the Manage batch link stacked under the qty. Hint + link align to
+   the input's own text inset (12px), same cell as CreateWorkOrderPage's raw materials. */
+.si-col-qty      { width: 132px; }
+.si-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.si-tracked-hint--error { color: var(--mp-text-danger); }
+.si-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
+.si-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
 .si-col-unit     { width: 104px; }
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
@@ -872,17 +1055,25 @@ function onSave() {
 .si-tr--dragover > .si-td { border-top: 2px solid var(--mp-border-focused, #2563eb); }
 .si-td--drag { padding: 0; text-align: center; color: var(--mp-text-placeholder); cursor: grab; }
 .si-td--del  { padding: 0; text-align: center; }
-/* Pins the drag/delete control to the first row's height instead of drifting
-   to the vertical center of a Dimensions-stretched row. */
-.si-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
+/* Drag/delete sit on the row's middle line, like every other cell's content. */
+.si-cell-center { display: flex; align-items: center; justify-content: center; height: 100%; min-height: var(--mp-sizes-10, 40px); }
 .si-td--input { padding: 0; }
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
+/* A row can be taller than one control (the qty cell stacks Manage batch under its
+   input), so controls fill the row rather than floating at the top — the affix cells
+   already stretch that way. The qty cell itself keeps the plain control height. */
+.si-td--input :deep(.mp-autocomplete__root),
+.si-td--input :deep(.mp-autocomplete__root > div),
+.si-td--input :deep(.mp-input-group__root),
 .si-td--input :deep(.mp-input__root),
-.si-td--input :deep(.mp-select__root) { height: var(--mp-sizes-10, 40px); background: transparent; }
+.si-td--input :deep(.mp-select__root) { height: 100%; min-height: var(--mp-sizes-10, 40px); background: transparent; }
+.si-td--qty :deep(.mp-input__root) { height: var(--mp-sizes-10, 40px); }
 .si-td--input :deep(.mp-input__control),
 .si-td--input :deep(.mp-select__control) {
-  height: var(--mp-sizes-10, 40px);
+  /* Fill the (possibly taller) cell so the control's own flex centring puts the
+     value on the row's middle line instead of pinning it to the top 40px. */
+  height: 100%; min-height: var(--mp-sizes-10, 40px);
   /* MpInput's control carries a hard min-width (88px). In the narrow Qty and
      Discount columns that overflows the cell and paints over the td's right
      border — and pushes the Discount "%" suffix out of view. */
@@ -904,20 +1095,24 @@ function onSave() {
 .si-td--error :deep([class*='input']) { background: transparent; }
 .si-error-tooltip-wrap { display: block; width: 100%; }
 .si-error-tooltip-wrap :deep([class*='tooltip__trigger']) { display: block; width: 100%; }
+/* The wrapper has to pass the cell height through, or the control it wraps
+   centres inside a 40px box at the top of a taller row. The qty cell is the
+   exception: its control shares the cell with the Manage batch link. */
+.si-td:not(.si-td--qty) > .si-error-tooltip-wrap,
+.si-td:not(.si-td--qty) > .si-error-tooltip-wrap :deep([class*='tooltip__trigger']) { height: 100%; }
 
 /* Prefix/suffix cells (Unit price, Discount, Amount) — a plain span box, never
    MpInputLeftAddon, so it fills the cell edge-to-edge like .ex-amount-prefix. */
 .si-td--affix { padding: 0; position: relative; }
 /* calculated (non-editable) Amount cell = disabled gray (rule/table-bg-white exception) */
 .si-td--calc, .si-td--calc .si-affix, .si-td--calc .si-affix-value { background: var(--mp-background-neutral-strong, #f1f3f5); }
-/* inset:0 (not height:100%) fills the full — possibly Dimensions-stretched —
-   row height. align-items:stretch then lets .si-affix (auto cross-size) grow
-   to match, while the input/value keep their own fixed height and simply
-   dock to the top (a flex item with a definite cross size doesn't stretch). */
+/* inset:0 (not height:100%) fills the full — possibly taller — row height, and
+   align-items:stretch lets the affix box and the control grow with it; their own
+   content then centres on the row's middle line. */
 .si-affix-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
 .si-affix {
-  flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
-  padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  padding: 0 var(--mp-spacing-2);
   background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
@@ -927,7 +1122,7 @@ function onSave() {
    the Discount "%"). Target the rendered root, not just the class on MpInput. */
 .si-affix-input { flex: 1 1 0; min-width: 0; }
 .si-affix-cell :deep(.mp-input__root) { flex: 1 1 0; min-width: 0; width: auto; }
-.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: flex-start; justify-content: flex-end; padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2); white-space: nowrap; }
+.si-affix-value { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; padding: 0 var(--mp-spacing-2); white-space: nowrap; }
 
 .si-del-btn {
   display: inline-flex !important; align-items: center; justify-content: center;
