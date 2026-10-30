@@ -1083,7 +1083,8 @@ const trailingColspan = computed(() => (isDelivery.value ? 4 : 5) + attrKeys.val
 // NOTHING when the pinned columns alone fill the table. The table's floor is therefore
 // the sum of the columns this kind actually renders plus a Description floor; below
 // it the wrap scrolls sideways instead of collapsing Description to zero width.
-const COL_PX = { batch: 240, expiry: 172, desc: 240, attr: 176, location: 160, num: 150, counted: 160, after: 175, unit: 78, del: 44, paLoc: 300 }
+// Mirrors the .mbd-col-* widths in <style> — keep the two in sync.
+const COL_PX = { batch: 160, expiry: 140, desc: 200, attr: 152, location: 140, num: 112, counted: 132, after: 132, unit: 78, del: 44, paLoc: 220 }
 const tableMinWidth = computed(() => {
   const attrs = attrKeys.value.length * COL_PX.attr
   if (isPutAway.value) return COL_PX.batch + COL_PX.expiry + COL_PX.desc + attrs + COL_PX.paLoc + COL_PX.counted + COL_PX.unit + COL_PX.del
@@ -2103,21 +2104,25 @@ function fmtNum(n: number | null): string {
   /* Set per kind from the rendered columns (tableMinWidth); 1000px only as a fallback. */
   min-width: var(--mbd-min-width, 1000px);
 }
-.mbd-col-batch   { width: 240px; }
-.mbd-col-expiry  { width: 172px; }
+/* Column widths are sized to their content — the header plus the longest value a
+   cell holds, at 24px of cell padding — so the table fits inside the drawer once
+   the batch attribute columns are added. Keep COL_PX in the script in sync: it
+   computes the table's min-width from these same numbers. */
+.mbd-col-batch   { width: var(--mp-sizes-40, 160px); }
+.mbd-col-expiry  { width: var(--mp-sizes-35, 140px); }
 /* No explicit width — under table-layout:fixed, when every other column is
    pinned, the browser stretches ALL of them proportionally to fill the
    table's 100%/min-width, so Del would land wider than 44px. Leaving
    Description as the one flexible column (like ManageSerialDrawer's Serial
    column) absorbs that leftover space instead, keeping Del exactly 44px. */
 .mbd-col-desc    { /* fills remaining */ }
-.mbd-col-location { width: 160px; }
-.mbd-col-num     { width: 150px; }
-.mbd-col-after   { width: 175px; }
-.mbd-col-counted { width: 160px; }
+.mbd-col-location { width: var(--mp-sizes-35, 140px); }
+.mbd-col-num     { width: var(--mp-sizes-28, 112px); }
+.mbd-col-after   { width: var(--mp-sizes-33, 132px); }
+.mbd-col-counted { width: var(--mp-sizes-33, 132px); }
 .mbd-col-unit    { width: 78px; }
 .mbd-col-del     { width: 44px; }
-.mbd-col-pa-loc  { width: 300px; }
+.mbd-col-pa-loc  { width: var(--mp-sizes-55, 220px); }
 
 /* ── Put-away inline split-row table ──────────────────────────────────────────── */
 .mbd-table--putaway .mbd-th { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
@@ -2400,7 +2405,8 @@ function fmtNum(n: number | null): string {
 .mbd-loc-del-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* Footer */
-.mbd-col-attr { width: var(--mp-sizes-44, 176px); }
+/* A long vendor name wraps to a second line rather than widening every row. */
+.mbd-col-attr { width: var(--mp-sizes-38, 152px); }
 /* WMS kinds' floor (--mbd-min-width) already counts one 176px column per batch
    attribute, so the table scrolls sideways instead of squeezing Description to zero. */
 /* Same invalid-cell treatment as the qty / put-away location cells. */
@@ -2420,7 +2426,7 @@ function fmtNum(n: number | null): string {
    10rem + unit 4.875rem + remove 2.75rem. With the table at 100%, the batch column
    takes whatever is left, so the rows always reach the table's right edge. */
 .mbd-table--delivery {
-  min-width: calc(12rem + 16.5rem + var(--mbd-attr-count, 0) * var(--mp-sizes-44, 11rem) + 10rem + 4.875rem + 2.75rem);
+  min-width: calc(12rem + 16.5rem + var(--mbd-attr-count, 0) * var(--mp-sizes-38, 9.5rem) + 10rem + 4.875rem + 2.75rem);
 }
 /* Pixel's 2xl drawer/modal size (sm 330 · md 448 · lg 684 · xl 920 · 2xl 1152px).
    It holds the widest delivery table — two attributes — without scrolling. The WMS

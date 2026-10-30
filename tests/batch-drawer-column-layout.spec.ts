@@ -3,8 +3,8 @@
  * Batch drawer column layout + description fallback (ATINV-9082 verification D1–D3).
  *
  * D1: every kind of ManageBatchDrawer renders one <col> per header cell, and the WMS
- *     kinds' table floor (--mbd-min-width) leaves Description its own 240px floor on top
- *     of the pinned columns — so it can never collapse to zero width and overlap Vendor.
+ *     kinds' table floor (--mbd-min-width) leaves Description its own floor on top of
+ *     the pinned columns — so it can never collapse to zero width and overlap Vendor.
  * D3: a batch with a record but no description shows "—", never the demo filler.
  */
 import { describe, it, expect, afterEach } from 'vitest'
@@ -22,10 +22,12 @@ const DEMO = 'Ethiopia Yirgacheffe'
 
 // Mirrors the .mbd-col-* widths in ManageBatchDrawer.vue's <style>.
 const MBD_COL_PX: Record<string, number> = {
-  'mbd-col-batch': 240, 'mbd-col-expiry': 172, 'mbd-col-attr': 176, 'mbd-col-location': 160,
-  'mbd-col-num': 150, 'mbd-col-counted': 160, 'mbd-col-after': 175, 'mbd-col-unit': 78,
-  'mbd-col-del': 44, 'mbd-col-pa-loc': 300,
+  'mbd-col-batch': 160, 'mbd-col-expiry': 140, 'mbd-col-attr': 152, 'mbd-col-location': 140,
+  'mbd-col-num': 112, 'mbd-col-counted': 132, 'mbd-col-after': 132, 'mbd-col-unit': 78,
+  'mbd-col-del': 44, 'mbd-col-pa-loc': 220,
 }
+/** Description's own floor inside --mbd-min-width (COL_PX.desc). */
+const DESC_FLOOR = 200
 
 function lot(batchNo: string) {
   const b = getWarehouseDetail(WAREHOUSE_ID)!.stock.find((s) => s.sku === SKU)!.batches!.find((x) => x.batchNo === batchNo)!
@@ -66,7 +68,7 @@ describe('ManageBatchDrawer column layout (D1)', () => {
   }
 
   for (const kind of ['in-out', 'transfer', 'put-away', 'picking', 'receiving'] as const) {
-    it(`${kind}: table floor leaves Description a 240px floor beside the pinned columns`, async () => {
+    it(`${kind}: table floor leaves Description its own floor beside the pinned columns`, async () => {
       const w = await mountManage(kind, [lot('Batch #00002')])
       const table = w.find('table.mbd-table')
       const floor = parseInt((table.element as HTMLElement).style.getPropertyValue('--mbd-min-width'), 10)
@@ -75,7 +77,7 @@ describe('ManageBatchDrawer column layout (D1)', () => {
         return s + (cls ? MBD_COL_PX[cls]! : 0)
       }, 0)
       expect(table.findAll('colgroup > col.mbd-col-desc').length).toBe(1)
-      expect(floor - pinned).toBe(240)
+      expect(floor - pinned).toBe(DESC_FLOOR)
     })
   }
 
