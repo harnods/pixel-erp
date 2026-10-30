@@ -1599,6 +1599,9 @@ onUnmounted(() => {
 .detail-view-link {
   background: none; border: none; padding: 0; cursor: pointer;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link);
+  /* Pixel's link variant is semibold; an in-table text link reads at the body
+     weight, like the MpTextlink the delivery details page uses for the same action. */
+  font-weight: var(--mp-font-weights-regular);
   white-space: nowrap;
 }
 .detail-view-link:hover { text-decoration: underline; text-underline-offset: 2px; }
