@@ -69,7 +69,7 @@ function lotDesc(batchNo: string, i: number): string {
 // Column widths in px — mirror the <col> widths in the template. Description is the one
 // width-less column, so the table's floor is the rendered columns plus a Description
 // floor; below it the wrap scrolls instead of collapsing Description to zero width.
-const COL_PX = { batch: 200, expiry: 140, desc: 240, attr: 176, available: 110, qty: 120, unit: 78 }
+const COL_PX = { batch: 200, expiry: 140, desc: 240, attr: 152, available: 110, qty: 120, unit: 78 }
 const tableMinWidth = computed(() => COL_PX.batch + COL_PX.expiry + COL_PX.desc
   + attrKeys.value.length * COL_PX.attr + COL_PX.available + COL_PX.qty + COL_PX.unit)
 
@@ -221,7 +221,8 @@ function handleSave() {
 </template>
 
 <style scoped>
-.pbd-col-attr { width: var(--mp-sizes-44, 176px); }
+/* Matches ManageBatchDrawer's attribute column; a long vendor name wraps. */
+.pbd-col-attr { width: var(--mp-sizes-38, 152px); }
 .pbd-enter-active,
 .pbd-leave-active { transition: background-color 250ms ease; }
 .pbd-enter-from, .pbd-leave-to { background-color: transparent; }

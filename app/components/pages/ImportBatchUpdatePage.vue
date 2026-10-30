@@ -437,8 +437,10 @@ watch(scenario, (s) => {
   margin: calc(var(--mp-spacing-2) * -1) 0 0;
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
 }
-.ibu-filters { display: flex; flex-direction: column; gap: var(--mp-spacing-3); max-width: 360px; }
-.ibu-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+/* The width cap belongs to the select, not the block: the checkbox's label is itself
+   360px wide, so capping the whole block wrapped the label under its own box. */
+.ibu-filters { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.ibu-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); max-width: var(--mp-sizes-90, 360px); }
 .ibu-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .ibu-error { margin: calc(var(--mp-spacing-1) * -1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
 

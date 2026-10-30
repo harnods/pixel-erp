@@ -133,9 +133,10 @@ describe('no demo description for a real batch (D3)', () => {
     const row = w.findAll('tbody tr').find((tr) => tr.text().includes('Batch #00002'))!
     expect(row.findAll('td')[h.indexOf('Description')]!.text()).toBe('—')
     expect(w.text()).not.toContain(DEMO)
-    // 200 batch + 140 expiry + 240 description floor + 176 per attribute + 110 + 120 + 78
+    // 200 batch + 140 expiry + 240 description floor + 110 + 120 + 78, plus one
+    // attribute column each (PickBatchDrawer's COL_PX.attr).
     const attrs = h.length - 6
-    expect((w.find('table.pbd-table').element as HTMLElement).style.minWidth).toBe(`${888 + 176 * attrs}px`)
+    expect((w.find('table.pbd-table').element as HTMLElement).style.minWidth).toBe(`${888 + MBD_COL_PX['mbd-col-attr']! * attrs}px`)
     expect(w.findAll('colgroup > col').length).toBe(h.length)
     w.unmount()
   })

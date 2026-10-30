@@ -189,7 +189,7 @@ function descFor(batchNo: string, saved: string | undefined, i: number): string 
 // Column widths in px — mirror the .vbd-col-* rules in <style>. Description is the one
 // width-less column, so the table's floor is the rendered columns plus a Description
 // floor; below it the wrap scrolls instead of collapsing Description to zero width.
-const COL_PX = { batch: 170, expiry: 140, desc: 180, attr: 176, loc: 150, num: 144, unit: 78 }
+const COL_PX = { batch: 170, expiry: 140, desc: 180, attr: 152, loc: 150, num: 144, unit: 78 }
 const tableMinWidth = computed(() => {
   const showLoc = isPacking.value && !isVerify.value && !props.hideLocation
   const nums = (!isPacking.value && !props.hideOnHand ? 1 : 0) + (hasPlanned.value ? 1 : 0) + 1
@@ -618,7 +618,8 @@ function close() { emit('update:open', false) }
 .vbd-col-expiry  { width: 140px; }
 .vbd-col-desc    { /* flexible */ }
 .vbd-col-loc     { width: 150px; }
-.vbd-col-attr    { width: var(--mp-sizes-44, 176px); }
+/* Matches ManageBatchDrawer's attribute column; a long vendor name wraps. */
+.vbd-col-attr    { width: var(--mp-sizes-38, 152px); }
 .vbd-col-num     { width: 144px; } /* fits the widest header, "NEW ON HAND QTY" (118px text + 24px padding) */
 .vbd-col-unit    { width: 78px; }
 
