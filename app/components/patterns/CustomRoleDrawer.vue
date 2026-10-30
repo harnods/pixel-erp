@@ -219,16 +219,6 @@ const ACTION_VERB: Record<AuthorityAction, string> = { view: 'View', create: 'Cr
 const selectedSummary = computed(() => {
   return AUTHORITY_CATEGORIES
     .map((cat) => {
-      // CRM is an acronym (not a lowercase-able word) and Admin/member is a
-      // single either/or choice, not a set of granted actions — so it gets its
-      // own plain-language bullet instead of the generic action-list phrasing.
-      if (cat.value === 'crm') {
-        if (!has('crm-access', 'view')) return null
-        const bullets = has('crm-access', 'edit')
-          ? [t('Full access to CRM data and settings (Administrator)')]
-          : [t('Access to CRM, scoped to their own records')]
-        return { category: cat, bullets }
-      }
       const catFeatures = features.filter((f) => f.category === cat.value)
       const allKeys = catFeatures.flatMap((f) => authorityRowKeys(f))
       const grantedActions = new Set<AuthorityAction>()
@@ -331,6 +321,12 @@ function close() { emit('close') }
                   <strong>{{ t('List Manager') }}</strong>
                   {{ t('authority.') }}
                 </p>
+                <!-- No CRM features in custom roles (PRD US-011 AC-04) — CRM access is
+                     the standalone CRM role on the user, combinable with this role. -->
+                <p class="crd-section-desc crd-crm-note" data-devchange="crm-user-seats-custom-role-note" data-test-id="crd-crm-note">
+                  <MpIcon name="info" size="sm" />
+                  {{ t('CRM access isn\'t part of custom roles. Give it with the CRM role when you invite or edit a user.') }}
+                </p>
 
                 <!-- Filter bar: Feature category quick filter + name search. -->
                 <div class="crd-filter-bar">
@@ -399,7 +395,6 @@ function close() { emit('close') }
                           <tr
                             v-if="isCategoryExpanded(cat.value)"
                             class="crd-row crd-row--l1"
-                            :class="{ 'crd-row--crm-access': feature.id === 'crm-access' }"
                           >
                             <td class="crd-td crd-td--feature crd-td--l1">
                               <div class="crd-td-inner">
@@ -418,40 +413,7 @@ function close() { emit('close') }
                                 <span class="crd-td-label">{{ t(feature.label) }}</span>
                               </div>
                             </td>
-                            <!-- CRM module access — Admin vs. member is a mutually-exclusive
-                                 choice, not an independent action, so it's one merged cell with
-                                 its own layout instead of the generic per-column grid. The base
-                                 checkbox is nudged in by .crd-crm-access-row--main so it still
-                                 lines up with the category's own View checkbox above it (same
-                                 120px-column center), while its label sits a normal 12px gap
-                                 away — the Administrator escalation row below it then aligns to
-                                 that label's left edge. -->
-                            <td v-if="feature.id === 'crm-access'" colspan="4" class="crd-td crd-td--crm-access">
-                              <div class="crd-crm-access">
-                                <label class="crd-crm-access-row crd-crm-access-row--main">
-                                  <MpCheckbox
-                                    :id="`${id}-crm-access`"
-                                    :aria-label="t('Access to CRM module')"
-                                    :is-checked="has('crm-access', 'view')"
-                                    @change="(on: boolean) => setGrant('crm-access', 'view', on)"
-                                  />
-                                  <span class="crd-crm-access-label">{{ t('Access to CRM module') }}</span>
-                                </label>
-                                <label v-if="has('crm-access', 'view')" class="crd-crm-access-row crd-crm-access-row--admin">
-                                  <MpCheckbox
-                                    :id="`${id}-crm-admin`"
-                                    :aria-label="t('Full access as Administrator')"
-                                    :is-checked="has('crm-access', 'edit')"
-                                    @change="(on: boolean) => setGrant('crm-access', 'edit', on)"
-                                  />
-                                  <span class="crd-crm-access-label">
-                                    {{ t('Full access as Administrator') }}
-                                    <span class="crd-crm-access-hint">{{ t('New activated users only get access to their own records.') }}</span>
-                                  </span>
-                                </label>
-                              </div>
-                            </td>
-                            <td v-for="action in AUTHORITY_ACTIONS" v-else :key="action.value" class="crd-td crd-td--action">
+                            <td v-for="action in AUTHORITY_ACTIONS" :key="action.value" class="crd-td crd-td--action">
                               <!-- Works for a leaf feature (its own single row) and a feature
                                    with subfeatures alike — checking it here grants/clears that
                                    action across every descendant leaf row. -->
@@ -696,32 +658,6 @@ function close() { emit('close') }
 .crd-td-label { white-space: normal; }
 .crd-na { color: var(--mp-text-secondary); }
 
-/* CRM module access — left-aligned (not centered like the generic action
-   cells), since this is prose-labeled, not a column of identical checkboxes.
-   The row is taller than a normal row (label + admin sub-row stacked), so its
-   cells vertical-align to the top instead of the table default's middle —
-   otherwise the Feature-column label and the View-column checkbox would sit
-   centered against the full row height instead of lining up with the first
-   line of content on the right. */
-.crd-row--crm-access .crd-td { vertical-align: top; }
-.crd-row--crm-access .crd-td-inner { align-items: flex-start; }
-.crd-td--crm-access { text-align: left; }
-.crd-crm-access { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.crd-crm-access-row { display: flex; align-items: flex-start; gap: var(--mp-spacing-3, 12px); cursor: pointer; }
-/* MpCheckbox's root reserves a 12px gap for an unfilled label slot (see the
-   action-column fix above) — kill it here too so the 16px checkbox box is the
-   true width our own padding math below is based on. */
-.crd-crm-access-row :deep(.mp-checkbox__root) { gap: 0; }
-/* Nudges the checkbox so its center lands on the (merged) View column's own
-   center — 60px from this cell's left edge — so it still lines up with the
-   category's View checkbox above it: 40px row padding + 12px inherited td
-   padding + half the 16px checkbox box ≈ 60px. */
-.crd-crm-access-row--main { padding-left: 40px; }
-/* Lines up with the "Access to CRM module" label above it: same 40px row
-   padding, plus the 16px checkbox box and the 12px gap before that label. */
-.crd-crm-access-row--admin { padding-left: 68px; }
-.crd-crm-access-label { display: flex; flex-direction: column; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.crd-crm-access-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .crd-table tbody tr:last-child .crd-td { border-bottom: none; }
 .crd-table tbody tr:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
@@ -760,4 +696,6 @@ function close() { emit('close') }
   .crd-body { flex-direction: column; }
   .crd-col--summary { flex-basis: auto; width: 100%; position: static; }
 }
+.crd-crm-note { display: flex; align-items: flex-start; gap: var(--mp-spacing-2); }
+.crd-crm-note :deep(svg) { flex-shrink: 0; margin-top: 2px; }
 </style>

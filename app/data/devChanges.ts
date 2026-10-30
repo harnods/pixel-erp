@@ -31,7 +31,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'batch-drawer-desc-column-fit',
     title: 'Batch drawers: Description keeps its own column',
     description:
-      'In the Manage batch (stock in/out, transfer, put-away, picking, receiving), work order batch and View batch drawers, the Description column no longer collapses to zero width when attribute columns are added — the table scrolls sideways instead, so Description never overlaps Vendor. View batch qty columns are wide enough for "New on hand qty". A batch with no description shows "—" instead of demo text.',
+      'In the Manage batch (stock in/out, transfer, put-away, picking, receiving), work order batch and View batch drawers, the Description column no longer collapses to zero width when attribute columns are added, so it never overlaps Vendor. Every column is now sized to its content, so the whole table — including the qty field you type into — fits a full-width drawer without scrolling sideways. A batch with no description shows "—" instead of demo text.',
     date: '2026-10-28',
     files: [
       'app/components/patterns/ManageBatchDrawer.vue',
@@ -100,6 +100,101 @@ export const DEV_CHANGES: DevChange[] = [
       'Step 1 filters by product and by batches missing a required attribute; the file can be edited and imported back.',
     date: '2026-10-27',
     files: ['app/components/pages/ImportBatchUpdatePage.vue'],
+    id: 'crm-invite-edit-disabled-options',
+    title: 'Invite / Edit user: options disabled up front, with the reason',
+    description:
+      'Instead of failing on save, options that would be blocked are disabled before the admin picks them, with the reason inline and on hover: CRM ("No CRM seats left. Contact Sales to add seats." / over quota "Remove CRM from some users or contact Sales to add seats." / expired "CRM subscription has ended. Contact Sales to renew."), CRM Administrator ("No CRM Administrator seat left" — CRM Basic is selected instead) and the ERP roles ("No ERP seats left" — CRM stays selectable). Counts come from the saved users, so an option the user already holds is never disabled: Administrator → Basic is always allowed and unticking CRM frees a seat. The save-time seat check stays as a safety net.',
+    date: '2026-10-28',
+    files: ['InviteUserPage.vue', 'DisabledReasonTooltip.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
+    id: 'crm-invite-edit-states-fab',
+    title: 'Invite / Edit states (demo)',
+    description:
+      'The scenario button now lists the 12 states of the Invite / Edit user CRM spec (default, CRM-only Administrator, Ultimate + Basic, custom role + Basic, no CRM seat, only Basic seats, ERP full, no CRM, edit user, over quota, expired, custom role editor). Each sets the mock Billing and pre-fills the form, opens Edit user, or opens the custom-role drawer. Picking state 1 restores the default seed. On the User list and Custom role pages the same section sits below the Billing presets.',
+    date: '2026-10-28',
+    files: ['CrmSeatsScenarioFab.vue', 'useInviteEditStates.ts', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
+    id: 'crm-user-seats-list-type',
+    title: 'Type = account type (Member / Partner)',
+    description:
+      'The User list Type column and the "All types" filter now use production\'s account types, Member (briefcase) and Partner (team), taken from jurnal-frontend-app user_management (button_filter_type). Partner users — e.g. the company\'s outside accountant — are not counted against the ERP user limit.',
+    date: '2026-10-28',
+    files: ['UsersListPage.vue', 'usersRoles.ts', 'crmSubscription.ts'],
+  },
+  {
+    id: 'crm-user-seats-invite-selected-roles',
+    title: 'Selected roles + Terms (Invite / Edit user)',
+    description:
+      'Right column matched to production: a sticky "Selected roles" card listing the ticked Existing roles (including the CRM tier, e.g. "CRM Administrator") and Custom roles (or "-"), above a collapsible "Terms for selecting roles" card with one CRM line: CRM combines with any role, including Ultimate and custom roles, and uses a CRM seat, not an ERP seat, unless the user also has an ERP role.',
+    date: '2026-10-28',
+    files: ['InviteUserPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-invite-crm-role',
+    title: 'CRM row on Invite / Edit user',
+    description:
+      'CRM is a row in the Existing role list: caret + CRM checkbox and four description lines ("Use Mekari CRM from the product switcher." / CRM Basic / CRM Administrator / "Detailed CRM permissions are set in CRM."). Ticking it shows a "CRM access level" radio pair — CRM Basic / CRM Administrator, Administrator by default (updated 2026-10-28). It is stored as the user\'s CRM role, not an ERP role, so CRM-only takes a CRM seat and no ERP seat; ERP roles + CRM take both. Ticking Ultimate never clears CRM, and the choice is kept on the Custom role tab, so custom role + CRM works. Read-only once CRM expired; locked for the Owner. A CRM block message sits inside the CRM row. PRD US-001, US-003, US-010, US-011.',
+    files: ['InviteUserPage.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-invite-summary',
+    title: 'Seat usage card on Invite / Edit user',
+    description:
+      'A "Seat usage" card in the right column, above Selected roles (same card style): ERP users and CRM users as total · used · left ("5 total · 7 used · 2 over" in the warning colour when over quota), where the CRM seats come from ("5 included", "+ 2 Basic, + 1 Administrator add-on" only when add-ons exist, or N trial seats) and "Up to N can be CRM Administrator" (hidden at 0). As soon as a role is ticked or unticked the title reads "Seat usage (after saving)" and the numbers show the result after saving (updated 2026-10-28). The CRM part hides without the CRM add-on. "Need more ERP or CRM seats? Contact Sales." opens the Contact Sales dialog. This is now the only place seat counts are shown — the User list title bar has no Seat usage button, as in prod. PRD US-002, US-010.',
+    files: ['InviteUserPage.vue', 'SeatUsageSummary.vue', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+
+  {
+    id: 'crm-user-seats-list-banners',
+    title: 'Seat state banners on the User list',
+    description:
+      'Only when they apply: over quota (everyone keeps access, new access is blocked — points to the Seat usage card on Invite / Edit user and to Contact Sales), CRM expired (read-only) and Billing down (last confirmed seats, or "try again later" when nothing was ever confirmed). PRD US-006, US-008.',
+    date: '2026-10-27',
+    files: ['UsersListPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-list-column',
+    title: 'Role chips include the CRM tier',
+    description:
+      'The Role column (matched to production) shows the ERP role chips, then the CRM tier ("CRM Basic" / "CRM Administrator"), then "List manager". A CRM-only user shows only the CRM chip; the Owner shows "Owner" and, with CRM active, "CRM Administrator". Replaces the separate CRM access column. Deleting a user or cancelling an invite frees their CRM seat. PRD US-004, US-005.',
+    files: ['UsersListPage.vue'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-custom-role-note',
+    title: 'No CRM inside custom roles',
+    description:
+      'The CRM category and the "Access to CRM module" row are gone from the custom-role permission matrix — CRM is given only through the CRM role on the user, which combines with any custom role. PRD US-011 AC-04.',
+    date: '2026-10-27',
+    files: ['CustomRoleDrawer.vue', 'usersRoles.ts'],
+  },
+  {
+    id: 'crm-user-seats-product-switcher',
+    title: 'CRM in the product switcher',
+    description:
+      'CRM is always listed. It opens CRM only when the company has the CRM add-on and you hold the CRM role; otherwise it lands on a CRM page that offers Contact Sales (no add-on) or says to ask your admin (no CRM role). PRD US-013.',
+    date: '2026-10-27',
+    files: ['ErpProductSwitcher.vue', 'ErpNavbarGroup.vue', 'CrmLandingPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-landing',
+    title: 'CRM landing page',
+    description:
+      'Where the product switcher sends users who can\'t open CRM: what CRM is plus Contact Sales without the add-on, "You don\'t have CRM access" without the CRM role, or "try again later" while Billing can\'t confirm. Content is a placeholder; the CRM team owns the real landing page. PRD US-013.',
+    date: '2026-10-27',
+    files: ['CrmLandingPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'crm-user-seats-scenario-fab',
+    title: 'CRM add-on scenarios (demo)',
+    description:
+      'The Users & roles scenario button switches the mock Billing between No CRM, Trial, Essential, seat add-on only, expired, Billing down and ERP-limit-full, includes the PRD §3b "Owner + 5 CRM Administrators" example (8 total · 6 used, Administrator 6 of 6 → Basic only; leaving the preset restores the seed), no-CRM-seat-left, Basic-only and over-quota presets, steps the Basic / Administrator add-ons and the ERP limit up and down (step an add-on below usage to simulate a seat reduction), previews a user without the CRM role, and lists the defaults assumed for the PRD\'s open questions.',
+    date: '2026-10-27',
+    files: ['CrmSeatsScenarioFab.vue', 'ScenarioFab.vue', 'useCrmSubscriptionScenario.ts'],
   },
   {
     id: 'dm-step-layout',
@@ -144,6 +239,38 @@ export const DEV_CHANGES: DevChange[] = [
       'The recurring expense detail now mirrors the expense detail page as a template — beneficiary + total, meta grid (next expense, start date, repeats every, end repeat, frequency, category, generated, tags), account line items, memo and the Subtotal/PPN/Total breakdown — with recurring history below. Matches the pattern already used by recurring sales invoices, sales orders, purchase invoices and purchase orders.',
     date: '2026-10-22',
     files: ['RecurringBillDetailsPage.vue', 'bills.ts'],
+  },
+  {
+    id: 'location-deepest-level',
+    title: 'No "Add sub-location" under a Bin',
+    description:
+      'Bin is the deepest storage level, so the Storage locations menus no longer offer "Add sub-location" on Bin rows (it opened a drawer with an empty Level picker). If the drawer is opened under a Bin anyway, it shows an info banner and a Close button instead of the form.',
+    date: '2026-10-21',
+    files: ['StorageLocationTree.vue', 'WarehouseDetailsPage.vue', 'NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
+    id: 'new-location-drawer-shell',
+    title: 'New / Edit location drawer on the standard drawer shell',
+    description:
+      'The location drawer moved off Pixel MpDrawer onto the shared ErpDrawer Teleport shell (filled header, × close, pinned footer with enterprise Cancel / Save), and Description is now a Pixel MpTextarea. Description is also saved when creating a location (it was only kept on edit).',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
+    id: 'new-location-storage-preference-radio',
+    title: 'Storage preference uses the standard radio list',
+    description:
+      'New / Edit location drawer: Storage preference was two uneven, bordered button-cards with a mint selected fill. It is now the standard MpRadio title + caption list (same as Edit classification), so it reads like every other single-choice field.',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue'],
+  },
+  {
+    id: 'row-kebab-icon-visible',
+    title: 'Row actions (⋯) icon visible again',
+    description:
+      'Row kebab buttons on ~45 tables (warehouses, storage locations, products, receipts, picking, packing, CRM, BOM, work orders…) rendered an invisible 0px icon — Pixel MpButton padding squeezed the 20px svg out of the 32px button. One global erp.css override restores the three-dot icon everywhere.',
+    date: '2026-10-21',
+    files: ['erp.css', 'WarehousesPage.vue', 'pixel-enterprise-overrides.md'],
   },
   {
     id: 'settings-inventory-page',
@@ -952,6 +1079,14 @@ export const DEV_CHANGES: DevChange[] = [
       'MpUpload emits the native Event (ev.target.files), but 17 attachment fields typed their handler as a FileList, so nothing was ever staged — the picked file silently vanished. All of them now accept both shapes.',
     date: '2026-10-23',
     files: ['AddFileDrawer.vue', 'NewCreditMemoPage.vue', 'SpendMoneyPage.vue'],
+  },
+  {
+    id: 'crm-paywall',
+    title: 'CRM paywall — first-run + trial-expired',
+    description:
+      'A tenant without active CRM access hits a full-bleed paywall on every /crm route (no level-1 CRM sidebar). Access is a shared status (useCrmAccess: active / none / expired, persisted, default active). Two faces: "none" is the educational first-run page (hero → value props with filled green/tosca/blue icons → how it works → feedback); "expired" is the trial-ended page (data-safe reassurance + Contact sales / Schedule a demo, no re-education, no pricing). Flip states from the scenario FAB (CRM access / Trial expired / No access) on the Deals page or the paywall; the router swaps instantly, no reload.',
+    date: '2026-10-29',
+    files: ['CrmPaywallPage.vue', 'useCrmAccess.ts', '[...slug].vue', 'CrmDealsPage.vue', 'default.vue'],
   },
 ]
 

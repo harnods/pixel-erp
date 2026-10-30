@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
 import { infoToast } from '~/utils/toasts'
-import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpTooltip, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
 const PageLoader = defineComponent({ render: () => h('div', { class: 'stage-loading' }, [h(MpSpinner, { size: 'lg' })]) })
@@ -55,6 +55,8 @@ const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
 const { dimensionsActivated } = useDimensionsActivation()
 const { requestDimensionCreate } = useDimensionsFormDrawer()
+// Gate for the CRM (Qontak) app — when off, every /crm route renders the paywall.
+const { hasCrmAccess } = useCrmAccess()
 const route = useRoute()
 const router = useRouter()
 
@@ -110,7 +112,13 @@ const vatFinalizeState = computed(() => {
 })
 
 const titleBreadcrumb = computed(() => MODULE_PARENT[currentPageKey.value] ?? null)
+/** Pages whose H1 differs from their sidebar label — matched to production
+ *  (Settings › "Users & Roles" opens a page titled "User management"). */
+const PAGE_TITLE_OVERRIDES: Record<string, string> = {
+  'Users and roles': 'User management',
+}
 const resolvedPageTitle = computed(() => {
+  if (PAGE_TITLE_OVERRIDES[currentPageKey.value]) return PAGE_TITLE_OVERRIDES[currentPageKey.value]!
   const entry = MODULE_PARENT[currentPageKey.value]
   return entry ? (entry.title ?? currentPageKey.value) : pageTitle.value
 })
@@ -387,11 +395,22 @@ const VatReconciliationUnmatchedPage = asyncPage(() => import('~/components/page
 // Both faktur sides scope themselves from ?tab= (Needs attention / All faktur).
 const VatReconciliationWorkspacePage = asyncPage(() => import('~/components/pages/VatReconciliationWorkspacePage.vue'))
 const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
+// /get-crm — where the product switcher sends users who can't open CRM (no CRM
+// add-on → Contact Sales; no CRM role → ask your admin). Deliberately NOT under
+// /crm so the ERP shell (not the CRM sidebar) renders around it.
+const CrmLandingPage = asyncPage(() => import('~/components/pages/CrmLandingPage.vue'))
 // The "New custom role" title-bar button lives here, but the drawer it opens is
 // rendered inside CustomRolesPage — the two talk through this shared intent.
 const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
 // Same pattern for Inventory › Grades: "New grade" here, the modal in GradesPage.
 const { openCreate: openGradeCreate } = useGradeModal()
+
+/** "Add custom role" works from both tabs (as in prod): the drawer lives on the
+ *  Custom role tab, so switch there first, then open it. */
+function addCustomRole() {
+  if (activeTab.value !== 'Custom role') selectTab('Custom role')
+  openCustomRoleCreate()
+}
 const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
 const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
 
@@ -463,6 +482,7 @@ watch(() => [currentPageKey.value, route.query.tab] as const, ([key, tab]) => {
   if (key === 'Purchase orders' && tab === 'Recurring orders') purchaseOrdersTab.value = 'recurring'
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const CrmPaywallPage = asyncPage(() => import('~/components/pages/CrmPaywallPage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
@@ -570,9 +590,14 @@ const { trigger: triggerXpm } = useXpmActions()
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  if (segs[0] === 'get-crm') return { component: CrmLandingPage, id: '' }
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {
+    // No CRM access → the paywall takes over every /crm route. Reactive on
+    // hasCrmAccess, so the paywall CTA (which flips it on) swaps straight to the
+    // real workspace without a route change.
+    if (!hasCrmAccess.value) return { component: CrmPaywallPage, id: '' }
     const sub = segs[1] ?? ''
     const id = segs[2]
     // /crm/contacts → Contacts list; /crm/contacts/:id → contact detail.
@@ -2320,15 +2345,23 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <!-- Settings → Users & roles: the create action follows the active tab. -->
+        <!-- Settings › Users & roles — production's title bar, same on both tabs:
+             (?) help · Add custom role · Invite user. Seat counts live in the
+             Invite / Edit user "Seat usage" card. -->
         <div v-else-if="currentPageKey === 'Users and roles'" class="page-title-actions">
+          <MpTooltip id="usr-help-tt" :label="t('Help')" placement="bottom" use-portal>
+            <MpButton
+              variant="secondary" is-rounded left-icon="help" class="usr-help-btn"
+              :aria-label="t('Help')" data-test-id="usr-help"
+              @click="infoToast(t('Users & roles help — coming soon'))"
+            />
+          </MpTooltip>
           <MpButton
-            v-if="activeTab === 'Custom role'"
-            variant="primary" is-rounded left-icon="add"
-            @click="openCustomRoleCreate()"
-          >{{ t('New custom role') }}</MpButton>
+            variant="secondary" is-rounded data-test-id="usr-add-custom-role"
+            @click="addCustomRole()"
+          >{{ t('Add custom role') }}</MpButton>
           <MpButton
-            v-else
-            variant="primary" is-rounded left-icon="add"
+            variant="primary" is-rounded data-test-id="usr-invite-user"
             @click="router.push('/users-and-roles/invite')"
           >{{ t('Invite user') }}</MpButton>
         </div>
@@ -3115,6 +3148,10 @@ function startResize(e: MouseEvent) {
   flex-shrink: 0;
 }
 
+.usr-help-btn {
+  min-width: 0 !important; width: 40px !important; height: 40px !important;
+  padding: 0 !important; border-radius: var(--mp-radii-full, 999px) !important; justify-content: center;
+}
 .page-title-actions {
   display: flex;
   align-items: center;
