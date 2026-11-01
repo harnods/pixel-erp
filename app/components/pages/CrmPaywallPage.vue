@@ -30,8 +30,6 @@ function activate() { setCrmAccess(true) }
 // Contact-sales paths have no destination in the prototype, so they say so rather
 // than looking clickable and doing nothing.
 function contactSales() { infoToast(t('Our team will reach out soon')) }
-function scheduleDemo() { infoToast(t('Demo scheduling — coming soon')) }
-function learnMore() { infoToast(t('CRM guide — coming soon')) }
 
 // ── Copy ────────────────────────────────────────────────────────────────────
 // Hero + bottom CTA differ by face; value props are shared (benefits / what you keep).
@@ -40,13 +38,11 @@ const hero = computed(() => isExpired.value
       title: t('Your CRM trial has ended'),
       body: t('Your deals, contacts, and pipeline are safe. Upgrade to pick up right where you left off.'),
       primary: t('Contact sales'),
-      secondary: t('Schedule a demo'),
     }
   : {
       title: t('Run your whole sales cycle inside your ERP'),
       body: t('Track every lead, deal, and customer in one pipeline—then turn a won deal into a sales order or invoice without re-keying a thing.'),
       primary: t('Activate CRM'),
-      secondary: t('Learn more'),
     })
 
 const bottomCta = computed(() => isExpired.value
@@ -54,7 +50,6 @@ const bottomCta = computed(() => isExpired.value
   : { question: t('Ready to run your sales cycle inside your ERP?'), button: t('Activate CRM') })
 
 function onHeroPrimary() { isExpired.value ? contactSales() : activate() }
-function onHeroSecondary() { isExpired.value ? scheduleDemo() : learnMore() }
 function onBottomCta() { isExpired.value ? contactSales() : activate() }
 
 const COPY = {
@@ -79,8 +74,13 @@ const COPY = {
       title: t('Everything stays connected'),
       body: t('Customers, products, and orders stay linked across CRM and your ERP modules.'),
     },
+    {
+      icon: 'setting' as const, tone: 'purple' as const,
+      title: t('Shape CRM around your process'),
+      body: t('Create modules with customizable fields, layout, and team availability — all based on your own needs.'),
+    },
   ],
-  howItWorksTitle: t('How does this feature work?'),
+  howItWorksTitle: t('How easy the Sales tracking can be?'),
   steps: [
     {
       label: t('Step 1'),
@@ -89,6 +89,7 @@ const COPY = {
       items: [
         t('Import your deals, contacts, and companies from a spreadsheet.'),
         t('Shape the pipeline stages to match your real sales process.'),
+        t('Create new modules with customized fields and layouts to cover different needs.'),
         t('Invite your team and decide who can view, edit, and own deals.'),
       ],
     },
@@ -99,7 +100,7 @@ const COPY = {
       items: [
         t('Work deals through the pipeline and track what is ongoing, closing, and overdue.'),
         t('Turn a won deal into a sales order or quote in one click.'),
-        t('Keep customers, products, and orders in sync across your ERP modules.'),
+        t('Sync customers, sales and revenue directly to your ERP without handover hassles.'),
       ],
     },
   ],
@@ -158,8 +159,8 @@ const headingH2 = css({ margin: 0, fontSize: '20px', fontWeight: '600', lineHeig
 
 const content = css({ display: 'flex', flexDirection: 'column', gap: '10', width: '100%', maxWidth: '760px', marginInline: 'auto', paddingBlock: '5' })
 
-const valuePropsRow = css({ display: 'flex', flexWrap: 'wrap', gap: '6' })
-const valueCol = css({ display: 'flex', flexDirection: 'column', gap: '6', flex: '1 1 200px', minWidth: '200px' })
+const valuePropsRow = css({ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6' })
+const valueCol = css({ display: 'flex', flexDirection: 'column', gap: '6' })
 const valueTextCol = css({ display: 'flex', flexDirection: 'column', gap: '2' })
 const valueTitle = css({ margin: 0, fontSize: '14px', fontWeight: '600', lineHeight: '24px', color: 'text.default' })
 const valuePropsBlock = css({ display: 'flex', flexDirection: 'column', gap: '5' })
@@ -177,7 +178,7 @@ const stepTitle = css({ margin: 0, fontSize: '16px', fontWeight: '600', lineHeig
 const orderedList = css({ paddingLeft: '5', listStyleType: 'decimal', color: 'text.secondary' })
 
 const ctaSection = css({
-  display: 'flex', flexDirection: 'column', gap: '4',
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4',
   borderTopWidth: '1px', borderTopStyle: 'solid', borderTopColor: 'border.default',
   paddingTop: '5',
 })
@@ -205,7 +206,6 @@ const fabScenarios = [
             </div>
             <div :class="css({ display: 'flex', alignItems: 'center', gap: '4' })">
               <MpButton variant="primary" is-rounded @click="onHeroPrimary">{{ hero.primary }}</MpButton>
-              <MpButton variant="ghost" is-rounded @click="onHeroSecondary">{{ hero.secondary }}</MpButton>
             </div>
           </div>
 
@@ -266,9 +266,7 @@ const fabScenarios = [
         <!-- ── Bottom CTA ───────────────────────────────────────────────── -->
         <div :class="ctaSection">
           <p :class="ctaQuestion">{{ bottomCta.question }}</p>
-          <div>
-            <MpButton variant="secondary" is-rounded @click="onBottomCta">{{ bottomCta.button }}</MpButton>
-          </div>
+          <MpButton variant="secondary" is-rounded @click="onBottomCta">{{ bottomCta.button }}</MpButton>
         </div>
 
         <!-- ── Was this helpful? (first-run only) ───────────────────────── -->
@@ -320,7 +318,8 @@ const fabScenarios = [
 .vp-icon :deep(svg) { color: inherit; }
 .vp-icon--green { background: var(--mp-background-nav-stack-hovered, #d6f4e9); color: var(--mp-text-selected, #0f6d4d); }
 .vp-icon--tosca { background: var(--mp-colors-teal-weaker, #cdeeee); color: var(--mp-colors-teal-bold, #0b7d87); }
-.vp-icon--blue  { background: var(--mp-colors-info-weaker, #e3edfb); color: var(--mp-text-link, #1c5fb3); }
+.vp-icon--blue   { background: var(--mp-colors-info-weaker, #e3edfb); color: var(--mp-text-link, #1c5fb3); }
+.vp-icon--purple { background: var(--mp-colors-purple-weaker, #ede5fb); color: var(--mp-colors-purple-bold, #6e3cbc); }
 
 /* The chosen thumb stays filled in, so the answer is visibly recorded. */
 .feedback-choice--on :deep(svg) { color: var(--mp-colors-icon-default, #1d1f24); }

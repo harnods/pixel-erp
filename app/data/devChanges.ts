@@ -1012,8 +1012,8 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-paywall',
     title: 'CRM paywall — first-run + trial-expired',
     description:
-      'A tenant without active CRM access hits a full-bleed paywall on every /crm route (no level-1 CRM sidebar). Access is a shared status (useCrmAccess: active / none / expired, persisted, default active). Two faces: "none" is the educational first-run page (hero → value props with filled green/tosca/blue icons → how it works → feedback); "expired" is the trial-ended page (data-safe reassurance + Contact sales / Schedule a demo, no re-education, no pricing). Flip states from the scenario FAB (CRM access / Trial expired / No access) on the Deals page or the paywall; the router swaps instantly, no reload.',
-    date: '2026-10-29',
+      'A tenant without active CRM access hits a full-bleed paywall on every /crm route (no level-1 CRM sidebar). Two faces: "none" (educational first-run) and "expired" (trial ended). Updated per feedback: 4 value props (added Custom Module), revised step copy with module builder mention, "Sync to ERP" step-2 item, heading changed to "How easy the Sales tracking can be?", removed Schedule a demo button, CTA buttons moved inline with titles on both faces. 2×2 grid value-prop layout.',
+    date: '2026-11-01',
     files: ['CrmPaywallPage.vue', 'useCrmAccess.ts', '[...slug].vue', 'CrmDealsPage.vue', 'default.vue'],
   },
 ]
