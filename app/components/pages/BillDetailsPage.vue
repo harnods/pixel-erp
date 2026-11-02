@@ -5,17 +5,22 @@ import {
   MpIcon, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpBanner, MpBannerIcon, MpBannerDescription, MpTextlink, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpTooltip,
+  MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpToggle,
   css, toast,
 } from '@mekari/pixel3'
 import type jsPDF from 'jspdf'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import MatchedDetailsDrawer from '~/components/patterns/MatchedDetailsDrawer.vue'
 import JournalEntryDrawer, { type JournalEntryRow } from '~/components/patterns/JournalEntryDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
-import { bills, deleteBills } from '~/data/bills'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
+import { getContactIdByName } from '~/data/contacts'
+import { bills, deleteBills, recurringBills, getRecurringForBill, persistBills, persistRecurringBills } from '~/data/bills'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import { formatDate, formatDateLong } from '~/utils/date'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
@@ -34,9 +39,145 @@ function dimensionValuesFor(dimensions?: Record<string, string>): { name: string
   return Object.entries(dimensions).map(([id, value]) => ({ name: getDimensionById(id)?.name ?? id, value }))
 }
 
-// "Set as recurring" isn't built yet — kept in the Actions popover markup below
-// (per design) but hidden until the feature ships.
-const showSetAsRecurring = false
+// ─── Recurring info drawer ──────────────────────────────────────────────────
+const sourceBill = computed(() => bills.find(b => b.id === props.orderId))
+const recurringTemplate = computed(() => {
+  const rid = sourceBill.value?.recurringId
+  return rid ? getRecurringForBill(rid) : undefined
+})
+const hasRecurring = computed(() => !!recurringTemplate.value)
+const recurringDrawerOpen = ref(false)
+const recurringEditing = ref(false)
+const isSettingRecurring = ref(false)
+const setRecurringSendAutoEmail = ref(false)
+
+const editRepeatInterval = ref(1)
+const editRepeatUnit = ref('month')
+const editEndRepeat = ref('never')
+const editEndAfterCount = ref(12)
+const editEndOnDate = ref('')
+const editStartDate = ref('')
+
+const repeatUnitOptions = [
+  { label: t('Day'), value: 'day' },
+  { label: t('Week'), value: 'week' },
+  { label: t('Month'), value: 'month' },
+  { label: t('Year'), value: 'year' },
+]
+const endRepeatOptions = [
+  { label: t('Repeat forever'), value: 'never' },
+  { label: t('End after'), value: 'after' },
+  { label: t('End on'), value: 'on' },
+]
+
+function unitLabel(unit: string) {
+  const map: Record<string, string> = { day: t('Day'), week: t('Week'), month: t('Month'), year: t('Year') }
+  return map[unit] ?? unit
+}
+function endRepeatLabel(val: string) {
+  const map: Record<string, string> = { never: t('Repeat forever'), after: t('End after'), on: t('End on') }
+  return map[val] ?? val
+}
+function formatDateDMY(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function todayDMY(): string {
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+}
+function recurDmyToIso(dmy: string) {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+function openRecurringDrawer() {
+  recurringEditing.value = false
+  recurringDrawerOpen.value = true
+}
+
+function startEditing() {
+  const s = recurringTemplate.value?.schedule
+  if (!s) return
+  editRepeatInterval.value = s.repeatInterval
+  editRepeatUnit.value = s.repeatUnit
+  editEndRepeat.value = s.endRepeat
+  editEndAfterCount.value = s.endAfterCount ?? 12
+  editEndOnDate.value = s.endOnDate ? formatDateDMY(s.endOnDate) : ''
+  editStartDate.value = formatDateDMY(s.startDate)
+  recurringEditing.value = true
+}
+
+function saveEditing() {
+  const tmpl = recurringTemplate.value
+  if (!tmpl?.schedule) return
+  tmpl.schedule.repeatInterval = editRepeatInterval.value
+  tmpl.schedule.repeatUnit = editRepeatUnit.value as 'day' | 'week' | 'month' | 'year'
+  tmpl.schedule.endRepeat = editEndRepeat.value as 'never' | 'after' | 'on'
+  tmpl.schedule.endAfterCount = editEndAfterCount.value
+  const [d2, m2, y2] = editStartDate.value.split('/')
+  tmpl.schedule.startDate = `${y2}-${m2}-${d2}`
+  if (editEndRepeat.value === 'on' && editEndOnDate.value) {
+    const [d3, m3, y3] = editEndOnDate.value.split('/')
+    tmpl.schedule.endOnDate = `${y3}-${m3}-${d3}`
+  }
+  recurringEditing.value = false
+  persistRecurringBills()
+  toast.notify({ variant: 'success', title: t('Recurring settings updated') })
+}
+
+function toggleAutoEmail() {
+  const tmpl = recurringTemplate.value
+  if (tmpl?.schedule) {
+    tmpl.schedule.sendAutoEmail = !tmpl.schedule.sendAutoEmail
+    persistRecurringBills()
+    toast.notify({ variant: 'success', title: t(tmpl.schedule.sendAutoEmail ? 'Automatic email enabled' : 'Automatic email disabled') })
+  }
+}
+
+function openSetRecurringDrawer() {
+  editRepeatInterval.value = 1
+  editRepeatUnit.value = 'month'
+  editEndRepeat.value = 'never'
+  editEndAfterCount.value = 12
+  editEndOnDate.value = ''
+  editStartDate.value = todayDMY()
+  setRecurringSendAutoEmail.value = false
+  isSettingRecurring.value = true
+  recurringEditing.value = false
+  recurringDrawerOpen.value = true
+}
+
+function saveSetRecurring() {
+  const b = sourceBill.value
+  if (!b) return
+  const newId = `rbill-${Date.now()}`
+  recurringBills.push({
+    id: newId,
+    templateName: `${b.beneficiary.name} - Recurring`,
+    beneficiary: b.beneficiary,
+    category: b.category,
+    frequency: `Every ${editRepeatInterval.value} ${editRepeatUnit.value}`,
+    amount: b.total,
+    nextDate: recurDmyToIso(editStartDate.value),
+    status: 'active',
+    createdCount: 0,
+    schedule: {
+      repeatInterval: editRepeatInterval.value,
+      repeatUnit: editRepeatUnit.value as 'day' | 'week' | 'month' | 'year',
+      endRepeat: editEndRepeat.value as 'never' | 'after' | 'on',
+      endAfterCount: editEndRepeat.value === 'after' ? editEndAfterCount.value : undefined,
+      endOnDate: editEndRepeat.value === 'on' ? recurDmyToIso(editEndOnDate.value) : undefined,
+      startDate: recurDmyToIso(editStartDate.value),
+      sendAutoEmail: setRecurringSendAutoEmail.value,
+    },
+  } as any)
+  persistRecurringBills()
+  b.recurringId = newId
+  persistBills()
+  isSettingRecurring.value = false
+  recurringDrawerOpen.value = false
+  toast.notify({ variant: 'success', title: t('Recurring expense created') })
+}
 
 // Duplicate — opens the New expense form pre-filled from this bill (minus payment);
 // nothing is saved until the user submits the form.
@@ -181,6 +322,19 @@ function attachmentIcon(name: string): string {
 function goExpenses() {
   router.push({ path: '/expenses', query: { tab: 'Bills' } })
 }
+
+const billActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: openPdfPreview },
+    { label: 'Add payment', show: bill.value?.status === 'unpaid' && !isAwaitingApproval.value, onClick: () => { router.push(`/expenses/${bill.value?.id}/payment`) } },
+    { label: 'Set as recurring', show: !hasRecurring.value && !isAwaitingApproval.value, onClick: openSetRecurringDrawer },
+  ],
+  [
+    { label: 'Duplicate', onClick: duplicate },
+    { label: 'Edit', show: bill.value?.status === 'unpaid' || isAwaitingApproval.value, onClick: edit },
+    { label: 'Delete', disabled: isReconciled.value, tooltip: isReconciled.value ? 'Unmatch reconciliation to delete' : undefined, onClick: () => { deleteOpen.value = true } },
+  ],
+])
 </script>
 
 <template>
@@ -209,10 +363,10 @@ function goExpenses() {
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button v-for="o in jumpResults" :key="o.id" class="detail-jump-item" @click="jumpTo(o.id)">
+                  <MpButton v-for="o in jumpResults" :key="o.id" variant="ghost" class="detail-jump-item" @click="jumpTo(o.id)">
                     <span class="detail-jump-item-number">{{ t('Expense') }} #{{ String(o.number).padStart(5, '0') }}</span>
                     <span class="detail-jump-item-customer">{{ o.beneficiary.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found.') }}</p>
                 </div>
               </div>
@@ -221,19 +375,26 @@ function goExpenses() {
         </div>
       </div>
 
-      <!-- Right-side header actions — only while awaiting approval, same icon row as the PO detail page -->
-      <div v-if="isAwaitingApproval" class="detail-titlerow-right">
-        <MpTooltip id="detail-tt-applog" :label="t('Approval log')" placement="bottom" use-portal>
-          <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
-            <MpIcon name="task-todo" size="md" />
+      <!-- Right-side header actions — approval flow OR recurring icon -->
+      <div v-if="isAwaitingApproval || hasRecurring" class="detail-titlerow-right">
+        <MpTooltip v-if="hasRecurring" id="detail-tt-recurring" :label="t('Recurring settings')" placement="bottom" use-portal>
+          <MpButton class="detail-icon-btn" :aria-label="t('Recurring settings')" @click="openRecurringDrawer">
+            <MpIcon name="refresh" size="md" />
           </MpButton>
         </MpTooltip>
-        <MpTooltip id="detail-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
-          <MpButton class="detail-icon-btn" :aria-label="t('Comments')">
-            <MpIcon name="comment" size="md" />
-          </MpButton>
-        </MpTooltip>
-        <button class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</button>
+        <template v-if="isAwaitingApproval">
+          <MpTooltip id="detail-tt-applog" :label="t('Approval log')" placement="bottom" use-portal>
+            <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
+              <MpIcon name="task-todo" size="md" />
+            </MpButton>
+          </MpTooltip>
+          <MpTooltip id="detail-tt-comments" :label="t('Comments')" placement="bottom" use-portal>
+            <MpButton class="detail-icon-btn" :aria-label="t('Comments')">
+              <MpIcon name="comment" size="md" />
+            </MpButton>
+          </MpTooltip>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="approve">{{ t('Approve') }}</MpButton>
+        </template>
       </div>
     </header>
 
@@ -271,7 +432,7 @@ function goExpenses() {
 
       <!-- Beneficiary + Total — separated section, inline together -->
       <section class="bd-primary">
-        <ContentList :label="t('Beneficiary')" :value="bill.beneficiary.name" />
+        <ContentList :label="t('Beneficiary')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(bill.beneficiary.name)}`, '_blank')">{{ bill.beneficiary.name }}</a></ContentList>
         <div class="detail-primary-total">
           <span class="detail-total-amount">
             <span class="detail-total-label">{{ t(hasLess ? 'Balance due' : 'Total') }}</span> {{ formatIDR(hasLess ? balanceDue : groupTotal) }}
@@ -459,39 +620,14 @@ function goExpenses() {
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer">
-      <button class="btn-enterprise btn-enterprise--secondary" @click="openPdfPreview">{{ t('Print PDF') }}</button>
+      <MpButton class="btn-enterprise btn-enterprise--secondary" @click="openPdfPreview">{{ t('Print PDF') }}</MpButton>
 
-      <button v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="btn-enterprise btn-enterprise--secondary">
+      <MpButton v-if="bill.status === 'unpaid' && !isAwaitingApproval" class="btn-enterprise btn-enterprise--secondary">
         <MpIcon name="pay-brand" size="md" />
         {{ t('Pay with Mekari Pay') }}
-      </button>
+      </MpButton>
 
-      <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-        <MpPopoverTrigger>
-          <button class="btn-enterprise" :class="isAwaitingApproval ? 'btn-enterprise--secondary' : 'btn-enterprise--primary'">
-            {{ t('Actions') }}
-            <MpIcon name="chevrons-down" size="sm" />
-          </button>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-          <MpPopoverList>
-            <MpPopoverListItem @click="openPdfPreview">{{ t('Preview') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="bill.status === 'unpaid' && !isAwaitingApproval" @click="router.push(`/expenses/${bill.id}/payment`)">{{ t('Add payment') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="showSetAsRecurring && !isAwaitingApproval">{{ t('Set as recurring') }}</MpPopoverListItem>
-          </MpPopoverList>
-          <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-          <MpPopoverList>
-            <MpPopoverListItem @click="duplicate">{{ t('Duplicate') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="bill.status === 'unpaid' || isAwaitingApproval" @click="edit">{{ t('Edit') }}</MpPopoverListItem>
-            <MpTooltip v-if="isReconciled" id="detail-actions-delete-tt" :label="t('Unmatch reconciliation to delete')" placement="top" use-portal>
-              <span class="detail-actions-delete-tt-wrap">
-                <MpPopoverListItem is-disabled>{{ t('Delete') }}</MpPopoverListItem>
-              </span>
-            </MpTooltip>
-            <MpPopoverListItem v-else @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
+      <DetailActionsMenu id="detail-actions" placement="bottom-end" :variant="isAwaitingApproval ? 'secondary' : 'primary'" :groups="billActionGroups" />
     </footer>
 
     <!-- ── Print / Preview PDF modal ── -->
@@ -521,6 +657,136 @@ function goExpenses() {
       :entries="activityEntries"
       @close="activityOpen = false"
     />
+
+    <!-- ── Recurring settings drawer ── -->
+    <ErpDrawer :is-open="recurringDrawerOpen" :title="isSettingRecurring ? t('Set as recurring') : recurringEditing ? t('Edit recurring settings') : t('Recurring settings')" @close="recurringDrawerOpen = false; isSettingRecurring = false">
+      <template #body>
+        <!-- ── Set as recurring (no template yet) ── -->
+        <template v-if="isSettingRecurring">
+          <MpFormControl id="recur-set-repeat">
+            <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+            <div class="recur-edit-repeat-row">
+              <MpInput id="recur-set-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+              <MpAutocomplete id="recur-set-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-set-end">
+            <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+            <MpAutocomplete id="recur-set-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+            <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+              <MpInput id="recur-set-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+              <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+            </div>
+            <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+              <MpDatePicker id="recur-set-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-set-start">
+            <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+            <MpDatePicker id="recur-set-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </MpFormControl>
+
+          <div class="recur-view-row recur-auto-toggle">
+            <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+            <MpToggle :is-checked="setRecurringSendAutoEmail" @change="setRecurringSendAutoEmail = !setRecurringSendAutoEmail" />
+          </div>
+        </template>
+
+        <template v-else-if="recurringTemplate?.schedule">
+          <!-- ── View mode ── -->
+          <template v-if="!recurringEditing">
+            <div class="recur-view-section">
+              <div class="recur-view-header">
+                <h3 class="recur-view-title">{{ t('Schedule') }}</h3>
+                <MpTextlink @click="startEditing">{{ t('Edit') }}</MpTextlink>
+              </div>
+
+              <div class="recur-view-row">
+                <span class="recur-view-label">{{ t('Repeats every') }}</span>
+                <span class="recur-view-value">{{ recurringTemplate.schedule.repeatInterval }} {{ unitLabel(recurringTemplate.schedule.repeatUnit) }}</span>
+              </div>
+              <div class="recur-view-row">
+                <span class="recur-view-label">{{ t('End repeat') }}</span>
+                <span class="recur-view-value">
+                  {{ endRepeatLabel(recurringTemplate.schedule.endRepeat) }}
+                  <template v-if="recurringTemplate.schedule.endRepeat === 'after'"> — {{ recurringTemplate.schedule.endAfterCount }} {{ t('occurrences') }}</template>
+                  <template v-if="recurringTemplate.schedule.endRepeat === 'on'"> — {{ formatDateDMY(recurringTemplate.schedule.endOnDate!) }}</template>
+                </span>
+              </div>
+              <div class="recur-view-row">
+                <span class="recur-view-label">{{ t('Start date') }}</span>
+                <span class="recur-view-value">{{ formatDateDMY(recurringTemplate.schedule.startDate) }}</span>
+              </div>
+            </div>
+
+            <div class="recur-view-row recur-auto-toggle">
+              <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+              <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+            </div>
+          </template>
+
+          <!-- ── Edit mode ── -->
+          <template v-else>
+            <MpFormControl id="recur-edit-repeat">
+              <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+              <div class="recur-edit-repeat-row">
+                <MpInput id="recur-edit-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+                <MpAutocomplete id="recur-edit-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+              </div>
+            </MpFormControl>
+
+            <MpFormControl id="recur-edit-end">
+              <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+              <MpAutocomplete id="recur-edit-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+              <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+                <MpInput id="recur-edit-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+                <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+              </div>
+              <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+                <MpDatePicker id="recur-edit-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+              </div>
+            </MpFormControl>
+
+            <MpFormControl id="recur-edit-start">
+              <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+              <MpDatePicker id="recur-edit-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+            </MpFormControl>
+
+            <div class="recur-view-row recur-auto-toggle">
+              <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+              <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+            </div>
+          </template>
+
+          <!-- ── Recurring history (view mode only) ── -->
+          <div v-if="!recurringEditing && recurringTemplate.history?.length" class="recur-history-section">
+            <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+            <div class="recur-history-list">
+              <div v-for="entry in recurringTemplate.history" :key="entry.billNumber" class="recur-history-item">
+                <span class="recur-history-number">{{ entry.billNumber }}</span>
+                <span class="recur-history-date">{{ formatDateDMY(entry.date) }}</span>
+                <ErpStatusBadge :status="entry.status.toLowerCase()" />
+              </div>
+            </div>
+          </div>
+          <div v-else-if="!recurringEditing" class="recur-history-section">
+            <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+            <p class="recur-history-empty">{{ t('No expenses created from this recurring template yet.') }}</p>
+          </div>
+        </template>
+      </template>
+
+      <template v-if="isSettingRecurring" #footer>
+        <button class="btn-enterprise btn-enterprise--ghost" @click="isSettingRecurring = false; recurringDrawerOpen = false">{{ t('Cancel') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="saveSetRecurring">{{ t('Save') }}</button>
+      </template>
+      <template v-else-if="recurringEditing" #footer>
+        <button class="btn-enterprise btn-enterprise--ghost" @click="recurringEditing = false">{{ t('Cancel') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" @click="saveEditing">{{ t('Save changes') }}</button>
+      </template>
+    </ErpDrawer>
   </div>
 
   <!-- Not found fallback -->
@@ -734,6 +1000,31 @@ function goExpenses() {
    link (project rule: not MpTextlink, to keep table cells aligned). */
 .detail-payment-number { color: var(--mp-text-link); cursor: pointer; }
 .detail-payment-number:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Recurring settings drawer ── */
+.recur-view-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.recur-view-header { display: flex; align-items: center; justify-content: space-between; }
+.recur-view-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-view-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.recur-view-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 160px; flex-shrink: 0; }
+.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.recur-auto-toggle { padding-top: var(--mp-spacing-2); }
+
+.recur-edit-repeat-row { display: flex; gap: var(--mp-spacing-2); }
+.recur-edit-num { flex: 0 0 80px; }
+.recur-edit-unit { flex: 1; }
+.recur-edit-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.recur-edit-count { flex: 0 0 80px; }
+.recur-edit-sublabel { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+.recur-history-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); padding-top: var(--mp-spacing-4); }
+.recur-history-heading { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-history-list { display: flex; flex-direction: column; }
+.recur-history-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default)); }
+.recur-history-item:last-child { border-bottom: none; }
+.recur-history-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); min-width: 180px; }
+.recur-history-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); flex: 1; }
+.recur-history-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 .bd-not-found { padding: var(--mp-spacing-6); }
 </style>

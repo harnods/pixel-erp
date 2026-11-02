@@ -453,7 +453,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goList">{{ t('Bill of materials') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ isEditMode ? t('Edit bill of materials') : t('New bill of materials') }}</h1>
@@ -552,7 +552,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               <li v-for="f in attachedFiles" :key="f.name" class="bf-file-item">
                 <MpIcon name="document" size="sm" />
                 <span class="bf-file-name">{{ f.name }}</span>
-                <button class="bf-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="minus-circular" size="sm" /></button>
+                <MpButton class="bf-file-remove" type="button" variant="ghost" left-icon="minus-circular" @click="removeFile(f.name)" />
               </li>
             </ul>
           </div>
@@ -623,7 +623,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="bf-td bf-td--num bf-td--right"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
                   <td class="bf-td bf-td--num bf-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
                   <td class="bf-td bf-td--del">
-                    <button v-if="row.productId" class="bf-del-btn" type="button" @click="removeRow(rawRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.productId" class="bf-del-btn" type="button" variant="ghost" left-icon="minus-circular" @click="removeRow(rawRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -667,7 +667,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     </MpInputGroup>
                   </td>
                   <td class="bf-td bf-td--del">
-                    <button v-if="row.account" class="bf-del-btn" type="button" @click="removeCostRow(group, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.account" class="bf-del-btn" type="button" variant="ghost" left-icon="minus-circular" @click="removeCostRow(group, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -710,7 +710,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     </MpInputGroup>
                   </td>
                   <td class="bf-td bf-td--del">
-                    <button v-if="row.process" class="bf-del-btn" type="button" @click="removeRow(routeRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.process" class="bf-del-btn" type="button" variant="ghost" left-icon="minus-circular" @click="removeRow(routeRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -809,7 +809,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="bf-td bf-td--spacer" />
                   <td class="bf-td bf-td--num bf-td--right"><template v-if="row.productId">{{ formatIDR(otherEstCost(row)) }}</template></td>
                   <td class="bf-td bf-td--del">
-                    <button v-if="row.productId" class="bf-del-btn" type="button" @click="removeRow(otherRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.productId" class="bf-del-btn" type="button" variant="ghost" left-icon="minus-circular" @click="removeRow(otherRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -862,7 +862,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <template v-else-if="row.accountMapping">{{ formatIDR(wasteAmount(row)) }}</template>
                   </td>
                   <td class="bf-td bf-td--del">
-                    <button v-if="row.accountMapping" class="bf-del-btn" type="button" @click="removeRow(wasteRows, row.id)"><MpIcon name="minus-circular" size="sm" /></button>
+                    <MpButton v-if="row.accountMapping" class="bf-del-btn" type="button" variant="ghost" left-icon="minus-circular" @click="removeRow(wasteRows, row.id)" />
                   </td>
                 </tr>
               </tbody>
@@ -1031,7 +1031,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .bf-td--pct { padding: 0; background: var(--mp-background-neutral, #fff); }
 .bf-td--input :deep([class*='input']),
 .bf-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
-.bf-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); z-index: 1; }
+.bf-td--input { position: relative; }
+.bf-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .bf-del-btn {
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px;
   border: none; background: none; border-radius: var(--mp-radii-sm); cursor: pointer; color: var(--mp-text-secondary);

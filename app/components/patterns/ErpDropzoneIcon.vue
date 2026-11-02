@@ -38,7 +38,7 @@ defineProps<{ loading?: boolean }>()
   height: 80px;
   padding: 16px;
   border-radius: 50%;
-  background: #F8F9F9;
+  background: var(--mp-colors-background-neutral-subtle);
   box-sizing: border-box;
 }
 .erp-dropzone-icon svg { display: block; width: 48px; height: 48px; }

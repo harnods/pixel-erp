@@ -13,8 +13,11 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
-import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, acknowledgeCanceledReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
-import { productBySku } from '~/data/inventory'
+import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, acknowledgeCanceledReceipt, receivingTaskVendorId, type ReceivingBatchLine } from '~/data/receivingTasks'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { VENDOR_MISMATCH_COPY, vendorMismatches } from '~/data/batchDrawerAttributes'
+import { vendors } from '~/data/vendors'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { notifyScanError, sameCode } from '~/utils/scan'
@@ -99,8 +102,6 @@ const filteredItems = computed(() => {
 })
 
 // ── Batch / serial helpers (same heuristic as stock count / stock in-out) ──────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(po.value?.warehouseId ?? '')
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -108,14 +109,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 
 // ── Manage batch drawer — received qty for batch-tracked SKUs comes from here,
@@ -173,6 +172,7 @@ watch([() => props.orderId, lineItems], () => {
     if (it.batchLines?.length) {
       nextBatch[it.skuCode] = it.batchLines.map(b => ({
         key: b.batchNo, batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, onHand: 0, counted: b.qty, unit: b.unit,
+        ...(b.attributes ? { attributes: b.attributes } : {}),
       }))
     }
     if (it.serialNumbers?.length) nextSerial[it.skuCode] = it.serialNumbers
@@ -333,7 +333,41 @@ function endReceiving() {
     toast.notify({ variant: 'error', title: t('Receive at least one item to finish, or cancel the task instead.'), maxWidth: 'max-content' })
     return
   }
+  if (askVendorMismatch()) return
   showConfirm.value = true
+}
+
+// ── Vendor mismatch (PRD story 20 → story 14): existing batches recorded with another
+// vendor than this PO's — one confirm for all of them; their vendor is never changed. ──
+const poVendorId = computed(() => receivingTaskVendorId(props.orderId))
+const mismatchOpen = ref(false)
+const mismatchText = ref('')
+const mismatchItems = ref<string[]>([])
+function askVendorMismatch(): boolean {
+  const vendorId = poVendorId.value
+  if (!vendorId) return false
+  const found: { batchNo: string; productName: string; vendorName: string }[] = []
+  for (const item of lineItems.value) {
+    if (!isBatchTrackedSku(item.skuCode)) continue
+    const input = (batchLinesBySku.value[item.skuCode] ?? [])
+      .filter(b => (b.counted ?? 0) > 0)
+      .map(b => ({ batchNo: b.batchNo, attributes: b.attributes ?? {} }))
+    for (const m of vendorMismatches(item.skuCode, vendorId, input)) {
+      found.push({ batchNo: m.batchNo, productName: item.productName, vendorName: vendors.find(v => v.id === m.batchVendorId)?.name ?? m.batchVendorId })
+    }
+  }
+  if (!found.length) return false
+  const poVendor = vendors.find(v => v.id === vendorId)?.name ?? ''
+  if (found.length === 1) {
+    const one = found[0]!
+    mismatchText.value = `${one.batchNo} (${one.productName}): ${t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', one.vendorName).replace('{deliveryVendor}', poVendor)}`
+    mismatchItems.value = []
+  } else {
+    mismatchText.value = t('These batches are recorded with a different vendor than this transaction ({deliveryVendor}). The vendor of the batches will not be changed.').replace('{deliveryVendor}', poVendor)
+    mismatchItems.value = found.map(m => `${m.batchNo} (${m.productName}) — ${m.vendorName}`)
+  }
+  mismatchOpen.value = true
+  return true
 }
 
 // Batch/serial identity recorded here would otherwise be thrown away once the qty
@@ -347,6 +381,7 @@ function buildReceivingDetail(): Record<string, { batchLines?: ReceivingBatchLin
         detail[item.skuCode] = {
           batchLines: lines.map(b => ({
             batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit,
+            ...(b.attributes ? { attributes: b.attributes } : {}),
           })),
         }
       }
@@ -460,8 +495,8 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
   <div v-if="task && po && task.needsCancelAck" class="ri-not-found">
     <p>The purchase order behind this task ({{ task.purchaseNo }}) was canceled.</p>
     <p>{{ t('There\'s nothing left to receive for it — acknowledging will cancel this task too.') }}</p>
-    <button class="ri-btn ri-btn--primary" type="button" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</button>
-    <button class="detail-breadcrumb" @click="goBack">{{ t('Back to task') }}</button>
+    <MpButton class="ri-btn ri-btn--primary" variant="primary" @click="acknowledgeAndCancel">{{ t('Acknowledge') }}</MpButton>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ t('Back to task') }}</MpButton>
   </div>
 
   <div v-else-if="task && po" class="detail-page">
@@ -470,9 +505,9 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceiving">{{ t('Receiving') }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goReceiving">{{ t('Receiving') }}</MpButton>
           <span class="detail-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goBack">{{ task.taskNo }}</button>
+          <MpButton class="detail-breadcrumb" variant="ghost" @click="goBack">{{ task.taskNo }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Receive items') }}</h1>
@@ -534,11 +569,11 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="ri-search" type="text" :placeholder="t('Search...')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpButton v-if="search" class="search-clear-btn" variant="ghost" :aria-label="t('Clear search')" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
@@ -632,16 +667,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <!-- Manage action column — only for batch/serial SKUs -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--action">
                     <MpTooltip :id="`ri-tt-batch-${item.skuCode}`" :label="t('Manage batch')" placement="top" use-portal>
-                      <button class="ri-view-btn" type="button" :aria-label="t('Manage batch')" @click="openBatchDrawer(item.skuCode)">
+                      <MpButton class="ri-view-btn" variant="secondary" :aria-label="t('Manage batch')" data-devchange="receiving-batch-attributes" @click="openBatchDrawer(item.skuCode)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <td v-else-if="isSerialTrackedSku(item.skuCode)" class="ri-td ri-td--action">
                     <MpTooltip :id="`ri-tt-serial-${item.skuCode}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                      <button class="ri-view-btn" type="button" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(item.skuCode)">
+                      <MpButton class="ri-view-btn" variant="secondary" :aria-label="t('Manage serial numbers')" @click="openSerialDrawer(item.skuCode)">
                         <MpIcon name="competencies" size="md" />
-                      </button>
+                      </MpButton>
                     </MpTooltip>
                   </td>
                   <td v-else class="ri-td ri-td--action"></td>
@@ -667,16 +702,16 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
-      <button class="ri-btn ri-btn--ghost" @click="goBack">{{ t('Cancel') }}</button>
-      <button class="ri-btn ri-btn--secondary" @click="saveDraft">{{ t('Save draft') }}</button>
-      <button class="ri-btn ri-btn--primary" @click="endReceiving">{{ t('Finish receiving') }}</button>
+      <MpButton class="ri-btn ri-btn--ghost" variant="ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+      <MpButton class="ri-btn ri-btn--secondary" variant="secondary" @click="saveDraft">{{ t('Save draft') }}</MpButton>
+      <MpButton class="ri-btn ri-btn--primary" variant="primary" @click="endReceiving">{{ t('Finish receiving') }}</MpButton>
     </footer>
   </div>
 
   <!-- Not found -->
   <div v-else class="ri-not-found">
     <p>{{ t('Receiving task not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goReceiving">{{ t('Back to Receiving') }}</button>
+    <MpButton class="detail-breadcrumb" variant="ghost" @click="goReceiving">{{ t('Back to Receiving') }}</MpButton>
   </div>
 
   <!-- ── Finish receiving confirmation modal ── -->
@@ -703,18 +738,26 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
       </MpModalBody>
       <MpModalFooter>
         <div class="ri-modal-footer">
-          <button class="ri-btn ri-btn--ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? t('Continue receiving') : t('Cancel') }}</button>
-          <button
+          <MpButton class="ri-btn ri-btn--ghost" variant="ghost" @click="showConfirm = false">{{ draftOutstanding > 0 ? t('Continue receiving') : t('Cancel') }}</MpButton>
+          <MpButton
             class="ri-btn"
             :class="putAwayEnabledForTask ? 'ri-btn--secondary' : 'ri-btn--primary'"
+            :variant="putAwayEnabledForTask ? 'secondary' : 'primary'"
             @click="commitReceiving(false)"
-          >{{ draftOutstanding > 0 ? t('Finish as incomplete') : t('Save') }}</button>
-          <button v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" @click="commitReceiving(true)">{{ t('Save & create put-away') }}</button>
+          >{{ draftOutstanding > 0 ? t('Finish as incomplete') : t('Save') }}</MpButton>
+          <MpButton v-if="putAwayEnabledForTask" class="ri-btn ri-btn--primary" variant="primary" @click="commitReceiving(true)">{{ t('Save & create put-away') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
+
+  <ConfirmModal
+    :is-open="mismatchOpen" :title="t('Save with batches from another vendor?')" :description="mismatchText"
+    :items="mismatchItems"
+    :confirm-label="t('Finish receiving')" :is-danger="false"
+    @update:is-open="(v: boolean) => { mismatchOpen = v }" @confirm="showConfirm = true"
+  />
 
   <ManageBatchDrawer
     v-if="batchDrawerSku"
@@ -722,6 +765,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     :sku="batchDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
+    :vendor-id="poVendorId"
     :target-count="lineItems.find(i => i.skuCode === batchDrawerSku)?.targetQty ?? 0"
     :max-count="Math.max(0, (lineItems.find(i => i.skuCode === batchDrawerSku)?.expectedQty ?? 0) - (priorReceivedPerSku[batchDrawerSku] ?? 0))"
     :model-value="batchLinesBySku[batchDrawerSku] ?? []"
@@ -888,9 +932,17 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
 
 /* Qty input — fills full cell; white bg always, gray inset border on focus */
 .ri-td--input { background: var(--mp-background-neutral, #fff); }
-.ri-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.ri-td--input { position: relative; }
+.ri-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ri-td--input--error { background: var(--mp-background-danger-subtle, #fef2f2); }
-.ri-td--input--error:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-danger, #dc2626); }
+.ri-td--input--error { position: relative; }
+.ri-td--input--error:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-danger, #dc2626); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ri-qty-input {
   display: block; width: 100%; box-sizing: border-box;
   padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4);

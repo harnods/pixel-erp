@@ -7,12 +7,12 @@
  * location store and emits `saved` with the parent id so callers can expand it.
  */
 import {
-  MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
-  MpFormControl, MpFormLabel, MpFormHelpText, MpInput, MpAutocomplete,
-  MpButton, MpText, toast,
+  MpFormControl, MpFormLabel, MpFormHelpText, MpInput, MpTextarea, MpAutocomplete,
+  MpButton, MpRadio, MpBanner, MpBannerDescription, toast,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import {
-  addRootLocation, addSubLocation, updateLocation, defaultTypeForLevel, findLocation,
+  addRootLocation, addSubLocation, updateLocation, defaultTypeForLevel, findLocation, canHaveSubLocation,
   STORAGE_LEVELS, type LocType,
 } from '~/data/storageLocations'
 import { levelOptions, levelLabel } from '~/data/storageLevels'
@@ -40,9 +40,19 @@ const levelPickerOptions = computed(() => {
   return all.filter((_, i) => i > parentIdx)
 })
 const level = ref<string>(STORAGE_LEVELS[0]!)
+// Adding under a deepest-level parent (Bin): no level is left to pick. The tree menus
+// don't offer "Add sub-location" there; this is the fallback if the drawer opens anyway.
+const parentNode = computed(() =>
+  !isEdit.value && props.parentId ? findLocation(props.warehouseId, props.parentId)?.node ?? null : null,
+)
+const noDeeperLevel = computed(() => !!parentNode.value && !canHaveSubLocation(parentNode.value.level))
 const name = ref('')
 const type = ref<LocType>('Organizational')
 const description = ref('')
+const TYPE_OPTIONS: { value: LocType; title: string; desc: string }[] = [
+  { value: 'Organizational', title: 'Organizational', desc: 'For grouping only. Stock cannot be stored here directly.' },
+  { value: 'Storage', title: 'Storage', desc: 'Stock can be stored and tracked at this location.' },
+]
 
 // Breadcrumb (root → parent). For edit it's the edited node's ancestors; for a
 // sub-location it's the parent's path; empty for a root-level add.
@@ -99,6 +109,7 @@ watch(level, (lvl) => {
 function close() { emit('update:isOpen', false) }
 const isSaving = ref(false)
 async function save() {
+  if (isSaving.value || noDeeperLevel.value) return
   const nm = name.value.trim()
   if (!nm) { toast.notify({ variant: 'error', title: 'You must fill in location name' , maxWidth: 'max-content'}); return }
   if (!isEdit.value && props.parentId) {
@@ -114,14 +125,9 @@ async function save() {
   }
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
-  if (isEdit.value) {
-    updateLocation(props.warehouseId, props.editId!, { level: level.value, name: nm, type: type.value, description: description.value.trim() })
-    emit('saved', props.parentId)
-    close()
-    return
-  }
-  const data = { level: level.value, name: nm, type: type.value }
-  if (props.parentId) addSubLocation(props.warehouseId, props.parentId, data)
+  const data = { level: level.value, name: nm, type: type.value, description: description.value.trim() }
+  if (isEdit.value) updateLocation(props.warehouseId, props.editId!, data)
+  else if (props.parentId) addSubLocation(props.warehouseId, props.parentId, data)
   else addRootLocation(props.warehouseId, data)
   emit('saved', props.parentId)
   isSaving.value = false
@@ -130,117 +136,93 @@ async function save() {
 </script>
 
 <template>
-  <MpDrawer :is-close-on-esc="false" :is-close-on-overlay-click="false"
-    id="new-loc-drawer"
+  <!-- Shared Teleport shell (rule/drawer-custom-shell) — closes only via × / Cancel /
+       Save (rule/modal-drawer-close-explicit-only). -->
+  <ErpDrawer
     :is-open="isOpen"
-    placement="right"
-    size="md"
-    variant="floating"
-    :is-keep-alive="false"
+    :title="isEdit ? 'Edit location' : 'New location'"
     @close="close"
   >
-    <MpDrawerContent>
-      <!-- Floating variant: the drawer body IS the white card; header/content/footer
-           all live inside it (MpDrawerHeader/Footer would render outside the card). -->
-      <MpDrawerBody>
-        <div class="nl-card">
-          <div class="nl-header">
-            <MpText weight="semiBold">{{ isEdit ? 'Edit location' : 'New location' }}</MpText>
-            <MpButton left-icon="close" variant="ghost" size="sm" aria-label="Close" @click="close" />
-          </div>
-          <div class="nl-form">
-          <div v-if="crumbs.length" class="nl-crumbs">
-            <template v-for="(c, i) in crumbs" :key="i">
-              <span class="nl-crumb">{{ c }}</span>
-              <span class="nl-crumb-sep">/</span>
-            </template>
-            <span class="nl-crumb nl-crumb--current">{{ isEdit ? name || 'Location' : 'New location' }}</span>
-          </div>
-
-          <MpFormControl id="nl-level" is-required>
-            <MpFormLabel>Level</MpFormLabel>
-            <MpAutocomplete
-              :id="`nl-level-ac-${parentId}`"
-              :key="`nl-level-ac-${parentId}`"
-              v-model="level"
-              :data="levelPickerOptions"
-              label-prop="label"
-              value-prop="value"
-              placeholder="Select level"
-              use-portal
-              is-full-width
-            />
-            <MpFormHelpText>{{ levelHelp }}</MpFormHelpText>
-          </MpFormControl>
-
-          <MpFormControl id="nl-name" is-required>
-            <MpFormLabel>Location name</MpFormLabel>
-            <MpInput id="nl-name-input" v-model="name" is-full-width placeholder="e.g. Cold Zone" />
-          </MpFormControl>
-
-          <MpFormControl id="nl-desc">
-            <MpFormLabel>Description</MpFormLabel>
-            <textarea
-              id="nl-desc-input"
-              v-model="description"
-              class="nl-textarea"
-              placeholder="Optional notes about this location"
-              rows="3"
-            />
-          </MpFormControl>
-
-          <MpFormControl id="nl-type" is-required>
-            <MpFormLabel>Storage preference</MpFormLabel>
-            <div class="nl-type-cards">
-              <button
-                v-for="opt in [
-                  { value: 'Organizational', title: 'Organizational', desc: 'For grouping only. Stock cannot be stored here directly.' },
-                  { value: 'Storage', title: 'Storage', desc: 'Stock can be stored and tracked at this location.' },
-                ]"
-                :key="opt.value"
-                type="button"
-                class="nl-type-card"
-                :class="{ 'nl-type-card--active': type === opt.value }"
-                @click="type = opt.value as LocType"
-              >
-                <span class="nl-type-title">{{ opt.title }}</span>
-                <span class="nl-type-desc">{{ opt.desc }}</span>
-              </button>
-            </div>
-            <MpFormHelpText>{{ typeHelp }}</MpFormHelpText>
-          </MpFormControl>
-          </div>
-          <div class="nl-footer">
-            <MpButton variant="ghost" is-rounded @click="close">Cancel</MpButton>
-            <MpButton variant="primary" is-rounded :is-disabled="isSaving" @click="save">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
-          </div>
+    <template #body>
+      <MpBanner v-if="noDeeperLevel" variant="info" data-devchange="location-deepest-level">
+        <MpBannerDescription>{{ levelLabel(parentNode!.level) }} is the deepest level, so it can't have sub-locations.</MpBannerDescription>
+      </MpBanner>
+      <template v-else>
+        <div v-if="crumbs.length" class="nl-crumbs">
+          <template v-for="(c, i) in crumbs" :key="i">
+            <span class="nl-crumb">{{ c }}</span>
+            <span class="nl-crumb-sep">/</span>
+          </template>
+          <span class="nl-crumb nl-crumb--current">{{ isEdit ? name || 'Location' : 'New location' }}</span>
         </div>
-      </MpDrawerBody>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
+
+        <MpFormControl id="nl-level" is-required>
+          <MpFormLabel>Level</MpFormLabel>
+          <MpAutocomplete
+            :id="`nl-level-ac-${parentId}`"
+            :key="`nl-level-ac-${parentId}`"
+            v-model="level"
+            :data="levelPickerOptions"
+            label-prop="label"
+            value-prop="value"
+            placeholder="Select level"
+            use-portal
+            is-full-width
+          />
+          <MpFormHelpText>{{ levelHelp }}</MpFormHelpText>
+        </MpFormControl>
+
+        <MpFormControl id="nl-name" is-required>
+          <MpFormLabel>Location name</MpFormLabel>
+          <MpInput id="nl-name-input" v-model="name" is-full-width placeholder="e.g. Cold Zone" />
+        </MpFormControl>
+
+        <MpFormControl id="nl-desc">
+          <MpFormLabel>Description</MpFormLabel>
+          <MpTextarea
+            id="nl-desc-input"
+            v-model="description"
+            placeholder="Optional notes about this location"
+            is-full-width
+          />
+        </MpFormControl>
+
+        <MpFormControl id="nl-type" is-required>
+          <MpFormLabel>Storage preference</MpFormLabel>
+          <!-- Radio + caption list — same pattern as EditClassificationModal -->
+          <div class="nl-type-group" data-devchange="new-location-storage-preference-radio">
+            <div v-for="opt in TYPE_OPTIONS" :key="opt.value" class="nl-type-option">
+              <label class="nl-type-radio">
+                <MpRadio
+                  :id="`nl-type-${opt.value}`"
+                  name="nl-type"
+                  :value="opt.value"
+                  :is-checked="type === opt.value"
+                  @change="type = opt.value"
+                />
+                <span>{{ opt.title }}</span>
+              </label>
+              <p class="nl-type-caption">{{ opt.desc }}</p>
+            </div>
+          </div>
+          <MpFormHelpText>{{ typeHelp }}</MpFormHelpText>
+        </MpFormControl>
+      </template>
+    </template>
+
+    <template #footer>
+      <div v-if="noDeeperLevel" class="nl-footer-right">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Close</MpButton>
+      </div>
+      <div v-else class="nl-footer-right" data-devchange="new-location-drawer-shell">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="save">{{ isSaving ? 'Saving…' : (isEdit ? 'Save changes' : 'Save') }}</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-/* Floating drawer: MpDrawerBody is the rounded white card (no built-in padding),
-   so the card owns header / scrollable form / pinned footer. */
-.nl-card { display: flex; flex-direction: column; height: 100%; }
-.nl-header {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--mp-spacing-1);
-  padding: var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.nl-form {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-5);
-  flex: 1; overflow-y: auto;
-  padding: var(--mp-spacing-4);
-}
-.nl-footer {
-  display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-2) var(--mp-spacing-4) 0;
-  border-top: 1px solid var(--mp-border-default);
-}
 .nl-crumbs {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-1);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
@@ -251,26 +233,16 @@ async function save() {
 .nl-crumb { color: var(--mp-text-default, #16171a); }
 .nl-crumb-sep { color: var(--mp-text-subtle, #9a9ea6); }
 .nl-crumb--current { color: var(--mp-text-subtle, #9a9ea6); }
-.nl-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-4); }
-.nl-type-cards { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
-.nl-type-card {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5);
-  text-align: left; cursor: pointer;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral);
+.nl-type-group { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+/* No gap — MpRadio renders its own 12px control-to-label gap internally */
+.nl-type-radio {
+  display: flex; align-items: center; gap: 0; cursor: pointer; user-select: none;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
 }
-.nl-type-card--active { border-color: var(--mp-border-selected, #0f6d4d); background: var(--mp-background-nav-stack-hovered, #d6f4e9); }
-.nl-type-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.nl-type-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.nl-textarea {
-  width: 100%; resize: vertical;
-  padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
-  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  background: var(--mp-background-neutral); font-family: inherit; line-height: 1.5;
-  outline: none;
+/* Caption sits under the label, aligned past the 16px control + its 12px gap */
+.nl-type-caption {
+  margin: 0; padding-left: var(--mp-spacing-8, 32px);
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary);
 }
-.nl-textarea:focus { border-color: var(--mp-border-focused, #0f6d4d); box-shadow: 0 0 0 2px var(--mp-shadow-focused, rgba(15,109,77,0.2)); }
-.nl-textarea::placeholder { color: var(--mp-text-placeholder); }
+.nl-footer-right { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-left: auto; }
 </style>

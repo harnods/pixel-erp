@@ -467,7 +467,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goReceipts">{{ t('Inbound delivery') }}</button>
+          <MpButton variant="link" class="detail-breadcrumb" @click="goReceipts">{{ t('Inbound delivery') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ isEdit ? t('Edit purchase order') : t('New receipt') }}</h1>
@@ -529,9 +529,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <MpFormControl id="cr-transno">
               <div class="cr-label-row">
                 <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-                <button type="button" class="cr-label-icon" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true">
-                  <MpIcon name="settings" size="sm" />
-                </button>
+                <MpButton
+                  type="button"
+                  variant="ghost"
+                  class="cr-label-icon"
+                  :aria-label="t('Transaction no. settings')"
+                  left-icon="settings"
+                  @click="noSettingsOpen = true"
+                />
               </div>
               <MpInput
                 id="cr-transno-input"
@@ -784,9 +789,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
                   <!-- Delete — only shown on rows that have a product -->
                   <td class="cr-td cr-td--del">
-                    <button v-if="row.productId" class="cr-del-btn" type="button" @click="removeRow(row.id)">
-                      <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    <MpButton
+                      v-if="row.productId"
+                      class="cr-del-btn"
+                      variant="ghost"
+                      type="button"
+                      left-icon="minus-circular"
+                      @click="removeRow(row.id)"
+                    />
                   </td>
                 </tr>
               </tbody>
@@ -814,7 +824,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
     <!-- ── Sticky footer ── -->
     <footer class="detail-footer" :class="{ 'detail-footer--floating': stageOverflowing }">
       <MpButton variant="ghost" is-rounded @click="goReceipts">{{ t('Cancel') }}</MpButton>
-      <button v-if="!isEdit" class="cr-btn-secondary" :disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</button>
+      <MpButton v-if="!isEdit" variant="secondary" class="cr-btn-secondary" :is-disabled="isSaving || isSavingAndAdding" @click="handleSaveAndAdd">{{ isSavingAndAdding ? t('Saving…') : t('Save & add another') }}</MpButton>
       <MpButton variant="primary" is-rounded :is-disabled="isSaving || isSavingAndAdding" @click="handleSave">{{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}</MpButton>
     </footer>
 
@@ -966,7 +976,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-td--input { padding: 0; vertical-align: middle; }
 .cr-td--input :deep([class*='input']),
 .cr-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
-.cr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.cr-td--input { position: relative; }
+.cr-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 
 /* Unit — read-only gray cell */
 .cr-td--unit { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
@@ -977,12 +991,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* Qty error state */
 .cr-td--qty-cell { padding: 0; vertical-align: middle; }
 .cr-td--qty-cell :deep([class*='input']) { border-radius: 0; border-color: transparent; }
-.cr-td--qty-cell:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
-.cr-td--qty-error { background: #FCEEED; border-bottom-color: #E2483D; }
+.cr-td--qty-cell { position: relative; }
+.cr-td--qty-cell:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
+.cr-td--qty-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .cr-td--qty-error :deep([class*='input']) { background: transparent; }
 
 /* Product error state */
-.cr-td--prod-error { background: #FCEEED; border-bottom-color: #E2483D; }
+.cr-td--prod-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .cr-td--prod-error :deep([class*='autocomplete']),
 .cr-td--prod-error :deep([class*='input']) { background: transparent; }
 

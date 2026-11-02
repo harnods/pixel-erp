@@ -7,9 +7,11 @@
  * Layout mirrors Figma "Menu Group" (node 4141:450).
  */
 import { computed } from 'vue'
+import { MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
+import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
 
 interface RailItem { key: string; label: string; icon: string; to?: string }
 const railItems: RailItem[] = [
@@ -26,19 +28,27 @@ const router = useRouter()
 const route = useRoute()
 // Active product follows the route: /hr* → HR, /crm* → CRM, everything else → ERP.
 const activeProduct = computed(() =>
-  isHrPath(route.path) ? 'HR' : route.path.startsWith('/crm') ? 'CRM' : 'ERP')
+  isHrPath(route.path) ? 'HR' : route.path.startsWith('/crm') || route.path.startsWith('/get-crm') ? 'CRM' : 'ERP')
+
+// Same rule as ErpProductSwitcher (PRD US-013): CRM opens only with the add-on
+// AND the CRM role; otherwise the /get-crm landing explains why.
+const { mode: crmMode, currentUserHasCrmRole } = useCrmSubscriptionScenario()
+const crmTarget = computed(() =>
+  (crmMode.value === 'active' || crmMode.value === 'read-only') && currentUserHasCrmRole.value ? '/crm' : '/get-crm')
 
 function openProduct(item: RailItem) {
-  if (item.to) router.push(item.to)
+  if (item.key === 'CRM') router.push(crmTarget.value)
+  else if (item.to) router.push(item.to)
   else infoToast(`${item.label} — coming soon`)
 }
 </script>
 
 <template>
   <nav class="navbar-group" aria-label="Product navigation">
-    <button
+    <MpButton
       v-for="item in railItems"
       :key="item.key"
+      variant="ghost"
       class="ng-item"
       :class="{ active: activeProduct === item.key }"
       :aria-label="item.label"
@@ -50,7 +60,7 @@ function openProduct(item: RailItem) {
         <img :src="`https://cdn.mekari.design/icons/${item.icon}-fill.svg`" class="ng-icon ng-icon-fill" alt="" />
       </span>
       <span class="ng-label">{{ item.label }}</span>
-    </button>
+    </MpButton>
   </nav>
 </template>
 

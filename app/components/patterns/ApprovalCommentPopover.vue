@@ -77,15 +77,14 @@ function commentParts(text: string) {
       @close="open = false"
     >
       <MpPopoverTrigger>
-        <button
+        <MpButton
           v-tooltip="{ label: 'Comments', placement: 'top' }"
           class="row-icon-btn"
           aria-label="Comments"
-          type="button"
           @click.stop="open = !open"
         >
           <MpIcon name="comment" size="md" />
-        </button>
+        </MpButton>
       </MpPopoverTrigger>
       <MpPopoverContent :class="css({ width: '360px', padding: '0', overflow: 'hidden' })" @blur="open = false" @escape="open = false">
         <div class="acp-header">Comments</div>

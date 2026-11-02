@@ -11,6 +11,7 @@
  */
 import { computed } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import { formatMoney } from '~/utils/currency'
 import { crmCustomers, dealTotals, type Deal, type DealLineItem } from '~/data/crm'
 import { dealTargetLabel, dealConvEligibility } from '~/data/crmConversion'
@@ -40,19 +41,14 @@ function lineAmount(li: DealLineItem) {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="crv">
-      <div v-if="open && deal" class="crv-overlay">
-        <div class="crv-panel" role="dialog" aria-modal="true">
-          <header class="crv-header">
-            <div class="crv-header-left">
-              <span class="crv-eyebrow">{{ deal.name }}</span>
-              <h2 class="crv-title">{{ title }}</h2>
-            </div>
-            <MpButton class="crv-close" is-rounded :aria-label="t('Close')" @click="emit('close')"><MpIcon name="close" size="md" /></MpButton>
-          </header>
-
-          <div class="crv-body">
+  <ErpDrawer :is-open="open && !!deal" :title="title" width="560px" @close="emit('close')">
+    <template #title>
+      <div class="crv-header-left">
+        <span class="crv-eyebrow">{{ deal?.name }}</span>
+        <h2 class="crv-title">{{ title }}</h2>
+      </div>
+    </template>
+    <template #body>
             <p class="crv-lead">{{ t('Review the values below. They are filled from this record’s mapping and cannot be edited here — edit the record itself if something is wrong.') }}</p>
 
             <!-- ERP Customer prerequisite -->
@@ -101,27 +97,18 @@ function lineAmount(li: DealLineItem) {
             </section>
 
             <p v-if="!eligibility.ok" class="crv-block">{{ eligibility.reason }}</p>
-          </div>
-
-          <footer class="crv-footer">
-            <MpButton class="btn-enterprise--ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="emit('confirm')">{{ t('Confirm and create') }} {{ t(targetLabel) }}</MpButton>
-          </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    </template>
+    <template #footer>
+      <MpButton class="btn-enterprise--ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
+      <MpButton variant="primary" is-rounded @click="emit('confirm')">{{ t('Confirm and create') }} {{ t(targetLabel) }}</MpButton>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.crv-overlay { position: fixed; inset: 0; z-index: 1200; display: flex; justify-content: flex-end; background: var(--mp-background-overlay, rgba(8,13,14,0.5)); }
-.crv-panel { margin: 12px; height: calc(100% - 24px); width: min(560px, calc(100% - 24px)); background: var(--mp-background-stage, #fff); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; }
-.crv-header { flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-subtle, #e6e8eb); }
 .crv-header-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .crv-eyebrow { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .crv-title { margin: 0; font-size: var(--mp-font-sizes-xl, 18px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.crv-close { min-width: 0 !important; padding: var(--mp-spacing-1) !important; background: transparent !important; border: none !important; }
-.crv-body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--mp-spacing-5); display: flex; flex-direction: column; gap: var(--mp-spacing-5); }
 .crv-lead { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-secondary); }
 .crv-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .crv-section-title { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
@@ -139,10 +126,4 @@ function lineAmount(li: DealLineItem) {
 .crv-total { display: flex; justify-content: space-between; padding-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md, 14px); }
 .crv-total b { font-weight: var(--mp-font-weights-semi-bold); }
 .crv-block { margin: 0; font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-text-danger, #a8352d); }
-.crv-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-subtle, #e6e8eb); }
-
-.crv-enter-active, .crv-leave-active { transition: opacity 0.2s ease; }
-.crv-enter-active .crv-panel, .crv-leave-active .crv-panel { transition: transform 0.2s ease; }
-.crv-enter-from, .crv-leave-to { opacity: 0; }
-.crv-enter-from .crv-panel, .crv-leave-to .crv-panel { transform: translateX(calc(100% + 12px)); }
 </style>

@@ -10,7 +10,7 @@
  * page at /crm/deals/new); Edit navigates to /crm/deals/:id/edit. Import/Export reuse the
  * shared modals; stage moves go through moveDealStage (Won terminal, Lost reason,
  * reopen) so the kanban and the table enforce the same PRD rules; bulk owner/stage
- * update the selection. Per rule/bulk-actions-no-delete + the PRD "no permanent
+ * update the selection. Per rule/bulk-actions-delete-confirmed + the PRD "no permanent
  * delete in V1", the only lifecycle action is Archive / Restore.
  */
 import { ref, reactive, computed, watch, inject, onMounted } from 'vue'
@@ -19,6 +19,8 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   MpTabs, MpTabList, MpTab,
 } from '@mekari/pixel3'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import type { CrmStatus } from '~/composables/useCrmAccess'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -49,6 +51,10 @@ import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmRepo
 
 const { t } = useLocale()
 const router = useRouter()
+// CRM access — the prototype scenario FAB (bottom-right) flips this; anything other
+// than 'active' makes the /crm router swap in CrmPaywallPage (see [...slug].vue +
+// useCrmAccess), with the face picked by the status.
+const { crmStatus, setCrmStatus } = useCrmAccess()
 // The page title mirrors the Deals module name (renamable in module settings).
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 
@@ -506,43 +512,41 @@ const toggleAirene = inject<() => void>('toggleAirene')
       <!-- ── Fixed metrics (PRD: 5 cards, click-through) ── -->
       <div class="cc-stats">
         <div class="stats-section">
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total ongoing deals') }}</div>
             <div class="stat-amount">{{ m.totalOngoing }}</div>
             <div class="stat-sub">{{ t('In the pipeline') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'ongoing' }" @click="applyMetric('ongoing')">
             <div class="stat-title">{{ t('Total deal value') }}</div>
             <div class="stat-amount">{{ formatMoney(m.totalOngoingValue, 'IDR') }}</div>
             <div class="stat-sub">{{ t('Ongoing, base currency') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'closing' }" @click="applyMetric('closing')">
             <div class="stat-title">{{ t('Closing this month') }}</div>
             <div class="stat-amount">{{ m.closingThisMonthCount }}</div>
             <div class="stat-sub">{{ formatMoney(m.closingThisMonthValue, 'IDR') }}</div>
-          </button>
-          <button type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
+          </MpButton>
+          <MpButton type="button" class="stat-card stat-card--bordered" :class="{ 'stat-card--active': metricFilter === 'overdue' }" @click="applyMetric('overdue')">
             <div class="stat-title">{{ t('Overdue') }}</div>
             <div class="stat-amount" :class="{ 'stat-amount--danger': m.overdueCount > 0 }">{{ m.overdueCount }}</div>
             <div class="stat-sub">{{ t('Past due date') }}</div>
-          </button>
-          <button type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
+          </MpButton>
+          <MpButton type="button" class="stat-card" :class="{ 'stat-card--active': metricFilter === 'converted' }" @click="applyMetric('converted')">
             <div class="stat-title">{{ convTargetShort }} {{ t('created') }}</div>
             <div class="stat-amount">{{ m.txnCreatedPast30Count }}</div>
             <div class="stat-sub">{{ t('Past 30 days') }}</div>
-          </button>
+          </MpButton>
         </div>
         <!-- ── Optional report-backed pins — a distinct extension area after the
              protected fixed cards above (never replaces/reorders them). ── -->
         <div v-if="pinnedDealMetrics.length" class="cc-pinned-metrics">
           <div v-for="pin in pinnedDealMetrics" :key="pin.id" class="pinned-metric-card">
-            <button type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
+            <MpButton type="button" class="pinned-metric-body" @click="router.push(`/crm/reports/${pin.reportId}`)">
               <div class="stat-title">{{ pin.label }}</div>
               <div class="stat-amount">{{ metricPinValue(pin) ?? '—' }}</div>
-            </button>
-            <button type="button" class="pinned-metric-unpin" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)">
-              <MpIcon name="close" size="sm" />
-            </button>
+            </MpButton>
+            <MpButton type="button" class="pinned-metric-unpin" left-icon="close" :aria-label="t('Unpin')" @click="unpinReportMetric(pin.id)" />
           </div>
         </div>
       </div>
@@ -586,7 +590,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
           <div class="filter-search">
             <MpIcon name="search" size="sm" />
             <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search deals…')" />
-            <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''"><MpIcon name="close" size="sm" /></button>
+            <MpButton v-if="search" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
           </div>
         </div>
       </div>
@@ -715,18 +719,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             <MpPopoverContent class="erp-dropdown-menu">
               <!-- Change stage swaps this SAME popover's content — no modal (rule/dnd… see CLAUDE.md). -->
               <div v-if="stagePicker.mode === 'row' && stagePicker.ids[0] === asDeal(row).id" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -763,18 +767,18 @@ const toggleAirene = inject<() => void>('toggleAirene')
             </MpPopoverTrigger>
             <MpPopoverContent class="erp-dropdown-menu">
               <div v-if="stagePicker.mode === 'bulk'" class="stage-picker">
-                <button type="button" class="stage-picker-back" @click="closeStagePicker()"><MpIcon name="chevrons-left" size="sm" />{{ t('Change stage') }}</button>
-                <button
+                <MpButton type="button" class="stage-picker-back" left-icon="chevrons-left" @click="closeStagePicker()">{{ t('Change stage') }}</MpButton>
+                <MpButton
                   v-for="s in stageOptionsFor(stagePicker.ids)" :key="s" type="button" class="stage-picker-item"
                   @click="pickStage(s); if (!stagePicker.mode) onClosePopover()"
-                >{{ t(dealStageLabel(s)) }}</button>
+                >{{ t(dealStageLabel(s)) }}</MpButton>
                 <div v-if="stagePicker.awaitingLostReason" class="stage-picker-lost">
                   <span class="stage-picker-lost-label">{{ t('Lost reason') }}</span>
                   <textarea v-model="stagePicker.lostReason" class="stage-picker-textarea" rows="2" @input="stagePicker.error = ''" />
                   <span v-if="stagePicker.error" class="stage-picker-err">{{ stagePicker.error }}</span>
                   <div class="stage-picker-lost-actions">
-                    <button type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</button>
-                    <button type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</button>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm" @click="cancelLostReason()">{{ t('Cancel') }}</MpButton>
+                    <MpButton type="button" class="btn-enterprise btn-enterprise--primary btn-enterprise--sm" @click="confirmLostReason(); if (!stagePicker.mode) onClosePopover()">{{ t('Confirm') }}</MpButton>
                   </div>
                 </div>
               </div>
@@ -879,6 +883,20 @@ const toggleAirene = inject<() => void>('toggleAirene')
       @close="exportOpen = false"
       @export="onExport"
     />
+
+    <!-- Prototype scenario FAB — flip the CRM state. "Trial expired" / "No access"
+         swap the whole /crm route to the matching paywall face (full-bleed, no CRM
+         sidebar); the paywall brings access back. -->
+    <ScenarioFab
+      :model-value="crmStatus"
+      :aria-label="t('Change CRM access')"
+      :scenarios="[
+        { label: t('CRM access'), value: 'active' },
+        { label: t('Trial expired'), value: 'expired' },
+        { label: t('No access (paywall)'), value: 'none' },
+      ]"
+      @update:model-value="(v: string) => setCrmStatus(v as CrmStatus)"
+    />
   </div>
 </template>
 
@@ -910,7 +928,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
    pinned bar carries an opaque strip above it. Rest-state spacing unchanged. */
 .cc-stats { padding-top: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); }
 .stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
-.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
+.stat-card.mp-button { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: var(--mp-spacing-1); padding: 0 var(--mp-spacing-6) 0 0; align-self: stretch; background: none; border: none; text-align: left; cursor: pointer; border-radius: var(--mp-radii-md); }
 .stat-card--bordered { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .stat-card:hover .stat-title { color: var(--mp-text-link); }
 .stat-card--active .stat-title { color: var(--mp-text-link); font-weight: var(--mp-font-weights-semi-bold); }
@@ -998,7 +1016,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .stage-picker-lost { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 .stage-picker-lost-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .stage-picker-textarea { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; resize: vertical; min-height: 56px; font-family: inherit; }
-.stage-picker-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
+.stage-picker-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); } /* pixel-police-allow-shadow: focus ring */
 .stage-picker-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c9372c); }
 .stage-picker-lost-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 

@@ -14,7 +14,8 @@ import {
   type PickingBatchPick, type PickingSerialPick,
 } from '~/data/pickingTasks'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
-import { orderSkuLines, productBySku } from '~/data/inventory'
+import { orderSkuLines } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { binForSku, getWarehouseDetail, getReservationsForOrder } from '~/data/warehouseDetails'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
@@ -69,8 +70,6 @@ const locationOptions = computed(() => {
 })
 
 // ─── Batch / serial helpers (same heuristic as receiving / put-away / picking) ───
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(warehouseId.value)
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -78,14 +77,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 // ─── Assignee ───────────────────────────────────────────────────────────────────
 const assigneeId    = ref('')
@@ -601,7 +598,7 @@ async function doCreate() {
 
     const batchChunks = (batchLinesBySku.value[g.sku] ?? [])
       .filter(b => (b.counted ?? 0) > 0)
-      .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, unit: b.unit, location: b.location ?? '', qty: b.counted ?? 0 }))
+      .map(b => ({ batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, unit: b.unit, location: b.location ?? '', qty: b.counted ?? 0, attributes: b.attributes }))
     let batchIdx = 0
     const serialQueue = serialLinesBySku.value[g.sku] ?? []
     let serialIdx = 0
@@ -623,7 +620,7 @@ async function doCreate() {
           const chunk = batchChunks[batchIdx]!
           const take = Math.min(need, chunk.qty)
           if (take > 0) {
-            picks.push({ batchNo: chunk.batchNo, expiryDate: chunk.expiryDate, desc: chunk.desc, unit: chunk.unit, location: chunk.location, qty: take })
+            picks.push({ batchNo: chunk.batchNo, expiryDate: chunk.expiryDate, desc: chunk.desc, unit: chunk.unit, location: chunk.location, qty: take, attributes: chunk.attributes })
             chunk.qty -= take
             need -= take
           }
@@ -675,7 +672,7 @@ async function doCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? t('Order details') : t('Picking') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goBack">{{ (route.query.from as string)?.startsWith('order:') ? t('Order details') : t('Picking') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New picking list') }}</h1>
@@ -753,8 +750,8 @@ async function doCreate() {
 
         <div class="pk-filter-bar">
           <div class="detail-loc-toggle">
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</button>
-            <button class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</button>
+            <MpButton variant="ghost" class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'combined' }" @click="viewMode = 'combined'">{{ t('Combined') }}</MpButton>
+            <MpButton variant="ghost" class="detail-loc-toggle-btn" :class="{ 'detail-loc-toggle-btn--active': viewMode === 'orders' }" @click="viewMode = 'orders'">{{ t('By orders') }}</MpButton>
           </div>
           <MpButton v-if="anyExcluded" variant="textLink" size="sm" @click="resetExclusions">{{ t('Reset') }}</MpButton>
         </div>
@@ -859,16 +856,12 @@ async function doCreate() {
                   <template v-if="SHOW_STORAGE_AND_MANAGE_COLUMNS">
                     <td v-if="isBatchTrackedSku(row.sku)" class="pk-td pk-td--action">
                       <MpTooltip :id="`tt-batch-${row.sku}`" :label="t('Manage batch')" placement="top" use-portal>
-                        <button class="pk-manage-icon-btn" type="button" @click.stop="openBatchDrawer(row.sku)">
-                          <MpIcon name="competencies" size="md" />
-                        </button>
+                        <MpButton class="pk-manage-icon-btn" type="button" variant="ghost" left-icon="competencies" @click.stop="openBatchDrawer(row.sku)" />
                       </MpTooltip>
                     </td>
                     <td v-else-if="isSerialTrackedSku(row.sku)" class="pk-td pk-td--action">
                       <MpTooltip :id="`tt-serial-${row.sku}`" :label="t('Manage serial numbers')" placement="top" use-portal>
-                        <button class="pk-manage-icon-btn" type="button" @click.stop="openSerialDrawer(row.sku)">
-                          <MpIcon name="competencies" size="md" />
-                        </button>
+                        <MpButton class="pk-manage-icon-btn" type="button" variant="ghost" left-icon="competencies" @click.stop="openSerialDrawer(row.sku)" />
                       </MpTooltip>
                     </td>
                     <td v-else class="pk-td pk-td--action"></td>
@@ -1209,7 +1202,11 @@ async function doCreate() {
 }
 /* Editable qty cell — white, input fills edge-to-edge, focus ring */
 .pk-items .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
-.pk-items .pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pk-items .pk-td--input { position: relative; }
+.pk-items .pk-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .pk-qty-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box; text-align: right;
   padding: 0 var(--mp-spacing-2);

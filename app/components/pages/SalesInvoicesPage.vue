@@ -4,8 +4,10 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpIcon, MpButton, MpButtonGroup, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
+  MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpCheckbox,
   css, toast,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
@@ -19,9 +21,9 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
 import type { AmountComparator } from '~/components/patterns/AmountComparatorField.vue'
-import { salesInvoices, awaitingSalesInvoices, deleteSalesInvoices } from '~/data'
+import { salesInvoices, awaitingSalesInvoices, deleteSalesInvoices, recurringSalesInvoices } from '~/data'
 import type { SalesInvoice } from '~/data'
-import { getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus, DJP_STATUS_CONFIG, type TaxDocumentStatus } from '~/data/taxDocuments'
+import { getTaxDocumentsForInvoice, currentTaxDocument, formatTaxDocumentNumber, updateTaxDocumentStatus, taxDocumentStatus, DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS, type TaxDocumentStatus, type TaxDocumentStatusValue } from '~/data/taxDocuments'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const aireneOpen = inject<Ref<boolean>>('aireneOpen')
@@ -38,10 +40,10 @@ const { t } = useLocale()
 const columns: TableColumn[] = [
   { key: 'date',         label: t('Date'),        kind: 'date',                                   sortType: 'date'   },
   { key: 'number',       label: t('Number'),      kind: 'number', sortable: true,                 sortType: 'text'   },
-  { key: 'attachment',   label: '',            width: '40px',  noHeader: true, align: 'center' },
   { key: 'customerName', label: t('Customer'),    kind: 'name', sortable: true,                 sortType: 'text'   },
   { key: 'dueDate',      label: t('Due date'),    kind: 'date',                                   sortType: 'date'   },
   { key: 'status',       label: t('Status'),      kind: 'status',                                 sortType: 'text'   },
+  { key: 'taxDocStatus', label: t('Tax document status'), kind: 'status',                         sortType: 'text'   },
   { key: 'djpStatus',    label: t('DJP status'),  kind: 'status',                                 sortType: 'text'   },
   { key: 'balance',      label: t('Balance due'), kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
   { key: 'total',        label: t('Total'),       kind: 'amount', align: 'right', sortable: true,  sortType: 'number' },
@@ -54,7 +56,15 @@ type Row = SalesInvoice & {
   customerName: string
   attachment: boolean
   hasTaxDocument: boolean
-  /** most recent tax document's status, or 'not-generated' when it has none. */
+  /**
+   * The two axes of the document that currently speaks for this invoice (see
+   * currentTaxDocument — an invoice can carry a whole lineage), or
+   * 'not-generated' when it has no tax document at all.
+   *
+   * `taxDocStatus` is the faktur's own status, `djpStatus` is DJP's reply. They
+   * are deliberately separate — see rule/efaktur-status-axes.
+   */
+  taxDocStatus: TaxDocumentStatusValue | 'not-generated'
   djpStatus: TaxDocumentStatus | 'not-generated'
   overdueLabel: string | null
 }
@@ -79,13 +89,15 @@ const rows = computed<Row[]>(() =>
         })()
       : null
     const taxDocs = getTaxDocumentsForInvoice(inv.id)
+    const current = currentTaxDocument(inv.id)
 
     return {
       ...inv,
       customerName: inv.customer.name,
       attachment:   inv.hasAttachment ?? false,
       hasTaxDocument: taxDocs.length > 0,
-      djpStatus: taxDocs.length > 0 ? taxDocs[0]!.status : 'not-generated',
+      taxDocStatus: current ? taxDocumentStatus(current) : 'not-generated',
+      djpStatus: current ? current.status : 'not-generated',
       overdueLabel,
     }
   })
@@ -103,12 +115,15 @@ const keywordColumns = [
   { key: 'tags',         label: t('Tags')     },
 ]
 const tagOptions = computed(() => [...new Set(salesInvoices.flatMap(inv => inv.tags ?? []))].sort())
-// DJP status is only a real column/filter when at least one invoice on the
-// table has a tax document — otherwise every row would just show "Not
-// generated" and the column/filter would be dead weight.
+// Tax document status / DJP status are only real columns/filters when at least
+// one invoice on the table has a tax document — otherwise every row would just
+// show an em dash and both would be dead weight.
 const hasAnyTaxDocument = computed(() => rows.value.some(r => r.hasTaxDocument))
-// Empty (and the drawer's DJP status field hidden) until the table has at
-// least one invoice with a tax document — see hasAnyTaxDocument below.
+// Empty (and the drawer's two tax fields hidden) until the table has at least
+// one invoice with a tax document — see hasAnyTaxDocument above.
+const taxDocStatusOptions = computed(() => hasAnyTaxDocument.value
+  ? (Object.keys(TAX_DOCUMENT_STATUS_LABELS) as TaxDocumentStatusValue[]).map(value => ({ value, label: t(TAX_DOCUMENT_STATUS_LABELS[value]) }))
+  : [])
 const djpStatusOptions = computed(() => hasAnyTaxDocument.value
   ? (Object.keys(DJP_STATUS_CONFIG) as TaxDocumentStatus[]).map(value => ({ value, label: t(DJP_STATUS_CONFIG[value].label) }))
   : [])
@@ -160,11 +175,12 @@ const {
       || (f.tagsComparator === 'isAnyOf' ? f.tags.some(tg => rowTags.includes(tg))
         : f.tagsComparator === 'isAllOf' ? f.tags.every(tg => rowTags.includes(tg))
         : f.tags.every(tg => !rowTags.includes(tg)))
+    const matchesTaxDocStatus = f.taxDocStatus.length === 0 || f.taxDocStatus.includes(row.taxDocStatus)
     const matchesDjpStatus = f.djpStatus.length === 0 || f.djpStatus.includes(row.djpStatus)
 
     return matchesSearch && matchesStatus
       && matchesKeyword && matchesTransactionDate && matchesDueDate && matchesDrawerStatus
-      && matchesTotal && matchesTags && matchesDjpStatus
+      && matchesTotal && matchesTags && matchesTaxDocStatus && matchesDjpStatus
   },
 })
 
@@ -179,6 +195,7 @@ const activeFilterCount = computed(() => {
   if (f.status.length > 0) n++
   if (f.totalValue !== '' || f.totalMin !== '' || f.totalMax !== '') n++
   if (f.tags.length > 0) n++
+  if (f.taxDocStatus.length > 0) n++
   if (f.djpStatus.length > 0) n++
   return n
 })
@@ -195,15 +212,17 @@ function clearFilters() {
 // ─── Filter options ───────────────────────────────────────────────────────────
 
 const statusOptions = [
-  { label: t('All status'), value: ''        },
-  { label: t('Paid'),       value: 'paid'    },
-  { label: t('Open'),       value: 'open'    },
-  { label: t('Overdue'),    value: 'overdue' },
+  { label: t('All status'),     value: ''               },
+  { label: t('Paid'),           value: 'paid'           },
+  { label: t('Partially paid'), value: 'partially-paid' },
+  { label: t('Open'),           value: 'open'           },
+  { label: t('Overdue'),        value: 'overdue'        },
 ]
 const drawerStatusOptions = [
-  { label: t('Open'),    value: 'open'    },
-  { label: t('Paid'),    value: 'paid'    },
-  { label: t('Overdue'), value: 'overdue' },
+  { label: t('Open'),           value: 'open'           },
+  { label: t('Partially paid'), value: 'partially-paid' },
+  { label: t('Paid'),           value: 'paid'           },
+  { label: t('Overdue'),        value: 'overdue'        },
 ]
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
@@ -228,10 +247,11 @@ function formatDate(iso: string) {
 
 
 // Column show/hide (first column always on; Last updated appended, hidden by default;
-// DJP status also starts hidden — only shown once activated from column settings)
-const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'djpStatus'])
+// the two tax columns also start hidden — only shown once activated from column settings)
+const HIDDEN_BY_DEFAULT = new Set(['lastUpdated', 'taxDocStatus', 'djpStatus'])
+const TAX_DOC_COLUMNS = new Set(['taxDocStatus', 'djpStatus'])
 const allCols = computed<TableColumn[]>(() => [
-  ...columns.filter(c => c.key !== 'djpStatus' || hasAnyTaxDocument.value),
+  ...columns.filter(c => !TAX_DOC_COLUMNS.has(c.key) || hasAnyTaxDocument.value),
   { key: 'lastUpdated', label: t('Last updated'), kind: 'date' },
 ])
 const columnVisibility = reactive<Record<string, boolean>>(Object.fromEntries(allCols.value.map(c => [c.key, !HIDDEN_BY_DEFAULT.has(c.key)])))
@@ -270,6 +290,93 @@ function openShareBulk(selectedRows: Set<number>) {
   if (rows.length) openShare(rows[0]!)
 }
 
+// ─── Set as recurring drawer ─────────────────────────────────────────────────
+function todayISO() { return new Date().toISOString().slice(0, 10) }
+function isoToDMY(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function dmyToIso(dmy: string) {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+const recurringDrawerOpen = ref(false)
+const recurringSourceRow = ref<Row | null>(null)
+const recurRepeatInterval = ref(1)
+const recurRepeatUnit = ref('month')
+const recurRepeatUnitOptions = [
+  { label: t('Day'), value: 'day' },
+  { label: t('Week'), value: 'week' },
+  { label: t('Month'), value: 'month' },
+  { label: t('Year'), value: 'year' },
+]
+const recurEndRepeat = ref('never')
+const recurEndRepeatOptions = [
+  { label: t('Repeat forever'), value: 'never' },
+  { label: t('End after'), value: 'after' },
+  { label: t('End on'), value: 'on' },
+]
+const recurEndAfterCount = ref(12)
+const recurEndOnDate = ref('')
+const recurStartDate = ref(isoToDMY(todayISO()))
+const recurSendAutoEmail = ref(false)
+
+const recurNextTransactionDate = computed(() => {
+  if (!recurStartDate.value) return ''
+  const iso = dmyToIso(recurStartDate.value)
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const unit = recurRepeatUnit.value
+  const n = recurRepeatInterval.value || 1
+  if (unit === 'day') d.setDate(d.getDate() + n)
+  else if (unit === 'week') d.setDate(d.getDate() + n * 7)
+  else if (unit === 'month') d.setMonth(d.getMonth() + n)
+  else if (unit === 'year') d.setFullYear(d.getFullYear() + n)
+  return isoToDMY(d.toISOString().slice(0, 10))
+})
+
+function openRecurringDrawer(row: Row) {
+  recurringSourceRow.value = row
+  recurRepeatInterval.value = 1
+  recurRepeatUnit.value = 'month'
+  recurEndRepeat.value = 'never'
+  recurEndAfterCount.value = 12
+  recurEndOnDate.value = ''
+  recurStartDate.value = isoToDMY(todayISO())
+  recurSendAutoEmail.value = false
+  recurringDrawerOpen.value = true
+}
+
+function saveRecurring() {
+  if (!recurringSourceRow.value) return
+  const row = recurringSourceRow.value
+  const newId = `rsi-${Date.now()}`
+  recurringSalesInvoices.push({
+    id: newId,
+    templateName: `${row.customerName ?? row.customer.name} - Recurring`,
+    customer: row.customer,
+    frequency: `Every ${recurRepeatInterval.value} ${recurRepeatUnit.value}`,
+    amount: row.total,
+    nextDate: dmyToIso(recurNextTransactionDate.value),
+    status: 'active',
+    createdCount: 0,
+    schedule: {
+      repeatInterval: recurRepeatInterval.value,
+      repeatUnit: recurRepeatUnit.value as 'day' | 'week' | 'month' | 'year',
+      endRepeat: recurEndRepeat.value as 'never' | 'after' | 'on',
+      endAfterCount: recurEndRepeat.value === 'after' ? recurEndAfterCount.value : undefined,
+      endOnDate: recurEndRepeat.value === 'on' ? dmyToIso(recurEndOnDate.value) : undefined,
+      startDate: dmyToIso(recurStartDate.value),
+      sendAutoEmail: recurSendAutoEmail.value,
+    },
+  })
+  const inv = salesInvoices.find(si => si.id === row.id)
+  if (inv) inv.recurringId = newId
+  recurringDrawerOpen.value = false
+  toast.notify({ variant: 'success', title: t('Recurring sales invoice created') })
+}
+
 // "Submit to DJP" only shows once every selected invoice has a tax document
 // AND that document's DJP status is Draft or Rejected — anything already
 // awaiting approval or approved has nothing left to (re-)submit.
@@ -284,7 +391,10 @@ function submitBulkToDjp(selectedRows: Set<number>, deselectAll: () => void) {
   const selected = bulkSelectedInvoices(selectedRows)
   if (!selected.length) return
   for (const inv of selected) {
-    const doc = getTaxDocumentsForInvoice(inv.id)[0]
+    // The document the row's status refers to — NOT simply the first in the
+    // list. An invoice with a lineage can have an approved faktur sitting
+    // alongside the draft replacement that actually needs submitting.
+    const doc = currentTaxDocument(inv.id)
     if (doc) updateTaxDocumentStatus(doc.id, 'awaiting-approval')
   }
   toast.notify({ variant: 'success', title: `${selected.length} ${t(selected.length !== 1 ? 'tax documents' : 'tax document')} ${t('submitted to DJP')}` })
@@ -449,9 +559,7 @@ function confirmBulkDelete() {
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" variant="secondary" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="search = ''" />
         </div>
       </div>
     </template>
@@ -462,62 +570,66 @@ function confirmBulkDelete() {
     </template>
 
     <!-- ── Cell: Number ── -->
+    <!-- ── Cell: Number — the invoice link, then its document icons on the same
+         line: the e-faktur icon (opens the tax-document popover) and the
+         attachment icon, side by side. They sit here rather than in a column of
+         their own because both describe THIS document, and a separate icon
+         column reads as data about something else. ── -->
     <template #cell-number="{ row, value }">
-      <a class="cell-link cell-text cell-number" @click.stop="viewDetails((row as Row).id)">{{ t('Sales Invoice') }} #{{ value }}</a>
-    </template>
-
-    <!-- ── Cell: Attachment icon (narrow column, no header) — tax-document icon
-         stacks above it when the invoice has one or more tax documents ── -->
-    <template #cell-attachment="{ row, value }">
-      <div class="attachment-cell">
-        <MpPopover v-if="(row as Row).hasTaxDocument" :id="`si-taxdoc-${(row as Row).id}`" use-portal :is-keep-alive="false" placement="bottom-start">
-          <MpPopoverTrigger>
-            <MpButton class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
-              <MpIcon name="doc" size="sm" />
-            </MpButton>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
-            <div class="taxdoc-popover">
-              <div class="taxdoc-popover-head">
-                <h3 class="taxdoc-popover-title">{{ t('Tax Document') }}</h3>
-                <p class="taxdoc-popover-subtitle">{{ t('Sales Invoice') }} #{{ (row as Row).number }}</p>
+      <div class="number-cell">
+        <a
+          class="cell-link cell-text cell-number"
+          :title="`${t('Sales Invoice')} #${value}`"
+          @click.stop="viewDetails((row as Row).id)"
+        >{{ t('Sales Invoice') }} #{{ value }}</a>
+        <span class="number-cell-icons">
+          <MpPopover v-if="(row as Row).hasTaxDocument" :id="`si-taxdoc-${(row as Row).id}`" use-portal :is-keep-alive="false" placement="bottom-start">
+            <MpPopoverTrigger>
+              <MpButton class="taxdoc-icon-btn" :aria-label="t('Tax document')" @click.stop>
+                <MpIcon name="doc" size="sm" />
+              </MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ width: '480px', padding: 'var(--mp-spacing-6)' })">
+              <div class="taxdoc-popover">
+                <div class="taxdoc-popover-head">
+                  <h3 class="taxdoc-popover-title">{{ t('Tax Document') }}</h3>
+                  <p class="taxdoc-popover-subtitle">{{ t('Sales Invoice') }} #{{ (row as Row).number }}</p>
+                </div>
+                <table class="taxdoc-popover-table">
+                  <colgroup>
+                    <col class="taxdoc-popover-col-label" />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>{{ t('Date') }}</th>
+                      <th>
+                        <span class="taxdoc-popover-th">
+                          {{ t('Number') }}
+                          <MpTooltip :id="`si-taxdoc-number-tt-${(row as Row).id}`" :label="t('Draft, awaiting approval, or rejected documents have no DJP number yet')" placement="top" use-portal>
+                            <MpIcon name="info" size="sm" />
+                          </MpTooltip>
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="doc in taxDocumentsFor((row as Row).id)" :key="doc.id">
+                      <td>{{ doc.date }}</td>
+                      <td>{{ formatTaxDocumentNumber(doc) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="taxdoc-popover-footer">
+                  <MpButton type="button" variant="secondary" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
+                    {{ t('View details') }}
+                  </MpButton>
+                </div>
               </div>
-              <table class="taxdoc-popover-table">
-                <colgroup>
-                  <col class="taxdoc-popover-col-label" />
-                  <col />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>{{ t('Date') }}</th>
-                    <th>
-                      <span class="taxdoc-popover-th">
-                        {{ t('Number') }}
-                        <MpTooltip :id="`si-taxdoc-number-tt-${(row as Row).id}`" :label="t('Draft, awaiting approval, or rejected documents have no DJP number yet')" placement="top" use-portal>
-                          <MpIcon name="info" size="sm" />
-                        </MpTooltip>
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="doc in taxDocumentsFor((row as Row).id)" :key="doc.id">
-                    <td>{{ doc.date }}</td>
-                    <td>{{ formatTaxDocumentNumber(doc) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <div class="taxdoc-popover-footer">
-                <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="viewDetails((row as Row).id)">
-                  {{ t('View details') }}
-                </button>
-              </div>
-            </div>
-          </MpPopoverContent>
-        </MpPopover>
-        <MpIcon v-if="value" name="attachment" size="sm" class="attachment-icon" />
-        <!-- render empty placeholder so Vue never falls back to the raw boolean -->
-        <span v-if="!(row as Row).hasTaxDocument && !value" />
+            </MpPopoverContent>
+          </MpPopover>
+          <MpIcon v-if="(row as Row).attachment" name="attachment" size="sm" class="attachment-icon" />
+        </span>
       </div>
     </template>
 
@@ -541,13 +653,23 @@ function confirmBulkDelete() {
       </div>
     </template>
 
-    <!-- ── Cell: DJP status — only rendered once a tax document has actually
-         been generated for the invoice; otherwise shows an em dash. ── -->
+    <!-- ── Cell: Tax document status — the faktur's own status (Normal /
+         Pengganti / Diganti / …), only once a tax document exists. ── -->
+    <template #cell-taxDocStatus="{ row }">
+      <!-- Plain text, not a badge — see TAX_DOCUMENT_STATUS_LABELS.
+           em dash (not raw 'not-generated') so Vue never falls back to the raw sentinel value -->
+      <span>{{ (row as Row).hasTaxDocument
+        ? t(TAX_DOCUMENT_STATUS_LABELS[(row as Row).taxDocStatus as TaxDocumentStatusValue])
+        : '—' }}</span>
+    </template>
+
+    <!-- ── Cell: DJP status — what DJP replied about that same document; only
+         rendered once a tax document has actually been generated. ── -->
     <template #cell-djpStatus="{ row }">
       <ErpStatusBadge
         v-if="(row as Row).hasTaxDocument"
         :status="(row as Row).djpStatus"
-        :label="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].label"
+        :label="t(DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].label)"
         :type="DJP_STATUS_CONFIG[(row as Row).djpStatus as TaxDocumentStatus].type"
       />
       <!-- em dash (not raw 'not-generated') so Vue never falls back to the raw sentinel value -->
@@ -582,6 +704,7 @@ function confirmBulkDelete() {
             <MpPopoverListItem @click="navigateTo(`/sales-invoices/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="(row as Row).balance > 0">{{ t('Add payment') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="!(row as Row).recurringId" @click="openRecurringDrawer(row as Row)">{{ t('Set as recurring') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
@@ -615,6 +738,7 @@ function confirmBulkDelete() {
     :columns="keywordColumns"
     :status-options="drawerStatusOptions"
     :tag-options="tagOptions"
+    :tax-doc-status-options="taxDocStatusOptions"
     :djp-status-options="djpStatusOptions"
     @update:is-open="filtersOpen = $event"
     @apply="applyDrawerFilters"
@@ -683,6 +807,46 @@ function confirmBulkDelete() {
     @close="shareOpen = false"
     @send="shareOpen = false"
   />
+
+  <!-- ── Set as recurring drawer ── -->
+  <ErpDrawer :is-open="recurringDrawerOpen" :title="t('Set as recurring')" @close="recurringDrawerOpen = false" data-devchange="si-set-as-recurring">
+    <template #body>
+      <MpFormControl id="recur-repeat">
+        <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+        <div class="recur-repeat-row">
+          <MpInput id="recur-repeat-interval" v-model.number="recurRepeatInterval" type="number" :min="1" class="recur-repeat-num" />
+          <MpAutocomplete id="recur-repeat-unit" v-model="recurRepeatUnit" :data="recurRepeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-repeat-unit" />
+        </div>
+        <span class="recur-caption">{{ t('Next transaction date') }}: {{ recurNextTransactionDate || '—' }}</span>
+      </MpFormControl>
+
+      <MpFormControl id="recur-end">
+        <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+        <MpAutocomplete id="recur-end-inp" v-model="recurEndRepeat" :data="recurEndRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+        <div v-if="recurEndRepeat === 'after'" class="recur-end-sub">
+          <MpInput id="recur-end-after-count" v-model.number="recurEndAfterCount" type="number" :min="1" class="recur-end-count" />
+          <span class="recur-end-label">{{ t('occurrences') }}</span>
+        </div>
+        <div v-if="recurEndRepeat === 'on'" class="recur-end-sub">
+          <MpDatePicker id="recur-end-on-date" v-model="recurEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+        </div>
+      </MpFormControl>
+
+      <MpFormControl id="recur-start">
+        <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+        <MpDatePicker id="recur-start-date" v-model="recurStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+      </MpFormControl>
+
+      <div class="recur-auto-email">
+        <MpCheckbox id="recur-send-auto-email" v-model:is-checked="recurSendAutoEmail">{{ t('Send automatic email') }}</MpCheckbox>
+      </div>
+    </template>
+
+    <template #footer>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="recurringDrawerOpen = false">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" @click="saveRecurring">{{ t('Save') }}</button>
+    </template>
+  </ErpDrawer>
 
   <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
   <ScenarioFab v-model="previewMode" />
@@ -805,11 +969,25 @@ function confirmBulkDelete() {
 }
 
 /* Attachment icon — the tax-document icon (when present) stacks above it */
-.attachment-cell {
+/* Number cell — invoice link + its document icons on one line.
+   GAP SPEC: 8px (--mp-spacing-2) between the number and the icon group, and the
+   same 8px between the two icons. 8px is the inline-gap step; the 4px below it
+   lets a 16px icon crowd the text it follows, and 12px starts reading as a
+   separate column again — which is the thing this change removes.
+   The link keeps min-width:0 so it ellipsises before the icons are pushed out:
+   the icons say whether a faktur/attachment EXISTS, which stays legible even
+   when the number itself is truncated. */
+.number-cell {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: var(--mp-spacing-1);
+  gap: var(--mp-spacing-2);
+  min-width: 0;
+}
+.number-cell-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mp-spacing-2);
+  flex-shrink: 0;
 }
 .attachment-icon {
   color: var(--mp-text-subtle);
@@ -818,8 +996,10 @@ function confirmBulkDelete() {
   display: inline-flex !important;
   align-items: center;
   justify-content: center;
-  width: var(--mp-sizes-6, 24px) !important;
-  height: var(--mp-sizes-6, 24px) !important;
+  /* 20px, matching the attachment MpIcon beside it — a 24px button next to a
+     20px glyph reads as two different things rather than one icon pair. */
+  width: var(--mp-sizes-5, 20px) !important;
+  height: var(--mp-sizes-5, 20px) !important;
   min-width: 0 !important;
   padding: 0 !important;
   border: none !important;
@@ -1028,4 +1208,14 @@ function confirmBulkDelete() {
   .stats-section { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .stat-card { flex: 0 0 auto; }
 }
+
+/* ── Set as recurring drawer ── */
+.recur-repeat-row { display: flex; gap: var(--mp-spacing-2); }
+.recur-repeat-num { flex: 0 0 80px; }
+.recur-repeat-unit { flex: 1; }
+.recur-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+.recur-end-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.recur-end-count { flex: 0 0 80px; }
+.recur-end-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.recur-auto-email { padding-top: var(--mp-spacing-1); }
 </style>

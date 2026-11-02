@@ -18,7 +18,8 @@ import {
   orderPackedFromPickingTask,
 } from '~/data/packingTasks'
 import { outgoingOrders, isMarketplaceOrder } from '~/data/outgoing'
-import { orderSkuLines, productBySku } from '~/data/inventory'
+import { orderSkuLines } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail, binForSku } from '~/data/warehouseDetails'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { scrollToFirstError } from '~/utils/form'
@@ -219,8 +220,6 @@ function pickingListBlockReasons(pt: PickingTask): string[] {
 // can be picked across several lists, so the batch/serial picks are aggregated
 // across ALL of them (merging by batchNo, deduping serials), not just the one
 // list this form happened to be opened from. ────────────────────────────────────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(warehouseId.value)
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -228,14 +227,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 /** Picked qty for a batch/serial-tracked line, broken down by which bin it was
  *  actually picked from — a batch/serial always sits in exactly ONE fixed
@@ -505,7 +502,7 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goPacking">{{ t('Packing') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New packing') }}</h1>
@@ -750,14 +747,10 @@ async function handleCreate() {
                       <td v-if="meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td">{{ meta.row.unit }}</td>
                       <td v-if="!isDirectMode && meta.groupIndex === 0" :rowspan="meta.groupSize" class="pk-td pk-td--action">
                         <MpTooltip v-if="isBatchTrackedSku(meta.row.sku)" :id="`pc-tt-batch-${meta.row.key}`" :label="tl('View batch')" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" :aria-label="tl('View batch')" @click.stop="openViewBatch(t.orderId, meta.row)">
-                            <MpIcon name="competencies" size="md" />
-                          </button>
+                          <MpButton class="pk-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="tl('View batch')" @click.stop="openViewBatch(t.orderId, meta.row)" />
                         </MpTooltip>
                         <MpTooltip v-else-if="isSerialTrackedSku(meta.row.sku)" :id="`pc-tt-serial-${meta.row.key}`" :label="tl('View serial number')" placement="top" use-portal>
-                          <button class="pk-view-btn" type="button" :aria-label="tl('View serial number')" @click.stop="openViewSerial(t.orderId, meta.row)">
-                            <MpIcon name="competencies" size="md" />
-                          </button>
+                          <MpButton class="pk-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="tl('View serial number')" @click.stop="openViewSerial(t.orderId, meta.row)" />
                         </MpTooltip>
                       </td>
                     </tr>
@@ -950,7 +943,11 @@ async function handleCreate() {
 
 /* Editable Pack qty cell — white, input fills edge-to-edge, focus ring */
 .pk-td--input { padding: 0; background: var(--mp-background-neutral); }
-.pk-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.pk-td--input { position: relative; }
+.pk-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 /* Direct/skip-picking mode is a FORM table (Pack qty input) → read-only cells go
    gray, the input + sticky action stay white. From-picking mode is a plain read-only
    table, so it keeps default (no gray). */

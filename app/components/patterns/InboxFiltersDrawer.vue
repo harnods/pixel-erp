@@ -100,187 +100,126 @@ function toggleReason(value: string) {
 </script>
 
 <template>
-  <Transition name="ibf-filters">
-    <div v-if="isOpen" class="ibf-filters-overlay">
-      <div class="ibf-filters-panel" role="dialog" aria-label="All filters">
-        <header class="ibf-filters-header">
-          <span class="ibf-filters-title">All filters</span>
-          <MpButton class="ibf-filters-close" type="button" aria-label="Close" @click="close">
-            <MpIcon name="close" size="md" />
-          </MpButton>
-        </header>
+  <ErpDrawer :is-open="isOpen" title="All filters" @close="close">
+    <template #body>
+      <!-- Date range / Transaction type / Requested by / Warehouse / Total /
+           Balance due are self-contained trigger + popover components (own
+           button, is-manual control) — MpFormControl breaks their
+           MpPopoverTrigger's cloneVNode injection (same reasoning as the ERP
+           Approval/Comment Icon Pattern memory), so they use a plain text
+           label instead. Only Due date below is an official Pixel3 form
+           component (MpDatePicker) and pairs with MpFormControl + MpFormLabel
+           normally, same as WorkOrderFiltersDrawer.vue.
 
-        <div class="ibf-filters-body">
-          <!-- Date range / Transaction type / Requested by / Warehouse / Total /
-               Balance due are self-contained trigger + popover components (own
-               button, is-manual control) — MpFormControl breaks their
-               MpPopoverTrigger's cloneVNode injection (same reasoning as the ERP
-               Approval/Comment Icon Pattern memory), so they use a plain text
-               label instead. Only Due date below is an official Pixel3 form
-               component (MpDatePicker) and pairs with MpFormControl + MpFormLabel
-               normally, same as WorkOrderFiltersDrawer.vue.
-
-               Date range's own label is the same plain bold field-label format
-               as every other field here (not AdvancedDateRangePicker's dynamic
-               "Date range: Last 30 days" sub-label, which only ever appears once
-               a value is picked). It also always opens unset (never pre-filled
-               from the toolbar's own Date range filter up top — that's separate,
-               independent state, see the file header comment). -->
-          <div class="ibf-field">
-            <span class="ibf-field-label">Date range</span>
-            <AdvancedDateRangePicker
-              :id="`${id}-daterange`" :model-value="draft.dateRange"
-              is-full-width hide-label placeholder="Select date range"
-              @update:model-value="draft.dateRange = $event"
-            />
-          </div>
-
-          <div class="ibf-field">
-            <span class="ibf-field-label">Transaction type</span>
-            <TransactionTypeCascadeMenu
-              :id="`${id}-txntype`" v-model="draft.transactionType"
-              :groups="cascadeGroups" multiple placeholder="Select transaction type"
-              is-full-width
-            />
-          </div>
-
-          <div v-if="!hideReason" class="ibf-field">
-            <span class="ibf-field-label">Reason</span>
-            <ul class="ibf-checklist">
-              <li
-                v-for="opt in reasonOptions" :key="opt"
-                class="ibf-check-item" @click="toggleReason(opt)"
-              >
-                <span @click.stop>
-                  <MpCheckbox :id="`${id}-reason-${opt}`" :is-checked="draft.reason.includes(opt)" @change="() => toggleReason(opt)" />
-                </span>
-                <span class="ibf-check-label">{{ opt }}</span>
-              </li>
-            </ul>
-          </div>
-
-          <!-- Requested by / Warehouse — flat multi-select dropdown (Figma shows
-               a plain "Select ..." field, but both can reasonably match more
-               than one person/warehouse, so selection is multi- under the hood). -->
-          <div class="ibf-field">
-            <span class="ibf-field-label">Requested by</span>
-            <MultiSelectDropdown
-              :id="`${id}-requestedby`" v-model="draft.requestedBy"
-              :options="requestedByOptions" placeholder="Select requested by"
-              is-full-width
-            />
-          </div>
-
-          <!-- Warehouse only appears when filtering inside the Warehouse inner tab. -->
-          <div v-if="showWarehouse" class="ibf-field">
-            <span class="ibf-field-label">Warehouse</span>
-            <MultiSelectDropdown
-              :id="`${id}-warehouse`" v-model="draft.warehouse"
-              :options="warehouseOptions" placeholder="Select warehouse"
-              is-full-width
-            />
-          </div>
-
-          <MpFormControl v-if="!hideDueDate" :id="`${id}-duedate-fc`">
-            <MpFormLabel>Due date</MpFormLabel>
-            <MpDatePicker
-              :id="`${id}-duedate`" v-model="draft.dueDate"
-              format="DD/MM/YYYY" value-type="format" placeholder="Select due date"
-              is-clearable use-portal is-full-width
-            />
-          </MpFormControl>
-
-          <div class="ibf-field">
-            <span class="ibf-field-label">Total (Rp)</span>
-            <AmountComparatorField
-              :id="`${id}-total`"
-              :comparator="draft.totalComparator"
-              :value="draft.totalValue"
-              :min="draft.totalMin"
-              :max="draft.totalMax"
-              @update:comparator="draft.totalComparator = $event"
-              @update:value="draft.totalValue = $event"
-              @update:min="draft.totalMin = $event"
-              @update:max="draft.totalMax = $event"
-            />
-          </div>
-
-          <div class="ibf-field">
-            <span class="ibf-field-label">Balance due (Rp)</span>
-            <AmountComparatorField
-              :id="`${id}-balancedue`"
-              :comparator="draft.balanceDueComparator"
-              :value="draft.balanceDueValue"
-              :min="draft.balanceDueMin"
-              :max="draft.balanceDueMax"
-              @update:comparator="draft.balanceDueComparator = $event"
-              @update:value="draft.balanceDueValue = $event"
-              @update:min="draft.balanceDueMin = $event"
-              @update:max="draft.balanceDueMax = $event"
-            />
-          </div>
-        </div>
-
-        <footer class="ibf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">Reset filter</button>
-          <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">Apply</button>
-        </footer>
+           Date range's own label is the same plain bold field-label format
+           as every other field here (not AdvancedDateRangePicker's dynamic
+           "Date range: Last 30 days" sub-label, which only ever appears once
+           a value is picked). It also always opens unset (never pre-filled
+           from the toolbar's own Date range filter up top — that's separate,
+           independent state, see the file header comment). -->
+      <div class="ibf-field">
+        <span class="ibf-field-label">Date range</span>
+        <AdvancedDateRangePicker
+          :id="`${id}-daterange`" :model-value="draft.dateRange"
+          is-full-width hide-label placeholder="Select date range"
+          @update:model-value="draft.dateRange = $event"
+        />
       </div>
-    </div>
-  </Transition>
+
+      <div class="ibf-field">
+        <span class="ibf-field-label">Transaction type</span>
+        <TransactionTypeCascadeMenu
+          :id="`${id}-txntype`" v-model="draft.transactionType"
+          :groups="cascadeGroups" multiple placeholder="Select transaction type"
+          is-full-width
+        />
+      </div>
+
+      <div v-if="!hideReason" class="ibf-field">
+        <span class="ibf-field-label">Reason</span>
+        <ul class="ibf-checklist">
+          <li
+            v-for="opt in reasonOptions" :key="opt"
+            class="ibf-check-item" @click="toggleReason(opt)"
+          >
+            <span @click.stop>
+              <MpCheckbox :id="`${id}-reason-${opt}`" :is-checked="draft.reason.includes(opt)" @change="() => toggleReason(opt)" />
+            </span>
+            <span class="ibf-check-label">{{ opt }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Requested by / Warehouse — flat multi-select dropdown (Figma shows
+           a plain "Select ..." field, but both can reasonably match more
+           than one person/warehouse, so selection is multi- under the hood). -->
+      <div class="ibf-field">
+        <span class="ibf-field-label">Requested by</span>
+        <MultiSelectDropdown
+          :id="`${id}-requestedby`" v-model="draft.requestedBy"
+          :options="requestedByOptions" placeholder="Select requested by"
+          is-full-width
+        />
+      </div>
+
+      <!-- Warehouse only appears when filtering inside the Warehouse inner tab. -->
+      <div v-if="showWarehouse" class="ibf-field">
+        <span class="ibf-field-label">Warehouse</span>
+        <MultiSelectDropdown
+          :id="`${id}-warehouse`" v-model="draft.warehouse"
+          :options="warehouseOptions" placeholder="Select warehouse"
+          is-full-width
+        />
+      </div>
+
+      <MpFormControl v-if="!hideDueDate" :id="`${id}-duedate-fc`">
+        <MpFormLabel>Due date</MpFormLabel>
+        <MpDatePicker
+          :id="`${id}-duedate`" v-model="draft.dueDate"
+          format="DD/MM/YYYY" value-type="format" placeholder="Select due date"
+          is-clearable use-portal is-full-width
+        />
+      </MpFormControl>
+
+      <div class="ibf-field">
+        <span class="ibf-field-label">Total (Rp)</span>
+        <AmountComparatorField
+          :id="`${id}-total`"
+          :comparator="draft.totalComparator"
+          :value="draft.totalValue"
+          :min="draft.totalMin"
+          :max="draft.totalMax"
+          @update:comparator="draft.totalComparator = $event"
+          @update:value="draft.totalValue = $event"
+          @update:min="draft.totalMin = $event"
+          @update:max="draft.totalMax = $event"
+        />
+      </div>
+
+      <div class="ibf-field">
+        <span class="ibf-field-label">Balance due (Rp)</span>
+        <AmountComparatorField
+          :id="`${id}-balancedue`"
+          :comparator="draft.balanceDueComparator"
+          :value="draft.balanceDueValue"
+          :min="draft.balanceDueMin"
+          :max="draft.balanceDueMax"
+          @update:comparator="draft.balanceDueComparator = $event"
+          @update:value="draft.balanceDueValue = $event"
+          @update:min="draft.balanceDueMin = $event"
+          @update:max="draft.balanceDueMax = $event"
+        />
+      </div>
+    </template>
+
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">Reset filter</MpButton>
+      <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">Apply</MpButton>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.ibf-filters-enter-active { transition: background-color 250ms ease; }
-.ibf-filters-leave-active { transition: background-color 250ms ease; }
-.ibf-filters-enter-from, .ibf-filters-leave-to { background-color: transparent; }
-.ibf-filters-enter-active .ibf-filters-panel { transition: transform 350ms ease-out; }
-.ibf-filters-leave-active .ibf-filters-panel { transition: transform 250ms ease-in; }
-.ibf-filters-enter-from .ibf-filters-panel,
-.ibf-filters-leave-to .ibf-filters-panel { transform: translateX(calc(100% + 12px)); }
-
-.ibf-filters-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
-  display: flex; justify-content: flex-end;
-}
-.ibf-filters-panel {
-  margin: var(--mp-spacing-3);
-  width: min(420px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.ibf-filters-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-}
-.ibf-filters-title {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-/* Rendered via MpButton, not a raw HTML control — default look reset (see
-   IconButton/.demo-fab precedent). */
-.ibf-filters-close {
-  display: inline-flex !important; align-items: center; justify-content: center;
-  min-width: 0 !important;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none !important; background: none !important; border-radius: var(--mp-radii-md) !important;
-  padding: 0 !important;
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.ibf-filters-close:hover { background: var(--mp-background-neutral-hovered) !important; }
-
-.ibf-filters-body {
-  flex: 1; overflow-y: auto;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-4);
-}
-
 .ibf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .ibf-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
@@ -294,9 +233,4 @@ function toggleReason(value: string) {
 }
 .ibf-check-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 
-.ibf-filters-footer {
-  flex-shrink: 0; display: flex; justify-content: flex-end; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-}
 </style>

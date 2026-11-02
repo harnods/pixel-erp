@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, css, toast,
+  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink,
+  MpFormControl, MpFormLabel, MpInput, MpAutocomplete, MpDatePicker, MpToggle, MpCheckbox,
+  css, toast,
 } from '@mekari/pixel3'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { formatIDR } from '~/utils/currency'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -12,16 +18,34 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import CreateTaxDocumentDrawer from '~/components/patterns/CreateTaxDocumentDrawer.vue'
 import CannotCreateTaxDocumentDrawer from '~/components/patterns/CannotCreateTaxDocumentDrawer.vue'
 import TaxDocumentDetailDrawer from '~/components/patterns/TaxDocumentDetailDrawer.vue'
+import { getContactIdByName } from '~/data/contacts'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { canGenerateTaxDocument } from '~/data/salesInvoiceLineItems'
 import { salesInvoices } from '~/data'
-import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import { getRecurringForInvoice, recurringSalesInvoices, type RecurringSalesInvoice } from '~/data/salesInvoices'
+import EFakturPreviewModal from '~/components/patterns/EFakturPreviewModal.vue'
+import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import {
-  getTaxDocumentsForInvoice, formatTaxDocumentNumber, updateTaxDocumentStatus,
-  taxDocMenuItemDefs, DJP_STATUS_CONFIG, type TaxDocument,
+  customerAvailableCredit, applicationsForInvoice, applicationLabel,
+} from '~/data/creditMemos'
+import {
+  paymentsForInvoice, paymentLabel as prLabel,
+} from '~/data/paymentsReceived'
+import {
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
+} from '@mekari/pixel3'
+import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
+import {
+  getTaxDocumentsForInvoice, formatTaxDocumentNumber, taxDocumentStatus,
+  updateTaxDocumentStatus,
+  taxDocMenuItemDefs, DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS,
+  getApprovedTaxDocument, generateReturnNoteDraft, outstandingReturnNote, removeTaxDocument,
+  type TaxDocument,
 } from '~/data/taxDocuments'
-import { generateEFakturPdf } from '~/utils/eFakturPdf'
-import type jsPDF from 'jspdf'
+import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
+import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermission'
+import { useTaxInfoScenario } from '~/composables/useTaxInfoScenario'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 
@@ -46,6 +70,139 @@ function dimensionValuesFor(dimensions?: Record<string, string>): { name: string
   return Object.entries(dimensions).map(([name, value]) => ({ name, value }))
 }
 
+// ─── Recurring info drawer ──────────────────────────────────────────────────
+const sourceInvoice = computed(() => salesInvoices.find(si => si.id === props.orderId))
+const recurringTemplate = computed(() => {
+  const rid = sourceInvoice.value?.recurringId
+  return rid ? getRecurringForInvoice(rid) : undefined
+})
+const hasRecurring = computed(() => !!recurringTemplate.value)
+const recurringDrawerOpen = ref(false)
+const recurringEditing = ref(false)
+const isSettingRecurring = ref(false)
+const setRecurringSendAutoEmail = ref(false)
+
+const editRepeatInterval = ref(1)
+const editRepeatUnit = ref('month')
+const editEndRepeat = ref('never')
+const editEndAfterCount = ref(12)
+const editEndOnDate = ref('')
+const editStartDate = ref('')
+
+const repeatUnitOptions = [
+  { label: t('Day'), value: 'day' },
+  { label: t('Week'), value: 'week' },
+  { label: t('Month'), value: 'month' },
+  { label: t('Year'), value: 'year' },
+]
+const endRepeatOptions = [
+  { label: t('Repeat forever'), value: 'never' },
+  { label: t('End after'), value: 'after' },
+  { label: t('End on'), value: 'on' },
+]
+
+function unitLabel(unit: string) {
+  const map: Record<string, string> = { day: t('Day'), week: t('Week'), month: t('Month'), year: t('Year') }
+  return map[unit] ?? unit
+}
+function endRepeatLabel(val: string) {
+  const map: Record<string, string> = { never: t('Repeat forever'), after: t('End after'), on: t('End on') }
+  return map[val] ?? val
+}
+function formatDateDMY(iso: string) {
+  const [y, m, d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+
+function openRecurringDrawer() {
+  recurringEditing.value = false
+  recurringDrawerOpen.value = true
+}
+
+function startEditing() {
+  const s = recurringTemplate.value?.schedule
+  if (!s) return
+  editRepeatInterval.value = s.repeatInterval
+  editRepeatUnit.value = s.repeatUnit
+  editEndRepeat.value = s.endRepeat
+  editEndAfterCount.value = s.endAfterCount ?? 12
+  editEndOnDate.value = s.endOnDate ? formatDateDMY(s.endOnDate) : ''
+  editStartDate.value = formatDateDMY(s.startDate)
+  recurringEditing.value = true
+}
+
+function saveEditing() {
+  const tmpl = recurringTemplate.value
+  if (!tmpl?.schedule) return
+  tmpl.schedule.repeatInterval = editRepeatInterval.value
+  tmpl.schedule.repeatUnit = editRepeatUnit.value as 'day' | 'week' | 'month' | 'year'
+  tmpl.schedule.endRepeat = editEndRepeat.value as 'never' | 'after' | 'on'
+  tmpl.schedule.endAfterCount = editEndAfterCount.value
+  const [d2, m2, y2] = editStartDate.value.split('/')
+  tmpl.schedule.startDate = `${y2}-${m2}-${d2}`
+  if (editEndRepeat.value === 'on' && editEndOnDate.value) {
+    const [d3, m3, y3] = editEndOnDate.value.split('/')
+    tmpl.schedule.endOnDate = `${y3}-${m3}-${d3}`
+  }
+  recurringEditing.value = false
+  toast.notify({ variant: 'success', title: t('Recurring settings updated') })
+}
+
+function toggleAutoEmail() {
+  const tmpl = recurringTemplate.value
+  if (tmpl?.schedule) {
+    tmpl.schedule.sendAutoEmail = !tmpl.schedule.sendAutoEmail
+    toast.notify({ variant: 'success', title: t(tmpl.schedule.sendAutoEmail ? 'Automatic email enabled' : 'Automatic email disabled') })
+  }
+}
+
+function recurDmyToIso(dmy: string) {
+  const [d, m, y] = dmy.split('/')
+  return `${y}-${m}-${d}`
+}
+
+function openSetRecurringDrawer() {
+  editRepeatInterval.value = 1
+  editRepeatUnit.value = 'month'
+  editEndRepeat.value = 'never'
+  editEndAfterCount.value = 12
+  editEndOnDate.value = ''
+  editStartDate.value = todayDMY()
+  setRecurringSendAutoEmail.value = false
+  isSettingRecurring.value = true
+  recurringEditing.value = false
+  recurringDrawerOpen.value = true
+}
+
+function saveSetRecurring() {
+  const inv = sourceInvoice.value
+  if (!inv) return
+  const newId = `rsi-${Date.now()}`
+  recurringSalesInvoices.push({
+    id: newId,
+    templateName: `${inv.customer.name} - Recurring`,
+    customer: inv.customer,
+    frequency: `Every ${editRepeatInterval.value} ${editRepeatUnit.value}`,
+    amount: inv.total,
+    nextDate: recurDmyToIso(editStartDate.value),
+    status: 'active',
+    createdCount: 0,
+    schedule: {
+      repeatInterval: editRepeatInterval.value,
+      repeatUnit: editRepeatUnit.value as 'day' | 'week' | 'month' | 'year',
+      endRepeat: editEndRepeat.value as 'never' | 'after' | 'on',
+      endAfterCount: editEndRepeat.value === 'after' ? editEndAfterCount.value : undefined,
+      endOnDate: editEndRepeat.value === 'on' ? recurDmyToIso(editEndOnDate.value) : undefined,
+      startDate: recurDmyToIso(editStartDate.value),
+      sendAutoEmail: setRecurringSendAutoEmail.value,
+    },
+  })
+  inv.recurringId = newId
+  isSettingRecurring.value = false
+  recurringDrawerOpen.value = false
+  toast.notify({ variant: 'success', title: t('Recurring sales invoice created') })
+}
+
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
@@ -57,25 +214,88 @@ const taxDocDrawerOpen = ref(false)
 const cannotCreateTaxDocDrawerOpen = ref(false)
 const taxDocuments = computed(() => getTaxDocumentsForInvoice(invoice.value.id))
 
-// "Create tax document" is blocked whenever one of the invoice's products is
-// missing a DJP code/unit — opens the read-only "Cannot create" drawer instead
-// (see CannotCreateTaxDocumentDrawer.vue) so the user knows what to fix first.
+// "Create tax document" is blocked whenever the invoice's tax info has a gap —
+// opens the read-only "Cannot create" drawer instead (see
+// CannotCreateTaxDocumentDrawer.vue) so the user knows what to fix first.
+//
+// Which gap (if any) is in the way: on 'auto' — the untouched default — the
+// invoice's own data decides, so a product genuinely missing its DJP code
+// blocks exactly as it did before this toggle existed. Once a scenario is
+// picked it forces its own state, "All tax info complete" included. See
+// useTaxInfoScenario.
+const { taxInfoScenario } = useTaxInfoScenario()
+const taxInfoComplete = computed(() =>
+  taxInfoScenario.value === 'auto'
+    ? canGenerateTaxDocument(invoice.value.id)
+    : taxInfoScenario.value === 'complete',
+)
 function openCreateTaxDocument() {
-  if (canGenerateTaxDocument(invoice.value.id)) {
-    taxDocDrawerOpen.value = true
-  } else {
-    cannotCreateTaxDocDrawerOpen.value = true
-  }
+  taxDocDrawerOpen.value = taxInfoComplete.value
+  cannotCreateTaxDocDrawerOpen.value = !taxInfoComplete.value
 }
+
+// Switching scenario from inside either drawer swaps to whichever one the new
+// scenario belongs to, rather than leaving the stale drawer up.
+watch(taxInfoScenario, () => {
+  if (taxDocDrawerOpen.value || cannotCreateTaxDocDrawerOpen.value) openCreateTaxDocument()
+})
 
 // Tabs only appear once they have something to show — an invoice with no
 // payments yet shouldn't offer an empty "Payments" tab, etc.
 const hasLinkedTransactions = computed(() => invoice.value.linkedTransactions.length > 0)
-const hasPayments = computed(() => invoice.value.payments.length > 0)
+const hasPayments = computed(() => paymentRows.value.length > 0)
+// Payment rows = cash payments + credit-memo applications. The credit rows carry a
+// link to their "Credit memo applied" record (Figma: a "VIEW DETAILS" hover chip).
+interface PaymentRow { date: string; number: string; linkTo?: string; method: string; account: string; reference: string; amount: number }
+const paymentRows = computed<PaymentRow[]>(() => {
+  const cash: PaymentRow[] = paymentsForInvoice(invoice.value.id).map(({ payment, amount }) => ({
+    date: payment.date, number: prLabel(payment.number), linkTo: `/payments-received/${payment.id}`,
+    method: t('Payment received'), account: '—', reference: '—', amount,
+  }))
+  const credit: PaymentRow[] = creditApplications.value.map(({ application, amount }) => ({
+    date: application.date, number: applicationLabel(application.number), linkTo: `/credit-memo-applications/${application.id}`,
+    method: t('Credit memo'), account: '—', reference: '—', amount,
+  }))
+  return [...credit, ...cash].sort((a, b) => b.date.localeCompare(a.date))
+})
 const hasTaxDocuments = computed(() => taxDocuments.value.length > 0)
 
 function onTaxDocumentSaved() {
   toast.notify({ variant: 'success', title: t('Tax document saved'), rootProps: { class: 'toast-enterprise' } })
+}
+
+/**
+ * Number of the document a replacement/cancellation supersedes — shown only
+ * while THIS document has no issued number of its own.
+ *
+ * Once DJP approves it the reference is redundant: the faktur number already
+ * says it, because a pengganti carries the NSFP of the faktur it corrects and
+ * differs only in the status digit (0404891702057779 → 0414891702057779). It
+ * earns its place only on a draft, where this row still reads "—" and the
+ * number it will take over can't be seen yet.
+ */
+function supersededNumber(doc: TaxDocument): string {
+  if (!doc.replacesId) return ''
+  if (formatTaxDocumentNumber(doc) !== '—') return ''
+  const source = taxDocuments.value.find(d => d.id === doc.replacesId)
+  if (!source) return ''
+  const number = formatTaxDocumentNumber(source)
+  return number === '—' ? '' : number
+}
+
+/**
+ * Number of the faktur a return note was raised against.
+ *
+ * Unlike supersededNumber this never hides itself, because a return note never
+ * gets a number of its own to make the reference redundant — the nota retur is
+ * numbered by the buyer who issues it.
+ */
+function returnNoteFor(doc: TaxDocument): string {
+  if (doc.kind !== 'return-note' || !doc.relatesToId) return ''
+  const source = taxDocuments.value.find(d => d.id === doc.relatesToId)
+  if (!source) return ''
+  const number = formatTaxDocumentNumber(source)
+  return number === '—' ? '' : number
 }
 
 // ── Tax document detail drawer ("View details") ─────────────────────────────────
@@ -87,16 +307,51 @@ function openTaxDocDetail(doc: TaxDocument) {
 }
 
 // ── e-Faktur print preview (Approved tax documents only) ───────────────────────
+// Renders the Faktur Pajak form as UI rather than embedding a generated PDF —
+// see EFakturPreviewModal.vue for why. The PDF is still available from inside
+// that modal ("Download PDF").
 const eFakturPreviewOpen = ref(false)
-const eFakturPreviewDoc = ref<jsPDF | null>(null)
-const eFakturPreviewFilename = ref('')
+const eFakturPreviewDoc = ref<TaxDocument | null>(null)
 function printEFaktur(doc: TaxDocument) {
-  eFakturPreviewDoc.value = generateEFakturPdf(doc, invoice.value)
-  eFakturPreviewFilename.value = `e-Faktur ${formatTaxDocumentNumber(doc)}.pdf`
+  eFakturPreviewDoc.value = doc
   eFakturPreviewOpen.value = true
 }
 
+/**
+ * BR-008 — an invoice may carry only one STANDING Output Tax Document. While one
+ * is approved, "Create tax document" is locked: correcting it is what Edit's
+ * replacement/cancellation flow is for, and raising a second faktur against the
+ * same delivery would report it to DJP twice.
+ */
+const STANDING_TAXDOC_REASON = 'This invoice already has an approved tax document. Edit the invoice to raise a replacement or cancellation.'
+const hasStandingTaxDoc = computed(() => getApprovedTaxDocument(invoice.value.id) !== null)
+
+/** Withdraw an outstanding return note — see removeTaxDocument for why this is
+ *  the one document we let the user take back. */
+function withdrawReturnNote(doc: TaxDocument) {
+  removeTaxDocument(doc.id)
+  toast.notify({
+    variant: 'success',
+    title: t('Return note withdrawn'),
+    rootProps: { class: 'toast-enterprise' },
+  })
+}
+
+// ── Submission permission (PRD-05 BR-006 / AC-009) ────────────────────────────
+const { canSubmitTaxDocument, setCanSubmitTaxDocument } = useTaxSubmissionPermission()
+
 function submitTaxDocToDjp(doc: TaxDocument) {
+  // Denied outright rather than hidden — the user needs to know the action exists
+  // and who to ask for it (AC-009).
+  if (!canSubmitTaxDocument.value) {
+    toast.notify({
+      variant: 'error',
+      title: t('You do not have permission to submit tax documents to DJP'),
+      description: t('Ask an administrator for tax submission access.'),
+      rootProps: { class: 'toast-enterprise' },
+    })
+    return
+  }
   updateTaxDocumentStatus(doc.id, 'awaiting-approval')
   toast.notify({ variant: 'success', title: t('Submitted to DJP'), rootProps: { class: 'toast-enterprise' } })
 }
@@ -111,18 +366,27 @@ function refreshTaxDocStatus(doc: TaxDocument) {
  *  this with View details dropped) — labels/order/disabled come from the
  *  shared taxDocMenuItemDefs; onClick handlers are wired here by label. */
 interface TaxDocMenuItem { label: string; disabled?: boolean; tooltip?: string; onClick?: () => void }
+/** Submitting is the one action gated by permission — locked with its reason
+ *  rather than hidden, so an unauthorised user can see what to request access for. */
+const SUBMIT_LABELS = ['Submit to DJP', 'Resubmit to DJP']
 function taxDocMenuItems(doc: TaxDocument, opts: { excludeViewDetails?: boolean } = {}): TaxDocMenuItem[] {
-  return taxDocMenuItemDefs(doc.status)
+  return taxDocMenuItemDefs(doc)
     .filter(item => !(opts.excludeViewDetails && item.label === 'View details'))
-    .map(item => ({
-      ...item,
-      onClick:
-        item.label === 'View details' ? () => openTaxDocDetail(doc)
-        : item.label === 'Submit to DJP' ? () => submitTaxDocToDjp(doc)
-        : item.label === 'Refresh DJP status' ? () => refreshTaxDocStatus(doc)
-        : item.label === 'Print e-faktur' ? () => printEFaktur(doc)
-        : undefined,
-    }))
+    .map(item => {
+      const submitLocked = SUBMIT_LABELS.includes(item.label) && !canSubmitTaxDocument.value
+      return {
+        ...item,
+        disabled: item.disabled || submitLocked,
+        tooltip: submitLocked ? 'You do not have permission to submit tax documents to DJP' : item.tooltip,
+        onClick:
+          item.label === 'View details' ? () => openTaxDocDetail(doc)
+          : SUBMIT_LABELS.includes(item.label) ? () => submitTaxDocToDjp(doc)
+          : item.label === 'Refresh DJP status' ? () => refreshTaxDocStatus(doc)
+          : item.label === 'Print e-faktur' ? () => printEFaktur(doc)
+          : item.label === 'Withdraw return note' ? () => withdrawReturnNote(doc)
+          : undefined,
+      }
+    })
 }
 const taxDocDetailMenuItems = computed(() =>
   taxDocDetailDoc.value ? taxDocMenuItems(taxDocDetailDoc.value, { excludeViewDetails: true }) : [],
@@ -135,6 +399,29 @@ function taxDocTooltipId(doc: TaxDocument, item: TaxDocMenuItem): string {
 // same width as the popover itself — comfortably fits the longest item label
 // ("Refresh DJP status").
 const taxDocMenuWidth = '200px'
+
+const previewOpen = ref(false)
+const pdfUrl = ref('')
+const PDF_B64 = 'JVBERi0xLjQKMSAwIG9iajw8L1R5cGUvQ2F0YWxvZy9QYWdlcyAyIDAgUj4+ZW5kb2JqCjIgMCBvYmo8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PmVuZG9iagozIDAgb2JqPDwvVHlwZS9QYWdlL1BhcmVudCAyIDAgUi9NZWRpYUJveFswIDAgNDIwIDI2MF0vQ29udGVudHMgNCAwIFIvUmVzb3VyY2VzPDwvRm9udDw8L0YxIDUgMCBSPj4+Pj4+ZW5kb2JqCjQgMCBvYmo8PC9MZW5ndGggMTIwPj5zdHJlYW0KQlQgL0YxIDIyIFRmIDQwIDIwMCBUZCAoU2FtcGxlIGludm9pY2UgUERGKSBUaiBFVApCVCAvRjEgMTMgVGYgNDAgMTY1IFRkIChQcmV2aWV3IHJlbmRlcmVkIGluIGFuIGlmcmFtZS4pIFRqIEVUCmVuZHN0cmVhbSBlbmRvYmoKNSAwIG9iajw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+ZW5kb2JqCnRyYWlsZXI8PC9Sb290IDEgMCBSPj4='
+if (import.meta.client) {
+  const bytes = Uint8Array.from(atob(PDF_B64), (c) => c.charCodeAt(0))
+  pdfUrl.value = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
+const siPaidActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview', onClick: () => { previewOpen.value = true } },
+    { label: 'Set as recurring' },
+    { label: 'Create sales return' },
+    { label: 'Create tax document', onClick: openCreateTaxDocument, show: invoice.value.hasPpn },
+  ],
+  [
+    { label: 'Edit' },
+    { label: 'Duplicate' },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
+
 const activityEntries = computed(() => [{
   date: invoice.value.lastUpdatedAt,
   user: invoice.value.lastUpdatedBy,
@@ -186,6 +473,9 @@ onUnmounted(() => itemsObserver?.disconnect())
 watch(() => props.orderId, () => {
   shownCount.value = PAGE_SIZE
   loadingMore.value = false
+  // A tab jump belongs to the invoice it was made on — switching invoices hands
+  // the choice back to the route.
+  jumpedTabIndex.value = null
   nextTick(() => {
     if (itemsScrollEl.value) itemsScrollEl.value.scrollTop = 0
     setupItemsObserver()
@@ -223,8 +513,6 @@ function formatUpdatedAt(iso: string) {
 }
 
 function discountText(pct: number) { return pct > 0 ? `${pct}%` : '' }
-function paymentStageLabel(stage: string) { return stage === 'down-payment' ? t('Down payment') : t('Settlement') }
-
 /** File-type → Pixel document icon for an attachment. */
 function attachmentIcon(name: string): string {
   const ext = name.toLowerCase().split('.').pop() ?? ''
@@ -236,8 +524,118 @@ function attachmentIcon(name: string): string {
 }
 
 function goBack() { router.push('/sales-invoices') }
-function receivePayment() { router.push('/sales-invoices') }
-</script>
+function receivePayment() { router.push(`/sales-invoices/${invoice.value.id}/add-payment`) }
+function editInvoice() { router.push(`/sales-invoices/${invoice.value.id}/edit`) }
+
+// Saving an edit that generated a tax document draft lands here with
+// ?tab=tax-document, so the draft waiting for review is what the user sees first.
+// MpTabs takes a positional index, and the tabs before this one are conditional
+// — so the index has to be counted, not hardcoded.
+const route = useRoute()
+const taxDocTabIndex = computed(() => (hasLinkedTransactions.value ? 1 : 0) + (hasPayments.value ? 1 : 0))
+
+/**
+ * Tab jumped to by an action on THIS page (rather than by the arriving route) —
+ * so raising a document lands the user on the tab that now holds it, the same
+ * way saving an edit does via ?tab=tax-document.
+ *
+ * The nonce is what makes it work: MpTabs only reads `default-value` on mount, so
+ * the jump takes effect through the `:key` remount. Without a nonce, jumping to a
+ * tab the user has since navigated away from wouldn't change the key, and so
+ * wouldn't remount.
+ */
+const jumpedTabIndex = ref<number | null>(null)
+const tabJumpNonce = ref(0)
+function showTaxDocumentTab() {
+  jumpedTabIndex.value = taxDocTabIndex.value
+  tabJumpNonce.value += 1
+}
+
+const defaultTabIndex = computed(() => {
+  if (jumpedTabIndex.value !== null) return jumpedTabIndex.value
+  if (route.query.tab !== 'tax-document' || !hasTaxDocuments.value) return 0
+  return taxDocTabIndex.value
+})
+
+// ── Sales return against an approved faktur ───────────────────────────────────
+// A return doesn't correct the faktur (nothing about the original delivery was
+// misstated), so it raises neither a replacement nor a cancellation — DJP handles
+// it through a Nota Retur issued by the BUYER. The impact is therefore a follow-up
+// the user owns, which is what the review drawer states before anything is added.
+const returnReviewOpen = ref(false)
+const approvedTaxDoc = computed(() => getApprovedTaxDocument(invoice.value.id))
+
+/** Today as DD/MM/YYYY — how tax documents store their date. */
+function todayDMY(): string {
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+}
+
+function createSalesReturn() {
+  // No approved faktur → no tax impact to review. The sales return form itself
+  // isn't part of this prototype, so there is nothing further to open here.
+  if (!approvedTaxDoc.value) return
+
+  // Already chasing one — raising a second identical placeholder would just be
+  // noise, so show the user the one that's already outstanding instead.
+  if (outstandingReturnNote(invoice.value.id)) {
+    toast.notify({
+      variant: 'information',
+      title: t('This invoice already has a return note awaiting the buyer'),
+      rootProps: { class: 'toast-enterprise' },
+    })
+    showTaxDocumentTab()
+    return
+  }
+  returnReviewOpen.value = true
+}
+
+/** The drawer emits a submit flag, but a return note can never go to DJP — the
+ *  buyer issues the nota retur — so this path has no submit button and ignores it. */
+function onSalesReturnConfirm() {
+  const source = approvedTaxDoc.value
+  if (!source) return
+  generateReturnNoteDraft({
+    source,
+    date: todayDMY(),
+    invoiceSnapshot: buildTaxSnapshot(invoice.value),
+  })
+  returnReviewOpen.value = false
+  toast.notify({
+    variant: 'success',
+    title: t('Return note added, awaiting the buyer'),
+    description: t('Follow up with the buyer to get the return note (nota retur).'),
+    rootProps: { class: 'toast-enterprise' },
+  })
+  showTaxDocumentTab()
+}
+// ── Credit memo ────────────────────────────────────────────────────────────────
+// Credit the customer has left to apply, and whether this invoice already carries
+// any — drives the "Apply credit memo" affordance and the totals/payment rows.
+const availableCredit = computed(() => customerAvailableCredit(invoice.value.customer.id))
+const creditApplications = computed(() => applicationsForInvoice(invoice.value.id))
+const hasCreditApplied = computed(() => invoice.value.creditApplied > 0)
+// Apply is offered only when there's a balance to reduce AND credit to spend.
+const canApplyCredit = computed(() => invoice.value.balance > 0 && availableCredit.value > 0)
+
+// Figma screen 1: the "Apply credit memo?" prompt. It appears PROACTIVELY when the
+// invoice opens and the customer has credit to spend on it — a nudge, not a gate.
+// Choosing to apply (from the prompt OR from Add payment → Apply credit memo) goes
+// straight to the form; there is no second confirm.
+const applyModalOpen = ref(false)
+const dontShowCreditForCustomer = ref(false)
+const dismissedCreditCustomers = useState<Set<string>>('dismissedCreditCustomers', () => new Set())
+function goToApplyForm() {
+  applyModalOpen.value = false
+  router.push(`/sales-invoices/${invoice.value.id}/apply-credit-memo`)
+}
+function dismissCreditModal() {
+  if (dontShowCreditForCustomer.value) dismissedCreditCustomers.value.add(invoice.value.customer.id)
+  dontShowCreditForCustomer.value = false
+  applyModalOpen.value = false
+}
+onMounted(() => {
+  if (invoice.value && canApplyCredit.value && !dismissedCreditCustomers.value.has(invoice.value.customer.id)) applyModalOpen.value = true
+})</script>
 
 <template>
   <div v-if="invoice" class="detail-page">
@@ -271,15 +669,16 @@ function receivePayment() { router.push('/sales-invoices') }
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="inv in jumpResults"
                     :key="inv.id"
+                    variant="secondary"
                     class="detail-jump-item"
                     @click="jumpTo(inv.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Sales Invoice') }} #{{ inv.number }}</span>
                     <span class="detail-jump-item-customer">{{ inv.customer.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -290,6 +689,11 @@ function receivePayment() { router.push('/sales-invoices') }
 
       <!-- Right-side icon actions — only when the page has an approval flow -->
       <div v-if="hasApproval" class="detail-titlerow-right">
+          <MpTooltip v-if="hasRecurring" id="detail-tt-recurring" :label="t('Recurring settings')" placement="bottom" use-portal>
+            <MpButton class="detail-icon-btn" :aria-label="t('Recurring settings')" data-devchange="si-detail-recurring-btn" @click="openRecurringDrawer">
+              <MpIcon name="refresh" size="md" />
+            </MpButton>
+          </MpTooltip>
           <MpTooltip id="detail-tt-tasks" :label="t('Approval log')" placement="bottom" use-portal>
             <MpButton class="detail-icon-btn" :aria-label="t('Approval log')">
               <MpIcon name="task-todo" size="md" />
@@ -318,7 +722,9 @@ function receivePayment() { router.push('/sales-invoices') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')" :value="invoice.customer.name" />
+            <ContentList :label="t('Customer')">
+              <a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(invoice.customer.name)}`, '_blank')">{{ invoice.customer.name }}</a>
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -464,9 +870,18 @@ function receivePayment() { router.push('/sales-invoices') }
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.totals.total) }}</span>
           </div>
-          <div class="detail-total-row">
+          <div v-if="invoice.cashPaid > 0" class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(invoice.amountPaid) }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.cashPaid) }}</span>
+          </div>
+          <!-- Credit applied via credit memos (Figma: "Less: Credit Memo") -->
+          <div v-if="hasCreditApplied" class="detail-total-row" data-devchange="invoice-less-credit-memo">
+            <span class="detail-total-row-label">{{ t('Less: Credit Memo') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(invoice.creditApplied) }}</span>
+          </div>
+          <div v-if="invoice.cashPaid === 0 && !hasCreditApplied" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
+            <span class="detail-total-row-amt">{{ formatDeduction(0) }}</span>
           </div>
           <div class="detail-total-rule" />
           <div class="detail-total-row">
@@ -482,7 +897,7 @@ function receivePayment() { router.push('/sales-invoices') }
       <!-- ── Tabs — only the ones with content to show ── -->
       <MpTabs
         v-if="hasLinkedTransactions || hasPayments || hasTaxDocuments"
-        :key="invoice.id" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs"
+        :key="`${invoice.id}-${defaultTabIndex}-${tabJumpNonce}`" id="detail-tabs" :default-value="defaultTabIndex" variant-color="green" class="detail-tabs"
       >
         <MpTabList>
           <MpTab v-if="hasLinkedTransactions" id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
@@ -521,26 +936,35 @@ function receivePayment() { router.push('/sales-invoices') }
           </MpTabPanel>
 
           <MpTabPanel v-if="hasPayments" value="payments">
-            <h3 class="detail-tab-heading">{{ t('Payments') }}</h3>
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
                 <col class="detail-linked-col--number" />
-                <col class="detail-linked-col--status" />
                 <col />
+                <col />
+                <col />
+                <col class="detail-linked-col--amount" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
                   <th class="detail-th">{{ t('Payment method') }}</th>
-                  <th class="detail-th">{{ t('Reference') }}</th>
-                  <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
+                  <th class="detail-th">{{ t('Account') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(p, i) in invoice.payments" :key="i" class="detail-item-row">
+                <tr v-for="(p, i) in paymentRows" :key="i" class="detail-item-row payment-row">
                   <td class="detail-td">{{ formatDateNumeric(p.date) }}</td>
+                  <td class="detail-td">
+                    <span v-if="!p.linkTo" class="detail-td--muted">{{ p.number }}</span>
+                    <a v-else class="cell-link cell-text" @click="router.push(p.linkTo)">{{ p.number }}</a>
+                  </td>
                   <td class="detail-td">{{ p.method }}</td>
+                  <td class="detail-td detail-td--muted">{{ p.account }}</td>
                   <td class="detail-td detail-td--muted">{{ p.reference }}</td>
                   <td class="detail-td detail-td--num">{{ formatIDR(p.amount) }}</td>
                 </tr>
@@ -549,21 +973,53 @@ function receivePayment() { router.push('/sales-invoices') }
           </MpTabPanel>
 
           <MpTabPanel v-if="hasTaxDocuments" value="tax-document">
-            <h3 class="detail-tab-heading">{{ t('Tax documents') }}</h3>
+            <div class="detail-taxdoc-heading-row">
+              <h3 class="detail-tab-heading detail-tab-heading--inline">{{ t('Tax documents') }}</h3>
+
+              <!-- Demo control for the submission permission the prototype has no
+                   roles module to derive (see useTaxSubmissionPermission) — same
+                   "Scenario state" convention as CreateTaxDocumentDrawer's lane FAB. -->
+              <MpPopover id="taxdoc-permission-popover" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                <MpPopoverTrigger>
+                  <MpButton class="detail-icon-btn" :aria-label="t('Change scenario state')">
+                    <MpIcon name="sliders" size="md" />
+                  </MpButton>
+                </MpPopoverTrigger>
+                <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+                  <p class="detail-scenario-heading">{{ t('Scenario state') }}</p>
+                  <MpPopoverList>
+                    <MpPopoverListItem :is-active="canSubmitTaxDocument" @click="setCanSubmitTaxDocument(true)">
+                      {{ t('Can submit tax documents') }}
+                    </MpPopoverListItem>
+                    <MpPopoverListItem :is-active="!canSubmitTaxDocument" @click="setCanSubmitTaxDocument(false)">
+                      {{ t('No tax submission permission') }}
+                    </MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </div>
+
             <table class="detail-linked">
               <colgroup>
                 <col class="detail-linked-col--date" />
                 <col class="detail-linked-col--number" />
-                <col class="detail-linked-col--stage" />
+                <col class="detail-linked-col--taxstatus" />
+                <!-- Status stays the flexible column, as it was before Remark
+                     existed: a badge absorbs leftover width harmlessly, whereas
+                     a flexible Remark soaks up everything the long Coretax
+                     message wants and starves Number and Tax document status
+                     down to a few characters each. -->
                 <col />
+                <col class="detail-linked-col--remark" />
                 <col class="detail-linked-col--actions" />
               </colgroup>
               <thead>
                 <tr>
                   <th class="detail-th">{{ t('Date') }}</th>
                   <th class="detail-th">{{ t('Number') }}</th>
-                  <th class="detail-th">{{ t('Payment stage') }}</th>
-                  <th class="detail-th">{{ t('DJP Status') }}</th>
+                  <th class="detail-th">{{ t('Tax document status') }}</th>
+                  <th class="detail-th">{{ t('DJP status') }}</th>
+                  <th class="detail-th">{{ t('Remark') }}</th>
                   <th class="detail-th" aria-hidden="true"></th>
                 </tr>
               </thead>
@@ -571,13 +1027,43 @@ function receivePayment() { router.push('/sales-invoices') }
                 <tr v-for="doc in taxDocuments" :key="doc.id" class="detail-item-row">
                   <td class="detail-td">{{ doc.date }}</td>
                   <td class="detail-td">{{ formatTaxDocumentNumber(doc) }}</td>
-                  <td class="detail-td">{{ paymentStageLabel(doc.paymentStage) }}</td>
+                  <td class="detail-td">
+                    <span>{{ t(TAX_DOCUMENT_STATUS_LABELS[taxDocumentStatus(doc)]) }}</span>
+                    <!-- Which document this one supersedes — the lineage is the
+                         whole point of a replacement/cancellation record. -->
+                    <span v-if="supersededNumber(doc)" class="detail-taxdoc-supersedes">
+                      {{ doc.kind === 'cancellation' ? t('Cancels') : t('Replaces') }} {{ supersededNumber(doc) }}
+                    </span>
+                    <!-- A return note acts on no document — it points at the
+                         faktur the returned goods were delivered under. -->
+                    <span v-else-if="returnNoteFor(doc)" class="detail-taxdoc-supersedes">
+                      {{ t('Against') }} {{ returnNoteFor(doc) }}
+                    </span>
+                  </td>
                   <td class="detail-td">
                     <ErpStatusBadge
                       :status="doc.status"
-                      :label="DJP_STATUS_CONFIG[doc.status].label"
+                      :label="t(DJP_STATUS_CONFIG[doc.status].label)"
                       :type="DJP_STATUS_CONFIG[doc.status].type"
                     />
+                  </td>
+                  <!-- Whatever DJP sent back — in practice only ever a rejection
+                       reason. Truncated to one line with the full text on hover,
+                       because a Coretax message runs well past any column width
+                       and must not push the table into a horizontal scroll. -->
+                  <td class="detail-td">
+                    <MpTooltip
+                      v-if="doc.djpRemark"
+                      :id="`taxdoc-remark-${doc.id}`"
+                      placement="top"
+                      use-portal
+                    >
+                      <template #label>
+                        <span class="taxdoc-tt-content" :style="{ width: taxDocMenuWidth }">{{ doc.djpRemark }}</span>
+                      </template>
+                      <span class="detail-taxdoc-remark">{{ doc.djpRemark }}</span>
+                    </MpTooltip>
+                    <span v-else>—</span>
                   </td>
                   <td class="detail-td">
                     <MpPopover :id="`taxdoc-row-actions-${doc.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -619,78 +1105,47 @@ function receivePayment() { router.push('/sales-invoices') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="si-print" />
 
         <!-- Paid: a plain "Actions" primary dropdown (no payment left to record) -->
-        <MpPopover v-if="invoice.status === 'paid'" id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <DetailActionsMenu v-if="invoice.status === 'paid'" id="si-actions" :groups="siPaidActionGroups" />
 
         <!-- Open/Overdue: "Add payment" primary split button — main segment records
              a payment; chevron segment opens the rest (Reject + the create-document
              actions that only make sense before the invoice is settled). -->
         <div v-else class="detail-split-btn">
-          <button class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
+          <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
             {{ t('Add payment') }}
-          </button>
+          </MpButton>
           <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>
-              <button class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" :aria-label="t('More actions')">
-                <MpIcon name="chevrons-down" size="sm" />
-              </button>
+              <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('More actions')" />
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="previewOpen = true">{{ t('Preview') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="!hasRecurring" @click="openSetRecurringDrawer">{{ t('Set as recurring') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create join invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Create sales return') }}</MpPopoverListItem>
-                <MpPopoverListItem v-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Apply credit memo') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="createSalesReturn">{{ t('Create sales return') }}</MpPopoverListItem>
+                <!-- BR-008: one STANDING document per invoice. Locked with its reason
+                     rather than hidden, so it is clear why it can't be used — a
+                     correction goes through Edit (replacement/cancellation), not
+                     through raising a second faktur. -->
+                <MpTooltip v-if="invoice.hasPpn && hasStandingTaxDoc" id="detail-create-taxdoc-locked-2" placement="top" use-portal>
+                  <template #label>
+                    <span class="taxdoc-tt-content" :style="{ width: taxDocMenuWidth }">{{ t(STANDING_TAXDOC_REASON) }}</span>
+                  </template>
+                  <span class="taxdoc-menu-item-wrap">
+                    <MpPopoverListItem is-disabled>{{ t('Create tax document') }}</MpPopoverListItem>
+                  </span>
+                </MpTooltip>
+                <MpPopoverListItem v-else-if="invoice.hasPpn" @click="openCreateTaxDocument">{{ t('Create tax document') }}</MpPopoverListItem>
+                <MpPopoverListItem v-if="canApplyCredit" data-devchange="invoice-apply-credit-memo" @click="goToApplyForm">{{ t('Apply credit memo') }}</MpPopoverListItem>
               </MpPopoverList>
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="editInvoice">{{ t('Edit') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Reject') }}</MpPopoverListItem>
                 <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
@@ -723,11 +1178,10 @@ function receivePayment() { router.push('/sales-invoices') }
       :invoice="invoice"
     />
 
-    <PdfPreviewModal
+    <EFakturPreviewModal
       :open="eFakturPreviewOpen"
       :doc="eFakturPreviewDoc"
-      :filename="eFakturPreviewFilename"
-      :title="t('Print e-faktur')"
+      :invoice="invoice"
       @close="eFakturPreviewOpen = false"
     />
 
@@ -736,6 +1190,18 @@ function receivePayment() { router.push('/sales-invoices') }
       :doc="taxDocDetailDoc"
       :invoice="invoice"
       :menu-items="taxDocDetailMenuItems"
+      :related-number="taxDocDetailDoc ? (supersededNumber(taxDocDetailDoc) || returnNoteFor(taxDocDetailDoc)) : ''"
+    />
+
+    <!-- Sales return on an invoice with an approved faktur — states the tax
+         follow-up before the return note record is added. -->
+    <TaxImpactReviewDrawer
+      v-model:is-open="returnReviewOpen"
+      trigger="sales-return"
+      action="return-note"
+      :changes="[]"
+      :source-document="approvedTaxDoc"
+      @confirm="onSalesReturnConfirm"
     />
 
     <ConfirmModal
@@ -745,6 +1211,30 @@ function receivePayment() { router.push('/sales-invoices') }
       :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
       @confirm="confirmDelete"
     />
+
+    <!-- Apply credit memo confirm (Figma: "Apply credit memo?") -->
+    <MpModal
+      id="apply-credit-confirm" :is-open="applyModalOpen" size="md" :is-centered="false" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="applyModalOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Apply credit memo?') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <p>{{ t('The customer has') }} {{ formatIDR(availableCredit) }} {{ t('in available credit.') }}</p>
+          <div :class="css({ display: 'flex', alignItems: 'center', gap: '2', marginTop: '4' })">
+            <MpCheckbox id="dont-show-credit" :is-checked="dontShowCreditForCustomer" @change="dontShowCreditForCustomer = !dontShowCreditForCustomer" />
+            <label for="dont-show-credit" :class="css({ fontSize: 'sm', color: 'text.secondary', cursor: 'pointer' })">{{ t("Don't show again for this customer") }}</label>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButton variant="ghost" is-rounded @click="dismissCreditModal">{{ t('Not now') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="goToApplyForm">{{ t('Apply credit memo') }}</MpButton>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <FilePreviewModal :open="previewOpen" :src="pdfUrl" :filename="`sales-invoice-${invoice.number}.pdf`" @close="previewOpen = false" />
   </div>
 
   <!-- Not-found reachable state: the id didn't resolve to an invoice -->
@@ -753,6 +1243,136 @@ function receivePayment() { router.push('/sales-invoices') }
     <p class="detail-notfound-desc">{{ t('This sales invoice may have been deleted or the link is invalid.') }}</p>
     <MpButton variant="secondary" is-rounded @click="router.push('/sales-invoices')">{{ t('Back to sales invoices') }}</MpButton>
   </div>
+
+  <!-- ── Recurring settings drawer ── -->
+  <ErpDrawer :is-open="recurringDrawerOpen" :title="isSettingRecurring ? t('Set as recurring') : recurringEditing ? t('Edit recurring settings') : t('Recurring settings')" @close="recurringDrawerOpen = false; isSettingRecurring = false">
+    <template #body>
+      <!-- ── Set as recurring (no template yet) ── -->
+      <template v-if="isSettingRecurring">
+        <MpFormControl id="recur-set-repeat">
+          <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+          <div class="recur-edit-repeat-row">
+            <MpInput id="recur-set-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+            <MpAutocomplete id="recur-set-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+          </div>
+        </MpFormControl>
+
+        <MpFormControl id="recur-set-end">
+          <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+          <MpAutocomplete id="recur-set-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+          <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+            <MpInput id="recur-set-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+            <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+          </div>
+          <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+            <MpDatePicker id="recur-set-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </div>
+        </MpFormControl>
+
+        <MpFormControl id="recur-set-start">
+          <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+          <MpDatePicker id="recur-set-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+        </MpFormControl>
+
+        <div class="recur-view-row recur-auto-toggle">
+          <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+          <MpToggle :is-checked="setRecurringSendAutoEmail" @change="setRecurringSendAutoEmail = !setRecurringSendAutoEmail" />
+        </div>
+      </template>
+
+      <template v-else-if="recurringTemplate?.schedule">
+        <!-- ── View mode ── -->
+        <template v-if="!recurringEditing">
+          <div class="recur-view-section">
+            <div class="recur-view-header">
+              <h3 class="recur-view-title">{{ t('Schedule') }}</h3>
+              <MpTextlink @click="startEditing">{{ t('Edit') }}</MpTextlink>
+            </div>
+
+            <div class="recur-view-row">
+              <span class="recur-view-label">{{ t('Repeats every') }}</span>
+              <span class="recur-view-value">{{ recurringTemplate.schedule.repeatInterval }} {{ unitLabel(recurringTemplate.schedule.repeatUnit) }}</span>
+            </div>
+            <div class="recur-view-row">
+              <span class="recur-view-label">{{ t('End repeat') }}</span>
+              <span class="recur-view-value">
+                {{ endRepeatLabel(recurringTemplate.schedule.endRepeat) }}
+                <template v-if="recurringTemplate.schedule.endRepeat === 'after'"> — {{ recurringTemplate.schedule.endAfterCount }} {{ t('occurrences') }}</template>
+                <template v-if="recurringTemplate.schedule.endRepeat === 'on'"> — {{ formatDateDMY(recurringTemplate.schedule.endOnDate!) }}</template>
+              </span>
+            </div>
+            <div class="recur-view-row">
+              <span class="recur-view-label">{{ t('Start date') }}</span>
+              <span class="recur-view-value">{{ formatDateDMY(recurringTemplate.schedule.startDate) }}</span>
+            </div>
+          </div>
+
+          <div class="recur-view-row recur-auto-toggle">
+            <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+            <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+          </div>
+        </template>
+
+        <!-- ── Edit mode ── -->
+        <template v-else>
+          <MpFormControl id="recur-edit-repeat">
+            <MpFormLabel>{{ t('Repeats every') }}</MpFormLabel>
+            <div class="recur-edit-repeat-row">
+              <MpInput id="recur-edit-interval" v-model.number="editRepeatInterval" type="number" :min="1" class="recur-edit-num" />
+              <MpAutocomplete id="recur-edit-unit" v-model="editRepeatUnit" :data="repeatUnitOptions" label-prop="label" value-prop="value" use-portal is-full-width class="recur-edit-unit" />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-edit-end">
+            <MpFormLabel>{{ t('End repeat') }}</MpFormLabel>
+            <MpAutocomplete id="recur-edit-end-inp" v-model="editEndRepeat" :data="endRepeatOptions" label-prop="label" value-prop="value" use-portal is-full-width />
+            <div v-if="editEndRepeat === 'after'" class="recur-edit-sub">
+              <MpInput id="recur-edit-end-count" v-model.number="editEndAfterCount" type="number" :min="1" class="recur-edit-count" />
+              <span class="recur-edit-sublabel">{{ t('occurrences') }}</span>
+            </div>
+            <div v-if="editEndRepeat === 'on'" class="recur-edit-sub">
+              <MpDatePicker id="recur-edit-end-date" v-model="editEndOnDate" format="DD/MM/YYYY" value-type="format" use-portal />
+            </div>
+          </MpFormControl>
+
+          <MpFormControl id="recur-edit-start">
+            <MpFormLabel>{{ t('Start date') }}</MpFormLabel>
+            <MpDatePicker id="recur-edit-start-date" v-model="editStartDate" format="DD/MM/YYYY" value-type="format" use-portal />
+          </MpFormControl>
+
+          <div class="recur-view-row recur-auto-toggle">
+            <span class="recur-view-label">{{ t('Send automatic email') }}</span>
+            <MpToggle :is-checked="recurringTemplate.schedule.sendAutoEmail" @change="toggleAutoEmail" />
+          </div>
+        </template>
+
+        <!-- ── Recurring history (view mode only) ── -->
+        <div v-if="!recurringEditing && recurringTemplate.history?.length" class="recur-history-section">
+          <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+          <div class="recur-history-list">
+            <div v-for="entry in recurringTemplate.history" :key="entry.invoiceNumber" class="recur-history-item">
+              <span class="recur-history-number">Sales Invoice #{{ entry.invoiceNumber }}</span>
+              <span class="recur-history-date">{{ formatDateDMY(entry.date) }}</span>
+              <ErpStatusBadge :status="entry.status.toLowerCase()" />
+            </div>
+          </div>
+        </div>
+        <div v-else-if="!recurringEditing" class="recur-history-section">
+          <h3 class="recur-history-heading">{{ t('Recurring history') }}</h3>
+          <p class="recur-history-empty">{{ t('No invoices created from this recurring template yet.') }}</p>
+        </div>
+      </template>
+    </template>
+
+    <template v-if="isSettingRecurring" #footer>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="isSettingRecurring = false; recurringDrawerOpen = false">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" @click="saveSetRecurring">{{ t('Save') }}</button>
+    </template>
+    <template v-else-if="recurringEditing" #footer>
+      <button class="btn-enterprise btn-enterprise--ghost" @click="recurringEditing = false">{{ t('Cancel') }}</button>
+      <button class="btn-enterprise btn-enterprise--primary" @click="saveEditing">{{ t('Save changes') }}</button>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
@@ -775,7 +1395,7 @@ function receivePayment() { router.push('/sales-invoices') }
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);   /* page title bar is always 72px */
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   flex-direction: row;
@@ -831,7 +1451,7 @@ function receivePayment() { router.push('/sales-invoices') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), 5 recent below */
 .detail-jump { display: flex; flex-direction: column; }
@@ -840,7 +1460,7 @@ function receivePayment() { router.push('/sales-invoices') }
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -857,7 +1477,7 @@ function receivePayment() { router.push('/sales-invoices') }
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -872,7 +1492,7 @@ function receivePayment() { router.push('/sales-invoices') }
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -899,7 +1519,7 @@ function receivePayment() { router.push('/sales-invoices') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -907,7 +1527,7 @@ function receivePayment() { router.push('/sales-invoices') }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   /* fixed 24px top border keeps content off the stage's top edge while scrolling */
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
@@ -987,7 +1607,7 @@ function receivePayment() { router.push('/sales-invoices') }
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 /* progressive case → contained panel with a 1px bold outer border */
 .detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
@@ -1010,12 +1630,12 @@ function receivePayment() { router.push('/sales-invoices') }
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .detail-th--num {
@@ -1031,7 +1651,7 @@ function receivePayment() { router.push('/sales-invoices') }
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
 .detail-td--num {
@@ -1052,12 +1672,51 @@ function receivePayment() { router.push('/sales-invoices') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
-.detail-linked-col--stage  { width: 160px; }
+.detail-linked-col--taxstatus { width: 200px; }
+.detail-linked-col--remark { width: 280px; }
 .detail-linked-col--actions { width: 52px; }
+/* One line, ellipsised — the full message lives in the row's tooltip.
+   The cap is in px, not %: under table-layout:auto a <col width> is only a hint,
+   and a nowrap string reports its FULL length as the column's minimum content
+   width — so a percentage resolves circularly and the Coretax message simply
+   takes 690px, squeezing Number and Tax document status down to a few
+   characters. A hard px
+   bound is what actually lets the ellipsis engage. Matches
+   .detail-linked-col--remark. */
+.detail-taxdoc-remark {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Secondary, not red: the Rejected badge one column over already carries the
+     alarm, and two reds in one row read as two separate problems. */
+  color: var(--mp-text-secondary);
+}
+
+/* Tax documents tab — heading with the scenario control pinned right */
+.detail-taxdoc-heading-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--mp-spacing-3);
+  margin-bottom: var(--mp-spacing-3);
+}
+.detail-tab-heading--inline { margin-bottom: 0; }
+.detail-scenario-heading {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+/* "Replaces 01234…" under the tax document status — a second line, subordinate to it */
+.detail-taxdoc-supersedes {
+  display: block;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-subtle);
+  margin-top: var(--mp-spacing-0\.5);
+}.detail-linked-col--amount { width: 200px; }
 
 .row-kebab {
   display: flex !important;
@@ -1072,7 +1731,7 @@ function receivePayment() { router.push('/sales-invoices') }
   color: var(--mp-text-subtle);
 }
 .row-kebab:hover {
-  background: var(--mp-background-neutral-hovered);
+  background: var(--mp-background-neutral-hovered, #eef0f3);
   color: var(--mp-text-default);
 }
 
@@ -1101,7 +1760,7 @@ function receivePayment() { router.push('/sales-invoices') }
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-loading {
   display: inline-flex;
@@ -1230,4 +1889,34 @@ function receivePayment() { router.push('/sales-invoices') }
   border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
   border-left: 1px solid rgba(255, 255, 255, 0.3);
 }
+
+/* ── Recurring settings drawer ── */
+.recur-view-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.recur-view-header { display: flex; align-items: center; justify-content: space-between; }
+.recur-view-title { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-view-row { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.recur-view-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); min-width: 160px; flex-shrink: 0; }
+.recur-view-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.recur-auto-toggle { padding-top: var(--mp-spacing-2); }
+.recur-toggle { cursor: pointer; display: inline-flex; align-items: center; }
+.recur-toggle-track { position: relative; width: 36px; height: 20px; border-radius: 10px; background: var(--mp-border-default); transition: background 0.2s ease; }
+.recur-toggle-on { background: var(--mp-color-green-500, #22c55e); }
+.recur-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--mp-color-white, #fff); transition: transform 0.2s ease; }
+.recur-toggle-on .recur-toggle-thumb { transform: translateX(16px); }
+
+.recur-edit-repeat-row { display: flex; gap: var(--mp-spacing-2); }
+.recur-edit-num { flex: 0 0 80px; }
+.recur-edit-unit { flex: 1; }
+.recur-edit-sub { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-2); }
+.recur-edit-count { flex: 0 0 80px; }
+.recur-edit-sublabel { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+.recur-history-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); border-top: 1px solid var(--mp-border-default); padding-top: var(--mp-spacing-4); }
+.recur-history-heading { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
+.recur-history-list { display: flex; flex-direction: column; }
+.recur-history-item { display: flex; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-2) 0; border-bottom: 1px solid var(--mp-border-subtle, var(--mp-border-default)); }
+.recur-history-item:last-child { border-bottom: none; }
+.recur-history-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); font-weight: var(--mp-font-weights-semi-bold); min-width: 180px; }
+.recur-history-date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); flex: 1; }
+.recur-history-empty { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 </style>

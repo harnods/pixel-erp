@@ -233,7 +233,7 @@ async function save() {
                 <div class="nc-multi-row">
                   <MpInput :id="`nc-email-input-${i}`" v-model="emails[i]" type="email" is-full-width />
                   <MpTooltip v-if="emails.length > 1" :id="`nc-email-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
-                    <button type="button" class="nc-multi-remove" :aria-label="t('Remove')" @click="removeEmail(i)"><MpIcon name="minus-circular" size="md" /></button>
+                    <MpButton type="button" class="nc-multi-remove" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeEmail(i)" />
                   </MpTooltip>
                 </div>
               </MpFormControl>
@@ -252,7 +252,7 @@ async function save() {
                 <div class="nc-multi-row">
                   <MpInput :id="`nc-phone-input-${i}`" v-model="phones[i]" is-full-width @update:model-value="phoneError = ''" />
                   <MpTooltip v-if="phones.length > 1" :id="`nc-phone-rm-${i}`" :label="t('Remove')" placement="top" use-portal>
-                    <button type="button" class="nc-multi-remove" :aria-label="t('Remove')" @click="removePhone(i)"><MpIcon name="minus-circular" size="md" /></button>
+                    <MpButton type="button" class="nc-multi-remove" left-icon="minus-circular" :aria-label="t('Remove')" @click="removePhone(i)" />
                   </MpTooltip>
                 </div>
                 <MpFormErrorMessage v-if="i === phones.length - 1">{{ phoneError }}</MpFormErrorMessage>

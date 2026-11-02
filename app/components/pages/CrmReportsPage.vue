@@ -225,10 +225,9 @@ const emptyCopy = computed(() => {
       >
         <template #filters>
           <div class="filter-left">
-            <button class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" @click="openFilters">
-              <MpIcon name="filter" size="sm" />
+            <MpButton class="btn-enterprise btn-enterprise--secondary filter-all-btn" type="button" left-icon="filter" @click="openFilters">
               {{ t('All filters') }}{{ activeFilterCount ? ` (${activeFilterCount})` : '' }}
-            </button>
+            </MpButton>
           </div>
           <div class="filter-right">
             <MpButtonGroup class="filter-btn-group">
@@ -322,8 +321,8 @@ const emptyCopy = computed(() => {
           <p v-if="transferError" class="rpt-modal-error">{{ transferError }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="transferTarget = null">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmTransfer">{{ t('Transfer') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="transferTarget = null">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmTransfer">{{ t('Transfer') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -338,8 +337,8 @@ const emptyCopy = computed(() => {
           <p class="rpt-modal-desc">{{ t('Sharing lets others discover and run this report. It does not grant them edit, export, or underlying data access beyond their own permissions.') }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="visTarget = null">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmVisibility">{{ t('Save') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="visTarget = null">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmVisibility">{{ t('Save') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -376,7 +375,7 @@ const emptyCopy = computed(() => {
    neutral bold border + 1px neutral ring, never Pixel's default brand-emerald ring. */
 .filter-search:focus-within {
   border-color: var(--mp-colors-border-bold, #8c9596);
-  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
+  box-shadow: 0 0 0 1px var(--mp-colors-border-bold, #8c9596); /* pixel-police-allow-shadow: border ring */
 }
 .filter-search-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }

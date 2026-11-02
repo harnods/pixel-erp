@@ -45,7 +45,7 @@ const duplicatePurchaseOrder = inject<(id: string) => void>('duplicatePurchaseOr
 // ─── Column definitions (date/number widths match the Expenses index) ─────────
 const columns: TableColumn[] = [
   { key: 'date',       label: 'Date',        kind: 'date',   sortType: 'date'                },
-  { key: 'number',     label: 'Number',      kind: 'number', sortable: true, sortType: 'text' },
+  { key: 'number',     label: 'Number',      width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true, sortType: 'text' },
   { key: 'attachment', label: '',            width: '40px',  noHeader: true, align: 'center' },
   { key: 'vendorName', label: 'Vendor',      kind: 'name',   sortable: true                  },
   { key: 'dueDate',    label: 'Due date',    kind: 'date'                                    },
@@ -198,7 +198,7 @@ const exportColumns = computed(() => [
 
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ selectedRows }">
-      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete (rule/bulk-actions-no-delete) -->
+      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete here, this module has no bulk delete (rule/bulk-actions-delete-confirmed) -->
       <MpPopover id="po-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
@@ -242,9 +242,7 @@ const exportColumns = computed(() => [
             type="text"
             :placeholder="t('Search...')"
           />
-          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
-            <MpIcon name="close" size="sm" />
-          </button>
+          <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
         </div>
       </div>
     </template>

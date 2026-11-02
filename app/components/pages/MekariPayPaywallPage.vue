@@ -69,7 +69,7 @@ const root = css({ marginInline: '-6' })
 
 const hero = css({
   position: 'relative', overflow: 'hidden',
-  background: '#F4FAFF',
+  background: 'var(--mp-colors-info-weaker)',
   height: '420px',
   paddingInline: '12', gap: '8',
   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -115,7 +115,7 @@ const footer = css({
           <p :class="heroBody">{{ COPY.heroBody }}</p>
         </div>
         <div>
-          <button class="btn-enterprise btn-enterprise--primary">{{ COPY.cta }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--primary">{{ COPY.cta }}</MpButton>
         </div>
       </div>
 
@@ -147,7 +147,7 @@ const footer = css({
 
     <!-- ── Help footer ─────────────────────────────────────────────────── -->
     <div :class="footer">
-      <MpIcon name="help" size="sm" color="icon.secondary" />
+      <MpIcon name="help" size="sm" color="icon.default" />
       <MpText size="body" color="text.default">{{ COPY.helpPrefix }}</MpText>
       <MpButton variant="textLink" size="sm">{{ COPY.helpLink }}</MpButton>
       <MpText size="body" color="text.default">{{ COPY.helpSuffix }}</MpText>

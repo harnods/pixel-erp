@@ -1,4 +1,5 @@
 import { purchaseDeliveries } from './purchaseDeliveries'
+import type { BatchAttributeValues } from './batchAttributes'
 import { products } from './products'
 import type { SalesOrderTotals } from './salesOrders'
 import type { PurchaseDelivery, SalesOrderItem } from './types'
@@ -15,7 +16,11 @@ import type { PurchaseDelivery, SalesOrderItem } from './types'
 const TAX_RATE = 0.11
 const TAX_LABEL = 'PPN 11%'
 
-export type PDLineItem = SalesOrderItem & { taxLabel: string }
+export type PDLineItem = SalesOrderItem & {
+  taxLabel: string
+  /** Batches that received this line's qty — only on deliveries created in the app. */
+  batches?: { batchId: string; batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
+}
 
 export interface PDAttachment { name: string; sizeKB: number }
 
@@ -132,7 +137,10 @@ function buildLinked(delivery: PurchaseDelivery, idx: number): PDLinkedTxn[] {
 }
 
 function buildDetail(base: PurchaseDelivery, idx: number): PurchaseDeliveryDetail {
-  const lineItems = buildItems(base, idx)
+  // A delivery made in the app keeps the lines it was saved with.
+  const lineItems: PDLineItem[] = base.lines
+    ? base.lines.map((l) => ({ ...l, amount: Math.round(l.qty * l.unitPrice * (1 - l.discountPct / 100)) }))
+    : buildItems(base, idx)
   const subtotal = lineItems.reduce((s, it) => s + it.amount, 0)
   const totals: SalesOrderTotals = {
     subtotal,

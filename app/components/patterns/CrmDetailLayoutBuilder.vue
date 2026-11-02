@@ -153,6 +153,7 @@ const addPropOptions = computed(() => {
   return props.properties
     .filter((p) => own.has(p.id) || !elsewhere.has(p.id))
     .map((p) => ({ id: p.id, name: p.name, subtitle: '', icon: defaultPropertyIcon(p.type) }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 })
 // Reconcile the drawer's picked set into the section's columns: drop de-selected
 // ids from every column, append newly-picked ids to the shortest column (keeps
@@ -400,7 +401,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
           autofocus @keydown.enter="commitRenameTab(tp)" @keydown.esc="renamingTabId = ''" @blur="commitRenameTab(tp)"
         />
         <template v-else>
-          <button type="button" class="dlb-tab-btn" @click="selectTab(tp.id)">{{ t(tp.label) }}</button>
+          <MpButton class="dlb-tab-btn" @click="selectTab(tp.id)">{{ t(tp.label) }}</MpButton>
           <span class="dlb-kebab dlb-tab-kebab">
             <MpPopover :id="`dlb-tab-${tp.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
@@ -482,7 +483,10 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                 </div>
               </TransitionGroup>
             </div>
-            <p v-if="!section.cols.some((c) => c.length)" class="dlb-empty">{{ t('No properties yet. Add one from the section menu.') }}</p>
+            <div v-if="!section.cols.some((c) => c.length)" class="dlb-empty">
+              <p class="dlb-empty-text">{{ t('No properties yet.') }}</p>
+              <MpButton variant="secondary" is-rounded left-icon="add" @click="openAddProperty(section)">{{ t('Add property') }}</MpButton>
+            </div>
           </section>
         </TransitionGroup>
 
@@ -653,7 +657,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                 <div class="dlb-prev-detail-page">
                   <div class="dp-stage">
                     <div class="dp-tabs">
-                      <button v-for="(tp, ti) in detail.tabs.filter(t => t.visible)" :key="tp.id" class="dp-tab" :class="{ 'dp-tab--active': ti === 0 }" :disabled="ti !== 0">{{ t(tp.label) }}</button><!-- pixel-police-allow -->
+                      <MpButton v-for="(tp, ti) in detail.tabs.filter(t => t.visible)" :key="tp.id" class="dp-tab" :class="{ 'dp-tab--active': ti === 0 }" :disabled="ti !== 0">{{ t(tp.label) }}</MpButton><!-- pixel-police-allow -->
                     </div>
                     <template v-for="section in detailsTabSections()" :key="section.id">
                       <section v-if="section.kind === 'products'" class="dp-section dp-items-section">
@@ -661,7 +665,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
                           <div />
                           <div class="dp-filter-right">
                             <div class="dp-search-pill"><MpIcon name="search" size="sm" /><span class="dp-search-text">{{ t('Search products…') }}</span></div>
-                            <button class="btn-enterprise btn-enterprise--tertiary dp-add-product" disabled><MpIcon name="add" size="sm" />{{ t('Add product') }}</button><!-- pixel-police-allow -->
+                            <MpButton class="btn-enterprise btn-enterprise--tertiary dp-add-product" disabled><MpIcon name="add" size="sm" />{{ t('Add product') }}</MpButton><!-- pixel-police-allow -->
                           </div>
                         </div>
                         <table class="dp-items">
@@ -1000,7 +1004,7 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 /* Text tab strip with a green active underline; each tab reveals a hover kebab */
 .dlb-tabstrip { display: flex; align-items: center; gap: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .dlb-tab { position: relative; display: inline-flex; align-items: center; gap: var(--mp-spacing-1, 4px); }
-.dlb-tab-btn { padding: var(--mp-spacing-3) 0; border: none; background: transparent; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #536062); }
+.dlb-tab-btn { padding: var(--mp-spacing-3) 0 !important; border: none !important; background: transparent !important; cursor: pointer; font-size: var(--mp-font-sizes-md, 14px) !important; color: var(--mp-colors-text-secondary, #536062) !important; min-width: 0 !important; }
 .dlb-tab--active .dlb-tab-btn { color: var(--mp-colors-text-success, #16b364); font-weight: var(--mp-font-weights-semi-bold, 600); }
 .dlb-tab--active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--mp-colors-background-success-bold, #16b364); }
 .dlb-tab-input { width: 132px; }
@@ -1066,7 +1070,8 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
 .dlb-prop-label { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-default, #080d0e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlb-mandatory { color: var(--mp-colors-text-danger, #c81e1e); margin-left: 2px; }
 .dlb-prop-var { font-size: var(--mp-font-sizes-sm, 12px); color: var(--mp-colors-text-secondary, #6b7678); font-family: var(--mp-fonts-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dlb-empty { grid-column: 1 / -1; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; padding: var(--mp-spacing-2) 0; }
+.dlb-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-3); padding: var(--mp-spacing-6) 0; }
+.dlb-empty-text { font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-colors-text-secondary, #6b7678); margin: 0; }
 
 .dlb-add-section { padding-top: var(--mp-spacing-2); }
 
@@ -1302,9 +1307,9 @@ function onPropPointerDown(section: DetailLayoutSection, pid: string, e: Pointer
   display: flex; gap: 0; border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .dp-tab {
-  padding: var(--mp-spacing-2) var(--mp-spacing-4); border: none; background: none; cursor: default;
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
-  color: var(--mp-text-secondary); position: relative;
+  padding: var(--mp-spacing-2) var(--mp-spacing-4) !important; border: none !important; background: none !important; cursor: default;
+  font-size: var(--mp-font-sizes-md) !important; font-weight: var(--mp-font-weights-regular) !important;
+  color: var(--mp-text-secondary) !important; position: relative; min-width: 0 !important;
 }
 .dp-tab--active { color: var(--mp-text-selected, #029861); font-weight: var(--mp-font-weights-semi-bold); }
 .dp-tab--active::after {

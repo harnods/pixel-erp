@@ -13,7 +13,7 @@ import {
   css, toast,
 } from '@mekari/pixel3'
 import NewLocationDrawer from '~/components/patterns/NewLocationDrawer.vue'
-import { getStorageTree, findLocation, type LocNode } from '~/data/storageLocations'
+import { getStorageTree, findLocation, canHaveSubLocation, type LocNode } from '~/data/storageLocations'
 import { deleteLocationSafe } from '~/data/integrityGuards'
 import { ensureLocationBarcode } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
@@ -144,11 +144,11 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
       <div class="wh-search">
         <MpIcon name="search" size="md" />
         <input v-model="search" class="wh-search-input" type="text" placeholder="Search..." />
-        <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+        <MpButton v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
           </svg>
-        </button>
+        </MpButton>
       </div>
       <MpButton variant="tertiary" is-rounded left-icon="add" @click="openNew">New location</MpButton>
     </div>
@@ -206,17 +206,17 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
             <td class="wh-btd wh-loc-td--action">
               <MpPopover :id="`slt-actions-${row.node.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                 <MpPopoverTrigger>
-                  <button class="row-kebab" aria-label="More actions" @click.stop>
+                  <MpButton class="row-kebab" aria-label="More actions" @click.stop>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
                     </svg>
-                  </button>
+                  </MpButton>
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                   <MpPopoverList>
                     <MpPopoverListItem @click="editLoc(row.node)">Edit</MpPopoverListItem>
                     <MpPopoverListItem v-if="row.node.type === 'Storage'" @click="printLocationBarcode(row.node)">Print barcode</MpPopoverListItem>
-                    <MpPopoverListItem @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
+                    <MpPopoverListItem v-if="canHaveSubLocation(row.node.level)" data-devchange="location-deepest-level" @click="addSub(row.node)">Add sub-location</MpPopoverListItem>
                     <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="askDelete(row.node)">Delete</MpPopoverListItem>
                   </MpPopoverList>
                 </MpPopoverContent>
@@ -264,8 +264,8 @@ async function confirmPrintBarcode({ qty, columns }: { qty: number; columns: 1 |
         </MpModalBody>
         <MpModalFooter>
           <div class="slt-modal-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteTarget = null">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="deleteTarget = null">Cancel</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">Delete</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>

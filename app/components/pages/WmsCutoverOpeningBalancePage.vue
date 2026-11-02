@@ -15,7 +15,7 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { MpTextlink, MpIcon, MpDatePicker, toast } from '@mekari/pixel3'
+import { MpTextlink, MpIcon, MpDatePicker, MpButton, toast } from '@mekari/pixel3'
 import ErpStepper from '~/components/patterns/ErpStepper.vue'
 import {
   coaAccounts, computeOpeningBalance, cutoverState,
@@ -229,13 +229,13 @@ function publish() {
 
     <!-- ── Sticky footer ── -->
     <footer class="ob-footer">
-      <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBack">
+      <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="goBack">
         {{ t('Back') }}
-      </button>
+      </MpButton>
       <div class="ob-footer-actions">
-        <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">{{ t('Cancel') }}</button>
-        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">{{ t('Save as draft') }}</button>
-        <button type="button" class="btn-enterprise btn-enterprise--primary" @click="publish">{{ t('Publish opening balance') }}</button>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="cancel">{{ t('Cancel') }}</MpButton>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="saveDraft">{{ t('Save as draft') }}</MpButton>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="publish">{{ t('Publish opening balance') }}</MpButton>
       </div>
     </footer>
   </div>
@@ -389,7 +389,11 @@ function publish() {
 }
 .ob-td--num { text-align: right; font-variant-numeric: tabular-nums; }
 .ob-td--input { padding: 0; }
-.ob-td--input:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.ob-td--input { position: relative; }
+.ob-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ob-td--locked { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
 
 /* Group divider row — sticks just below the header so the current category

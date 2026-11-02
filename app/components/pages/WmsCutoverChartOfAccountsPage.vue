@@ -197,7 +197,7 @@ function onContinue() {
                 <div class="coa-card-title-row">
                   <h2 class="coa-card-title">{{ t('Import my own chart of accounts') }}</h2>
                   <span v-if="committedSource === 'own'" class="coa-inuse">
-                    <MpIcon name="check" size="sm" color="icon.positive" /> {{ t('In use') }}
+                    <MpIcon name="check" size="sm" color="icon.success" /> {{ t('In use') }}
                   </span>
                 </div>
                 <p class="coa-card-desc">
@@ -212,9 +212,9 @@ function onContinue() {
                 <li>{{ t('Upload the completed file below.') }}</li>
               </ul>
 
-              <button type="button" class="btn-enterprise btn-enterprise--secondary">
+              <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary">
                 {{ t('Download template file') }}
-              </button>
+              </MpButton>
 
               <div class="coa-form-grid">
                 <div class="coa-field">
@@ -251,14 +251,15 @@ function onContinue() {
 
               <!-- Import → progress → done + Preview -->
               <div v-if="importFile" class="coa-import-action">
-                <button
+                <MpButton
                   v-if="importPhase === 'idle'"
                   type="button"
                   class="btn-enterprise btn-enterprise--secondary"
+                  variant="secondary"
                   @click="runImport"
                 >
                   {{ t('Import') }}
-                </button>
+                </MpButton>
 
                 <div v-else-if="importPhase === 'importing'" class="coa-import-progress">
                   <MpProgress :value="String(importProgress)" size="sm" color="information" />
@@ -267,7 +268,7 @@ function onContinue() {
 
                 <div v-else class="coa-import-done">
                   <span class="coa-import-done-msg">
-                    <MpIcon name="check" size="sm" color="icon.positive" />
+                    <MpIcon name="check" size="sm" color="icon.success" />
                     {{ coaSourceState.importedCount }} {{ t('accounts imported') }}
                   </span>
                   <MpTextlink id="coa-preview-link" as="a" @click.prevent="openPreview">{{ t('Preview') }}</MpTextlink>
@@ -317,15 +318,15 @@ function onContinue() {
 
     <!-- ── Sticky footer (first step — no Back) ── -->
     <footer class="coa-footer">
-      <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">
+      <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="cancel">
         {{ t('Cancel') }}
-      </button>
-      <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">
+      </MpButton>
+      <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="saveDraft">
         {{ t('Save as draft') }}
-      </button>
-      <button type="button" class="btn-enterprise btn-enterprise--primary" @click="onContinue">
+      </MpButton>
+      <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="onContinue">
         {{ t('Continue') }}
-      </button>
+      </MpButton>
     </footer>
   </div>
 </template>

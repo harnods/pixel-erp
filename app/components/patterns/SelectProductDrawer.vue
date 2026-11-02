@@ -58,7 +58,7 @@ async function save() {
       <!-- Header -->
       <header class="spd-header">
         <h2 class="spd-title">Select product</h2>
-        <button class="spd-close" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></button>
+        <MpButton class="spd-close" variant="ghost" aria-label="Close" @click="close"><MpIcon name="close" size="md" /></MpButton>
       </header>
 
       <!-- Body — two panels -->
@@ -68,18 +68,18 @@ async function save() {
           <div class="spd-search">
             <MpIcon name="search" size="sm" />
             <input v-model="leftSearch" class="spd-search-input" type="text" placeholder="Search..." />
-            <button v-if="leftSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="leftSearch = ''">
+            <MpButton v-if="leftSearch" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="leftSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
           <div class="spd-col-head">
             <span class="spd-col-title">Products</span>
-            <button class="spd-link" type="button" @click="addAll">Add all</button>
+            <MpButton class="spd-link" variant="ghost" type="button" @click="addAll">Add all</MpButton>
           </div>
           <div class="spd-list">
-            <button v-for="p in available" :key="p.sku" class="spd-item" type="button" @click="add(p.sku)">
+            <MpButton v-for="p in available" :key="p.sku" class="spd-item" variant="ghost" type="button" @click="add(p.sku)">
               <img v-if="p.img" class="spd-thumb" :src="p.img" :alt="p.name" loading="lazy" />
               <span v-else class="spd-thumb spd-thumb--empty" />
               <span class="spd-info">
@@ -88,7 +88,7 @@ async function save() {
                 <span v-if="p.minStock !== undefined" class="spd-min-stock">Min. stock {{ p.minStock.toLocaleString('id-ID') }}{{ p.unit ? ` ${p.unit}` : '' }}</span>
               </span>
               <span class="spd-act spd-act--add"><MpIcon name="add" size="sm" /></span>
-            </button>
+            </MpButton>
             <p v-if="!available.length" class="spd-empty">No products found.</p>
           </div>
         </section>
@@ -100,18 +100,18 @@ async function save() {
           <div class="spd-search">
             <MpIcon name="search" size="sm" />
             <input v-model="rightSearch" class="spd-search-input" type="text" placeholder="Search..." />
-            <button v-if="rightSearch" class="search-clear-btn" type="button" aria-label="Clear search" @click="rightSearch = ''">
+            <MpButton v-if="rightSearch" class="search-clear-btn" variant="ghost" type="button" aria-label="Clear search" @click="rightSearch = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
           <div class="spd-col-head">
             <span class="spd-col-title">Selected products ({{ selectedCount }})</span>
-            <button class="spd-link" type="button" @click="removeAll">Remove all</button>
+            <MpButton class="spd-link" variant="ghost" type="button" @click="removeAll">Remove all</MpButton>
           </div>
           <div class="spd-list">
-            <button v-for="p in selected" :key="p.sku" class="spd-item" type="button" @click="remove(p.sku)">
+            <MpButton v-for="p in selected" :key="p.sku" class="spd-item" variant="ghost" type="button" @click="remove(p.sku)">
               <img v-if="p.img" class="spd-thumb" :src="p.img" :alt="p.name" loading="lazy" />
               <span v-else class="spd-thumb spd-thumb--empty" />
               <span class="spd-info">
@@ -120,7 +120,7 @@ async function save() {
                 <span v-if="p.minStock !== undefined" class="spd-min-stock">Min. stock {{ p.minStock.toLocaleString('id-ID') }}{{ p.unit ? ` ${p.unit}` : '' }}</span>
               </span>
               <span class="spd-act spd-act--remove"><MpIcon name="minus-circular" size="sm" /></span>
-            </button>
+            </MpButton>
             <p v-if="!selected.length" class="spd-empty">No products selected yet.</p>
           </div>
         </section>

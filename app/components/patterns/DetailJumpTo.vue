@@ -80,7 +80,7 @@ function choose(id: string) { search.value = ''; emit('select', id) }
 
 .djt-list { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; padding: 0 var(--mp-spacing-1) var(--mp-spacing-1); }
 .djt-item {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-0\.5); width: 100%; text-align: left;
   cursor: pointer;
   padding: var(--mp-spacing-2) var(--mp-spacing-3); border-radius: var(--mp-radii-md);
 }

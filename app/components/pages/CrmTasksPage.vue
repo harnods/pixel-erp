@@ -94,10 +94,10 @@ function onDrop(stage: TaskStage) {
         <h1 class="crm-title">Tasks</h1>
       </div>
       <div class="crm-titlebar__right">
-        <button class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('New task')">
+        <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="soon('New task')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
           New task
-        </button>
+        </MpButton>
       </div>
     </header>
 
@@ -147,9 +147,9 @@ function onDrop(stage: TaskStage) {
             <div class="filter-search">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input v-model="search" class="filter-search-input" type="text" placeholder="Search...">
-              <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+              <MpButton v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
-              </button>
+              </MpButton>
             </div>
           </div>
         </template>
@@ -177,9 +177,9 @@ function onDrop(stage: TaskStage) {
         <template #actions="{ row }">
           <MpPopover :id="`task-actions-${(row as CrmTask).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="row-kebab" type="button" aria-label="More actions">
+              <MpButton class="row-kebab" type="button" aria-label="More actions">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
-              </button>
+              </MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>

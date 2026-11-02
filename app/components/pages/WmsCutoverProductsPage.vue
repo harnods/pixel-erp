@@ -371,10 +371,10 @@ onUnmounted(() => {
           <div class="cut-filter-left">
             <MpPopover id="cut-status-filter" is-close-on-select>
               <MpPopoverTrigger>
-                <button type="button" class="cut-filter-trigger" :class="{ 'cut-filter-trigger--set': !!statusFilter }">
+                <MpButton type="button" class="cut-filter-trigger" variant="ghost" :class="{ 'cut-filter-trigger--set': !!statusFilter }">
                   <span class="cut-filter-label">{{ statusFilter ? statusLabel : t('Status') }}</span>
                   <MpIcon name="chevrons-down" size="sm" />
-                </button>
+                </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content' })">
                 <MpPopoverList>
@@ -390,14 +390,15 @@ onUnmounted(() => {
               </MpPopoverContent>
             </MpPopover>
 
-            <button
+            <MpButton
               v-if="statusFilter || search"
               type="button"
               class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm"
+              variant="ghost"
               @click="statusFilter = ''; search = ''"
             >
               {{ t('Reset filter') }}
-            </button>
+            </MpButton>
           </div>
 
           <div class="cut-filter-right">
@@ -412,11 +413,11 @@ onUnmounted(() => {
                 :placeholder="`${t('Search')}...`"
                 :aria-label="t('Search product or SKU')"
               >
-              <button v-if="search" class="cut-search-clear" type="button" :aria-label="t('Clear search')" @click="search = ''">
+              <MpButton v-if="search" class="cut-search-clear" type="button" variant="ghost" :aria-label="t('Clear search')" @click="search = ''">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
                 </svg>
-              </button>
+              </MpButton>
             </div>
 
             <MpButton variant="tertiary" is-rounded @click="openImport">{{ t('Import') }}</MpButton>
@@ -463,12 +464,12 @@ onUnmounted(() => {
 
                       <MpPopover id="cut-bulk-account" is-close-on-select>
                         <MpPopoverTrigger>
-                          <button type="button" class="cut-filter-trigger cut-filter-trigger--wide" :class="{ 'cut-filter-trigger--set': !!bulkAccount }">
+                          <MpButton type="button" class="cut-filter-trigger cut-filter-trigger--wide" variant="ghost" :class="{ 'cut-filter-trigger--set': !!bulkAccount }">
                             <span class="cut-filter-label">
                               {{ bulkAccount ? labelFor(inventoryAccounts, bulkAccount) : t('Select inventory account') }}
                             </span>
                             <MpIcon name="chevrons-down" size="sm" />
-                          </button>
+                          </MpButton>
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '280px', width: 'max-content', maxWidth: '360px' })">
                           <MpPopoverList>
@@ -484,9 +485,9 @@ onUnmounted(() => {
                         </MpPopoverContent>
                       </MpPopover>
 
-                      <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="applyBulkAccount">
+                      <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="applyBulkAccount">
                         {{ t('Apply') }}
-                      </button>
+                      </MpButton>
                       <span v-if="bulkError" class="cut-bulk-error">{{ bulkError }}</span>
                     </div>
                     <div class="cut-bulk-bar__right">
@@ -569,12 +570,12 @@ onUnmounted(() => {
                 <td class="cut-td cut-td--select" :class="{ 'cut-td--error': hasError(p, 'inventoryAccount') }">
                   <MpPopover :id="`inv-acct-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
                     <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger">
+                      <MpButton type="button" class="cut-cell-trigger" variant="ghost">
                         <span :class="p.inventoryAccount ? 'cut-cell-value' : 'cut-cell-placeholder'">
                           {{ p.inventoryAccount ? labelFor(inventoryAccounts, p.inventoryAccount) : t('Select account') }}
                         </span>
                         <MpIcon name="chevrons-down" size="sm" />
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ width: '320px', maxHeight: '260px', overflowY: 'auto', padding: '0' })">
                       <MpPopoverList>
@@ -638,12 +639,12 @@ onUnmounted(() => {
                 >
                   <MpPopover :id="`rev-acct-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
                     <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger" :disabled="!p.isSold">
+                      <MpButton type="button" class="cut-cell-trigger" variant="ghost" :is-disabled="!p.isSold">
                         <span :class="p.revenueAccount ? 'cut-cell-value' : 'cut-cell-placeholder'">
                           {{ p.revenueAccount ? labelFor(revenueAccounts, p.revenueAccount) : t('Select account') }}
                         </span>
                         <MpIcon name="chevrons-down" size="sm" />
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ width: '300px', padding: '0' })">
                       <MpPopoverList>
@@ -665,12 +666,12 @@ onUnmounted(() => {
                 >
                   <MpPopover :id="`sell-tax-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
                     <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger" :disabled="!p.isSold">
+                      <MpButton type="button" class="cut-cell-trigger" variant="ghost" :is-disabled="!p.isSold">
                         <span :class="p.sellTax ? 'cut-cell-value' : 'cut-cell-placeholder'">
                           {{ p.sellTax || t('Select tax') }}
                         </span>
                         <MpIcon name="chevrons-down" size="sm" />
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ width: '220px', padding: '0' })">
                       <MpPopoverList>
@@ -719,12 +720,12 @@ onUnmounted(() => {
                 >
                   <MpPopover :id="`cogs-acct-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
                     <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger" :disabled="!p.isBought">
+                      <MpButton type="button" class="cut-cell-trigger" variant="ghost" :is-disabled="!p.isBought">
                         <span :class="p.cogsAccount ? 'cut-cell-value' : 'cut-cell-placeholder'">
                           {{ p.cogsAccount ? labelFor(cogsAccounts, p.cogsAccount) : t('Select account') }}
                         </span>
                         <MpIcon name="chevrons-down" size="sm" />
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ width: '320px', padding: '0' })">
                       <MpPopoverList>
@@ -746,12 +747,12 @@ onUnmounted(() => {
                 >
                   <MpPopover :id="`buy-tax-${p.id}`" placement="bottom-start" use-portal is-close-on-select>
                     <MpPopoverTrigger>
-                      <button type="button" class="cut-cell-trigger" :disabled="!p.isBought">
+                      <MpButton type="button" class="cut-cell-trigger" variant="ghost" :is-disabled="!p.isBought">
                         <span :class="p.buyTax ? 'cut-cell-value' : 'cut-cell-placeholder'">
                           {{ p.buyTax || t('Select tax') }}
                         </span>
                         <MpIcon name="chevrons-down" size="sm" />
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ width: '220px', padding: '0' })">
                       <MpPopoverList>
@@ -805,19 +806,19 @@ onUnmounted(() => {
 
     <!-- ── Sticky footer — Continue is never disabled ── -->
     <footer class="cut-footer">
-      <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="goBackStep">
+      <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="goBackStep">
         {{ t('Back') }}
-      </button>
+      </MpButton>
       <div class="cut-footer-actions">
-        <button type="button" class="btn-enterprise btn-enterprise--ghost" @click="cancel">
+        <MpButton type="button" class="btn-enterprise btn-enterprise--ghost" variant="ghost" @click="cancel">
           {{ t('Cancel') }}
-        </button>
-        <button type="button" class="btn-enterprise btn-enterprise--secondary" @click="saveDraft">
+        </MpButton>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary" @click="saveDraft">
           {{ t('Save as draft') }}
-        </button>
-        <button type="button" class="btn-enterprise btn-enterprise--primary" @click="submit">
+        </MpButton>
+        <MpButton type="button" class="btn-enterprise btn-enterprise--primary" variant="primary" @click="submit">
           {{ t('Continue') }}
-        </button>
+        </MpButton>
       </div>
     </footer>
 
@@ -840,7 +841,7 @@ onUnmounted(() => {
                 <div class="imd-step-body">
                   <p class="imd-step-title">{{ t('Download the template') }}</p>
                   <p class="imd-step-desc">{{ t('The template lists every WMS product, ready for you to map to accounts.') }}</p>
-                  <button type="button" class="btn-enterprise btn-enterprise--secondary">{{ t('Download template file') }}</button>
+                  <MpButton type="button" class="btn-enterprise btn-enterprise--secondary" variant="secondary">{{ t('Download template file') }}</MpButton>
 
                   <FormatRequirementsAccordion :requirements="formatRequirements" />
                 </div>

@@ -22,7 +22,7 @@
 import { ref, computed, watch } from 'vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpRadio, MpAutocomplete, MpInput,
+  MpModalOverlay, MpModalCloseButton, MpRadio, MpAutocomplete, MpInput, MpButton,
 } from '@mekari/pixel3'
 
 export interface NumberFormatConfig {
@@ -108,9 +108,9 @@ function save() {
       <MpModalBody v-if="!customizing">
         <p class="nf-caption">{{ caption }}</p>
         <p class="nf-next">{{ t('Next number') }}: {{ nextNumber }}</p>
-        <button class="btn-enterprise btn-enterprise--secondary nf-customize-btn" type="button" @click="customizing = true">
+        <MpButton class="btn-enterprise btn-enterprise--secondary nf-customize-btn" @click="customizing = true">
           {{ t('Customize format') }}
-        </button>
+        </MpButton>
       </MpModalBody>
 
       <!-- Customize view -->
@@ -162,8 +162,8 @@ function save() {
 
       <MpModalFooter v-if="customizing">
         <div class="nf-footer-btns">
-          <button class="btn-enterprise btn-enterprise--ghost" @click="close">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save changes') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="close">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="save">{{ t('Save changes') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>

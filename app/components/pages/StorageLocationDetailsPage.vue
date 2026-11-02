@@ -10,7 +10,7 @@
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  css, toast,
+  MpButton, css, toast,
 } from '@mekari/pixel3'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import StockTables from '~/components/patterns/StockTables.vue'
@@ -149,21 +149,21 @@ function confirmDeleteLocation() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <div class="sld-crumbs">
-          <button class="detail-breadcrumb" @click="goAllWarehouses">{{ t('All warehouses') }}</button>
+          <MpButton variant="ghost" class="detail-breadcrumb" @click="goAllWarehouses">{{ t('All warehouses') }}</MpButton>
           <span class="sld-crumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goWarehouse">{{ warehouse?.name ?? t('Warehouse') }}</button>
+          <MpButton variant="ghost" class="detail-breadcrumb" @click="goWarehouse">{{ warehouse?.name ?? t('Warehouse') }}</MpButton>
         </div>
         <h1 class="detail-title">{{ node.name }}</h1>
       </div>
 
       <MpPopover id="sld-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <button class="detail-btn detail-btn--primary">
+          <MpButton variant="primary" class="detail-btn detail-btn--primary">
             {{ t('Actions') }}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-          </button>
+          </MpButton>
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -199,7 +199,7 @@ function confirmDeleteLocation() {
             <dd class="sld-info-value">
               <span class="sld-path">
                 <template v-for="(p, i) in path" :key="p.id">
-                  <button class="sld-path-link" @click="goToLoc(p.id)">{{ p.name }}</button>
+                  <MpButton variant="link" class="sld-path-link" @click="goToLoc(p.id)">{{ p.name }}</MpButton>
                   <span v-if="i < path.length - 1" class="sld-path-sep">/</span>
                 </template>
               </span>
@@ -305,8 +305,8 @@ function confirmDeleteLocation() {
         </MpModalBody>
         <MpModalFooter>
           <div class="sld-modal-btns">
-            <button class="btn-enterprise btn-enterprise--ghost" @click="deleteConfirmOpen = false">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--danger" @click="confirmDeleteLocation">{{ t('Delete') }}</button>
+            <MpButton variant="ghost" class="btn-enterprise btn-enterprise--ghost" @click="deleteConfirmOpen = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="danger" class="btn-enterprise btn-enterprise--danger" @click="confirmDeleteLocation">{{ t('Delete') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -316,7 +316,7 @@ function confirmDeleteLocation() {
 
   <div v-else class="sld-not-found">
     <p>{{ t('Storage location not found.') }}</p>
-    <button class="detail-breadcrumb" @click="goWarehouse">{{ t('Back') }}</button>
+    <MpButton variant="ghost" class="detail-breadcrumb" @click="goWarehouse">{{ t('Back') }}</MpButton>
   </div>
 </template>
 

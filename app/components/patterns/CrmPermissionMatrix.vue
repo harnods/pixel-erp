@@ -9,7 +9,7 @@
  * `perms` is a reactive flat key→boolean map owned by the parent and mutated here.
  */
 import { reactive } from 'vue'
-import { MpCheckbox, MpRadio, MpIcon } from '@mekari/pixel3'
+import { MpCheckbox, MpRadio, MpIcon, MpButton } from '@mekari/pixel3'
 import { CRM_PERMISSION_GROUPS, type CrmPermControl, type CrmPermSet } from '~/data/crm'
 
 const props = defineProps<{ perms: CrmPermSet }>()
@@ -42,13 +42,13 @@ function toggle(key: string) { props.perms[key] = !props.perms[key] }
 <template>
   <div class="pm">
     <section v-for="g in CRM_PERMISSION_GROUPS" :key="g.group" class="pm-group">
-      <button type="button" class="pm-group-head" :aria-expanded="!collapsed[g.group]" @click="toggleCollapse(g.group)">
+      <MpButton class="pm-group-head" :aria-expanded="!collapsed[g.group]" @click="toggleCollapse(g.group)">
         <MpIcon name="chevrons-down" size="sm" class="pm-chevron" :class="{ 'pm-chevron--collapsed': collapsed[g.group] }" />
         <div class="pm-group-titles">
           <h3 class="pm-group-title">{{ t(g.group) }}</h3>
           <p v-if="g.subtitle" class="pm-group-subtitle">{{ t(g.subtitle) }}</p>
         </div>
-      </button>
+      </MpButton>
 
       <div v-if="!collapsed[g.group]" class="pm-controls">
         <template v-for="(c, i) in g.controls" :key="i">
@@ -103,8 +103,8 @@ function toggle(key: string) { props.perms[key] = !props.perms[key] }
 .pm-group:last-child { border-bottom: none; padding-bottom: 0; }
 
 .pm-group-head {
-  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
-  width: 100%; padding: 0; border: none; background: none; cursor: pointer; text-align: left;
+  display: flex !important; align-items: flex-start; gap: var(--mp-spacing-2);
+  width: 100% !important; padding: 0 !important; border: none !important; background: none !important; cursor: pointer; text-align: left; min-width: 0 !important;
 }
 .pm-chevron { flex-shrink: 0; margin-top: 2px; color: var(--mp-icon-default, var(--mp-text-secondary)); transition: transform 150ms ease; }
 .pm-chevron--collapsed { transform: rotate(-90deg); }

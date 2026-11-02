@@ -114,162 +114,105 @@ function clearAll() {
 </script>
 
 <template>
-  <Transition name="mdf-filters">
-    <div v-if="isOpen" class="mdf-filters-overlay">
-      <div class="mdf-filters-panel" role="dialog" :aria-label="t('All filters')">
-        <header class="mdf-filters-header">
-          <span class="mdf-filters-title">{{ t('All filters') }}</span>
-          <MpButton class="mdf-filters-close" is-rounded :aria-label="t('Close')" @click="close">
-            <MpIcon name="close" size="md" />
-          </MpButton>
-        </header>
-
-        <div class="mdf-filters-body">
-          <!-- Date range — the report's period; presets + custom range. -->
-          <div class="mdf-field">
-            <span class="mdf-field-label">{{ t('Date range') }}</span>
-            <AdvancedDateRangePicker
-              id="mdf-filters-range"
-              :model-value="draftRange"
-              is-full-width
-              hide-label
-              period-mode
-              :placeholder="t('Select date range')"
-              @update:model-value="onRangeChange"
-            />
-            <p v-if="dateError" class="mdf-field-error">{{ dateError }}</p>
-          </div>
-
-          <!-- Dimension — which dimension the report's columns slice by. -->
-          <div class="mdf-field">
-            <span class="mdf-field-label">{{ t('Dimension') }}</span>
-            <ErpFilterSelect
-              id="mdf-filters-dimension"
-              :model-value="draftDimensionId"
-              :placeholder="t('Select dimension')"
-              :options="dimensionSelectOptions"
-              width="100%"
-              @update:model-value="onDimensionChange"
-            />
-            <p v-if="dimensionError" class="mdf-field-error">{{ dimensionError }}</p>
-          </div>
-
-          <!-- Values — the comparator filters, scoping what the report counts. -->
-          <div class="mdf-group">
-            <h3 class="mdf-group-title">{{ t('Values') }}</h3>
-            <p class="mdf-group-desc">{{ t('Filters the values of each dimension.') }}</p>
-          </div>
-
-          <div class="mdf-field">
-            <span class="mdf-field-label">{{ t('Dimensions') }}</span>
-            <ErpTagComparatorField
-              id="mdf-filters-values"
-              :comparator="draft.valuesComparator"
-              :values="draft.values"
-              :options="valueOptions"
-              :comparators="MD_COMPARATORS"
-              :placeholder="valuePlaceholder"
-              @update:comparator="draft.valuesComparator = $event as MdComparator"
-              @update:values="draft.values = $event"
-            />
-          </div>
-
-          <div class="mdf-field">
-            <span class="mdf-field-label">{{ t('Tags') }}</span>
-            <ErpTagComparatorField
-              id="mdf-filters-tags"
-              :comparator="draft.tagsComparator"
-              :values="draft.tags"
-              :options="tagOptions"
-              :comparators="MD_COMPARATORS"
-              :placeholder="t('Type a tag…')"
-              @update:comparator="draft.tagsComparator = $event as MdComparator"
-              @update:values="draft.tags = $event"
-            />
-          </div>
-
-          <MpFormControl id="mdf-filters-account-fc">
-            <MpFormLabel>{{ t('Account') }}</MpFormLabel>
-            <input
-              v-model="draft.accountKeyword"
-              class="mdf-keyword-input"
-              type="text"
-              :placeholder="t('Search account code or name...')"
-              @keydown.enter.prevent="apply"
-            />
-          </MpFormControl>
-
-          <MpFormControl id="mdf-filters-zero-fc">
-            <MpFormLabel>{{ t('Accounts') }}</MpFormLabel>
-            <div class="mdf-filters-checkbox-list">
-              <label class="mdf-filters-checkbox-item">
-                <MpCheckbox id="mdf-filters-zero" :is-checked="draft.showZero" @change="draft.showZero = !draft.showZero">
-                  {{ t('Show accounts with no activity') }}
-                </MpCheckbox>
-              </label>
-            </div>
-          </MpFormControl>
-        </div>
-
-        <footer class="mdf-filters-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="clearAll">{{ t('Reset filter') }}</button>
-          <div class="mdf-filters-footer-actions">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Cancel') }}</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="apply">{{ t('Apply') }}</button>
-          </div>
-        </footer>
+  <ErpDrawer :is-open="isOpen" :title="t('All filters')" @close="close">
+    <template #body>
+      <!-- Date range — the report's period; presets + custom range. -->
+      <div class="mdf-field">
+        <span class="mdf-field-label">{{ t('Date range') }}</span>
+        <AdvancedDateRangePicker
+          id="mdf-filters-range"
+          :model-value="draftRange"
+          is-full-width
+          hide-label
+          period-mode
+          :placeholder="t('Select date range')"
+          @update:model-value="onRangeChange"
+        />
+        <p v-if="dateError" class="mdf-field-error">{{ dateError }}</p>
       </div>
-    </div>
-  </Transition>
+
+      <!-- Dimension — which dimension the report's columns slice by. -->
+      <div class="mdf-field">
+        <span class="mdf-field-label">{{ t('Dimension') }}</span>
+        <ErpFilterSelect
+          id="mdf-filters-dimension"
+          :model-value="draftDimensionId"
+          :placeholder="t('Select dimension')"
+          :options="dimensionSelectOptions"
+          width="100%"
+          @update:model-value="onDimensionChange"
+        />
+        <p v-if="dimensionError" class="mdf-field-error">{{ dimensionError }}</p>
+      </div>
+
+      <!-- Values — the comparator filters, scoping what the report counts. -->
+      <div class="mdf-group">
+        <h3 class="mdf-group-title">{{ t('Values') }}</h3>
+        <p class="mdf-group-desc">{{ t('Filters the values of each dimension.') }}</p>
+      </div>
+
+      <div class="mdf-field">
+        <span class="mdf-field-label">{{ t('Dimensions') }}</span>
+        <ErpTagComparatorField
+          id="mdf-filters-values"
+          :comparator="draft.valuesComparator"
+          :values="draft.values"
+          :options="valueOptions"
+          :comparators="MD_COMPARATORS"
+          :placeholder="valuePlaceholder"
+          @update:comparator="draft.valuesComparator = $event as MdComparator"
+          @update:values="draft.values = $event"
+        />
+      </div>
+
+      <div class="mdf-field">
+        <span class="mdf-field-label">{{ t('Tags') }}</span>
+        <ErpTagComparatorField
+          id="mdf-filters-tags"
+          :comparator="draft.tagsComparator"
+          :values="draft.tags"
+          :options="tagOptions"
+          :comparators="MD_COMPARATORS"
+          :placeholder="t('Type a tag…')"
+          @update:comparator="draft.tagsComparator = $event as MdComparator"
+          @update:values="draft.tags = $event"
+        />
+      </div>
+
+      <MpFormControl id="mdf-filters-account-fc">
+        <MpFormLabel>{{ t('Account') }}</MpFormLabel>
+        <input
+          v-model="draft.accountKeyword"
+          class="mdf-keyword-input"
+          type="text"
+          :placeholder="t('Search account code or name...')"
+          @keydown.enter.prevent="apply"
+        />
+      </MpFormControl>
+
+      <MpFormControl id="mdf-filters-zero-fc">
+        <MpFormLabel>{{ t('Accounts') }}</MpFormLabel>
+        <div class="mdf-filters-checkbox-list">
+          <label class="mdf-filters-checkbox-item">
+            <MpCheckbox id="mdf-filters-zero" :is-checked="draft.showZero" @change="draft.showZero = !draft.showZero">
+              {{ t('Show accounts with no activity') }}
+            </MpCheckbox>
+          </label>
+        </div>
+      </MpFormControl>
+    </template>
+
+    <template #footer>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">{{ t('Reset filter') }}</MpButton>
+      <div class="mdf-filters-footer-actions">
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">{{ t('Cancel') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">{{ t('Apply') }}</MpButton>
+      </div>
+    </template>
+  </ErpDrawer>
 </template>
 
 <style scoped>
-.mdf-filters-enter-active { transition: background-color 250ms ease; }
-.mdf-filters-leave-active { transition: background-color 250ms ease; }
-.mdf-filters-enter-from, .mdf-filters-leave-to { background-color: transparent; }
-.mdf-filters-enter-active .mdf-filters-panel { transition: transform 350ms ease-out; }
-.mdf-filters-leave-active .mdf-filters-panel { transition: transform 250ms ease-in; }
-.mdf-filters-enter-from .mdf-filters-panel,
-.mdf-filters-leave-to .mdf-filters-panel { transform: translateX(calc(100% + 12px)); }
-
-.mdf-filters-overlay {
-  position: fixed; inset: 0; z-index: 1300;
-  background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45));
-  display: flex; justify-content: flex-end;
-}
-.mdf-filters-panel {
-  margin: var(--mp-spacing-3);
-  width: min(420px, calc(100% - 24px));
-  height: calc(100% - 24px);
-  display: flex; flex-direction: column;
-  background: var(--mp-background-stage, #fff);
-  border-radius: 24px;
-  overflow: hidden;
-}
-.mdf-filters-header {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle, #f8f9f9);
-  border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
-}
-.mdf-filters-title {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-.mdf-filters-close {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px);
-  border: none; background: none; border-radius: var(--mp-radii-md);
-  cursor: pointer; color: var(--mp-icon-default);
-}
-.mdf-filters-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
-
-.mdf-filters-body {
-  flex: 1; overflow-y: auto;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-4);
-}
-
 /* Field = bold label above a reused control (rule/filter-drawer-fields). */
 .mdf-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1, 4px); }
 .mdf-field-label {
@@ -302,10 +245,5 @@ function clearAll() {
 .mdf-filters-checkbox-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
 .mdf-filters-checkbox-item { display: flex; align-items: flex-start; }
 
-/* Action group — no top border (per Figma). */
-.mdf-filters-footer {
-  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  padding: var(--mp-spacing-4);
-}
 .mdf-filters-footer-actions { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 </style>

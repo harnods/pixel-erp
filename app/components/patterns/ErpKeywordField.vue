@@ -84,7 +84,7 @@ const columnLabel = computed(() => {
   border-radius: var(--mp-radii-md, 6px);
 }
 .efk-keyword:focus-within {
-  border-color: #8c9596;
+  border-color: var(--mp-colors-border-bold);
 }
 .efk-keyword-input {
   flex: 1 0 0; min-width: 0; height: 20px;

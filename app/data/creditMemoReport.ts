@@ -14,11 +14,16 @@
  *    is ON. Case C (no prior data, no in-period activity) excluded entirely.
  *  • Voided / soft-deleted CMs excluded from every query.
  *
- * All figures are hard-set to be internally consistent (a real, auditable
- * ledger). Saved views (Default + user views) persist to the mini-DB.
+ * Figures are DERIVED from the credit memo mini-DB (creditMemos.ts) — the same
+ * records the Credit memo / Applied / Refund pages create — so the report and
+ * the documents can never disagree. Saved views persist to the mini-DB.
  */
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import {
+  creditMemos, creditMemoApplications, creditMemoRefunds, memoTotal, memoLabel, applicationLabel,
+  refundLabel, invoiceLabel, invoiceById, customerNameOf, type SalesCreditMemo,
+} from './creditMemos'
 
 export type CmMutationType = 'Issued' | 'Applied' | 'Refund' | 'Reversal'
 /** CM lifecycle status derived from remaining vs original. */
@@ -105,98 +110,65 @@ function isCaseC(cm: CreditMemo): boolean {
   return !cm.hasPriorData && cm.mutations.length === 0
 }
 
-// ── Seed — a coherent, auditable Aug 2026 ledger over REAL sales customers
-// (customers.ts) and REAL sales-invoice numbers (salesInvoices.ts uses #40001+).
-// Covers every case: Case A (issued before period) / Case B (issued in period),
-// Active / Partial / Used-up, and all four mutation types.
-const SEED: CmCustomer[] = [
-  {
-    id: 'C005', name: 'Djournal Coffee',
-    cms: [
-      {
-        id: 'cm-2451', customerId: 'C005', cmNumber: 'Credit Memo #10090',
-        issueDate: '2026-08-05', originalAmount: 30_000_000, beginningBalance: 0, hasPriorData: false,
-        mutations: [
-          { id: 'cm-2451-m1', date: '2026-08-05', type: 'Issued', transactionNo: 'Credit Memo #10090', transactionHref: '#', description: 'Return goods', amount: 30_000_000 },
-          { id: 'cm-2451-m2', date: '2026-08-20', type: 'Applied', transactionNo: 'Sales Invoice #40025', transactionHref: '#', description: 'Applied to invoice', amount: -15_000_000 },
-        ],
-      },
-      {
-        id: 'cm-2467', customerId: 'C005', cmNumber: 'Credit Memo #10091',
-        issueDate: '2026-08-24', originalAmount: 5_000_000, beginningBalance: 0, hasPriorData: false,
-        mutations: [
-          { id: 'cm-2467-m1', date: '2026-08-24', type: 'Issued', transactionNo: 'Credit Memo #10091', transactionHref: '#', description: 'Goodwill credit', amount: 5_000_000 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'C001', name: 'Anomali Coffee',
-    cms: [
-      {
-        id: 'cm-2390', customerId: 'C001', cmNumber: 'Credit Memo #10092',
-        issueDate: '2026-07-16', originalAmount: 22_000_000, beginningBalance: 22_000_000, hasPriorData: true,
-        mutations: [
-          { id: 'cm-2390-m1', date: '2026-08-12', type: 'Applied', transactionNo: 'Sales Invoice #40031', transactionHref: '#', description: 'Applied to invoice', amount: -2_550_000 },
-        ],
-      },
-      {
-        id: 'cm-2395', customerId: 'C001', cmNumber: 'Credit Memo #10093',
-        issueDate: '2026-08-15', originalAmount: 10_000_000, beginningBalance: 0, hasPriorData: false,
-        mutations: [
-          { id: 'cm-2395-m1', date: '2026-08-15', type: 'Issued', transactionNo: 'Credit Memo #10093', transactionHref: '#', description: 'Overpayment', amount: 10_000_000 },
-          { id: 'cm-2395-m2', date: '2026-08-18', type: 'Refund', transactionNo: 'Cash Refund #CR-2201', transactionHref: '#', description: 'Cash refund to customer', amount: -10_000_000 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'C006', name: 'Kopi Kenangan Pusat',
-    cms: [
-      {
-        id: 'cm-2405', customerId: 'C006', cmNumber: 'Credit Memo #10094',
-        issueDate: '2026-08-03', originalAmount: 12_000_000, beginningBalance: 0, hasPriorData: false,
-        mutations: [
-          { id: 'cm-2405-m1', date: '2026-08-03', type: 'Issued', transactionNo: 'Credit Memo #10094', transactionHref: '#', description: 'Return goods', amount: 12_000_000 },
-          { id: 'cm-2405-m2', date: '2026-08-10', type: 'Applied', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Applied to invoice', amount: -8_000_000 },
-          { id: 'cm-2405-m3', date: '2026-08-14', type: 'Reversal', transactionNo: 'Sales Invoice #40046', transactionHref: '#', description: 'Reversed application', amount: 8_000_000 },
-          { id: 'cm-2405-m4', date: '2026-08-20', type: 'Applied', transactionNo: 'Sales Invoice #40052', transactionHref: '#', description: 'Applied to invoice', amount: -4_000_000 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'C002', name: 'Tanamera Coffee Roastery',
-    cms: [
-      {
-        id: 'cm-2377', customerId: 'C002', cmNumber: 'Credit Memo #10095',
-        issueDate: '2026-07-20', originalAmount: 8_000_000, beginningBalance: 8_000_000, hasPriorData: true,
-        mutations: [
-          { id: 'cm-2377-m1', date: '2026-08-10', type: 'Applied', transactionNo: 'Sales Invoice #40018', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'C013', name: 'Excelso Grand Indonesia',
-    cms: [
-      {
-        id: 'cm-2340', customerId: 'C013', cmNumber: 'Credit Memo #10096',
-        issueDate: '2026-07-29', originalAmount: 10_000_000, beginningBalance: 10_000_000, hasPriorData: true,
-        mutations: [
-          { id: 'cm-2340-m1', date: '2026-08-07', type: 'Applied', transactionNo: 'Sales Invoice #40012', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-2340-m2', date: '2026-08-12', type: 'Applied', transactionNo: 'Sales Invoice #40033', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-2340-m3', date: '2026-08-18', type: 'Applied', transactionNo: 'Sales Invoice #40041', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-          { id: 'cm-2340-m4', date: '2026-08-22', type: 'Applied', transactionNo: 'Sales Invoice #40055', transactionHref: '#', description: 'Applied to invoice', amount: -2_500_000 },
-        ],
-      },
-    ],
-  },
-]
+// ── Ledger — DERIVED from the credit memo mini-DB (creditMemos.ts), never a
+// separate seed. Every Credit Memo / Credit Memo Applied / Credit Memo Refund the
+// user creates, edits or deletes shows up here on the next render. The report
+// period is Aug 2026 (the page's default + the window it gates on):
+//   • memo dated before 1 Aug → Case A: Saldo Awal = total − usage before 1 Aug
+//   • memo dated in Aug       → Case B: Saldo Awal 0, an "Issued" mutation
+//   • usage outside the period is excluded from the mutation list.
+export const REPORT_PERIOD_START = '2026-08-01'
+export const REPORT_PERIOD_END = '2026-08-31'
 
-export const creditMemoCustomers = reactive<CmCustomer[]>(
-  loadSnapshot<CmCustomer>('credit-memo-report-v4') ?? SEED.map((c) => ({ ...c })),
-)
+function inPeriod(iso: string): boolean { return iso >= REPORT_PERIOD_START && iso <= REPORT_PERIOD_END }
+
+function ledgerFor(m: SalesCreditMemo): CreditMemo {
+  const total = memoTotal(m)
+  const apps = creditMemoApplications.filter((a) => a.creditMemoId === m.id)
+  const refunds = creditMemoRefunds.filter((r) => r.lines.some((l) => l.creditMemoId === m.id))
+  const usage: { date: string; m: CmMutation }[] = []
+  for (const a of apps) {
+    const amt = a.allocations.reduce((s, al) => s + al.amount, 0)
+    const invs = a.allocations.map((al) => invoiceLabel(invoiceById(al.invoiceId)?.number ?? 0)).join(', ')
+    usage.push({ date: a.date, m: { id: `${m.id}-${a.id}`, date: a.date, type: 'Applied', transactionNo: applicationLabel(a.number), transactionHref: `/credit-memo-applications/${a.id}`, description: `Applied to ${invs}`, amount: -amt } })
+  }
+  for (const r of refunds) {
+    const amt = r.lines.filter((l) => l.creditMemoId === m.id).reduce((s, l) => s + l.amount, 0)
+    const reason = r.lines.find((l) => l.creditMemoId === m.id)?.reason || 'Cash refund to customer'
+    usage.push({ date: r.date, m: { id: `${m.id}-${r.id}`, date: r.date, type: 'Refund', transactionNo: refundLabel(r.number), transactionHref: `/credit-memo-refunds/${r.id}`, description: reason, amount: -amt } })
+  }
+  usage.sort((a, b) => a.date.localeCompare(b.date))
+  const issuedBefore = m.date < REPORT_PERIOD_START
+  const usedBefore = usage.filter((u) => u.date < REPORT_PERIOD_START).reduce((s, u) => s - u.m.amount, 0)
+  const mutations: CmMutation[] = []
+  if (inPeriod(m.date)) {
+    mutations.push({ id: `${m.id}-issued`, date: m.date, type: 'Issued', transactionNo: memoLabel(m.number), transactionHref: `/credit-memos/${m.id}`, description: m.lines[0]?.reason ?? 'Credit memo', amount: total })
+  }
+  for (const u of usage) if (inPeriod(u.date)) mutations.push(u.m)
+  return {
+    id: m.id,
+    customerId: m.customerId,
+    cmNumber: memoLabel(m.number),
+    issueDate: m.date,
+    originalAmount: total,
+    beginningBalance: issuedBefore ? total - usedBefore : 0,
+    hasPriorData: issuedBefore,
+    mutations,
+  }
+}
+
+/** Customers with their memos' period ledgers — recomputed from the mini-DB on every call. */
+export function creditMemoLedger(): CmCustomer[] {
+  const byCustomer = new Map<string, CmCustomer>()
+  for (const m of creditMemos) {
+    if (m.date > REPORT_PERIOD_END) continue
+    let c = byCustomer.get(m.customerId)
+    if (!c) { c = { id: m.customerId, name: customerNameOf(m.customerId), cms: [] }; byCustomer.set(m.customerId, c) }
+    c.cms.push(ledgerFor(m))
+  }
+  for (const c of byCustomer.values()) c.cms.sort((a, b) => a.issueDate.localeCompare(b.issueDate))
+  return [...byCustomer.values()]
+}
 
 // ── Report query — filters + zero-balance toggle + Case C + voided exclusion ──
 export type CmComparator = 'isAnyOf' | 'isNoneOf'
@@ -245,7 +217,7 @@ function customerMatch(name: string, f: CmReportFilters): boolean {
 
 export function creditMemoReport(f: CmReportFilters): CmReportCustomer[] {
   const groups: CmReportCustomer[] = []
-  for (const c of creditMemoCustomers) {
+  for (const c of creditMemoLedger()) {
     if (!customerMatch(c.name, f)) continue
     const cms = c.cms.filter((cm) => cmVisible(cm, f))
     if (!cms.length) continue
@@ -258,7 +230,7 @@ export function creditMemoReport(f: CmReportFilters): CmReportCustomer[] {
 }
 
 /** All distinct customer names (for the customer filter autocomplete). */
-export function cmCustomerNames(): string[] { return creditMemoCustomers.map((c) => c.name).sort((a, b) => a.localeCompare(b)) }
+export function cmCustomerNames(): string[] { return creditMemoLedger().map((c) => c.name).sort((a, b) => a.localeCompare(b)) }
 
 // ── Saved views (Default + user views) — same concept as CRM Customers. ────────
 export interface CmSavedView { id: string; name: string; filters: CmReportFilters }

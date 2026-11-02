@@ -60,6 +60,7 @@ const sidebar = [
   },
   {
     label: 'Navigation', items: [
+      { slug: 'header-bar', label: 'Global header bar' },
       { slug: 'tabs', label: 'Tabs' },
       { slug: 'popover', label: 'Popover' },
     ],
@@ -76,6 +77,8 @@ const sidebar = [
       { slug: 'pattern-pdf-preview-modal', label: 'PDF preview modal' },
       { slug: 'pattern-image-preview-modal', label: 'Image preview modal' },
       { slug: 'pattern-jump-to', label: 'Jump to' },
+      { slug: 'pattern-detail-actions-menu', label: 'Detail actions menu' },
+      { slug: 'pattern-print-share-menu', label: 'Print & share menu' },
     ],
   },
   {

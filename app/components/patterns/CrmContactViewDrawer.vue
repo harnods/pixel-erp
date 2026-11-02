@@ -83,11 +83,11 @@ function toggle(list: string[], v: string) {
         </div>
 
         <footer class="ctvd-footer">
-          <button v-if="mode === 'edit'" class="btn-enterprise btn-enterprise--danger" type="button" @click="emit('delete')">Delete view</button>
-          <button v-else class="btn-enterprise btn-enterprise--ghost" type="button" @click="resetFilters">Reset filter</button>
+          <MpButton v-if="mode === 'edit'" class="btn-enterprise btn-enterprise--danger" variant="danger" type="button" @click="emit('delete')">Delete view</MpButton>
+          <MpButton v-else class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="resetFilters">Reset filter</MpButton>
           <div class="ctvd-footer-right">
-            <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">Cancel</button>
-            <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ mode === 'create' ? 'Save view' : 'Save changes' }}</button>
+            <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
+            <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="save">{{ mode === 'create' ? 'Save view' : 'Save changes' }}</MpButton>
           </div>
         </footer>
       </div>

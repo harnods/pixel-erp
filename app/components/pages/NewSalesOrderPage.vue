@@ -23,6 +23,7 @@ import {
   customers, products, salesOrders,
   PAYMENT_TERMS, WAREHOUSES, TAX_OPTIONS,
 } from '~/data'
+import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesOrder, SalesOrderItem } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -32,7 +33,8 @@ import ProductThumb from '~/components/patterns/ProductThumb.vue'
 import { CATALOG } from '~/data/catalog'
 import { warehouses } from '~/data/warehouses'
 import { availableForSku, totalAvailableForSku } from '~/data/warehouseDetails'
-import type { SalesFormPrefill } from '~/data/salesFormPrefill'
+import { pendingSalesPrefill, pendingConversionDealId, type SalesFormPrefill } from '~/data/salesFormPrefill'
+import { runDealConversion } from '~/data/crmConversion'
 
 // Embedded mode: the form is rendered inside a full-screen drawer (e.g. from a CRM
 // Deal). It hides its own title bar and, instead of routing on cancel/save, emits
@@ -254,7 +256,10 @@ function fmtPlain(n: number) {
 // ── Notes + attachments ───────────────────────────────────────────────────────
 const message = ref('')
 const memo    = ref('')
-const attachments = ref<{ name: string; sizeKB: number }[]>([])
+// Seeded from the File manager's "Add file › Create a new transaction"
+// hand-off, so the form opens with those files already attached. Reading it
+// clears it, so a later visit starts empty. Empty on every other entry.
+const attachments = ref<{ name: string; sizeKB: number }[]>(takePendingAttachments())
 function iconForFile(name: string): 'pdf' | 'excel-document' | 'word-document' | 'doc' {
   if (name.endsWith('.pdf')) return 'pdf'
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return 'excel-document'
@@ -336,7 +341,13 @@ function applyPrefill(p: SalesFormPrefill) {
     }))
   }
 }
-onMounted(() => { if (props.prefill) applyPrefill(props.prefill) })
+onMounted(() => {
+  if (props.prefill) { applyPrefill(props.prefill) }
+  else if (pendingSalesPrefill.value) {
+    applyPrefill(pendingSalesPrefill.value)
+    pendingSalesPrefill.value = null
+  }
+})
 
 function onSave() {
   // Products-only (Deal → Add product): validate line items only, then emit.
@@ -377,6 +388,10 @@ function onSave() {
     shippingFee: shippingFee.value,
   }
   salesOrders.push(order)
+  if (pendingConversionDealId.value) {
+    runDealConversion(pendingConversionDealId.value, order)
+    pendingConversionDealId.value = null
+  }
   toast.notify({ variant: 'success', title: t('Sales order created'), rootProps: { class: 'toast-enterprise' } })
   if (props.embedded) { emit('created', order); return }
   router.push(`/sales-orders/${order.id}`)
@@ -1022,7 +1037,11 @@ function onSave() {
   border: none; border-radius: 0;
   box-shadow: var(--mp-shadows-none, none); /* pixel-police-allow-shadow: removing the default shadow */
 }
-.si-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.si-td--input { position: relative; }
+.si-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
 .si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }
 /* CRM Deal product option: photo + name + "SKU, Category" + per-warehouse stock. */

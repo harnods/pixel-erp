@@ -1,12 +1,16 @@
 import { reactive } from 'vue'
 import type { Bill } from './types'
+import type { RecurringSchedule } from './salesInvoices'
+import { loadSnapshot, saveSnapshot } from './persist'
+import { SIM_SPAN_DAYS, simDay } from './simClock'
 
 // Company operating expenses (electricity, internet, water, rent, subscriptions,
 // employee reimbursements, services). A healthy AP list: most bills are already
 // PAID; only a few slipped past their due date and show as overdue.
 // Overdue = still unpaid AND past due; everything else here is paid.
-export const bills = reactive<Bill[]>([
-  { id: 'BILL001', number: 1, beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' },          category: 'Services',      date: '2026-06-20', dueDate: '2026-07-04', total: 5_450_000,  balanceDue: 0,          status: 'paid',   tags: ['Recurring'], reconciled: true,
+
+const SEED_BILLS: Bill[] = [
+  { id: 'BILL001', number: 1, beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' },          category: 'Services',      date: '2026-06-20', dueDate: '2026-07-04', total: 5_450_000,  balanceDue: 0,          status: 'paid',   tags: ['Recurring'], reconciled: true, recurringId: 'RBILL001',
     memo: 'Monthly office cleaning & security service for HQ — approved by Finance Manager.',
     attachments: [
       { name: 'invoice-BILL001.pdf', sizeKB: 245.3 },
@@ -20,38 +24,55 @@ export const bills = reactive<Bill[]>([
       { account: '560 - Professional services', description: 'Daily office cleaning (June)', tax: 'PPN 11%', amount: 3_000_000 },
       { account: '560 - Professional services', description: 'Security guard service (June)', tax: 'PPN 11%', amount: 2_000_000 },
     ]},
-  { id: 'BILL002', number: 2, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-06-25', dueDate: '2026-07-08', total: 6_200_000,  balanceDue: 6_200_000,  status: 'unpaid'                          , lineItems: [{ account: '610 - Electricity', description: 'Electricity — June', tax: 'No tax', amount: 6_200_000 }]},
-  { id: 'BILL003', number: 3, beneficiary: { id: 'V003', name: 'Biznet Networks' },              category: 'Internet',      date: '2026-06-26', dueDate: '2026-07-11', total: 2_200_000,  balanceDue: 0,          status: 'paid', reconciled: true, payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_200_000, paymentDate: '2026-07-09', reference: 'TRX-000116' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Office internet 100 Mbps — June', tax: 'No tax', amount: 2_200_000 }]},
+  { id: 'BILL002', number: 2, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-06-25', dueDate: '2026-07-08', total: 6_200_000,  balanceDue: 6_200_000,  status: 'unpaid', recurringId: 'RBILL002', lineItems: [{ account: '610 - Electricity', description: 'Electricity — June', tax: 'No tax', amount: 6_200_000 }]},
+  { id: 'BILL003', number: 3, beneficiary: { id: 'V003', name: 'Biznet Networks' },              category: 'Internet',      date: '2026-06-26', dueDate: '2026-07-11', total: 2_200_000,  balanceDue: 0,          status: 'paid', reconciled: true, recurringId: 'RBILL003', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_200_000, paymentDate: '2026-07-09', reference: 'TRX-000116' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Office internet 100 Mbps — June', tax: 'No tax', amount: 2_200_000 }]},
   { id: 'BILL004', number: 4, beneficiary: { id: 'V002', name: 'PT Telkom Indonesia' },          category: 'Internet',      date: '2026-06-22', dueDate: '2026-06-30', total: 1_450_000,  balanceDue: 0,          status: 'paid', reconciled: true, payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 1_450_000, paymentDate: '2026-06-28', reference: 'TRX-000114' } , lineItems: [{ account: '631 - Telephone', description: 'Office landline & fax — June', tax: 'No tax', amount: 1_450_000 }]},
   { id: 'BILL005', number: 5, beneficiary: { id: 'V004', name: 'PDAM Tirta Pakuan' },            category: 'Utilities',     date: '2026-06-24', dueDate: '2026-07-05', total: 620_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 620_000, paymentDate: '2026-07-02', reference: 'TRX-000115' } , lineItems: [{ account: '611 - Water', description: 'Water usage — June', tax: 'No tax', amount: 620_000 }]},
-  { id: 'BILL006', number: 6, beneficiary: { id: 'V005', name: 'PT Graha Perkantoran Sudirman' },category: 'Rent',          date: '2026-06-20', dueDate: '2026-07-01', total: 28_000_000, balanceDue: 0,          status: 'paid', tags: ['Rent'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 28_000_000, paymentDate: '2026-06-30', reference: 'TRX-000110' } , lineItems: [{ account: '620 - Office rent', description: 'HQ office rent — July', tax: 'No tax', amount: 28_000_000 }]},
+  { id: 'BILL006', number: 6, beneficiary: { id: 'V005', name: 'PT Graha Perkantoran Sudirman' },category: 'Rent',          date: '2026-06-20', dueDate: '2026-07-01', total: 28_000_000, balanceDue: 0,          status: 'paid', tags: ['Rent'], recurringId: 'RBILL005', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 28_000_000, paymentDate: '2026-06-30', reference: 'TRX-000110' } , lineItems: [{ account: '620 - Office rent', description: 'HQ office rent — July', tax: 'No tax', amount: 28_000_000 }]},
   { id: 'BILL007', number: 7, beneficiary: { id: 'V007', name: 'Toko ATK Sinar Jaya' },          category: 'Office supplies',date: '2026-06-26', dueDate: '2026-07-10', total: 1_850_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 1_850_000, paymentDate: '2026-07-01' } , lineItems: [{ account: '520 - Office supplies', description: 'A4 paper, pens, and printer toner', tax: 'No tax', amount: 1_850_000 }]},
-  { id: 'BILL008', number: 8, beneficiary: { id: 'V008', name: 'Google Workspace' },             category: 'Software',      date: '2026-06-27', dueDate: '2026-07-05', total: 2_500_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_500_000, paymentDate: '2026-06-28' } , lineItems: [{ account: '485 - Subscriptions', description: 'Google Workspace — 25 seats', tax: 'No tax', amount: 2_500_000 }]},
-  { id: 'BILL009', number: 9, beneficiary: { id: 'V009', name: 'Telkomsel' },                    category: 'Telephone',     date: '2026-06-28', dueDate: '2026-07-12', total: 1_100_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 1_100_000, paymentDate: '2026-07-05' } , lineItems: [{ account: '631 - Telephone', description: 'Corporate mobile plan — June', tax: 'No tax', amount: 1_100_000 }]},
+  { id: 'BILL008', number: 8, beneficiary: { id: 'V008', name: 'Google Workspace' },             category: 'Software',      date: '2026-06-27', dueDate: '2026-07-05', total: 2_500_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], recurringId: 'RBILL004', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_500_000, paymentDate: '2026-06-28' } , lineItems: [{ account: '485 - Subscriptions', description: 'Google Workspace — 25 seats', tax: 'No tax', amount: 2_500_000 }]},
+  { id: 'BILL009', number: 9, beneficiary: { id: 'V009', name: 'Telkomsel' },                    category: 'Telephone',     date: '2026-06-28', dueDate: '2026-07-12', total: 1_100_000,  balanceDue: 0,          status: 'paid', recurringId: 'RBILL007', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 1_100_000, paymentDate: '2026-07-05' } , lineItems: [{ account: '631 - Telephone', description: 'Corporate mobile plan — June', tax: 'No tax', amount: 1_100_000 }]},
   { id: 'BILL010', number: 10, beneficiary: { id: 'EMP01', name: 'Andi Wijaya' },                category: 'Reimbursement', date: '2026-06-29', dueDate: '2026-07-05', total: 1_800_000,  balanceDue: 1_800_000,  status: 'unpaid', tags: ['Reimbursement'], lineItems: [{ account: '550 - Employee reimbursement', description: 'Client visit — transport & meals', tax: 'No tax', amount: 1_800_000 }]},
   { id: 'BILL011', number: 11, beneficiary: { id: 'V010', name: 'PT Catering Nusantara' },        category: 'Meals',         date: '2026-06-30', dueDate: '2026-07-14', total: 2_100_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_100_000, paymentDate: '2026-07-07', reference: 'TRX-000121' } , lineItems: [{ account: '570 - Meals & entertainment', description: 'Team lunch catering — month-end', tax: 'No tax', amount: 2_100_000 }]},
-  { id: 'BILL012', number: 12, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-07-01', dueDate: '2026-07-15', total: 3_500_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 3_500_000, paymentDate: '2026-07-10', reference: 'TRX-000124' } , lineItems: [{ account: '610 - Electricity', description: 'Electricity — branch office', tax: 'No tax', amount: 3_500_000 }]},
+  { id: 'BILL012', number: 12, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-07-01', dueDate: '2026-07-15', total: 3_500_000,  balanceDue: 0,          status: 'paid', recurringId: 'RBILL002', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 3_500_000, paymentDate: '2026-07-10', reference: 'TRX-000124' } , lineItems: [{ account: '610 - Electricity', description: 'Electricity — branch office', tax: 'No tax', amount: 3_500_000 }]},
   { id: 'BILL013', number: 13, beneficiary: { id: 'V002', name: 'PT Telkom Indonesia' },          category: 'Internet',      date: '2026-07-02', dueDate: '2026-07-16', total: 1_200_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 1_200_000, paymentDate: '2026-07-06', reference: 'TRX-000131' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Branch internet — June', tax: 'No tax', amount: 1_200_000 }]},
   { id: 'BILL014', number: 14, beneficiary: { id: 'EMP02', name: 'Siti Rahmawati' },             category: 'Reimbursement', date: '2026-07-03', dueDate: '2026-07-17', total: 650_000,    balanceDue: 0,          status: 'paid', tags: ['Reimbursement'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 650_000, paymentDate: '2026-07-09' } , lineItems: [{ account: '550 - Employee reimbursement', description: 'Parking & toll — site inspection', tax: 'No tax', amount: 650_000 }]},
   { id: 'BILL015', number: 15, beneficiary: { id: 'V007', name: 'Toko ATK Sinar Jaya' },          category: 'Office supplies',date: '2026-07-04', dueDate: '2026-07-18', total: 2_900_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_900_000, paymentDate: '2026-07-08' } , lineItems: [{ account: '520 - Office supplies', description: 'Pantry & printing supplies restock', tax: 'No tax', amount: 2_900_000 }]},
-  { id: 'BILL016', number: 16, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-07-05', dueDate: '2026-07-19', total: 2_800_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_800_000, paymentDate: '2026-07-11', reference: 'TRX-000138' } , lineItems: [{ account: '610 - Electricity', description: 'Electricity — warehouse', tax: 'No tax', amount: 2_800_000 }]},
-  { id: 'BILL017', number: 17, beneficiary: { id: 'V003', name: 'Biznet Networks' },              category: 'Internet',      date: '2026-07-06', dueDate: '2026-07-20', total: 2_200_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_200_000, paymentDate: '2026-07-13' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Office internet 100 Mbps — July', tax: 'No tax', amount: 2_200_000 }]},
+  { id: 'BILL016', number: 16, beneficiary: { id: 'V001', name: 'PT PLN (Persero)' },             category: 'Utilities',     date: '2026-07-05', dueDate: '2026-07-19', total: 2_800_000,  balanceDue: 0,          status: 'paid', recurringId: 'RBILL002', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_800_000, paymentDate: '2026-07-11', reference: 'TRX-000138' } , lineItems: [{ account: '610 - Electricity', description: 'Electricity — warehouse', tax: 'No tax', amount: 2_800_000 }]},
+  { id: 'BILL017', number: 17, beneficiary: { id: 'V003', name: 'Biznet Networks' },              category: 'Internet',      date: '2026-07-06', dueDate: '2026-07-20', total: 2_200_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], recurringId: 'RBILL003', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 2_200_000, paymentDate: '2026-07-13' } , lineItems: [{ account: '630 - Internet & telecom', description: 'Office internet 100 Mbps — July', tax: 'No tax', amount: 2_200_000 }]},
   { id: 'BILL018', number: 18, beneficiary: { id: 'V004', name: 'PDAM Tirta Pakuan' },            category: 'Utilities',     date: '2026-07-07', dueDate: '2026-07-21', total: 480_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 480_000, paymentDate: '2026-07-12' } , lineItems: [{ account: '611 - Water', description: 'Water usage — branch', tax: 'No tax', amount: 480_000 }]},
   { id: 'BILL019', number: 19, beneficiary: { id: 'EMP01', name: 'Andi Wijaya' },                category: 'Reimbursement', date: '2026-07-08', dueDate: '2026-07-22', total: 320_000,    balanceDue: 0,          status: 'paid', tags: ['Reimbursement'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 320_000, paymentDate: '2026-07-12', reference: 'TRX-000144' } , lineItems: [{ account: '550 - Employee reimbursement', description: 'Taxi — vendor meeting', tax: 'No tax', amount: 320_000 }]},
-  { id: 'BILL020', number: 20, beneficiary: { id: 'V008', name: 'Google Workspace' },             category: 'Software',      date: '2026-07-09', dueDate: '2026-07-23', total: 2_500_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_500_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '485 - Subscriptions', description: 'Google Workspace — 25 seats (July)', tax: 'No tax', amount: 2_500_000 }]},
-  { id: 'BILL021', number: 21, beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' },          category: 'Services',      date: '2026-07-10', dueDate: '2026-07-13', total: 5_200_000,  balanceDue: 5_200_000,  status: 'unpaid'                          , lineItems: [{ account: '560 - Professional services', description: 'Office cleaning & security — July', tax: 'No tax', amount: 5_200_000 }]},
-  { id: 'BILL022', number: 22, beneficiary: { id: 'V009', name: 'Telkomsel' },                    category: 'Telephone',     date: '2026-07-11', dueDate: '2026-07-25', total: 950_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 950_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '631 - Telephone', description: 'Corporate mobile plan — July', tax: 'No tax', amount: 950_000 }]},
+  { id: 'BILL020', number: 20, beneficiary: { id: 'V008', name: 'Google Workspace' },             category: 'Software',      date: '2026-07-09', dueDate: '2026-07-23', total: 2_500_000,  balanceDue: 0,          status: 'paid', tags: ['Recurring'], recurringId: 'RBILL004', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 2_500_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '485 - Subscriptions', description: 'Google Workspace — 25 seats (July)', tax: 'No tax', amount: 2_500_000 }]},
+  { id: 'BILL021', number: 21, beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' },          category: 'Services',      date: '2026-07-10', dueDate: '2026-07-13', total: 5_200_000,  balanceDue: 5_200_000,  status: 'unpaid', recurringId: 'RBILL001', lineItems: [{ account: '560 - Professional services', description: 'Office cleaning & security — July', tax: 'No tax', amount: 5_200_000 }]},
+  { id: 'BILL022', number: 22, beneficiary: { id: 'V009', name: 'Telkomsel' },                    category: 'Telephone',     date: '2026-07-11', dueDate: '2026-07-25', total: 950_000,    balanceDue: 0,          status: 'paid', recurringId: 'RBILL007', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 950_000, paymentDate: '2026-07-14' } , lineItems: [{ account: '631 - Telephone', description: 'Corporate mobile plan — July', tax: 'No tax', amount: 950_000 }]},
   { id: 'BILL023', number: 23, beneficiary: { id: 'V010', name: 'PT Catering Nusantara' },        category: 'Meals',         date: '2026-07-12', dueDate: '2026-07-26', total: 1_600_000,  balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 1_600_000, paymentDate: '2026-07-15', reference: 'TRX-000151' } , lineItems: [{ account: '570 - Meals & entertainment', description: 'Client meeting refreshments', tax: 'No tax', amount: 1_600_000 }]},
   { id: 'BILL024', number: 24, beneficiary: { id: 'V007', name: 'Toko ATK Sinar Jaya' },          category: 'Office supplies',date: '2026-07-13', dueDate: '2026-07-27', total: 850_000,    balanceDue: 0,          status: 'paid', payment: { paymentAccount: '1-10004 VISA 8265', amountPaid: 850_000, paymentDate: '2026-07-16' } , lineItems: [{ account: '520 - Office supplies', description: 'Stationery top-up', tax: 'No tax', amount: 850_000 }]},
   // Scenario: prices INCLUDE tax — line amounts are gross (tax-inclusive); the PPN
   // is extracted out of the total (10/110), so Subtotal is net-of-tax. total = line sum.
-  { id: 'BILL025', number: 25, beneficiary: { id: 'V011', name: 'PT Konsultan Prima' },            category: 'Services',      date: '2026-07-13', dueDate: '2026-07-27', total: 11_000_000, balanceDue: 0,          status: 'paid', tags: ['Recurring'], payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 11_000_000, paymentDate: '2026-07-16', reference: 'TRX-000158' },
+  { id: 'BILL025', number: 25, beneficiary: { id: 'V011', name: 'PT Konsultan Prima' },            category: 'Services',      date: '2026-07-13', dueDate: '2026-07-27', total: 11_000_000, balanceDue: 0,          status: 'paid', tags: ['Recurring'], recurringId: 'RBILL006', payment: { paymentAccount: '1-10003 Bank BCA', amountPaid: 11_000_000, paymentDate: '2026-07-16', reference: 'TRX-000158' },
     memo: 'Monthly tax & accounting advisory retainer — invoice amount is inclusive of PPN.',
     subtotal: 10_000_000,
     taxAmount: 1_000_000,
     priceIncludesTax: true,
     lineItems: [{ account: '560 - Professional services', description: 'Tax advisory retainer (July) — incl. PPN', tax: 'PPN 10%', amount: 11_000_000 }]},
-])
+]
+
+const K_BILLS = 'bills-v1'
+
+export const bills = reactive<Bill[]>(
+  loadSnapshot<Bill>(K_BILLS) ?? [...SEED_BILLS],
+)
+
+// Migrate cached bills: patch recurringId from seed data when missing
+for (const seed of SEED_BILLS) {
+  if (!seed.recurringId) continue
+  const cached = bills.find(b => b.id === seed.id)
+  if (cached && !cached.recurringId) cached.recurringId = seed.recurringId
+}
+
+export function persistBills(): void {
+  saveSnapshot(K_BILLS, bills)
+}
 
 let billAddSeq = bills.length
 
@@ -102,4 +123,161 @@ export function deleteBills(ids: string[]): number {
     }
   }
   return removed
+}
+
+// ── Recurring Bills ───────────────────────────────────────────────────────────
+
+export interface RecurringBillHistoryEntry {
+  billNumber: string
+  date: string
+  amount: number
+  status: string
+}
+
+export interface RecurringBillLineItem {
+  account: string
+  description: string
+  tax: string
+  amount: number
+}
+
+export interface RecurringBill {
+  id: string
+  templateName: string
+  beneficiary: { id: string; name: string }
+  category: string
+  frequency: string
+  amount: number
+  nextDate: string
+  status: 'active' | 'completed'
+  createdCount: number
+  schedule?: RecurringSchedule
+  history?: RecurringBillHistoryEntry[]
+  // Template body — mirrors the expense detail page
+  referenceNo?: string
+  tags?: string[]
+  memo?: string
+  lineItems?: RecurringBillLineItem[]
+  subtotal?: number
+  taxAmount?: number
+  priceIncludesTax?: boolean
+  withholding?: { name: string; amount: number; account: string }
+  lastUpdatedBy?: string
+  lastUpdatedAt?: string
+}
+
+const RECURRING_BILL_TEMPLATES: RecurringBill[] = [
+  {
+    id: 'RBILL001', templateName: 'Monthly office cleaning', beneficiary: { id: 'V006', name: 'CV Bersih Sejahtera' }, category: 'Services',
+    frequency: 'Monthly', amount: 5_450_000, nextDate: simDay(SIM_SPAN_DAYS + 5), status: 'active', createdCount: 6,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-180), sendAutoEmail: true },
+    tags: ['Recurring'],
+    memo: 'Monthly office cleaning & security service for HQ — approved by Finance Manager.',
+    subtotal: 5_000_000,
+    taxAmount: 550_000,
+    withholding: { name: 'PPh 23 - Jasa', amount: 100_000, account: '2-20502 Withholding Tax Payable' },
+    lineItems: [
+      { account: '560 - Professional services', description: 'Daily office cleaning', tax: 'PPN 11%', amount: 3_000_000 },
+      { account: '560 - Professional services', description: 'Security guard service', tax: 'PPN 11%', amount: 2_000_000 },
+    ],
+    lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: simDay(-35),
+    history: [
+      { billNumber: 'Expense #00021', date: simDay(-5), amount: 5_200_000, status: 'Unpaid' },
+      { billNumber: 'Expense #00001', date: simDay(-35), amount: 5_450_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL002', templateName: 'Monthly electricity (HQ)', beneficiary: { id: 'V001', name: 'PT PLN (Persero)' }, category: 'Utilities',
+    frequency: 'Monthly', amount: 6_200_000, nextDate: simDay(SIM_SPAN_DAYS + 3), status: 'active', createdCount: 12,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-365), sendAutoEmail: false },
+    memo: 'HQ electricity bill — metered monthly by PLN.',
+    lineItems: [
+      { account: '610 - Electricity', description: 'Electricity — HQ', tax: 'No tax', amount: 6_200_000 },
+    ],
+    lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: simDay(-30),
+    history: [
+      { billNumber: 'Expense #00002', date: simDay(-3), amount: 6_200_000, status: 'Unpaid' },
+      { billNumber: 'Expense #00016', date: simDay(-20), amount: 2_800_000, status: 'Paid' },
+      { billNumber: 'Expense #00012', date: simDay(-30), amount: 3_500_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL003', templateName: 'Monthly internet (Biznet)', beneficiary: { id: 'V003', name: 'Biznet Networks' }, category: 'Internet',
+    frequency: 'Monthly', amount: 2_200_000, nextDate: simDay(SIM_SPAN_DAYS + 7), status: 'active', createdCount: 8,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-240), sendAutoEmail: true },
+    tags: ['Recurring'],
+    memo: 'Dedicated office internet line — 100 Mbps fibre.',
+    lineItems: [
+      { account: '630 - Internet & telecom', description: 'Office internet 100 Mbps', tax: 'No tax', amount: 2_200_000 },
+    ],
+    lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: simDay(-40),
+    history: [
+      { billNumber: 'Expense #00017', date: simDay(-10), amount: 2_200_000, status: 'Paid' },
+      { billNumber: 'Expense #00003', date: simDay(-40), amount: 2_200_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL004', templateName: 'Monthly Google Workspace', beneficiary: { id: 'V008', name: 'Google Workspace' }, category: 'Software',
+    frequency: 'Monthly', amount: 2_500_000, nextDate: simDay(SIM_SPAN_DAYS + 10), status: 'active', createdCount: 10,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-300), sendAutoEmail: false },
+    tags: ['Recurring'],
+    memo: 'Google Workspace Business Standard — 25 seats, billed monthly.',
+    lineItems: [
+      { account: '485 - Subscriptions', description: 'Google Workspace — 25 seats', tax: 'No tax', amount: 2_500_000 },
+    ],
+    lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: simDay(-38),
+    history: [
+      { billNumber: 'Expense #00020', date: simDay(-8), amount: 2_500_000, status: 'Paid' },
+      { billNumber: 'Expense #00008', date: simDay(-38), amount: 2_500_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL005', templateName: 'Monthly office rent', beneficiary: { id: 'V005', name: 'PT Graha Perkantoran Sudirman' }, category: 'Rent',
+    frequency: 'Monthly', amount: 28_000_000, nextDate: simDay(SIM_SPAN_DAYS + 1), status: 'active', createdCount: 7,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 12, startDate: simDay(-210), sendAutoEmail: true },
+    tags: ['Rent'],
+    memo: 'HQ office lease — 12-month term, payable in advance each month.',
+    lineItems: [
+      { account: '620 - Office rent', description: 'HQ office rent', tax: 'No tax', amount: 28_000_000 },
+    ],
+    lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: simDay(-28),
+  },
+  {
+    id: 'RBILL006', templateName: 'Quarterly consulting retainer', beneficiary: { id: 'V011', name: 'PT Konsultan Prima' }, category: 'Services',
+    frequency: 'Quarterly', amount: 11_000_000, nextDate: simDay(SIM_SPAN_DAYS + 30), status: 'active', createdCount: 3,
+    schedule: { repeatInterval: 3, repeatUnit: 'month', endRepeat: 'never', startDate: simDay(-270), sendAutoEmail: true },
+    tags: ['Recurring'],
+    memo: 'Monthly tax & accounting advisory retainer — invoice amount is inclusive of PPN.',
+    subtotal: 10_000_000,
+    taxAmount: 1_000_000,
+    priceIncludesTax: true,
+    lineItems: [
+      { account: '560 - Professional services', description: 'Tax advisory retainer — incl. PPN', tax: 'PPN 10%', amount: 11_000_000 },
+    ],
+    lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: simDay(-2),
+    history: [
+      { billNumber: 'Expense #00025', date: simDay(-2), amount: 11_000_000, status: 'Paid' },
+    ],
+  },
+  {
+    id: 'RBILL007', templateName: 'Weekly mobile plan', beneficiary: { id: 'V009', name: 'Telkomsel' }, category: 'Telephone',
+    frequency: 'Monthly', amount: 1_100_000, nextDate: simDay(SIM_SPAN_DAYS + 12), status: 'completed', createdCount: 12,
+    schedule: { repeatInterval: 1, repeatUnit: 'month', endRepeat: 'after', endAfterCount: 12, startDate: simDay(-365), sendAutoEmail: false },
+    memo: 'Corporate mobile plan — 12-month contract, now completed.',
+    lineItems: [
+      { account: '631 - Telephone', description: 'Corporate mobile plan', tax: 'No tax', amount: 1_100_000 },
+    ],
+    lastUpdatedBy: 'Rizal Candra', lastUpdatedAt: simDay(-60),
+  },
+]
+
+const K_RBILL = 'recurring-bills-v1'
+
+export const recurringBills = reactive<RecurringBill[]>(
+  loadSnapshot<RecurringBill>(K_RBILL) ?? [...RECURRING_BILL_TEMPLATES],
+)
+export function recurringBillsCount(): number { return recurringBills.filter(r => r.status === 'active').length }
+export function persistRecurringBills(): void { saveSnapshot(K_RBILL, recurringBills) }
+export function getRecurringForBill(recurringId: string): RecurringBill | undefined {
+  return recurringBills.find(r => r.id === recurringId)
 }

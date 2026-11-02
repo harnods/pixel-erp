@@ -5,15 +5,30 @@
  * scenario). Clicking opens the product popover (Figma node 4143:3732): a company
  * header + the product list (ERP / HR / CRM / Tax / Trip & expense / Sales channel
  * / POS). ERP/HR/CRM/Tax navigate; the rest are placeholders.
+ *
+ * CRM is ALWAYS listed (PRD US-013). It opens /crm only when the company has
+ * the CRM add-on and the signed-in user holds the CRM role; otherwise it lands
+ * on /get-crm (Contact Sales without the add-on, "ask your admin" without the
+ * role, "try again later" while Billing can't be confirmed).
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
+import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
 
 const router = useRouter()
 const route = useRoute()
 const { activeScenario, setScenario } = useScenario()
+const { mode: crmMode, currentUserHasCrmRole } = useCrmSubscriptionScenario()
+
+/** Where the CRM entry goes for this company + user. Expired CRM still opens
+ *  CRM — read-only handling there is CRM's own (PRD A4). */
+const crmTarget = computed(() =>
+  (crmMode.value === 'active' || crmMode.value === 'read-only') && currentUserHasCrmRole.value
+    ? '/crm'
+    : '/get-crm')
 
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
@@ -39,9 +54,8 @@ const products: Product[] = [
 
 const activeKey = computed(() =>
   activeScenario.value === 'XPM' ? 'XPM'
-    : activeScenario.value === 'BUZZ' ? 'BUZZ'
     : isHrPath(route.path) ? 'HR'
-    : route.path.startsWith('/crm') ? 'CRM'
+    : route.path.startsWith('/crm') || route.path.startsWith('/get-crm') ? 'CRM'
     : route.path.startsWith('/tax') ? 'Tax'
     : 'ERP')
 
@@ -51,7 +65,7 @@ function choose(p: Product) {
     // Set the scenario BEFORE navigating so the sidebar + Home render the right
     // product on the first paint (ERP for ERP/HR/CRM/Tax, XPM for Spend management).
     if (p.scenario && p.scenario !== activeScenario.value) setScenario(p.scenario)
-    router.push(p.to)
+    router.push(p.key === 'CRM' ? crmTarget.value : p.to)
   } else {
     infoToast(`${p.label} — coming soon`)
   }
@@ -67,23 +81,24 @@ onUnmounted(() => { document.removeEventListener('mousedown', onDocClick); docum
 
 <template>
   <div ref="rootEl" class="ps">
-    <button class="ps-trigger" type="button" aria-label="Switch product" :aria-expanded="open" @click="open = !open">
+    <MpButton variant="ghost" class="ps-trigger" type="button" aria-label="Switch product" :aria-expanded="open" @click="open = !open">
       <img src="https://cdn.mekari.design/icons/categories-outline.svg" class="ps-trigger-icon" alt="">
-    </button>
+    </MpButton>
 
     <Transition name="ps-fade">
       <div v-if="open" class="ps-popover" role="menu">
         <!-- Company header (click to expand company switcher) -->
-        <button class="ps-company" type="button" :aria-expanded="companyOpen" @click="companyOpen = !companyOpen">
+        <MpButton variant="ghost" class="ps-company" type="button" :aria-expanded="companyOpen" @click="companyOpen = !companyOpen">
           <span class="ps-company-name">{{ activeCompany }}</span>
           <svg class="ps-company-chevron" :class="{ 'is-open': companyOpen }" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
+        </MpButton>
 
         <!-- Company list (expanded) -->
         <div v-if="companyOpen" class="ps-company-list">
-          <button
+          <MpButton
             v-for="co in companies"
             :key="co"
+            variant="ghost"
             class="ps-company-item"
             :class="{ 'ps-company-item--active': co === activeCompany }"
             type="button"
@@ -91,25 +106,28 @@ onUnmounted(() => { document.removeEventListener('mousedown', onDocClick); docum
           >
             <span class="ps-company-item-label">{{ co }}</span>
             <svg v-if="co === activeCompany" class="ps-company-check" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12l5 5L20 7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          </MpButton>
         </div>
 
         <!-- Products -->
         <div v-show="!companyOpen" class="ps-list">
-          <button
+          <MpButton
             v-for="p in products"
             :key="p.key"
+            variant="ghost"
             class="ps-item"
             :class="{ 'ps-item--active': p.key === activeKey }"
             type="button"
             role="menuitem"
+            :data-test-id="`ps-item-${p.key}`"
+            :data-devchange="p.key === 'CRM' ? 'crm-user-seats-product-switcher' : undefined"
             @click="choose(p)"
           >
             <span class="ps-item-icon">
               <img :src="`https://cdn.mekari.design/icons/${p.icon}-outline.svg`" class="ps-icon" alt="">
             </span>
             <span class="ps-item-label">{{ p.label }}</span>
-          </button>
+          </MpButton>
         </div>
       </div>
     </Transition>

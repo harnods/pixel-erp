@@ -76,7 +76,11 @@ const totalAmount = computed(() => amountNum())
 // ── Memo / Attachment ─────────────────────────────────────────────────────────
 const memo = ref('')
 const attachedFiles = ref<File[]>([])
-function onAttachmentChange(files: FileList | null) {
+function onAttachmentChange(payload: Event | FileList | null) {
+  // MpUpload's @change emits the native Event (ev.target.files), not a
+  // FileList. Accept both so the field actually stages what was picked.
+  const files: FileList | null | undefined =
+    payload && 'target' in payload ? (payload.target as HTMLInputElement).files : (payload as FileList | null)
   if (!files) return
   for (const f of Array.from(files)) {
     if (!attachedFiles.value.some((x) => x.name === f.name)) attachedFiles.value.push(f)
@@ -212,9 +216,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <MpFormControl id="it-transno">
           <div class="ex-label-row">
             <MpFormLabel>{{ t('Transaction no.') }}</MpFormLabel>
-            <button class="ex-label-icon" type="button" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true">
-              <MpIcon name="settings" size="sm" />
-            </button>
+            <MpButton class="ex-label-icon" type="button" left-icon="settings" :aria-label="t('Transaction no. settings')" @click="noSettingsOpen = true" />
           </div>
           <MpInput id="it-transno-input" v-model="transactionNo" :placeholder="t('Auto')" is-full-width is-disabled />
         </MpFormControl>
@@ -371,12 +373,23 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .detail-footer--floating { border-top-color: var(--mp-border-default); }
 
 /* ── Transfer from + Total row ─────────────────────────────────────────────── */
+/* Row 1 shares .ex-grid-2's track sizing so its fields line up with the rows
+   below it — a flex row with fixed-width fields does not. */
 .ex-row-1 {
-  display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; align-items: end;
   padding-bottom: 20px; border-bottom: 1px dashed var(--mp-border-default, #e3e7e9);
 }
-.ex-field-flex { width: 316px; flex-shrink: 0; min-width: 0; }
-.it-total-inline { margin-left: auto; display: flex; align-items: flex-end; padding-bottom: 8px; white-space: nowrap; }
+@container (min-width: 860px) {
+  .ex-row-1 { grid-template-columns: repeat(4, 1fr); }
+}
+.ex-field-flex { min-width: 0; }
+.it-total-inline {
+  grid-column: 1 / -1; justify-self: end;
+  display: flex; align-items: flex-end; padding-bottom: var(--mp-spacing-2); white-space: nowrap;
+}
+@container (min-width: 860px) {
+  .it-total-inline { grid-column: 3 / -1; }
+}
 .detail-total-amount { font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .detail-total-label { font-weight: var(--mp-font-weights-semi-bold); }
 
@@ -422,7 +435,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 .ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
-.ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ex-td--input { position: relative; }
+.ex-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }
 .ex-td--error :deep([class*='autocomplete']), .ex-td--error :deep([class*='input']) { background: transparent; }

@@ -25,23 +25,23 @@
     v-slot="{ onClosePopover }"
   >
     <MpPopoverTrigger>
-      <button type="button" class="wh-switch-trigger" aria-label="Switch warehouse">
+      <MpButton variant="ghost" class="wh-switch-trigger" aria-label="Switch warehouse">
         <span class="wh-switch-sep" aria-hidden="true" />
         <span class="wh-switch-label">
           <span class="wh-switch-name">{{ activeWarehouse?.name }}</span>
           <span class="wh-switch-code">{{ activeWarehouse?.code }}</span>
         </span>
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
 
     <MpPopoverContent class="wh-switch-menu" is-unstyled>
       <p class="wh-switch-heading">Switch warehouse</p>
       <nav class="wh-switch-list">
-        <button
+        <MpButton
           v-for="w in assignedWarehouses"
           :key="w.id"
-          type="button"
+          variant="ghost"
           class="wh-switch-item"
           @click="select(w.id, onClosePopover)"
         >
@@ -55,14 +55,14 @@
             size="md"
             color="icon.brand"
           />
-        </button>
+        </MpButton>
       </nav>
     </MpPopoverContent>
   </MpPopover>
 </template>
 
 <script setup lang="ts">
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon } from "@mekari/pixel3";
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpButton } from "@mekari/pixel3";
 
 const router = useRouter();
 const { assignedWarehouses, activeWarehouse, hasWarehouseSwitcher, setActiveWarehouse } =

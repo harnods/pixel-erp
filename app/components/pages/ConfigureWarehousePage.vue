@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  MpToggle, MpIcon, MpTooltip, MpBadge,
+  MpToggle, MpIcon, MpTooltip, MpBadge, MpButton,
   MpInputGroup, MpInput, MpInputRightAddon, MpFormControl, MpFormLabel,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
   MpModalOverlay, MpModalCloseButton,
@@ -326,7 +326,7 @@ const toggleConfirmItems = computed((): string[] => {
     <!-- ── Page title bar (neutral-subtle bg, 72px, breadcrumb + title) ── -->
     <div class="cw-titlebar">
       <div class="cw-titlebar-left">
-        <button class="cw-breadcrumb" @click="goBack">{{ warehouse.name }}</button>
+        <MpButton variant="link" class="cw-breadcrumb" @click="goBack">{{ warehouse.name }}</MpButton>
         <h1 class="cw-title">{{ t('Configure warehouse') }}</h1>
       </div>
     </div>
@@ -339,14 +339,14 @@ const toggleConfirmItems = computed((): string[] => {
             <h2 class="cw-section-title">{{ t('Settings') }}</h2>
             <p class="cw-section-desc">{{ t('Configure how inbound and outbound tasks run in this warehouse.') }}</p>
           </div>
-          <button
+          <MpButton
             v-if="!isEditing"
             class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before"
+            left-icon="edit"
             @click="startEdit"
           >
-            <MpIcon name="edit" size="sm" />
             {{ t('Edit') }}
-          </button>
+          </MpButton>
         </div>
 
         <div class="cw-toggle-list">
@@ -415,13 +415,13 @@ const toggleConfirmItems = computed((): string[] => {
             <span class="cw-sub-label">{{ t('Priority order') }}</span>
             <div class="cw-sub-priority">
               <span class="cw-sub-value">{{ locationPrioritySummary }}</span>
-              <button
+              <MpButton
                 v-if="isEditing && storageLeaves.length"
                 class="btn-enterprise btn-enterprise--secondary cw-manage-priority-btn"
                 @click="locationPriorityDrawerOpen = true"
               >
                 {{ t('Manage storage priority') }}
-              </button>
+              </MpButton>
             </div>
           </div>
 
@@ -621,13 +621,13 @@ const toggleConfirmItems = computed((): string[] => {
                   <span class="cw-toggle-title">{{ t('Cycle-count watch list') }}</span>
                   <span class="cw-toggle-desc">{{ t('List of SKUs that will show on the cycle count recommendation list.') }}</span>
                 </div>
-                <button
+                <MpButton
                   class="btn-enterprise btn-enterprise--secondary"
-                  :disabled="!isEditing"
+                  :is-disabled="!isEditing"
                   @click="watchListDrawerOpen = true"
                 >
                   {{ t('Select product') }}{{ draft.cycleCountWatchList.length ? ` (${draft.cycleCountWatchList.length})` : '' }}
-                </button>
+                </MpButton>
               </div>
 
             </template>
@@ -636,10 +636,10 @@ const toggleConfirmItems = computed((): string[] => {
         </div>
 
         <div v-if="isEditing" class="cw-action-bar">
-          <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="requestCancel">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="requestSave">
+          <MpButton class="btn-enterprise btn-enterprise--ghost" :is-disabled="isSaving" @click="requestCancel">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" :is-disabled="isSaving" @click="requestSave">
             {{ isSaving ? t('Saving…') : t('Save changes') }}
-          </button>
+          </MpButton>
         </div>
       </section>
     </div>
@@ -660,8 +660,8 @@ const toggleConfirmItems = computed((): string[] => {
           <p class="cw-dialog-body">{{ t('Your changes will not be saved.') }}</p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">{{ t('Keep editing') }}</button>
-          <button class="btn-enterprise btn-enterprise--danger" @click="exitEdit">{{ t('Discard') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="discardOpen = false">{{ t('Keep editing') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" @click="exitEdit">{{ t('Discard') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -685,8 +685,8 @@ const toggleConfirmItems = computed((): string[] => {
           </ul>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="cancelToggleConfirm">{{ t('Cancel') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmToggle">{{ t('Confirm') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="cancelToggleConfirm">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmToggle">{{ t('Confirm') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />
@@ -710,8 +710,8 @@ const toggleConfirmItems = computed((): string[] => {
           </p>
         </MpModalBody>
         <MpModalFooter>
-          <button class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">{{ t('Keep editing') }}</button>
-          <button class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">{{ t('Save changes') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="ruleConfirmOpen = false">{{ t('Keep editing') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmRuleChange">{{ t('Save changes') }}</MpButton>
         </MpModalFooter>
       </MpModalContent>
       <MpModalOverlay />

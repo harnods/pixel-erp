@@ -13,7 +13,7 @@ import { getTaskLineItems, type TaskLineItem } from '~/data/receivingTaskDetails
 import { addPutAwayTask } from '~/data/putAwayTasks'
 import { getWarehouseOperators } from '~/data/warehouseTeam'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { productBySku } from '~/data/inventory'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { scrollToFirstError } from '~/utils/form'
 
 const router = useRouter()
@@ -123,8 +123,6 @@ const selectedTasks = computed(() =>
 )
 
 // ── Batch / serial helpers (same heuristic as receiving / put-away details) ───
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(warehouseId.value)
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -132,14 +130,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 
 // ─── Aggregated SKU rows from selected tasks ───────────────────────────────────
@@ -319,7 +315,7 @@ async function handleCreate() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goPutAway">{{ t('Put-away') }}</button>
+          <MpButton variant="textLink" class="detail-breadcrumb" @click="goPutAway">{{ t('Put-away') }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('New put-away') }}</h1>
@@ -490,14 +486,10 @@ async function handleCreate() {
                   <td class="pa-td">{{ row.unit }}</td>
                   <td class="pa-td pa-td--action">
                     <MpTooltip v-if="isBatchTrackedSku(row.skuCode)" :id="`pa-tt-batch-${row.rowKey}`" :label="t('View batch')" placement="top" use-portal>
-                      <button class="pa-view-btn" type="button" :aria-label="t('View batch')" @click="openViewBatch(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton class="pa-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="t('View batch')" @click="openViewBatch(row)" />
                     </MpTooltip>
                     <MpTooltip v-else-if="isSerialTrackedSku(row.skuCode)" :id="`pa-tt-serial-${row.rowKey}`" :label="t('View serial number')" placement="top" use-portal>
-                      <button class="pa-view-btn" type="button" :aria-label="t('View serial number')" @click="openViewSerial(row)">
-                        <MpIcon name="competencies" size="md" />
-                      </button>
+                      <MpButton class="pa-view-btn" type="button" variant="ghost" left-icon="competencies" :aria-label="t('View serial number')" @click="openViewSerial(row)" />
                     </MpTooltip>
                   </td>
                 </tr>

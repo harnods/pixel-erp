@@ -19,7 +19,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import {
-  MpAutocomplete, MpCheckbox, MpDatePicker, MpIcon, MpInput, MpTextarea, MpTextlink, toast,
+  MpAutocomplete, MpButton, MpCheckbox, MpDatePicker, MpIcon, MpInput, MpTextarea, MpTextlink, toast,
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
@@ -330,12 +330,12 @@ function handleSave() {
                     :is-keep-alive="false" placement="bottom-start"
                   >
                     <MpPopoverTrigger>
-                      <button type="button" class="bsr-movement-trigger btn-enterprise">
+                      <MpButton type="button" class="bsr-movement-trigger btn-enterprise">
                         <span>{{ t(movementLabel(row.movement)) }}</span>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                           <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
-                      </button>
+                      </MpButton>
                     </MpPopoverTrigger>
                     <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
                       <MpPopoverList>
@@ -380,9 +380,9 @@ function handleSave() {
       </section>
 
       <footer class="ex-footer">
-        <button class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</button>
-        <button class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</button>
-        <button class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ t('Save') }}</button>
+        <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--secondary" @click="goToNext()()">{{ t('Skip without saving') }}</MpButton>
+        <MpButton class="btn-enterprise btn-enterprise--primary" @click="handleSave">{{ t('Save') }}</MpButton>
       </footer>
     </div>
   </FileReviewShell>
@@ -460,7 +460,11 @@ function handleSave() {
 /* Calendar icon addon — the field should still open the picker on focus, it
    just doesn't need the trailing glyph advertising that. */
 .ex-datepicker :deep(.mp-input-addon__root) { display: none; }
-.ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); }
+.ex-td--input { position: relative; }
+.ex-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 /* A <td>'s height is "auto", and percentage/100% heights on a normal-flow
    child never resolve against an auto-height containing block (CSS2.1 10.5)
    — the row here is only ever taller than 40px because of the 2-line

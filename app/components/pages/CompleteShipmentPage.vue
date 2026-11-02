@@ -82,7 +82,7 @@ async function handleSave() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">{{ shipment.shipmentNo }}</button>
+          <MpButton class="detail-breadcrumb" variant="link" @click="goBack">{{ shipment.shipmentNo }}</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">Complete shipment</h1>
@@ -124,7 +124,7 @@ async function handleSave() {
             <ul v-if="attachedFiles.length" class="cs-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="cs-file-item">
                 <span class="cs-file-name">{{ f.name }}</span>
-                <button class="cs-file-remove" type="button" @click="removeFile(f.name)"><MpIcon name="close" size="xs" /></button>
+                <MpButton class="cs-file-remove" variant="ghost" type="button" left-icon="close" @click="removeFile(f.name)" />
               </li>
             </ul>
           </div>

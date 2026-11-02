@@ -6,7 +6,7 @@
  * selects span 3 (half, 270px, paired two per row). Selects use the popover
  * ErpFilterSelect (never a native dropdown). Inline validation fires only on Save.
  */
-import { MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, toast } from '@mekari/pixel3'
+import { MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpButton, toast } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
   addCrmCustomer, CRM_OWNERS, CUSTOMER_SEGMENTS, LIFECYCLE_STAGES, type LifecycleStage,
@@ -73,7 +73,7 @@ async function save() {
     <!-- Title bar -->
     <div class="ncf-titlebar">
       <div class="ncf-titlebar-left">
-        <button class="ncf-breadcrumb" @click="goBack">Companies</button>
+        <MpButton class="ncf-breadcrumb" @click="goBack">Companies</MpButton>
         <h1 class="ncf-title">New company</h1>
       </div>
     </div>
@@ -156,8 +156,8 @@ async function save() {
 
     <!-- Sticky footer -->
     <div class="ncf-footer">
-      <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="goBack">Cancel</button>
-      <button class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</button>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" type="button" @click="goBack">Cancel</MpButton>
+      <MpButton class="btn-enterprise btn-enterprise--primary" type="button" @click="save">{{ isSaving ? 'Saving…' : 'Save' }}</MpButton>
     </div>
   </div>
 </template>

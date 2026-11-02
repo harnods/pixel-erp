@@ -15,7 +15,7 @@
  * blocks interaction with the page underneath.
  */
 import { ref, computed, onBeforeUnmount, watch } from 'vue'
-import { MpIcon } from '@mekari/pixel3'
+import { MpIcon, MpButton } from '@mekari/pixel3'
 import { getDevChange, DEV_CHANGES_REPO, type DevChange } from '~/data/devChanges'
 
 // All shared state (per-user resolved set, dismiss/mute, derived on/off) lives in
@@ -142,9 +142,8 @@ function fmtDate(iso: string) {
     <!-- FAB — shown only while the layer is on AND there are unresolved changes on
          this page. Once everything here is resolved it hides itself; re-enable the
          layer from the user menu → "Changes". Click hides the layer for the session. -->
-    <button
+    <MpButton
       v-if="active && pageCount > 0"
-      type="button"
       class="wn-fab wn-fab--on"
       title="Hide code changes (re-enable from the user menu)"
       @click="hideOverlay"
@@ -152,27 +151,25 @@ function fmtDate(iso: string) {
       <MpIcon name="code" size="sm" />
       <span class="wn-fab-label">Changes</span>
       <span class="wn-fab-count">{{ pageCount }}</span>
-    </button>
+    </MpButton>
 
     <!-- Restore markers this user resolved on the current page. -->
-    <button
+    <MpButton
       v-if="active && resolvedOnPage"
-      type="button"
       class="wn-restore"
       title="Show changes you marked resolved on this page"
       @click="showResolvedOnPage"
     >
       <MpIcon name="refresh" size="sm" />
       Show {{ resolvedOnPage }} resolved
-    </button>
+    </MpButton>
 
     <!-- The marker + coachmark layer (pointer-events pass through except markers). -->
     <div v-if="active" class="wn-layer" aria-hidden="false">
-      <button
+      <MpButton
         v-for="m in markers"
         v-show="m.visible"
         :key="m.key"
-        type="button"
         class="wn-marker"
         :class="{ 'wn-marker--open': openKey === m.key }"
         :style="{ left: m.x + 'px', top: m.y + 'px' }"
@@ -181,24 +178,23 @@ function fmtDate(iso: string) {
         @mouseenter="openKey === null ? (openKey = m.key) : null"
       >
         <span class="wn-dot" />
-      </button>
+      </MpButton>
 
       <div v-if="openMarker" class="wn-card" :style="cardStyle">
         <div class="wn-card-head">
           <span class="wn-card-badge">New</span>
           <span class="wn-card-date">{{ fmtDate(openMarker.change.date) }}</span>
-          <button
-            type="button"
+          <MpButton
             class="wn-card-resolve"
             aria-label="Mark as resolved"
             title="Mark as resolved"
             @click="resolveChange(openMarker.change.id)"
           >
             <MpIcon name="done" size="sm" />
-          </button>
-          <button type="button" class="wn-card-close" aria-label="Close" @click="openKey = null">
+          </MpButton>
+          <MpButton class="wn-card-close" aria-label="Close" @click="openKey = null">
             <MpIcon name="close" size="sm" />
-          </button>
+          </MpButton>
         </div>
         <h4 class="wn-card-title">{{ openMarker.change.title }}</h4>
         <p class="wn-card-desc">{{ openMarker.change.description }}</p>
@@ -227,20 +223,21 @@ function fmtDate(iso: string) {
   right: 24px;
   bottom: 24px;
   z-index: 2147483001;
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: 6px;
-  height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--mp-airene-badge-border, #8270db);
-  border-radius: 9999px;
-  background: #ffffff;
-  color: var(--mp-airene-bold, #5a41d6);
+  height: 40px !important;
+  padding: 0 14px !important;
+  border: 1px solid var(--mp-airene-badge-border, #8270db) !important;
+  border-radius: 9999px !important;
+  background: #ffffff !important;
+  color: var(--mp-airene-bold, #5a41d6) !important;
   font-family: var(--mp-fonts-body);
-  font-size: 14px;
+  font-size: 14px !important;
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--mp-shadows-md, 0 8px 24px rgba(0, 0, 0, 0.1));
+  min-width: 0 !important;
 }
 .wn-fab:hover { background: var(--mp-airene-badge-bg, #f3f1fc); }
 
@@ -250,26 +247,27 @@ function fmtDate(iso: string) {
   right: 24px;
   bottom: 72px;
   z-index: 2147483001;
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--mp-border-default, #e3e7e9);
-  border-radius: 9999px;
-  background: #ffffff;
-  color: var(--mp-text-secondary, #3a4749);
+  height: 32px !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--mp-border-default, #e3e7e9) !important;
+  border-radius: 9999px !important;
+  background: #ffffff !important;
+  color: var(--mp-text-secondary, #3a4749) !important;
   font-family: var(--mp-fonts-body);
-  font-size: 13px;
+  font-size: 13px !important;
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--mp-shadows-md, 0 8px 24px rgba(0, 0, 0, 0.1));
+  min-width: 0 !important;
 }
 .wn-restore:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .wn-fab--on {
-  background: var(--mp-airene-default, #651fff);
-  border-color: var(--mp-airene-default, #651fff);
-  color: #ffffff;
+  background: var(--mp-airene-default, #651fff) !important;
+  border-color: var(--mp-airene-default, #651fff) !important;
+  color: #ffffff !important;
 }
 .wn-fab--on:hover { background: var(--mp-airene-hovered, #7c3aed); border-color: var(--mp-airene-hovered, #7c3aed); }
 .wn-fab-count {
@@ -296,13 +294,14 @@ function fmtDate(iso: string) {
 .wn-marker {
   position: fixed;
   transform: translate(-50%, -50%);
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  background: transparent;
+  width: 22px !important;
+  height: 22px !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
   cursor: pointer;
   pointer-events: auto;
+  min-width: 0 !important;
 }
 .wn-dot {
   position: absolute;
@@ -360,23 +359,25 @@ function fmtDate(iso: string) {
 .wn-card-date { font-size: 12px; color: var(--mp-text-subtle, #6e7a7c); }
 .wn-card-resolve {
   margin-left: auto;
-  display: inline-flex;
-  padding: 2px;
-  border: none;
-  background: transparent;
-  color: var(--mp-text-selected, #0f6d4d);
+  display: inline-flex !important;
+  padding: 2px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--mp-text-selected, #0f6d4d) !important;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 6px !important;
+  min-width: 0 !important;
 }
 .wn-card-resolve:hover { background: var(--mp-background-nav-stack-hovered, #d6f4e9); }
 .wn-card-close {
-  display: inline-flex;
-  padding: 2px;
-  border: none;
-  background: transparent;
-  color: var(--mp-text-subtle, #6e7a7c);
+  display: inline-flex !important;
+  padding: 2px !important;
+  border: none !important;
+  background: transparent !important;
+  color: var(--mp-text-subtle, #6e7a7c) !important;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 6px !important;
+  min-width: 0 !important;
 }
 .wn-card-close:hover { background: var(--mp-background-neutral-pressed, #ebf0f1); }
 .wn-card-title {

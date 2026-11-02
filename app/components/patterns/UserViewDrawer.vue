@@ -10,10 +10,13 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import {
-  userRoleNames, userRoleTypeLabels, timeLimitText, type AccountUser,
+  userRoleNames, timeLimitText, ACCOUNT_TYPE_OPTIONS, accountTypeOf, type AccountUser,
 } from '~/data/usersRoles'
+import { effectiveCrmRole, crmRoleLabel } from '~/data/crmSubscription'
+import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
 
 const { t } = useLocale()
+const { crmVisible } = useCrmSubscriptionScenario()
 
 defineProps<{
   id: string
@@ -41,17 +44,22 @@ function fmtDate(iso: string | null): string {
         <div class="uvd-body">
           <ContentList :label="t('Name')" :value="user.name" />
           <ContentList :label="t('Email')" :value="user.email" />
-          <ContentList :label="t('Role')"><ErpTagList :tags="userRoleNames(user)" /></ContentList>
+          <ContentList :label="t('Role')">
+            <ErpTagList v-if="userRoleNames(user).length" :tags="userRoleNames(user)" />
+            <span v-else>—</span>
+          </ContentList>
+          <ContentList v-if="crmVisible" :label="t('CRM access')" :value="effectiveCrmRole(user) ? t(crmRoleLabel(effectiveCrmRole(user))) : '—'" />
           <ContentList :label="t('List manager')" :value="user.isListManager ? t('Yes') : '—'" />
           <ContentList :label="t('Access time limit')" :value="timeLimitText(user)" />
           <ContentList :label="t('Status')"><ErpStatusBadge :status="user.status" /></ContentList>
-          <ContentList :label="t('Type')"><ErpTagList :tags="userRoleTypeLabels(user)" /></ContentList>
+          <!-- Account type, same as the User list Type column (prod: Member / Partner). -->
+          <ContentList :label="t('Type')" :value="t(ACCOUNT_TYPE_OPTIONS.find((o) => o.value === accountTypeOf(user))!.label)" />
           <ContentList :label="t('Join date')" :value="fmtDate(user.joinedAt)" />
           <ContentList :label="t('Last active')" :value="fmtDate(user.lastActiveAt)" />
         </div>
 
         <footer class="uvd-footer">
-          <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="close">{{ t('Close') }}</button>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">{{ t('Close') }}</MpButton>
         </footer>
       </div>
     </div>

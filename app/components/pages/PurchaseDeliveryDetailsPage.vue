@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
@@ -9,7 +9,13 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { getPurchaseDeliveryDetail } from '~/data/purchaseDeliveryDetails'
+import ViewBatchDrawer, { type PickedBatchRow } from '~/components/patterns/ViewBatchDrawer.vue'
+import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
+import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
+import { getContactIdByName } from '~/data/contacts'
+import { getPurchaseDeliveryDetail, type PDLineItem } from '~/data/purchaseDeliveryDetails'
+import { getProductBatches } from '~/data/productDetails'
 import { purchaseDeliveries } from '~/data'
 
 const props = defineProps<{ orderId: string }>()
@@ -27,12 +33,49 @@ const router = useRouter()
 const delivery = computed(() => getPurchaseDeliveryDetail(props.orderId))
 
 const activityOpen = ref(false)
+
+// ── View batch drawer (Batch Attribute story 10) ──────────────────────────────
+// The batches that received a line are read-only here, so this is the shared
+// ViewBatchDrawer in its per-line "packing" mode — the same drawer the WMS
+// detail pages open from their own View batch link (rule/drawer-open-via-manage
+// covers the editable twin on the form).
+const viewBatchItem = ref<PDLineItem | null>(null)
+const viewBatchRows = computed<PickedBatchRow[]>(() => {
+  const item = viewBatchItem.value
+  if (!item) return []
+  const records = getProductBatches(item.sku)
+  return (item.batches ?? []).map((b) => {
+    const record = records.find((r) => r.batchNo === b.batchNo)
+    return {
+      batchNo: b.batchNo,
+      expiryDate: record?.expiryDate ?? '',
+      desc: record?.description ?? '',
+      qty: b.qty,
+      unit: item.unit,
+      attributes: b.attributes,
+    }
+  })
+})
+
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
   toast.notify({ variant: 'success', title: t('Purchase delivery deleted'), rootProps: { class: 'toast-enterprise' } })
   router.push('/purchase-deliveries')
 }
+const pdActionGroups = computed<ActionItem[][]>(() => [
+  [
+    { label: 'Preview' },
+    { label: 'Create purchase invoice' },
+  ],
+  [
+    { label: 'Edit' },
+    { label: 'Set as recurring' },
+    { label: 'Duplicate' },
+    { label: 'Void' },
+    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+  ],
+])
 const activityEntries = computed(() => [{
   date: delivery.value.lastUpdatedAt,
   user: delivery.value.lastUpdatedBy,
@@ -168,15 +211,16 @@ function goBack() { router.push('/purchase-deliveries') }
                   </MpButton>
                 </div>
                 <div class="detail-jump-list">
-                  <button
+                  <MpButton
                     v-for="o in jumpResults"
                     :key="o.id"
+                    variant="secondary"
                     class="detail-jump-item"
                     @click="jumpTo(o.id)"
                   >
                     <span class="detail-jump-item-number">{{ t('Purchase Delivery') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.vendor.name }}</span>
-                  </button>
+                  </MpButton>
                   <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
                 </div>
               </div>
@@ -215,7 +259,7 @@ function goBack() { router.push('/purchase-deliveries') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')" :value="delivery.vendor.name" />
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(delivery.vendor.name)}`, '_blank')">{{ delivery.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">
@@ -290,7 +334,16 @@ function goBack() { router.push('/purchase-deliveries') }
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.qty }}</td>
+              <!-- Batch-tracked lines open the batches in the shared read-only drawer,
+                   from a link under the qty it splits (Batch Attribute story 10) —
+                   the same shape the WMS detail pages use. -->
+              <td v-if="(it.batches ?? []).length" class="detail-td detail-td--qty-batch">
+                <div class="detail-qty-value">{{ it.qty }}</div>
+                <div class="detail-qty-action">
+                  <MpTextlink :id="`pdd-view-batch-${i}`" as="a" class="detail-view-link" @click.prevent="viewBatchItem = it">{{ t('View batch') }}</MpTextlink>
+                </div>
+              </td>
+              <td v-else class="detail-td detail-td--num">{{ it.qty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
@@ -409,51 +462,8 @@ function goBack() { router.push('/purchase-deliveries') }
 
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
-        <!-- Print & share (secondary dropdown) -->
-        <MpPopover id="detail-print-share" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Print & share') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Print PDF') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print dot matrix') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Copy link') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-        <!-- Actions (primary dropdown) -->
-        <MpPopover id="detail-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--primary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Create purchase invoice') }}</MpPopoverListItem>
-            </MpPopoverList>
-            <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-            <MpPopoverList>
-              <MpPopoverListItem>{{ t('Edit') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Set as recurring') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <PrintShareMenu id="pd-print" />
+        <DetailActionsMenu id="pd-actions" :groups="pdActionGroups" />
       </div>
 
     </div><!-- /detail-stage -->
@@ -474,6 +484,20 @@ function goBack() { router.push('/purchase-deliveries') }
       :confirm-label="`${t('Delete')} ${t('purchase delivery')}`"
       @confirm="confirmDelete"
     />
+
+    <ViewBatchDrawer
+      v-if="viewBatchItem"
+      :open="true"
+      :sku="viewBatchItem.sku"
+      :warehouse-id="''"
+      kind="packing"
+      :picked-batches="viewBatchRows"
+      :qty-label="t('Received qty')"
+      hide-location
+      :product-name="viewBatchItem.product"
+      :product-img="''"
+      @update:open="viewBatchItem = null"
+    />
   </div>
 </template>
 
@@ -491,7 +515,7 @@ function goBack() { router.push('/purchase-deliveries') }
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);   /* page title bar is always 72px */
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   flex-direction: row;
@@ -545,7 +569,7 @@ function goBack() { router.push('/purchase-deliveries') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), 5 recent below */
 .detail-jump { display: flex; flex-direction: column; }
@@ -554,7 +578,7 @@ function goBack() { router.push('/purchase-deliveries') }
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -570,7 +594,7 @@ function goBack() { router.push('/purchase-deliveries') }
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -585,7 +609,7 @@ function goBack() { router.push('/purchase-deliveries') }
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -611,7 +635,7 @@ function goBack() { router.push('/purchase-deliveries') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -619,7 +643,7 @@ function goBack() { router.push('/purchase-deliveries') }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   /* fixed 24px top border keeps content off the stage's top edge while scrolling */
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
@@ -699,7 +723,7 @@ function goBack() { router.push('/purchase-deliveries') }
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 /* progressive case → contained panel with a 1px bold outer border */
 .detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
@@ -722,12 +746,12 @@ function goBack() { router.push('/purchase-deliveries') }
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .detail-th--num {
@@ -743,7 +767,7 @@ function goBack() { router.push('/purchase-deliveries') }
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
 .detail-td--num {
@@ -753,6 +777,17 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 /* line-items rows carry a 2-line product cell → that whole row top-aligns */
 .detail-items tbody .detail-td { vertical-align: top; }
+/* Batch-tracked line: qty keeps the numeric column's alignment and the View batch
+   link sits under it, the same stack the WMS detail tables use. */
+.detail-td--qty-batch {
+  white-space: nowrap;
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4);
+}
+.detail-qty-value { text-align: right; }
+.detail-qty-action { margin-top: var(--mp-spacing-1); text-align: right; }
+/* Size and colour come from MpTextlink itself — matching the Stock adjustment
+   detail table, the other place a View batch link sits under its qty. */
+.detail-view-link { white-space: nowrap; }
 .detail-td--muted { color: var(--mp-text-secondary); }
 .detail-item-primary { display: block; }
 .detail-item-name { display: block; color: var(--mp-text-default); }
@@ -764,8 +799,8 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 
 /* fixed, left-aligned columns for the linked-transactions table (4th col fills) */
-.detail-linked { table-layout: auto; }
-.detail-linked-col--date   { width: 140px; }
+.detail-linked { table-layout: fixed; }
+.detail-linked-col--date   { width: 160px; }
 .detail-linked-col--number { width: 260px; }
 .detail-linked-col--status { width: 160px; }
 
@@ -781,7 +816,7 @@ function goBack() { router.push('/purchase-deliveries') }
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-loading {
   display: inline-flex;

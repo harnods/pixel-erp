@@ -12,7 +12,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
-  MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpIcon, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpSelect, MpTooltip, toast,
 } from '@mekari/pixel3'
@@ -96,15 +96,8 @@ function confirmTransfer() {
 </script>
 
 <template>
-  <Transition name="ddd">
-    <div v-if="isOpen && dimension" class="ddd-overlay">
-      <div class="ddd-panel" role="dialog" :aria-label="`${dimension.name} ${t('preview')}`">
-        <header class="ddd-header">
-          <span class="ddd-title">{{ dimension.name }} {{ t('preview') }}</span>
-          <button class="ddd-close" type="button" :aria-label="t('Close')" @click="close"><MpIcon name="close" size="md" /></button>
-        </header>
-
-        <div class="ddd-body">
+  <ErpDrawer :is-open="isOpen && !!dimension" :title="dimension ? `${dimension.name} ${t('preview')}` : ''" width="480px" @close="close">
+    <template #body>
           <!-- Overview -->
           <div class="ddd-section">
             <h3 class="ddd-section-title">{{ t('Overview') }}</h3>
@@ -138,15 +131,15 @@ function confirmTransfer() {
                 <div v-for="v in filteredValues" :key="v.name" class="ddd-values-row">
                   <span class="ddd-values-cell">{{ v.name }}</span>
                   <span class="ddd-values-cell ddd-values-cell--muted">{{ userAccessText(v.userIds) }}</span>
-                  <button
+                  <MpButton
                     v-if="canTransfer"
                     v-tooltip="{ label: t('Transfer to another dimension'), placement: 'top' }"
-                    class="ddd-icon-btn ddd-icon-btn--transfer" type="button"
+                    class="ddd-icon-btn ddd-icon-btn--transfer" variant="ghost" type="button"
                     :aria-label="`${t('Transfer to another dimension')} — ${v.name}`"
                     @click="openTransfer(v.name)"
                   >
                     <MpIcon name="transfer" size="sm" />
-                  </button>
+                  </MpButton>
                 </div>
               </div>
               <p v-else class="ddd-values-none">{{ t('No values match your search.') }}</p>
@@ -162,46 +155,45 @@ function confirmTransfer() {
               <span class="ddd-list-value">{{ dimension.mandatory ? t('Yes') : t('No') }}</span>
             </div>
           </div>
-        </div>
 
-        <footer class="ddd-footer">
-          <button class="ddd-btn ddd-btn--ghost" type="button" @click="close">{{ t('Close') }}</button>
-          <MpPopover id="ddd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
-            <MpPopoverTrigger>
-              <button class="ddd-btn ddd-btn--primary" type="button">
-                {{ t('Actions') }}
-                <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-              </button>
-            </MpPopoverTrigger>
-            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
-              <MpPopoverList>
-                <MpPopoverListItem @click="act('edit')">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem @click="act('toggle-status')">
-                  {{ dimension.status === 'active' ? t('Archive') : t('Activate') }}
-                </MpPopoverListItem>
-                <MpPopoverListItem
-                  v-if="!deleteBlocked"
-                  :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
-                  @click="act('delete')"
-                >
-                  {{ t('Delete') }}
-                </MpPopoverListItem>
-                <MpPopoverListItem v-else class="ddd-menu-item--disabled" @click.stop>
-                  <MpTooltip
-                    :id="`ddd-delete-tip-${dimension.id}`"
-                    :label="t('Cannot delete. Transaction has been recorded with this dimension.')"
-                    placement="left" use-portal class="ddd-menu-tip"
-                  >
-                    <span class="ddd-menu-disabled-label">{{ t('Delete') }}</span>
-                  </MpTooltip>
-                </MpPopoverListItem>
-              </MpPopoverList>
-            </MpPopoverContent>
-          </MpPopover>
-        </footer>
-      </div>
-    </div>
-  </Transition>
+    </template>
+
+    <template #footer>
+      <MpButton class="ddd-btn ddd-btn--ghost" variant="ghost" type="button" @click="close">{{ t('Close') }}</MpButton>
+      <MpPopover id="ddd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpPopoverTrigger>
+          <MpButton class="ddd-btn ddd-btn--primary" variant="ghost" type="button">
+            {{ t('Actions') }}
+            <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
+          </MpButton>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
+          <MpPopoverList>
+            <MpPopoverListItem @click="act('edit')">{{ t('Edit') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="act('toggle-status')">
+              {{ dimension?.status === 'active' ? t('Archive') : t('Activate') }}
+            </MpPopoverListItem>
+            <MpPopoverListItem
+              v-if="!deleteBlocked"
+              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+              @click="act('delete')"
+            >
+              {{ t('Delete') }}
+            </MpPopoverListItem>
+            <MpPopoverListItem v-else class="ddd-menu-item--disabled" @click.stop>
+              <MpTooltip
+                :id="`ddd-delete-tip-${dimension?.id}`"
+                :label="t('Cannot delete. Transaction has been recorded with this dimension.')"
+                placement="left" use-portal class="ddd-menu-tip"
+              >
+                <span class="ddd-menu-disabled-label">{{ t('Delete') }}</span>
+              </MpTooltip>
+            </MpPopoverListItem>
+          </MpPopoverList>
+        </MpPopoverContent>
+      </MpPopover>
+    </template>
+  </ErpDrawer>
 
   <!-- ── Transfer value — moves one value from this dimension onto another. ── -->
   <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
@@ -248,8 +240,8 @@ function confirmTransfer() {
       </MpModalBody>
       <MpModalFooter>
         <div class="ddd-transfer-footer-btns">
-          <button class="ddd-btn ddd-btn--ghost" type="button" @click="closeTransfer">{{ t('Cancel') }}</button>
-          <button class="ddd-btn ddd-btn--primary" type="button" :disabled="!transferTargetId" @click="confirmTransfer">{{ t('Transfer') }}</button>
+          <MpButton class="ddd-btn ddd-btn--ghost" variant="ghost" type="button" @click="closeTransfer">{{ t('Cancel') }}</MpButton>
+          <MpButton class="ddd-btn ddd-btn--primary" variant="ghost" type="button" :is-disabled="!transferTargetId" @click="confirmTransfer">{{ t('Transfer') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -258,21 +250,6 @@ function confirmTransfer() {
 </template>
 
 <style scoped>
-.ddd-enter-active, .ddd-leave-active { transition: background-color 250ms ease; }
-.ddd-enter-from, .ddd-leave-to { background-color: transparent; }
-.ddd-enter-active .ddd-panel { transition: transform 350ms ease-out; }
-.ddd-leave-active .ddd-panel { transition: transform 250ms ease-in; }
-.ddd-enter-from .ddd-panel, .ddd-leave-to .ddd-panel { transform: translateX(calc(100% + 12px)); }
-
-.ddd-overlay { position: fixed; inset: 0; z-index: 1300; background: var(--mp-colors-overlay, rgba(8, 13, 14, 0.45)); display: flex; justify-content: flex-end; }
-.ddd-panel { margin: var(--mp-spacing-3); width: min(480px, calc(100% - 24px)); height: calc(100% - 24px); display: flex; flex-direction: column; background: var(--mp-background-stage, #fff); border-radius: 12px; overflow: hidden; }
-
-.ddd-header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4); background: var(--mp-background-neutral-subtle); border-bottom: 1px solid var(--mp-border-default); }
-.ddd-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.ddd-close { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; background: none; border-radius: var(--mp-radii-md); cursor: pointer; color: var(--mp-icon-default); padding: 0; }
-.ddd-close:hover { background: var(--mp-background-neutral-hovered); }
-
-.ddd-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--mp-spacing-5, 20px); padding: var(--mp-spacing-4); }
 .ddd-section { display: flex; flex-direction: column; gap: 0; width: 100%; }
 .ddd-section-title { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
@@ -304,7 +281,6 @@ function confirmTransfer() {
 .ddd-icon-btn--transfer { visibility: hidden; }
 .ddd-values-row:hover .ddd-icon-btn--transfer { visibility: visible; }
 
-.ddd-footer { flex-shrink: 0; display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-3); padding: var(--mp-spacing-4); border-top: 1px solid var(--mp-border-default); }
 .ddd-btn { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); height: 36px; padding: 0 var(--mp-spacing-4); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); cursor: pointer; border: 1px solid transparent; }
 .ddd-btn--ghost { background: transparent; color: var(--mp-text-secondary); }
 .ddd-btn--ghost:hover { background: var(--mp-background-neutral-hovered); }

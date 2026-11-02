@@ -307,7 +307,7 @@ async function handleSave() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="detail-breadcrumb-trail">
-          <button class="detail-breadcrumb" @click="goBack">Shipping</button>
+          <MpButton variant="ghost" class="detail-breadcrumb" @click="goBack">Shipping</MpButton>
         </nav>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">New shipment</h1>
@@ -378,7 +378,7 @@ async function handleSave() {
         <MpFormControl id="ns-txno">
           <div class="ho-label-row">
             <MpFormLabel>Transaction no.</MpFormLabel>
-            <button type="button" class="ho-label-icon" aria-label="Transaction no. settings" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></button>
+            <MpButton variant="secondary" type="button" class="ho-label-icon" aria-label="Transaction no. settings" @click="noSettingsOpen = true"><MpIcon name="settings" size="sm" /></MpButton>
           </div>
           <input id="ns-txno-input" class="ho-txno-input" value="" placeholder="[Auto]" disabled />
         </MpFormControl>
@@ -400,16 +400,16 @@ async function handleSave() {
               <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <input v-model="search" class="ho-search" type="text" placeholder="Search..." />
-            <button v-if="search" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
+            <MpButton v-if="search" variant="ghost" class="search-clear-btn" type="button" aria-label="Clear search" @click="search = ''">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
               </svg>
-            </button>
+            </MpButton>
           </div>
         </div>
 
         <ScanBar placeholder="Scan tracking no., packing no., or order no." class="ns-scanbar" @scan="handleScan">
-          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</button>
+          <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</MpButton>
         </ScanBar>
 
         <div v-if="!rows.length" class="empty-full">
@@ -649,9 +649,17 @@ async function handleSave() {
 .ho-td--number { position: relative; }
 /* Editable Courier/Tracking cell — white, input fills edge-to-edge, focus ring */
 .ho-td--input { padding: 0; background: var(--mp-background-neutral, #ffffff); }
-.ho-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ho-td--input { position: relative; }
+.ho-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ho-td--input--error { box-shadow: inset 0 0 0 2px var(--mp-border-danger, #dc2626); }
-.ho-td--input--error:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ho-td--input--error { position: relative; }
+.ho-td--input--error:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ho-text-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;
