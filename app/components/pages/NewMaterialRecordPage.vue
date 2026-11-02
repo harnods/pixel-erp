@@ -18,6 +18,7 @@ import {
   MpCheckbox, MpRadio, toast,
 } from '@mekari/pixel3'
 import { workOrders } from '~/data/workOrders'
+import { neededQtyFor } from '~/data/workOrderAdjustment'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouses } from '~/data/warehouses'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
@@ -114,8 +115,8 @@ const rows = reactive<MaterialRow[]>(
       product: p?.name ?? '—',
       sku: p?.sku ?? '—',
       unit: r.unit,
-      neededQty: r.needed,
-      onHandQty: r.needed,
+      neededQty: neededQtyFor(wo.value, r.productId, r.needed),
+      onHandQty: neededQtyFor(wo.value, r.productId, r.needed),
       consumedQty: Math.max(0, netConsumed(r.productId)),
       qtyValue: prefillQty > 0 ? String(prefillQty) : '',
       selected: true,

@@ -28,6 +28,46 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-adjust-page',
+    title: 'Adjust work order page',
+    description:
+      'Record field differences before closing a work order: produced and needed qty, cost multipliers, other outputs, and production waste. Changes apply to this work order only, never the BOM, and show on its detail page.',
+    date: '2026-11-02',
+    files: ['AdjustWorkOrderPage.vue', 'workOrderAdjustment.ts'],
+  },
+  {
+    id: 'wo-routing-confirmation',
+    title: 'Complete work order asks for routing confirmation',
+    description:
+      'Completing a tracked work order now asks whether the field process matched, offers Adjust work order, and captures the actual end date.',
+    date: '2026-11-02',
+    files: ['RoutingConfirmationModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-track-routing-page',
+    title: 'Track routing page',
+    description:
+      'New board to move a work order\'s routing steps through Not started, In progress, and Completed with actual dates. Progress is saved to the work order and drives the Routing section and primary action on its detail page.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue', 'workOrderRouting.ts'],
+  },
+  {
+    id: 'wo-primary-track-routing',
+    title: 'Work order primary action follows routing',
+    description:
+      'Start work order now starts the work order. With Track routing set to Yes, the primary action becomes Track routing, then Complete work order once every routing step is completed.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-status-badge',
+    title: 'Routing status uses the status badge',
+    description:
+      'The Routing section status is now a status badge, and tracked work orders show each step\'s own status and actual dates.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
     id: 'crm-deals-exist-in-deals',
     title: 'Deals: properties aligned to PRD "Exist in Deals"',
     description:

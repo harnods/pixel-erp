@@ -269,6 +269,8 @@ const ProjectsRouter = asyncPage(() => import('~/components/projects/ProjectsRou
 const PROJECT_SEGMENTS = ['projects', 'project-approvals', 'project-documents', 'stock-availability', 'site-change-capture', 'project-audit-log', 'project-settings']
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
+const TrackRoutingPage = asyncPage(() => import('~/components/pages/TrackRoutingPage.vue'))
+const AdjustWorkOrderPage = asyncPage(() => import('~/components/pages/AdjustWorkOrderPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
@@ -664,6 +666,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /work-orders/:id/material-record/new → new consume/return record (full page)
   if (segs.length >= 4 && segs[0] === 'work-orders' && segs[2] === 'material-record' && segs[3] === 'new') {
     return { component: NewMaterialRecordPage, id: segs[1]! }
+  }
+  // /work-orders/:id/track-routing → routing tracker board (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'track-routing') {
+    return { component: TrackRoutingPage, id: segs[1]! }
+  }
+  // /work-orders/:id/adjust → adjust before completing (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'adjust') {
+    return { component: AdjustWorkOrderPage, id: segs[1]! }
   }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
