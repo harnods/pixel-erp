@@ -1,4 +1,5 @@
 import { reactive } from "vue";
+import type { BatchAttributeValues } from "./batchAttributes";
 import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { outgoingOrders, pickableOrders, canCreatePicking, isMarketplaceOrder, shippedSeeds, type OutgoingOrder } from "./outgoing";
@@ -33,6 +34,8 @@ export interface PickingBatchPick {
   qty: number;
   unit: string;
   location: string;
+  /** Batch attribute snapshot saved with the pick (ATINV-9082); absent on plan lines. */
+  attributes?: BatchAttributeValues;
 }
 
 /** One serial picked to fulfil a line — a serial lives in exactly one bin. */

@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import type { BatchAttributeValues } from './batchAttributes'
 import { TODAY } from './master'
 import { billOfMaterials } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
@@ -56,7 +57,7 @@ export interface WorkOrder {
 export interface WorkOrderMaterialReservation {
   /** Warehouse the reservation was picked from — needed to look the units back up later. */
   warehouseId?: string
-  batchSelection?: { batchNo: string; qty: number }[]
+  batchSelection?: { batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
   serialSelection?: string[]
 }
 

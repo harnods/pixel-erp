@@ -6,6 +6,9 @@
  * (breadcrumb, Actions dropdown, activity log link + modal, MpTabs) but a simpler
  * 2-column info section (no photo, no Purchase/Sales info) since a batch has no
  * accounting fields of its own — those live on the parent product.
+ *
+ * Batch Attribute (plan Phase 3): Batch info lists the product's attributes in its
+ * order, Edit opens BatchFormModal, and the activity log shows recorded creates/edits.
  */
 import {
   MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -17,18 +20,28 @@ import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/Acti
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
+import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { generateBarcodeLabelPdf } from '~/utils/barcodeLabelPdf'
 import type jsPDF from 'jspdf'
 import {
   getBatchDetail, getWarehouseBatchDetail, getBatchTransactions, getBatchWarehouseStock,
+  setBatchArchived,
+  type ProductBatchSummary,
 } from '~/data/productDetails'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
-import { formatDateTimeLong } from '~/utils/date'
+import { batchAttributeDef, formatExpiry, getBatchAttributeConfig, type BatchAttributeKey } from '~/data/batchAttributes'
+import { batchActivityFor } from '~/data/batchStore'
+import { gradeById } from '~/data/grades'
+import { vendors } from '~/data/vendors'
+import { formatDateLong, formatDateTimeLong } from '~/utils/date'
+import { successToast } from '~/utils/toasts'
 
 // orderId is "sku::batchNo" from the Products path, OR "warehouseId::sku::batchNo" when
 // opened from Warehouse Details — the batch page stays under /warehouses in that case,
 // same page format, just warehouse-scoped data + breadcrumb.
 const props = defineProps<{ orderId: string }>()
+const { t } = useLocale()
 const router = useRouter()
 const route = useRoute()
 
@@ -66,24 +79,113 @@ function formatQty(n: number, unit: string) {
   return `${n.toLocaleString('id-ID')} ${unit}`
 }
 function formatDate(iso: string) {
-  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
+  // A batch can have no expiry (the Unassigned batch, or an optional Expiry left
+  // empty) — Intl throws "Invalid time value" on an invalid Date, so render "—".
+  const d = new Date(iso)
+  if (!iso || Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
 }
 const updatedLabel = computed(() => batch.value ? formatDateTimeLong(batch.value.updatedAt) : '')
 
+/** One attribute (or batch number / description) value as shown to people. Stored
+ *  values are raw — vendor id, grade id, ISO date — so this is where they're named. */
+function formatAttributeValue(field: BatchAttributeKey | 'batchNo' | 'description', value: string | null | undefined): string {
+  if (!value) return '—'
+  switch (field) {
+    case 'expiry_date': return formatExpiry(value, 'long')
+    case 'manufacturing_date':
+    case 'best_before_date': return formatDateLong(value)
+    case 'supplier': return vendors.find(v => v.id === value)?.name ?? value
+    case 'grade': {
+      const grade = gradeById(value)
+      if (!grade) return value
+      return `${grade.name} (Rank ${grade.rank})${grade.status === 'inactive' ? ' · Inactive' : ''}`
+    }
+    default: return value
+  }
+}
+
+// ── Batch attributes ─────────────────────────────────────────────────────────────
+/** The product's current attribute set, in its order. The Unassigned batch never
+ *  carries attributes (PM answer A5), so it shows none. */
+const attributeRows = computed(() => {
+  const b = batch.value
+  if (!b || b.isUnassigned) return []
+  return getBatchAttributeConfig(sku.value).map(a => ({
+    key: a.key,
+    label: batchAttributeDef(a.key).label,
+    value: formatAttributeValue(a.key, b.attributes[a.key]),
+  }))
+})
+
+// ── Edit ─────────────────────────────────────────────────────────────────────────
+/** Product batches only: warehouse lots are seed data outside the product's batch
+ *  list, and the Unassigned batch can't be edited (PM answer A5). */
+const canEdit = computed(() => !!batch.value && !batch.value.isUnassigned && !batch.value.id.includes('::lot::'))
+const editOpen = ref(false)
+function onBatchSaved(saved: ProductBatchSummary) {
+  // A rename changes the batch number in the URL — follow it so the page still resolves.
+  if (!warehouseId.value && saved.batchNo !== batchNo.value) {
+    router.replace({ path: `/product-list/${sku.value}/batches/${encodeURIComponent(saved.batchNo)}`, query: route.query })
+  }
+}
+
+// ── Archive ────────────────────────────────────────────────────────────────────
+// Archiving is reversible and leaves stock and history alone, so it confirms
+// without the danger styling (the Grades deactivate confirm sets the precedent).
+const archiveOpen = ref(false)
+function archiveBatch() {
+  const b = batch.value
+  if (!b) return
+  const result = setBatchArchived(sku.value, b.id, true)
+  if (!result.ok) return
+  successToast(t('Batch archived'))
+  router.push({ path: `/product-list/${sku.value}`, query: { section: 'batches' } })
+}
+function unarchiveBatch() {
+  const b = batch.value
+  if (!b) return
+  const result = setBatchArchived(sku.value, b.id, false)
+  if (result.ok) successToast(t('Batch unarchived'))
+}
+
 // ── Activity log ───────────────────────────────────────────────────────────────
+const CHANGE_LABELS: Record<string, string> = { batchNo: 'Number', description: 'Description' }
+function changeLabel(field: string): string {
+  return CHANGE_LABELS[field] ?? batchAttributeDef(field as BatchAttributeKey)?.label ?? field
+}
+
 const activityOpen = ref(false)
 const activityEntries = computed<ActivityEntry[]>(() => {
   const b = batch.value
   if (!b) return []
-  return [{
-    date: b.updatedAt,
-    user: b.updatedBy,
-    activity: 'Updated',
-    details: [
-      { label: 'Number', value: b.batchNo },
-      { label: 'Expiration date', value: formatDate(b.expiryDate) },
-    ],
-  }]
+  const recorded = batchActivityFor(b.id)
+  // Recorded creates/edits, newest first — an edit reads old → new.
+  const entries: ActivityEntry[] = recorded.map(e => ({
+    date: e.date,
+    user: e.user,
+    activity: e.action === 'created' ? 'Created' : 'Updated',
+    details: e.changes.map(c => ({
+      label: changeLabel(c.field),
+      value: e.action === 'created'
+        ? formatAttributeValue(c.field, c.to)
+        : `${formatAttributeValue(c.field, c.from)} → ${formatAttributeValue(c.field, c.to)}`,
+    })),
+  }))
+  // Seed batches existed before anything was recorded — start their trail from the
+  // record itself (rule/activity-log-entries).
+  if (!recorded.some(e => e.action === 'created')) {
+    entries.push({
+      date: b.createdAt ?? b.updatedAt,
+      user: b.createdBy ?? b.updatedBy,
+      activity: 'Created',
+      details: [
+        { label: 'Number', value: b.batchNo },
+        ...(b.attributes.expiry_date ? [{ label: 'Expiry date', value: formatExpiry(b.attributes.expiry_date, 'long') }] : []),
+      ],
+    })
+  }
+  return entries
 })
 
 // empty-state illustration (runtime public path, not a build-time import)
@@ -171,9 +273,13 @@ const pagedWarehouseStock = computed(() => {
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem>Edit</MpPopoverListItem>
-            <MpPopoverListItem @click="openPrintBarcode">Print barcode</MpPopoverListItem>
-            <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })">Archive</MpPopoverListItem>
+            <MpPopoverListItem v-if="canEdit" @click="editOpen = true">Edit</MpPopoverListItem>
+            <!-- The Unassigned batch isn't a physical lot, so it has no label to print. -->
+            <MpPopoverListItem v-if="!batch?.isUnassigned" @click="openPrintBarcode">Print barcode</MpPopoverListItem>
+            <!-- Restoring is benign, so it acts straight away; archiving confirms first
+                 (the Grades Deactivate/Activate pair sets the same precedent). -->
+            <MpPopoverListItem v-if="batch?.archived" @click="unarchiveBatch">Unarchive</MpPopoverListItem>
+            <MpPopoverListItem v-else :class="css({ color: 'var(--mp-text-critical)' })" @click="archiveOpen = true">Archive</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
       </MpPopover>
@@ -188,16 +294,19 @@ const pagedWarehouseStock = computed(() => {
         <div class="pd-info-row">
           <div class="pd-field-col" style="width: 368px">
             <ContentList label="Number" :value="batch.batchNo" />
-            <ContentList label="Expiration date" :value="formatDate(batch.expiryDate)" />
+            <!-- The product's batch attributes, in its order (Batch Attribute Phase 3). -->
+            <ContentList v-for="a in attributeRows" :key="a.key" :label="a.label" :value="a.value" />
             <ContentList label="Description">
-              <ClampText :text="batch.description" :lines="2" />
+              <ClampText :text="batch.description || '—'" :lines="2" />
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
             <ContentList label="On hand qty" :value="formatQty(batch.onHand, batch.unit)" />
             <ContentList label="Reserved qty" :value="formatQty(batch.reserved, batch.unit)" />
             <ContentList label="Available qty" :value="formatQty(batch.available, batch.unit)" />
-            <ContentList label="Min. stock" :value="formatQty(batch.minStock, batch.unit)" />
+            <!-- The threshold is the product's, across all its batches — labelled as
+                 such so it doesn't read as a minimum this one batch is under. -->
+            <ContentList label="Product min. stock" :value="formatQty(batch.minStock, batch.unit)" />
           </div>
         </div>
       </section>
@@ -397,6 +506,24 @@ const pagedWarehouseStock = computed(() => {
       title="Barcode preview"
       @close="barcodePreviewOpen = false"
     />
+
+    <BatchFormModal
+      v-if="canEdit"
+      :open="editOpen"
+      :sku="sku"
+      :batch-id="batch.id"
+      @close="editOpen = false"
+      @saved="onBatchSaved"
+    />
+
+    <ConfirmModal
+      v-model:is-open="archiveOpen"
+      :title="t('Archive batch?')"
+      :description="t('Archived batches are hidden from the product\'s batch list and can\'t be used in new transactions. Stock and history are kept.')"
+      :confirm-label="t('Archive batch')"
+      :is-danger="false"
+      @confirm="archiveBatch"
+    />
   </div>
 
   <div v-else class="detail-page">
@@ -412,7 +539,7 @@ const pagedWarehouseStock = computed(() => {
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .detail-bar {
   flex-shrink: 0; height: var(--mp-sizes-18, 72px); box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle); padding: 0 var(--mp-spacing-6);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); padding: 0 var(--mp-spacing-6);
   display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
 }
 .detail-bar-left { display: flex; flex-direction: column; justify-content: center; gap: 0; min-width: 0; }
@@ -443,7 +570,7 @@ const pagedWarehouseStock = computed(() => {
 }
 .detail-stage {
   flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
   border-top: var(--mp-spacing-6) solid var(--mp-background-stage);
@@ -487,8 +614,8 @@ const pagedWarehouseStock = computed(() => {
 .pd-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   min-width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-neutral); color: var(--mp-text-subtle);
+  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full, 999px);
+  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-subtle);
 }
 .pd-search-input { flex: 1; border: none; outline: none; background: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); min-width: 0; }
 .pd-search-input::placeholder { color: var(--mp-text-placeholder); }
@@ -499,7 +626,7 @@ const pagedWarehouseStock = computed(() => {
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.pd-search-clear:hover { background: var(--mp-background-neutral-hovered); }
+.pd-search-clear:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Tables (ErpTablePage header/row spec, raw table — mirrors ProductDetailsPage.vue's tab tables) ── */
 .pd-table-scroll { overflow-x: auto; }
@@ -507,20 +634,20 @@ const pagedWarehouseStock = computed(() => {
 .pd-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default);
+  color: var(--mp-text-secondary); text-transform: uppercase; border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .pd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 .pd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default);
-  vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral);
+  color: var(--mp-text-default); border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
+  vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral, #ffffff);
 }
 .pd-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
-.pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered); }
+.pd-tr:hover .pd-td { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* Number / Warehouse cells — value is a link to detail */
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

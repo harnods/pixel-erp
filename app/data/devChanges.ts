@@ -28,6 +28,78 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'batch-drawer-desc-column-fit',
+    title: 'Batch drawers: Description keeps its own column',
+    description:
+      'In the Manage batch (stock in/out, transfer, put-away, picking, receiving), work order batch and View batch drawers, the Description column no longer collapses to zero width when attribute columns are added, so it never overlaps Vendor. Every column is now sized to its content, so the whole table — including the qty field you type into — fits a full-width drawer without scrolling sideways. A batch with no description shows "—" instead of demo text.',
+    date: '2026-10-28',
+    files: [
+      'app/components/patterns/ManageBatchDrawer.vue',
+      'app/components/patterns/PickBatchDrawer.vue',
+      'app/components/patterns/ViewBatchDrawer.vue',
+    ],
+  },
+  {
+    id: 'batch-export-write-error',
+    title: 'Batch export: a failed file shows an inline error',
+    description: 'If the template, export or error file can’t be created, an inline message says so under the button (no silent failure). The button stays to retry.',
+    date: '2026-10-28',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue', 'app/components/patterns/BatchExportModal.vue'],
+  },
+  {
+    id: 'batch-drawer-typed-expiry-locked',
+    title: 'Receiving drawer: a typed existing batch keeps its expiry',
+    description: 'Typing a new number that matches an existing batch with an expiry shows that expiry read-only (like its other attributes) and saves it; a batch with no expiry stays fillable.',
+    date: '2026-10-28',
+    files: ['app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'view-batch-drawer-attributes',
+    title: 'Batch attributes in View batch and Pick batch drawers',
+    description:
+      'The batch detail and pick drawers show the product\'s batch attributes (Vendor, Grade, ...) after Expiry date, read-only. A saved line shows the values it was saved with; a lot with no batch record shows only its expiry. Put-away, picking and purchase delivery lines now keep that attribute snapshot.',
+    date: '2026-10-28',
+    files: ['app/components/patterns/ViewBatchDrawer.vue', 'app/components/patterns/PickBatchDrawer.vue', 'app/data/pickingTasks.ts', 'app/data/putAwayTasks.ts', 'app/data/purchaseDeliveryBatches.ts'],
+  },
+  {
+    id: 'receiving-batch-attributes',
+    title: 'WMS receiving saves batch attributes to the batch master',
+    description:
+      'Finishing receiving creates a product batch for each new batch number and fills its empty attributes; existing values are never overwritten. A new row prefills Vendor from the PO, and existing batches recorded with another vendor ask for one confirmation first.',
+    date: '2026-10-28',
+    files: ['app/data/receivingTasks.ts', 'app/components/pages/ReceiveItemsPage.vue', 'app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'stock-in-batch-attributes',
+    title: 'Stock in saves its batches with their attributes',
+    description:
+      'A saved stock in/out keeps each line\'s batches and creates them in the batch master, filling only empty attributes. The adjustment details batch drawer shows the saved batches.',
+    date: '2026-10-28',
+    files: ['app/data/stockAdjustments.ts', 'app/components/pages/StockInOutFormPage.vue', 'app/components/pages/StockAdjustmentDetailsPage.vue'],
+  },
+  {
+    id: 'batch-drawer-attributes',
+    title: 'Batch attributes in every Manage batch drawer',
+    description:
+      'Stock in/out, transfer and WMS receiving, put-away and picking drawers show the product\'s batch attributes (Vendor, Grade, dates) as columns and under each Select-batch option. Receiving drawers take values for new batches and empty ones, and block Save on an empty required attribute; issuing drawers only show them.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/ManageBatchDrawer.vue', 'app/composables/useBatchAttributeColumns.ts'],
+  },
+  {
+    id: 'batch-export-modal',
+    title: 'Product Export batches uses the import template',
+    description:
+      'Exports this product\'s batches in the Update batches template format, with an optional "only batches with an empty required attribute" filter and an inline message when nothing matches.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/BatchExportModal.vue', 'app/components/pages/ProductDetailsPage.vue'],
+  },
+  {
+    id: 'batch-export-filters',
+    title: 'Export batches from the Update batches page',
+    description:
+      'Step 1 filters by product and by batches missing a required attribute; the file can be edited and imported back.',
+    date: '2026-10-27',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue'],
     id: 'crm-invite-edit-disabled-options',
     title: 'Invite / Edit user: options disabled up front, with the reason',
     description:

@@ -170,6 +170,7 @@ const pageRegistry: Record<string, Component> = {
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+  'Grades':            defineAsyncComponent(() => import('~/components/pages/GradesPage.vue')),
   // Contacts — one index page serves all three role lists; the route slug picks
   // which role it filters by. New/detail/edit resolve via detailMatch below.
   'Customers':         defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
@@ -297,6 +298,7 @@ const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const ImportBatchUpdatePage = asyncPage(() => import('~/components/pages/ImportBatchUpdatePage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
@@ -400,6 +402,9 @@ const CrmLandingPage = asyncPage(() => import('~/components/pages/CrmLandingPage
 // The "New custom role" title-bar button lives here, but the drawer it opens is
 // rendered inside CustomRolesPage — the two talk through this shared intent.
 const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
+// Same pattern for Inventory › Grades: "New grade" here, the modal in GradesPage.
+const { openCreate: openGradeCreate } = useGradeModal()
+
 /** "Add custom role" works from both tabs (as in prod): the drawer lives on the
  *  Custom role tab, so switch there first, then open it. */
 function addCustomRole() {
@@ -1135,6 +1140,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }
+  }
+  // /product-list/import-batches?sku= → Update batches from spreadsheet (must precede /product-list/:sku)
+  if (segs.length === 2 && segs[0] === 'product-list' && segs[1] === 'import-batches') {
+    return { component: ImportBatchUpdatePage, id: 'import-batches' }
   }
   // /product-list/:sku/edit → reuse the product form in edit mode
   if (segs.length >= 3 && segs[0] === 'product-list' && segs[2] === 'edit') {
@@ -2355,6 +2364,10 @@ function startResize(e: MouseEvent) {
             variant="primary" is-rounded data-test-id="usr-invite-user"
             @click="router.push('/users-and-roles/invite')"
           >{{ t('Invite user') }}</MpButton>
+        </div>
+        <!-- Inventory › Grades: the modal lives in GradesPage (useGradeModal). -->
+        <div v-else-if="currentPageKey === 'Grades'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="openGradeCreate()">{{ t('New grade') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">
