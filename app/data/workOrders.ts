@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import type { BatchAttributeValues } from './batchAttributes'
-import { TODAY } from './master'
+import { TODAY, TODAY_ISO } from './master'
 import { billOfMaterials, bomAtVersion, resolveSubBomPins, type BillOfMaterials } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
 
@@ -46,6 +46,8 @@ export interface WorkOrder {
   producedQty: number
   /** total units planned */
   plannedQty: number
+  /** ISO date the work order was created (it pins the BOM's Active version of that moment) */
+  createdAt?: string
   /** ISO planned start date */
   planStartDate: string
   /** ISO planned end date */
@@ -138,6 +140,18 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
   { bomIndex: 9, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 160, planStartDate: isoOffset(-3), planEndDate: isoOffset(2),  endDate: isoOffset(-1) },
 ]
 
+/**
+ * Seed creation date: two weeks before the planned start, but never later than
+ * 9 Jun 2026 — every seed WO is pinned to v1, so it must predate the first v2
+ * (grinder v2 on 10 Jun, house blend v2 on 20 Jun).
+ */
+function seedCreatedAt(planStartDate: string): string {
+  const d = new Date(planStartDate)
+  d.setDate(d.getDate() - 14)
+  const iso = d.toISOString().slice(0, 10)
+  return iso < '2026-06-09' ? iso : '2026-06-09'
+}
+
 function buildSeed(): WorkOrder[] {
   return SEED.map(({ bomIndex, ...wo }, i) => ({
     ...wo,
@@ -146,6 +160,7 @@ function buildSeed(): WorkOrder[] {
     bomId: seedBomId(bomIndex),
     bomName: seedBomName(bomIndex),
     bomVersion: 1,
+    createdAt: seedCreatedAt(wo.planStartDate),
     // Seed work orders predate every sub-BOM upgrade — each level was v1 then.
     subBomPins: resolveSubBomPins({ ...bomAtVersion(billOfMaterials.find(b => b.id === seedBomId(bomIndex)), 1)!, id: seedBomId(bomIndex) }, () => 1),
     // One completed order is from before versioning — shown as "pre-versioning".
@@ -157,7 +172,12 @@ function buildSeed(): WorkOrder[] {
 // Key bumped for the multi-level pins (subBomPins) + pre-versioning demo row.
 const workOrderSnapshot = loadSnapshot<WorkOrder>('workOrders-v2')
 // Work orders saved before versioning existed were built from v1.
-export const workOrders = reactive<WorkOrder[]>((workOrderSnapshot ?? buildSeed()).map(w => ({ ...w, bomVersion: w.bomVersion ?? 1, ...(w.bomVersion === undefined ? { preVersioning: true } : {}) })))
+export const workOrders = reactive<WorkOrder[]>((workOrderSnapshot ?? buildSeed()).map(w => ({
+  ...w,
+  bomVersion: w.bomVersion ?? 1,
+  createdAt: w.createdAt ?? seedCreatedAt(w.planStartDate),
+  ...(w.bomVersion === undefined ? { preVersioning: true } : {}),
+})))
 
 /** Persist the work-order snapshot (call after any mutation). */
 export function persistWorkOrders(): void {
@@ -179,14 +199,15 @@ function nextWorkOrderNumber(): string {
  *  It is pinned to the BOM's Active version at this moment, and every sub-BOM level
  *  resolves to its own Active version and is pinned too (resolve-at-WO). A version
  *  saved later never reaches this work order — only work orders created after it. */
-export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number' | 'bomVersion' | 'subBomPins' | 'preVersioning'>): WorkOrder {
+export function addWorkOrder(data: Omit<WorkOrder, 'id' | 'number' | 'bomVersion' | 'subBomPins' | 'preVersioning' | 'createdAt'>): WorkOrder {
   const bom = billOfMaterials.find(b => b.id === data.bomId)
   const n = woAddSeq++
-  const { preVersioning: _legacy, subBomPins: _pins, ...rest } = data as WorkOrder
+  const { preVersioning: _legacy, subBomPins: _pins, createdAt: _created, ...rest } = data as WorkOrder
   const wo: WorkOrder = {
     ...rest,
     bomVersion: bom?.version ?? 1,
     subBomPins: bom ? resolveSubBomPins(bom) : {},
+    createdAt: TODAY_ISO,
     id: `wo-new-${n}`,
     number: nextWorkOrderNumber(),
   }

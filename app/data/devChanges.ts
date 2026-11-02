@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'bom-version-wo-drawer',
+    title: "Versions section: all work orders drawer",
+    description:
+      "“Show more (n)” opens a drawer: header with the BOM name, number and version; table with WO number, product (finished good) and creation date, newest first. Each WO number opens the work order.",
+    date: '2026-11-02',
+    files: ['BomVersionWorkOrdersDrawer.vue', 'BillOfMaterialsDetailsPage.vue', 'workOrders.ts'],
+  },
+  {
     id: 'bom-structure-parents',
     title: "BOM structure: Parents tab with versions",
     description:
@@ -36,18 +44,10 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['BomStructureDrawer.vue', 'billOfMaterials.ts'],
   },
   {
-    id: 'bom-version-wo-modal',
-    title: "Versions section: all work orders modal",
-    description:
-      "Modal listing every work order created from the version, with its status; each opens the work order.",
-    date: '2026-11-02',
-    files: ['BillOfMaterialsDetailsPage.vue'],
-  },
-  {
     id: 'bom-version-no-changes',
-    title: "Edit BOM: no-changes warning",
+    title: "Edit BOM: “No changes detected” modal",
     description:
-      "Saving a used version without changing anything shows an inline warning and creates no version; the API refuses it too (NO_CHANGES).",
+      "Saving a version a work order uses without changing anything opens a modal saying nothing changed and no new version is created (Back to edit). The API refuses it too (NO_CHANGES).",
     date: '2026-11-02',
     files: ['CreateBillOfMaterialsPage.vue', 'integrityGuards.ts'],
   },
@@ -63,7 +63,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'bom-version-wo-list',
     title: "Versions section: work orders per version",
     description:
-      "Work orders created from each version (this BOM only). The first 3 show in the row; “Show more (n)” opens a modal with all of them and their status.",
+      "Work orders created from each version (this BOM only). The first 3 show in the row; “Show more (n)” opens a drawer with all of them.",
     date: '2026-11-02',
     files: ['BillOfMaterialsDetailsPage.vue', 'workOrders.ts'],
   },

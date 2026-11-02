@@ -18,7 +18,8 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpInputGroup, MpInputLeftAddon, MpInputRightAddon, MpTextarea,
-  MpButton, MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription, toast,
+  MpButton, MpButtonGroup, MpIcon, MpCheckbox, MpBanner, MpBannerIcon, MpBannerDescription, MpText, toast,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import {
@@ -54,8 +55,8 @@ const newVersionMode = computed(() => !!editingBomRecord.value && (!!fromVersion
 const nextVersion = computed(() => (editingBomRecord.value ? nextBomVersion(editingBomRecord.value) : 1))
 /** Inline save errors (rule/form-errors-inline) — a circular reference or a refused save. */
 const saveError = ref('')
-/** Inline warning — Save on a version a WO uses, with nothing changed (no new version is created). */
-const saveWarning = ref('')
+/** "No changes detected" modal — Save on a version a WO uses, with nothing changed: no new version is created. */
+const isNoChangesOpen = ref(false)
 const editingNumber = ref('')
 const editingArchived = ref(false)
 
@@ -455,7 +456,7 @@ function saveNewVersion(reason: string) {
   if (!res.ok) {
     if (res.reason === 'REASON') return
     isNewVersionModalOpen.value = false
-    if (res.reason === 'NO_CHANGES') saveWarning.value = noChangesCopy()
+    if (res.reason === 'NO_CHANGES') isNoChangesOpen.value = true
     else saveError.value = t('Failed to save. Please try again')
     return
   }
@@ -464,23 +465,20 @@ function saveNewVersion(reason: string) {
   router.push(`/bill-of-materials/${editingId}`)
 }
 
-const noChangesCopy = () => t('No changes to save. Change at least one detail of the bill of materials to save it as a new version.')
 function handleSave() {
   saveError.value = ''
-  saveWarning.value = ''
   if (!validate()) return
   if (newVersionMode.value) {
     const payload = buildBomPayload()
     if (cycleError(payload)) return
-    // Nothing changed → warn, don't create a version. Editing the Active version: compared with
+    // Nothing changed → "No changes detected" modal, no version. Editing the Active version: compared with
     // the form as loaded. Editing an inactive version: only when it equals the Active one
     // (bringing back an older recipe unchanged is a real change).
     const unchanged = fromVersion
       ? !!editingBomRecord.value && bomContentEquals(payload, editingBomRecord.value)
       : JSON.stringify(payload) === initialPayloadJson
     if (unchanged) {
-      saveWarning.value = noChangesCopy()
-      stageEl.value?.scrollTo({ top: 0, behavior: 'smooth' })
+      isNoChangesOpen.value = true
       return
     }
     pendingContent.value = payload
@@ -540,15 +538,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <div class="bf-body">
 
         <!-- ══ BOM info ══════════════════════════════════════════════════════ -->
-        <!-- Inline save error (circular reference / refused save) or no-changes warning -->
-        <section v-if="saveError || saveWarning" class="bf-section bf-version">
-          <MpBanner v-if="saveError" id="bf-save-error" variant="danger">
+        <!-- Inline save error (circular reference / refused save) -->
+        <section v-if="saveError" class="bf-section bf-version">
+          <MpBanner id="bf-save-error" variant="danger">
             <MpBannerIcon />
             <MpBannerDescription>{{ saveError }}</MpBannerDescription>
-          </MpBanner>
-          <MpBanner v-if="saveWarning" id="bf-no-changes" variant="warning" data-devchange="bom-version-no-changes">
-            <MpBannerIcon />
-            <MpBannerDescription>{{ saveWarning }}</MpBannerDescription>
           </MpBanner>
         </section>
 
@@ -977,6 +971,28 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <MpButton v-if="!isEditMode" variant="secondary" is-rounded @click="handleSaveDraft">{{ t('Save as draft') }}</MpButton>
       <MpButton variant="primary" is-rounded @click="handleSave">{{ isEditMode ? t('Save changes') : t('Save') }}</MpButton>
     </footer>
+
+    <!-- No changes detected: informs that nothing changed and no new version is created.
+         Alert modal — MpModal md, top-aligned, × / button to close only (rule/modal-alert-top-align,
+         rule/modal-drawer-close-explicit-only). -->
+    <MpModal
+      id="bf-no-changes-modal" :is-open="isNoChangesOpen" size="md"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false"
+      @close="isNoChangesOpen = false"
+    >
+      <MpModalContent data-devchange="bom-version-no-changes">
+        <MpModalHeader>{{ t('No changes detected') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <MpText>{{ t('You haven’t changed anything in this bill of materials, so no new version is created.') }}</MpText>
+        </MpModalBody>
+        <MpModalFooter>
+          <MpButtonGroup class="erp-action-footer">
+            <MpButton variant="primary" is-rounded @click="isNoChangesOpen = false">{{ t('Back to edit') }}</MpButton>
+          </MpButtonGroup>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
     <BomNewVersionModal
       v-if="newVersionMode && editingBomRecord"

@@ -114,6 +114,14 @@ describe('regular BOM versioning', () => {
     expect(wo.bomVersion).toBe(1)
   })
 
+  it('work orders carry a creation date — seeds predate the first v2, new ones are stamped today', async () => {
+    const { wos } = await load()
+    const master = await import('~/data/master')
+    expect(wos.workOrders.every(w => !!w.createdAt && w.createdAt <= '2026-06-09')).toBe(true)
+    const nw = wos.addWorkOrder({ ...wos.workOrders[0]!, id: undefined as never, number: undefined as never })
+    expect(nw.createdAt).toBe(master.TODAY_ISO)
+  })
+
   it('saving a new version with no changes is refused (NO_CHANGES) — the version stays as it is', async () => {
     const { boms, guards } = await load()
     const b = boms.billOfMaterials.find(x => x.number === 'Bill of Materials #10002')!

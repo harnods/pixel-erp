@@ -23,13 +23,14 @@ import { ref, reactive, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpButton, MpBadge, MpButtonGroup,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
+  MpIcon, MpButton, MpBadge,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import BomStructureDrawer from '~/components/BomStructureDrawer.vue'
+import BomVersionWorkOrdersDrawer from '~/components/BomVersionWorkOrdersDrawer.vue'
 import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink } from '@mekari/pixel3'
 import { workOrdersOnBomVersion } from '~/data/workOrders'
 import { bomVersionRefCount } from '~/data/integrityGuards'
@@ -80,7 +81,7 @@ function viewVersion(v: number) {
 }
 function goWorkOrder(id: string) { router.push(`/work-orders/${id}`) }
 // Versions section: the work orders created from each version — first 3 in the row,
-// "Show more (n)" opens a modal with all of them.
+// "Show more (n)" opens a drawer with all of them (WO number, product, creation date).
 const WO_LIMIT = 3
 const wosOf = (v: number) => (record.value ? workOrdersOnBomVersion(record.value.id, v) : [])
 const woModalVersion = ref<number | null>(null)
@@ -608,32 +609,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
     @confirm="confirmDelete"
   />
   <!-- All work orders created from one version (from "Show more" in the Versions table) -->
-  <MpModal
-    id="bomd-wo-modal" :is-open="woModalVersion !== null" size="md"
-    :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false" scroll-behavior="inside"
-    @close="woModalVersion = null"
-  >
-    <MpModalContent data-devchange="bom-version-wo-modal">
-      <MpModalHeader>{{ t('Work orders on') }} v{{ woModalVersion }} ({{ woModalVersion !== null ? wosOf(woModalVersion).length : 0 }})<MpModalCloseButton /></MpModalHeader>
-      <MpModalBody>
-        <table v-if="woModalVersion !== null" class="bom-table bomd-wo-table">
-          <thead><tr><th class="bom-th">{{ t('Work order') }}</th><th class="bom-th">{{ t('Status') }}</th></tr></thead>
-          <tbody>
-            <tr v-for="w in wosOf(woModalVersion)" :key="w.id" class="bom-tr">
-              <td class="bom-td"><span class="bom-link" role="link" tabindex="0" @click="goWorkOrderFromModal(w.id)" @keydown.enter="goWorkOrderFromModal(w.id)">{{ w.number }}</span></td>
-              <td class="bom-td"><ErpStatusBadge :status="w.status" /></td>
-            </tr>
-          </tbody>
-        </table>
-      </MpModalBody>
-      <MpModalFooter>
-        <MpButtonGroup class="erp-action-footer">
-          <MpButton variant="ghost" is-rounded @click="woModalVersion = null">{{ t('Close') }}</MpButton>
-        </MpButtonGroup>
-      </MpModalFooter>
-    </MpModalContent>
-    <MpModalOverlay />
-  </MpModal>
+  <BomVersionWorkOrdersDrawer
+    :is-open="woModalVersion !== null" :bom-id="record?.id" :version="woModalVersion ?? undefined"
+    @close="woModalVersion = null" @open-work-order="goWorkOrderFromModal"
+  />
   <BomStructureDrawer
     :is-open="isStructureOpen" :bom-id="record?.id" :version="selectedVersion"
     @close="isStructureOpen = false" @open-bom="openSubBom"
@@ -648,7 +627,6 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 .bomd-inline { display: inline; }
 .bomd-wo-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .bomd-wo-more { font-size: var(--mp-font-sizes-sm); }
-.bomd-wo-table { width: 100%; min-width: 0; }
 .bomd-wo-item { display: inline-flex; align-items: baseline; gap: var(--mp-spacing-1); }
 .bomd-review-badge { display: block; width: fit-content; margin-top: var(--mp-spacing-1); cursor: pointer; }
 .bom-link { color: var(--mp-text-link); cursor: pointer; }

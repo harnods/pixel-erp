@@ -6420,4 +6420,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "The file uses the Update batches template, so you can edit it and import it back.": "File ini memakai template Perbarui batch, sehingga Anda dapat mengubahnya lalu mengimpornya kembali.",
   "All products": "Semua produk",
   "The template lists your current batches, ready to edit. Filter it to the batches you want to update.": "Template berisi batch Anda saat ini, siap untuk diubah. Gunakan filter untuk memilih batch yang ingin diperbarui.",
+  "Work order number": "Nomor perintah kerja",
+  "Creation date": "Tanggal dibuat",
+  "No changes detected": "Tidak ada perubahan",
+  "You haven’t changed anything in this bill of materials, so no new version is created.": "Anda belum mengubah apa pun di bill of materials ini, jadi versi baru tidak dibuat.",
+  "Back to edit": "Kembali ke ubah",
 }
