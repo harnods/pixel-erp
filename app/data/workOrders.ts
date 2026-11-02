@@ -199,41 +199,7 @@ export function bomForWorkOrder(wo: Pick<WorkOrder, 'bomId' | 'bomVersion'>): Bi
   return bomAtVersion(billOfMaterials.find(b => b.id === wo.bomId), wo.bomVersion)
 }
 
-/**
- * Every work order that uses one version of a BOM: its own work orders first, then
- * the work orders of parent BOMs that pinned this version as a sub-assembly
- * (`viaSub` — shown as "Sub WO").
- */
-export function workOrdersUsingBomVersion(bomId: string, version: number): { wo: WorkOrder; viaSub: boolean }[] {
-  return [
-    ...workOrders.filter(w => w.bomId === bomId && w.bomVersion === version).map(wo => ({ wo, viaSub: false })),
-    ...workOrders.filter(w => w.bomId !== bomId && w.subBomPins?.[bomId] === version).map(wo => ({ wo, viaSub: true })),
-  ]
-}
-
 /** Work orders pinned to one version of a BOM (any status — a reference locks the version for good). */
 export function workOrdersOnBomVersion(bomId: string, version: number): WorkOrder[] {
   return workOrders.filter(w => w.bomId === bomId && w.bomVersion === version)
-}
-
-/** Closed work orders never show drift — their as-built is final. */
-export function workOrderClosed(wo: Pick<WorkOrder, 'status'>): boolean {
-  return wo.status === 'completed' || wo.status === 'canceled'
-}
-/**
- * Drift (V-06): the BOM's Active version is newer than this work order's pin.
- * Neutral and informational — never blocking. None on closed or pre-versioning WOs.
- */
-export function workOrderDrift(wo: WorkOrder): number | undefined {
-  if (wo.preVersioning || workOrderClosed(wo)) return undefined
-  const b = billOfMaterials.find(x => x.id === wo.bomId)
-  return b && b.version > wo.bomVersion ? b.version : undefined
-}
-/** Sub-BOM levels whose Active version moved past this work order's pin. */
-export function workOrderSubDrift(wo: WorkOrder): { bom: BillOfMaterials; pinned: number; active: number }[] {
-  if (wo.preVersioning || workOrderClosed(wo)) return []
-  return Object.entries(wo.subBomPins ?? {}).flatMap(([id, pinned]) => {
-    const b = billOfMaterials.find(x => x.id === id)
-    return b && b.version > pinned ? [{ bom: b, pinned, active: b.version }] : []
-  })
 }

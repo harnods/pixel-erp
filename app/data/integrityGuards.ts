@@ -20,7 +20,7 @@ import { warehouses, archiveWarehouses } from './warehouses'
 import { receivingTasks } from './receivingTasks'
 import { pickingTasks } from './pickingTasks'
 import { warehouseTransfers } from './warehouseTransfers'
-import { billOfMaterials, updateBillOfMaterials, saveBomNewVersion, bomCycle, VERSION_REASON_MIN, VERSION_REASON_MAX, type BillOfMaterialsInput } from './billOfMaterials'
+import { billOfMaterials, updateBillOfMaterials, saveBomNewVersion, bomCycle, bomContentEquals, VERSION_REASON_MIN, VERSION_REASON_MAX, type BillOfMaterialsInput } from './billOfMaterials'
 import { workOrders } from './workOrders'
 
 export type GuardResult = { ok: true } | { ok: false; reason: string }
@@ -139,29 +139,27 @@ export function activeWorkOrdersForBom(bomId: string): number {
 }
 
 /**
- * Reference lock (V-02): the first reference by a work order freezes a version
+ * Reference lock (V-02): the first work order created from a version freezes it
  * forever — even if that work order is later canceled. A locked version is never
- * edited; "Edit" becomes "Create new version" (the form saves vN+1). An Active
- * version nothing references yet is edited in place. Parent BOMs don't lock their
- * sub-BOMs (multi-level = resolve-at-WO; recursive locking is rejected).
+ * edited in place: Edit saves it as vN+1 (upgrade reason). Only work orders on THIS
+ * BOM count — a work order of a parent BOM using it as a sub-assembly doesn't lock it.
  * (Project BOMs differ: an edit to a referenced one raises an ECO — see projectActions.)
  */
 export function bomVersionLocked(id: string, version?: number): boolean {
   const b = billOfMaterials.find(x => x.id === id)
   if (!b) return false
-  const v = version ?? b.version
-  return workOrders.some(w => (w.bomId === id && (w.bomVersion ?? 1) === v) || w.subBomPins?.[id] === v)
+  return bomVersionRefCount(id, version ?? b.version) > 0
 }
-/** How many documents reference one version — work orders on it, plus work orders pinning it as a sub-BOM. */
+/** How many work orders were created from one version of this BOM. */
 export function bomVersionRefCount(id: string, version: number): number {
-  return workOrders.filter(w => (w.bomId === id && (w.bomVersion ?? 1) === version) || w.subBomPins?.[id] === version).length
+  return workOrders.filter(w => w.bomId === id && (w.bomVersion ?? 1) === version).length
 }
 /** @deprecated kept for callers of the pre-versioning guard — every BOM is now editable. */
 export function canEditBom(id: string): boolean {
   return billOfMaterials.some(b => b.id === id)
 }
 
-export type BomSaveFailure = { ok: false; reason: 'NOT_FOUND' | 'LOCKED' | 'CIRCULAR' | 'REASON'; path?: string[] }
+export type BomSaveFailure = { ok: false; reason: 'NOT_FOUND' | 'LOCKED' | 'CIRCULAR' | 'REASON' | 'NO_CHANGES'; path?: string[] }
 export type BomSaveResult = { ok: true; version: number } | BomSaveFailure
 
 /**
@@ -195,6 +193,8 @@ export function saveBomNewVersionSafe(
 ): BomSaveResult {
   const b = billOfMaterials.find(x => x.id === id)
   if (!b) return { ok: false, reason: 'NOT_FOUND' }
+  // Nothing changed against the Active version → no new version (the FE warns first).
+  if (bomContentEquals(data, b)) return { ok: false, reason: 'NO_CHANGES' }
   const n = meta.reason.trim().length
   if (n < VERSION_REASON_MIN || n > VERSION_REASON_MAX) return { ok: false, reason: 'REASON' }
   const cycle = bomCycle(id, data)

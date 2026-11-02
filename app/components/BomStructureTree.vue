@@ -13,7 +13,8 @@
  * Qty needed is cumulative for `rootQty` units of the finished good; availability
  * compares it with the product's on-hand stock.
  */
-import { MpButton, MpBadge, MpIcon } from '@mekari/pixel3'
+import { MpButton, MpBadge, MpIcon, MpTooltip } from '@mekari/pixel3'
+import { COLUMN_WIDTH } from '~/components/patterns/columnWidths'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import { billOfMaterials, bomTree, bomVersionContent, catalogProduct, type BomTreeNode } from '~/data/billOfMaterials'
 
@@ -92,7 +93,8 @@ const num = (n: number) => (Number.isInteger(n) ? n : Math.round(n * 100) / 100)
 <template>
   <div class="bst-scroll" data-devchange="bom-structure">
     <table class="bst-table">
-      <colgroup><col /><col class="bst-col-num" /><col class="bst-col-num" /><col class="bst-col-status" /><col v-if="showActions" class="bst-col-action" /></colgroup>
+      <!-- Semantic widths from the column-width standard (columnWidths.ts); the action column is layout-only -->
+      <colgroup><col /><col :style="{ width: COLUMN_WIDTH.default.minWidth }" /><col :style="{ width: COLUMN_WIDTH.default.minWidth }" /><col :style="{ width: COLUMN_WIDTH.status.maxWidth }" /><col v-if="showActions" class="bst-col-action" /></colgroup>
       <thead>
         <tr>
           <th>{{ t('Product') }}</th>
@@ -109,17 +111,21 @@ const num = (n: number) => (Number.isInteger(n) ? n : Math.round(n * 100) / 100)
               <!-- Tree guides: continuing lines for ancestors, then this row's elbow -->
               <span v-for="(g, gi) in r.guides" v-show="g" :key="gi" class="bst-guide" :style="{ '--level': gi }" aria-hidden="true" />
               <span v-if="r.depth > 0" class="bst-elbow" :class="{ 'bst-elbow--last': r.isLast }" aria-hidden="true" />
-              <MpButton
-                v-if="r.hasChildren" variant="ghost" class="bst-caret" :aria-label="collapsed.has(r.key) ? t('Expand') : t('Collapse')"
-                @click="toggle(r.key)"
-              >
-                <MpIcon :name="collapsed.has(r.key) ? 'caret-right' : 'caret-down'" size="sm" />
-              </MpButton>
+              <!-- Icon-only button → aria-label + tooltip (rule/btn-icon-tooltip) -->
+              <MpTooltip v-if="r.hasChildren" :id="`bst-caret-tip-${r.key}`" :label="collapsed.has(r.key) ? t('Expand') : t('Collapse')" placement="top" use-portal>
+                <MpButton
+                  variant="ghost" is-rounded class="bst-caret" :aria-label="collapsed.has(r.key) ? t('Expand') : t('Collapse')"
+                  @click="toggle(r.key)"
+                >
+                  <MpIcon :name="collapsed.has(r.key) ? 'caret-right' : 'caret-down'" size="sm" />
+                </MpButton>
+              </MpTooltip>
               <span v-else class="bst-caret-spacer" />
               <div class="bst-text">
-                <a class="bst-link" @click.prevent="emit('openProduct', r.productId)">{{ catalogProduct(r.productId)?.name ?? r.productId }}</a>
+                <!-- Clickable name in a cell = <span> styled as a link (rule/table-name-link-span) -->
+                <span class="bst-link" role="link" tabindex="0" @click="emit('openProduct', r.productId)" @keydown.enter="emit('openProduct', r.productId)">{{ catalogProduct(r.productId)?.name ?? r.productId }}</span>
                 <span v-if="r.subBomId" class="bst-bom">
-                  <a class="bst-bom-link" @click.prevent="emit('openBom', r.subBomId!, r.subVersion!)">{{ subOf(r.subBomId)?.number }} · v{{ r.subVersion }}</a>
+                  <span class="bst-bom-link" role="link" tabindex="0" @click="emit('openBom', r.subBomId!, r.subVersion!)" @keydown.enter="emit('openBom', r.subBomId!, r.subVersion!)">{{ subOf(r.subBomId)?.number }} · v{{ r.subVersion }}</span>
                   <MpBadge
                     v-if="newer(r)" :id="`bst-drift-${r.key}`" for="tableStatus" type="information" class="bst-drift"
                     role="button" tabindex="0" @click="emit('openDrift', r.subBomId!, r.subVersion!)"
@@ -147,46 +153,52 @@ const num = (n: number) => (Number.isInteger(n) ? n : Math.round(n * 100) / 100)
 </template>
 
 <style scoped>
-.bst-scroll { overflow-x: auto; border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); }
-.bst-table { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; font-size: var(--mp-font-sizes-md); }
+/* Hand-rolled tree table, matched to the ERP table metrics: no outer border box
+   (rule/table-no-outer-border), UPPERCASE 12px semibold secondary header on the gray
+   surface, 28px tall (rule/table-header-uppercase, rule/table-header-height), 8px cell
+   padding with single-line rows aligned middle (rule/table-cell-padding-align),
+   14px regular cell text (rule/table-cell-text-plain), white background (rule/table-bg-white). */
+.bst-scroll { overflow-x: auto; }
+.bst-table { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; background: var(--mp-background-stage, #ffffff); }
 .bst-table th {
-  text-align: left; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-colors-text-default); padding: var(--mp-spacing-3);
-  background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
-}
-.bst-table td { padding: 0 var(--mp-spacing-3); height: 60px; border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); vertical-align: middle; }
-.bst-row--bom td { height: 78px; }
-.bst-action { text-align: right; }
-.bst-col-num { width: 160px; }
-.bst-col-status { width: 180px; }
-.bst-col-action { width: 200px; }
-
-/* ── Product cell + tree guides (indent 38px per level) ──
-   The row divider under the product starts at the row's own indent (as in the
-   reference), so nested rows read as children of the row above. */
-.bst-product { position: relative; padding-left: 0 !important; border-bottom: none !important; }
-.bst-product::after {
-  content: ''; position: absolute; right: 0; bottom: 0; left: calc(var(--depth) * 38px + 8px);
+  height: var(--mp-sizes-7); padding: var(--mp-spacing-1) var(--mp-spacing-2); text-align: left; white-space: nowrap;
+  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); text-transform: uppercase;
+  color: var(--mp-colors-text-secondary); background: var(--mp-background-neutral-subtle, #f8f9f9);
   border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
 }
-.bst-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); padding-left: calc(var(--depth) * 38px); }
+.bst-table td {
+  padding: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400);
+  color: var(--mp-colors-text-default); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); vertical-align: middle;
+}
+.bst-action { text-align: right; }
+.bst-col-action { width: var(--mp-sizes-48, 12rem); }
+
+/* ── Product cell + tree guides (indent = spacing-10 per level) ──
+   The row divider under the product starts at the row's own indent (as in the
+   reference), so nested rows read as children of the row above. */
+.bst-product { --bst-indent: var(--mp-spacing-10); --bst-guide: var(--mp-spacing-4); position: relative; padding-left: 0 !important; border-bottom: none !important; }
+.bst-product::after {
+  content: ''; position: absolute; right: 0; bottom: 0; left: calc(var(--depth) * var(--bst-indent) + var(--mp-spacing-2));
+  border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9);
+}
+.bst-cell { display: flex; align-items: center; gap: var(--mp-spacing-2); padding-left: calc(var(--depth) * var(--bst-indent)); }
 .bst-guide, .bst-elbow { position: absolute; pointer-events: none; }
 /* an ancestor that has more siblings below: full-height line through this row */
-.bst-guide { top: 0; bottom: 0; left: calc(var(--level) * 38px + 16px); border-left: 1px solid var(--mp-colors-border-bold, #b8c0c8); }
+.bst-guide { top: 0; bottom: 0; left: calc(var(--level) * var(--bst-indent) + var(--bst-guide)); border-left: 1px solid var(--mp-colors-border-bold, #b8c0c8); }
 /* this row's own elbow: down from the top to the middle, then right to the caret */
-.bst-elbow { top: 0; bottom: 0; left: calc((var(--depth) - 1) * 38px + 16px); border-left: 1px solid var(--mp-colors-border-bold, #b8c0c8); }
+.bst-elbow { top: 0; bottom: 0; left: calc((var(--depth) - 1) * var(--bst-indent) + var(--bst-guide)); border-left: 1px solid var(--mp-colors-border-bold, #b8c0c8); }
 .bst-elbow::after {
-  content: ''; position: absolute; top: 50%; left: 0; width: 22px;
+  content: ''; position: absolute; top: 50%; left: 0; width: var(--mp-spacing-6);
   border-top: 1px solid var(--mp-colors-border-bold, #b8c0c8);
 }
 .bst-elbow--last { bottom: 50%; }
 .bst-elbow--last::after { top: 100%; }
-.bst-caret { min-width: 0 !important; width: 32px; height: 32px; padding: 0 !important; flex-shrink: 0; position: relative; z-index: 1; }
-.bst-caret-spacer { width: 32px; flex-shrink: 0; }
+.bst-caret { min-width: 0 !important; width: var(--mp-sizes-8); height: var(--mp-sizes-8); padding: 0 !important; flex-shrink: 0; position: relative; z-index: 1; }
+.bst-caret-spacer { width: var(--mp-sizes-8); flex-shrink: 0; }
 .bst-text { display: flex; flex-direction: column; min-width: 0; }
 .bst-link { color: var(--mp-text-link); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bst-link:hover, .bst-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
-.bst-bom { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
-.bst-bom-link { color: var(--mp-colors-text-default); cursor: pointer; }
+.bst-bom { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
+.bst-bom-link { cursor: pointer; }
 .bst-drift { cursor: pointer; }
 </style>

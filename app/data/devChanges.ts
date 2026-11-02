@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'bom-structure-parents',
+    title: "BOM structure: Parents tab with versions",
+    description:
+      "The hierarchy drawer has Components and Parents tabs. Parents lists every BOM that uses this one — directly or via another BOM — with its code + Active version and the qty used.",
+    date: '2026-11-02',
+    files: ['BomStructureDrawer.vue', 'billOfMaterials.ts'],
+  },
+  {
+    id: 'bom-version-wo-modal',
+    title: "Versions section: all work orders modal",
+    description:
+      "Modal listing every work order created from the version, with its status; each opens the work order.",
+    date: '2026-11-02',
+    files: ['BillOfMaterialsDetailsPage.vue'],
+  },
+  {
+    id: 'bom-version-no-changes',
+    title: "Edit BOM: no-changes warning",
+    description:
+      "Saving a used version without changing anything shows an inline warning and creates no version; the API refuses it too (NO_CHANGES).",
+    date: '2026-11-02',
+    files: ['CreateBillOfMaterialsPage.vue', 'integrityGuards.ts'],
+  },
+  {
     id: 'bom-version-no',
     title: "Bill of materials: opened version beside BOM no.",
     description:
@@ -37,10 +61,10 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'bom-version-wo-list',
-    title: "Versions section: every work order on the version, incl. sub WOs",
+    title: "Versions section: work orders per version",
     description:
-      "The Work orders column lists every work order using the version — its own WOs, plus parent-BOM work orders that pinned it as a sub-assembly, marked with a gray “· Sub WO” suffix (hover names the parent BOM). Shows the first 3; “Show more (n)” expands the row. Each opens the work order.",
-    date: '2026-10-03',
+      "Work orders created from each version (this BOM only). The first 3 show in the row; “Show more (n)” opens a modal with all of them and their status.",
+    date: '2026-11-02',
     files: ['BillOfMaterialsDetailsPage.vue', 'workOrders.ts'],
   },
   {
@@ -55,9 +79,9 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'bom-version-impact',
     title: "Edit BOM: upgrade-reason modal on Save",
     description:
-      "On Save the system checks the version: if a work order already uses it (or it’s a superseded version), a modal explains why, asks for the upgrade reason (10–500 characters) and shows the impact; confirming saves it as v(n+1) — same BOM, same code; work orders already created keep their version. Otherwise the BOM is saved in place.",
-    date: '2026-10-03',
-    files: ['CreateBillOfMaterialsPage.vue', 'BomNewVersionModal.vue', 'billOfMaterials.ts'],
+      "On Save, if a work order already uses the version (or it’s inactive), a modal explains why the save becomes v(n+1) — same BOM and code — and asks for the upgrade reason (10–500 characters). No impact list or cost delta. Otherwise the BOM is saved in place.",
+    date: '2026-11-02',
+    files: ['CreateBillOfMaterialsPage.vue', 'BomNewVersionModal.vue'],
   },
   {
     id: 'bom-version-create',
@@ -69,11 +93,11 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'bom-version-superseded',
-    title: "Bill of materials: deactivated (superseded) version",
+    title: "Bill of materials: inactive version",
     description:
-      "Banner “You are viewing v1 (superseded). Active version: v2.” + “Deactivated on [date time] · [n] Work Orders are created for this version.” and Go to active. A deactivated version can only be printed or duplicated into a new bill of materials (Actions: Duplicate, Print).",
-    date: '2026-10-03',
-    files: ['BillOfMaterialsDetailsPage.vue', 'CreateBillOfMaterialsPage.vue'],
+      "“Superseded” is now shown as “Inactive”. Banner: “You are viewing v1 (inactive). Active version: v2. Deactivated on [date time] · [n] Work Orders are created for this version.” An inactive version can only be printed or duplicated into a new bill of materials.",
+    date: '2026-11-02',
+    files: ['BillOfMaterialsDetailsPage.vue'],
   },
   {
     id: 'bom-version-changelog',
@@ -93,10 +117,10 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'bom-parent-review',
-    title: "Multi-level: clickable sub-BOM version badge on the line",
+    title: "Multi-level: sub-assembly line shows its Active version",
     description:
-      "When a sub-assembly’s BOM got a new version, its raw-material line shows “Bill of Materials #10009 · v2”. Clicking it opens that sub-BOM’s detail. Replaces the banner on the parent BOM.",
-    date: '2026-10-03',
+      "Every raw-material line that is another BOM’s output shows that sub-BOM’s code + Active version (e.g. “Bill of Materials #10009 · v2”) — also on an inactive parent version, so a duplicate picks up the newest. Click opens the sub-BOM.",
+    date: '2026-11-02',
     files: ['BillOfMaterialsDetailsPage.vue'],
   },
   {
@@ -116,36 +140,12 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['BillOfMaterialsIndexPage.vue'],
   },
   {
-    id: 'bom-index-version-filter',
-    title: "Bill of materials list: Version status filter",
-    description:
-      "Filter to BOMs with older versions, or whose sub-BOM has a new version.",
-    date: '2026-10-01',
-    files: ['BillOfMaterialsIndexPage.vue'],
-  },
-  {
     id: 'bom-wo-version-pin',
     title: "Work order: BOM version beside the BOM name",
     description:
-      "BOM name shows the version this work order was created from, e.g. “Espresso Machine Dual Boiler 2-Group · v1” — the pin never moves. Replaces the separate BOM version row.",
-    date: '2026-10-01',
+      "BOM name shows the version the work order was created from, e.g. “Espresso Machine Dual Boiler 2-Group · v1”. No comparison with newer versions.",
+    date: '2026-11-02',
     files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
-  },
-  {
-    id: 'bom-wo-newer-version',
-    title: "Work order: neutral “vN available” badge",
-    description:
-      "Info-colored, never a warning: opens the cumulative diff with Δ cost/unit. Hidden on completed, canceled and pre-versioning work orders.",
-    date: '2026-10-01',
-    files: ['WorkOrderDetailsPage.vue', 'WorkOrderBomVersionDrawer.vue'],
-  },
-  {
-    id: 'wo-drift-diff',
-    title: "Work order: what changed (cumulative)",
-    description:
-      "Composition diff between the pinned version and the Active one, with the estimated cost delta per unit.",
-    date: '2026-10-01',
-    files: ['WorkOrderBomVersionDrawer.vue', 'BomVersionDiff.vue'],
   },
   {
     id: 'bom-wo-pre-versioning',
@@ -154,14 +154,6 @@ export const DEV_CHANGES: DevChange[] = [
       "Work orders created before versioning have no reliable pin — they show a gray “pre-versioning” tag and never a drift badge.",
     date: '2026-10-01',
     files: ['WorkOrderDetailsPage.vue', 'workOrders.ts'],
-  },
-  {
-    id: 'bom-wo-index-version',
-    title: "Work orders list: BOM version per row",
-    description:
-      "The BOM name cell shows the version each work order uses (v1, v2…), without the “available” hint.",
-    date: '2026-10-01',
-    files: ['WorkOrdersIndexPage.vue'],
   },
   {
     id: 'crm-erp-integration-detail',

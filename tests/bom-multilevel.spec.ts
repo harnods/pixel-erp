@@ -3,12 +3,11 @@
  *
  *   • A raw material whose product is another BOM's finished good is a sub-BOM;
  *     the structure explodes through every level (Espresso machine › Grinder › Pitcher).
- *   • A parent version never pins or locks its subs — no recursive locking.
- *   • A work order resolves every sub level to its Active version at creation and
- *     pins it; later sub activations show as neutral sub-level drift.
- *   • A sub's new version surfaces on its direct parent as a banner + line badge with the
- *     cumulative diff + per-unit cost delta; "Mark as reviewed" logs and clears it.
- *   • Where-used walks every level, with "via" and the cost delta rolled up.
+ *   • A parent version never pins or locks its subs — no recursive locking. A
+ *     sub-assembly always resolves to its Active version, even under an inactive parent.
+ *   • A work order resolves every sub level to its Active version at creation; only
+ *     work orders on the BOM itself lock its version (a sub pin doesn't).
+ *   • Where-used walks every level, with "via" (Parents tab of the hierarchy).
  *   • Circular references are refused at any depth.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -39,42 +38,30 @@ describe('multi-level BOM', () => {
     expect(boms.resolveSubBomPins(espresso)).toEqual({ [grinder.id]: 2, [pitcher.id]: 1 })
   })
 
-  it('the parent has a pending review for the grinder v1 → v2 with the per-unit cost delta; mark as reviewed logs and clears it', async () => {
-    const { boms } = await load()
+  it('a sub-assembly shows its Active version — also when the parent version shown is inactive', async () => {
+    const { boms, guards } = await load()
     const espresso = boms.billOfMaterials.find(b => b.finishedGoodId === 'p13')!
     const grinder = boms.billOfMaterials.find(b => b.finishedGoodId === 'p16')!
-    const [r] = boms.bomPendingReviews(espresso)
-    expect(r!.sub.id).toBe(grinder.id)
-    expect([r!.fromVersion, r!.toVersion]).toEqual([1, 2])
-    const pitcherPrice = grinder.rawMaterials[0]!.purchaseCost
-    expect(r!.subDelta).toBe(pitcherPrice)
-    const versionBefore = espresso.version
-    expect(boms.markSubBomReviewed(espresso.id, grinder.id, 'Rudi')).toBe(true)
-    expect(boms.bomPendingReviews(espresso)).toEqual([])
-    expect(espresso.version).toBe(versionBefore) // no forced parent version
-    expect(espresso.changelog!.at(-1)).toMatchObject({ action: 'reviewed', subBomId: grinder.id, subVersion: 2, actor: 'Rudi' })
+    const data = { ...JSON.parse(JSON.stringify(espresso)), description: 'v2 of the machine' }
+    expect(guards.saveBomNewVersionSafe(espresso.id, data, { by: 'Rudi', reason: REASON })).toEqual({ ok: true, version: 2 })
+    const inactiveV1 = boms.bomAtVersion(espresso, 1)!
+    expect(boms.bomTree(inactiveV1).find(n => n.productId === 'p16')!.subVersion).toBe(grinder.version)
   })
 
-  it('work orders pin every sub level at creation; a later sub activation is drift, never a moved pin', async () => {
+  it('only work orders on the BOM itself lock a version — a sub-assembly pin on another WO does not', async () => {
     const { boms, wos, guards } = await load()
     const espresso = boms.billOfMaterials.find(b => b.finishedGoodId === 'p13')!
     const pitcher = boms.billOfMaterials.find(b => b.finishedGoodId === 'p20')!
-    const seedWo = wos.workOrders.find(w => w.bomId === espresso.id && !wos.workOrderClosed(w))!
-    // Seed WO predates the grinder upgrade — it pinned grinder v1.
-    expect(wos.workOrderSubDrift(seedWo).map(d => [d.pinned, d.active])).toEqual([[1, 2]])
+    const seedWo = wos.workOrders.find(w => w.bomId === espresso.id)!
     const wo = wos.addWorkOrder({ ...seedWo, id: undefined as never, number: undefined as never })
     expect(wo.subBomPins).toEqual(boms.resolveSubBomPins(espresso))
-    // The sub pin locks the pitcher's v1 (reference by a document), not the parent's version.
-    expect(guards.bomVersionLocked(pitcher.id, 1)).toBe(true)
-
-    const data = { ...JSON.parse(JSON.stringify(pitcher)), rawMaterials: pitcher.rawMaterials.map(r => ({ ...r, needed: r.needed + 1 })) }
-    expect(guards.saveBomNewVersionSafe(pitcher.id, data, { by: 'Rudi', reason: REASON })).toEqual({ ok: true, version: 2 })
     expect(wo.subBomPins![pitcher.id]).toBe(1)
-    // The grinder (direct parent) now shows the pitcher's new version; the espresso machine doesn't.
-    const grinder = boms.billOfMaterials.find(b => b.finishedGoodId === 'p16')!
-    expect(boms.bomPendingReviews(grinder).map(r => [r.sub.id, r.fromVersion, r.toVersion])).toEqual([[pitcher.id, 1, 2]])
-    expect(boms.bomPendingReviews(espresso).map(r => r.sub.id)).not.toContain(pitcher.id)
-    expect(wos.workOrderSubDrift(wo).map(x => [x.bom.id, x.pinned, x.active])).toEqual([[pitcher.id, 1, 2]])
+    expect(wos.workOrders.some(w => w.bomId === pitcher.id)).toBe(false)
+    expect(guards.bomVersionLocked(pitcher.id, 1)).toBe(false)
+    expect(guards.bomVersionRefCount(pitcher.id, 1)).toBe(0)
+    // So the pitcher's v1 is still edited in place, and the WO's pin never moves.
+    expect(guards.updateBillOfMaterialsSafe(pitcher.id, { ...JSON.parse(JSON.stringify(pitcher)), description: 'Polished finish' })).toEqual({ ok: true, version: 1 })
+    expect(wo.subBomPins![pitcher.id]).toBe(1)
   })
 
   it('where-used walks every level — the grinder directly, the espresso machine via the grinder — with the cost delta rolled up', async () => {

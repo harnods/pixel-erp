@@ -22,7 +22,7 @@ import {
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
 import {
-  addBillOfMaterials, billOfMaterials, catalogProduct, bomAtVersion, bomCycle, nextBomVersion,
+  addBillOfMaterials, billOfMaterials, catalogProduct, bomAtVersion, bomCycle, nextBomVersion, bomContentEquals,
   type BillOfMaterials, type BomRawMaterial, type BomProductionCost,
   type BomRoutingStep, type BomOtherOutput, type BomProductionWaste,
 } from '~/data/billOfMaterials'
@@ -54,6 +54,8 @@ const newVersionMode = computed(() => !!editingBomRecord.value && (!!fromVersion
 const nextVersion = computed(() => (editingBomRecord.value ? nextBomVersion(editingBomRecord.value) : 1))
 /** Inline save errors (rule/form-errors-inline) — a circular reference or a refused save. */
 const saveError = ref('')
+/** Inline warning — Save on a version a WO uses, with nothing changed (no new version is created). */
+const saveWarning = ref('')
 const editingNumber = ref('')
 const editingArchived = ref(false)
 
@@ -416,6 +418,11 @@ function buildBomPayload() {
   }
 }
 
+// What the form looked like right after loading — Save with nothing changed against
+// it is a "no changes" save (compared on the form's own payload, so derived fields
+// like percentages/option labels never count as a change).
+const initialPayloadJson = editingId ? JSON.stringify(buildBomPayload()) : ''
+
 // Returns the BOM id + the version it saved, or null when the save was refused —
 // the reason is shown inline above the form (never a toast).
 function cycleError(payload: ReturnType<typeof buildBomPayload>): boolean {
@@ -439,14 +446,17 @@ function saveBom(): { id: string; version: number } | null {
   return { id: created.id, version: created.version }
 }
 
-// ── New version: Save opens the modal (reason + impact), its confirm saves vN+1 ──
+// ── New version: Save opens the modal (upgrade reason), its confirm saves vN+1 ──
 const isNewVersionModalOpen = ref(false)
 const pendingContent = ref<ReturnType<typeof buildBomPayload>>()
 function saveNewVersion(reason: string) {
   const payload = pendingContent.value ?? buildBomPayload()
   const res = saveBomNewVersionSafe(editingId, payload, { by: 'Rahadian Bima', reason })
   if (!res.ok) {
-    if (res.reason !== 'REASON') { isNewVersionModalOpen.value = false; saveError.value = t('Failed to save. Please try again') }
+    if (res.reason === 'REASON') return
+    isNewVersionModalOpen.value = false
+    if (res.reason === 'NO_CHANGES') saveWarning.value = noChangesCopy()
+    else saveError.value = t('Failed to save. Please try again')
     return
   }
   isNewVersionModalOpen.value = false
@@ -454,12 +464,25 @@ function saveNewVersion(reason: string) {
   router.push(`/bill-of-materials/${editingId}`)
 }
 
+const noChangesCopy = () => t('No changes to save. Change at least one detail of the bill of materials to save it as a new version.')
 function handleSave() {
   saveError.value = ''
+  saveWarning.value = ''
   if (!validate()) return
   if (newVersionMode.value) {
     const payload = buildBomPayload()
     if (cycleError(payload)) return
+    // Nothing changed → warn, don't create a version. Editing the Active version: compared with
+    // the form as loaded. Editing an inactive version: only when it equals the Active one
+    // (bringing back an older recipe unchanged is a real change).
+    const unchanged = fromVersion
+      ? !!editingBomRecord.value && bomContentEquals(payload, editingBomRecord.value)
+      : JSON.stringify(payload) === initialPayloadJson
+    if (unchanged) {
+      saveWarning.value = noChangesCopy()
+      stageEl.value?.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     pendingContent.value = payload
     isNewVersionModalOpen.value = true
     return
@@ -517,11 +540,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
       <div class="bf-body">
 
         <!-- ══ BOM info ══════════════════════════════════════════════════════ -->
-        <!-- Inline save error (circular reference / refused save) -->
-        <section v-if="saveError" class="bf-section bf-version">
-          <MpBanner id="bf-save-error" variant="danger">
+        <!-- Inline save error (circular reference / refused save) or no-changes warning -->
+        <section v-if="saveError || saveWarning" class="bf-section bf-version">
+          <MpBanner v-if="saveError" id="bf-save-error" variant="danger">
             <MpBannerIcon />
             <MpBannerDescription>{{ saveError }}</MpBannerDescription>
+          </MpBanner>
+          <MpBanner v-if="saveWarning" id="bf-no-changes" variant="warning" data-devchange="bom-version-no-changes">
+            <MpBannerIcon />
+            <MpBannerDescription>{{ saveWarning }}</MpBannerDescription>
           </MpBanner>
         </section>
 

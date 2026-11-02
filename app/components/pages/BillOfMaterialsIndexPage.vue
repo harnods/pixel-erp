@@ -11,8 +11,7 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import BillOfMaterialsFiltersDrawer, { type BomFiltersValue } from '~/components/patterns/BillOfMaterialsFiltersDrawer.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import { billOfMaterials, catalogProduct, persistBillOfMaterials, bomPendingReviews, type BillOfMaterials } from '~/data/billOfMaterials'
+import { billOfMaterials, catalogProduct, persistBillOfMaterials, type BillOfMaterials } from '~/data/billOfMaterials'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -21,8 +20,7 @@ const { t } = useLocale()
 const columns: TableColumn[] = [
   { key: 'number',           label: t('Number'),             kind: 'number', sortable: true },
   { key: 'name',             label: t('Name'),               kind: 'name', sortable: true },
-  // Regular BOM versioning — exactly one Active version per BOM (never part of the name),
-  // plus the "sub-BOM has a new version" indicator (V-05, V-11).
+  // Regular BOM versioning — exactly one Active version per BOM (never part of the name).
   { key: 'version',          label: t('Active version'),     sortable: true },
   { key: 'category',         label: t('Category') },
   { key: 'costingReference', label: t('Costing reference'),  kind: 'number' },
@@ -58,22 +56,6 @@ const finishedGoodOptions = computed(() => {
 const finishedGoodFilter = ref('')
 const showArchived = ref(false)
 
-// Version status — superseded versions exist / a sub-BOM used here has a new version.
-const VERSION_STATUS_OPTIONS = [
-  { value: 'has-superseded', label: t('Has older versions') },
-  { value: 'sub-new-version', label: t('Sub-BOM has a new version') },
-]
-const versionStatusFilter = ref('')
-/** Sub-BOMs used here that got a new version — undefined when it can't be computed (badge shows without a count). */
-function reviewCount(b: BillOfMaterials): number | undefined {
-  try { return bomPendingReviews(b).length } catch { return undefined }
-}
-function matchesVersionStatus(b: BillOfMaterials): boolean {
-  const f = versionStatusFilter.value
-  if (!f) return true
-  if (f === 'has-superseded') return b.versionHistory.length > 0
-  return (reviewCount(b) ?? 1) > 0
-}
 
 // ─── All filters drawer ─────────────────────────────────────────────────────────
 const isFiltersDrawerOpen = ref(false)
@@ -115,7 +97,7 @@ const {
     const matchesCosting = !costingFilter.value || row.costingReference === costingFilter.value
     const matchesFinishedGood = !finishedGoodFilter.value || row.finishedGoodId === finishedGoodFilter.value
     const matchesArchived = showArchived.value || !row.archived
-    return matchesSearch && matchesCategory && matchesCosting && matchesFinishedGood && matchesArchived && matchesVersionStatus(row)
+    return matchesSearch && matchesCategory && matchesCosting && matchesFinishedGood && matchesArchived
   },
 })
 // Newest first by default.
@@ -123,10 +105,10 @@ sortKey.value = 'number'
 sortDir.value = 'desc'
 
 // Reset to page 1 when the extra (non-built-in) filters change
-watch([categoryFilter, costingFilter, finishedGoodFilter, showArchived, versionStatusFilter], () => setPage(1))
+watch([categoryFilter, costingFilter, finishedGoodFilter, showArchived], () => setPage(1))
 
 const hasActiveFilter = computed(() =>
-  !!search.value || !!categoryFilter.value || !!costingFilter.value || !!finishedGoodFilter.value || showArchived.value || !!versionStatusFilter.value,
+  !!search.value || !!categoryFilter.value || !!costingFilter.value || !!finishedGoodFilter.value || showArchived.value,
 )
 function clearFilters() {
   search.value = ''
@@ -134,7 +116,6 @@ function clearFilters() {
   costingFilter.value = ''
   finishedGoodFilter.value = ''
   showArchived.value = false
-  versionStatusFilter.value = ''
 }
 
 function archiveBom(row: BillOfMaterials) {
@@ -251,10 +232,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-
-        <div data-devchange="bom-index-version-filter">
-          <ErpFilterSelect id="bom-version-status" v-model="versionStatusFilter" :placeholder="t('Version status')" :options="VERSION_STATUS_OPTIONS" width="200px" />
-        </div>
 
         <MpButton class="filter-all-btn" variant="secondary" left-icon="filter" @click="isFiltersDrawerOpen = true">
           {{ t('All filters') }}

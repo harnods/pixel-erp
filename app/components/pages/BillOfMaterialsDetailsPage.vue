@@ -12,8 +12,8 @@
  * A BOM is the *template* a work order is produced from, so — unlike the work
  * order detail — it carries no workflow status, and its tables show planned figures only.
  *
- * Versioning (regular BOM, Active → Superseded — no Draft): the page shows one
- * version at a time — the Active one by default, or a Superseded one picked from
+ * Versioning (regular BOM, Active → Inactive — no Draft): the page shows one
+ * version at a time — the Active one by default, or an Inactive one picked from
  * the Versions section (?version=N), read-only with a banner naming the Active one.
  * Actions always offers "Edit"; on save, a version a work order uses becomes vN+1
  * (reason modal) — work orders already created keep their version. Multi-level:
@@ -23,19 +23,19 @@ import { ref, reactive, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpButton, MpBadge, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
+  MpIcon, MpButton, MpBadge, MpButtonGroup,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, css, toast,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import BomStructureDrawer from '~/components/BomStructureDrawer.vue'
 import { MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink } from '@mekari/pixel3'
-import { workOrdersUsingBomVersion } from '~/data/workOrders'
+import { workOrdersOnBomVersion } from '~/data/workOrders'
 import { bomVersionRefCount } from '~/data/integrityGuards'
 import { formatDate, formatDateTime, formatDateLong, formatDateTimeLong } from '~/utils/date'
 import {
-  billOfMaterials, catalogProduct, persistBillOfMaterials, bomAtVersion, bomVersionList,
-  bomPendingReviews,
+  billOfMaterials, catalogProduct, persistBillOfMaterials, bomAtVersion, bomVersionList, subBomForProduct,
   type BillOfMaterials, type BomProductionCost, type RegularBomVersionStatus, type BomChangelogAction,
 } from '~/data/billOfMaterials'
 
@@ -49,7 +49,7 @@ const route = useRoute()
 /** The stored record — identity + the Active version. */
 const record = computed<BillOfMaterials | undefined>(() => billOfMaterials.find(b => b.id === props.orderId))
 const versions = computed(() => (record.value ? bomVersionList(record.value) : []))
-// Which version is shown: ?version=N (Superseded, read-only) or the Active one.
+// Which version is shown: ?version=N (Inactive, read-only) or the Active one.
 const selectedVersion = computed(() => {
   const q = Number(route.query.version)
   return record.value && versions.value.some(v => v.version === q) ? q : record.value?.version
@@ -66,11 +66,12 @@ const deactivatedAt = computed(() => {
 const activeVersion = computed(() => record.value?.version)
 /** Everything below renders THIS version's content (identity stays the record's). */
 const bom = computed<BillOfMaterials | undefined>(() => bomAtVersion(record.value, selectedVersion.value))
-const STATUS_LABEL: Record<RegularBomVersionStatus, string> = { active: 'Active', superseded: 'Superseded' }
+// Internal status 'superseded' is shown to users as "Inactive".
+const STATUS_LABEL: Record<RegularBomVersionStatus, string> = { active: 'Active', superseded: 'Inactive' }
 const STATUS_TYPE: Record<RegularBomVersionStatus, 'completed' | 'announcement'> = { active: 'completed', superseded: 'announcement' }
 const refCount = (v: number) => (record.value ? bomVersionRefCount(record.value.id, v) : 0)
 const docLabel = (n: number) => `${n} ${n === 1 ? t('document') : t('documents')}`
-/** Open the detail page of one version (the Versions section below) — Active = no query, Superseded = ?version=N. */
+/** Open the detail page of one version (the Versions section below) — Active = no query, Inactive = ?version=N. */
 const stageEl = ref<HTMLElement | null>(null)
 function viewVersion(v: number) {
   if (!record.value) return
@@ -78,19 +79,13 @@ function viewVersion(v: number) {
   stageEl.value?.scrollTo({ top: 0 })
 }
 function goWorkOrder(id: string) { router.push(`/work-orders/${id}`) }
-// Versions section: show the first 3 work orders per version; "Show more (n)" expands that row.
+// Versions section: the work orders created from each version — first 3 in the row,
+// "Show more (n)" opens a modal with all of them.
 const WO_LIMIT = 3
-const expandedWos = ref(new Set<number>())
-function toggleWos(v: number) {
-  const next = new Set(expandedWos.value)
-  if (next.has(v)) next.delete(v)
-  else next.add(v)
-  expandedWos.value = next
-}
-function visibleWos(v: number) {
-  const all = record.value ? workOrdersUsingBomVersion(record.value.id, v) : []
-  return expandedWos.value.has(v) ? all : all.slice(0, WO_LIMIT)
-}
+const wosOf = (v: number) => (record.value ? workOrdersOnBomVersion(record.value.id, v) : [])
+const woModalVersion = ref<number | null>(null)
+function openWoModal(v: number) { woModalVersion.value = v }
+function goWorkOrderFromModal(id: string) { woModalVersion.value = null; goWorkOrder(id) }
 
 function goList() { router.push('/bill-of-materials') }
 function createWorkOrder() { router.push(`/work-orders/new?source=bom&bomId=${encodeURIComponent(props.orderId)}`) }
@@ -108,9 +103,10 @@ function goDuplicate() {
 }
 
 // ── Versioning actions ─────────────────────────────────────────────────────────
-// ── Multi-level: sub-BOM lines + parent review (V-11) ──────────────────────────
-const pendingReviews = computed(() => (selectedStatus.value === 'active' ? bomPendingReviews(record.value) : []))
-const reviewFor = (productId: string) => pendingReviews.value.find(r => r.sub.finishedGoodId === productId)
+// ── Multi-level: sub-assembly lines ────────────────────────────────────────────
+// A raw material that is another BOM's output always shows that sub-BOM's ACTIVE
+// version — also on an inactive parent version — so a duplicate picks up the newest.
+const subFor = (productId: string) => { const s = subBomForProduct(productId); return s && s.id !== record.value?.id ? s : undefined }
 /** Open the sub-assembly's own BOM detail (its Active version). */
 function goSubBom(id: string) { router.push(`/bill-of-materials/${id}`) }
 
@@ -123,10 +119,9 @@ function openSubBom(id: string, version: number) {
 
 // ── Changelog (V-07) ───────────────────────────────────────────────────────────
 const ACTION_LABEL: Record<BomChangelogAction, string> = {
-  created: 'Created', edited: 'Edited', new_version: 'New version saved', reviewed: 'Sub-BOM new version acknowledged',
+  created: 'Created', edited: 'Edited', new_version: 'New version saved',
 }
 const changelog = computed(() => [...(record.value?.changelog ?? [])].reverse())
-const subName = (id?: string) => billOfMaterials.find(b => b.id === id)?.name ?? '—'
 const TAB_NAMES = ['details', 'changelog']
 const activeTabIndex = computed({
   get: () => Math.max(0, TAB_NAMES.indexOf(String(route.query.section ?? 'details'))),
@@ -240,7 +235,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
           </MpPopoverContent>
         </MpPopover>
 
-        <!-- Superseded is read-only: no primary action (Create new version from here is in Actions). -->
+        <!-- An inactive version is read-only: no primary action (Duplicate / Print are in Actions). -->
         <MpButton v-if="!viewingSuperseded" class="detail-btn detail-btn--primary" variant="primary" @click="createWorkOrder">{{ t('Create work order') }}</MpButton>
       </div>
     </header>
@@ -250,7 +245,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 
       <MpBanner v-if="viewingSuperseded && record" id="bomd-superseded" variant="info" class="bomd-version-banner" data-devchange="bom-version-superseded">
         <MpBannerIcon />
-        <MpBannerTitle>{{ t('You are viewing') }} v{{ selectedVersion }} ({{ t('superseded') }}). {{ t('Active version') }}: v{{ activeVersion }}.</MpBannerTitle>
+        <MpBannerTitle>{{ t('You are viewing') }} v{{ selectedVersion }} ({{ t('inactive') }}). {{ t('Active version') }}: v{{ activeVersion }}.</MpBannerTitle>
         <MpBannerDescription>
           {{ t('Deactivated on') }} {{ deactivatedAt }} · {{ refCount(selectedVersion!) }} {{ t('Work Orders are created for this version.') }}
         </MpBannerDescription>
@@ -327,10 +322,10 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                   <td class="bom-td">
                     {{ productName(r.productId) }}
                     <MpBadge
-                      v-if="reviewFor(r.productId)" :id="`bomd-review-${r.productId}`" data-devchange="bom-parent-review"
+                      v-if="subFor(r.productId)" :id="`bomd-sub-${r.productId}`" data-devchange="bom-parent-review"
                       for="tableStatus" type="information" class="bomd-review-badge" role="link" tabindex="0"
-                      @click="goSubBom(reviewFor(r.productId)!.sub.id)" @keydown.enter="goSubBom(reviewFor(r.productId)!.sub.id)"
-                    >{{ reviewFor(r.productId)!.sub.number }} · v{{ reviewFor(r.productId)!.toVersion }}</MpBadge>
+                      @click="goSubBom(subFor(r.productId)!.id)" @keydown.enter="goSubBom(subFor(r.productId)!.id)"
+                    >{{ subFor(r.productId)!.number }} · v{{ subFor(r.productId)!.version }}</MpBadge>
                   </td>
                   <td class="bom-td">{{ productSku(r.productId) }}</td>
                   <td class="bom-td bom-td--num">{{ num(r.needed) }}</td>
@@ -533,7 +528,8 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
             <tbody>
               <tr v-for="v in versions" :key="v.version" class="bom-tr">
                 <td class="bom-td">
-                  <a class="bom-show-more" data-devchange="bom-version-link" @click.prevent="viewVersion(v.version)">v{{ v.version }}</a>
+                  <!-- Clickable value in a table cell = <span> styled as a link (rule/table-name-link-span) -->
+                  <span class="bom-link" role="link" tabindex="0" data-devchange="bom-version-link" @click="viewVersion(v.version)" @keydown.enter="viewVersion(v.version)">v{{ v.version }}</span>
                 </td>
                 <td class="bom-td">
                   <ErpStatusBadge :status="v.status" :type="STATUS_TYPE[v.status]" :label="t(STATUS_LABEL[v.status])" />
@@ -541,16 +537,15 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                 <td class="bom-td">{{ formatDate(v.createdAt) }}<span class="bomd-sub">{{ v.createdBy }}</span></td>
                 <td class="bom-td bom-td--wrap">{{ v.note || '—' }}</td>
                 <td class="bom-td">
-                  <!-- Every WO on this version, incl. sub WOs (parent BOM work orders that pinned it as a sub-assembly) -->
-                  <div v-if="record && workOrdersUsingBomVersion(record.id, v.version).length" class="bomd-wo-list" data-devchange="bom-version-wo-list">
-                    <span v-for="u in visibleWos(v.version)" :key="u.wo.id" class="bomd-wo-item">
-                      <a class="bom-link" @click.prevent="goWorkOrder(u.wo.id)">{{ u.wo.number }}</a>
-                      <span v-if="u.viaSub" class="bomd-subwo" :title="`${t('Uses this BOM as a sub-assembly of')} ${u.wo.bomName}`">· {{ t('Sub WO') }}</span>
+                  <!-- Work orders created from this version: first 3, the rest in a modal -->
+                  <div v-if="wosOf(v.version).length" class="bomd-wo-list" data-devchange="bom-version-wo-list">
+                    <span v-for="w in wosOf(v.version).slice(0, WO_LIMIT)" :key="w.id" class="bomd-wo-item">
+                      <span class="bom-link" role="link" tabindex="0" @click="goWorkOrder(w.id)" @keydown.enter="goWorkOrder(w.id)">{{ w.number }}</span>
                     </span>
-                    <a
-                      v-if="workOrdersUsingBomVersion(record.id, v.version).length > WO_LIMIT" class="bom-link bomd-wo-more"
-                      @click.prevent="toggleWos(v.version)"
-                    >{{ expandedWos.has(v.version) ? t('Show less') : `${t('Show more')} (${workOrdersUsingBomVersion(record.id, v.version).length - WO_LIMIT})` }}</a>
+                    <span
+                      v-if="wosOf(v.version).length > WO_LIMIT" class="bom-link bomd-wo-more" role="button" tabindex="0"
+                      @click="openWoModal(v.version)" @keydown.enter="openWoModal(v.version)"
+                    >{{ t('Show more') }} ({{ wosOf(v.version).length - WO_LIMIT }})</span>
                   </div>
                   <template v-else>—</template>
                 </td>
@@ -579,8 +574,7 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
                     <td class="bom-td">v{{ e.version }}</td>
                     <td class="bom-td">{{ e.actor }}</td>
                     <td class="bom-td bom-td--wrap">
-                      <template v-if="e.action === 'reviewed'">{{ subName(e.subBomId) }} v{{ e.subVersion }}</template>
-                      <template v-else>{{ e.reason || '—' }}</template>
+                      {{ e.reason || '—' }}
                     </td>
                   </tr>
                   <tr v-if="!changelog.length" class="bom-tr"><td class="bom-td" colspan="5">{{ t('No version events yet.') }}</td></tr>
@@ -613,6 +607,33 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
     :confirm-label="t('Archive')"
     @confirm="confirmDelete"
   />
+  <!-- All work orders created from one version (from "Show more" in the Versions table) -->
+  <MpModal
+    id="bomd-wo-modal" :is-open="woModalVersion !== null" size="md"
+    :is-close-on-esc="false" :is-close-on-overlay-click="false" :is-keep-alive="false" scroll-behavior="inside"
+    @close="woModalVersion = null"
+  >
+    <MpModalContent data-devchange="bom-version-wo-modal">
+      <MpModalHeader>{{ t('Work orders on') }} v{{ woModalVersion }} ({{ woModalVersion !== null ? wosOf(woModalVersion).length : 0 }})<MpModalCloseButton /></MpModalHeader>
+      <MpModalBody>
+        <table v-if="woModalVersion !== null" class="bom-table bomd-wo-table">
+          <thead><tr><th class="bom-th">{{ t('Work order') }}</th><th class="bom-th">{{ t('Status') }}</th></tr></thead>
+          <tbody>
+            <tr v-for="w in wosOf(woModalVersion)" :key="w.id" class="bom-tr">
+              <td class="bom-td"><span class="bom-link" role="link" tabindex="0" @click="goWorkOrderFromModal(w.id)" @keydown.enter="goWorkOrderFromModal(w.id)">{{ w.number }}</span></td>
+              <td class="bom-td"><ErpStatusBadge :status="w.status" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButtonGroup class="erp-action-footer">
+          <MpButton variant="ghost" is-rounded @click="woModalVersion = null">{{ t('Close') }}</MpButton>
+        </MpButtonGroup>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
   <BomStructureDrawer
     :is-open="isStructureOpen" :bom-id="record?.id" :version="selectedVersion"
     @close="isStructureOpen = false" @open-bom="openSubBom"
@@ -627,10 +648,8 @@ const finishedGoodsTotal = computed(() => mainOutputEstCost.value + otherOutputs
 .bomd-inline { display: inline; }
 .bomd-wo-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .bomd-wo-more { font-size: var(--mp-font-sizes-sm); }
+.bomd-wo-table { width: 100%; min-width: 0; }
 .bomd-wo-item { display: inline-flex; align-items: baseline; gap: var(--mp-spacing-1); }
-.bomd-subwo { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); cursor: default; }
-.bomd-banner-line { display: block; }
-.bomd-banner-line .bom-link { margin-left: var(--mp-spacing-1); }
 .bomd-review-badge { display: block; width: fit-content; margin-top: var(--mp-spacing-1); cursor: pointer; }
 .bom-link { color: var(--mp-text-link); cursor: pointer; }
 .bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }

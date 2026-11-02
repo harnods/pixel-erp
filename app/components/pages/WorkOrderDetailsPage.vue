@@ -12,7 +12,7 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpSelect, MpDatePicker, MpButton, MpBadge, MpTag, css, toast,
+  MpIcon, MpSelect, MpDatePicker, MpButton, MpTag, css, toast,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -22,10 +22,9 @@ import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus , bomForWorkOrder, workOrderDrift } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus , bomForWorkOrder } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
-import WorkOrderBomVersionDrawer from '~/components/WorkOrderBomVersionDrawer.vue'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
@@ -40,11 +39,6 @@ const wo = computed<WorkOrder | undefined>(() => workOrders.find(w => w.id === p
 // current one. An upgrade of the BOM never changes what this work order builds.
 const bom = computed(() => wo.value ? bomForWorkOrder(wo.value) : undefined)
 const bomRecord = computed(() => wo.value ? billOfMaterials.find(b => b.id === wo.value!.bomId) : undefined)
-/** A newer Active version exists — neutral information (V-06), hidden once the WO is closed or pre-versioning. */
-const newerBomVersion = computed(() => (wo.value ? workOrderDrift(wo.value) : undefined))
-const bomDiffOpen = ref(false)
-const diffTarget = ref<{ bomId?: string; from?: number }>({})
-function openDrift(bomId?: string, from?: number) { diffTarget.value = { bomId, from }; bomDiffOpen.value = true }
 
 function goList() { router.push('/work-orders') }
 function goNewRecord() { router.push(`/work-orders/${props.orderId}/material-record/new`) }
@@ -476,11 +470,6 @@ function suppressFabClick(e: MouseEvent) {
               <span data-devchange="bom-wo-version-pin" class="wod-version">
                 <span>{{ wo.bomName }} · v{{ wo.bomVersion }}</span>
                 <MpTag v-if="wo.preVersioning" id="wod-pre-versioning" data-devchange="bom-wo-pre-versioning">{{ t('pre-versioning') }}</MpTag>
-                <MpBadge
-                  v-if="newerBomVersion" id="wod-drift" for="tableStatus" type="information" class="wod-version-hint" role="button" tabindex="0"
-                  data-devchange="bom-wo-newer-version"
-                  @click="openDrift(wo.bomId, wo.bomVersion)" @keydown.enter="openDrift(wo.bomId, wo.bomVersion)"
-                >v{{ newerBomVersion }} {{ t('available') }}</MpBadge>
               </span>
             </ContentList>
             <ContentList :label="t('BOM no.')">
@@ -964,7 +953,6 @@ function suppressFabClick(e: MouseEvent) {
       </div>
     </header>
   </div>
-  <WorkOrderBomVersionDrawer :is-open="bomDiffOpen" :bom-id="diffTarget.bomId" :from-version="diffTarget.from" :wo-number="wo?.number" @close="bomDiffOpen = false" />
 </template>
 
 <style scoped>
@@ -1128,7 +1116,6 @@ function suppressFabClick(e: MouseEvent) {
 .wod-bom-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 /* BOM version pin + neutral newer-version indicator (information only — never blocks) */
 .wod-version { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-2); }
-.wod-version-hint { cursor: pointer; }
 .wod-hierarchy-link { flex-shrink: 0; }
 .wod-attach-list { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .wod-attach { display: inline-flex; align-items: flex-start; gap: var(--mp-spacing-2); cursor: pointer; color: var(--mp-text-link); }

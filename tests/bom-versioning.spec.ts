@@ -114,15 +114,13 @@ describe('regular BOM versioning', () => {
     expect(wo.bomVersion).toBe(1)
   })
 
-  it('drift: neutral "vN available" only on open, versioned work orders', async () => {
-    const { boms, wos } = await load()
-    const b = boms.billOfMaterials[0]!
-    const open = wos.workOrders.find(w => w.bomId === b.id && !wos.workOrderClosed(w))!
-    const closed = wos.workOrders.find(w => w.bomId === b.id && wos.workOrderClosed(w))!
-    expect(wos.workOrderDrift(open)).toBe(2)
-    expect(wos.workOrderDrift(closed)).toBeUndefined()
-    const legacy = wos.workOrders.find(w => w.preVersioning)!
-    expect(legacy).toBeTruthy()
-    expect(wos.workOrderDrift(legacy)).toBeUndefined()
+  it('saving a new version with no changes is refused (NO_CHANGES) — the version stays as it is', async () => {
+    const { boms, guards } = await load()
+    const b = boms.billOfMaterials.find(x => x.number === 'Bill of Materials #10002')!
+    expect(guards.bomVersionLocked(b.id)).toBe(true)
+    expect(guards.saveBomNewVersionSafe(b.id, copy(b), { by: 'Rudi', reason: REASON })).toEqual({ ok: false, reason: 'NO_CHANGES' })
+    expect(b.version).toBe(1)
+    expect(b.versionHistory).toEqual([])
   })
+
 })

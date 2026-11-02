@@ -96,15 +96,9 @@ export interface BillOfMaterials {
   versionHistory: BomVersionSnapshot[]
   /** Append-only version changelog, oldest first. */
   changelog?: BomChangelogEntry[]
-  /**
-   * Multi-level: for each sub-BOM used by this BOM's Active version, the sub's
-   * version this parent was last made aware of. A newer sub version shows a
-   * "sub-BOM has a new version" banner + line badge until acknowledged.
-   */
-  reviewedSubVersions?: Record<string, number>
 }
 
-export type BomChangelogAction = 'created' | 'edited' | 'new_version' | 'reviewed'
+export type BomChangelogAction = 'created' | 'edited' | 'new_version'
 /** One changelog event — who did what to which version, and why. */
 export interface BomChangelogEntry {
   /** ISO date-time (WIB) */
@@ -113,9 +107,6 @@ export interface BomChangelogEntry {
   version: number
   actor: string
   reason?: string
-  /** reviewed: the sub-BOM and the version acknowledged */
-  subBomId?: string
-  subVersion?: number
 }
 
 /** The recipe fields a version freezes — everything a work order is built from. */
@@ -248,12 +239,9 @@ function buildSeed(): BillOfMaterials[] {
   const demo = boms[0]
   if (demo) upgradeSeed(demo, '2026-06-20', 'Stronger blend — one more unit of the base green bean per batch.', r => r.map((x, i) => (i === 0 ? { ...x, needed: x.needed + 1 } : x)))
   // Multi-level demo: the grinder (#10009) got v2 — one more pitcher per unit. Its
-  // parent, the espresso machine (#10007), shows a "sub-BOM has a new version" banner.
+  // parent, the espresso machine (#10007), shows the grinder's Active version (v2).
   const grinder = boms.find(b => b.finishedGoodId === 'p16')
   if (grinder) upgradeSeed(grinder, '2026-06-10', 'Accessory bundle upgrade — ships with a second frothing pitcher.', r => r.map((x, i) => (i === 0 ? { ...x, needed: x.needed + 1 } : x)))
-  for (const b of boms) b.reviewedSubVersions = Object.fromEntries(directSubBoms(b, boms).map(s => [s.id, s.version]))
-  const espresso = boms.find(b => b.finishedGoodId === 'p13')
-  if (espresso && grinder) espresso.reviewedSubVersions![grinder.id] = 1
   return boms
 }
 
@@ -283,9 +271,6 @@ function normalize(b: BillOfMaterials): BillOfMaterials {
   return b
 }
 export const billOfMaterials = reactive<BillOfMaterials[]>((bomSnapshot ?? buildSeed()).map(normalize))
-for (const b of billOfMaterials) {
-  b.reviewedSubVersions ??= Object.fromEntries(directSubBoms(b).map(s => [s.id, s.version]))
-}
 
 /** Persist the BOM snapshot (call after any mutation). */
 export function persistBillOfMaterials(): void {
@@ -324,9 +309,7 @@ export function addBillOfMaterials(data: BillOfMaterialsInput, by = 'Rahadian Bi
     versionCreatedBy: by,
     versionHistory: [],
     changelog: [],
-    reviewedSubVersions: {},
   }
-  bom.reviewedSubVersions = Object.fromEntries(directSubBoms(bom).map(s => [s.id, s.version]))
   log(bom, { action: 'created', version: 1, actor: by }, today)
   billOfMaterials.unshift(bom)
   persistBillOfMaterials()
@@ -346,6 +329,11 @@ export function updateBillOfMaterials(id: string, data: BillOfMaterialsInput, by
 /** Only recipe fields + the archive flag — never lets a caller overwrite id, number or version history. */
 function pickInput(data: BillOfMaterialsInput): BillOfMaterialsInput {
   return { ...cloneContent(data), archived: data.archived }
+}
+
+/** True when two versions have the same recipe — saving it as a new version would change nothing. */
+export function bomContentEquals(a: BomContent, b: BomContent): boolean {
+  return JSON.stringify(cloneContent(a)) === JSON.stringify(cloneContent(b))
 }
 
 /** The number the next saved version gets — monotonic, never reused. */
@@ -376,8 +364,6 @@ export function saveBomNewVersion(id: string, data: BillOfMaterialsInput, meta: 
   existing.versionCreatedAt = today
   existing.versionCreatedBy = meta.by
   existing.versionNote = meta.reason.trim()
-  // The author saw the sub-BOMs this version uses as of now.
-  existing.reviewedSubVersions = { ...existing.reviewedSubVersions, ...Object.fromEntries(directSubBoms(existing).map(s => [s.id, s.version])) }
   log(existing, { action: 'new_version', version: existing.version, actor: meta.by, reason: existing.versionNote }, today)
   persistBillOfMaterials()
   return existing
@@ -570,39 +556,3 @@ export function bomWhereUsed(id: string, unitDelta?: number): BomWhereUsedRow[] 
   return rows
 }
 
-/** A parent line whose sub-BOM got a newer version since this parent was last made aware of it. */
-export interface BomPendingReview {
-  sub: BillOfMaterials
-  /** the sub version this parent last reviewed */
-  fromVersion: number
-  /** the sub's current Active version */
-  toVersion: number
-  /** cumulative per-unit cost change of the sub across every unreviewed hop */
-  subDelta?: number
-  /** that change multiplied by the parent's needed qty, per parent unit */
-  lineDelta?: number
-  /** when the newest sub version was saved */
-  releasedAt?: string
-}
-export function bomPendingReviews(b: BillOfMaterials | undefined): BomPendingReview[] {
-  if (!b) return []
-  return directSubBoms(b).flatMap(sub => {
-    const from = b.reviewedSubVersions?.[sub.id] ?? sub.version
-    if (sub.version <= from) return []
-    const subDelta = bomUnitCostDelta(sub, from, sub.version)
-    const qty = b.rawMaterials.filter(r => r.productId === sub.finishedGoodId).reduce((s, r) => s + r.needed, 0)
-    const lineDelta = subDelta === undefined ? undefined : Math.round((subDelta * qty) / (b.finishedGoodQty || 1))
-    return [{ sub, fromVersion: from, toVersion: sub.version, subDelta, lineDelta, releasedAt: sub.versionCreatedAt }]
-  })
-}
-
-/** "Mark as reviewed" — acknowledge a sub-BOM's new version on a parent. Logged; never forces a parent version. */
-export function markSubBomReviewed(parentId: string, subId: string, by = 'Rahadian Bima'): boolean {
-  const p = billOfMaterials.find(b => b.id === parentId)
-  const s = billOfMaterials.find(b => b.id === subId)
-  if (!p || !s) return false
-  ;(p.reviewedSubVersions ??= {})[subId] = s.version
-  log(p, { action: 'reviewed', version: p.version, actor: by, subBomId: subId, subVersion: s.version })
-  persistBillOfMaterials()
-  return true
-}
