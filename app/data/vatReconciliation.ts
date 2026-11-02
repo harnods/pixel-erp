@@ -1,5 +1,9 @@
 import { ref } from 'vue'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
+import { coaAccounts, type CoaAccount } from '~/data/wmsCutover'
+import { salesInvoices } from '~/data/salesInvoices'
+import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
+import { currentTaxDocument, type TaxDocument } from '~/data/taxDocuments'
 
 /**
  * VAT reconciliation — ERP records ↔ DJP Coretax faktur pajak.
@@ -87,6 +91,12 @@ export interface ReconRecord {
   approved?: boolean
   /** ERP side — the sales invoice was voided after the faktur was approved. */
   voided?: boolean
+  /**
+   * ERP side, output only — the real Sales invoice this row is (`SI…`), so the
+   * row's actions can open it. Set on every "Not found in Coretax" row, which is
+   * where the user goes to the invoice to raise its tax document.
+   */
+  salesInvoiceId?: string
   /** ERP side — a sales return linked to this invoice (US-012 / US-017). */
   returnRef?: string
   returnDate?: string
@@ -318,7 +328,7 @@ export const SIDE_LABELS: Record<ReconSide, {
     title: 'Output tax invoice',
     erpHeader: 'Sales invoices', erpHeaderSub: 'ERP',
     djpHeader: 'Tax invoices issued', djpHeaderSub: 'Coretax DJP',
-    erpEmptyAction: 'Create sales invoice', djpEmptyAction: 'Create faktur pajak',
+    erpEmptyAction: 'Create sales invoice', djpEmptyAction: 'Create tax document',
     erpEmptyToast: 'Opening sales invoice…', djpEmptyToast: 'Opening Coretax…',
     partyLabel: 'Customer',
     kpiErpDpp: 'DPP · sales', kpiDjpDpp: 'DPP · faktur',
@@ -336,6 +346,76 @@ export const SIDE_LABELS: Record<ReconSide, {
     kpiErpDpp: 'DPP · purchases', kpiDjpDpp: 'DPP · faktur',
     kpiErpPpn: 'PPN · purchases', kpiDjpPpn: 'PPN · faktur',
   },
+}
+
+// ── Linking "Not found in Coretax" rows to real Sales invoices ────────────────
+/**
+ * A sales invoice with no faktur is fixed on the invoice itself — that is where
+ * "Create tax document" lives — so every output row in that state points at a
+ * real invoice the user can open. The ids are named, not derived, and each one
+ * can actually raise a tax document (PPN present, every product DJP-classified,
+ * domestic buyer, no tax document seeded of its own); a test holds that.
+ *
+ * Linking takes the invoice's own number, customer and amounts, so the row and
+ * the invoice it opens never disagree on what is owed.
+ */
+export const OUTPUT_NOT_IN_CORETAX_LINKS: Record<string, string[]> = {
+  '2027-06': ['SI103', 'SI097', 'SI061', 'SI050', 'SI043', 'SI013', 'SI002'],
+}
+
+export function linkToSalesInvoice(rec: ReconRecord, salesInvoiceId: string | undefined): ReconRecord {
+  const inv = salesInvoiceId ? salesInvoices.find(s => s.id === salesInvoiceId) : undefined
+  if (!inv) return rec
+  const { totals } = getSalesInvoiceDetail(inv.id)
+  return {
+    ...rec,
+    ref: String(inv.number),
+    salesInvoiceId: inv.id,
+    customer: inv.customer.name,
+    dpp: totals.total - totals.taxAmount,
+    ppn: totals.taxAmount,
+    total: totals.total,
+  }
+}
+
+/**
+ * Where the invoice's own tax document stands, for a "Not found in Coretax"
+ * row. Absence in Coretax has different fixes depending on how far the faktur
+ * got in ERP — none yet (create one), a draft (submit or edit it), or already
+ * with DJP (nothing to do but wait) — so the row says which, and offers that.
+ */
+export type ErpFakturState = 'none' | 'draft' | 'submitted' | 'rejected' | 'approved'
+
+export interface ErpFaktur {
+  salesInvoiceId: string
+  state: ErpFakturState
+  doc: TaxDocument | null
+}
+
+export function erpFakturOf(pair: ReconPair): ErpFaktur | null {
+  const id = pair.erp?.salesInvoiceId
+  if (pair.match !== 'not-in-coretax' || !id) return null
+  const doc = currentTaxDocument(id)
+  const live = doc && doc.status !== 'replaced' && doc.status !== 'cancelled' ? doc : null
+  const state: ErpFakturState =
+    !live ? 'none'
+    : live.status === 'draft' ? 'draft'
+    : live.status === 'rejected' ? 'rejected'
+    : live.status === 'approved' ? 'approved'
+    : 'submitted'
+  return { salesInvoiceId: id, state, doc: live }
+}
+
+/** Sales invoice detail URL that opens the matching tax-document drawer on load. */
+export function salesInvoiceTaxDocUrl(
+  salesInvoiceId: string,
+  action: 'create' | 'edit' | 'view',
+  taxDocumentId?: string,
+): string {
+  const base = `/sales-invoices/${salesInvoiceId}`
+  if (action === 'create') return `${base}?action=create-tax-document`
+  if (action === 'edit' && taxDocumentId) return `${base}?action=edit-tax-document&taxDocument=${encodeURIComponent(taxDocumentId)}`
+  return `${base}?tab=tax-document`
 }
 
 // ── Output side — Faktur keluaran (sales) ──────────────────────────────────────
@@ -452,6 +532,15 @@ export const outputPairs: ReconPair[] = [
     reason: 'Faktur is still Draft in Coretax, so it is excluded from matching until it is approved.',
   },
 ]
+
+/**
+ * o-07 is the 05/2027 "invoice raised, faktur never issued" case — the row the
+ * user acts on by going to the invoice, so it has to BE one.
+ */
+{
+  const o07 = outputPairs.find(p => p.id === 'o-07')
+  if (o07?.erp) o07.erp = linkToSalesInvoice(o07.erp, 'SI122')
+}
 
 // ── Input side — Faktur masukan (purchases) ────────────────────────────────────
 
@@ -582,7 +671,7 @@ const PERIOD_SEEDS: ReconPeriodSeed[] = [
     // to not-press a button.
     id: '2027-06', masa: '06/2027',
     sides: {
-      output: { erp: { amount: 268_400_000, count: 9 }, djp: { amount: 0, count: 0 }, matched: 0, total: 9 },
+      output: { erp: { amount: 89_100_000, count: 7 }, djp: { amount: 0, count: 0 }, matched: 0, total: 7 },
       input:  { erp: { amount: 47_850_000, count: 7 },  djp: { amount: 0, count: 0 }, matched: 0, total: 7 },
     },
   },
@@ -624,37 +713,21 @@ const PERIOD_SEEDS: ReconPeriodSeed[] = [
  */
 export const FIRST_PERIOD_ID = '2027-01'
 
-// ── Setup — which tax codes count as PPN Keluaran (US-016) ────────────────────
+// ── Setup — which accounts hold PPN (US-016) ──────────────────────────────────
 /**
- * Reconciliation pulls the ERP side by **tax code**, not by a filter the user
- * re-picks every run: the tax codes chosen here decide which sales invoices are
- * in scope, and the PPN Keluaran COA linked to them is what sweeps in journal
- * entries and bank deposits that carry PPN but no tax code of their own.
+ * Reconciliation pulls the ERP side by **account**: every transaction that posts
+ * to the accounts chosen here — sales invoices, journal entries, bank deposits —
+ * is in scope. The user picks them by hand rather than the system guessing from
+ * tax codes, because every company names and numbers its PPN accounts
+ * differently; a guessed account that is wrong pulls the wrong transactions.
  *
  * Setup is mandatory on first visit — the index stays out of reach until it is
- * saved, because an index built from the wrong tax codes is worse than no index.
+ * saved, because an index built from the wrong accounts is worse than no index.
  *
- * A period that has been reconciled keeps a **snapshot** of the codes used at
+ * A period that has been reconciled keeps a **snapshot** of the accounts used at
  * its last run, so changing setup later never silently rewrites history; re-run
  * warns that it will use the current selection instead.
  */
-export interface VatTaxCode {
-  id: string
-  code: string
-  name: string
-  rate: number
-  /** PPN Keluaran control account the code posts to. */
-  account: string
-}
-
-export const VAT_OUT_TAX_CODES: VatTaxCode[] = [
-  { id: 'ppn-12', code: 'PPN 12%', name: 'PPN Keluaran 12%', rate: 12, account: '2-20300 · PPN Keluaran' },
-  { id: 'ppn-11', code: 'PPN 11%', name: 'PPN Keluaran 11% (legacy)', rate: 11, account: '2-20300 · PPN Keluaran' },
-  { id: 'ppn-0', code: 'PPN 0%', name: 'PPN Keluaran 0% (ekspor)', rate: 0, account: '2-20300 · PPN Keluaran' },
-  { id: 'ppn-dtp', code: 'PPN DTP', name: 'PPN Ditanggung Pemerintah', rate: 12, account: '2-20310 · PPN DTP' },
-  { id: 'ppnbm-20', code: 'PPnBM 20%', name: 'PPnBM Keluaran 20%', rate: 20, account: '2-20400 · PPnBM Keluaran' },
-  { id: 'ppnbm-40', code: 'PPnBM 40%', name: 'PPnBM Keluaran 40%', rate: 40, account: '2-20400 · PPnBM Keluaran' },
-]
 
 /**
  * Which taxes this company reconciles here.
@@ -669,7 +742,10 @@ export type VatReconScope = 'out' | 'both'
 
 /** What a saved setup looks like. Absent means first run. */
 export interface VatReconSetup {
-  taxCodeIds: string[]
+  /** PPN Keluaran (VAT Out) account codes. */
+  outputAccountCodes: string[]
+  /** PPN Masukan (VAT In) account codes — only used when scope is `both`. */
+  inputAccountCodes: string[]
   scope: VatReconScope
   savedAt: string
 }
@@ -679,17 +755,40 @@ const SETUP_KEY = 'vat-recon-setup'
 let setupCache: VatReconSetup | null = null
 let setupLoaded = false
 
+/**
+ * Older snapshots stored `taxCodeIds` instead of accounts. They still count as
+ * "set up" (the gate stays open) but carry no accounts, so the page asks the
+ * user to pick them.
+ */
+export function normalizeSetup(raw: Partial<VatReconSetup>): VatReconSetup {
+  return {
+    outputAccountCodes: Array.isArray(raw.outputAccountCodes) ? raw.outputAccountCodes : [],
+    inputAccountCodes: Array.isArray(raw.inputAccountCodes) ? raw.inputAccountCodes : [],
+    scope: raw.scope === 'both' ? 'both' : 'out',
+    savedAt: raw.savedAt ?? new Date().toISOString(),
+  }
+}
+
 export function loadVatSetup(): VatReconSetup | null {
   if (!setupLoaded) {
-    const rows = loadSnapshot<VatReconSetup>(SETUP_KEY)
-    setupCache = rows && rows.length ? rows[0]! : null
+    const rows = loadSnapshot<Partial<VatReconSetup>>(SETUP_KEY)
+    setupCache = rows && rows.length ? normalizeSetup(rows[0]!) : null
     setupLoaded = true
   }
   return setupCache
 }
 
-export function saveVatSetup(taxCodeIds: string[], scope: VatReconScope = 'out'): VatReconSetup {
-  const setup: VatReconSetup = { taxCodeIds, scope, savedAt: new Date().toISOString() }
+export function saveVatSetup(input: {
+  outputAccountCodes: string[]
+  inputAccountCodes?: string[]
+  scope?: VatReconScope
+}): VatReconSetup {
+  const setup: VatReconSetup = {
+    outputAccountCodes: [...input.outputAccountCodes],
+    inputAccountCodes: [...(input.inputAccountCodes ?? [])],
+    scope: input.scope ?? 'out',
+    savedAt: new Date().toISOString(),
+  }
   setupCache = setup
   setupLoaded = true
   saveSnapshot(SETUP_KEY, [setup])
@@ -711,14 +810,28 @@ export function isSideInScope(side: ReconSide): boolean {
 }
 
 /**
- * The codes a reconciled period was run with. Real data would store this per
- * period at run time; the prototype pins the two codes in use when these
- * fixtures were produced so the detail header has something honest to show.
+ * The accounts a reconciled period was run with. Real data would store this per
+ * period at run time; the prototype pins the default chart's VAT accounts so the
+ * "Heads up" note has something honest to compare against.
  */
-export const SNAPSHOT_TAX_CODE_IDS = ['ppn-12', 'ppnbm-20']
+export const SNAPSHOT_ACCOUNT_CODES: { output: string[]; input: string[] } = {
+  output: ['2-20500'],
+  input: ['1-10500'],
+}
 
-export function taxCodeLabels(ids: string[]): string {
-  return VAT_OUT_TAX_CODES.filter(c => ids.includes(c.id)).map(c => c.code).join(', ')
+/** "(2-20500) - VAT Out" — the picker's option label, Jurnal-style. */
+export function vatAccountOptionLabel(a: CoaAccount): string {
+  return `(${a.code}) - ${a.name}`
+}
+
+/** Labels for saved codes, read from the live chart; unknown codes show bare. */
+export function accountLabels(codes: string[]): string {
+  return codes
+    .map((code) => {
+      const a = coaAccounts.find((x) => x.code === code)
+      return a ? vatAccountOptionLabel(a) : code
+    })
+    .join(', ')
 }
 
 export const periodLabel = (masa: string) => `Masa pajak ${masa}`
@@ -821,8 +934,11 @@ function generatePairs(seed: ReconSideSeed, side: ReconSide, period: ReconPeriod
   // Sales invoices are plain numbers (salesInvoices.ts), purchase invoices are
   // PINV-YYYY-NNN (purchaseInvoices.ts) — the same identifiers the rest of the
   // app uses, because the match key *is* the commercial invoice number.
+  // Output refs start at 41000 so a fixture number can never collide with a
+  // real Sales invoice (40001–40150) — the rows that ARE real are linked
+  // explicitly (linkToSalesInvoice), the rest must not look like they are.
   const erpRef = (i: number) => side === 'output'
-    ? String(40000 + Number(month) * 60 + i)
+    ? String(41000 + Number(month) * 60 + i)
     : `PINV-${year}-${String(Number(month) * 5 + i).padStart(3, '0')}`
   // Coretax nomor faktur pajak: 17 digits, numeric only. YY + MM + a 13-digit
   // serial, so the generated numbers are the right shape as well as unique.
@@ -865,7 +981,9 @@ function generatePairs(seed: ReconSideSeed, side: ReconSide, period: ReconPeriod
     pairs.push({
       id: `${period.id}-${side}-e${i + 1}`,
       match: 'not-in-coretax', confidence: 0,
-      erp: record(both + i, erpExtra[i]!, false),
+      erp: side === 'output'
+        ? linkToSalesInvoice(record(both + i, erpExtra[i]!, false), OUTPUT_NOT_IN_CORETAX_LINKS[period.id]?.[i])
+        : record(both + i, erpExtra[i]!, false),
       djp: null,
       reason: side === 'output'
         ? 'No matching faktur pajak issued in Coretax.'

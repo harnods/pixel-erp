@@ -17,6 +17,7 @@ import {
   MpButton, MpText, MpIcon,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
+import VatReconciliationTaxDocActions from '~/components/patterns/VatReconciliationTaxDocActions.vue'
 import {
   MATCH_META, matchCandidates, formatAmountPlain,
   type ReconPair, type ReconSide,
@@ -281,7 +282,10 @@ const activity = computed(() => [
                 <MpButton variant="secondary" is-rounded @click="act(t('Opening match picker…'))">
                   {{ t('Find & match') }}
                 </MpButton>
-                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+                <!-- Output rows are real invoices: the fix is on the invoice, and
+                     what it is depends on how far its tax document got. -->
+                <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId" :pair="pair" :show-hint="false" size="md" />
+                <MpButton v-else variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
                   {{ t('Create faktur pajak') }}
                 </MpButton>
               </template>

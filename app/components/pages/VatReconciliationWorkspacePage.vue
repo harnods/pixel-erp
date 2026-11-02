@@ -22,6 +22,8 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { formatIDR } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
 import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDetailDrawer.vue'
+import VatReconciliationTaxDocActions from '~/components/patterns/VatReconciliationTaxDocActions.vue'
+import { reloadTaxDocumentsFromStorage, TAX_DOCUMENTS_STORE_KEY } from '~/data/taxDocuments'
 import {
   MATCH_META, ATTENTION_STATES, SIDE_LABELS, pairsForPeriod, activePeriodId,
   periodLabelById, runPeriod, reconVersion, reconTotals, matchCounts,
@@ -202,6 +204,16 @@ const statusOptions = computed(() => {
   }
   return opts
 })
+
+// ── Tax documents changed in another tab ──────────────────────────────────────
+// "Create / Edit tax document" open the invoice in a new tab. When the user
+// saves there and comes back, the row must show the new state — the `storage`
+// event fires in THIS tab when another one writes the store.
+function onStorage(e: StorageEvent) {
+  if (e.key?.endsWith(TAX_DOCUMENTS_STORE_KEY)) reloadTaxDocumentsFromStorage()
+}
+onMounted(() => window.addEventListener('storage', onStorage))
+onUnmounted(() => window.removeEventListener('storage', onStorage))
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
 const drawerOpen = ref(false)
@@ -522,13 +534,18 @@ function reviewWithAirene() {
               <MpIcon name="warning-triangle" size="sm" />
               <span>{{ t('Not found in Coretax') }}</span>
             </div>
-            <span class="vr-empty-hint">{{ t('Issue a faktur pajak in Coretax to match this invoice.') }}</span>
-            <MpButton
-              variant="secondary" size="sm" is-rounded left-icon="add"
-              @click="infoToast(t(L.djpEmptyToast))"
-            >
-              {{ t(L.djpEmptyAction) }}
-            </MpButton>
+            <!-- Output: the row is a real invoice, so the panel says where its
+                 tax document stands and offers the fix for that state. -->
+            <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId" :pair="pair" />
+            <template v-else>
+              <span class="vr-empty-hint">{{ t('Issue a faktur pajak in Coretax to match this invoice.') }}</span>
+              <MpButton
+                variant="secondary" size="sm" is-rounded left-icon="add"
+                @click="infoToast(t(L.djpEmptyToast))"
+              >
+                {{ t(L.djpEmptyAction) }}
+              </MpButton>
+            </template>
           </div>
 
           <!-- Engine reasoning banner -->

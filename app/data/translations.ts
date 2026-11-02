@@ -2901,13 +2901,26 @@ export const ID_TRANSLATIONS: Record<string, string> = {
 
   // ── Setup (US-016) ───────────────────────────────────────────────────────────
   'Set up VAT reconciliation': 'Atur rekonsiliasi PPN',
-  'Choose which tax codes count as PPN Keluaran. Reconciliation pulls sales invoices carrying those codes, and the journal entries posted to their accounts.':
-    'Pilih kode pajak yang dihitung sebagai PPN Keluaran. Rekonsiliasi akan menarik faktur penjualan dengan kode tersebut, beserta jurnal yang masuk ke akunnya.',
+  'Choose the accounts that record PPN. Reconciliation pulls every transaction posted to them — sales invoices, journal entries and bank deposits.':
+    'Pilih akun yang mencatat PPN. Rekonsiliasi akan menarik setiap transaksi yang masuk ke akun tersebut — faktur penjualan, jurnal umum, dan setoran bank.',
   'Start setup': 'Mulai pengaturan',
-  'PPN Keluaran tax codes': 'Kode pajak PPN Keluaran',
-  'Sales invoices carrying these tax codes are pulled into reconciliation.': 'Faktur penjualan dengan kode pajak ini akan ditarik ke rekonsiliasi.',
-  'Journal entries and bank deposits that post to these accounts are pulled in too, even when the line carries no tax code.':
-    'Jurnal umum dan setoran bank yang masuk ke akun ini ikut ditarik, meski barisnya tidak memiliki kode pajak.',
+  'PPN Keluaran accounts': 'Akun PPN Keluaran',
+  'PPN Masukan accounts': 'Akun PPN Masukan',
+  'Transactions posted to these accounts — sales invoices, journal entries and bank deposits — are pulled into VAT Out reconciliation.':
+    'Transaksi yang masuk ke akun ini — faktur penjualan, jurnal umum, dan setoran bank — akan ditarik ke rekonsiliasi PPN Keluaran.',
+  'Transactions posted to these accounts — purchase invoices, journal entries and bank payments — are pulled into VAT In reconciliation.':
+    'Transaksi yang masuk ke akun ini — faktur pembelian, jurnal umum, dan pembayaran bank — akan ditarik ke rekonsiliasi PPN Masukan.',
+  'Include accounts': 'Akun yang disertakan',
+  'Select accounts': 'Pilih akun',
+  'Choose only accounts that record PPN Keluaran (VAT Out), e.g. VAT Out or PPN Keluaran. Accounts for other taxes, like PPh, pull in the wrong transactions.':
+    'Pilih hanya akun yang mencatat PPN Keluaran, misalnya VAT Out atau PPN Keluaran. Akun pajak lain, seperti PPh, akan menarik transaksi yang salah.',
+  'Choose only accounts that record PPN Masukan (VAT In), e.g. VAT In or PPN Masukan. Accounts for other taxes, like prepaid PPh, pull in the wrong transactions.':
+    'Pilih hanya akun yang mencatat PPN Masukan, misalnya VAT In atau PPN Masukan. Akun pajak lain, seperti PPh dibayar di muka, akan menarik transaksi yang salah.',
+  'Select at least one PPN Keluaran account.': 'Pilih minimal satu akun PPN Keluaran.',
+  'Select at least one PPN Masukan account.': 'Pilih minimal satu akun PPN Masukan.',
+  "An account can't be both PPN Keluaran and PPN Masukan. Remove it from one list.":
+    'Akun tidak bisa menjadi PPN Keluaran sekaligus PPN Masukan. Hapus dari salah satu daftar.',
+  'No accounts selected': 'Belum ada akun dipilih',
   'How matching works': 'Cara pencocokan bekerja',
   'Applied to every pair and not configurable.': 'Berlaku untuk setiap pasangan dan tidak dapat diubah.',
   'Match key': 'Kunci pencocokan',
@@ -2927,10 +2940,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Periods are reconciled from': 'Rekonsiliasi dimulai dari',
   'onward.': 'dan seterusnya.',
   'Heads up': 'Perhatian',
-  'periods already reconciled keep the tax codes they ran with': 'masa yang sudah direkonsiliasi tetap memakai kode pajak saat dijalankan',
+  'periods already reconciled keep the accounts they ran with': 'masa yang sudah direkonsiliasi tetap memakai akun saat dijalankan',
   'Re-running one will use the current selection instead.': 'Menjalankan ulang akan memakai pilihan saat ini.',
   'Setup history': 'Riwayat pengaturan',
-  'Tax code setup saved': 'Pengaturan kode pajak tersimpan',
   'Sync with Klikpajak': 'Sinkronkan dengan Klikpajak',
 
   // ── Queue tiles ──────────────────────────────────────────────────────────────
@@ -3072,6 +3084,29 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Create a purchase invoice from this faktur to reconcile.': 'Buat faktur pembelian dari faktur ini untuk merekonsiliasi.',
   'Issue a faktur pajak in Coretax to match this invoice.': 'Terbitkan faktur pajak di Coretax agar cocok dengan faktur ini.',
   'Create faktur pajak': 'Buat faktur pajak',
+  // Not found in Coretax — the fix lives on the invoice's tax document
+  'Create tax document': 'Buat dokumen pajak',
+  'Edit tax document': 'Ubah dokumen pajak',
+  'View tax document': 'Lihat dokumen pajak',
+  'Submit to DJP': 'Kirim ke DJP',
+  'Submitted to DJP': 'Berhasil dikirim ke DJP',
+  'Tax document saved': 'Dokumen pajak berhasil disimpan',
+  'Tax document updated': 'Dokumen pajak berhasil diubah',
+  'Submit tax document to DJP?': 'Kirim dokumen pajak ke DJP?',
+  'The draft tax document for sales invoice': 'Draf dokumen pajak untuk faktur penjualan',
+  'will be sent to DJP for approval. It can no longer be edited after this.':
+    'akan dikirim ke DJP untuk disetujui. Setelah itu, dokumen tidak bisa diubah lagi.',
+  "You don't have permission to submit tax documents to DJP. Ask an administrator for access.":
+    'Anda tidak memiliki izin untuk mengirim dokumen pajak ke DJP. Minta akses ke admin.',
+  'No tax document yet. Create one on the sales invoice, then submit it to DJP.':
+    'Belum ada dokumen pajak. Buat di faktur penjualan, lalu kirim ke DJP.',
+  'A draft tax document exists but has not been submitted to DJP.':
+    'Draf dokumen pajak sudah ada, tetapi belum dikirim ke DJP.',
+  'Submitted to DJP, waiting for approval.': 'Sudah dikirim ke DJP, menunggu persetujuan.',
+  'Rejected by DJP. Fix it on the sales invoice and resubmit.':
+    'Ditolak DJP. Perbaiki di faktur penjualan, lalu kirim ulang.',
+  'Approved in ERP. Sync with Klikpajak to match it.':
+    'Sudah disetujui di ERP. Sinkronkan dengan Klikpajak untuk mencocokkannya.',
   'Create purchase invoice': 'Buat faktur pembelian',
   'Flag for follow-up': 'Tandai untuk ditindaklanjuti',
 

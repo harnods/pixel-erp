@@ -227,6 +227,7 @@ describe('pixel-police — VAT reconciliation is token-only', () => {
       'app/components/pages/VatReconciliationWorkspacePage.vue',
       'app/components/patterns/ReconciliationDetailDrawer.vue',
       'app/components/patterns/ReconciliationFiltersDrawer.vue',
+      'app/components/patterns/VatReconciliationTaxDocActions.vue',
     ])
   })
 

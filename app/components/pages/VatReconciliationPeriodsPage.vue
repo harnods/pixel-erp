@@ -223,7 +223,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
     <div class="vp-setup-icon"><MpIcon name="sliders" size="32px" color="icon.information" /></div>
     <h2 class="vp-setup-title">{{ t('Set up VAT reconciliation') }}</h2>
     <p class="vp-setup-body">
-      {{ t('Choose which tax codes count as PPN Keluaran. Reconciliation pulls sales invoices carrying those codes, and the journal entries posted to their accounts.') }}
+      {{ t('Choose the accounts that record PPN. Reconciliation pulls every transaction posted to them — sales invoices, journal entries and bank deposits.') }}
     </p>
     <MpButton variant="primary" is-rounded @click="router.push('/matching-rules')">
       {{ t('Start setup') }}

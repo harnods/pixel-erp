@@ -219,6 +219,20 @@ function buildSeedTaxDocuments(): TaxDocument[] {
       serial: '', status: 'rejected', kind: 'normal', revision: 0,
       djpRemark: 'ETAX-API-10012: NITKU pembeli tidak terdaftar pada Coretax. Perbaiki data pembeli lalu kirim ulang.',
     },
+    // VAT reconciliation, masa 06/2027 — two of the invoices the engine reports
+    // as "Not found in Coretax" already have a faktur in ERP that never reached
+    // DJP approval. Seeded so the row's draft (Submit / Edit) and submitted
+    // (waiting on DJP) states are visible without staging them by hand.
+    {
+      ...common, id: 'taxdoc-seed-si061-draft', salesInvoiceId: 'SI061', date: '28/10/2026',
+      serial: '2500003141592', status: 'draft', kind: 'normal', revision: 0,
+      docKind: 'FK', paymentStage: 'full-payment', djpCode: '01',
+    },
+    {
+      ...common, id: 'taxdoc-seed-si043-submitted', salesInvoiceId: 'SI043', date: '29/10/2026',
+      serial: '2500002718281', status: 'awaiting-approval', kind: 'normal', revision: 0,
+      docKind: 'FK', paymentStage: 'full-payment', djpCode: '01',
+    },
   ]
 }
 
@@ -229,6 +243,21 @@ const store = reactive<TaxDocument[]>(
 )
 
 function persist() { saveSnapshot(STORE_KEY, [...store]) }
+
+/**
+ * Re-read the store from persistence. The VAT reconciliation screen opens the
+ * invoice in a NEW TAB to raise or edit its tax document; when the user comes
+ * back, this tab's in-memory store is stale. Called on the `storage` event so
+ * the row reflects what was just saved elsewhere.
+ */
+export function reloadTaxDocumentsFromStorage(): void {
+  const rows = loadSnapshot<TaxDocument>(STORE_KEY)
+  if (!rows) return
+  store.splice(0, store.length, ...rows.map(normalize))
+}
+
+/** The persistence key, for callers that listen for changes made in another tab. */
+export const TAX_DOCUMENTS_STORE_KEY = STORE_KEY
 
 /** A fresh NSFP — what DJP would hand out for a new faktur. */
 function generateSerial(): string {
@@ -577,6 +606,23 @@ export function formatTaxDocumentNumber(doc: TaxDocument): string {
  * only way back if a sales return is called off. Everything else is either
  * still being drafted or is a historical record that BR-007 keeps on file.
  */
+/**
+ * Rewrite a DRAFT in place — the drawer's edit mode. Only a draft is editable
+ * (taxDocMenuItemDefs locks Edit on everything else), and only the fields the
+ * form owns change: id, NSFP, lineage and kind stay, so editing never mints a
+ * new faktur number or breaks a replacement chain.
+ */
+export function updateTaxDocument(
+  id: string,
+  patch: Partial<Omit<TaxDocument, 'id' | 'salesInvoiceId' | 'serial' | 'kind' | 'revision' | 'replacesId' | 'replacedById'>>,
+): TaxDocument | null {
+  const doc = store.find(d => d.id === id)
+  if (!doc || doc.status !== 'draft') return null
+  Object.assign(doc, patch)
+  persist()
+  return doc
+}
+
 export function removeTaxDocument(id: string): void {
   const i = store.findIndex(d => d.id === id)
   if (i === -1) return

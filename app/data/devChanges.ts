@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-tax-doc-actions',
+    title: 'Not found in Coretax: act on the invoice\'s tax document',
+    description:
+      'Rows are now real sales invoices, and the action follows how far the invoice\'s tax document got. None → "Create tax document ↗" opens the invoice in a new tab with the Create drawer already open. Draft → "Submit to DJP" (confirm, right here) or "Edit tax document ↗" (new tab, draft open in edit mode). Submitted / rejected / approved → "View tax document ↗". Saving in the other tab updates this row on return. The invoice page\'s draft "Edit" menu item now works too.',
+    date: '2026-11-02',
+    files: ['VatReconciliationTaxDocActions.vue', 'VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'SalesInvoiceDetailsPage.vue', 'CreateTaxDocumentDrawer.vue', 'vatReconciliation.ts', 'taxDocuments.ts'],
+  },
+  {
+    id: 'vat-setup-manual-accounts',
+    title: 'VAT reconciliation setup: pick PPN accounts by hand',
+    description:
+      'The fixed tax-code list (with hardcoded, non-existent COA like 2-20300) is gone. Users now pick the PPN Keluaran accounts themselves from the live chart of accounts — multi-select with chips, like Jurnal "Include accounts" — with a hint that only PPN/VAT accounts belong here. "VAT Out & VAT In" adds a second picker for PPN Masukan. Save is never disabled: an empty list or an account in both lists shows an inline error.',
+    date: '2026-11-02',
+    files: ['VatMatchingRulesPage.vue', 'vatReconciliation.ts', 'VatReconciliationPeriodsPage.vue', 'translations.ts'],
+  },
+  {
     id: 'wo-approval-queue-columns',
     title: 'Awaiting approval: Request type column',
     description:

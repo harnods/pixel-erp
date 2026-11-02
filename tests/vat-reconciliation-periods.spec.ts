@@ -22,7 +22,7 @@ import {
   SIDE_LABELS, MATCH_META, ATTENTION_STATES, FIRST_PERIOD_ID, exposureOf,
   finalizePeriod, unfinalizePeriod, isPeriodFinalized, canFinalizePeriod,
   periodFinalization, reconUnfinishedCount, CURRENT_USER, TODAY_ISO,
-  saveVatSetup, reconSides, isSideInScope, SNAPSHOT_TAX_CODE_IDS,
+  saveVatSetup, reconSides, isSideInScope, SNAPSHOT_ACCOUNT_CODES,
   type ReconSide,
 } from '~/data/vatReconciliation'
 
@@ -30,7 +30,7 @@ import {
 // The shipping default is VAT Out only, so the scope is set explicitly here
 // rather than left to whatever the default happens to be — the toggle has its
 // own tests at the bottom.
-saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
 
 const rows = reconPeriodRows()
 const SIDES: ReconSide[] = ['output', 'input']
@@ -469,45 +469,45 @@ describe('VAT reconciliation — finalize a period', () => {
  * shows an input side in one place and hides it in another.
  */
 describe('VAT reconciliation — VAT Out only vs VAT In & Out', () => {
-  afterEach(() => { saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both') })
+  afterEach(() => { saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' }) })
 
   it('defaults to VAT Out only', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS])
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output })
     expect(reconSides()).toEqual(['output'])
     expect(isSideInScope('output')).toBe(true)
     expect(isSideInScope('input')).toBe(false)
   })
 
   it('VAT Out only lists one row per masa, not two', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     const r = reconPeriodRows()
     expect(r.every(x => x.side === 'output')).toBe(true)
     expect(new Set(r.map(x => x.periodId)).size).toBe(r.length)
   })
 
   it('VAT In & Out lists both', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
     const r = reconPeriodRows()
     expect(new Set(r.map(x => x.side))).toEqual(new Set(['output', 'input']))
     expect(new Set(r.map(x => x.periodId)).size).toBe(r.length / 2)
   })
 
   it('the issue feed drops the input side with it', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     expect(reconIssues(activePeriodId).every(i => i.side === 'output')).toBe(true)
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
     expect(reconIssues(activePeriodId).some(i => i.side === 'input')).toBe(true)
   })
 
   it('the outstanding count follows the scope', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     const outOnly = reconUnfinishedCount()
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
     expect(reconUnfinishedCount()).toBeGreaterThan(outOnly)
   })
 
   it('finalize is not blocked by an input side the company never adopted', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     const done = reconPeriodRows().find(r => r.status === 'reconciled')!
     expect(canFinalizePeriod(done.periodId)).toBe(true)
   })
