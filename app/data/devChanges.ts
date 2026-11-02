@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-start-date-modal',
+    title: 'Start work order asks for the actual start date',
+    description:
+      'Starting a work order now opens a modal for its actual start date, up to today. Routing start dates are limited by this date.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-drag',
+    title: 'Drag routing cards between columns',
+    description:
+      'Drag a card to the next column to start or finish it (the date modal opens), or to the previous column to move it back.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue'],
+  },
+  {
     id: 'wo-adjust-page',
     title: 'Adjust work order page',
     description:

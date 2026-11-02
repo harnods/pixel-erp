@@ -228,30 +228,40 @@ function continueCompletion() {
   completeWorkOrder()
 }
 
-const showEndDateModal = ref(false)
-const endDateValue = ref('') // DD/MM/YYYY
-const endDateError = ref('')
-const endDateWindow = computed(() => wo.value ? workOrderEndWindow(wo.value, routingSteps.value) : { min: '', max: '' })
-function openEndDateModal() {
-  endDateValue.value = ''
-  endDateError.value = ''
-  showEndDateModal.value = true
+// Actual date modal — shared by Start work order and the end of the flow above.
+const showDateModal = ref(false)
+const dateModalMode = ref<'start' | 'end'>('end')
+const dateValue = ref('') // DD/MM/YYYY
+const dateError = ref('')
+const dateWindow = computed(() => dateModalMode.value === 'start'
+  ? { min: '', max: todayIso() }
+  : wo.value ? workOrderEndWindow(wo.value, routingSteps.value) : { min: '', max: '' })
+const dateHint = computed(() => dateModalMode.value === 'start'
+  ? t('You can only select dates until today.')
+  : t('You can only select dates from the routing end date until today.'))
+function openDateModal(mode: 'start' | 'end') {
+  dateModalMode.value = mode
+  dateValue.value = ''
+  dateError.value = ''
+  showDateModal.value = true
 }
-function isEndDateDisabled(date: Date): boolean {
+function openEndDateModal() { openDateModal('end') }
+function isDateDisabled(date: Date): boolean {
   const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-  return !isWithinWindow(iso, endDateWindow.value)
+  return !isWithinWindow(iso, dateWindow.value)
 }
-function confirmEndDate() {
-  const m = endDateValue.value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-  if (!m) { endDateError.value = t('Select a date.'); return }
+function confirmDate() {
+  const m = dateValue.value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) { dateError.value = t('Select a date.'); return }
   const iso = `${m[3]}-${m[2]}-${m[1]}`
-  if (!isWithinWindow(iso, endDateWindow.value)) {
-    endDateError.value = t('You can only select dates from the routing end date until today.')
-    return
+  if (!isWithinWindow(iso, dateWindow.value)) { dateError.value = dateHint.value; return }
+  if (dateModalMode.value === 'start') {
+    startWorkOrder(iso)
+  } else {
+    if (autoConsumeOnFinish.value) autoConsumeRemaining(iso)
+    completeWorkOrder(iso)
   }
-  if (autoConsumeOnFinish.value) autoConsumeRemaining(iso)
-  completeWorkOrder(iso)
-  showEndDateModal.value = false
+  showDateModal.value = false
 }
 
 // Adjust work order's Save & finish lands here with ?finish=1 to continue the flow.
@@ -260,15 +270,15 @@ onMounted(() => {
   router.replace(`/work-orders/${props.orderId}`)
   if (primaryActionKey.value === 'Complete work order') continueCompletion()
 })
-function startWorkOrder() {
+function startWorkOrder(startDate: string) {
   if (!wo.value) return
   wo.value.status = 'in progress'
-  wo.value.startDate = todayIso()
+  wo.value.startDate = startDate
   persistWorkOrders()
   toast.notify({ variant: 'success', title: t('Work order started') })
 }
 function handlePrimaryAction() {
-  if (primaryActionKey.value === 'Start work order') { startWorkOrder(); return }
+  if (primaryActionKey.value === 'Start work order') { openDateModal('start'); return }
   if (primaryActionKey.value === 'Track routing') { router.push(`/work-orders/${props.orderId}/track-routing`); return }
   if (primaryActionKey.value !== 'Complete work order') return
   if (usesRoutingCompletion.value) { showRoutingConfirm.value = true; return }
@@ -982,30 +992,30 @@ function suppressFabClick(e: MouseEvent) {
     />
 
     <MpModal
-      id="wod-end-date-modal" :is-open="showEndDateModal" size="md" :is-keep-alive="false"
-      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="showEndDateModal = false"
+      id="wod-date-modal" :is-open="showDateModal" size="md" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="showDateModal = false"
     >
       <MpModalContent>
         <MpModalHeader>
-          {{ t('Confirm work order completion') }}
+          {{ dateModalMode === 'start' ? t('Start work order') : t('Confirm work order completion') }}
           <MpModalCloseButton />
         </MpModalHeader>
         <MpModalBody>
-          <MpFormControl id="wod-end-date" is-required :is-invalid="!!endDateError">
-            <MpFormLabel>{{ t('Actual end date') }}</MpFormLabel>
+          <MpFormControl id="wod-date" is-required :is-invalid="!!dateError" data-devchange="wo-start-date-modal">
+            <MpFormLabel>{{ dateModalMode === 'start' ? t('Actual start date') : t('Actual end date') }}</MpFormLabel>
             <MpDatePicker
-              id="wod-end-date-picker" v-model="endDateValue" format="DD/MM/YYYY" value-type="format"
-              :placeholder="t('Select date')" use-portal :disabled-date="isEndDateDisabled"
-              :class="css({ width: '100%' })" @update:model-value="endDateError = ''"
+              id="wod-date-picker" v-model="dateValue" format="DD/MM/YYYY" value-type="format"
+              :placeholder="t('Select date')" use-portal :disabled-date="isDateDisabled"
+              :class="css({ width: '100%' })" @update:model-value="dateError = ''"
             />
-            <MpFormErrorMessage v-if="endDateError">{{ endDateError }}</MpFormErrorMessage>
-            <p v-else class="wod-end-date-hint">{{ t('You can only select dates from the routing end date until today.') }}</p>
+            <MpFormErrorMessage v-if="dateError">{{ dateError }}</MpFormErrorMessage>
+            <p v-else class="wod-date-hint">{{ dateHint }}</p>
           </MpFormControl>
         </MpModalBody>
         <MpModalFooter>
-          <div class="wod-end-date-footer">
-            <MpButton variant="ghost" is-rounded @click="showEndDateModal = false">{{ t('Cancel') }}</MpButton>
-            <MpButton variant="primary" is-rounded @click="confirmEndDate">{{ t('Confirm') }}</MpButton>
+          <div class="wod-date-footer">
+            <MpButton variant="ghost" is-rounded @click="showDateModal = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="confirmDate">{{ dateModalMode === 'start' ? t('Start') : t('Confirm') }}</MpButton>
           </div>
         </MpModalFooter>
       </MpModalContent>
@@ -1273,6 +1283,6 @@ function suppressFabClick(e: MouseEvent) {
 .wod-summary-row > :last-child { min-width: 200px; text-align: right; font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .wod-summary-row--total { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 
-.wod-end-date-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
-.wod-end-date-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
+.wod-date-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wod-date-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

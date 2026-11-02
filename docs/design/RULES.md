@@ -1080,6 +1080,8 @@ component — reuse it, never rebuild.
   gaps; do not use them). For a single-axis list use the shared composable
   **`~/composables/usePointerSortable`**; the multi-column layout builder follows
   the same pattern by hand.
+  **Exception:** a board card moving between status columns (Track routing) is dragged
+  by the **whole card**, with no handle icon; pressing its buttons never starts a drag.
   1. **Handle-initiated** — `@pointerdown="start(i, $event)"` on a **drag handle**
      (`MpIcon name="drag"` in a `<span class="…-drag" :aria-label="t('Drag to reorder')">`),
      never on the whole row/card. Handle CSS: `cursor: grab`, `touch-action: none`,

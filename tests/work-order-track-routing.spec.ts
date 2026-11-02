@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   canTrackRouting, isRoutingComplete, isWithinWindow, routingEndWindow, routingStartWindow,
-  routingStepsFor, routingStepStatus, undoRoutingStep,
+  routingDropAction, routingStepsFor, routingStepStatus, undoRoutingStep,
 } from '~/data/workOrderRouting'
 import type { WorkOrderRoutingProgress } from '~/data/workOrders'
 
@@ -77,5 +77,20 @@ describe('cancel moves a step one column back', () => {
     expect(progress[0]).toEqual({ startDate: '2026-01-02' })
     undoRoutingStep(progress, 0)
     expect(progress[0]).toBeUndefined()
+  })
+})
+
+describe('routingDropAction', () => {
+  it('moves one column at a time', () => {
+    expect(routingDropAction('not started', 'in progress')).toBe('start')
+    expect(routingDropAction('in progress', 'completed')).toBe('finish')
+    expect(routingDropAction('in progress', 'not started')).toBe('undo')
+    expect(routingDropAction('completed', 'in progress')).toBe('undo')
+  })
+
+  it('ignores skipped columns and the same column', () => {
+    expect(routingDropAction('not started', 'completed')).toBeNull()
+    expect(routingDropAction('completed', 'not started')).toBeNull()
+    expect(routingDropAction('in progress', 'in progress')).toBeNull()
   })
 })

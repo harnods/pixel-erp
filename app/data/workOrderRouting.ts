@@ -110,3 +110,14 @@ export function workOrderEndWindow(
   const min = steps.reduce((latest, s) => s.endDate && s.endDate > latest ? s.endDate : latest, wo.startDate ?? wo.planStartDate)
   return { min, max: today }
 }
+
+/**
+ * What dropping a card from one column on another does. Cards only move one column
+ * at a time: forward asks for the actual date, backward undoes (same as Cancel).
+ */
+export function routingDropAction(from: RoutingStepStatus, to: RoutingStepStatus): 'start' | 'finish' | 'undo' | null {
+  if (from === 'not started' && to === 'in progress') return 'start'
+  if (from === 'in progress' && to === 'completed') return 'finish'
+  if ((from === 'in progress' && to === 'not started') || (from === 'completed' && to === 'in progress')) return 'undo'
+  return null
+}
