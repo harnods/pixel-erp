@@ -460,7 +460,11 @@ function handleSave() {
 /* Calendar icon addon — the field should still open the picker on focus, it
    just doesn't need the trailing glyph advertising that. */
 .ex-datepicker :deep(.mp-input-addon__root) { display: none; }
-.ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); }
+.ex-td--input { position: relative; }
+.ex-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 /* A <td>'s height is "auto", and percentage/100% heights on a normal-flow
    child never resolve against an auto-height containing block (CSS2.1 10.5)
    — the row here is only ever taller than 40px because of the 2-line

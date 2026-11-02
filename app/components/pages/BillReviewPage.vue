@@ -1548,7 +1548,11 @@ watch(() => props.orderId, () => { applyScenario(scenario.value); applyRealData(
 .ex-td--input { padding: 0; }
 .ex-td--input :deep([class*='input']), .ex-td--input :deep([class*='autocomplete']), .ex-td--input :deep([class*='datepicker']) { border-radius: 0; border-color: transparent; }
 .ex-td--input .ex-datepicker { width: 100%; }
-.ex-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); }
+.ex-td--input { position: relative; }
+.ex-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-colors-border-focused, #41c6a0); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ex-td--del { padding: 0; text-align: center; }
 .ex-td--border { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .ex-td--error { background: var(--mp-background-danger-subtle, #fef2f2); box-shadow: inset 0 -1px 0 0 var(--mp-border-danger, #dc2626); }

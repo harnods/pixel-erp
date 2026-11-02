@@ -11,6 +11,7 @@ import { MpButton } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
 import { toast } from '@mekari/pixel3'
 import { isHrPath } from '~/utils/hrRoutes'
+import { useCrmSubscriptionScenario } from '~/composables/useCrmSubscriptionScenario'
 
 interface RailItem { key: string; label: string; icon: string; to?: string }
 const railItems: RailItem[] = [
@@ -27,10 +28,17 @@ const router = useRouter()
 const route = useRoute()
 // Active product follows the route: /hr* → HR, /crm* → CRM, everything else → ERP.
 const activeProduct = computed(() =>
-  isHrPath(route.path) ? 'HR' : route.path.startsWith('/crm') ? 'CRM' : 'ERP')
+  isHrPath(route.path) ? 'HR' : route.path.startsWith('/crm') || route.path.startsWith('/get-crm') ? 'CRM' : 'ERP')
+
+// Same rule as ErpProductSwitcher (PRD US-013): CRM opens only with the add-on
+// AND the CRM role; otherwise the /get-crm landing explains why.
+const { mode: crmMode, currentUserHasCrmRole } = useCrmSubscriptionScenario()
+const crmTarget = computed(() =>
+  (crmMode.value === 'active' || crmMode.value === 'read-only') && currentUserHasCrmRole.value ? '/crm' : '/get-crm')
 
 function openProduct(item: RailItem) {
-  if (item.to) router.push(item.to)
+  if (item.key === 'CRM') router.push(crmTarget.value)
+  else if (item.to) router.push(item.to)
   else infoToast(`${item.label} — coming soon`)
 }
 </script>

@@ -174,7 +174,7 @@ function confirmArchive() {
   allowed.forEach((id) => archiveCrmContactPerson(id))
   archiveDeselect?.(); archiveDeselect = null
   if (allowed.length) toast.notify({ variant: 'success', title: allowed.length === 1 ? t('Contact archived') : t('Contacts archived'), maxWidth: 'max-content' })
-  if (blocked.length) toast.notify({ variant: 'warning', title: t('Some contacts are a company PIC and were kept.'), maxWidth: 'max-content' })
+  if (blocked.length) infoToast(t('Some contacts are a company PIC and were kept.'))
 }
 const archiveTitle = computed(() => showArchived.value ? t('Restore contact') : t('Archive contact'))
 const archiveConfirmLabel = computed(() => showArchived.value ? t('Restore') : t('Archive'))

@@ -126,6 +126,18 @@ borderless.
   pointer-events: none;
 }
 
+```
+
+> **⚠️ The focus/error ring MUST be an `::after` overlay — never a direct
+> `box-shadow: inset` on the cell.** With `border-collapse: collapse`, a ring
+> painted on the cell itself sits *below* the neighbouring cells' column borders,
+> so its left/right edges get clipped/overpainted (and the right edge is cut by
+> the table edge). The `::after` overlay (`position:absolute; inset:0; z-index:2;
+> pointer-events:none`) paints *above* those borders, so all four edges stay
+> crisp. For an error state, override the same `::after`'s `border-color` (or
+> `box-shadow` colour) rather than adding a second ring.
+
+```css
 .form-cell-input {
   width: 100%;
   height: var(--mp-sizes-10, 40px);

@@ -649,9 +649,17 @@ async function handleSave() {
 .ho-td--number { position: relative; }
 /* Editable Courier/Tracking cell — white, input fills edge-to-edge, focus ring */
 .ho-td--input { padding: 0; background: var(--mp-background-neutral, #ffffff); }
-.ho-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ho-td--input { position: relative; }
+.ho-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ho-td--input--error { box-shadow: inset 0 0 0 2px var(--mp-border-danger, #dc2626); }
-.ho-td--input--error:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.ho-td--input--error { position: relative; }
+.ho-td--input--error:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .ho-text-input {
   display: block; width: 100%; height: var(--mp-sizes-10, 40px); box-sizing: border-box;
   padding: 0 var(--mp-spacing-2); border: none; outline: none; background: transparent;

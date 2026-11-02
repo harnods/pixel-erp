@@ -198,7 +198,7 @@ const exportColumns = computed(() => [
 
     <!-- ── Bulk actions ── -->
     <template #bulk-actions="{ selectedRows }">
-      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete (rule/bulk-actions-no-delete) -->
+      <!-- Bulk bar = single secondary-sm "Actions" dropdown (never primary); no Delete here, this module has no bulk delete (rule/bulk-actions-delete-confirmed) -->
       <MpPopover id="po-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
         <MpPopoverTrigger>
           <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>

@@ -416,7 +416,7 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
             <MpPopoverList>
               <MpPopoverListItem>{{ t('Import from spreadsheet') }}</MpPopoverListItem>
               <MpPopoverListItem @click="openOcrModal">
-                <span class="cmd-ocr-item">{{ t('Upload bank statement') }}<MpIcon name="airene-brand" size="xs" class="cmd-ocr-ai-icon" /></span>
+                <span class="cmd-ocr-item">{{ t('Upload bank statement') }}<MpIcon name="airene-brand" size="16px" class="cmd-ocr-ai-icon" /></span>
               </MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
@@ -489,7 +489,7 @@ const dropboxCount = computed(() => bankStatementDropboxFiles.length)
       <section class="cmd-overview">
         <div class="cmd-ov-item cmd-account">
           <div class="cmd-bank-logo">
-            <MpIcon name="bank" size="lg" class="cmd-bank-logo__icon" />
+            <MpIcon name="bank" size="32px" class="cmd-bank-logo__icon" />
           </div>
           <div class="cmd-account-col">
             <div class="cmd-account-name-row">

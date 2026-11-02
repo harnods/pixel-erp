@@ -70,7 +70,7 @@ onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEven
             <div :key="idx" class="wn-content">
               <img v-if="slides[idx].hero.img" class="wn-hero-icon" :src="slides[idx].hero.img" alt="" width="72" height="72">
               <div v-else class="wn-hero-icon wn-hero-icon--circle" :style="{ background: slides[idx].hero.circleBg, color: slides[idx].hero.circleFg }">
-                <MpIcon :name="slides[idx].hero.icon!" size="lg" />
+                <MpIcon :name="slides[idx].hero.icon!" size="32px" />
               </div>
 
               <h2 id="wn-title" class="wn-title">{{ slides[idx].title }}</h2>

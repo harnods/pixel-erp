@@ -21,7 +21,7 @@ Source of truth (read before choosing kinds):
 | `kind` | min–max | Use for |
 | --- | --- | --- |
 | `date` | 160–160 (fixed) | any date (created, due, transaction, last updated) |
-| `number` | 160–240 | document/transaction number, identifier code |
+| `number` | 240–280 | document/transaction number, identifier code (fits `<Module> #<n>` + up to 2 trailing icons) |
 | `name` | 240–280 | vendor / customer / beneficiary / warehouse / product / person — any entity name |
 | `status` | 128–160 | status column rendered with a badge (`ErpStatusBadge`/`MpBadge`) |
 | `amount` | 160–240 | any monetary amount (balance, total, price) — `align: 'right'` |

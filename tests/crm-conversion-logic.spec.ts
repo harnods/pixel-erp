@@ -12,7 +12,7 @@ import {
   type MappingEntry, type ErpTargetField, type EntryEval, type ConversionConfig,
 } from '~/data/crmConversion'
 import {
-  crmModules, getCrmModule, moduleStores, serviceDeals,
+  crmModules, getCrmModule, moduleStores,
   DEFAULT_PROPERTIES, DEFAULT_PROPERTY_IDS, defaultDealProperties,
   type CrmModule, type CrmModuleField, type DealProperty, type DealPropertyType,
 } from '~/data/crm'
@@ -316,23 +316,11 @@ describe('DEFAULT_PROPERTIES completeness', () => {
 })
 
 // ── Service deals seed — draft module must be empty ─────────────────────────
-describe('Service deals — draft module empty state', () => {
-  it('service deals seed is empty', () => {
-    expect(serviceDeals.length).toBe(0)
-  })
-
-  it('services module has recordCount 0', () => {
-    const svc = getCrmModule('services')
-    expect(svc).toBeDefined()
-    expect(svc!.recordCount).toBe(0)
-  })
-
-  it('services module is in draft status', () => {
-    const svc = getCrmModule('services')
-    expect(svc).toBeDefined()
-    expect(svc!.status).toBe('draft')
-  })
-})
+// The Service deals module was deleted in beb3b507 ("only Deals remains as the
+// system default") — its pages, stores, types and seed all went with it, so
+// `serviceDeals` is no longer exported and getCrmModule('services') is
+// undefined. These three tests asserted that module's empty state and were left
+// behind; there is nothing left for them to guard.
 
 // ── eligibleModules — only published modules ────────────────────────────────
 describe('eligibleModules — only published', () => {

@@ -1,5 +1,6 @@
 import { purchaseInvoices } from './purchaseInvoices'
 import { products } from './products'
+import { invoiceDebitApplied, invoiceCashPaid } from './debitMemos'
 import type { SalesOrderTotals } from './salesOrders'
 import type { PurchaseInvoice, SalesOrderItem, SILineItem } from './types'
 
@@ -31,6 +32,13 @@ export interface PILinkedTxn {
   status: string        // mapped via ErpStatusBadge
 }
 
+export interface PIPayment {
+  date: string
+  method: string
+  reference: string
+  amount: number
+}
+
 export interface PurchaseInvoiceDetail extends PurchaseInvoice {
   email: string[]
   billingAddress: string
@@ -43,6 +51,10 @@ export interface PurchaseInvoiceDetail extends PurchaseInvoice {
   memo: string
   attachments: PIAttachment[]
   totals: SalesOrderTotals
+  amountPaid: number
+  cashPaid: number
+  debitApplied: number
+  payments: PIPayment[]
   lastUpdatedBy: string
   lastUpdatedAt: string
   linkedTransactions: PILinkedTxn[]
@@ -63,6 +75,7 @@ const SHIP_TO = [
 ]
 const WAREHOUSES = ['Default warehouse', 'Cibinong warehouse', 'Pulogadung DC', 'Bandung hub']
 const PAYMENT_TERMS = ['Net 30', 'Net 14', 'Cash on delivery', 'Net 45']
+const PAYMENT_METHODS = ['Bank transfer', 'Virtual account', 'Cash', 'Giro']
 
 function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`)
@@ -133,10 +146,22 @@ function buildDetail(base: PurchaseInvoice, idx: number): PurchaseInvoiceDetail 
     discountPerLine: 0,
     globalDiscount: 0,
     taxLabel: TAX_LABEL,
-    taxAmount: base.amount - subtotal,   // plug so grand total === index amount
+    taxAmount: base.amount - subtotal,
     shippingFee: 0,
     total: base.amount,
   }
+  const amountPaid = base.total - base.balance
+  const debitApplied = invoiceDebitApplied(base.id)
+  const cashPaid = invoiceCashPaid(base.id)
+
+  const payments: PIPayment[] = cashPaid > 0
+    ? [{
+        date: addDays(base.dueDate, -2),
+        method: pick(PAYMENT_METHODS, idx),
+        reference: `TRF-${String(700000 + idx * 13)}`,
+        amount: cashPaid,
+      }]
+    : []
 
   return {
     ...base,
@@ -151,6 +176,10 @@ function buildDetail(base: PurchaseInvoice, idx: number): PurchaseInvoiceDetail 
     memo: 'Booked against the approved purchase order.',
     attachments: [{ name: `${base.number}-Signed.pdf`, sizeKB: 78 }],
     totals,
+    amountPaid,
+    cashPaid,
+    debitApplied,
+    payments,
     lastUpdatedBy: 'Rizal Candra',
     lastUpdatedAt: `${base.date}T11:00:00+07:00`,
     linkedTransactions: buildLinked(base, idx),

@@ -976,7 +976,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .cr-td--input { padding: 0; vertical-align: middle; }
 .cr-td--input :deep([class*='input']),
 .cr-td--input :deep([class*='autocomplete']) { border-radius: 0; border-color: transparent; }
-.cr-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.cr-td--input { position: relative; }
+.cr-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 
 /* Unit — read-only gray cell */
 .cr-td--unit { background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary); }
@@ -987,7 +991,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 /* Qty error state */
 .cr-td--qty-cell { padding: 0; vertical-align: middle; }
 .cr-td--qty-cell :deep([class*='input']) { border-radius: 0; border-color: transparent; }
-.cr-td--qty-cell:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); }
+.cr-td--qty-cell { position: relative; }
+.cr-td--qty-cell:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .cr-td--qty-error { background: var(--mp-colors-danger-weaker); border-bottom-color: var(--mp-colors-danger-default); }
 .cr-td--qty-error :deep([class*='input']) { background: transparent; }
 

@@ -140,6 +140,31 @@ export function getMissingDjpProducts(invoiceId: string): MissingDjpProduct[] {
   return out
 }
 
+/**
+ * The Product tax info list the "Cannot create tax document" drawer shows when
+ * that gap is being FORCED by the demo scenario (see `useTaxInfoScenario`).
+ *
+ * Falls back to the invoice's own distinct products, reported as missing both
+ * fields, when nothing is genuinely missing — otherwise picking the "Product
+ * tax info missing" scenario on a fully classified invoice would open a drawer
+ * with an empty section and nothing to click through to.
+ */
+export function getDemoMissingDjpProducts(invoiceId: string): MissingDjpProduct[] {
+  const real = getMissingDjpProducts(invoiceId)
+  if (real.length) return real
+
+  const seen = new Set<string>()
+  const out: MissingDjpProduct[] = []
+  for (const li of getLineItemsForInvoice(invoiceId)) {
+    if (seen.has(li.productId)) continue
+    const p = CATALOG.find(c => c.id === li.productId)
+    if (!p) continue
+    seen.add(li.productId)
+    out.push({ productId: p.id, name: p.name, sku: p.sku, missingCode: true, missingUnit: true })
+  }
+  return out
+}
+
 /** Joins a stored row against the product catalogue and prices the line. */
 export function hydrateLineItem(li: SalesInvoiceLineItem, taxLabel: string): SILineItem {
   const p = CATALOG.find(c => c.id === li.productId)!

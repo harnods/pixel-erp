@@ -10,7 +10,7 @@
  * page at /crm/deals/new); Edit navigates to /crm/deals/:id/edit. Import/Export reuse the
  * shared modals; stage moves go through moveDealStage (Won terminal, Lost reason,
  * reopen) so the kanban and the table enforce the same PRD rules; bulk owner/stage
- * update the selection. Per rule/bulk-actions-no-delete + the PRD "no permanent
+ * update the selection. Per rule/bulk-actions-delete-confirmed + the PRD "no permanent
  * delete in V1", the only lifecycle action is Archive / Restore.
  */
 import { ref, reactive, computed, watch, inject, onMounted } from 'vue'
@@ -19,6 +19,8 @@ import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
   MpTabs, MpTabList, MpTab,
 } from '@mekari/pixel3'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
+import type { CrmStatus } from '~/composables/useCrmAccess'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -49,6 +51,10 @@ import { pinsForModule, metricPinValue, unpinReportMetric } from '~/data/crmRepo
 
 const { t } = useLocale()
 const router = useRouter()
+// CRM access — the prototype scenario FAB (bottom-right) flips this; anything other
+// than 'active' makes the /crm router swap in CrmPaywallPage (see [...slug].vue +
+// useCrmAccess), with the face picked by the status.
+const { crmStatus, setCrmStatus } = useCrmAccess()
 // The page title mirrors the Deals module name (renamable in module settings).
 const dealsModuleName = computed(() => getCrmModule('deals')?.name || t('Deals'))
 
@@ -877,6 +883,20 @@ const toggleAirene = inject<() => void>('toggleAirene')
       @close="exportOpen = false"
       @export="onExport"
     />
+
+    <!-- Prototype scenario FAB — flip the CRM state. "Trial expired" / "No access"
+         swap the whole /crm route to the matching paywall face (full-bleed, no CRM
+         sidebar); the paywall brings access back. -->
+    <ScenarioFab
+      :model-value="crmStatus"
+      :aria-label="t('Change CRM access')"
+      :scenarios="[
+        { label: t('CRM access'), value: 'active' },
+        { label: t('Trial expired'), value: 'expired' },
+        { label: t('No access (paywall)'), value: 'none' },
+      ]"
+      @update:model-value="(v: string) => setCrmStatus(v as CrmStatus)"
+    />
   </div>
 </template>
 
@@ -996,7 +1016,7 @@ const toggleAirene = inject<() => void>('toggleAirene')
 .stage-picker-lost { display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); border-top: 1px solid var(--mp-border-default, #e3e7e9); margin-top: var(--mp-spacing-1); }
 .stage-picker-lost-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .stage-picker-textarea { width: 100%; box-sizing: border-box; padding: var(--mp-spacing-2); border: 1px solid var(--mp-border-form, rgba(29, 31, 36, 0.16)); border-radius: var(--mp-radii-md, 6px); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); outline: none; resize: vertical; min-height: 56px; font-family: inherit; }
-.stage-picker-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); }
+.stage-picker-textarea:focus { border-color: var(--mp-border-bold, #8c9596); box-shadow: 0 0 0 3px var(--mp-background-neutral-hovered, rgba(140, 149, 150, 0.24)); } /* pixel-police-allow-shadow: focus ring */
 .stage-picker-err { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger, #c9372c); }
 .stage-picker-lost-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); }
 

@@ -26,7 +26,9 @@ import {
   reassignPackingTask,
 } from '~/data/packingTasks'
 import { getPickingTask } from '~/data/pickingTasks'
-import { getShipment, marketplaceShipping, type ShipmentSummary } from '~/data/deliveryTasks'
+import {
+  getShipment, marketplaceShipping, wmsShippingForPackage, type ShipmentSummary,
+} from '~/data/deliveryTasks'
 import { outgoingOrders, outgoingStage, OUTGOING_TODAY, canReleaseReservedForOrder, releaseReservedForCancelledOrder } from '~/data/outgoing'
 import { formatDate, formatDateLong, formatDateTime, formatDateTimeLong } from '~/utils/date'
 import { generatePackingListPdf } from '~/utils/packingListPdf'
@@ -104,11 +106,25 @@ function openViewSerial(item: PackLineItem) { viewSerialItem.value = item }
 
 const linkedOrder = computed(() => outgoingOrders.find(o => o.id === task.value?.salesOrderId))
 const linkedDelivery = computed(() => task.value ? getDeliveryForPackingTask(task.value.id) : [])
-// Courier / tracking no. surface from the linked delivery; for marketplace orders
-// they're pre-assigned by the channel even before shipping is processed (mirrors
-// the same lookup on the sales order detail page).
-const courier = computed(() => linkedDelivery.value.find(d => d.courier)?.courier ?? marketplaceShipping(linkedOrder.value)?.courier)
-const trackingNo = computed(() => linkedDelivery.value.find(d => d.trackingNo)?.trackingNo ?? marketplaceShipping(linkedOrder.value)?.trackingNo)
+// Courier / tracking no. for THIS parcel, most-settled source first:
+//   1. the delivery created from this packing task — the shipment that actually goes
+//   2. this package's own details, or the parent outbound's when it has none of its
+//      own (the carry-down rule), which is what a label printed from here would use
+//   3. a marketplace order's channel-assigned pair, pre-known before shipping runs
+// Shown in the header as reference while packing, and printed on the packing list.
+const packageShipping = computed(() =>
+  task.value ? wmsShippingForPackage(task.value.id, task.value.salesOrderId) : undefined,
+)
+const courier = computed(() =>
+  linkedDelivery.value.find(d => d.courier)?.courier
+  ?? packageShipping.value?.courier
+  ?? marketplaceShipping(linkedOrder.value)?.courier,
+)
+const trackingNo = computed(() =>
+  linkedDelivery.value.find(d => d.trackingNo)?.trackingNo
+  ?? (packageShipping.value?.trackingNo || undefined)
+  ?? marketplaceShipping(linkedOrder.value)?.trackingNo,
+)
 // Delivery is just an in-between state (packed, waiting to leave) — not a document
 // worth linking to on its own. Once shipped, the shipment batch is what matters.
 const linkedShipments = computed<ShipmentSummary[]>(() => {
@@ -430,6 +446,8 @@ function goBack() { router.push('/outbound-delivery?tab=Packing') }
               <span v-if="agingLabel()" class="pck-aging">{{ agingLabel() }}</span>
             </span>
           </ContentList>
+          <ContentList :label="t('Courier')" :value="courier || '—'" />
+          <ContentList :label="t('Tracking no.')" :value="trackingNo || '—'" />
         </div>
       </section>
 

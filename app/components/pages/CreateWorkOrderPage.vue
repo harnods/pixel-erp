@@ -1122,7 +1122,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-td--input :deep([class*='input']),
 .wo-td--input :deep([class*='autocomplete']),
 .wo-td--input :deep(.mp-datepicker__root) { border-radius: 0; border-color: transparent; }
-.wo-td--input:focus-within { box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); z-index: 1; }
+.wo-td--input { position: relative; }
+.wo-td--input:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .wo-tracked-hint { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .wo-tracking { display: block; padding: 0 var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-link); cursor: pointer; }
 .wo-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }

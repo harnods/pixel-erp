@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
-// Reports → Tax index (Reports module → Tax submenu). Same flush
-// edge-to-edge card grid as the Sales reports index (SalesReportsIndexPage) —
-// Pixel 3 DT 2.4 enterprise tokens. No report detail page is built yet, so
-// every "View report" shows the coming-soon toast (same as the other indexes).
+// Reports → Tax index (Reports module → Tax submenu). Same flush edge-to-edge
+// card grid as the Sales reports index (SalesReportsIndexPage) — Pixel 3 DT 2.4
+// enterprise tokens.
+//
+// VAT reconciliation is the only built card — it opens the module at
+// /vat-reconciliation. The rest are placeholders (coming-soon toast), same as
+// the unbuilt cards on the sibling report indexes.
 import { infoToast } from '~/utils/toasts'
 const { t } = useLocale()
 const router = useRouter()
@@ -15,8 +18,12 @@ interface ReportCard {
   description: string
 }
 const reports: ReportCard[] = [
-  { slug: 'withholding-tax-summary', title: 'Withholding tax summary', description: 'Details all withholding tax (PPh) deductions recorded on sales and purchases, including taxable amounts and tax rates.' },
+  { slug: 'vat-reconciliation',      title: 'VAT reconciliation',      description: 'Matches your sales and purchase invoices against the faktur pajak recorded in DJP Coretax, per tax period, and shows what is still unreconciled.' },
+  { slug: 'output-tax-invoice-list', title: 'Output tax invoice list', description: 'Every faktur pajak you issued in a period, with its transaction code, DPP, and PPN. The working list behind your SPT Masa PPN.' },
+  { slug: 'input-tax-invoice-list',  title: 'Input tax invoice list',  description: 'Every faktur pajak you received in a period, showing which ones are creditable and which are still waiting on a vendor.' },
   { slug: 'value-added-tax',         title: 'Value added tax (PPN)',   description: 'Calculates net VAT obligations by comparing Output Tax (from sales) and Input Tax (from purchases) within the period.' },
+  { slug: 'withholding-tax-summary', title: 'Withholding tax summary', description: 'Details all withholding tax (PPh) deductions recorded on sales and purchases, including taxable amounts and tax rates.' },
+  { slug: 'tax-payment-list',        title: 'Tax payment list',        description: 'All tax payments made in a period, with their billing codes, so you can tie every payment back to a return.' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
@@ -44,8 +51,8 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
-// Built report detail pages navigate; the rest show a coming-soon toast for now.
-const BUILT: Record<string, string> = {}
+// Built report pages navigate; the rest show a coming-soon toast for now.
+const BUILT: Record<string, string> = { 'vat-reconciliation': '/vat-reconciliation' }
 function viewReport(r: ReportCard) {
   const to = BUILT[r.slug]
   if (to) router.push(to)
@@ -88,7 +95,11 @@ function viewReport(r: ReportCard) {
 }
 .report-card--filler { padding: 0; }
 
-.report-card-body { display: flex; flex-direction: column; min-height: 92px; }
+/* flex:1 makes the body fill the card, which the grid has already stretched to
+   the tallest card in its row — so every "View report" in a row still lines up,
+   without pinning the description to a fixed height it can overflow out of at
+   narrow widths (one column, six wrapped lines). */
+.report-card-body { display: flex; flex-direction: column; flex: 1; min-height: 92px; }
 .report-card-title {
   font-family: var(--mp-font-family-title, inherit);
   font-size: var(--mp-font-sizes-xl, 20px);
@@ -101,7 +112,7 @@ function viewReport(r: ReportCard) {
   white-space: nowrap;
 }
 .report-card-desc {
-  height: var(--mp-sizes-24, 96px);
+  min-height: var(--mp-sizes-24, 96px);
   margin: 0;
   font-size: var(--mp-font-sizes-md, 14px);
   font-weight: var(--mp-font-weights-regular, 400);
@@ -109,7 +120,6 @@ function viewReport(r: ReportCard) {
   line-height: var(--mp-line-heights-md, 20px);
 }
 
-/* Secondary pill button (Pixel enterprise): white fill, bold border, rounded-full. */
 /* layout only — the button look comes from MpButton (secondary) */
 .report-view-btn { align-self: flex-start; }
 </style>

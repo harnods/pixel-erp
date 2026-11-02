@@ -205,7 +205,7 @@ function confirmArchive() {
     // Block archiving a contact that is this company's PIC or sole active member (PRD §351).
     const blocker = contactBlockingCompany(archiveContactId.value)
     if (blocker) {
-      toast.notify({ variant: 'warning', title: t('Set another PIC before archiving this contact.'), maxWidth: 'max-content' })
+      infoToast(t('Set another PIC before archiving this contact.'))
       return
     }
     archiveCrmContactPerson(archiveContactId.value)
@@ -472,7 +472,7 @@ function confirmArchive() {
   </div>
 
   <div v-else class="cr-missing">
-    <MpIcon name="profile" size="lg" />
+    <MpIcon name="profile" size="32px" />
     <p>{{ t('Company not found') }}</p>
     <MpButton variant="secondary" is-rounded @click="router.push('/crm/customers/companies')">{{ t('Back to Companies') }}</MpButton>
   </div>
@@ -492,7 +492,7 @@ function confirmArchive() {
 .cr-title { margin: 0; font-size: var(--mp-font-sizes-2xl, 24px); font-weight: var(--mp-font-weights-semi-bold); line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default); }
 
 /* Tab strip: no gray baseline border — only the active tab's green underline. */
-.cr-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: 0 !important; border-bottom: none !important; box-shadow: none !important; }
+.cr-tabs :deep([data-pixel-component="MpTabList"]) { margin-bottom: 0 !important; border-bottom: none !important; box-shadow: none !important; } /* pixel-police-allow-shadow: reset */
 .cr-tabs :deep(.mp-tab--isSelected_true), .cr-tabs :deep(.mp-tab--isSelected_true:hover) { color: var(--mp-text-selected) !important; }
 .cr-tabs :deep(.mp-tab--isSelected_true .mp-tab-selected-border) { background-color: var(--mp-border-selected, #029861) !important; }
 

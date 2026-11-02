@@ -427,7 +427,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Tax info</h2>
           <div v-if="!hasTaxInfo" class="pd-tax-empty">
-            <MpIcon name="information" size="sm" color="icon.secondary" />
+            <MpIcon name="information" size="sm" color="icon.subtle" />
             <span>
               Tax info is incomplete.
               <a class="pd-link" @click.prevent="router.push(`/product-list/${product.sku}/edit`)">Add tax info</a>

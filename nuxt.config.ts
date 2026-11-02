@@ -49,6 +49,12 @@ export default defineNuxtConfig({
     "/**": { headers: { "cache-control": "no-cache" } },
   },
 
+  components: [
+    { path: '~/components/patterns', pathPrefix: false },
+    { path: '~/components/pages', pathPrefix: false },
+    { path: '~/components' },
+  ],
+
   build: {
     transpile: ['@ds/proto-review'],
   },
@@ -63,6 +69,8 @@ export default defineNuxtConfig({
     "@/assets/css/crm-page.css",
     // Projects module (Project MTO) — plain CSS, .pm- prefixed.
     "@/assets/css/project-mto.css",
+    // Shared shell for the Credit memo flow detail + form pages.
+    "@/assets/css/credit-memo.css",
   ],
   postcss: {
     plugins: {

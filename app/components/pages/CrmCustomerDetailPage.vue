@@ -122,7 +122,8 @@ const contactColumns: TableColumn[] = [
   { key: 'email',       label: 'Email',                       sortable: true, sortType: 'text' },
   { key: 'phone',       label: 'Mobile',                      sortable: true, sortType: 'text' },
   { key: 'owner',       label: 'Contact owner', kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'lastUpdated', label: 'Last updated',  kind: 'date'                                    },
+  // LastUpdatedCell stacks formatDateTime over a byline — the `datetime` kind.
+  { key: 'lastUpdated', label: 'Last updated',  kind: 'datetime'                                },
 ]
 const contactVisibility = reactive<Record<string, boolean>>(Object.fromEntries(contactColumns.map((c) => [c.key, true])))
 const contactColumnItems = contactColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))
@@ -238,7 +239,7 @@ function orderBadge(status: string) {
             <div class="cd-panel">
               <!-- Company profile -->
               <section class="cd-profile">
-                <MpAvatar :id="`cd-av-${customer.id}`" :name="customer.company" size="lg" variant-color="green" />
+                <MpAvatar :id="`cd-av-${customer.id}`" :name="customer.company" size="32px" variant-color="green" />
                 <div class="cd-profile-body">
                   <div class="cd-profile-titlerow">
                     <h2 class="cd-profile-name">{{ customer.company }}</h2>
@@ -429,7 +430,7 @@ function orderBadge(status: string) {
   </div>
 
   <div v-else class="cd-missing">
-    <MpIcon name="profile" size="lg" />
+    <MpIcon name="profile" size="32px" />
     <p>Company not found.</p>
     <MpButton class="btn-enterprise btn-enterprise--secondary" type="button" @click="router.push('/crm/customers')">Back to Companies</MpButton>
   </div>

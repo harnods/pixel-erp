@@ -1245,7 +1245,11 @@ async function handleSave() {
 }
 .msn-td--from-bin { padding: 10px var(--mp-spacing-2); }
 .msn-td--to-bin { padding: 0; vertical-align: middle; }
-.msn-td--to-bin:focus-within { box-shadow: inset 0 0 0 1px var(--mp-border-bold); }
+.msn-td--to-bin { position: relative; }
+.msn-td--to-bin:focus-within::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  box-shadow: inset 0 0 0 1px var(--mp-border-bold); /* pixel-police-allow-shadow: focus ring over collapsed borders */
+}
 .msn-bin-text {
   display: block; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   color: var(--mp-text-default);
