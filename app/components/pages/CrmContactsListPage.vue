@@ -438,7 +438,6 @@ function onExport() { exportOpen.value = false; successToast(t('Export ready —
       :columns="exportColumns"
       :total="total"
       :selected-count="selectedCount"
-      :show-column-search="false"
       @close="exportOpen = false"
       @export="onExport"
     />

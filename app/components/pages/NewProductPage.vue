@@ -6,14 +6,21 @@
  */
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, toast,
+  MpInput, MpTextarea, MpRadio, MpCheckbox, MpAutocomplete, MpButton, MpButtonGroup, toast,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, css,
 } from '@mekari/pixel3'
 import BarcodeSettingsButton from '~/components/patterns/BarcodeSettingsButton.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { PRODUCTS, type Product } from '~/data/inventory'
 import { customProducts, addCustomProduct, updateCustomProduct } from '~/data/customProducts'
 import { GOODS_CLASSIFICATION_CODES, SERVICE_CLASSIFICATION_CODES } from '~/data/taxClassificationCodes'
 import { getProductTaxInfo, setProductTaxInfo } from '~/data/productsIndex'
+import { productTrackStockBy, getProductBatches } from '~/data/productDetails'
+import {
+  BATCH_ATTRIBUTE_CATALOG, MAX_BATCH_ATTRIBUTES, DEFAULT_BATCH_ATTRIBUTES,
+  getBatchAttributeConfig, setBatchAttributeConfig, sameBatchAttributeConfig,
+  type BatchAttributeKey, type BatchAttributeSetting,
+} from '~/data/batchAttributes'
 
 const { t } = useLocale()
 
@@ -49,6 +56,42 @@ const trackStock = ref(true)
 const minStock = ref('')
 const trackStockBy = ref('Quantity')
 const inventoryAccount = ref('1-10200 Inventory')
+
+// ── Batch attributes (Track stock by = Batch) — Batch Attribute PRD stories 5, 6 ──
+// Which attributes every batch of this product records, and which are required.
+// Rows survive switching Track stock by away from Batch and back, so the choice
+// isn't lost to an accidental toggle.
+interface AttributeRow { id: number; key: BatchAttributeKey | ''; required: boolean }
+let attributeRowSeq = 0
+function rowsFrom(settings: readonly BatchAttributeSetting[]): AttributeRow[] {
+  return settings.map(s => ({ id: attributeRowSeq++, key: s.key, required: s.required }))
+}
+const attributeRows = ref<AttributeRow[]>(rowsFrom(DEFAULT_BATCH_ATTRIBUTES))
+/** The set as saved, in edit mode — changing it on Save changes shows the warning. */
+const savedAttributes = ref<BatchAttributeSetting[]>(DEFAULT_BATCH_ATTRIBUTES.map(a => ({ ...a })))
+const attributeError = ref('')
+const isBatchTrackedForm = computed(() => (isWms.value || trackStock.value) && trackStockBy.value === 'Batch')
+
+/** One row's options: the catalog minus attributes other rows already picked. */
+function attributeOptionsFor(row: AttributeRow) {
+  const taken = new Set(attributeRows.value.filter(r => r.id !== row.id).map(r => r.key))
+  return BATCH_ATTRIBUTE_CATALOG.filter(a => !taken.has(a.key)).map(a => ({ label: t(a.label), value: a.key }))
+}
+function addAttributeRow() {
+  if (attributeRows.value.length >= MAX_BATCH_ATTRIBUTES) return
+  attributeRows.value.push({ id: attributeRowSeq++, key: '', required: false })
+}
+function removeAttributeRow(id: number) {
+  // A batch-tracked product always keeps at least one attribute; the last row's
+  // remove control isn't rendered, this is just the guard.
+  if (attributeRows.value.length <= 1) return
+  attributeRows.value = attributeRows.value.filter(r => r.id !== id)
+}
+function attributeSettings(): BatchAttributeSetting[] {
+  return attributeRows.value
+    .filter(r => r.key)
+    .map(r => ({ key: r.key as BatchAttributeKey, required: r.required }))
+}
 
 const doesBuy = ref(true)
 const purchaseCost = ref('')
@@ -99,6 +142,12 @@ onMounted(async () => {
   photoDataUrl.value = p.img
   purchaseCost.value = p.buyPrice ? String(p.buyPrice) : ''
   salesPrice.value = p.sellPrice ? String(p.sellPrice) : ''
+  // The product's own choice, or its category's default for a seed product.
+  trackStockBy.value = productTrackStockBy(p.sku)
+  // The attribute set lives in its own SKU-keyed store (like tax info), so seed
+  // catalog products carry one too. Remember it to spot a change on save.
+  savedAttributes.value = getBatchAttributeConfig(p.sku)
+  attributeRows.value = rowsFrom(savedAttributes.value)
 
   // Tax info lives in its own SKU-keyed store, not on the product record (it
   // applies to read-only CATALOG products too) — see productsIndex.ts.
@@ -321,7 +370,12 @@ function validate(): boolean {
   if (!category.value) categoryError.value = t('You must select category')
   if (!unit.value) unitError.value = t('You must select base unit')
 
-  return !(nameError.value || skuError.value || categoryError.value || unitError.value)
+  // Only while the Batch attributes block is shown — nothing else reads the rows.
+  attributeError.value = isBatchTrackedForm.value && attributeRows.value.some(r => !r.key)
+    ? t('You must select attribute')
+    : ''
+
+  return !(nameError.value || skuError.value || categoryError.value || unitError.value || attributeError.value)
 }
 
 function buildPayload(): Omit<Product, 'id'> {
@@ -338,6 +392,9 @@ function buildPayload(): Omit<Product, 'id'> {
     buyPrice,
     averageCost: Math.round(sellPrice * 0.6),
     lastPurchaseCost: Math.round(sellPrice * 0.62),
+    // Saved so the product's own choice drives its detail page (Stock by batches /
+    // serial numbers), not just its category. Left unset when stock isn't tracked.
+    trackStockBy: isWms.value || trackStock.value ? trackStockBy.value : undefined,
   }
 }
 
@@ -362,12 +419,36 @@ function resetForm() {
   productClassification.value = ''
   classificationCode.value = ''
   djpUnit.value = ''
+  attributeRows.value = rowsFrom(DEFAULT_BATCH_ATTRIBUTES)
+  attributeError.value = ''
   nameError.value = skuError.value = categoryError.value = unitError.value = ''
 }
 
+// Edit mode: changing a batch-tracked product's attribute set asks first — existing
+// batches aren't rewritten and have to be updated one by one (PRD story 6).
+const attributeConfirmOpen = ref(false)
+const existingBatchCount = computed(() =>
+  isEdit.value ? getProductBatches(props.orderId!).filter(b => !b.isUnassigned).length : 0,
+)
+const attributeSetChanged = computed(() =>
+  isBatchTrackedForm.value && !sameBatchAttributeConfig(savedAttributes.value, attributeSettings()),
+)
+
 async function save() {
   if (!validate()) return
+  if (isEdit.value && attributeSetChanged.value) {
+    attributeConfirmOpen.value = true
+    return
+  }
+  await commitSave()
+}
 
+async function confirmAttributeChange() {
+  attributeConfirmOpen.value = false
+  await commitSave()
+}
+
+async function commitSave() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 600))
   const payload = buildPayload()
@@ -376,13 +457,16 @@ async function save() {
   if (isEdit.value && editingCustom.value) {
     updateCustomProduct(props.orderId!, payload)
     saveTaxInfo(payload.sku)
+    saveBatchAttributes(payload.sku)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${payload.sku}`)
   } else if (isEdit.value) {
     // Seed (CATALOG) product — read-only master data, so the operational fields
     // aren't persisted. Tax info still is: it lives in its own SKU-keyed store
     // precisely so Tax/Finance can classify catalogue products they can't edit.
+    // The batch attribute set is SKU-keyed the same way.
     saveTaxInfo(props.orderId!)
+    saveBatchAttributes(props.orderId!)
     toast.notify({ variant: 'success', title: t('Product changes saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${props.orderId}`)
   } else {
@@ -390,6 +474,7 @@ async function save() {
     // settings icon); left blank, the product simply has no real barcode yet.
     const created = addCustomProduct({ ...payload, barcode: barcode.value.trim() || undefined })
     saveTaxInfo(created.sku)
+    saveBatchAttributes(created.sku)
     toast.notify({ variant: 'success', title: t('Product saved'), maxWidth: 'max-content' })
     router.push(`/product-list/${created.sku}`)
   }
@@ -406,6 +491,15 @@ function saveTaxInfo(productSku: string) {
   })
 }
 
+/** Persist the batch attribute set — only for a batch-tracked product. Rows of a
+ *  quantity/serial product are ignored rather than cleared, so a stored set survives
+ *  switching Track stock by back later. Saving it unchanged is a no-op and isn't
+ *  logged (see setBatchAttributeConfig). */
+function saveBatchAttributes(productSku: string) {
+  if (!isBatchTrackedForm.value) return
+  setBatchAttributeConfig(productSku, attributeSettings())
+}
+
 // Create mode only — persist then reset the form to add the next product.
 async function saveAndAdd() {
   if (!validate()) return
@@ -413,6 +507,7 @@ async function saveAndAdd() {
   await new Promise(r => setTimeout(r, 600))
   const created = addCustomProduct({ ...buildPayload(), barcode: barcode.value.trim() || undefined })
   saveTaxInfo(created.sku)
+  saveBatchAttributes(created.sku)
   toast.notify({ variant: 'success', title: 'Product saved', maxWidth: 'max-content' })
   isSavingAndAdding.value = false
   resetForm()
@@ -631,6 +726,52 @@ onUnmounted(() => { footerObserver?.disconnect() })
                   />
                 </MpFormControl>
               </div>
+
+              <!-- Batch attributes — what every batch of this product records, and which
+                   are required (Batch Attribute PRD stories 5, 6). Not wrapped in one
+                   MpFormControl: it hands its id to the child control, and three selects
+                   sharing an id would share one popover. -->
+              <div v-if="isBatchTrackedForm" class="np-toggle-fields np-attr-block">
+                <!-- Sub-heading + its description, like the other form sub-sections. -->
+                <h3 class="np-attr-title">{{ t('Batch attributes') }}</h3>
+                <p class="np-attr-desc">{{ t('Up to 3 attributes recorded on every batch') }}</p>
+                <div v-for="(row, i) in attributeRows" :key="row.id" class="np-attr-row">
+                  <!-- One field per row, one column wide like the row above. The
+                       MpFormControl hands its id to the select, so each row's popover
+                       still has an id of its own. -->
+                  <MpFormControl :id="`np-batch-attribute-${row.id}`" class="np-field-270">
+                    <MpFormLabel>{{ t('Attribute') }} {{ i + 1 }}</MpFormLabel>
+                    <MpAutocomplete
+                      v-model="row.key"
+                      :data="attributeOptionsFor(row)" label-prop="label" value-prop="value"
+                      :placeholder="t('Select attribute')" use-portal is-full-width
+                      :is-invalid="!!attributeError && !row.key" @update:model-value="attributeError = ''"
+                    />
+                  </MpFormControl>
+                  <div class="np-attr-actions">
+                    <MpCheckbox
+                      :id="`np-batch-attribute-required-${row.id}`" :is-checked="row.required"
+                      @change="row.required = !row.required"
+                    >{{ t('Required') }}</MpCheckbox>
+                    <!-- rule/remove-icon-tooltip. The last row has no remove: a batch-tracked
+                         product always keeps at least one attribute. -->
+                    <MpTooltip
+                      v-if="attributeRows.length > 1" :id="`np-batch-attribute-remove-tt-${row.id}`"
+                      :label="t('Remove')" placement="top" use-portal
+                    >
+                      <MpButton
+                        variant="ghost" is-rounded left-icon="minus-circular"
+                        :aria-label="t('Remove')" @click="removeAttributeRow(row.id)"
+                      />
+                    </MpTooltip>
+                  </div>
+                </div>
+                <!-- Inline error, below the rows it refers to (rule/form-errors-inline). -->
+                <p v-if="attributeError" role="alert" class="np-attr-error">{{ attributeError }}</p>
+                <div v-if="attributeRows.length < MAX_BATCH_ATTRIBUTES" class="np-attr-add">
+                  <MpButton variant="ghost" is-rounded left-icon="add" @click="addAttributeRow">{{ t('Add attribute') }}</MpButton>
+                </div>
+              </div>
             </div>
 
             <!-- I buy this product / I sell this product — ERP only; WMS only tracks stock -->
@@ -804,6 +945,22 @@ onUnmounted(() => { footerObserver?.disconnect() })
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <!-- ── Batch attribute change warning (edit mode, Batch Attribute PRD story 6) ──
+         A confirmation, not destructive: primary Save changes + ghost Cancel. The
+         shared ConfirmModal also gets the close behaviour right by construction
+         (rule/modal-drawer-close-explicit-only). -->
+    <ConfirmModal
+      v-model:is-open="attributeConfirmOpen"
+      :title="t('Save batch attribute changes?')"
+      :description="t('Existing batches will need to be manually updated to have the new attribute information.')"
+      :note="existingBatchCount === 0 ? '' : existingBatchCount === 1
+        ? t('This product has 1 batch.')
+        : t('This product has {count} batches.').replace('{count}', String(existingBatchCount))"
+      :confirm-label="t('Save changes')"
+      :is-danger="false"
+      @confirm="confirmAttributeChange"
+    />
   </div>
 </template>
 
@@ -811,7 +968,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
 /* ── Shell — identical to NewWarehousePage.vue ── */
 .nw-page { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .nw-titlebar {
-  flex-shrink: 0; height: 72px; background: var(--mp-background-neutral-subtle);
+  flex-shrink: 0; height: 72px; background: var(--mp-background-neutral-subtle, #f8f9f9);
   display: flex; align-items: center; justify-content: space-between; padding: 0 var(--mp-spacing-6);
 }
 .nw-titlebar-left { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0; }
@@ -826,7 +983,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
   line-height: 32px; letter-spacing: var(--mp-letter-spacings-tight, -0.2px); color: var(--mp-text-default);
 }
 .nw-stage {
-  flex: 1; min-height: 0; background: var(--mp-background-stage);
+  flex: 1; min-height: 0; background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl, 12px) var(--mp-radii-xl, 12px) 0 0;
   overflow-x: hidden; overflow-y: auto; padding: var(--mp-spacing-6) var(--mp-spacing-6) var(--mp-spacing-8);
 }
@@ -852,7 +1009,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
   flex-shrink: 0;
   display: flex; justify-content: flex-end; align-items: center; gap: var(--mp-spacing-3);
   padding: var(--mp-spacing-4) var(--mp-spacing-6);
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-top: 1px solid transparent;
   transition: border-top-color 0.15s;
 }
@@ -861,20 +1018,20 @@ onUnmounted(() => { footerObserver?.disconnect() })
   display: inline-flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   border-radius: var(--mp-radii-full, 999px);
-  border: 1px solid var(--mp-border-bold);
-  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-bold, #8c9596);
+  background: var(--mp-background-neutral, #ffffff);
   color: var(--mp-text-secondary);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   line-height: var(--mp-line-heights-md); cursor: pointer; white-space: nowrap; font-family: inherit;
 }
-.nw-btn-secondary:hover:not(:disabled) { background: var(--mp-background-neutral-hovered); }
+.nw-btn-secondary:hover:not(:disabled) { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .nw-btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
 .nw-btn-cancel {
   background: transparent; border: none; border-radius: var(--mp-radii-full, 999px);
   padding: var(--mp-spacing-2) var(--mp-spacing-4); font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-md); color: var(--mp-text-secondary); cursor: pointer; font-family: inherit;
 }
-.nw-btn-cancel:hover { background: var(--mp-background-neutral-hovered); }
+.nw-btn-cancel:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .nw-btn-save {
   background: var(--mp-colors-emerald-700, #029861); border: 1px solid var(--mp-colors-emerald-700, #029861);
   border-radius: var(--mp-radii-full, 999px); padding: var(--mp-spacing-2) var(--mp-spacing-4);
@@ -889,6 +1046,31 @@ onUnmounted(() => { footerObserver?.disconnect() })
 .np-photo-col { flex-shrink: 0; width: 270px; display: flex; flex-direction: column; }
 
 .np-field-270 { width: 270px; flex-shrink: 0; }
+/* ── Batch attributes block ──
+   Sub-heading 14px semibold like the other sub-sections; 20px between stacked fields
+   (docs/patterns/Form.md) and 24px between a field and its trailing controls. */
+/* The toggle block stacks its rows 12px apart; a sub-section wants the repo's 24px,
+   so add the remainder above the heading. */
+.np-attr-block { display: flex; flex-direction: column; margin-top: var(--mp-spacing-3); }
+.np-attr-title {
+  margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
+}
+.np-attr-desc {
+  margin: var(--mp-spacing-1) 0 var(--mp-spacing-3);
+  font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary);
+}
+.np-attr-row + .np-attr-row { margin-top: var(--mp-spacing-5); }
+.np-attr-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.np-attr-add { margin-top: var(--mp-spacing-5); }
+
+/* The field carries a label now, so its trailing controls sit on the control's line
+   (a box as tall as the control) rather than the row's middle. */
+.np-attr-row { display: flex; align-items: flex-end; gap: var(--mp-spacing-6); }
+.np-attr-actions {
+  display: flex; align-items: center; gap: var(--mp-spacing-6);
+  height: var(--mp-sizes-9, 36px);
+}
 
 /* Radio group */
 .np-radio-group { display: flex; gap: var(--mp-spacing-6); align-items: center; }
@@ -911,11 +1093,11 @@ onUnmounted(() => { footerObserver?.disconnect() })
 .np-prefix-wrap, .np-suffix-wrap {
   display: flex; align-items: stretch; width: 100%;
   border: 1px solid var(--mp-border-form, rgba(29,31,36,0.16)); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral); overflow: hidden;
+  background: var(--mp-background-neutral, #ffffff); overflow: hidden;
 }
 .np-prefix-chip, .np-suffix-chip {
   display: flex; align-items: center; padding: 0 var(--mp-spacing-3);
-  background: var(--mp-background-neutral-subtle); color: var(--mp-text-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-default);
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); white-space: nowrap;
 }
 .np-prefix-input, .np-suffix-input {
@@ -931,10 +1113,10 @@ onUnmounted(() => { footerObserver?.disconnect() })
 .np-dropzone {
   width: 270px; height: 270px; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: var(--mp-spacing-4); padding: var(--mp-spacing-8); border-radius: var(--mp-radii-md);
-  background: var(--mp-background-neutral-subtle); color: var(--mp-text-placeholder); text-align: center; cursor: pointer;
+  background: var(--mp-background-neutral-subtle, #f8f9f9); color: var(--mp-text-placeholder); text-align: center; cursor: pointer;
   transition: background 0.15s;
 }
-.np-dropzone--over { background: var(--mp-background-neutral-subtle-hovered, var(--mp-background-neutral-hovered)); }
+.np-dropzone--over { background: var(--mp-background-neutral-subtle-hovered, var(--mp-background-neutral-hovered, #eef0f3)); }
 .np-dropzone-icon { width: 48px; height: 48px; }
 .np-dropzone-copy { margin: 0; font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
 .np-dropzone-link { color: var(--mp-text-link); cursor: pointer; }
@@ -942,7 +1124,7 @@ onUnmounted(() => { footerObserver?.disconnect() })
 
 .np-photo-preview {
   position: relative; width: 270px; height: 270px; border-radius: var(--mp-radii-md); overflow: hidden;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 .np-photo-img { width: 100%; height: 100%; object-fit: cover; }
 .np-photo-remove {
