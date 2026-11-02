@@ -172,9 +172,9 @@ const expanded = ref<Record<number, boolean>>({})
     <header class="detail-bar">
       <div class="detail-bar-left">
         <nav class="tr-breadcrumb">
-          <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+          <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</MpButton>
           <span class="tr-breadcrumb-sep">/</span>
-          <button class="detail-breadcrumb" @click="goDetail">{{ woLabel }}</button>
+          <MpButton variant="link" class="detail-breadcrumb" @click="goDetail">{{ woLabel }}</MpButton>
         </nav>
         <h1 class="detail-title">{{ t('Track routing') }}</h1>
       </div>
@@ -229,11 +229,7 @@ const expanded = ref<Record<number, boolean>>({})
                       class="tr-card-desc"
                       :class="{ 'tr-card-desc--clamped': step.description.length > DESCRIPTION_CLAMP && !expanded[step.index] }"
                     >{{ step.description || '—' }}</span>
-                    <button
-                      v-if="step.description.length > DESCRIPTION_CLAMP"
-                      class="tr-card-more"
-                      @click="expanded[step.index] = !expanded[step.index]"
-                    >{{ expanded[step.index] ? t('Show less') : t('Show more') }}</button>
+                    <MpButton v-if="step.description.length > DESCRIPTION_CLAMP" variant="link" class="tr-card-more" @click="expanded[step.index] = !expanded[step.index]">{{ expanded[step.index] ? t('Show less') : t('Show more') }}</MpButton>
                   </ContentList>
                 </div>
                 <footer class="tr-card-actions">
@@ -296,7 +292,7 @@ const expanded = ref<Record<number, boolean>>({})
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+        <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</MpButton>
         <h1 class="detail-title">{{ t('Work order not found') }}</h1>
       </div>
     </header>

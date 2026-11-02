@@ -11,7 +11,7 @@
 import { ref, computed } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
-  MpAutocomplete, MpButton, MpFormControl, MpFormErrorMessage, MpFormLabel, MpIcon, MpInput,
+  MpAutocomplete, MpButton, MpFormControl, MpFormErrorMessage, MpFormLabel, MpInput,
   MpInputGroup, MpInputRightAddon, MpRadio,
 } from '@mekari/pixel3'
 import { CATALOG } from '~/data/catalog'
@@ -155,7 +155,7 @@ function save() {
   <div v-if="wo" class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+        <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</MpButton>
         <h1 class="detail-title">{{ t('Adjust work order') }}</h1>
       </div>
     </header>
@@ -326,7 +326,7 @@ function save() {
                   <td class="wo-td">{{ row.unit }}</td>
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.productId" :id="`aw-other-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(otherAmount(row)) }}</template></td>
-                  <td class="wo-td wo-td--del"><button v-if="row.productId" class="wo-del-btn" type="button" :aria-label="t('Remove')" @click="removeOther(row.id)"><MpIcon name="minus-circular" size="sm" /></button></td>
+                  <td class="wo-td wo-td--del"><MpButton v-if="row.productId" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeOther(row.id)" /></td>
                 </tr>
               </tbody>
             </table>
@@ -347,7 +347,7 @@ function save() {
                   <td class="wo-td wo-td--input wo-td--num-input"><MpInput v-if="row.accountMapping && row.allocationMethod !== 'Amount'" :id="`aw-waste-pct-${row.id}`" v-model="row.percentage" type="number" placeholder="0" is-full-width /></td>
                   <td v-if="row.accountMapping && row.allocationMethod === 'Amount'" class="wo-td wo-td--input wo-td--num-input"><MpInput :id="`aw-waste-amt-${row.id}`" v-model="row.amount" type="number" placeholder="0" is-full-width /></td>
                   <td v-else class="wo-td wo-td--num wo-td--right"><template v-if="row.accountMapping">{{ formatIDR(wasteAmount(row)) }}</template></td>
-                  <td class="wo-td wo-td--del"><button v-if="row.accountMapping" class="wo-del-btn" type="button" :aria-label="t('Remove')" @click="removeWaste(row.id)"><MpIcon name="minus-circular" size="sm" /></button></td>
+                  <td class="wo-td wo-td--del"><MpButton v-if="row.accountMapping" class="wo-del-btn" variant="ghost" type="button" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeWaste(row.id)" /></td>
                 </tr>
               </tbody>
             </table>
@@ -376,7 +376,7 @@ function save() {
   <div v-else class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</button>
+        <MpButton variant="link" class="detail-breadcrumb" @click="goList">{{ t('Work orders') }}</MpButton>
         <h1 class="detail-title">{{ t('Work order not found') }}</h1>
       </div>
     </header>
@@ -497,8 +497,8 @@ function save() {
   position: sticky;
   right: 0;
   z-index: 2;
-  width: 44px;
-  min-width: 44px;
+  width: var(--mp-sizes-11, 44px);
+  min-width: var(--mp-sizes-11, 44px);
   padding: 0;
   text-align: center;
   /* 1px inset separator on the sticky column's left edge. It must match the 1px
@@ -543,21 +543,6 @@ function save() {
 }
 .wo-del-btn:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-critical); }
 
-/* Loading skeleton bar (shown in each cell while the selected BOM's data loads) */
-.wo-skel {
-  display: block;
-  height: 14px;
-  width: 70%;
-  border-radius: var(--mp-radii-sm, 4px);
-  background: linear-gradient(90deg, var(--mp-border-default) 25%, var(--mp-background-neutral-subtle) 37%, var(--mp-border-default) 63%);
-  background-size: 400% 100%;
-  animation: wo-skel-shimmer 1.4s ease infinite;
-}
-.wo-td--del .wo-skel { display: none; }
-@keyframes wo-skel-shimmer {
-  0% { background-position: 100% 0; }
-  100% { background-position: 0 0; }
-}
 
 /* ── Subtotal + summary ──────────────────────────────────────────────────── */
 .wo-subtotal-row {
