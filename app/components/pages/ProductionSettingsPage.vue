@@ -101,7 +101,7 @@ const methodOptions = computed(() =>
         <span class="ps-label">
           {{ t(opt.label) }}
           <MpTooltip :label="t(opt.hint)" placement="top">
-            <MpIcon name="information" size="sm" class="ps-info" />
+            <MpIcon name="info" size="sm" class="ps-info" />
           </MpTooltip>
         </span>
         <div class="ps-control">
@@ -113,14 +113,14 @@ const methodOptions = computed(() =>
       </div>
 
       <p v-if="productionSettings.partialMode !== 'none'" class="ps-note">
-        <MpIcon name="information" size="sm" />
+        <MpIcon name="info" size="sm" />
         {{ t('Partial consume and partial completion cannot both be on — turning one on turns the other off.') }}
       </p>
 
       <!-- UC-04 — the partial mode IS the start rule (there is no separate S-4
            toggle); spell it out, because neither toggle's label says it. -->
       <p class="ps-note" data-devchange="ps-start-gate-partial-mode">
-        <MpIcon name="information" size="sm" />
+        <MpIcon name="info" size="sm" />
         {{ t(startGateNote) }}
       </p>
     </section>
@@ -154,11 +154,11 @@ const methodOptions = computed(() =>
       </div>
 
       <p v-if="!productionSettings.componentsMustBeReserved" class="ps-note">
-        <MpIcon name="information" size="sm" />
+        <MpIcon name="info" size="sm" />
         {{ t('Work orders raise no stock request and start without reserved components. Requests already raised stay on Stock requests.') }}
       </p>
       <p v-else-if="productionSettings.reservationMethod === 'two-step'" class="ps-note">
-        <MpIcon name="information" size="sm" />
+        <MpIcon name="info" size="sm" />
         {{ t('Work orders show an info badge instead of reservation actions: "Reservation via Stock requests only (PPIC / stockist)".') }}
       </p>
     </section>

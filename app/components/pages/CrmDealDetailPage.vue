@@ -346,21 +346,21 @@ function goCustomer(id: string) { router.push(`/crm/customers/${id}`) }
 
       <!-- Contextual banners -->
       <div v-if="isArchived" class="detail-banner detail-banner--muted">
-        <MpIcon name="information" size="md" class="detail-banner-icon" />
+        <MpIcon name="info" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ t('This deal is archived — hidden from active views and metrics. Restore it to edit, change stage, or convert.') }}</span>
       </div>
       <div v-else-if="isFailed" class="detail-banner detail-banner--warn">
-        <MpIcon name="information" size="md" class="detail-banner-icon" />
+        <MpIcon name="info" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ deal.conversionError }}</span>
         <MpTextlink v-if="convEligible" @click="retryConversion">{{ t('Retry conversion') }}</MpTextlink>
       </div>
       <div v-else-if="isConverted" class="detail-banner">
-        <MpIcon name="information" size="md" class="detail-banner-icon" />
+        <MpIcon name="info" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ t('This deal is linked to') }} {{ t(convTarget) }}<template v-if="erpTxn"> #{{ erpTxn.number }}</template>. {{ t('Editing the deal does not update the ERP transaction.') }}</span>
         <MpTextlink v-if="erpTxn" @click="openErpTxn">{{ t('Open in ERP') }}</MpTextlink>
       </div>
       <div v-else-if="isLost" class="detail-banner detail-banner--warn">
-        <MpIcon name="information" size="md" class="detail-banner-icon" />
+        <MpIcon name="info" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ t('This deal was marked Lost.') }}<span v-if="deal.lostReason">&nbsp;{{ t('Reason') }}: {{ deal.lostReason }}.</span></span>
       </div>
 

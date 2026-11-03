@@ -504,7 +504,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
             <MpButton class="glr-view-item" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">{{ t('Default view') }}</MpButton>
             <div v-for="v in views" :key="v.id" class="glr-view-item-row">
               <MpButton class="glr-view-item" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</MpButton>
-              <MpButton class="glr-view-del" type="button" :aria-label="t('Delete')" left-icon="trash" @click="askDeleteView(v)" />
+              <MpButton class="glr-view-del" type="button" :aria-label="t('Delete')" left-icon="delete" @click="askDeleteView(v)" />
             </div>
             <p v-if="!views.length" class="glr-vd-hint">{{ t('Saved views will appear here.') }}</p>
           </div>

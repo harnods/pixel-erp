@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'icon-names-fixed',
+    title: 'Missing icons now show (no more 404s in the console)',
+    description:
+      'Several icons asked Pixel for names it does not have, so they rendered blank and left a 404 in the console on every page that mounted them — the work order page among them. Fixed to the real Pixel names: information → info (work order Adjust / Edit materials / Request additional stock modals, Production settings, product, sales and purchase invoice details, CRM deal), warning → warning-triangle (rejected-demand note on the work order), document → doc (attachment chips on New work order and New bill of materials), trash → delete (saved-view delete in the GL, budget variance and multidimensional reports), caret-left → chevrons-left (budget variance year picker), chevron-down → chevrons-down (shipping details), info-circle → info (knowledge-base warning). A test now checks every icon name against Pixel\'s own list.',
+    date: '2026-11-03',
+    files: ['WorkOrderDetailsPage.vue', 'ProductionSettingsPage.vue', 'CreateWorkOrderPage.vue', 'CreateBillOfMaterialsPage.vue'],
+  },
+  {
     id: 'wo-raw-bulk-set',
     title: 'New work order: bulk set warehouse and required date',
     description:

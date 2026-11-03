@@ -918,7 +918,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
             <MpButton class="mdr-view-item" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">{{ t('Default view') }}</MpButton>
             <div v-for="v in multidimensionalViews" :key="v.id" class="mdr-view-item-row">
               <MpButton class="mdr-view-item" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</MpButton>
-              <MpButton class="mdr-view-del" type="button" left-icon="trash" :aria-label="t('Delete')" @click="askDeleteView(v)" />
+              <MpButton class="mdr-view-del" type="button" left-icon="delete" :aria-label="t('Delete')" @click="askDeleteView(v)" />
             </div>
             <p v-if="!multidimensionalViews.length" class="mdr-vd-hint">{{ t('Saved views will appear here.') }}</p>
           </div>

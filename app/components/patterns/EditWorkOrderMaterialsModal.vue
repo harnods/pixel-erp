@@ -206,7 +206,7 @@ function submit() {
 
         <!-- UC-06 — say what saving will release, before it happens (as Adjust does). -->
         <div v-if="releasingRows.length" class="ewm-banner" data-devchange="wo-edit-auto-unreserve">
-          <MpIcon name="information" size="md" />
+          <MpIcon name="info" size="md" />
           <span>
             {{ t('Saving releases the full remaining reservation of') }}
             {{ releasingRows.map(r => r.product).join(', ') }}

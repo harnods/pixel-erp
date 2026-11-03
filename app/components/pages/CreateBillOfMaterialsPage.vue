@@ -550,7 +550,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <p class="bf-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per BOM') }}</p>
             <ul v-if="attachedFiles.length" class="bf-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="bf-file-item">
-                <MpIcon name="document" size="sm" />
+                <MpIcon name="doc" size="sm" />
                 <span class="bf-file-name">{{ f.name }}</span>
                 <MpButton class="bf-file-remove" type="button" variant="ghost" left-icon="minus-circular" @click="removeFile(f.name)" />
               </li>

@@ -1201,7 +1201,7 @@ function suppressFabClick(e: MouseEvent) {
         <template v-if="!collapsed.raw">
           <!-- The warehouse reserved different units than this work order picked. -->
           <div v-if="reservationOn && trackingChangedLines.length" class="wod-tracking-note">
-            <MpIcon name="information" size="sm" />
+            <MpIcon name="info" size="sm" />
             <span>
               {{ t('The warehouse reserved a different batch / serial number for') }}
               <template v-for="(l, i) in trackingChangedLines" :key="l.productId">
@@ -1213,7 +1213,7 @@ function suppressFabClick(e: MouseEvent) {
 
           <!-- W-7 / OPEN-14 — rejected demand stays flagged, not rolled back. -->
           <div v-if="reservationOn && rejectedLines.length" class="wod-tracking-note">
-            <MpIcon name="warning" size="sm" />
+            <MpIcon name="warning-triangle" size="sm" data-devchange="icon-names-fixed" />
             <span>
               {{ t('The warehouse rejected') }}
               <template v-for="(l, i) in rejectedLines" :key="`${l.productId}-${i}`">
@@ -1226,7 +1226,7 @@ function suppressFabClick(e: MouseEvent) {
 
           <!-- S-2 — Two-step: no reservation happens here, so say where it does. -->
           <p v-if="reservationOn && !canReserveHere" class="wod-reserve-note">
-            <MpIcon name="information" size="sm" />
+            <MpIcon name="info" size="sm" />
             {{ t('Reservation via Stock requests only (PPIC / stockist)') }}
           </p>
           <!-- D-4 — ONE Material reservation action opening Reserve / Unreserve;

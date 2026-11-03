@@ -223,7 +223,7 @@ function submit() {
         </div>
 
         <div class="ras-banner">
-          <MpIcon name="information" size="md" />
+          <MpIcon name="info" size="md" />
           <span>{{ t('This does not change the work order plan — the job still needs what it needed.') }}</span>
         </div>
 

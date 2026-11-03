@@ -798,7 +798,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <p class="wo-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per work order') }}</p>
             <ul v-if="attachedFiles.length" class="wo-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wo-file-item">
-                <MpIcon name="document" size="sm" />
+                <MpIcon name="doc" size="sm" />
                 <span class="wo-file-name">{{ f.name }}</span>
                 <MpButton class="wo-file-remove" variant="ghost" type="button" left-icon="minus-circular" @click="removeFile(f.name)" />
               </li>

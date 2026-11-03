@@ -171,7 +171,7 @@ function goFolder() { router.push({ path: '/cowork-knowledge', query: folder.val
     <div class="kbd-stage">
       <!-- Content preview -->
       <article class="kbd-content">
-        <div v-if="doc.warning && !editing" class="kbd-warn"><MpIcon name="info-circle" size="sm" /> {{ doc.warning }}</div>
+        <div v-if="doc.warning && !editing" class="kbd-warn"><MpIcon name="info" size="sm" /> {{ doc.warning }}</div>
         <textarea v-if="editing" v-model="draft" class="kbd-editor" spellcheck="false" placeholder="Document content…"></textarea>
         <template v-else>
           <div v-if="doc.status === 'processing'" class="kbd-processing"><MpSpinner size="md" /><p>Extracting and indexing…</p></div>
