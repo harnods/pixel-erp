@@ -3,6 +3,7 @@ import type { BatchAttributeValues } from './batchAttributes'
 import { TODAY } from './master'
 import { billOfMaterials } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
+import type { WorkOrderAdjustment } from './workOrderAdjustment'
 
 /**
  * A manufacturing work order (Production → Work orders). Produces (Assembly) or
@@ -52,6 +53,18 @@ export interface WorkOrder {
    * reserved but unconsumed.
    */
   materialReservations?: Record<string, WorkOrderMaterialReservation>
+  /**
+   * Actual dates per routing step, keyed by the step's index in the BOM's routing
+   * (Track routing page). Status is derived from these — see workOrderRouting.ts.
+   */
+  routingProgress?: Record<string, WorkOrderRoutingProgress>
+  /** Field differences from Adjust work order; overrides the BOM's lines for this work order. */
+  adjustment?: WorkOrderAdjustment
+}
+
+export interface WorkOrderRoutingProgress {
+  startDate?: string
+  endDate?: string
 }
 
 export interface WorkOrderMaterialReservation {

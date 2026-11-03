@@ -28,6 +28,62 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-start-date-modal',
+    title: 'Start work order asks for the actual start date',
+    description:
+      'Starting a work order now opens a modal for its actual start date, up to today. Routing start dates are limited by this date.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-drag',
+    title: 'Drag routing cards between columns',
+    description:
+      'Drag a card to the next column to start or finish it (the date modal opens), or to the previous column to move it back.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue'],
+  },
+  {
+    id: 'wo-adjust-page',
+    title: 'Adjust work order page',
+    description:
+      'Record field differences before closing a work order: produced and needed qty, cost multipliers, other outputs, and production waste. Changes apply to this work order only, never the BOM, and show on its detail page.',
+    date: '2026-11-02',
+    files: ['AdjustWorkOrderPage.vue', 'workOrderAdjustment.ts'],
+  },
+  {
+    id: 'wo-routing-confirmation',
+    title: 'Complete work order asks for routing confirmation',
+    description:
+      'Completing a tracked work order now asks whether the field process matched, offers Adjust work order, and captures the actual end date.',
+    date: '2026-11-02',
+    files: ['RoutingConfirmationModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-track-routing-page',
+    title: 'Track routing page',
+    description:
+      'New board to move a work order\'s routing steps through Not started, In progress, and Completed with actual dates. Progress is saved to the work order and drives the Routing section and primary action on its detail page.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue', 'workOrderRouting.ts'],
+  },
+  {
+    id: 'wo-primary-track-routing',
+    title: 'Work order primary action follows routing',
+    description:
+      'Start work order now starts the work order. With Track routing set to Yes, the primary action becomes Track routing, then Complete work order once every routing step is completed.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-status-badge',
+    title: 'Routing status uses the status badge',
+    description:
+      'The Routing section status is now a status badge, and tracked work orders show each step\'s own status and actual dates.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
     id: 'batch-drawer-desc-column-fit',
     title: 'Batch drawers: Description keeps its own column',
     description:
@@ -647,6 +703,46 @@ export const DEV_CHANGES: DevChange[] = [
       '"Rotting in (days)" renamed to "Close in" and only available when Expected close date is in the layout. Swimlane preview cards reduced to 1. Delete stage and New stage buttons removed.',
     date: '2026-09-23',
     files: ['CrmModuleBuilderPage.vue'],
+  },
+  {
+    id: 'pm-completion-true-up',
+    title: 'Projects: completion true-up before close',
+    description:
+      'When every work package is technically complete but a cost-to-cost or unit-measured project measured under 100%, "Recognise remaining revenue" posts the rest of the contract value. The close gate now checks recognised revenue against contract value, so a job finished under plan can close.',
+    date: '2026-09-22',
+    files: ['CompletionTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-draft-project-documents',
+    title: 'Projects: Draft projects accept only draft purchase requests',
+    description:
+      'Firm documents (PO, expense, timesheet) can no longer post to a Draft project, and Draft projects consume no actual cost (PRD Story 7). A purchase request to a Draft project saves as a draft that commits nothing.',
+    date: '2026-09-22',
+    files: ['ProjectNewDocumentPage.vue', 'projectActions.ts', 'projectTransactions.ts'],
+  },
+  {
+    id: 'pm-eco-affected-units',
+    title: 'Projects: ECO cost delta counts only affected units',
+    description:
+      'The ECO diff and the budget revision on approval now count only future work orders plus the work orders in the effectivity scope — in-progress and unselected work orders keep their BOM version. Affected work orders keep line budgets within their set-aside.',
+    date: '2026-09-22',
+    files: ['EcoDiff.vue', 'ChangesTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-pixel-rework',
+    title: 'Projects: rebuilt on Pixel components',
+    description:
+      'The whole Projects module now uses Pixel 3 / ERP patterns: MpTabs on the project page, ErpFilterSelect for every dropdown, MpBanner, ErpStatusBadge, MpProgress, MpModal and the custom drawer shell, ActivityLogModal from the “Last updated by” line, and ErpTablePage on every index. Actions never disable for validation — they show an inline error instead — and success is a toast.',
+    date: '2026-09-22',
+    files: ['components/projects/**', 'project-mto.css', 'useProjectAction.ts', 'projectStatus.ts'],
+  },
+  {
+    id: 'pm-release-approval',
+    title: 'Projects: Finance approves project release (OQ7, provisional)',
+    description:
+      'Draft → Active is approved by Finance / Controller only, never by the project’s own PM. Other roles see "Waiting for Finance approval" and the reason in the dialog.',
+    date: '2026-09-22',
+    files: ['ProjectDetailPage.vue', 'projectActions.ts'],
   },
   {
     id: 'crm-module-per-tab-save',

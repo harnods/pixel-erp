@@ -369,8 +369,14 @@ const CreateDeliveryOrderPage = asyncPage(() => import('~/components/pages/Creat
 const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
+// Projects module (Project MTO) — every route under these first segments renders
+// through ProjectsRouter, which owns its title bars (full-bleed, like CRM).
+const ProjectsRouter = asyncPage(() => import('~/components/projects/ProjectsRouter.vue'))
+const PROJECT_SEGMENTS = ['projects', 'project-approvals', 'project-documents', 'stock-availability', 'site-change-capture', 'project-audit-log', 'project-settings']
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
+const TrackRoutingPage = asyncPage(() => import('~/components/pages/TrackRoutingPage.vue'))
+const AdjustWorkOrderPage = asyncPage(() => import('~/components/pages/AdjustWorkOrderPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
@@ -815,6 +821,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'cash-management') {
     return { component: CashManagementDetailPage, id: segs[1]! }
   }
+  // Projects module — /projects[/:id[/…]], /project-approvals, /project-documents, …
+  if (segs.length >= 1 && PROJECT_SEGMENTS.includes(segs[0]!)) {
+    return { component: ProjectsRouter, id: segs.join('/') }
+  }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
     return { component: CreateWorkOrderPage, id: 'new' }
@@ -822,6 +832,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /work-orders/:id/material-record/new → new consume/return record (full page)
   if (segs.length >= 4 && segs[0] === 'work-orders' && segs[2] === 'material-record' && segs[3] === 'new') {
     return { component: NewMaterialRecordPage, id: segs[1]! }
+  }
+  // /work-orders/:id/track-routing → routing tracker board (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'track-routing') {
+    return { component: TrackRoutingPage, id: segs[1]! }
+  }
+  // /work-orders/:id/adjust → adjust before completing (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'adjust') {
+    return { component: AdjustWorkOrderPage, id: segs[1]! }
   }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
