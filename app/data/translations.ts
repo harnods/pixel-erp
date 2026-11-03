@@ -3891,6 +3891,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Send request': 'Kirim permintaan',
   'Select all components': 'Pilih semua komponen',
   'component selected': 'komponen dipilih',
+  'Set warehouse': 'Atur gudang',
+  'Set required date': 'Atur tanggal dibutuhkan',
+  'Press': 'Tekan',
+  'to deselect': 'untuk batal pilih',
   'components selected': 'komponen dipilih',
   'Select at least one component to request.': 'Pilih minimal satu komponen untuk diminta.',
   'enter how much extra is needed.': 'masukkan jumlah tambahan yang dibutuhkan.',
@@ -4133,6 +4137,10 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'This work order was created without raw materials.': 'Perintah kerja ini dibuat tanpa bahan baku.',
   'No routing': 'Tidak ada routing',
   'This work order was created without routing steps.': 'Perintah kerja ini dibuat tanpa langkah routing.',
+  'No other outputs': 'Tidak ada output lain',
+  'This work order\'s bill of materials produces no other outputs.': 'Bill of materials perintah kerja ini tidak menghasilkan output lain.',
+  'No production waste': 'Tidak ada limbah produksi',
+  'This work order\'s bill of materials allocates no production waste.': 'Bill of materials perintah kerja ini tidak mengalokasikan limbah produksi.',
 
   // PRD 12 Oct — reservation toggle back, S-4 and disposition removed, C-1 plan window
   'A raw material': 'Bahan baku',

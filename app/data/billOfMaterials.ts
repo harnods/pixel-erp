@@ -100,6 +100,9 @@ const ROUTING_POOL = [
   { process: 'Quality control', description: 'Sample and verify against spec before release' },
 ]
 
+/** A seed by-product: what it is, how many come off one batch, and its cost share. */
+interface SeedOtherOutput { productId: string; qty: number; percentage: number }
+
 function seedBom(
   i: number,
   finishedGoodId: string,
@@ -107,6 +110,7 @@ function seedBom(
   category: 'Standard' | 'Custom',
   costingReference: 'Actual cost' | 'Standard cost',
   description: string,
+  others: SeedOtherOutput[] = [],
 ): BillOfMaterials {
   const fg = catalogProduct(finishedGoodId)!
   const rawMaterials: BomRawMaterial[] = materialIds.map((id, mi) => {
@@ -129,6 +133,16 @@ function seedBom(
   const totalProductionCost = rawSubtotal + productionCostSubtotal + routingSubtotal
   const wastePct = 4 + (i % 4)
   const wasteAmount = Math.round(totalProductionCost * (wastePct / 100))
+  // Other outputs take their share of the production cost the same way the form
+  // derives it (percentage × total), and the main output keeps what is left.
+  const otherOutputs: BomOtherOutput[] = others.map(o => ({
+    productId: o.productId,
+    qty: o.qty,
+    unit: catalogProduct(o.productId)!.unit,
+    percentage: o.percentage,
+    estCost: Math.round(totalProductionCost * (o.percentage / 100)),
+  }))
+  const otherPct = others.reduce((sum, o) => sum + o.percentage, 0)
   return {
     id: `bom-${10001 + i}`,
     number: `Bill of Materials #${10001 + i}`,
@@ -138,21 +152,21 @@ function seedBom(
     finishedGoodId,
     finishedGoodQty: 1,
     finishedGoodUnit: fg.unit,
-    finishedGoodPercentage: 100 - wastePct,
+    finishedGoodPercentage: 100 - wastePct - otherPct,
     description,
     allowBomAdjustment: i % 2 === 0,
     archived: false,
     rawMaterials,
     productionCost,
     routing,
-    otherOutputs: [],
+    otherOutputs,
     productionWaste: [
       { accountMapping: 'Production waste', allocationMethod: 'Percentage', percentage: wastePct, amount: wasteAmount },
     ],
   }
 }
 
-const SEED_SPEC: { fg: string; materials: string[]; category: 'Standard' | 'Custom'; costing: 'Actual cost' | 'Standard cost'; desc: string }[] = [
+const SEED_SPEC: { fg: string; materials: string[]; category: 'Standard' | 'Custom'; costing: 'Actual cost' | 'Standard cost'; desc: string; others?: SeedOtherOutput[] }[] = [
   // Component counts run from 1 to 10 on purpose: a bill with one component and
   // a bill with ten are different things to read, and every surface built on a
   // BOM — the work order's Raw materials table, the stock request it raises and
@@ -160,21 +174,87 @@ const SEED_SPEC: { fg: string; materials: string[]; category: 'Standard' | 'Cust
   //
   // The blends share Gayo Grade 1 (p01) as their base bean, which is also why the
   // same component shows up across many open transactions in the By product view.
-  { fg: 'p09', materials: ['p01', 'p02', 'p03'], category: 'Standard', costing: 'Actual cost', desc: 'House blend medium roast for retail 250g bags.' },
-  { fg: 'p10', materials: ['p01'], category: 'Custom', costing: 'Standard cost', desc: 'Single-origin dark roast, small batch.' },
-  { fg: 'p11', materials: ['p01', 'p04', 'p05', 'p06'], category: 'Custom', costing: 'Standard cost', desc: 'Premium blend for specialty cafes.' },
+  //
+  // Six bills also carry Other outputs, so the Finished goods tables have rows to
+  // read: a roast batch packs its tail end as 250 g retail bags or coarse cold-brew
+  // grind, and a machine build packs accessories into the box. Four bills keep
+  // none, so the empty state is seen too. Every by-product is a registered product
+  // that is NOT one of the same bill's raw materials.
+  { fg: 'p09', materials: ['p01', 'p02', 'p03'], category: 'Standard', costing: 'Actual cost', desc: 'House blend medium roast for retail 250g bags.', others: [{ productId: 'p27', qty: 2, percentage: 6 }] },
+  { fg: 'p10', materials: ['p01'], category: 'Custom', costing: 'Standard cost', desc: 'Single-origin dark roast, small batch.', others: [{ productId: 'p26', qty: 1, percentage: 8 }] },
+  { fg: 'p11', materials: ['p01', 'p04', 'p05', 'p06'], category: 'Custom', costing: 'Standard cost', desc: 'Premium blend for specialty cafes.', others: [{ productId: 'p27', qty: 2, percentage: 5 }, { productId: 'p26', qty: 1, percentage: 4 }] },
   { fg: 'p12', materials: ['p01', 'p06'], category: 'Standard', costing: 'Actual cost', desc: 'Everyday light roast, wholesale pack.' },
-  { fg: 'p26', materials: ['p07', 'p08', 'p02', 'p03', 'p04', 'p05'], category: 'Standard', costing: 'Actual cost', desc: 'Seasonal blend, medium-dark profile.' },
+  { fg: 'p26', materials: ['p07', 'p08', 'p02', 'p03', 'p04', 'p05'], category: 'Standard', costing: 'Actual cost', desc: 'Seasonal blend, medium-dark profile.', others: [{ productId: 'p27', qty: 1, percentage: 5 }] },
   { fg: 'p27', materials: ['p01'], category: 'Custom', costing: 'Standard cost', desc: 'Decaf process, swiss water method.' },
-  { fg: 'p13', materials: ['p16', 'p20', 'p21', 'p22', 'p23'], category: 'Standard', costing: 'Actual cost', desc: 'Assembled espresso machine, factory spec.' },
-  { fg: 'p14', materials: ['p17', 'p20', 'p21', 'p22', 'p23', 'p24', 'p25'], category: 'Custom', costing: 'Standard cost', desc: 'Semi-automatic unit, custom trim.' },
+  { fg: 'p13', materials: ['p16', 'p20', 'p21', 'p22', 'p23'], category: 'Standard', costing: 'Actual cost', desc: 'Assembled espresso machine, factory spec.', others: [{ productId: 'p25', qty: 1, percentage: 2 }, { productId: 'p30', qty: 1, percentage: 1 }] },
+  { fg: 'p14', materials: ['p17', 'p20', 'p21', 'p22', 'p23', 'p24', 'p25'], category: 'Custom', costing: 'Standard cost', desc: 'Semi-automatic unit, custom trim.', others: [{ productId: 'p30', qty: 1, percentage: 2 }] },
   { fg: 'p16', materials: ['p20', 'p21'], category: 'Standard', costing: 'Actual cost', desc: 'Burr grinder, standard assembly.' },
   { fg: 'p28', materials: ['p18', 'p19', 'p20', 'p21', 'p22', 'p23', 'p24', 'p25', 'p30', 'p02'], category: 'Custom', costing: 'Standard cost', desc: 'Compact machine for small cafes.' },
 ]
 
+/**
+ * The teak wood table — the one furniture bill. Written out line by line rather
+ * than through {@link seedBom}, whose generated quantities and coffee-roasting
+ * routing don't fit joinery: a table takes 3 planks and 4 legs, is cut, assembled,
+ * varnished and checked, and its trimmings come off as offcuts. Account, cost
+ * driver and process names are the ones the bill of materials form offers, so the
+ * bill opens for edit with every field filled.
+ */
+function teakWoodTableBom(i: number): BillOfMaterials {
+  const raw = (productId: string, needed: number): BomRawMaterial => {
+    const p = catalogProduct(productId)!
+    return { productId, needed, unit: p.unit, purchaseCost: p.price }
+  }
+  const rawMaterials = [raw('p32', 3), raw('p33', 4), raw('p34', 1), raw('p35', 1), raw('p36', 1)]
+  const productionCost: BomProductionCost[] = [
+    { group: 'Labor', account: 'Direct labor', costDriver: 'Labor hour', amount: 200_000 },
+    { group: 'Overhead', account: 'Machine depreciation', costDriver: 'Machine hour', amount: 35_000 },
+    { group: 'Overhead', account: 'Electricity', costDriver: 'kWh', amount: 25_000 },
+  ]
+  const routing: BomRoutingStep[] = [
+    { process: 'Fitting', description: 'Cut the planks to size, plane and sand the top', accountMapping: 'Routing cost', amount: 40_000 },
+    { process: 'Assembly', description: 'Join the top and fix the legs with glue and screws', accountMapping: 'Routing cost', amount: 50_000 },
+    { process: 'Painting', description: 'Two coats of clear varnish, 24 hours drying between coats', accountMapping: 'Routing cost', amount: 45_000 },
+    { process: 'Quality control', description: 'Check level, joints and finish before release', accountMapping: 'Routing cost', amount: 15_000 },
+  ]
+  const totalProductionCost =
+    rawMaterials.reduce((sum, r) => sum + r.needed * r.purchaseCost, 0)
+    + productionCost.reduce((sum, c) => sum + c.amount, 0)
+    + routing.reduce((sum, r) => sum + r.amount, 0)
+  const offcutPct = 2
+  const wastePct = 3
+  const fg = catalogProduct('p31')!
+  return {
+    id: `bom-${10001 + i}`,
+    number: `Bill of Materials #${10001 + i}`,
+    name: fg.name,
+    category: 'Standard',
+    costingReference: 'Actual cost',
+    finishedGoodId: fg.id,
+    finishedGoodQty: 1,
+    finishedGoodUnit: fg.unit,
+    finishedGoodPercentage: 100 - offcutPct - wastePct,
+    description: 'Solid teak café table, 120x60 cm top on four turned legs.',
+    allowBomAdjustment: true,
+    archived: false,
+    rawMaterials,
+    productionCost,
+    routing,
+    otherOutputs: [{
+      productId: 'p37', qty: 4, unit: catalogProduct('p37')!.unit, percentage: offcutPct,
+      estCost: Math.round(totalProductionCost * (offcutPct / 100)),
+    }],
+    productionWaste: [
+      { accountMapping: 'Production waste', allocationMethod: 'Percentage', percentage: wastePct, amount: Math.round(totalProductionCost * (wastePct / 100)) },
+    ],
+  }
+}
+
 function buildSeed(): BillOfMaterials[] {
-  return SEED_SPEC.map((s, i) => seedBom(i, s.fg, s.materials, s.category, s.costing, s.desc))
-    .filter(b => !!catalogProduct(b.finishedGoodId))
+  return [
+    ...SEED_SPEC.map((s, i) => seedBom(i, s.fg, s.materials, s.category, s.costing, s.desc, s.others)),
+    teakWoodTableBom(SEED_SPEC.length),
+  ].filter(b => !!catalogProduct(b.finishedGoodId))
 }
 
 // Persisted as a full snapshot (seed + user-created) — mirrors outgoing.ts: a
@@ -186,6 +266,30 @@ function buildSeed(): BillOfMaterials[] {
  */
 const bomSnapshot = loadSnapshot<BillOfMaterials>('billOfMaterials.v2')
 export const billOfMaterials = reactive<BillOfMaterials[]>(bomSnapshot ?? buildSeed())
+
+// Snapshots saved before a seed change are brought forward without touching what
+// the user did:
+//  • a seed bill the snapshot doesn't have (the teak wood table) is added — renumbered
+//    if a bill the user created already took its number;
+//  • a seed bill saved before the seed carried Other outputs is filled in, but only
+//    while it is still as seeded — no other outputs, and its main-output share is
+//    the old one (seed share + by-product share) — so a bill someone has since
+//    edited is left exactly as they saved it.
+if (bomSnapshot) {
+  for (const seed of buildSeed()) {
+    const saved = billOfMaterials.find(b => b.id === seed.id)
+    if (!saved) {
+      if (billOfMaterials.some(b => b.number === seed.number)) seed.number = nextBomNumber()
+      billOfMaterials.push(seed)
+      continue
+    }
+    if (saved.otherOutputs.length || !seed.otherOutputs.length) continue
+    const seedOtherPct = seed.otherOutputs.reduce((sum, o) => sum + o.percentage, 0)
+    if (saved.finishedGoodPercentage !== seed.finishedGoodPercentage + seedOtherPct) continue
+    saved.otherOutputs = seed.otherOutputs.map(o => ({ ...o }))
+    saved.finishedGoodPercentage = seed.finishedGoodPercentage
+  }
+}
 
 /** Persist the BOM snapshot (call after any mutation). */
 export function persistBillOfMaterials(): void {

@@ -11,7 +11,7 @@
  * one that really exists in that warehouse. This module owns (a); `warehouseDetails`
  * owns the bin placement (b) and reads its product list + pricing from here.
  */
-import { CATALOG } from './catalog'
+import { CATALOG, IN_HOUSE_CATEGORIES } from './catalog'
 import { warehouses } from './warehouses'
 
 /** A product master row — basics + the full pricing triple. */
@@ -62,6 +62,9 @@ export const PRODUCTS: readonly Product[] = CATALOG.map((c) => ({
 }))
 
 const BY_SKU = new Map(PRODUCTS.map((p) => [p.sku, p]))
+/** Products seed orders may demand — the trading range (see TRADING_CATALOG). The
+ *  in-house range is still STOCKED everywhere, via {@link warehouseProducts}. */
+const ORDER_PRODUCTS: readonly Product[] = PRODUCTS.filter((p) => !IN_HOUSE_CATEGORIES.has(p.category))
 /** Product master row for a SKU (undefined if the SKU isn't in the catalog). */
 export function productBySku(sku: string): Product | undefined {
   return BY_SKU.get(sku)
@@ -110,9 +113,9 @@ export function warehouseOrderPool(warehouseId: string): Product[] {
   if (!wh || wh.isDefault || !wh.skuTotal) return []
   // wh-006 (Gudang Makassar Selatan) is the demo/QA warehouse — carry the FULL catalog
   // so ANY product can be ordered/picked/shipped from it (not a 9-SKU subset).
-  if (warehouseId === 'wh-006') return [...PRODUCTS]
+  if (warehouseId === 'wh-006') return [...ORDER_PRODUCTS]
   const allowed = WAREHOUSE_CATEGORIES[warehouseId]
-  const pool = allowed ? PRODUCTS.filter((p) => allowed.has(p.category)) : PRODUCTS
+  const pool = allowed ? ORDER_PRODUCTS.filter((p) => allowed.has(p.category)) : ORDER_PRODUCTS
   const n = Math.min(ORDER_POOL_SIZE[warehouseId] ?? wh.skuTotal, pool.length)
   // Seeded Fisher–Yates over the pool indices, then take the first n.
   let s = warehouseSeed(warehouseId)

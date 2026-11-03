@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import type { PurchaseRequest, PurchaseRequestLine, PurchaseRequestStatus, UrgencyLevel } from './types'
 import { loadSnapshot, saveSnapshot } from './persist'
-import { CATALOG } from './catalog'
+import { TRADING_CATALOG } from './catalog'
 
 /**
  * Mock purchase requests for the coffee business — 100 records generated
@@ -41,7 +41,7 @@ function addDays(iso: string, days: number): string {
 function buildLines(i: number, count: number): PurchaseRequestLine[] {
   const lines: PurchaseRequestLine[] = []
   for (let j = 0; j < count; j++) {
-    const p = CATALOG[(i * 5 + j * 7) % CATALOG.length]!
+    const p = TRADING_CATALOG[(i * 5 + j * 7) % TRADING_CATALOG.length]!
     const requestedQty = 5 + ((i + j * 3) % 96)          // 5..100
     // Available is often short of requested (that's why a PO is raised).
     const availableQty = Math.round(requestedQty * ((j % 4) / 4))

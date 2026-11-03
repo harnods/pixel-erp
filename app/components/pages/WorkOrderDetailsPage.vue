@@ -1120,7 +1120,11 @@ function suppressFabClick(e: MouseEvent) {
             </MpPopoverContent>
           </MpPopover>
         </div>
-        <MpButton v-else-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" data-devchange="wo-approval-freeze" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
+        <!-- While a request is pending, Start / Complete is HIDDEN, not answered with an
+             error after the click — the same as every other module with approval
+             (Stock adjustment, Warehouse transfer, Purchase order, Bill leave locked
+             actions out with v-if). The pending notice already says why. -->
+        <MpButton v-else-if="primaryAction && !pending.length" class="detail-btn detail-btn--primary" variant="primary" data-devchange="wo-approval-hide-locked" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
       </div>
     </header>
 
@@ -1433,7 +1437,7 @@ function suppressFabClick(e: MouseEvent) {
           <div class="wod-subtotal-row"><span>{{ t('Estimated main output subtotal') }}</span><span class="wod-amount">{{ formatIDR(mainOutputSubtotal) }}</span></div>
 
           <!-- Other outputs — same column widths as Main output -->
-          <h3 class="wod-subsection-title">{{ t('Other outputs') }}</h3>
+          <h3 class="wod-subsection-title" data-devchange="wo-finished-goods-sample">{{ t('Other outputs') }}</h3>
           <div class="wod-table-scroll">
             <table class="wod-table wod-table--outputs">
               <colgroup>
@@ -1456,6 +1460,17 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">{{ o.percentage }}%</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(o.estCost) }}</td>
                 </tr>
+                <!-- rule/table-empty-state — the bill of materials makes no by-product.
+                     No CTA: outputs come from the bill, not the work order. -->
+                <tr v-if="otherOutputs.length === 0">
+                  <td colspan="6" class="wod-td">
+                    <div class="wod-empty wod-empty--illustrated">
+                      <img src="/illustrations/empty-folder.png" alt="" width="144" height="120">
+                      <p class="wod-empty-title">{{ t('No other outputs') }}</p>
+                      <p class="wod-empty-desc">{{ t('This work order\'s bill of materials produces no other outputs.') }}</p>
+                    </div>
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -1477,6 +1492,15 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td">{{ w.method }}</td>
                   <td class="wod-td wod-td--num">{{ w.percentage }}%</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(w.amount) }}</td>
+                </tr>
+                <tr v-if="productionWaste.length === 0">
+                  <td colspan="4" class="wod-td">
+                    <div class="wod-empty wod-empty--illustrated">
+                      <img src="/illustrations/empty-folder.png" alt="" width="144" height="120">
+                      <p class="wod-empty-title">{{ t('No production waste') }}</p>
+                      <p class="wod-empty-desc">{{ t('This work order\'s bill of materials allocates no production waste.') }}</p>
+                    </div>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -1556,7 +1580,7 @@ function suppressFabClick(e: MouseEvent) {
         <img src="/illustrations/empty-folder.png" alt="" class="crr-empty-illustration" width="288" height="240" />
         <p class="wod-empty-title">No material consume & return</p>
         <p class="wod-empty-desc">Material consume & return will appear here.</p>
-        <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="onNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
+        <MpButton v-if="!pending.length" class="detail-btn detail-btn--secondary" variant="secondary" @click="onNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
       </div>
     </div>
 
@@ -1628,7 +1652,7 @@ function suppressFabClick(e: MouseEvent) {
               <input v-model="crrSearch" class="filter-search-input" type="text" placeholder="Search..." />
             </div>
 
-            <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="onNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
+            <MpButton v-if="!pending.length" class="detail-btn detail-btn--secondary" variant="secondary" @click="onNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
           </div>
         </template>
 

@@ -28,6 +28,38 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-raw-bulk-set',
+    title: 'New work order: bulk set warehouse and required date',
+    description:
+      'UC-01 C-2. Raw materials now has a tickbox per component and a select-all in the header. With components ticked, the header row becomes a bulk bar: "Set warehouse" puts one warehouse on every ticked component (a batch or serial pick made for the old warehouse is cleared), and "Set required date" puts one required date on all of them — days outside the production plan stay greyed out (C-1). The selection stays after a set, so both can be set in turn; Esc deselects. This replaces the old "Bulk set warehouse" tickbox above the table, which did nothing.',
+    date: '2026-11-03',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'bom-teak-wood-table',
+    title: 'Sample data: Teak Wood Table and its bill of materials',
+    description:
+      'A furniture sample alongside the coffee range. New products: Teak Wood Table 120x60 (Furniture, SKU 4001) and its wood materials (SKU 41xx): Teak Wood Plank, Teak Table Leg, Wood Screw, Wood Glue, Wood Varnish, and Teak Wood Offcuts. Bill of Materials #10011 builds one table from 3 planks, 4 legs, screws, glue and varnish, through Fitting, Assembly, Painting and Quality control, with direct labor, machine depreciation and electricity. The offcuts come off as an Other output (2%) beside 3% production waste, so the table keeps 95% of the Rp3.330.000 production cost. The products are stocked in every warehouse but kept out of the seeded orders, receipts and invoices, which stay exactly as before. They have no photo yet, so the product page shows the coloured initial tile instead of a broken image.',
+    date: '2026-11-03',
+    files: ['catalog.ts', 'billOfMaterials.ts', 'inventory.ts', 'productsIndex.ts', 'ProductDetailsPage.vue'],
+  },
+  {
+    id: 'wo-finished-goods-sample',
+    title: 'Finished goods: sample Other outputs, and empty states',
+    description:
+      'Six of the ten seed bills of materials now make by-products, so the Other outputs table under Finished goods has rows on the bill and on every work order made from it: roast batches pack their tail end as Signature Espresso 250g bags or Cold Brew Coarse, and machine builds pack a Knock Box or Distribution Tool into the box. Each by-product takes a percentage of the production cost and the main output keeps the rest, so the subtotals still add up to the total production cost. The other four bills keep none, and on a work order Other outputs and Production waste now show an empty state instead of a blank table.',
+    date: '2026-11-03',
+    files: ['billOfMaterials.ts', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-hide-locked',
+    title: 'Work order: Start / Complete is hidden while approval runs',
+    description:
+      'Clicking Start (or Complete) on a work order with a pending request used to show a red "locked" banner. Every other module with approval — Stock adjustment, Warehouse transfer, Purchase order, Bill — simply leaves actions that aren\'t allowed out of the page, so the work order now does the same: Start / Complete and Material consume & return\'s New record are hidden until the request is decided. The pending notice still says who it is waiting for.',
+    date: '2026-10-15',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
     id: 'wod-adjust-materials',
     title: 'Work order: "Adjust materials" sits beside the approval "Adjust work order"',
     description:

@@ -170,6 +170,8 @@ const CATEGORY_DJP: Record<string, { code: string; unit: string }> = {
   'Grinder':            { code: djpCodeFor('850900'), unit: 'Unit' },     // electro-mechanical domestic appliance
   Equipment:            { code: djpCodeFor('841900'), unit: 'Unit' },     // machinery for treatment by heating/roasting
   Accessory:            { code: djpCodeFor('850900'), unit: 'Piece' },
+  Furniture:            { code: djpCodeFor('940300'), unit: 'Unit' },     // other furniture and parts thereof
+  'Wood Material':      { code: djpCodeFor('440700'), unit: 'Piece' },    // wood sawn lengthwise, > 6 mm
 }
 /** SKU -> DJP code/unit, for the roughly-half of products that ship pre-classified.
  *  This is only the SEED backfill — anything the user saves on the product form
