@@ -1403,10 +1403,15 @@ onUnmounted(() => { stageObserver?.disconnect() })
   background: transparent;
 }
 .wo-th.wo-th--check, .wo-td.wo-td--check { text-align: center; }
-.wo-th.wo-th--check :deep(label), .wo-td.wo-td--check :deep(label) {
-  display: inline-flex; justify-content: center; margin: 0;
+.wo-th.wo-th--check :deep(.mp-checkbox__root), .wo-td.wo-td--check :deep(.mp-checkbox__root) {
+  display: inline-flex; align-items: center; justify-content: center; margin: 0;
 }
-.wo-th.wo-th--check > *, .wo-td.wo-td--check > * { display: inline-flex; margin-inline: auto; }
+/* MpCheckbox always renders its label element, empty here because the box has no
+   text beside it. Left in, its line-height adds space BELOW the control and
+   pushes the box off the cell's centre. */
+.wo-th.wo-th--check :deep(.mp-checkbox__label), .wo-td.wo-td--check :deep(.mp-checkbox__label) {
+  display: none;
+}
 
 /* The apply row reads as part of the table, set apart by its fill alone. */
 .wo-tr--apply .wo-td { background: var(--mp-background-neutral-subtle, #f8f9f9); }
