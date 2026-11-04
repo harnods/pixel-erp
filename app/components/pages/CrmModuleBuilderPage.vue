@@ -1539,7 +1539,7 @@ const checkinEnabled = ref(false)
                   <p class="checkin-toggle-label">{{ t('Enable check-in for this module') }}</p>
                   <p class="checkin-toggle-desc">{{ t('Allow team members to check in at customer or prospect locations to log visits and track field activity.') }}</p>
                 </div>
-                <MpToggle v-model="checkinEnabled" :aria-label="t('Enable check-in for this module')" />
+                <MpToggle v-model:is-checked="checkinEnabled" :aria-label="t('Enable check-in for this module')" />
               </div>
             </div>
           </div>
