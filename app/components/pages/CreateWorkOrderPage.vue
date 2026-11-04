@@ -1410,7 +1410,21 @@ onUnmounted(() => { stageObserver?.disconnect() })
 }
 .wo-th.wo-th--check, .wo-td.wo-td--check { text-align: center; }
 .wo-th.wo-th--check :deep(.mp-checkbox__root), .wo-td.wo-td--check :deep(.mp-checkbox__root) {
-  display: inline-flex; align-items: center; justify-content: center; margin: 0;
+  /* `flex`, not `inline-flex`: an inline box is placed on its BASELINE, and the
+     control's baseline moves when the tick appears inside it — so the unchecked
+     box sat 3px higher than the checked one. A block-level flex row is placed by
+     the cell's own vertical-align instead, which does not care what is inside. */
+  display: flex; align-items: center; justify-content: center; margin: 0;
+  /* Pixel shrink-wraps the label, so it has to be told to fill the cell before
+     `justify-content` has anything to centre within. */
+  width: 100%;
+  line-height: 0; position: relative;
+}
+/* MpCheckbox's real form control is visually hidden but still laid out. As a
+   flex item of the row above it took width and pushed the box off centre, so it
+   is taken out of flow here. */
+.wo-th.wo-th--check :deep(.mp-shared__hidden), .wo-td.wo-td--check :deep(.mp-shared__hidden) {
+  position: absolute;
 }
 /* MpCheckbox always renders its label element, empty here because the box has no
    text beside it. Left in, its line-height adds space BELOW the control and
