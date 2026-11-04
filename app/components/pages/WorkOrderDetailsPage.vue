@@ -1238,7 +1238,7 @@ function suppressFabClick(e: MouseEvent) {
             <MpPopover id="wod-reservation" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
               <MpPopoverTrigger>
                 <MpButton
-                  variant="tertiary" is-rounded right-icon="chevrons-down"
+                  variant="tertiary" size="sm" is-rounded right-icon="chevrons-down"
                   data-devchange="wod-material-reservation"
                 >{{ t('Material reservation') }}</MpButton>
               </MpPopoverTrigger>
@@ -1889,7 +1889,9 @@ function suppressFabClick(e: MouseEvent) {
 /* Material reservation — its own row above the table it acts on. A section-toolbar
    action, so it is the black tertiary button (rule/filter-bar-action-tertiary);
    the green primary belongs to the page title bar. */
-.wod-reserve-actions { display: flex; margin-bottom: var(--mp-spacing-4); }
+/* Same gap below as the section head leaves above it, so the button sits evenly
+   between the title and the table rather than closer to one of them. */
+.wod-reserve-actions { display: flex; margin-bottom: var(--mp-spacing-5); }
 .wod-reserve-note {
   display: flex; align-items: center; gap: var(--mp-spacing-1);
   margin: 0 0 var(--mp-spacing-3);
