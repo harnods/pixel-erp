@@ -12,7 +12,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, provide } from 'vue'
+import { ref, computed, reactive, watch, watchEffect, onMounted, onUnmounted, nextTick, inject, provide, useSlots } from 'vue'
+import { useTableState } from '~/composables/useTableState'
 import {
   outputPairs, candidatesFor, confirmManualMatch, undoManualMatch, pairsForPeriod, activePeriodId,
   finalizePeriod, unfinalizePeriod,
@@ -25,7 +26,7 @@ vi.stubGlobal('useRouter', () => ({ push, replace: vi.fn() }))
 vi.stubGlobal('useLocale', () => ({ t: (s: string) => s }))
 vi.stubGlobal('useNavigation', () => ({ currentPageKey: ref('Faktur keluaran') }))
 vi.stubGlobal('useTaxSubmissionPermission', () => ({ canSubmitTaxDocument: ref(true), setCanSubmitTaxDocument: vi.fn() }))
-for (const [k, v] of Object.entries({ ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject })) vi.stubGlobal(k, v)
+for (const [k, v] of Object.entries({ ref, computed, reactive, watch, watchEffect, onMounted, onUnmounted, nextTick, inject, useSlots, useTableState })) vi.stubGlobal(k, v)
 class FakeObserver { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver', FakeObserver)
 vi.stubGlobal('IntersectionObserver', FakeObserver)
@@ -110,6 +111,37 @@ describe('workspace', () => {
     expect(item.text()).toContain('Sales return')
     expect(item.text()).toContain(ret.erp!.returnRef!)
     w.unmount()
+  })
+})
+
+describe('index: one list, no tabs', () => {
+  it('the index registers no tabs and no tab badge', () => {
+    const slug = src('app/pages/[...slug].vue')
+    expect(slug).not.toContain("'Vat reconciliation': ['All reconciliations', 'Needs attention']")
+    expect(slug).not.toContain("'All reconciliations': VatReconciliationPeriodsPage")
+  })
+
+  it('periods that need attention come first, newest first within each group', async () => {
+    route.query = {}
+    const { default: Page } = await import('~/components/pages/VatReconciliationPeriodsPage.vue')
+    const { saveVatSetup, loadVatSetup } = await import('~/data/vatReconciliation')
+    const had = loadVatSetup()
+    if (!had) saveVatSetup({ outputAccountCodes: ['2-20500'] })
+    vi.useFakeTimers()
+    const w = mount(Page, { attachTo: document.body, global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
+    await vi.advanceTimersByTimeAsync(1300) // first-load skeleton
+    vi.useRealTimers()
+    await flushPromises()
+    const masas = w.findAll('tbody tr').map(r => r.text().match(/\d{2}\/\d{4}/)?.[0]).filter(Boolean)
+    expect(masas.slice(0, 2)).toEqual(['03/2027', '02/2027'])
+    expect(masas.slice(2)).toEqual(['01/2027', '12/2026', '11/2026', '10/2026'])
+    w.unmount()
+  })
+
+  it('tax period checklist sits in a scrolling box (StockAdjustments pattern)', () => {
+    const s = src('app/components/patterns/ReconciliationFiltersDrawer.vue')
+    expect(s).toContain('rf-checklist--boxed')
+    expect(s).toMatch(/\.rf-checklist--boxed \{[^}]*overflow-y: auto/)
   })
 })
 

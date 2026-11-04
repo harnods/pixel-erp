@@ -300,7 +300,7 @@ export const SITEMAP: SitemapModule[] = [
         note: 'Reports › Tax index (report cards). VAT reconciliation is the built card; the rest are coming-soon.',
         children: [
           leaf('VAT reconciliation', {
-            note: 'Tabs: All reconciliations · Needs attention. A masa row opens its Faktur keluaran / Faktur masukan workspace; the Difference cell opens Unmatched & discrepancies for that masa; Matching rules is a title-bar settings destination.',
+            note: 'One list, no tabs — periods that need attention are sorted to the top. A masa row opens its Faktur keluaran / Faktur masukan workspace; the Difference cell opens Unmatched & discrepancies for that masa; Matching rules is a title-bar settings destination.',
           }),
         ],
       }),

@@ -39,15 +39,16 @@ import {
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
 const router = useRouter()
-const route = useRoute()
 
 /**
- * Page-level tab = the *scope* of the list, per docs/patterns/tabs.md: `All
- * reconciliations` is the full calendar, `Needs attention` is everything not
- * finished. Narrowing within a scope is the filter bar's job, which is why the
- * masa and the two quick filters are not tabs.
+ * One list, no tabs: the periods that still need work (not reconciled, or only
+ * partially) sit at the top, so the "Needs attention" scope is simply the head
+ * of the table rather than a tab you have to switch to. Within each group the
+ * order stays newest masa first. A column sort the user picks overrides this.
  */
-const isAttentionScope = computed(() => route.query.tab === 'Needs attention')
+function needsAttention(row: ReconPeriodRow) {
+  return row.status !== 'reconciled' && row.status !== 'finalized'
+}
 
 /**
  * Setup gate (US-016). Reconciliation pulls the ERP side by tax code, so until
@@ -92,7 +93,9 @@ const columns = computed<TableColumn[]>(() => [
 // here too — status, matched count and Reconciled on all move together.
 const rows = computed<ReconPeriodRow[]>(() => {
   void reconVersion.value
-  return reconPeriodRows()
+  const all = reconPeriodRows()
+  // Stable split keeps newest-first inside each group.
+  return [...all.filter(needsAttention), ...all.filter(r => !needsAttention(r))]
 })
 
 // ─── Filters ──────────────────────────────────────────────────────────────────
@@ -114,9 +117,6 @@ const {
   perPage: 25,
   filterFn: (row, s, status) =>
     (row.masa.includes(s) || row.jenis.toLowerCase().includes(s))
-    // Tab scope is ANDed with everything else, so a filter can narrow within
-    // the scope but never widen past it.
-    && (!isAttentionScope.value || (row.status !== 'reconciled' && row.status !== 'finalized'))
     && (!jenisFilter.value || row.side === jenisFilter.value)
     && (!status || row.status === status)
     && (appliedFilters.periods.length === 0 || appliedFilters.periods.includes(row.periodId))
@@ -125,33 +125,13 @@ const {
 
 watch(jenisFilter, () => setPage(1))
 watch(appliedFilters, () => setPage(1))
-// Switching scope resets narrowing: the two scopes hold different rows, so a
-// filter carried across can land the user on an empty table for no visible reason.
-watch(isAttentionScope, () => {
-  search.value = ''
-  statusFilter.value = ''
-  jenisFilter.value = ''
-  Object.assign(appliedFilters, emptyReconciliationFilters())
-  setPage(1)
-})
 
-/**
- * Status options are scoped to the tab, so the two controls can't contradict
- * each other — no "Needs attention + Reconciled" dead end.
- */
-const statusOptions = computed(() => {
-  const all = [
-    { label: t('Not reconciled'),       value: 'not reconciled'       },
-    { label: t('Partially reconciled'), value: 'partially reconciled' },
-    { label: t('Reconciled'),           value: 'reconciled'           },
-    { label: t('Finalized'),            value: 'finalized'            },
-  ]
-  // A finished period is finished whichever way it got there, so Needs attention
-  // hides both of the done states rather than only one.
-  return isAttentionScope.value
-    ? all.filter(o => o.value !== 'reconciled' && o.value !== 'finalized')
-    : all
-})
+const statusOptions = computed(() => [
+  { label: t('Not reconciled'),       value: 'not reconciled'       },
+  { label: t('Partially reconciled'), value: 'partially reconciled' },
+  { label: t('Reconciled'),           value: 'reconciled'           },
+  { label: t('Finalized'),            value: 'finalized'            },
+])
 /**
  * Only the sides in scope. With VAT Out only there is nothing to choose between,
  * so the filter hides itself rather than offering a control with one option.
@@ -262,6 +242,7 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
   <ErpTablePage
     v-else
+    data-devchange="vat-recon-index-no-tabs"
     :columns="visibleColumns"
     :rows="(paginated as unknown as Record<string, unknown>[])"
     :total="total"

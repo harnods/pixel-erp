@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-index-no-tabs',
+    title: 'VAT reconciliation index: one list, no tabs',
+    description:
+      'The All reconciliations / Needs attention tabs are gone. Periods that still need work (Not reconciled, Partially reconciled) are sorted to the top of the single list, newest masa first within each group; a column sort overrides it. In All filters, the Tax period checklist sits in a bordered box that scrolls past a fixed height (same box as the Stock adjustments filters).',
+    date: '2026-11-04',
+    files: ['VatReconciliationPeriodsPage.vue', 'ReconciliationFiltersDrawer.vue', '[...slug].vue', 'erpSitemap.ts'],
+  },
+  {
     id: 'vat-recon-ui-review-2',
     title: 'VAT reconciliation: UI review pass 2',
     description:

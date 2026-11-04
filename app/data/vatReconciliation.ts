@@ -1762,7 +1762,7 @@ export function reconPeriodRows(): ReconPeriodRow[] {
 }
 
 /**
- * Reconciliations that aren't finished — the `Needs attention` tab's scope, and
+ * Reconciliations that aren't finished — the rows the index sorts to the top, and
  * the module's nav badge. Deliberately the same number in both places: a badge
  * on a nav item should mean the same thing as the badge on the tab it lands you
  * near, otherwise the two numbers read as a contradiction.

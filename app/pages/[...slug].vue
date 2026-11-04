@@ -44,7 +44,7 @@ import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import {
-  matchCounts, pairsForPeriod, activePeriodId, reconUnfinishedCount, periodLabelById,
+  matchCounts, pairsForPeriod, activePeriodId, periodLabelById,
   reconVersion, isPeriodFinalized, canFinalizePeriod, loadVatSetup,
 } from '~/data/vatReconciliation'
 
@@ -366,7 +366,6 @@ const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/Purch
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
 // VAT reconciliation issue queue — rendered per tab via tabComponents below.
-const VatReconciliationPeriodsPage = asyncPage(() => import('~/components/pages/VatReconciliationPeriodsPage.vue'))
 const VatReconciliationUnmatchedPage = asyncPage(() => import('~/components/pages/VatReconciliationUnmatchedPage.vue'))
 // Both faktur sides scope themselves from ?tab= (Needs attention / All faktur).
 const VatReconciliationWorkspacePage = asyncPage(() => import('~/components/pages/VatReconciliationWorkspacePage.vue'))
@@ -1201,10 +1200,8 @@ const pageTabs: Record<string, string[]> = {
   'Work orders':       ['All work orders', 'Awaiting approval'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
-  // VAT reconciliation — the tab is the *scope* of the list, not a different
-  // object: everything, or only what isn't finished. Masa pajak, invoice type
-  // and status are filters, not tabs (docs/patterns/index-page-format.md §A.3).
-  'Vat reconciliation': ['All reconciliations', 'Needs attention'],
+  // VAT reconciliation has no tabs: periods that need attention are sorted to
+  // the top of the one list (VatReconciliationPeriodsPage).
   // Faktur workspaces: the tab is the *scope* (what's in play), the in-page
   // Status select narrows by match state. Splitting them this way keeps both
   // controls on-system — Pixel has no filter-chip component.
@@ -1233,13 +1230,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
   if (currentPageKey.value === 'Overview') return {}
-  // Only the work scope is badged — "All reconciliations" is a calendar, and a
-  // count on it would just restate the row count.
-  if (currentPageKey.value === 'Vat reconciliation') {
-    void reconVersion.value
-    const unfinished = reconUnfinishedCount()
-    return unfinished ? { 'Needs attention': unfinished } : {}
-  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -1341,7 +1331,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
 const { hasWarehouseContext, activeWarehouse } = useWarehouseContext()
 const { activeScenario } = useScenario()
 const currentTabs = computed<string[]>(() => {
-  if (currentPageKey.value === 'Vat reconciliation' && !vatSetUp.value) return []
   const tabs = pageTabs[currentPageKey.value] ?? []
   const config = (hasWarehouseContext.value && activeWarehouse.value) ? getWarehouseConfig(activeWarehouse.value.id) : null
   return tabs.filter((tab) => {
@@ -1494,12 +1483,6 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
-  },
-  // Both scopes are the same component — it re-filters itself from ?tab=
-  // (identical ref keeps it mounted across tab changes).
-  'Vat reconciliation': {
-    'All reconciliations': VatReconciliationPeriodsPage,
-    'Needs attention': VatReconciliationPeriodsPage,
   },
   'Faktur keluaran': {
     'Needs attention': VatReconciliationWorkspacePage,
