@@ -1,15 +1,16 @@
 /**
- * PRD revision of 12 Oct — two rules that are new or back:
+ * Two UC-00 / UC-01 rules:
  *
- *   • UC-00 — reservation can be switched OFF again ("There is a toggle to disable /
- *     enable the reservation"; L-12 deleted). Off, nothing on the work order
- *     reserves, and One-step can't fire either.
+ *   • UC-00 S-0 — reservation is optional and DEFAULT OFF (v0.6). Off, nothing on
+ *     the work order reserves, and One-step can't fire either. A change applies
+ *     forward only: each work order keeps the setting it was created under.
  *   • UC-01 C-1 — a raw material's request date must fall inside the production
  *     plan: not before the planned start, not after the planned finish.
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import {
   productionSettings, saveProductionSettings, reservationEnabled, reservationOnWorkOrder,
+  currentReservation, woReservation, woReservationOn, woReservesOnWorkOrder,
 } from '~/data/productionSettings'
 import {
   planWindowOf, isOutsideWindow, displayDateOutside, parseDDMMYYYY, toDDMMYYYY,
@@ -19,8 +20,21 @@ describe('UC-00 — the reservation toggle', () => {
   const saved = { ...productionSettings }
   afterEach(() => { saveProductionSettings(saved) })
 
-  it('is on by default', () => {
-    expect(reservationEnabled()).toBe(true)
+  it('is off by default (v0.6 S-0) — on a fresh browser nothing is saved', () => {
+    // The suite has no saved settings, so the live value IS the default.
+    expect(reservationEnabled()).toBe(false)
+  })
+
+  it('a work order captures the setting it was created under, and keeps it', () => {
+    saveProductionSettings({ componentsMustBeReserved: true, reservationMethod: 'two-step' })
+    const wo = { reservation: currentReservation() }
+    saveProductionSettings({ componentsMustBeReserved: false, reservationMethod: 'one-step' })
+    expect(woReservationOn(wo)).toBe(true)
+    expect(woReservesOnWorkOrder(wo)).toBe(false) // still Two-step
+  })
+
+  it('a seeded work order, which predates the capture, reads as created with reservation on', () => {
+    expect(woReservation({})).toEqual({ on: true, method: 'one-step' })
   })
 
   it('off means the flow does not run — and One-step cannot fire, whatever the method says', () => {

@@ -4,6 +4,7 @@ import { TODAY } from './master'
 import { billOfMaterials, type BomProductionCost, type BomRoutingStep } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
 import type { WorkOrderAdjustment } from './workOrderAdjustment'
+import type { ReservationMethod } from './productionSettings'
 
 /**
  * A manufacturing work order (Production → Work orders). Produces (Assembly) or
@@ -72,6 +73,14 @@ export interface WorkOrder {
   productionCost?: WorkOrderCostLine[]
   /** Routing steps as created. Read through {@link workOrderRouting}. */
   routing?: WorkOrderRoutingStep[]
+  /**
+   * UC-00 S-0 — the reservation setting in force when this work order was CREATED.
+   * It keeps it for its whole life (PRD v0.6, "changes apply forward only"):
+   * switching reservation on raises nothing for existing work orders, and switching
+   * it off releases nothing on ones already running under it. Absent on the seed,
+   * whose work orders all carry stock requests — read through `woReservation`.
+   */
+  reservation?: { on: boolean; method: ReservationMethod }
   /**
    * Work order approval (MVP) — material is RESERVED only when the work order starts (or
    * its Start request is approved). Until then the picks made on the create form are held

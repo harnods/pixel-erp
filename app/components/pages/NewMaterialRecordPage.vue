@@ -6,7 +6,13 @@
  * (.detail-page + scrollable stage + sticky footer).
  *
  * One form, one Record type radio (Consume / Return) — switching it swaps the
- * line-item columns (Needed/On hand/Qty to consume vs Consumed/Qty to return).
+ * line-item columns, per PRD v0.6 P-4 / P-5:
+ *  • Consume — On hand · Needed · Reserved for this WO · Consumed. The limit,
+ *    min(reserved, on hand), is not a column: the inline error names it (P-2).
+ *  • Return  — Needed · Reserved for this WO (informational) · Consumed · Max
+ *    returnable. Returned qty goes to AVAILABLE stock, not back to the reservation.
+ * Each line consumes / returns at its OWN destination warehouse — where its
+ * reservation sits — so there is no record-level warehouse picker.
  * Saving creates one persisted record per checked row (see
  * ~/data/materialConsumeReturn.ts) and returns to the work order's Material
  * consume & return tab.
@@ -19,11 +25,11 @@
 import { ref, reactive, computed } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
-  MpAutocomplete, MpDatePicker, MpInput, MpTextarea, MpButton, MpIcon,
+  MpDatePicker, MpInput, MpTextarea, MpButton, MpIcon,
   MpCheckbox, MpRadio, MpBanner, MpBannerIcon, MpBannerDescription, toast,
 } from '@mekari/pixel3'
 import { workOrders } from '~/data/workOrders'
-import { workOrderMaterials } from '~/data/stockRequests'
+import { workOrderMaterials, onHandAt } from '~/data/stockRequests'
 import { neededQtyFor } from '~/data/workOrderAdjustment'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
 import { warehouses } from '~/data/warehouses'
@@ -31,7 +37,8 @@ import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer, { type PickedBatch } from '~/components/patterns/PickBatchDrawer.vue'
-import { guardMessage, consumableQty } from '~/data/woApproval'
+import { guardMessage } from '~/data/woApproval'
+import { woReservationOn } from '~/data/productionSettings'
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -53,14 +60,11 @@ const isConsume = computed(() => recordType.value === 'consume')
 // ── Header fields ────────────────────────────────────────────────────────────
 const recordDate = ref('') // DD/MM/YYYY
 const recordDateError = ref(false)
-const warehouseId = ref('')
-const warehouseError = ref(false)
 const memo = ref('')
 const MEMO_MAX = 256
 
-const warehouseOptions = warehouses
-  .filter(w => !w.isDefault && w.status === 'active')
-  .map(w => ({ id: w.id, name: w.name }))
+// S-0 — the setting this work order was created under, not today's.
+const reservationOn = computed(() => woReservationOn(wo.value))
 
 // ── Line items — one row per BOM raw material ────────────────────────────────
 interface MaterialRow {
@@ -68,11 +72,17 @@ interface MaterialRow {
   product: string
   sku: string
   unit: string
+  /** the line's destination warehouse — where it is reserved and consumed from */
+  warehouseId: string
+  warehouseName: string
   neededQty: number
+  /** Still held for THIS work order — total reserved − total consumed (never the
+   *  warehouse's total reserved, which includes other jobs'). The same figure as
+   *  the work order's Raw materials "Reserved qty" column. */
+  reservedQty: number
+  /** on hand at the line's warehouse (available + reserved) */
   onHandQty: number
   consumedQty: number // net already consumed for this work order + product
-  /** Consume ceiling — planned qty − consumed (work order approval MVP). */
-  consumableQty: number
   qtyValue: string
   selected: boolean
   trackingType?: 'serial' | 'batch'
@@ -115,22 +125,36 @@ function remainingReservedSerial(productId: string): string[] {
   return remainingReservation(wo.value.id, productId, wo.value.materialReservations?.[productId]).serialSelection ?? []
 }
 
+/** Keep a pre-fill inside the P-1 limit — the pick can hold more than is reserved now. */
+function capBatches(batches: PickedBatch[], limit: number): PickedBatch[] {
+  let left = limit
+  return batches.flatMap((b) => {
+    const qty = Math.min(b.qty, left)
+    left -= qty
+    return qty > 0 ? [{ ...b, qty }] : []
+  })
+}
+
 const rows = reactive<MaterialRow[]>(
   materials.value.map((r) => {
     const p = catalogProduct(r.productId)
     const trackingType = trackingTypeFor(r.productId)
-    const prefillSerial = isConsume.value && trackingType === 'serial' ? remainingReservedSerial(r.productId) : []
-    const prefillBatch = isConsume.value && trackingType === 'batch' ? remainingReservedBatch(r.productId) : []
+    const onHand = onHandAt(r.productId, r.warehouseId)
+    const limit = reservationOn.value ? Math.min(r.remainingReserved, onHand) : onHand
+    const prefillSerial = isConsume.value && trackingType === 'serial' ? remainingReservedSerial(r.productId).slice(0, limit) : []
+    const prefillBatch = isConsume.value && trackingType === 'batch' ? capBatches(remainingReservedBatch(r.productId), limit) : []
     const prefillQty = trackingType === 'serial' ? prefillSerial.length : trackingType === 'batch' ? prefillBatch.reduce((s, b) => s + b.qty, 0) : 0
     return {
       productId: r.productId,
       product: p?.name ?? '—',
       sku: p?.sku ?? '—',
       unit: r.unit,
+      warehouseId: r.warehouseId ?? '',
+      warehouseName: warehouses.find(w => w.id === r.warehouseId)?.name ?? '—',
       neededQty: neededQtyFor(wo.value, r.productId, r.needed),
-      onHandQty: neededQtyFor(wo.value, r.productId, r.needed),
+      reservedQty: r.remainingReserved,
+      onHandQty: onHand,
       consumedQty: Math.max(0, netConsumed(r.productId)),
-      consumableQty: wo.value ? consumableQty(wo.value.id, r.productId) : r.needed,
       qtyValue: prefillQty > 0 ? String(prefillQty) : '',
       selected: true,
       trackingType,
@@ -149,10 +173,17 @@ function effectiveQty(row: MaterialRow): number {
   if (row.trackingType === 'batch') return row.batchSelection.reduce((s, b) => s + b.qty, 0)
   return num(row.qtyValue)
 }
-const remainingQty = (row: MaterialRow) =>
-  isConsume.value
-    ? Math.max(0, row.onHandQty - effectiveQty(row))
-    : Math.max(0, row.consumedQty - effectiveQty(row))
+/**
+ * P-1 — the most this record may consume: min(remaining reserved for this line,
+ * on hand at its warehouse). Reserved normally binds; on hand binds only when a
+ * backdated transaction drops it below the reserved qty. For a work order created
+ * with reservation off there is no reserved qty, so the limit is on hand (P-3).
+ */
+function maxConsumable(row: MaterialRow): number {
+  return reservationOn.value ? Math.min(row.reservedQty, row.onHandQty) : row.onHandQty
+}
+/** P-5 — a return is capped at what was consumed. */
+const maxReturnable = (row: MaterialRow) => row.consumedQty
 
 // ── Manage serial number / Manage batch drawers ─────────────────────────────
 // The pool each drawer offers is the SKU's real per-warehouse stock — the same
@@ -166,7 +197,7 @@ const remainingQty = (row: MaterialRow) =>
 // the drawer's own selection, not the typed target).
 const activeDrawerRow = ref<MaterialRow | null>(null)
 function openTracking(row: MaterialRow) {
-  if (!warehouseId.value) return
+  if (!row.warehouseId) return
   if (num(row.qtyValue) <= 0) {
     toast.notify({ variant: 'warning', title: 'Input the qty first' })
     return
@@ -181,9 +212,9 @@ function onBatchDrawerSave(batches: PickedBatch[]) {
   if (activeDrawerRow.value) activeDrawerRow.value.batchSelection = batches
 }
 // Target passed to the drawer — the qty the operator typed for this row,
-// capped by what could ever be consumed (on hand) or returned (consumed so far).
+// capped by what may be consumed (P-1) or returned (consumed so far).
 function drawerTargetCount(row: MaterialRow): number {
-  const ceiling = isConsume.value ? row.onHandQty : row.consumedQty
+  const ceiling = isConsume.value ? maxConsumable(row) : maxReturnable(row)
   return Math.min(num(row.qtyValue), ceiling)
 }
 // A return can never exceed what was actually consumed for this work order —
@@ -191,7 +222,6 @@ function drawerTargetCount(row: MaterialRow): number {
 function onReturnQtyInput(row: MaterialRow) {
   if (num(row.qtyValue) > row.consumedQty) row.qtyValue = row.consumedQty > 0 ? String(row.consumedQty) : ''
 }
-const drawerWarehouseName = computed(() => warehouseOptions.find(w => w.id === warehouseId.value)?.name ?? '')
 function drawerProductImg(row: MaterialRow): string | undefined {
   return catalogProduct(row.productId)?.img
 }
@@ -204,13 +234,14 @@ function toggleAll() {
   rows.forEach(r => { r.selected = next })
 }
 
-// ── Empty state — Consume only. Before a warehouse is picked there's nothing
-// to show on-hand qty against, so the table shows a blank slate instead of
-// the material rows (Figma: Table / New record → Blank Slate). Return doesn't
-// depend on a source warehouse for its qty columns, so its rows load
-// immediately — the warehouse is still required, just validated on Save.
-const showEmptyState = computed(() => isConsume.value && !warehouseId.value)
-const colCount = computed(() => 3 + (isConsume.value ? 4 : 2) + 2)
+// ── Empty state — a work order saved with no raw materials has nothing to record
+// (rule/table-empty-state). Rows no longer wait on a warehouse pick: each line
+// carries its own.
+const showEmptyState = computed(() => rows.length === 0)
+// A work order created with reservation off (S-0) has no reserved qty to show.
+const showReserved = computed(() => reservationOn.value)
+// check · product · SKU · warehouse · [on hand] · needed · [reserved] · consumed · [max returnable] · qty · unit
+const colCount = computed(() => 9 + (showReserved.value ? 1 : 0))
 
 // ── Save ─────────────────────────────────────────────────────────────────────
 const CURRENT_USER = 'Rizal Candra'
@@ -224,15 +255,15 @@ function parseDMY(v: string): string {
 // Work order approval — a pending adjustment / completion / cancel-close blocks new records.
 const guard = computed(() => (wo.value ? guardMessage(wo.value.id) : null))
 const guardShown = ref(false)
-// Consume is capped at the planned qty — flagged inline under the field, not clamped.
+// P-2 — consume above the P-1 limit is blocked INLINE under the field, naming the
+// limit (rule/form-errors-inline); Save stays enabled. More goes through Adjust.
 function consumeExceeds(row: MaterialRow): boolean {
-  return isConsume.value && row.selected && effectiveQty(row) > row.consumableQty
+  return isConsume.value && row.selected && effectiveQty(row) > maxConsumable(row)
 }
 
 function validate() {
   let ok = true
   if (!recordDate.value) { recordDateError.value = true; ok = false }
-  if (!warehouseId.value) { warehouseError.value = true; ok = false }
   return ok
 }
 
@@ -253,7 +284,7 @@ function handleSave() {
       date: isoDate,
       qty: isConsume.value ? qty : -qty,
       unit: row.unit,
-      warehouseId: warehouseId.value,
+      warehouseId: row.warehouseId,
       memo: memo.value,
       recordedBy: CURRENT_USER,
       batchSelection: row.trackingType === 'batch' ? row.batchSelection : undefined,
@@ -299,7 +330,7 @@ function handleSave() {
           </div>
         </MpFormControl>
 
-        <!-- ── Date + Warehouse ── -->
+        <!-- ── Date. No warehouse here: each line uses its own (P-1). ── -->
         <div class="mr-grid">
           <MpFormControl id="mr-date" is-required :is-invalid="recordDateError">
             <MpFormLabel>{{ isConsume ? 'Consume date' : 'Return date' }}</MpFormLabel>
@@ -313,16 +344,6 @@ function handleSave() {
             <MpFormErrorMessage>You must select a date</MpFormErrorMessage>
           </MpFormControl>
 
-          <MpFormControl id="mr-warehouse" is-required :is-invalid="warehouseError">
-            <MpFormLabel>{{ isConsume ? 'Pick from warehouse' : 'Return to warehouse' }}</MpFormLabel>
-            <MpAutocomplete
-              id="mr-warehouse-ac" v-model="warehouseId" :data="warehouseOptions"
-              label-prop="name" value-prop="id" placeholder="Select warehouse"
-              is-searchable is-clearable use-portal is-full-width :is-invalid="warehouseError"
-              @update:model-value="warehouseError = false"
-            />
-            <MpFormErrorMessage>You must select a warehouse</MpFormErrorMessage>
-          </MpFormControl>
         </div>
 
         <!-- ── Memo ── -->
@@ -334,6 +355,12 @@ function handleSave() {
           <MpTextarea id="mr-memo-textarea" v-model="memo" is-full-width :rows="3" :maxlength="MEMO_MAX" />
         </MpFormControl>
 
+        <!-- P-5 — a return goes to available stock, not back to this work order. -->
+        <MpBanner v-if="!isConsume" variant="info" data-devchange="wo-v06-material-record">
+          <MpBannerIcon />
+          <MpBannerDescription>{{ t('Returned qty goes to available stock, not back to this work order\'s reservation.') }}</MpBannerDescription>
+        </MpBanner>
+
         <!-- ── Line items ── -->
         <div class="mr-table-section" :class="{ 'mr-table-section--empty': showEmptyState }">
           <div class="mr-table-scroll">
@@ -342,54 +369,47 @@ function handleSave() {
                 <col class="mr-col-check" />
                 <col class="mr-col-product" />
                 <col class="mr-col-sku" />
-                <template v-if="isConsume">
-                  <col class="mr-col-num" /><col class="mr-col-num" /><col class="mr-col-num" />
-                  <col class="mr-col-qty" />
-                </template>
-                <template v-else>
-                  <col class="mr-col-num" />
-                  <col class="mr-col-qty" />
-                </template>
+                <col class="mr-col-warehouse" />
                 <col class="mr-col-num" />
+                <col v-if="showReserved" class="mr-col-num" />
+                <col class="mr-col-num" />
+                <col class="mr-col-num" />
+                <col class="mr-col-qty" />
                 <col class="mr-col-unit" />
               </colgroup>
-              <thead>
+              <thead data-devchange="wo-v06-material-record">
                 <tr>
                   <th class="mr-th mr-th--check">
                     <div class="mr-check-wrap">
                       <MpCheckbox id="mr-select-all" :is-checked="allSelected" :is-indeterminate="someSelected" :is-disabled="showEmptyState" @change="toggleAll" />
                     </div>
                   </th>
-                  <th class="mr-th">Product</th>
-                  <th class="mr-th">SKU</th>
-                  <template v-if="isConsume">
-                    <th class="mr-th mr-th--right">Needed qty</th>
-                    <th class="mr-th mr-th--right">Consumed qty</th>
-                    <th class="mr-th mr-th--right">On hand qty</th>
-                    <th class="mr-th">Qty to consume</th>
-                  </template>
-                  <template v-else>
-                    <th class="mr-th mr-th--right">Consumed qty</th>
-                    <th class="mr-th">Qty to return</th>
-                  </template>
-                  <th class="mr-th mr-th--right">Remaining qty</th>
-                  <th class="mr-th">Unit</th>
+                  <th class="mr-th">{{ t('Product') }}</th>
+                  <th class="mr-th">{{ t('SKU') }}</th>
+                  <th class="mr-th">{{ t('Warehouse') }}</th>
+                  <th v-if="isConsume" class="mr-th mr-th--right">{{ t('On hand qty') }}</th>
+                  <th class="mr-th mr-th--right">{{ t('Needed qty') }}</th>
+                  <th v-if="showReserved" class="mr-th mr-th--right" data-devchange="wo-consume-reserved-col">{{ t('Reserved qty') }}</th>
+                  <th class="mr-th mr-th--right">{{ t('Consumed qty') }}</th>
+                  <th v-if="!isConsume" class="mr-th mr-th--right">{{ t('Max returnable') }}</th>
+                  <th class="mr-th">{{ isConsume ? t('Qty to consume') : t('Qty to return') }}</th>
+                  <th class="mr-th">{{ t('Unit') }}</th>
                 </tr>
               </thead>
-              <!-- Empty state — Consume only, no warehouse picked yet -->
+              <!-- Empty state — a work order with no raw materials -->
               <tbody v-if="showEmptyState">
                 <tr class="mr-tr mr-tr--empty">
                   <td class="mr-td mr-td--empty" :colspan="colCount">
                     <div class="mr-empty">
                       <img src="/illustrations/empty-box.png" alt="" class="mr-empty-illustration" width="144" height="132" />
-                      <p class="mr-empty-title">No material to record</p>
-                      <p class="mr-empty-desc">Select warehouse first.</p>
+                      <p class="mr-empty-title">{{ t('No material to record') }}</p>
+                      <p class="mr-empty-desc">{{ t('This work order has no raw materials.') }}</p>
                     </div>
                   </td>
                 </tr>
               </tbody>
               <tbody v-else>
-                <tr v-for="row in rows" :key="row.productId" class="mr-tr">
+                <tr v-for="(row, ri) in rows" :key="`${row.productId}-${ri}`" class="mr-tr">
                   <td class="mr-td mr-td--check">
                     <div class="mr-check-wrap">
                       <MpCheckbox :id="`mr-row-${row.productId}`" :is-checked="row.selected" @change="() => row.selected = !row.selected" />
@@ -397,25 +417,27 @@ function handleSave() {
                   </td>
                   <td class="mr-td mr-td--locked">{{ row.product }}</td>
                   <td class="mr-td mr-td--locked">{{ row.sku }}</td>
+                  <td class="mr-td mr-td--locked">{{ row.warehouseName }}</td>
+                  <td v-if="isConsume" class="mr-td mr-td--locked mr-td--num">{{ row.onHandQty }}</td>
+                  <td class="mr-td mr-td--locked mr-td--num">{{ row.neededQty }}</td>
+                  <td v-if="showReserved" class="mr-td mr-td--locked mr-td--num">{{ row.reservedQty }}</td>
+                  <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
                   <template v-if="isConsume">
-                    <td class="mr-td mr-td--locked mr-td--num">{{ row.neededQty }}</td>
-                    <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
-                    <td class="mr-td mr-td--locked mr-td--num">{{ row.onHandQty }}</td>
                     <td class="mr-td mr-td--input">
                       <MpInput :id="`mr-qty-${row.productId}`" v-model="row.qtyValue" type="number" placeholder="0" is-full-width :is-invalid="consumeExceeds(row)" />
-                      <span v-if="consumeExceeds(row)" class="mr-field-error" data-devchange="wo-approval-forms">
-                        {{ t('Qty exceeds the remaining planned qty ({qty} {unit}). Use Adjust work order for extra material or scrap').replace('{qty}', String(row.consumableQty)).replace('{unit}', row.unit) }}
+                      <span v-if="consumeExceeds(row)" class="mr-field-error" data-devchange="wo-v06-material-record">
+                        {{ t('Max {qty} {unit} (reserved or on hand). Adjust the work order to consume more.').replace('{qty}', String(maxConsumable(row))).replace('{unit}', row.unit) }}
                       </span>
                       <template v-if="row.trackingType">
                         <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
-                        <a class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }" @click.prevent="openTracking(row)">
+                        <a class="mr-tracking" :class="{ 'mr-tracking--disabled': !row.warehouseId }" @click.prevent="openTracking(row)">
                           {{ row.trackingType === 'serial' ? 'Manage serial number' : 'Manage batch' }}
                         </a>
                       </template>
                     </td>
                   </template>
                   <template v-else>
-                    <td class="mr-td mr-td--locked mr-td--num">{{ row.consumedQty }}</td>
+                    <td class="mr-td mr-td--locked mr-td--num">{{ maxReturnable(row) }}</td>
                     <td class="mr-td mr-td--input" :class="{ 'mr-td--input-disabled': row.consumedQty === 0 }">
                       <MpInput
                         :id="`mr-qty-${row.productId}`"
@@ -428,13 +450,12 @@ function handleSave() {
                       <template v-if="row.trackingType && row.consumedQty > 0">
                         <span v-if="num(row.qtyValue) > 0" class="mr-tracked-hint">{{ effectiveQty(row) }} of {{ num(row.qtyValue) }} selected</span>
                         <a
-                          class="mr-tracking" :class="{ 'mr-tracking--disabled': !warehouseId }"
+                          class="mr-tracking" :class="{ 'mr-tracking--disabled': !row.warehouseId }"
                           @click.prevent="openTracking(row)"
                         >{{ row.trackingType === 'serial' ? 'Manage serial number' : 'Manage batch' }}</a>
                       </template>
                     </td>
                   </template>
-                  <td class="mr-td mr-td--locked mr-td--num">{{ remainingQty(row) }}</td>
                   <td class="mr-td mr-td--locked">{{ row.unit }}</td>
                 </tr>
               </tbody>
@@ -460,8 +481,8 @@ function handleSave() {
       :product-name="activeDrawerRow.product"
       :product-img="drawerProductImg(activeDrawerRow)"
       :sku="activeDrawerRow.sku"
-      :warehouse-id="warehouseId"
-      :warehouse-name="drawerWarehouseName"
+      :warehouse-id="activeDrawerRow.warehouseId"
+      :warehouse-name="activeDrawerRow.warehouseName"
       :target-count="drawerTargetCount(activeDrawerRow)"
       :model-value="activeDrawerRow.serialSelection"
       @update:open="(v: boolean) => { if (!v) closeTracking() }"
@@ -473,8 +494,8 @@ function handleSave() {
       :product-name="activeDrawerRow.product"
       :product-img="drawerProductImg(activeDrawerRow)"
       :sku="activeDrawerRow.sku"
-      :warehouse-id="warehouseId"
-      :warehouse-name="drawerWarehouseName"
+      :warehouse-id="activeDrawerRow.warehouseId"
+      :warehouse-name="activeDrawerRow.warehouseName"
       :unit="activeDrawerRow.unit"
       :target-count="drawerTargetCount(activeDrawerRow)"
       :model-value="activeDrawerRow.batchSelection"
@@ -495,7 +516,7 @@ function handleSave() {
 </template>
 
 <style scoped>
-.mr-field-error { display: block; margin-top: var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); white-space: normal; }
+.mr-field-error { display: block; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); white-space: normal; }
 
 /* ── Page shell (shared create-page pattern) ─────────────────────────────── */
 .detail-page { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -555,6 +576,7 @@ function handleSave() {
 .mr-col-check { width: 44px; }
 .mr-col-product { width: 240px; }
 .mr-col-sku { width: 120px; }
+.mr-col-warehouse { width: 200px; }
 .mr-col-num { width: 110px; }
 .mr-col-qty { width: 160px; }
 .mr-col-unit { width: 90px; }
@@ -614,7 +636,7 @@ function handleSave() {
 .mr-tracking:hover { text-decoration: underline; text-underline-offset: 2px; }
 .mr-tracking--disabled { color: var(--mp-text-disabled); cursor: not-allowed; pointer-events: none; }
 
-/* Empty state — before a warehouse is picked (Figma: Table / New record → Blank Slate) */
+/* Empty state — a work order with no raw materials (Figma: Table / New record → Blank Slate) */
 .mr-tr--empty:hover { background: none; }
 .mr-td--empty { padding: var(--mp-spacing-6) var(--mp-spacing-4); border-right: none; border-bottom: none; white-space: normal; }
 .mr-empty { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-1); }

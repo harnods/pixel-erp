@@ -36,7 +36,7 @@ import { TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
   lineCovered, stockRequestLineStatus, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
-  reserveStock, reserveRequestProducts, unreserveRequestProducts, rejectRequestLine, canReject, canRejectLine,
+  reserveStock, reserveRequestProducts, unreserveRequestProducts,
   isLineOverdue,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
   type SkuDemandGroup, type SkuDemandEntry,
@@ -51,8 +51,8 @@ const router = useRouter()
 // ?tab=. The split is work vs not-work:
 //
 //   • **Awaiting** (default) — demand the warehouse still has to fulfil: anything
-//     not fully reserved, on a request that is neither rejected nor canceled.
-//   • **Closed** — the two TERMINAL states (W-3). A declined line and a
+//     not fully reserved, on a request that is not canceled.
+//   • **Closed** — the two TERMINAL states (W-3). A completed request and a
 //     cancelled job's request are still records worth finding, but they are not
 //     work, so they do not sit in a tab the stockist works down.
 //
@@ -397,7 +397,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 const expanded = reactive<Record<string, boolean>>({})
 function toggleExpand(key: string) { expanded[key] = !expanded[key] }
 
-// ─── Row actions (W-1 row menu, W-7 reject) ────────────────────────────────────
+// ─── Row actions (W-1 row menu; no reject — L-12) ──────────────────────────────
 // "View details" opens the stock request; the work order is one click further in.
 function viewDetails(requestId: string) { router.push(`/stock-requests/${requestId}`) }
 
@@ -462,7 +462,7 @@ const confirmUnreserveOpen = ref(false)
 
 /** Every line of this request is wanted at one warehouse. */
 function singleWarehouse(req: StockRequest): boolean {
-  return new Set(req.lines.filter(l => !l.rejected).map(l => l.destinationWarehouseId)).size <= 1
+  return new Set(req.lines.map(l => l.destinationWarehouseId)).size <= 1
 }
 
 function openConfirm(req: StockRequest, lines: StockRequestLine[], kind: 'reserve' | 'unreserve') {
@@ -472,12 +472,12 @@ function openConfirm(req: StockRequest, lines: StockRequestLine[], kind: 'reserv
 }
 
 /** From a By transaction request row — the whole request, same-warehouse only. */
-function reserveRequest(req: StockRequest) { openConfirm(req, req.lines.filter(l => !l.rejected), 'reserve') }
+function reserveRequest(req: StockRequest) { openConfirm(req, req.lines, 'reserve') }
 function unreserveRequest(req: StockRequest) { openConfirm(req, req.lines.filter(l => l.reserved > 0), 'unreserve') }
 
 /** From a breakdown row — one component on one request. */
 function linesFor(req: StockRequest, productId: string) {
-  return req.lines.filter(l => l.productId === productId && !l.rejected)
+  return req.lines.filter(l => l.productId === productId)
 }
 function requestOf(id: string) { return stockRequests.find(r => r.id === id) }
 
@@ -528,21 +528,6 @@ function unreserveEntry(group: SkuDemandGroup, entry: SkuDemandEntry) {
 }
 
 const byComponent = (productIds: string[]) => ({ fromComponent: productIds.join(',') })
-/**
- * W-7 — rejection is per LINE: only Additional stock and Adjustment lines can be
- * declined, never the components the work order itself committed to. From the
- * transaction row this declines every line on the request that is eligible.
- */
-function reject(req: StockRequest) {
-  const rejectable = req.lines.filter(canRejectLine)
-  if (rejectable.length === 0) return
-  for (const line of rejectable) rejectRequestLine(req.id, line)
-  toast.notify({
-    variant: 'success',
-    title: `${rejectable.length} ${rejectable.length === 1 ? t('line rejected on') : t('lines rejected on')} ${req.workOrderNumber}`,
-    maxWidth: 'max-content',
-  })
-}
 
 // Row casts for the template — ErpTablePage hands every row back as a plain
 // record, and this page feeds it two different row shapes depending on the view.
@@ -970,12 +955,6 @@ function onPerPageChange(n: number) {
                 <MpPopoverListItem @click="createPurchaseRequest(byRequest(wo(row).id))">{{ t('Create purchase request') }}</MpPopoverListItem>
               </template>
             </MpPopoverList>
-            <template v-if="canReject(wo(row))">
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="reject(wo(row))">{{ t('Reject request') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </template>
           </template>
         </MpPopoverContent>
       </MpPopover>

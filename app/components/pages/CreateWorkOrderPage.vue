@@ -22,9 +22,9 @@ import { warehouses } from '~/data/warehouses'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
-import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation, type WorkOrderRawMaterial, type WorkOrderCostLine, type WorkOrderRoutingStep } from '~/data/workOrders'
+import { addWorkOrder, type WorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation, type WorkOrderRawMaterial, type WorkOrderCostLine, type WorkOrderRoutingStep } from '~/data/workOrders'
 import { raiseStockRequestForWorkOrder } from '~/data/stockRequests'
-import { reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
+import { currentReservation, woReservationOn, woReservesOnWorkOrder } from '~/data/productionSettings'
 import { STAFF } from '~/data/master'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
@@ -518,6 +518,8 @@ function saveWorkOrder() {
     rawMaterials: buildRawMaterials(start),
     productionCost: buildProductionCost(),
     routing: buildRouting(),
+    // S-0 — the work order keeps the reservation setting it was created under.
+    reservation: currentReservation(),
   })
 }
 
@@ -591,14 +593,15 @@ function displayToIso(display: string, fallback: string): string {
 }
 /**
  * C-4 — saving a work order pushes a stock request carrying its component lines,
- * so it is on the warehouse's dashboard immediately — unless reservation is
- * switched off in Production settings (UC-00). C-3 — under One-step a line reserves
- * only when destination stock covers it in FULL; partly covered lines stay
- * Requested for the stockist. The toast says which case applied.
+ * so it is on the warehouse's dashboard immediately — unless the work order was
+ * created with reservation off (S-0). C-3 — under One-step each line reserves up to
+ * the qty available at its destination: fully covered → Reserved, partly →
+ * Partially reserved, none → Requested; the shortfall stays with the stockist. The
+ * toast says which case applied.
  */
-function raiseStockRequest(wo: { id: string; number: string }) {
-  // UC-00 — with "Product components must be reserved" off, no request is raised.
-  if (!reservationEnabled()) return
+function raiseStockRequest(wo: WorkOrder) {
+  // S-0 — a work order created with reservation off raises no request.
+  if (!woReservationOn(wo)) return
   const planStart = parseDateRange(planDates.value).start
   const toIso = (display: string): string => displayToIso(display, planStart)
   const filled = filledRawRows()
@@ -633,13 +636,16 @@ function raiseStockRequest(wo: { id: string; number: string }) {
     requestor: STAFF[0]!,
     requestDate: planStart,
     lines,
-  }, { autoReserve: reservationOnWorkOrder() })
+  }, { autoReserve: woReservesOnWorkOrder(wo) })
 
   if (!result.created) return
   if (result.reservedProducts > 0) {
-    // C-3 — auto-reserve is all-or-nothing per line, so there are exactly two
-    // cases: reserved in full, or left with the stockist as a request.
-    const parts = [`${result.reservedProducts} ${t('component(s) reserved automatically')}`]
+    // C-3 — reserved up to the qty available, so three cases: in full, partly (the
+    // rest stays with the stockist), or not at all.
+    const full = result.reservedProducts - result.partialProducts
+    const parts: string[] = []
+    if (full > 0) parts.push(`${full} ${t('component(s) reserved automatically')}`)
+    if (result.partialProducts > 0) parts.push(`${result.partialProducts} ${t('partially reserved')}`)
     if (result.shortProducts > 0) parts.push(`${result.shortProducts} ${t('sent to the stockist as a request')}`)
     toast.notify({
       variant: 'success',

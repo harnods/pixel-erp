@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Adjust work order — PRD v0.5 UC-06 (In progress phase).
+ * Adjust work order — PRD v0.6 UC-06 (In progress phase).
  *
  * Adjust is the ONLY way a running work order's material demand changes, and the
  * only place its reservation can be released after start (UC-03). Both are true
@@ -10,13 +10,13 @@
  *
  * The rules this form carries:
  *  • Each line has its own **Request date**, mandatory on every line the user
- *    changes and never earlier than today — a delta raised mid-run has its own
- *    date, which is exactly why the delta gets its own line rather than being
- *    added to the original's qty.
+ *    changes and never earlier than today; the changed line takes it as its
+ *    required date. The line is updated IN PLACE (v0.6) — no Adjustment line.
  *  • A **Reason to adjust** is mandatory.
- *  • Cutting below what is already reserved releases that component's FULL
- *    remaining reservation on save (R-4, R-8) — the form says so before the user
- *    commits, rather than surprising them afterwards.
+ *  • ANY qty change on a reserved component releases its FULL remaining
+ *    reservation on save, and the updated line is reserved again through the
+ *    method (R-4, R-8) — the form says so before the user commits, rather than
+ *    surprising them afterwards.
  *  • Qty can never go below what has already been ISSUED: that material has left
  *    the rack and comes back, if at all, through a material return (UC-08).
  *
@@ -59,8 +59,8 @@ const toIso = (display: string): string => {
 
 /**
  * One row per COMPONENT, not per line: the user adjusts what the job needs of a
- * material, and how that resolves across the original and Adjustment lines is the
- * data layer's job (`applyDemandChanges`), not a decision to put in front of them.
+ * material, and how that resolves across its lines is the data layer's job
+ * (`applyDemandChanges`), not a decision to put in front of them.
  */
 interface Row {
   productId: string
@@ -69,7 +69,7 @@ interface Row {
   unit: string
   /** total qty across every line for this component */
   current: number
-  /** already reserved — cutting below this releases the lot */
+  /** already reserved — any change releases the lot (R-4) */
   reserved: number
   /** already issued — an absolute floor */
   consumed: number
@@ -83,7 +83,6 @@ const rows = ref<Row[]>([])
 function build(): Row[] {
   const byProduct = new Map<string, Row>()
   for (const l of props.lines) {
-    if (l.rejected) continue
     const existing = byProduct.get(l.productId)
     if (existing) {
       existing.current += l.qty
@@ -125,9 +124,9 @@ const num = (v: string) => {
 /** Rows the user actually changed — the only ones that need a date and get saved. */
 const changedRows = computed(() => rows.value.filter(r => num(r.qty) !== r.current))
 
-/** R-4 — cutting below the reserved qty releases that component's whole reservation. */
+/** R-4 (v0.6) — any qty change on a reserved component releases its whole reservation. */
 function willRelease(r: Row): boolean {
-  return num(r.qty) < r.reserved + r.consumed && r.reserved > 0
+  return num(r.qty) !== r.current && r.reserved > 0
 }
 /** UC-08 — issued material cannot be un-asked for. */
 function belowIssued(r: Row): boolean {
@@ -188,7 +187,7 @@ function submit() {
       </MpModalHeader>
       <MpModalBody>
         <p class="aw-lead">
-          {{ t('An increase is sent to the warehouse as a separate adjustment line with its own request date, so the original demand and its date stay intact.') }}
+          {{ t('A changed line is updated on the stock request with the request date entered here, and reserved again through the reservation method.') }}
         </p>
 
         <div class="aw-table-wrap">
@@ -239,7 +238,7 @@ function submit() {
         </div>
 
         <!-- R-4 / R-8 — say what saving will release, before it happens. -->
-        <div v-if="releasingRows.length" class="aw-banner">
+        <div v-if="releasingRows.length" class="aw-banner" data-devchange="wo-v06-adjust-in-place">
           <MpIcon name="info" size="md" />
           <span>
             {{ t('Saving releases the full remaining reservation of') }}

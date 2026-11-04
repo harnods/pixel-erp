@@ -1,13 +1,14 @@
 /**
- * Stock request lifecycle — PRD v0.5 UC-01, UC-05, UC-06, W-3.
+ * Stock request lifecycle — PRD v0.6 UC-01, UC-05, UC-06, W-3.
  *
  * Covers the rules a request line lives by:
- *   • C-3 — one-step auto-reserve is ALL-OR-NOTHING per line.
+ *   • C-3 — one-step auto-reserve takes each line UP TO the qty available.
  *   • W-3 — status is derived, never stored, and a request's status is the LOWEST
  *     among its lines.
- *   • UC-06 — Edit updates in place; Adjust puts an increase on its own tagged
- *     line with its own required date, and a decrease reduces the Adjustment line
- *     FIRST, so the most recent extra demand is released before committed demand.
+ *   • UC-06 — Edit AND Adjust update the existing line in place: any qty change
+ *     releases the component's remaining reservation, the line takes the new qty
+ *     and date, and it is reserved again through the method. A new product adds a
+ *     line. There are no tagged lines and no rejection (L-12).
  *   • The requestor follows whoever changed the demand, never whoever filled it.
  *
  * The last block reproduces the PRD's own worked example (WO-2026-0042) end to
@@ -16,7 +17,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   stockRequests, raiseStockRequestForWorkOrder, applyDemandChanges,
-  appendStockRequestLines, reserveRequestProducts,
+  reserveRequestProducts,
   stockRequestLineStatus, stockRequestStatus, needsAction, lineCovered,
   type WorkOrderMaterialLine,
   lowestLineStatus,
@@ -57,20 +58,15 @@ function raise(lines: WorkOrderMaterialLine[], available: Record<string, number>
   }, { autoReserve: false })
   for (const l of request.lines) l.destAvailable = available[l.productId] ?? 0
   if (autoReserve) {
-    // Settle through the public path: reserving every line is what One-step does
-    // at creation, and reserveRequestProducts applies the same per-line rule.
-    for (const l of request.lines) {
-      if (l.destAvailable >= l.qty - lineCovered(l)) {
-        reserveRequestProducts(request.id, [l.productId], { source: 'automatic' })
-      }
-    }
+    // Settle through the public path: One-step at creation reserves each line up
+    // to the qty available (C-3), the same rule reserveRequestProducts applies.
+    reserveRequestProducts(request.id, request.lines.map(l => l.productId), { source: 'automatic' })
   }
   return request
 }
 
 const req = () => stockRequests.find(r => r.id === REQ_ID)!
-const lineFor = (productId: string, tag?: 'adjustment' | 'additional') =>
-  req().lines.find(l => l.productId === productId && l.tag === tag)!
+const lineFor = (productId: string) => req().lines.find(l => l.productId === productId)!
 
 beforeEach(() => {
   const i = stockRequests.findIndex(r => r.workOrderId === WO_ID)
@@ -147,57 +143,39 @@ describe('W-3 — status is derived', () => {
   })
 })
 
-describe('UC-06 — Edit (Not started) updates in place', () => {
-  it('grows the existing line and makes the editor its requestor', () => {
-    raise([material('mdf', 20)], { mdf: 20 })
-    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 24, requiredDate: '2026-10-08' }], 'Boy', 'edit')
-    expect(req().lines).toHaveLength(1)
-    expect(lineFor('mdf').qty).toBe(24)
-    expect(lineFor('mdf').requestor).toBe('Boy')
-  })
+describe('UC-06 — Edit and Adjust update the line in place', () => {
+  for (const phase of ['edit', 'adjust'] as const) {
+    it(`${phase}: grows the existing line, takes the new date, and makes the user its requestor`, () => {
+      raise([material('mdf', 20, '2026-10-08')], { mdf: 20 })
+      applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 28, requiredDate: '2026-10-10' }], 'Citra', phase)
+      expect(req().lines).toHaveLength(1)
+      expect(lineFor('mdf').qty).toBe(28)
+      expect(lineFor('mdf').requiredDate).toBe('2026-10-10')
+      expect(lineFor('mdf').requestor).toBe('Citra')
+    })
 
-  // 12 Oct — "System will unreserve remaining reserved qty": ANY qty change on a
-  // reserved component releases its whole reservation, then the line is updated in
-  // place and goes back through the method. (This replaced the "unreserve first" block.)
-  it('a cut releases the whole reservation, then updates in place (Two-step: stays Requested)', () => {
-    const request = raise([material('mdf', 20)], { mdf: 0 })
-    request.lines[0]!.reserved = 20
-    const r = applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 10, requiredDate: '2026-10-08' }], 'Boy', 'edit')
-    expect(r.released.qty).toBe(20)
-    expect(lineFor('mdf').qty).toBe(10)
-    expect(lineFor('mdf').reserved).toBe(0)
-    expect(stockRequestLineStatus(lineFor('mdf'))).toBe('requested')
-  })
+    it(`${phase}: a cut releases the whole reservation, then updates in place (Two-step: stays Requested)`, () => {
+      const request = raise([material('mdf', 20)], { mdf: 0 })
+      request.lines[0]!.reserved = 20
+      const r = applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 10, requiredDate: '2026-10-08' }], 'Boy', phase)
+      expect(r.released.qty).toBe(20)
+      expect(lineFor('mdf').qty).toBe(10)
+      expect(lineFor('mdf').reserved).toBe(0)
+      expect(stockRequestLineStatus(lineFor('mdf'))).toBe('requested')
+    })
 
-  it('releases even when the cut stays above the reserved qty, and One-step re-reserves', () => {
-    const request = raise([material('mdf', 20)], { mdf: 0 })
-    request.lines[0]!.reserved = 10
-    const r = applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 15, requiredDate: '2026-10-08' }], 'Boy', 'edit',
-      { autoReserve: true })
-    expect(r.released.qty).toBe(10)
-    // the 10 released went back to this line's destination: 10 < 15 → all-or-nothing reserves nothing
-    expect(lineFor('mdf').reserved).toBe(0)
-  })
-
-  it('an increase releases too, and One-step re-reserves the NEW total when stock covers it', () => {
-    const request = raise([material('mdf', 20)], { mdf: 10 })
-    request.lines[0]!.reserved = 20
-    const r = applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 24, requiredDate: '2026-10-08' }], 'Boy', 'edit',
-      { autoReserve: true })
-    expect(r.released.qty).toBe(20)
-    // 10 free + 20 released = 30 ≥ 24 → reserved in full on the same save
-    expect(lineFor('mdf').reserved).toBe(24)
-    expect(r.reserved.reservedQty).toBe(24)
-  })
-
-  it('an increase the warehouse cannot cover in full drops the line to Requested (C-3 all-or-nothing)', () => {
-    const request = raise([material('mdf', 20)], { mdf: 0 })
-    request.lines[0]!.reserved = 20
-    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 24, requiredDate: '2026-10-08' }], 'Boy', 'edit',
-      { autoReserve: true })
-    expect(lineFor('mdf').reserved).toBe(0)
-    expect(stockRequestLineStatus(lineFor('mdf'))).toBe('requested')
-  })
+    it(`${phase}: an increase releases too, and One-step reserves again up to the qty available`, () => {
+      const request = raise([material('mdf', 20)], { mdf: 0 })
+      request.lines[0]!.reserved = 20
+      const r = applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 24, requiredDate: '2026-10-08' }], 'Boy', phase,
+        { autoReserve: true })
+      expect(r.released.qty).toBe(20)
+      // 20 released are free again; 24 asked → 20 reserved, Partially reserved (C-3)
+      expect(lineFor('mdf').reserved).toBe(20)
+      expect(stockRequestLineStatus(lineFor('mdf'))).toBe('partially reserved')
+      expect(r.reserved.partialProducts).toBe(1)
+    })
+  }
 
   it('a date-only change releases nothing', () => {
     const request = raise([material('mdf', 20)], { mdf: 0 })
@@ -206,118 +184,79 @@ describe('UC-06 — Edit (Not started) updates in place', () => {
     expect(r.released.qty).toBe(0)
     expect(lineFor('mdf').reserved).toBe(20)
   })
-})
 
-describe('UC-06 — Adjust (In progress) keeps the delta on its own line', () => {
-  it('puts an increase on a new Adjustment line with its own required date', () => {
-    raise([material('mdf', 20, '2026-10-08')], { mdf: 20 })
-    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 28, requiredDate: '2026-10-10' }], 'Citra', 'adjust')
-
-    expect(req().lines).toHaveLength(2)
-    expect(lineFor('mdf').qty).toBe(20)
-    expect(lineFor('mdf').requiredDate).toBe('2026-10-08')
-    expect(lineFor('mdf', 'adjustment').qty).toBe(8)
-    expect(lineFor('mdf', 'adjustment').requiredDate).toBe('2026-10-10')
-    expect(lineFor('mdf', 'adjustment').requestor).toBe('Citra')
-  })
-
-  it('reduces the Adjustment line FIRST on a decrease', () => {
-    raise([material('mdf', 20)], { mdf: 20 })
-    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 28, requiredDate: '2026-10-10' }], 'Citra', 'adjust')
-    // 28 → 22: the 8-unit Adjustment line absorbs the whole 6-unit cut.
-    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 22, requiredDate: '2026-10-10' }], 'Citra', 'adjust')
-    expect(lineFor('mdf').qty).toBe(20)
-    expect(lineFor('mdf', 'adjustment').qty).toBe(2)
-  })
-
-  it('drops a tagged line cut to nothing, but keeps an original line at zero', () => {
-    raise([material('mdf', 20)], { mdf: 20 })
-    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 28, requiredDate: '2026-10-10' }], 'Citra', 'adjust')
-    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 20, requiredDate: '2026-10-10' }], 'Citra', 'adjust')
-    expect(req().lines).toHaveLength(1)
-    expect(lineFor('mdf').qty).toBe(20)
-  })
-
-  it('releases the whole remaining reservation when the cut goes below it (R-4)', () => {
+  it('never cuts a line below what has already been issued', () => {
     const request = raise([material('mdf', 20)], { mdf: 0 })
-    request.lines[0]!.reserved = 20
-    const r = applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 12, requiredDate: '2026-10-10' }], 'Citra', 'adjust')
-    expect(r.released.qty).toBe(20)
+    request.lines[0]!.consumed = 12
+    applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 5, requiredDate: '2026-10-09' }], 'Citra', 'adjust')
     expect(lineFor('mdf').qty).toBe(12)
   })
-})
 
-describe('D-7 — additional stock lands on the same request, tagged', () => {
-  it('appends a tagged line rather than raising a second request', () => {
+  it('adds a component new to the work order as a new line, with the user as requestor', () => {
     raise([material('mdf', 20)], { mdf: 20 })
-    const r = appendStockRequestLines(WO_ID, [material('mdf', 5, '2026-10-12')], 'Citra', 'additional', { autoReserve: false })
-    expect(r?.request.id).toBe(REQ_ID)
-    expect(stockRequests.filter(x => x.workOrderId === WO_ID)).toHaveLength(1)
-    expect(lineFor('mdf', 'additional').qty).toBe(5)
-    expect(lineFor('mdf', 'additional').requestor).toBe('Citra')
+    applyDemandChanges(WO_ID, [{ productId: 'handle', qty: 10, requiredDate: '2026-10-08', newLine: material('handle', 10) }], 'Boy', 'edit')
+    expect(req().lines).toHaveLength(2)
+    expect(lineFor('handle').qty).toBe(10)
+    expect(lineFor('handle').requestor).toBe('Boy')
   })
 })
 
 /**
  * The PRD's own worked example, steps 1–4 (WO-2026-0042 · Meja kerja × 10,
  * One-step, one destination warehouse). Opening stock: MDF 20, Kaki besi 30,
- * Baut 500, Handle 10.
+ * Baut 500, Handle 10. Each step checks the PRD table's figures line by line.
  */
-describe('UC-06 worked example — WO-2026-0042', () => {
-  it('step 1: one-step reserves only the lines stock fully covers', () => {
+describe('UC-06 worked example — WO-2026-0042 (v0.6)', () => {
+  const row = (productId: string) => {
+    const l = lineFor(productId)
+    return { qty: l.qty, reserved: l.reserved, remaining: l.qty - lineCovered(l), requestor: l.requestor, status: stockRequestLineStatus(l) }
+  }
+
+  it('runs create → edit → PPIC → adjust as the PRD tables say', () => {
+    // 1 — Create, Bima. One-step reserves each line up to the qty available.
     const request = raise(
       [material('mdf', 20), material('kaki', 40), material('baut', 160)],
       { mdf: 20, kaki: 30, baut: 500 },
       true,
     )
-    expect(request.lines.find(l => l.productId === 'mdf')!.reserved).toBe(20)
-    // 30 < 40 — all-or-nothing per line, so Kaki besi reserves NOTHING.
-    expect(request.lines.find(l => l.productId === 'kaki')!.reserved).toBe(0)
-    expect(request.lines.find(l => l.productId === 'baut')!.reserved).toBe(160)
-    expect(lowestLineStatus(request)).toBe('requested')
-    expect(stockRequestStatus(request)).toBe('open')
-  })
+    expect(row('mdf')).toEqual({ qty: 20, reserved: 20, remaining: 0, requestor: 'Bima', status: 'reserved' })
+    expect(row('kaki')).toEqual({ qty: 40, reserved: 30, remaining: 10, requestor: 'Bima', status: 'partially reserved' })
+    expect(row('baut')).toEqual({ qty: 160, reserved: 160, remaining: 0, requestor: 'Bima', status: 'reserved' })
+    expect(lowestLineStatus(request)).toBe('partially reserved')
 
-  it('step 2: an Edit before start grows MDF in place and adds Handle as a new line', () => {
-    raise([material('mdf', 20), material('kaki', 40), material('baut', 160)], { mdf: 0, kaki: 30, baut: 340 }, false)
-    lineFor('mdf').reserved = 20
-    lineFor('baut').reserved = 160
-
-    const r = applyDemandChanges(WO_ID, [{ productId: 'mdf', qty: 24, requiredDate: '2026-10-08' }], 'Boy', 'edit',
-      { autoReserve: true })
-    appendStockRequestLines(WO_ID, [material('handle', 10)], 'Boy', 'additional', { autoReserve: false })
-
-    // UC-06 table (12 Oct): the Edit releases MDF's 20 first, then One-step tries to
-    // reserve the new 24 all-or-nothing against the 20 now free — not enough — so
-    // MDF waits as Requested. NOTE: the PRD's worked-example text still shows
-    // "reserved 20 · Partially reserved" here; it predates the new UC-06 table.
-    expect(r.released.qty).toBe(20)
-    expect(lineFor('mdf').qty).toBe(24)
-    expect(lineFor('mdf').reserved).toBe(0)
-    expect(stockRequestLineStatus(lineFor('mdf'))).toBe('requested')
-    expect(lineFor('mdf').requestor).toBe('Boy')
-    // Kaki besi's requestor is untouched — Boy did not change that line's demand.
-    expect(lineFor('kaki').requestor).toBe('Bima')
-  })
-
-  it('step 4: an Adjust mid-run adds MDF +8 as its own line and cuts Baut in place', () => {
-    raise([material('mdf', 24), material('baut', 160)], { mdf: 6, baut: 0 }, false)
-    lineFor('mdf').reserved = 24
-    lineFor('baut').reserved = 160
-
+    // 2 — Edit, Boy (not started): MDF 20 → 24; Handle 10 added.
     applyDemandChanges(WO_ID, [
-      { productId: 'mdf', qty: 32, requiredDate: '2026-10-10' },
-      { productId: 'baut', qty: 150, requiredDate: '2026-10-10' },
-    ], 'Citra', 'adjust')
+      { productId: 'mdf', qty: 24, requiredDate: '2026-10-08' },
+      { productId: 'handle', qty: 10, requiredDate: '2026-10-08', newLine: material('handle', 10) },
+    ], 'Boy', 'edit', { autoReserve: true })
+    // A new line reads the warehouse's real stock, which a synthetic SKU doesn't
+    // have — give it the PRD's 10 Handle, then settle it as One-step would.
+    lineFor('handle').destAvailable = 10
+    reserveRequestProducts(REQ_ID, ['handle'], { source: 'automatic' })
+    expect(row('mdf')).toEqual({ qty: 24, reserved: 20, remaining: 4, requestor: 'Boy', status: 'partially reserved' })
+    expect(row('kaki')).toEqual({ qty: 40, reserved: 30, remaining: 10, requestor: 'Bima', status: 'partially reserved' })
+    expect(row('baut').requestor).toBe('Bima')
+    expect(row('handle')).toEqual({ qty: 10, reserved: 10, remaining: 0, requestor: 'Boy', status: 'reserved' })
 
-    // MDF +8 becomes L5, leaving L1 and its date untouched; 6 available < 8, so
-    // all-or-nothing leaves the new line Requested.
-    expect(lineFor('mdf').qty).toBe(24)
-    expect(lineFor('mdf', 'adjustment').qty).toBe(8)
-    expect(lineFor('mdf', 'adjustment').reserved).toBe(0)
-    expect(stockRequestLineStatus(lineFor('mdf', 'adjustment'))).toBe('requested')
-    // Baut 160 → 150 is a cut below its reservation: released, then reduced.
-    expect(lineFor('baut').qty).toBe(150)
-    expect(lineFor('baut').requestor).toBe('Citra')
+    // 3 — PPIC fulfils after stock in (MDF +10, Kaki +20). Requestors unchanged.
+    lineFor('mdf').destAvailable += 10
+    lineFor('kaki').destAvailable += 20
+    reserveRequestProducts(REQ_ID, ['mdf', 'kaki'], { source: 'stock-request' })
+    expect(row('mdf')).toEqual({ qty: 24, reserved: 24, remaining: 0, requestor: 'Boy', status: 'reserved' })
+    expect(row('kaki')).toEqual({ qty: 40, reserved: 40, remaining: 0, requestor: 'Bima', status: 'reserved' })
+
+    // 4 — Adjust, Citra (in progress): MDF +8 required 10 Oct; Baut 160 → 150.
+    // MDF on hand 30, so after its 24 are released only 30 can be reserved again.
+    const r = applyDemandChanges(WO_ID, [
+      { productId: 'mdf', qty: 32, requiredDate: '2026-10-10' },
+      { productId: 'baut', qty: 150, requiredDate: '2026-10-08' },
+    ], 'Citra', 'adjust', { autoReserve: true })
+    expect(r.released.qty).toBe(24 + 160)
+    expect(row('mdf')).toEqual({ qty: 32, reserved: 30, remaining: 2, requestor: 'Citra', status: 'partially reserved' })
+    expect(lineFor('mdf').requiredDate).toBe('2026-10-10')
+    expect(row('baut')).toEqual({ qty: 150, reserved: 150, remaining: 0, requestor: 'Citra', status: 'reserved' })
+    expect(row('kaki').requestor).toBe('Bima')
+    expect(row('handle').requestor).toBe('Boy')
+    expect(req().lines).toHaveLength(4) // updated in place — no Adjustment line
   })
 })

@@ -5635,7 +5635,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Reserve stock': 'Reservasi stok',
   'Request purchase': 'Ajukan pembelian',
   'Reject request': 'Tolak permintaan',
-  'Additional stock': 'Stok tambahan',
   'Adjustment': 'Penyesuaian',
   'Overdue — reminder sent': 'Terlambat — pengingat dikirim',
   'Stock minus after recalculation': 'Stok minus setelah perhitungan ulang',
@@ -5736,6 +5735,31 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Stock request sent to the warehouse': 'Permintaan stok dikirim ke gudang',
   'Unassigned warehouse': 'Gudang belum ditentukan',
 
+  // ── PRD v0.6 reconciliation (4 Nov) ─────────────────────────────────────────
+  'partially reserved': 'direservasi sebagian',
+  'Configure how work order components are requested from and reserved in the warehouse.': 'Atur cara komponen perintah kerja diminta dari gudang dan direservasi.',
+  'unit restored to on hand': 'unit dikembalikan ke stok fisik',
+  'Delete work order?': 'Hapus perintah kerja?',
+  'This work order was cancelled, so deleting it moves no stock.': 'Perintah kerja ini sudah dibatalkan, jadi menghapusnya tidak memindahkan stok.',
+  '{released} unit will be released from reservation and {restored} unit restored to on hand by deleting its stock adjustments. Its stock request stays as Canceled.': '{released} unit akan dilepas dari reservasi dan {restored} unit dikembalikan ke stok fisik dengan menghapus penyesuaian stoknya. Permintaan stoknya tetap tercatat sebagai Dibatalkan.',
+  'The work order will be cancelled or closed. {released} unit released from reservation and {restored} unit restored to on hand by deleting its stock adjustments.': 'Perintah kerja akan dibatalkan atau ditutup. {released} unit dilepas dari reservasi dan {restored} unit dikembalikan ke stok fisik dengan menghapus penyesuaian stoknya.',
+  'At least one component must be on hand before starting': 'Minimal satu komponen harus tersedia di stok fisik sebelum dimulai',
+  'Every component needs some stock on hand before starting': 'Setiap komponen harus punya stok fisik sebelum dimulai',
+  'Every component must be fully on hand before starting, or relax the rule in Production settings': 'Setiap komponen harus tersedia penuh di stok fisik sebelum dimulai, atau longgarkan aturannya di Pengaturan produksi',
+  'A changed line is updated on the stock request with the request date entered here, and reserved again through the reservation method.': 'Baris yang diubah diperbarui di permintaan stok dengan tanggal permintaan yang diisi di sini, lalu direservasi ulang sesuai metode reservasi.',
+  "Returned qty goes to available stock, not back to this work order's reservation.": 'Qty yang dikembalikan masuk ke stok tersedia, bukan kembali ke reservasi perintah kerja ini.',
+  'Max returnable': 'Maks. dapat dikembalikan',
+  'Qty to consume': 'Qty dipakai',
+  'Qty to return': 'Qty dikembalikan',
+  'No material to record': 'Tidak ada material untuk dicatat',
+  'This work order has no raw materials.': 'Perintah kerja ini tidak punya bahan baku.',
+  'Max {qty} {unit} (reserved or on hand). Adjust the work order to consume more.': 'Maks. {qty} {unit} (direservasi atau stok fisik). Sesuaikan perintah kerja untuk memakai lebih banyak.',
+  'Reservation is off, so a work order can start once at least one component has stock on hand.': 'Reservasi nonaktif, jadi perintah kerja dapat dimulai setelah minimal satu komponen punya stok fisik.',
+  'Reservation is off, so a work order can start once every component has some stock on hand.': 'Reservasi nonaktif, jadi perintah kerja dapat dimulai setelah setiap komponen punya stok fisik.',
+  'Reservation is off, so a work order can start only once every component is fully on hand.': 'Reservasi nonaktif, jadi perintah kerja hanya dapat dimulai setelah setiap komponen tersedia penuh di stok fisik.',
+  'Applies to work orders created after the change. Existing work orders keep the setting they were created with.': 'Berlaku untuk perintah kerja yang dibuat setelah perubahan. Perintah kerja yang sudah ada tetap memakai pengaturan saat dibuat.',
+  'New work orders raise no stock request; they start, and consume, against stock on hand.': 'Perintah kerja baru tidak membuat permintaan stok; dimulai dan dipakai berdasarkan stok fisik.',
+
   // ── Stock request detail — request identity + warehouse groups ──────────────
   'Stock request': 'Permintaan stok',
   'Request no.': 'No. permintaan',
@@ -5801,7 +5825,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'October': 'Oktober',
   'November': 'November',
   'December': 'Desember',
-  'lines rejected on': 'baris ditolak pada',
   // Pagination (uxw-mekari-erp — Pagination patterns)
   'Rows per page': 'Baris per halaman',
   'Showing': 'Menampilkan',
@@ -5819,7 +5842,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Product name': 'Nama produk',
   'Work order number': 'Nomor perintah kerja',
   // Request additional stock (D-7)
-  'Request additional stock': 'Minta stok tambahan',
   // Edit work order materials (UC-06, Not started)
   'Edit materials': 'Edit material',
   'The work order has not started, so a change updates its existing request line and the warehouse is told. A component cannot be removed.': 'Perintah kerja belum dimulai, jadi perubahan memperbarui baris permintaan yang ada dan gudang diberi tahu. Komponen tidak bisa dihapus.',
@@ -5829,10 +5851,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Work order materials edited': 'Material perintah kerja diubah',
   'Work order materials changed on': 'Material perintah kerja berubah pada',
   'Production changed what this work order needs. Check the stock request before picking.': 'Produksi mengubah kebutuhan perintah kerja ini. Cek permintaan stok sebelum menyiapkan barang.',
-  'Additional stock requested on': 'Stok tambahan diminta pada',
-  'Production asked for extra material on top of this work order. Added lines can be declined.': 'Produksi meminta material tambahan di luar perintah kerja ini. Baris tambahan bisa ditolak.',
-  'component requested': 'komponen diminta',
-  'components requested': 'komponen diminta',
   'Work order': 'Perintah kerja',
   'Extra material on top of what this work order already asks for. It is sent to the warehouse as its own line, tagged Additional stock, which the stockist can decline.': 'Material tambahan di luar yang sudah diminta perintah kerja ini. Permintaan dikirim ke gudang sebagai baris tersendiri dengan tanda Stok tambahan, dan stockist bisa menolaknya.',
   'This does not change the work order plan — the job still needs what it needed.': 'Ini tidak mengubah rencana perintah kerja — kebutuhan awalnya tetap sama.',
@@ -5863,9 +5881,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'line still short': 'baris masih kurang',
   'transaction': 'transaksi',
   'transactions': 'transaksi',
-  'line rejected': 'baris ditolak',
   'lines rejected': 'baris ditolak',
-  'Reject added lines': 'Tolak baris tambahan',
   // Audit trail — stored in English, translated on read (activityLog.ts)
   'Reserved material': 'Mereservasi material',
   'Released reservation': 'Melepas reservasi',
@@ -5886,7 +5902,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Work order page (Production)': 'Halaman perintah kerja (Produksi)',
   'Stock request (PPIC / stockist)': 'Permintaan stok (PPIC / stockist)',
   'Automatic (one-step reservation)': 'Otomatis (reservasi satu langkah)',
-  'Additional stock': 'Stok tambahan',
   'A work order can start once at least one component holds a reservation.': 'Perintah kerja bisa dimulai setelah minimal satu komponen punya reservasi.',
   'A work order can start once every component holds a reservation, even a partial one.': 'Perintah kerja bisa dimulai setelah semua komponen punya reservasi, meski sebagian.',
   'Work orders show an info badge instead of reservation actions: "Reservation via Stock requests only (PPIC / stockist)".': 'Perintah kerja menampilkan info, bukan aksi reservasi: "Reservasi hanya lewat Permintaan stok (PPIC / stockist)".',
@@ -5894,7 +5909,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // Adjust work order (UC-06)
   'Adjust': 'Sesuaikan',
   'Adjust work order': 'Sesuaikan perintah kerja',
-  'An increase is sent to the warehouse as a separate adjustment line with its own request date, so the original demand and its date stay intact.': 'Penambahan dikirim ke gudang sebagai baris penyesuaian terpisah dengan tanggal permintaannya sendiri, sehingga permintaan awal dan tanggalnya tetap utuh.',
   'Current': 'Saat ini',
   'New qty': 'Kuantitas baru',
   'Reason to adjust': 'Alasan penyesuaian',
@@ -5929,7 +5943,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'The system will count that material in the warehouse again — anything physically on the production floor still has to be brought back.': 'Sistem akan menghitung material itu kembali di gudang — material yang masih ada di lantai produksi tetap harus dikembalikan.',
   'A work order in progress cannot be deleted — cancel it instead': 'Perintah kerja yang sedang berjalan tidak bisa dihapus — batalkan saja',
   'Work order canceled': 'Perintah kerja dibatalkan',
-  'Work order deleted': 'Perintah kerja dihapus',
 
   // Release & activity log (UC-11)
   'Reserved material': 'Material direservasi',
@@ -5953,9 +5966,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
 
   // Line-level requestor, tags & rejection (W-7, W-9)
   'Requestors': 'Pemohon',
-  'Reject added lines': 'Tolak baris tambahan',
-  'line rejected': 'baris ditolak',
-  'line rejected on': 'baris ditolak pada',
 
   // Dashboard columns & shared labels (W-2)
   'SKU code': 'Kode SKU',
@@ -5973,8 +5983,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'No stock to reserve — the destination warehouse has none of the selected components': 'Tidak ada stok untuk direservasi — gudang tujuan tidak punya komponen yang dipilih',
   'No stock to reserve — the destination warehouse has none of what this request needs': 'Tidak ada stok untuk direservasi — gudang tujuan tidak punya yang dibutuhkan permintaan ini',
   'unit reserved automatically': 'unit direservasi otomatis',
-  'The warehouse rejected': 'Gudang menolak',
-  'Adjust the work order to request it again.': 'Sesuaikan perintah kerja untuk memintanya lagi.',
   'Select at least one component to reserve.': 'Pilih minimal satu komponen untuk direservasi.',
   // Project accounting > New engagement — Setup form (client, budget, project assignment).
   "Add new contact": "Tambah kontak baru",
@@ -6178,8 +6186,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'A raw material': 'Bahan baku',
   'Product components must be reserved': 'Komponen produk harus direservasi',
   'Triggers reservation when a work order is created': 'Memicu reservasi saat perintah kerja dibuat',
-  'Reservation is off, so a work order can start without any component reserved.': 'Reservasi nonaktif, jadi perintah kerja bisa dimulai tanpa komponen yang direservasi.',
-  'Work orders raise no stock request and start without reserved components. Requests already raised stay on Stock requests.': 'Perintah kerja tidak membuat permintaan stok dan bisa dimulai tanpa komponen yang direservasi. Permintaan yang sudah dibuat tetap ada di Permintaan stok.',
   'the request date must fall within the production plan dates.': 'tanggal permintaan harus berada dalam tanggal rencana produksi.',
   'The released quantity goes back to available warehouse stock.': 'Kuantitas yang dilepas kembali ke stok gudang yang tersedia.',
   'Select at least one component to unreserve.': 'Pilih minimal satu komponen untuk dibatalkan reservasinya.',
@@ -6289,14 +6295,12 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Work order cancel/close": "Pembatalan/penutupan perintah kerja",
   "Cancel/close work order": "Batalkan/tutup perintah kerja",
   "Cancel/close work order?": "Batalkan/tutup perintah kerja?",
-  "The work order will be cancelled or closed and its remaining material reservation released.": "Perintah kerja akan dibatalkan atau ditutup dan sisa reservasi materialnya dilepas.",
   "This work order is locked while its cancel/close is waiting for approval.": "Perintah kerja ini dikunci selama pembatalan/penutupannya menunggu persetujuan.",
   "This transaction requires approval because it's a work order cancel/close on a work order.": "Transaksi ini memerlukan persetujuan karena merupakan pembatalan/penutupan perintah kerja pada perintah kerja.",
   "Adjustment date": "Tanggal penyesuaian",
   "You must select a date": "Anda harus memilih tanggal",
   "You must fill in reason for adjustment": "Anda harus memasukkan alasan penyesuaian",
   "Shown to the approver in the approval log": "Ditampilkan kepada penyetuju di log persetujuan",
-  "Qty exceeds the remaining planned qty ({qty} {unit}). Use Adjust work order for extra material or scrap": "Qty melebihi sisa qty direncanakan ({qty} {unit}). Gunakan Sesuaikan perintah kerja untuk material tambahan atau scrap",
   "All {n} transaction types are already added": "Ke-{n} tipe transaksi sudah ditambahkan",
   "Allow requester to approve own request": "Izinkan pengaju menyetujui permintaannya sendiri",
   "When off, requesters never see or approve their own requests": "Jika nonaktif, pengaju tidak akan melihat atau menyetujui permintaannya sendiri",

@@ -74,7 +74,6 @@ const error = ref('')
 function build(): Row[] {
   const byProduct = new Map<string, Row>()
   for (const l of props.lines) {
-    if (l.rejected) continue
     const existing = byProduct.get(l.productId)
     if (existing) {
       existing.current += l.qty

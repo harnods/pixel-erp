@@ -25,7 +25,7 @@ import {
 } from '@mekari/pixel3'
 import { persistWorkOrders, type WorkOrder } from '~/data/workOrders'
 import {
-  submitRequest, guardMessage, joinNames, rejectionOf, recordActionReason, dismissRejection,
+  submitRequest, guardMessage, joinNames, rejectionOf, recordActionReason, dismissRejection, previewStockReversal,
   type WoApprovalRequest,
 } from '~/data/woApproval'
 import { useValApprovalRule } from '~/data/valApprovalRule'
@@ -116,6 +116,13 @@ const bannerText = computed(() => {
 
 const rejection = computed(() => (props.prefill ? rejectionOf(props.prefill) : undefined))
 const qtyLabel = computed(() => props.mode === 'adjustment' ? t('Planned qty') : t('Final produced qty'))
+// R-6 — the confirmation names the qty released from reservation and the qty
+// restored to on hand by deleting the work order's stock adjustments.
+const cancelText = computed(() => {
+  const { releasedQty, restoredQty } = previewStockReversal(props.workOrder)
+  return t('The work order will be cancelled or closed. {released} unit released from reservation and {restored} unit restored to on hand by deleting its stock adjustments.')
+    .replace('{released}', String(releasedQty)).replace('{restored}', String(restoredQty))
+})
 const noteRequired = computed(() => props.mode === 'adjustment' || props.mode === 'cancel')
 
 function close() { emit('update:isOpen', false) }
@@ -225,7 +232,8 @@ function submit() {
 
           <p v-if="mode === 'adjustment'" class="wtm-helper">{{ t('Changes apply to this work order only. The bill of materials stays the same') }}</p>
           <p v-if="mode === 'start'" class="wtm-body-text">{{ needsApproval ? t('The work order moves to In progress and its material is reserved once the start is approved.') : t('The work order moves to In progress and its material is reserved.') }}</p>
-          <p v-if="mode === 'cancel'" class="wtm-body-text">{{ t('The work order will be cancelled or closed and its remaining material reservation released.') }}</p>
+          <!-- UC-09 R-6 — Cancel releases the reservation AND reverses consumption; say how much of each. -->
+          <p v-if="mode === 'cancel'" class="wtm-body-text" data-devchange="wo-v06-cancel-delete">{{ cancelText }}</p>
 
           <MpFormControl v-if="mode === 'adjustment'" id="wtm-date" is-required :is-invalid="!!dateError">
             <MpFormLabel>{{ t('Adjustment date') }}</MpFormLabel>

@@ -7,13 +7,14 @@ import {
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import {
-  productionSettings, saveProductionSettings, type PlanDateField,
+  productionSettings, saveProductionSettings, RESERVATION_METHOD_OPTIONS,
+  type PlanDateField, type ReservationMethod,
 } from '~/data/productionSettings'
 import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 
-type SectionKey = 'general' | 'readiness' | 'integration'
+type SectionKey = 'general' | 'readiness' | 'reservation' | 'integration'
 
 /**
  * What this page edits, in the prod page's own terms. It reads and writes the ONE
@@ -21,7 +22,10 @@ type SectionKey = 'general' | 'readiness' | 'integration'
  * reservation flow read, so a change here is a change everywhere:
  *  • plan period Hide / Optional / Required ↔ `planDateField`;
  *  • partial production / partial consumption ↔ `partialMode` completion / consume
- *    (mutually exclusive, so one three-way value underneath).
+ *    (mutually exclusive, so one three-way value underneath);
+ *  • Component request & reservation (PRD Work Order: Material Reservation v0.6,
+ *    UC-00) ↔ `componentsMustBeReserved` (S-0, default off, forward only) and
+ *    `reservationMethod` (S-1).
  */
 type PlanPeriodRule = 'hide' | 'optional' | 'required'
 interface View {
@@ -30,6 +34,8 @@ interface View {
   partialProduction: boolean
   partialConsumption: boolean
   salesOrderIntegration: boolean
+  componentsMustBeReserved: boolean
+  reservationMethod: ReservationMethod
 }
 const PLAN_PERIOD_OPTIONS: { id: PlanPeriodRule; name: string }[] = [
   { id: 'hide', name: 'Hide' },
@@ -46,6 +52,8 @@ function fromStore(): View {
     partialProduction: productionSettings.partialMode === 'completion',
     partialConsumption: productionSettings.partialMode === 'consume',
     salesOrderIntegration: productionSettings.salesOrderIntegration,
+    componentsMustBeReserved: productionSettings.componentsMustBeReserved,
+    reservationMethod: productionSettings.reservationMethod,
   }
 }
 function toStore(v: View) {
@@ -54,6 +62,8 @@ function toStore(v: View) {
     allowBackdate: v.backdated,
     partialMode: v.partialProduction ? 'completion' : v.partialConsumption ? 'consume' : 'none',
     salesOrderIntegration: v.salesOrderIntegration,
+    componentsMustBeReserved: v.componentsMustBeReserved,
+    reservationMethod: v.reservationMethod,
   })
 }
 
@@ -87,6 +97,34 @@ async function save() {
   editing.value = null
   successToast(t('Production settings changes saved'))
 }
+
+const methodOptions = computed(() =>
+  RESERVATION_METHOD_OPTIONS.map(o => ({ value: o.value, label: t(o.label), description: t(o.description) })))
+const methodLabel = computed(() => methodOptions.value.find(o => o.value === committed.reservationMethod))
+
+/**
+ * UC-04 / D-8 — what the partial mode means for starting a work order, read off
+ * the committed settings. The two modes protect different things: partial
+ * consumption lets work begin with whatever has arrived, so one secured component
+ * is enough; partial production posts output in tranches, and even one finished
+ * unit needs a complete set. With reservation off (S-0) the same rule counts stock
+ * on hand.
+ */
+const startGateNote = computed(() => {
+  const mode = committed.partialConsumption ? 'consume' : committed.partialProduction ? 'completion' : 'none'
+  if (!committed.componentsMustBeReserved) {
+    return {
+      consume: 'Reservation is off, so a work order can start once at least one component has stock on hand.',
+      completion: 'Reservation is off, so a work order can start once every component has some stock on hand.',
+      none: 'Reservation is off, so a work order can start only once every component is fully on hand.',
+    }[mode]
+  }
+  return {
+    consume: 'A work order can start once at least one component holds a reservation.',
+    completion: 'A work order can start once every component holds a reservation, even a partial one.',
+    none: 'A work order can start only once every component is reserved in full.',
+  }[mode]
+})
 
 // View mode always reads the committed value; the draft only drives the section in edit.
 function val<K extends keyof View>(section: SectionKey, key: K): View[K] {
@@ -203,8 +241,92 @@ function val<K extends keyof View>(section: SectionKey, key: K): View[K] {
           </span>
         </div>
       </div>
+      <!-- UC-04 — the start rule these settings imply. -->
+      <p class="ps-note" data-devchange="ps-start-gate-partial-mode">
+        <MpIcon name="info" size="sm" />
+        {{ t(startGateNote) }}
+      </p>
 
       <div v-if="editing === 'readiness'" class="ps-action-bar">
+        <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="cancel">{{ t('Cancel') }}</button>
+        <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : t('Save changes') }}</button>
+      </div>
+    </section>
+
+    <!-- ── Component request & reservation (PRD Material Reservation v0.6, UC-00) ── -->
+    <section class="ps-section">
+      <div class="ps-section-header">
+        <div class="ps-section-meta">
+          <h2 class="ps-section-title">{{ t('Component request & reservation') }}</h2>
+          <p class="ps-section-desc">{{ t('Configure how work order components are requested from and reserved in the warehouse.') }}</p>
+        </div>
+        <button v-if="editing !== 'reservation'" class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="edit('reservation')">
+          <MpIcon name="edit" size="sm" />
+          {{ t('Edit') }}
+        </button>
+      </div>
+
+      <div class="ps-rows">
+        <!-- S-0 — the reservation master switch, as the Figma draws it. -->
+        <div class="ps-row" data-devchange="ps-reservation-toggle">
+          <div class="ps-row-info">
+            <span class="ps-row-title">{{ t('Product components must be reserved') }}</span>
+            <span class="ps-row-desc">{{ t('Triggers reservation when a work order is created') }}</span>
+          </div>
+          <span class="ps-toggle">
+            <MpToggle
+              id="ps-must-reserve"
+              :is-checked="val('reservation', 'componentsMustBeReserved')"
+              :is-disabled="editing !== 'reservation' || isSaving"
+              :aria-label="t('Product components must be reserved')"
+              @update:is-checked="(v: boolean) => (draft.componentsMustBeReserved = v)"
+            />
+          </span>
+        </div>
+
+        <!-- S-1 — the method only means anything while reservation is on. -->
+        <template v-if="val('reservation', 'componentsMustBeReserved')">
+          <div v-if="editing === 'reservation'" class="ps-edit-field" data-devchange="ps-reservation-method">
+            <MpFormControl id="ps-method" is-required>
+              <MpFormLabel>{{ t('Reservation method') }}</MpFormLabel>
+              <ErpFilterSelect
+                id="ps-method-select"
+                :model-value="draft.reservationMethod"
+                :placeholder="t('Reservation method')"
+                :options="methodOptions"
+                :is-clearable="false"
+                width="270px"
+                @update:model-value="(v: string) => (draft.reservationMethod = v as ReservationMethod)"
+              />
+            </MpFormControl>
+          </div>
+          <div v-else class="ps-row" data-devchange="ps-reservation-method">
+            <div class="ps-row-info">
+              <span class="ps-row-title">{{ t('Reservation method') }}</span>
+              <span class="ps-row-desc">{{ methodLabel?.description }}</span>
+            </div>
+            <span class="ps-row-value">{{ methodLabel?.label }}</span>
+          </div>
+        </template>
+      </div>
+
+      <div class="ps-notes">
+        <!-- S-0 (v0.6) — forward only: each work order keeps the setting it was created under. -->
+        <p class="ps-note" data-devchange="ps-reservation-forward-only">
+          <MpIcon name="info" size="sm" />
+          {{ t('Applies to work orders created after the change. Existing work orders keep the setting they were created with.') }}
+        </p>
+        <p v-if="!val('reservation', 'componentsMustBeReserved')" class="ps-note">
+          <MpIcon name="info" size="sm" />
+          {{ t('New work orders raise no stock request; they start, and consume, against stock on hand.') }}
+        </p>
+        <p v-else-if="val('reservation', 'reservationMethod') === 'two-step'" class="ps-note">
+          <MpIcon name="info" size="sm" />
+          {{ t('Work orders show an info badge instead of reservation actions: "Reservation via Stock requests only (PPIC / stockist)".') }}
+        </p>
+      </div>
+
+      <div v-if="editing === 'reservation'" class="ps-action-bar">
         <button class="btn-enterprise btn-enterprise--ghost" :disabled="isSaving" @click="cancel">{{ t('Cancel') }}</button>
         <button class="btn-enterprise btn-enterprise--primary" :disabled="isSaving" @click="save">{{ isSaving ? t('Saving…') : t('Save changes') }}</button>
       </div>
@@ -277,6 +399,12 @@ function val<K extends keyof View>(section: SectionKey, key: K): View[K] {
 .ps-row-desc { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .ps-row-value { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); flex-shrink: 0; }
 .ps-toggle { display: inline-flex; flex-shrink: 0; }
+.ps-notes { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.ps-note {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2); margin: var(--mp-spacing-2) 0 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle);
+}
+.ps-note :deep(svg) { flex-shrink: 0; margin-top: var(--mp-spacing-0\.5); }
 .ps-action-bar { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-4); }
 .ps-action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

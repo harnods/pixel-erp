@@ -1,24 +1,28 @@
 /**
  * The work order START gate — UC-04 / D-8, PRD revision of 12 Oct.
  *
- * S-4 "start with limited stock" is no longer a separate toggle; the partial mode
- * (S-3) decides the gate alone, and switching reservation off lifts it:
+ * S-4 "start with limited stock" is not a separate toggle; the partial mode (S-3)
+ * decides the gate. What a component must "hold" depends on the setting the work
+ * order was created under (S-0, v0.6):
  *
- *   | reservation | partial mode | start permitted when      |
- *   | ----------- | ------------ | ------------------------- |
- *   | on          | consume      | at least ONE reserved > 0 |
- *   | on          | completion   | EVERY component > 0       |
- *   | on          | none         | every component FULL      |
- *   | off         | any          | always                    |
+ *   | partial mode | start permitted when      |
+ *   | ------------ | ------------------------- |
+ *   | consume      | at least ONE holds > 0    |
+ *   | completion   | EVERY component holds > 0 |
+ *   | none         | every component in FULL   |
  *
- * The rule under test, in one sentence: the gate counts RESERVATION, never
- * availability — stock sitting free in the warehouse does not open it, because
- * nobody has allocated it to this job.
+ *   • reservation on  — "holds" is RESERVATION, never availability: stock sitting
+ *     free in the warehouse does not open the gate, because nobody has allocated
+ *     it to this job.
+ *   • reservation off — "holds" is stock ON HAND at the component's warehouse.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  stockRequests, startGate, type StockRequest, type StockRequestLine,
+  stockRequests, startGate, onHandAt, type StockRequest, type StockRequestLine,
 } from '~/data/stockRequests'
+import { workOrders, type WorkOrder } from '~/data/workOrders'
+import { getWarehouseDetail } from '~/data/warehouseDetails'
+import { CATALOG } from '~/data/catalog'
 
 const WO_ID = 'wo-gate-test'
 
@@ -109,11 +113,55 @@ describe('UC-04 — partial completion: every component must hold something', ()
   })
 })
 
-describe('UC-00 — reservation switched off lifts the gate', () => {
-  it('allows a work order with nothing reserved, whatever the partial mode', () => {
-    for (const partialMode of ['none', 'consume', 'completion'] as const) {
-      expect(startGate(WO_ID, { partialMode, reservationOn: false }).allowed).toBe(true)
-    }
+describe('S-0 off — the same table, counting stock on hand (v0.6 UC-04)', () => {
+  const OFF_ID = 'wo-gate-off-test'
+  // Two real components with stock on hand at Gudang Jakarta Pusat.
+  const stocked = (getWarehouseDetail('wh-001')?.stock ?? [])
+    .filter(row => row.onHand >= 2)
+    .map(row => CATALOG.find(p => p.sku === row.sku))
+    .filter((p): p is NonNullable<typeof p> => !!p)
+    .slice(0, 2)
+  const [a, b] = stocked
+
+  function workOrderNeeding(needA: number, needB: number) {
+    const i = workOrders.findIndex(w => w.id === OFF_ID)
+    if (i >= 0) workOrders.splice(i, 1)
+    workOrders.push({
+      id: OFF_ID, number: 'WO-GATE-OFF', bomId: '', bomName: '', category: 'Standard', type: 'Assembly',
+      trackRouting: false, status: 'not started', producedQty: 0, plannedQty: 1,
+      planStartDate: '2026-11-01', planEndDate: '2026-11-30',
+      reservation: { on: false, method: 'one-step' },
+      rawMaterials: [
+        { productId: a!.id, needed: needA, unit: 'Unit', purchaseCost: 0, warehouseId: 'wh-001' },
+        { productId: b!.id, needed: needB, unit: 'Unit', purchaseCost: 0, warehouseId: 'wh-001' },
+      ],
+    } as WorkOrder)
+  }
+  const gate = (partialMode: 'none' | 'consume' | 'completion') =>
+    startGate(OFF_ID, { reservationOn: false, partialMode })
+
+  it('has two stocked components to test with', () => {
+    expect(stocked).toHaveLength(2)
+  })
+
+  it('none — every component must be fully on hand', () => {
+    workOrderNeeding(onHandAt(a!.id, 'wh-001'), onHandAt(b!.id, 'wh-001'))
+    expect(gate('none').allowed).toBe(true)
+    workOrderNeeding(onHandAt(a!.id, 'wh-001') + 1, 1)
+    expect(gate('none')).toEqual({ allowed: false, reason: 'not-fully-reserved' })
+  })
+
+  it('consume / completion — partly on hand is enough, as the table says', () => {
+    // Both short, but both have something on hand.
+    workOrderNeeding(onHandAt(a!.id, 'wh-001') + 5, onHandAt(b!.id, 'wh-001') + 5)
+    expect(gate('consume').allowed).toBe(true)
+    expect(gate('completion').allowed).toBe(true)
+  })
+
+  it('ignores reservation — nothing is requested, nothing reserved', () => {
+    workOrderNeeding(1, 1)
+    expect(stockRequests.some(r => r.workOrderId === OFF_ID)).toBe(false)
+    expect(gate('none').allowed).toBe(true)
   })
 })
 

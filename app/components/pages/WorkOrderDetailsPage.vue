@@ -34,6 +34,7 @@ import WoApprovalNotice, { type WoNotice } from '~/components/patterns/WoApprova
 import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
 import {
   pendingForWorkOrder, rejectedNotices, rejectionOf, dismissRejection, guardMessage, startWorkOrder, cancelWorkOrder,
+  deleteWorkOrder as removeWorkOrder, previewStockReversal,
   approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest,
   approveRequest, displayStatus, typeLabel, requestTitle, requestById,
   canCancelRequest, cancelRequest, requestsForWorkOrder, commentsFor, addComment,
@@ -60,16 +61,15 @@ import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import AdjustWorkOrderModal from '~/components/patterns/AdjustWorkOrderModal.vue'
-import RequestAdditionalStockModal from '~/components/patterns/RequestAdditionalStockModal.vue'
 import EditWorkOrderMaterialsModal from '~/components/patterns/EditWorkOrderMaterialsModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
-import { productionSettings, reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
+import { productionSettings, woReservationOn, woReservesOnWorkOrder } from '~/data/productionSettings'
 import { logActivityFor, entriesFor, lastActivity } from '~/data/reservationActivityLog'
 import { pushNotification } from '~/data/notifications'
 import {
-  raiseStockRequestForWorkOrder, appendStockRequestLines, requestForWorkOrder, workOrderMaterials, workOrderReadiness, startGate,
-  releaseOnCompletion, releaseForCanceledWorkOrder, applyDemandChanges, reservedProductIds,
+  raiseStockRequestForWorkOrder, requestForWorkOrder, workOrderMaterials, workOrderReadiness, startGate, onHandAt,
+  releaseOnCompletion, applyDemandChanges, reservedProductIds,
   type DemandChange,
   changedTrackingLines, reservedTracking,
   reserveWorkOrderProducts, unreserveWorkOrderProducts,
@@ -132,37 +132,39 @@ const primaryActionKey = computed(() => {
 })
 const primaryAction = computed(() => primaryActionKey.value ? t(primaryActionKey.value) : '')
 /**
- * Actions menu — merged from material-reserve (UC-06 / UC-09) and work order approval:
- *  • Not started — Edit (materials), Request additional stock, Cancel/close, Delete.
+ * Actions menu — merged from material-reserve (UC-06 / UC-09) and work order approval,
+ * per PRD v0.6 UC-09:
+ *  • Not started — Edit (materials), Delete. No Cancel: a job that never started is
+ *    deleted, not cancelled ("Cancel — allowed once the WO has started").
  *  • Running — Adjust work order (planned qty, approval-aware), Adjust materials
- *    (UC-06), Request additional stock, Cancel/close. Delete is listed but refused
- *    (UC-09) with a message pointing at Cancel/close — a listed action can explain
- *    itself, a missing one looks like a bug (rule/btn-no-disabled-validation).
- *  • Completed — Print, Delete (UC-09). Canceled — Print.
+ *    (UC-06), Cancel/close. Delete is listed but refused with a message pointing
+ *    at Cancel/close — a listed action can explain itself, a missing one looks like
+ *    a bug (rule/btn-no-disabled-validation).
+ *  • Completed — Print, Delete. Canceled — Print, Delete (moves no stock).
  *  • While an approval request is pending the locked actions are hidden; the
  *    requester's own pending request adds "Cancel approval request".
- *  • With reservation switched off (UC-00) the actions that change demand on the
- *    stock request (Edit, Adjust materials, Request additional stock) aren't offered.
+ *  • A work order created with reservation off (S-0) has no stock request, so the
+ *    actions that change demand on it (Edit, Adjust materials) aren't offered.
+ *  • "Request additional stock" is gone (v0.6): more material is asked for through
+ *    Adjust, which updates the request line in place (P-2, UC-06).
  */
 const RUNNING_STATUSES = ['in progress', 'partially produced', 'partially completed']
 const isRunning = computed(() => RUNNING_STATUSES.includes(wo.value?.status ?? ''))
 const HIDDEN_WHILE_PENDING = new Set([
   'Adjust work order', 'Adjust materials', 'Cancel/close work order', 'Edit',
-  'Request additional stock', 'Replace attachment', 'Delete',
+  'Replace attachment', 'Delete',
 ])
 const actionItems = computed(() => {
   const s = wo.value?.status
   const own = cancelableRequest.value ? ['Cancel approval request'] : []
-  const demand = reservationEnabled()
+  const demand = reservationOn.value
   let items: string[]
-  if (s === 'completed') items = ['Print', 'Delete']
-  else if (s === 'canceled') items = ['Print']
+  if (s === 'completed' || s === 'canceled') items = ['Print', 'Delete']
   else if (isRunning.value) {
-    items = ['Adjust work order', ...(demand ? ['Adjust materials', 'Request additional stock'] : []),
+    items = ['Adjust work order', ...(demand ? ['Adjust materials'] : []),
       'Replace attachment', 'Print', 'Cancel/close work order', 'Delete']
   } else {
-    items = [...(demand ? ['Edit', 'Request additional stock'] : []),
-      'Replace attachment', 'Print', 'Cancel/close work order', 'Delete']
+    items = [...(demand ? ['Edit'] : []), 'Replace attachment', 'Print', 'Delete']
   }
   if (pending.value.length) items = items.filter(i => !HIDDEN_WHILE_PENDING.has(i))
   return [...own, ...items]
@@ -170,50 +172,62 @@ const actionItems = computed(() => {
 const DESTRUCTIVE_ACTIONS = new Set(['Delete', 'Cancel/close work order'])
 const ACTION_DEVCHANGE: Record<string, string> = {
   'Edit': 'wod-edit-materials',
-  'Request additional stock': 'wod-request-additional',
   'Adjust materials': 'wod-adjust-materials',
+  'Delete': 'wo-v06-cancel-delete',
   'Cancel approval request': 'wo-approval-cancel-request',
 }
 
 const adjustOpen = ref(false)
-const additionalOpen = ref(false)
 const editOpen = ref(false)
 
 
 /**
- * UC-09 — Delete, allowed Not started or Completed. Reservations are released
- * automatically (UC-11 trigger b); the request stays on the dashboard as Canceled.
+ * UC-09 — Delete, allowed Not started, Completed or Cancelled (never while in
+ * progress). Like Cancel it releases the remaining reservation and deletes the
+ * stock adjustments; a cancelled work order has had both done, so deleting it only
+ * removes the record. The request stays on the dashboard as Canceled. R-6 — the
+ * confirmation names both quantities before anything happens.
  */
+const deleteConfirmOpen = ref(false)
+const deleteDescription = computed(() => {
+  if (!wo.value) return ''
+  const { releasedQty, restoredQty } = previewStockReversal(wo.value)
+  if (wo.value.status === 'canceled') return t('This work order was cancelled, so deleting it moves no stock.')
+  return t('{released} unit will be released from reservation and {restored} unit restored to on hand by deleting its stock adjustments. Its stock request stays as Canceled.')
+    .replace('{released}', String(releasedQty)).replace('{restored}', String(restoredQty))
+})
 function deleteWorkOrder() {
   const w = wo.value
   if (!w) return
-  const released = releaseForCanceledWorkOrder(w.id, { user: STAFF[0]!, source: 'work-order' })
-  w.status = 'canceled'
-  persistWorkOrders()
+  const number = w.number
+  const r = removeWorkOrder(w, { user: STAFF[0]!, source: 'work-order' })
+  const moved = [
+    ...(r.releasedQty > 0 ? [`${r.releasedQty} ${t('unit released from reservation')}`] : []),
+    ...(r.restoredQty > 0 ? [`${r.restoredQty} ${t('unit restored to on hand')}`] : []),
+  ]
   toast.notify({
     variant: 'success',
-    title: released.qty > 0
-      ? `${t('Work order deleted')} — ${released.qty} ${t('unit released from reservation')}`
-      : t('Work order deleted'),
+    title: [`${number} ${t('deleted')}`, ...moved].join(' · '),
     maxWidth: 'max-content',
   })
+  router.push('/work-orders')
 }
 
 
 /**
- * UC-06 — apply an Adjust. An increase lands as a new line tagged Adjustment
- * carrying only the delta with its own request date; a decrease reduces in place,
- * Adjustment line first. Cutting below the reserved qty releases that component's
- * full remaining reservation as part of the same save (R-4), which the modal warns
- * about before the user commits.
+ * UC-06 — apply an Adjust (In progress). Like Edit, each changed component's line
+ * is updated IN PLACE (v0.6): its full remaining reservation is released (R-4), it
+ * takes the new qty and the request date entered on the form, the adjuster becomes
+ * its requestor, and it is reserved again through the method on the same save. The
+ * modal warns before the user commits.
  */
 function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
   const w = wo.value
   if (!w) return
-  // R-4 / C-3 — under One-step the new Adjustment lines, and any component the cut
-  // had to release, reserve again on this same save by available qty.
+  // R-4 / C-3 — under One-step every changed line reserves again on this same save,
+  // up to the qty available.
   const r = applyDemandChanges(w.id, payload.changes, STAFF[0]!, 'adjust', {
-    autoReserve: reservationOnWorkOrder(),
+    autoReserve: woReservesOnWorkOrder(w),
     ctx: { user: STAFF[0]!, source: 'work-order', reason: payload.reason },
   })
   adjustOpen.value = false
@@ -222,6 +236,8 @@ function onAdjust(payload: { changes: DemandChange[]; reason: string }) {
     { label: 'Reason', value: payload.reason },
     ...r.increased.map(i => ({ label: `Increased — ${i.product}`, value: `+${i.delta}` })),
     ...r.decreased.map(d => ({ label: `Decreased — ${d.product}`, value: `-${d.delta}` })),
+    ...(r.released.qty > 0 ? [{ label: 'Qty released', value: `${r.released.qty}` }] : []),
+    ...(r.reserved.reservedQty > 0 ? [{ label: 'Qty reserved', value: `${r.reserved.reservedQty}` }] : []),
   ]
   logActivityFor(
     [
@@ -254,7 +270,7 @@ function onEditMaterials(payload: { changes: DemandChange[] }) {
   const w = wo.value
   if (!w) return
   const r = applyDemandChanges(w.id, payload.changes, STAFF[0]!, 'edit', {
-    autoReserve: reservationOnWorkOrder(),
+    autoReserve: woReservesOnWorkOrder(w),
     ctx: { user: STAFF[0]!, source: 'work-order' },
   })
   editOpen.value = false
@@ -293,74 +309,6 @@ function onEditMaterials(payload: { changes: DemandChange[] }) {
   if (r.released.qty > 0) parts.push(`${r.released.qty} ${t('unit released from reservation')}`)
   if (r.reserved.reservedQty > 0) parts.push(`${r.reserved.reservedQty} ${t('unit reserved automatically')}`)
   toast.notify({ variant: 'success', title: parts.join(' · ') || t('Materials updated'), maxWidth: 'max-content' })
-}
-
-/**
- * D-7 — Request additional stock. The lines land on the work order's EXISTING
- * request tagged `additional`, because a transaction never holds more than one
- * request (C-4); the stockist may decline them (W-7), unlike the components the
- * work order itself committed to.
- */
-function onRequestAdditional(payload: {
-  lines: { productId: string; qty: number; requiredDate: string }[]
-  reason: string
-}) {
-  const w = wo.value
-  if (!w) return
-  const material = payload.lines.flatMap((l) => {
-    // Copy identity and destination from the component's existing line, so the
-    // extra demand lands at the same warehouse as the demand it tops up.
-    const source = reservationLines.value.find(line => line.productId === l.productId)
-    if (!source) return []
-    return [{
-      productId: source.productId,
-      product: source.product,
-      sku: source.sku,
-      unit: source.unit,
-      qty: l.qty,
-      requiredDate: l.requiredDate,
-      destinationWarehouse: source.destinationWarehouse,
-      destinationWarehouseId: source.destinationWarehouseId,
-      ...(source.tracking ? { tracking: source.tracking } : {}),
-    }]
-  })
-  const r = appendStockRequestLines(w.id, material, STAFF[0]!, 'additional', {
-    autoReserve: reservationOnWorkOrder(),
-  })
-  additionalOpen.value = false
-  if (!r) return
-
-  logActivityFor(
-    [
-      { type: 'work-order' as const, id: w.id },
-      { type: 'stock-request' as const, id: r.request.id },
-    ],
-    {
-      user: STAFF[0]!,
-      activity: 'Requested additional stock',
-      details: [
-        { label: 'Reason', value: payload.reason },
-        ...material.map(m => ({ label: m.product, value: `+${m.qty} ${m.unit}` })),
-      ],
-    },
-  )
-
-  // The warehouse is told, the same way it is told about a qty change (UC-06).
-  pushNotification({
-    title: `${t('Additional stock requested on')} ${r.request.number}`,
-    preview: `${w.number} — ${material.map(m => `${m.product} +${m.qty} ${m.unit}`).join(', ')}`,
-    description: t('Production asked for extra material on top of this work order. Added lines can be declined.'),
-    fields: [
-      { label: t('Work order'), value: w.number },
-      { label: t('Stock request'), value: r.request.number },
-      { label: t('Reason'), value: payload.reason },
-    ],
-    actions: [{ label: t('View stock request'), primary: true }],
-  })
-
-  const parts = [`${material.length} ${material.length === 1 ? t('component requested') : t('components requested')}`]
-  if (r.reservedQty > 0) parts.push(`${r.reservedQty} ${t('unit reserved automatically')}`)
-  toast.notify({ variant: 'success', title: parts.join(' · '), maxWidth: 'max-content' })
 }
 
 // ── Attachments (representative) ────────────────────────────────────────────────
@@ -409,6 +357,9 @@ const rawMaterials = computed(() => (wo.value ? workOrderMaterials(wo.value) : [
   ...r,
   needed: neededQtyFor(wo.value, r.productId, r.needed),
   warehouse: warehouseName(r.warehouseId),
+  // On hand (available + reserved) at the row's own warehouse — what P-1 caps
+  // consumption by, and what the start gate counts when reservation is off.
+  onHand: onHandAt(r.productId, r.warehouseId),
 })))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 
@@ -422,7 +373,7 @@ function syncStockRequest() {
   const w = wo.value
   if (!w || rawMaterials.value.length === 0) return
   // "Product components must be reserved" off (UC-00) → work orders raise no request.
-  if (!reservationEnabled()) return
+  if (!woReservationOn(w)) return
   // Seeded work orders predate the save-time hook (C-4) — back-fill their request
   // on first open, using the same builder so nothing can diverge. Already-reserved
   // state is untouched: raising is idempotent and never auto-reserves here.
@@ -449,9 +400,6 @@ watch(() => wo.value?.id, syncStockRequest)
 const stockRequest = computed(() => wo.value ? requestForWorkOrder(wo.value.id) : undefined)
 // Components whose batch / serial the warehouse reserved differently from what
 // this work order picked — production must be told, never silently substituted.
-// W-7 — a line the stockist rejected is shown on the WORK ORDER too, not only on
-// the dashboard: production is the one who resolves it, by readjusting (OPEN-14).
-const rejectedLines = computed(() => stockRequest.value?.lines.filter(l => l.rejected) ?? [])
 const trackingChangedLines = computed(() =>
   stockRequest.value ? changedTrackingLines(stockRequest.value) : [])
 function reservedTrackingLabel(productId: string): string {
@@ -463,21 +411,24 @@ function reservedTrackingLabel(productId: string): string {
 }
 const reservationLines = computed(() => stockRequest.value?.lines ?? [])
 const materialReadiness = computed(() =>
-  reservationEnabled() && wo.value ? workOrderReadiness(wo.value.id) : undefined)
+  reservationOn.value && wo.value ? workOrderReadiness(wo.value.id) : undefined)
 
 // UC-00 — with "Product components must be reserved" off the work order carries no
 // reservation at all: the readiness badge, Reserved qty column, Reservation menu and
 // start gate all go, rather than showing figures nothing maintains.
-const reservationOn = computed(() => reservationEnabled())
+const reservationOn = computed(() => woReservationOn(wo.value))
 // S-2 — under Two-step, EVERY reservation entry point is hidden (not disabled)
 // and an info badge points to Stock requests instead.
-const canReserveHere = computed(() => reservationOnWorkOrder())
+const canReserveHere = computed(() => woReservesOnWorkOrder(wo.value))
 // UC-03 — unreserve is allowed only while Not started. Once the work order has
 // started it is reachable ONLY inside the Adjust modal, where the Adjust reason
 // stands in for the approval that path would otherwise need.
 const notStarted = computed(() => wo.value?.status === 'not started')
 const hasReservation = computed(() => reservationLines.value.some(l => l.reserved > 0))
-const showReservationMenu = computed(() => canReserveHere.value && rawMaterials.value.length > 0)
+// A completed or cancelled work order holds no reservation (R-3, UC-09) and takes no
+// new one, so the menu goes with it.
+const isClosed = computed(() => wo.value?.status === 'completed' || wo.value?.status === 'canceled')
+const showReservationMenu = computed(() => canReserveHere.value && rawMaterials.value.length > 0 && !isClosed.value)
 
 const reserveOpen = ref(false)
 const unreserveOpen = ref(false)
@@ -532,13 +483,13 @@ function onUnreserve(payload: { productIds: string[]; reason: string }) {
 
 
 // ── D-8 / UC-04 — the start gate ───────────────────────────────────────────────
-// Decided by the partial mode alone (no separate S-4 toggle) — "Allow partial
-// consume" needs only ONE component reserved, "Allow partial completion" needs
-// EVERY component reserved (each may be partial), neither needs full reservation.
-// Lifted entirely when reservation is switched off (UC-00).
+// Decided by the partial mode (no separate S-4 toggle) — "Allow partial consume"
+// needs ONE component held, "Allow partial completion" needs EVERY component held
+// (each may be partial), neither needs everything in full. "Held" is reserved for a
+// work order created with reservation on, on hand for one created with it off (S-0).
 const gate = computed(() => wo.value
   ? startGate(wo.value.id, {
-      reservationOn: reservationEnabled(),
+      reservationOn: reservationOn.value,
       partialMode: productionSettings.partialMode,
     })
   : { allowed: true as const })
@@ -548,6 +499,11 @@ const START_BLOCK_MESSAGE: Record<string, string> = {
   'none-reserved': t('Reserve at least one component before starting'),
   'some-unreserved': t('Every component needs some stock reserved before starting'),
   'not-fully-reserved': t('Reserve every component in full before starting, or relax the rule in Production settings'),
+}
+const START_BLOCK_MESSAGE_ON_HAND: Record<string, string> = {
+  'none-reserved': t('At least one component must be on hand before starting'),
+  'some-unreserved': t('Every component needs some stock on hand before starting'),
+  'not-fully-reserved': t('Every component must be fully on hand before starting, or relax the rule in Production settings'),
 }
 
 /**
@@ -560,7 +516,7 @@ function passesStartGate(): boolean {
   if (!startBlocked.value) return true
   toast.notify({
     variant: 'error',
-    title: START_BLOCK_MESSAGE[gate.value.reason ?? 'not-fully-reserved'] ?? '',
+    title: (reservationOn.value ? START_BLOCK_MESSAGE : START_BLOCK_MESSAGE_ON_HAND)[gate.value.reason ?? 'not-fully-reserved'] ?? '',
     maxWidth: 'max-content',
   })
   return false
@@ -883,12 +839,15 @@ function onTransactionDone(result: WoTransactionResult, mode: WoTransactionMode)
 // The same cancelWorkOrder() runs when a gated request is approved.
 function cancelNow() {
   if (!wo.value) return
-  const released = cancelWorkOrder(wo.value, { user: STAFF[0]!, reason: wo.value.actionReason?.reason })
+  const r = cancelWorkOrder(wo.value, { user: STAFF[0]!, reason: wo.value.actionReason?.reason })
+  const moved = [
+    ...(r.releasedQty > 0 ? [`${r.releasedQty} ${t('unit released from reservation')}`] : []),
+    ...(r.restoredQty > 0 ? [`${r.restoredQty} ${t('unit restored to on hand')}`] : []),
+  ]
   toast.notify({
     variant: 'success',
-    title: released > 0
-      ? `${t('Work order canceled')} — ${released} ${t('unit released from reservation')}`
-      : t('Work order canceled'),
+    title: [t('Work order canceled'), ...moved].join(' · '),
+    maxWidth: 'max-content',
   })
 }
 
@@ -908,7 +867,6 @@ function onActionItem(item: string) {
   if (item === 'Cancel/close work order') { openTransaction('cancel'); return }
   // material-reserve — demand on the stock request (UC-06, D-7)
   if (item === 'Adjust materials') { adjustOpen.value = true; return }
-  if (item === 'Request additional stock') { additionalOpen.value = true; return }
   if (item === 'Edit') { editOpen.value = true; return }
   if (item === 'Delete') {
     // UC-09 — a running work order cannot be deleted; say so and name the way out.
@@ -920,7 +878,7 @@ function onActionItem(item: string) {
       })
       return
     }
-    deleteWorkOrder()
+    deleteConfirmOpen.value = true
   }
 }
 function onNewRecord() {
@@ -1298,19 +1256,6 @@ function suppressFabClick(e: MouseEvent) {
             </span>
           </div>
 
-          <!-- W-7 / OPEN-14 — rejected demand stays flagged, not rolled back. -->
-          <div v-if="reservationOn && rejectedLines.length" class="wod-tracking-note">
-            <MpIcon name="warning-triangle" size="sm" data-devchange="icon-names-fixed" />
-            <span>
-              {{ t('The warehouse rejected') }}
-              <template v-for="(l, i) in rejectedLines" :key="`${l.productId}-${i}`">
-                <strong>{{ l.qty }} {{ l.unit }} {{ l.product }}</strong>
-                <span class="wod-tracking-detail"> ({{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }})</span>{{ i < rejectedLines.length - 1 ? ', ' : '' }}
-              </template>.
-              {{ t('Adjust the work order to request it again.') }}
-            </span>
-          </div>
-
           <!-- S-2 — Two-step: no reservation happens here, so say where it does. -->
           <p v-if="reservationOn && !canReserveHere" class="wod-reserve-note">
             <MpIcon name="info" size="sm" />
@@ -1346,9 +1291,10 @@ function suppressFabClick(e: MouseEvent) {
                   <th class="wod-th">{{ t('Product') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Purchase cost') }}</th>
                   <th class="wod-th">{{ t('Warehouse') }}</th>
+                  <th class="wod-th wod-th--num" data-devchange="wo-raw-on-hand">{{ t('On hand qty') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Needed qty') }}</th>
                   <th v-if="reservationOn" class="wod-th wod-th--num">{{ t('Reserved qty') }}</th>
-                  <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
+                  <th class="wod-th wod-th--num" data-devchange="wo-reserved-consumed-plain">{{ t('Consumed qty') }}</th>
                   <th class="wod-th">{{ t('Unit') }}</th>
                   <th class="wod-th wod-th--num">{{ t('Estimated cost') }}</th>
                 </tr>
@@ -1362,9 +1308,11 @@ function suppressFabClick(e: MouseEvent) {
                   </td>
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
+                  <td class="wod-td wod-td--num">{{ num(r.onHand) }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
-                  <td v-if="reservationOn" class="wod-td wod-td--num">{{ num(r.reserved) }}/{{ num(r.needed) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
+                  <!-- v0.6 UC-05 — what is still held: total reserved − total consumed (0 once completed, R-3). -->
+                  <td v-if="reservationOn" class="wod-td wod-td--num">{{ num(r.remainingReserved) }}</td>
+                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}</td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
                 </tr>
@@ -1372,7 +1320,7 @@ function suppressFabClick(e: MouseEvent) {
                      material row removed. No CTA: nothing can add a component to an
                      existing work order (Edit only changes quantities). -->
                 <tr v-if="rawMaterials.length === 0">
-                  <td :colspan="reservationOn ? 8 : 7" class="wod-td">
+                  <td :colspan="reservationOn ? 9 : 8" class="wod-td">
                     <div class="wod-empty wod-empty--illustrated">
                       <img src="/illustrations/empty-folder.png" alt="" width="144" height="120">
                       <p class="wod-empty-title">{{ t('No raw materials') }}</p>
@@ -1837,14 +1785,6 @@ function suppressFabClick(e: MouseEvent) {
       @save="onEditMaterials"
     />
 
-    <RequestAdditionalStockModal
-      id="wod-additional"
-      :is-open="additionalOpen"
-      :work-order-number="wo?.number ?? ''"
-      :lines="reservationLines"
-      @close="additionalOpen = false"
-      @request="onRequestAdditional"
-    />
 
 
     <ActivityLogModal
@@ -1861,6 +1801,15 @@ function suppressFabClick(e: MouseEvent) {
       :logs="approvalLogs"
       empty-text="No approval request on this work order"
       @close="approvalLogOpen = false"
+    />
+    <ConfirmModal
+      v-model:is-open="deleteConfirmOpen"
+      :title="t('Delete work order?')"
+      :description="deleteDescription"
+      :confirm-label="t('Delete')"
+      :cancel-label="t('Cancel')"
+      data-devchange="wo-v06-cancel-delete"
+      @confirm="deleteWorkOrder"
     />
     <ConfirmModal
       v-model:is-open="cancelRequestOpen"

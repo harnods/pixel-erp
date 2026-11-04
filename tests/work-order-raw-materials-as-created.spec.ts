@@ -100,23 +100,12 @@ describe('workOrderMaterials — live need and reservation, per row', () => {
       workOrderId: WO_ID, workOrderNumber: wo.number, requestor: 'Test', requestDate: '2026-10-06',
       lines: [line('p-a', 4, 'wh-001')],
     }, { autoReserve: false })
-    // an Adjust delta lands as its own line on the same request
-    request.lines.push({ ...request.lines[0]!, qty: 6, tag: 'adjustment' })
+    // Edit / Adjust update the line in place (v0.6 UC-06)
+    request.lines[0]!.qty = 10
 
     const [m] = workOrderMaterials(wo)
     expect(m!.needed).toBe(10)
     expect(m!.plannedNeeded).toBe(4)
-  })
-
-  it('leaves a rejected line out of the need', () => {
-    const wo = makeWorkOrder([{ productId: 'p-r', needed: 4, unit: 'Sack', purchaseCost: 0, warehouseId: 'wh-001' }])
-    const { request } = raiseStockRequestForWorkOrder({
-      workOrderId: WO_ID, workOrderNumber: wo.number, requestor: 'Test', requestDate: '2026-10-06',
-      lines: [line('p-r', 4, 'wh-001')],
-    }, { autoReserve: false })
-    request.lines.push({ ...request.lines[0]!, qty: 2, tag: 'adjustment', rejected: true })
-
-    expect(workOrderMaterials(wo)[0]!.needed).toBe(4)
   })
 })
 

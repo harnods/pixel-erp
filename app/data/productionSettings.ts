@@ -1,17 +1,19 @@
 import { reactive, watch } from 'vue'
+import type { WorkOrder } from './workOrders'
 
 /**
  * Production settings — the three groups in the Figma
  * "Production Material Requisition & Reservation" › Production settings:
  * production planning, production readiness, and component request & reservation.
  *
- * Cross-reference: [PRD] Work Order: Material Reservation (Confluence, 12 Oct) ›
- * UC-00 — the reservation toggle, S-1 method, S-2 entry-point gating, S-3 retained
- * v1 settings (partial consume / partial completion, mutually exclusive).
+ * Cross-reference: [PRD] Work Order: Material Reservation (Confluence, v0.6) ›
+ * UC-00 — S-0 the reservation toggle, S-1 method, S-2 entry-point gating, S-3
+ * retained v1 settings (partial consume / partial completion, mutually exclusive).
  *
- * Reservation CAN be switched off again: "There is a toggle to disable / enable the
- * reservation of work order", and L-12 ("reservation cannot be disabled") was
- * deleted. That is the "Komponen produk harus direservasi" toggle the Figma draws.
+ * S-0 — reservation is OPTIONAL and **default off**; it is the "Komponen produk
+ * harus direservasi" toggle the Figma draws. A change applies FORWARD ONLY: each
+ * work order captures the setting at creation (`WorkOrder.reservation`) and keeps
+ * it — read a work order's surfaces through `woReservation`, never the live value.
  *
  * S-4 "start with limited stock" is deliberately NOT a setting: the PRD now says it
  * "is not introduced as a separate toggle" and uses the partial consume / partial
@@ -50,20 +52,20 @@ export interface ProductionSettings {
 
   // ── Component request & reservation ──────────────────────────────────────
   /**
-   * Master switch for the whole reservation flow (UC-00). When off, saving a work
-   * order raises no stock request; the work order shows no readiness, no Reserved
-   * qty, no reservation actions and no Adjust / Edit materials (both change demand
-   * on the request); and the start gate does not apply. Requests that already
-   * exist stay on the Stock requests dashboard — switching the flow off does not
-   * rewrite history.
+   * S-0 — master switch for the reservation flow, default off. A work order saved
+   * while it is off raises no stock request and shows no readiness, Reserved qty,
+   * reservation actions, or Adjust materials / Edit (both change demand on the
+   * request); its start gate and consume limit count stock on hand instead
+   * (UC-04, P-3). Forward only — see `woReservation`.
    */
   componentsMustBeReserved: boolean
   /**
    * S-1 — who reserves, and when. Only meaningful while
    * {@link ProductionSettings.componentsMustBeReserved} is on.
-   *  • `one-step` — components auto-reserve once the work order is created, for
-   *    every line the destination warehouse fully covers; Production may also
-   *    reserve from the work order page.
+   *  • `one-step` — components auto-reserve once the work order is created, each
+   *    up to the qty available at its destination warehouse (C-3, v0.6), so a line
+   *    may end fully or partially reserved; Production may also reserve from the
+   *    work order page.
    *  • `two-step` — reservation is done by sending a request to the warehouse;
    *    PPIC/stockist reserves from Stock requests and every reservation entry
    *    point on work order surfaces is HIDDEN (S-2).
@@ -115,7 +117,8 @@ function load(): ProductionSettings {
     planDateField: 'required',
     allowBackdate: false,
     partialMode: 'none',
-    componentsMustBeReserved: true,
+    // v0.6 S-0 — reservation is opt-in: "default off".
+    componentsMustBeReserved: false,
     reservationMethod: 'one-step',
     salesOrderIntegration: false,
   }
@@ -180,6 +183,26 @@ export const reservationEnabled = (): boolean => productionSettings.componentsMu
  */
 export const reservationOnWorkOrder = (): boolean =>
   productionSettings.componentsMustBeReserved && productionSettings.reservationMethod === 'one-step'
+
+/**
+ * S-0 — the reservation setting a work order was created under (v0.6, forward
+ * only). This, not the live setting, decides every reservation surface on that
+ * work order. The seed predates the capture and was created with reservation on.
+ */
+export function woReservation(wo: Pick<WorkOrder, 'reservation'> | undefined): { on: boolean; method: ReservationMethod } {
+  return wo?.reservation ?? { on: true, method: 'one-step' }
+}
+export const woReservationOn = (wo: Pick<WorkOrder, 'reservation'> | undefined): boolean => woReservation(wo).on
+/** S-2 per work order — reservation entry points on its own surfaces (One-step). */
+export const woReservesOnWorkOrder = (wo: Pick<WorkOrder, 'reservation'> | undefined): boolean => {
+  const r = woReservation(wo)
+  return r.on && r.method === 'one-step'
+}
+/** What a work order saved now captures. */
+export const currentReservation = (): { on: boolean; method: ReservationMethod } => ({
+  on: productionSettings.componentsMustBeReserved,
+  method: productionSettings.reservationMethod,
+})
 
 /** S-3 — convenience readers for the mutually exclusive partial modes. */
 export const partialConsumeOn = (): boolean => productionSettings.partialMode === 'consume'

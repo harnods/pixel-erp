@@ -19,7 +19,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpBadge, toast, css,
+  MpIcon, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
@@ -31,10 +31,10 @@ import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsMod
 import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
-  isOverdue, canReject, canRejectLine, reserveRequestProducts, unreserveRequestProducts, rejectRequestLine,
+  isOverdue, reserveRequestProducts, unreserveRequestProducts,
   stockRequestLineStatus,
   reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
-  workOrderFor,
+  workOrderFor, isActionable,
   type StockRequest, type StockRequestLine,
 } from '~/data/stockRequests'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
@@ -87,14 +87,9 @@ const READINESS_LABEL: Record<string, string> = {
   'partially reserved': 'Partially reserved',
   reserved: 'Reserved',
   'issued / picked': 'Issued / picked',
-  rejected: 'Rejected',
   canceled: 'Canceled',
 }
-/**
- * W-3 — derived centrally in the data layer so this page cannot drift from the
- * dashboard. It previously had its own copy, which did not know about rejection
- * and showed a declined line as still Requested.
- */
+/** W-3 — derived centrally in the data layer so this page cannot drift from the dashboard. */
 const lineStatus = stockRequestLineStatus
 
 // ─── Actions ───────────────────────────────────────────────────────────────────
@@ -110,10 +105,12 @@ function openLineLog(line: StockRequestLine) {
   activityOpen.value = true
 }
 function canReserveGroup(g: { lines: StockRequestLine[] }): boolean {
-  return g.lines.some(l => !l.rejected && lineCovered(l) < l.qty)
+  // A completed, cancelled or deleted job's request is read-only (isActionable).
+  if (!req.value || !isActionable(req.value)) return false
+  return g.lines.some(l => lineCovered(l) < l.qty)
 }
 function openGroupReserve(g: { lines: StockRequestLine[] }) {
-  reserveGroupLines.value = g.lines.filter(l => !l.rejected)
+  reserveGroupLines.value = g.lines
   reserveOpen.value = true
 }
 
@@ -161,33 +158,6 @@ function createWarehouseTransfer(warehouseId?: string) {
 function createPurchaseRequest() {
   if (!req.value) return
   router.push({ path: '/purchase-requests/new', query: { fromStockRequest: req.value.id } })
-}
-/**
- * W-7 — decline ONE line. Only Additional stock and Adjustment lines can be
- * rejected; the components the work order itself committed to are not the
- * warehouse's to refuse.
- */
-function rejectLine(line: StockRequestLine) {
-  if (!req.value || !rejectRequestLine(req.value.id, line)) return
-  toast.notify({
-    variant: 'success',
-    title: `${line.product} ${t('line rejected')}`,
-    maxWidth: 'max-content',
-  })
-}
-
-/** Decline every eligible line at once — the Actions-list shortcut. */
-function rejectAllTagged() {
-  const r = req.value
-  if (!r) return
-  const rejectable = r.lines.filter(canRejectLine)
-  if (rejectable.length === 0) return
-  for (const line of rejectable) rejectRequestLine(r.id, line)
-  toast.notify({
-    variant: 'success',
-    title: `${rejectable.length} ${t('line rejected on')} ${r.number}`,
-    maxWidth: 'max-content',
-  })
 }
 
 /**
@@ -342,12 +312,6 @@ function saveSerials(serials: string[]) {
               <MpPopoverListItem @click="goWorkOrder">{{ t('Open work order') }}</MpPopoverListItem>
               <MpPopoverListItem v-if="canUnreserve" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
             </MpPopoverList>
-            <template v-if="canReject(req)">
-              <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
-              <MpPopoverList>
-                <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical)' })" @click="rejectAllTagged">{{ t('Reject added lines') }}</MpPopoverListItem>
-              </MpPopoverList>
-            </template>
           </MpPopoverContent>
         </MpPopover>
 
@@ -432,7 +396,6 @@ function saveSerials(serials: string[]) {
               <col class="wod-col-status">
               <col class="wod-col-tracking">
               <col class="wod-col-requestor">
-              <col class="wod-col-actions">
             </colgroup>
             <thead>
               <tr>
@@ -448,26 +411,18 @@ function saveSerials(serials: string[]) {
                 <!-- W-9 — each line names who last changed ITS demand (OPEN-17).
                      It sits last: it is provenance, not something acted on. -->
                 <th class="wod-th">{{ t('Requestor') }}</th>
-                <th class="wod-th wod-th--actions" />
               </tr>
             </thead>
             <tbody>
-              <!-- Keyed by INDEX, not productId: one component can hold several
-                   lines on a request (original + Adjustment deltas), so productId
-                   is no longer unique here. -->
-              <tr v-for="(l, li) in g.lines" :key="`${l.productId}-${li}`" class="wod-tr" :class="{ 'srd-tr--rejected': l.rejected }">
+              <!-- Keyed by INDEX, not productId: the creation form lets one product
+                   be drawn twice, so productId is not unique here. v0.6 — no line
+                   tags and no Reject (L-12); a line the warehouse can't cover stays
+                   open as Requested / Partially reserved. -->
+              <tr v-for="(l, li) in g.lines" :key="`${l.productId}-${li}`" class="wod-tr" data-devchange="sr-v06-no-reject">
                 <td class="wod-td wod-td--wrap">
                   <div class="srd-product">
                     <span class="srd-product-name">{{ l.product }}</span>
                     <span class="srd-product-sku">{{ l.sku }}</span>
-                    <!-- W-7 — what kind of demand this line is. MpBadge is the one
-                         badge component (rule/badge-single-mpbadge); these used to be
-                         a hand-rolled chip with its own colours. It stays with the
-                         name and SKU it qualifies; the link that leaves the row
-                         comes after everything describing it. -->
-                    <MpBadge v-if="l.tag" for="tableStatus" :type="l.tag === 'additional' ? 'warning' : 'information'">
-                      {{ l.tag === 'additional' ? t('Additional stock') : t('Adjustment') }}
-                    </MpBadge>
                     <!-- Same affordance as the index: a text link under the SKU,
                          not an icon that has to be guessed at and then explained. -->
                     <span
@@ -499,16 +454,6 @@ function saveSerials(serials: string[]) {
                   </span>
                 </td>
                 <td class="wod-td">{{ l.requestor }}</td>
-                <!-- W-7 — reject is offered ONLY on a tagged line; the components
-                     the work order itself committed to are not the warehouse's to
-                     refuse, so there is no button to explain away on those rows. -->
-                <td class="wod-td wod-td--actions">
-                  <button
-                    v-if="canRejectLine(l)"
-                    class="btn-enterprise btn-enterprise--ghost btn-enterprise--sm srd-reject"
-                    @click="rejectLine(l)"
-                  >{{ t('Reject') }}</button>
-                </td>
               </tr>
             </tbody>
           </table>
@@ -639,7 +584,6 @@ function saveSerials(serials: string[]) {
 .wod-col-status    { width: 140px; }
 .wod-col-tracking  { width: 128px; }
 .wod-col-requestor { width: 144px; }
-.wod-col-actions   { width: 100px; }
 .wod-th {
   height: var(--mp-sizes-7, 28px); text-align: left; white-space: nowrap;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
@@ -703,8 +647,6 @@ function saveSerials(serials: string[]) {
   margin: 0; align-self: flex-start;
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
 }
-.srd-tr--rejected .wod-td { opacity: 0.55; }
-.srd-reject { color: var(--mp-text-critical); }
 .srd-muted { color: var(--mp-text-secondary, #3a4749); }
 .srd-warn { color: var(--mp-text-warning, #a35200); }
 .srd-short { color: var(--mp-text-critical, #a8352d); font-weight: var(--mp-font-weights-semi-bold); }

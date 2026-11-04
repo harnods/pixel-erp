@@ -31,8 +31,8 @@ import { TODAY } from './master'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderActionReason } from './workOrders'
 import { billOfMaterials } from './billOfMaterials'
-import { recordsForWorkOrder } from './materialConsumeReturn'
-import { releaseForCanceledWorkOrder, releaseOnCompletion, type ActivityContext } from './stockRequests'
+import { recordsForWorkOrder, deleteRecordsForWorkOrder, netConsumedForWorkOrder } from './materialConsumeReturn'
+import { releaseForCanceledWorkOrder, releaseOnCompletion, requestForWorkOrder, markWorkOrderDeleted, type ActivityContext } from './stockRequests'
 import { formatIDR } from '~/utils/currency'
 import { formatDateLong } from '~/utils/date'
 import { warehouses } from './warehouses'
@@ -652,19 +652,66 @@ export function startWorkOrder(wo: WorkOrder, startDate?: string): void {
   persistWorkOrders()
 }
 
+/** What Cancel / Delete did to stock — the two figures the confirmation names (R-6). */
+export interface StockReversal {
+  /** qty released from reservation back to available (UC-11 trigger b) */
+  releasedQty: number
+  /** qty restored to on hand by deleting the work order's stock adjustments */
+  restoredQty: number
+}
+
 /**
- * Cancel / close a work order: status Canceled, its batch/serial picks dropped, and
- * — UC-11 trigger (b) — its stock-request reservation released back to available
- * stock and logged. One function for both paths: applied immediately from the page
- * when the action isn't gated, or here at final approval. Returns the qty released.
+ * UC-09 (v0.6) — what Cancel and Delete both do to stock: release the remaining
+ * reservation AND reverse consumption by deleting the work order's stock
+ * adjustments, so stock is as it would be had the job never existed. A work order
+ * already cancelled has had this done, so a later Delete moves nothing.
  */
-export function cancelWorkOrder(wo: WorkOrder, ctx: ActivityContext = {}): number {
+export function previewStockReversal(wo: WorkOrder): StockReversal {
+  if (wo.status === 'canceled') return { releasedQty: 0, restoredQty: 0 }
+  const req = requestForWorkOrder(wo.id)
+  return {
+    releasedQty: req?.lines.reduce((s, l) => s + l.reserved, 0) ?? 0,
+    restoredQty: netConsumedForWorkOrder(wo.id),
+  }
+}
+
+function reverseWorkOrderStock(wo: WorkOrder, ctx: ActivityContext): StockReversal {
+  if (wo.status === 'canceled') return { releasedQty: 0, restoredQty: 0 }
+  const releasedQty = releaseForCanceledWorkOrder(wo.id, { source: 'work-order', ...ctx }).qty
+  const restoredQty = deleteRecordsForWorkOrder(wo.id)
+  return { releasedQty, restoredQty }
+}
+
+/**
+ * Cancel / close a work order (allowed once started): status Canceled, its
+ * batch/serial picks dropped, its reservation released and its consumption
+ * reversed (UC-09). One function for both paths: applied immediately from the page
+ * when the action isn't gated, or here at final approval. The stock request stays,
+ * as Canceled.
+ */
+export function cancelWorkOrder(wo: WorkOrder, ctx: ActivityContext = {}): StockReversal {
+  const reversal = reverseWorkOrderStock(wo, ctx)
   wo.status = 'canceled'
   wo.endDate = new Date().toISOString().slice(0, 10)
   wo.materialReservations = undefined
   wo.reservationPlan = undefined
   persistWorkOrders()
-  return releaseForCanceledWorkOrder(wo.id, { source: 'work-order', ...ctx }).qty
+  return reversal
+}
+
+/**
+ * Delete a work order (UC-09) — Not started, Completed or Cancelled; never while
+ * in progress. Same effect on stock as Cancel (nothing, if it was already
+ * cancelled), then the record itself goes. Its stock request stays on the
+ * dashboard as Canceled — a request that vanishes reads like one never raised.
+ */
+export function deleteWorkOrder(wo: WorkOrder, ctx: ActivityContext = {}): StockReversal {
+  const reversal = reverseWorkOrderStock(wo, ctx)
+  markWorkOrderDeleted(wo.id)
+  const i = workOrders.findIndex(w => w.id === wo.id)
+  if (i >= 0) workOrders.splice(i, 1)
+  persistWorkOrders()
+  return reversal
 }
 
 /** Apply what a request carries — only ever called at final-level approval. */

@@ -62,14 +62,6 @@ export interface StockRequestLine {
    */
   requestor: string
   /**
-   * W-7 — a line raised on top of the work order's original demand. Tagged lines
-   * are the only ones the stockist may reject; an untagged line is demand the work
-   * order itself committed to, so refusing it is not the warehouse's call.
-   */
-  tag?: StockRequestLineTag
-  /** Declined by the stockist. Only ever set on a tagged line (W-7). */
-  rejected?: boolean
-  /**
    * Batch / serial tracking, when the component is tracked.
    *
    * `requested*` is what the WORK ORDER picked at creation; `reserved*` is what
@@ -85,20 +77,13 @@ export interface StockRequestLine {
 }
 
 /**
- * W-7 line tags — demand raised on top of the work order's original components.
- * A property of the LINE, not the request: an increase usually applies to only
- * some components, and the stockist may reject one without touching the rest.
- */
-export type StockRequestLineTag = 'additional' | 'adjustment'
-
-/**
  * The demand one transaction places on the warehouse.
  *
- * A work order raises EXACTLY ONE request, for its whole life (v0.5 C-4). Later
- * changes — an Adjust increase, an Additional stock request — append LINES to it;
- * they never raise a second request. That is why a product can legitimately appear
- * on more than one line here: an original line plus one or more tagged lines, each
- * with its own required date and its own rejectability.
+ * A work order raises EXACTLY ONE request, for its whole life (C-4), with ONE
+ * line per component. Later changes — Edit or Adjust — update that line IN PLACE
+ * (v0.6 UC-06); only a component new to the work order adds a line. There are no
+ * line tags and no stockist rejection (L-12): a request the warehouse cannot cover
+ * stays open as Requested or Partially reserved.
  *
  * The request is a record of DEMAND, not of allocation: reserving against it moves
  * its status but never closes it. Status, readiness, overdue, remaining and
@@ -115,6 +100,11 @@ export interface StockRequest {
   /** ISO date the request was raised. */
   requestDate: string
   lines: StockRequestLine[]
+  /**
+   * UC-09 (v0.6) — the raising work order was DELETED. The request stays listed,
+   * as Canceled, because a request that vanishes reads like one never raised.
+   */
+  workOrderDeleted?: boolean
 }
 
 /**
@@ -135,16 +125,12 @@ export type StockRequestStatus =
  * different question from the request's. A request is open or it is not; a line
  * says how far the warehouse has got with that component.
  *
- * `rejected` sits outside the progression: the stockist declined that line, so it
- * is no longer demand at all (W-7). It is kept because a rejected line still has
- * to render as something on the request it stays listed on.
  */
 export type StockRequestLineStatus =
   | 'requested'
   | 'partially reserved'
   | 'reserved'
   | 'fulfilled'
-  | 'rejected'
 
 /**
  * Rank for "lowest status wins" (W-3). A request is only as good as its weakest
@@ -154,9 +140,8 @@ export type StockRequestLineStatus =
 const LINE_STATUS_RANK: Record<StockRequestLineStatus, number> = {
   'requested': 0,
   'partially reserved': 1,
-  'rejected': 2,
-  'reserved': 3,
-  'fulfilled': 4,
+  'reserved': 2,
+  'fulfilled': 3,
 }
 
 /**
@@ -188,7 +173,6 @@ export function requestCoveredQty(req: StockRequest): number {
  * the warehouse has committed.
  */
 export function stockRequestLineStatus(line: StockRequestLine): StockRequestLineStatus {
-  if (line.rejected) return 'rejected'
   if (line.consumed >= line.qty && line.qty > 0) return 'fulfilled'
   const covered = lineCovered(line)
   if (covered === 0) return 'requested'
@@ -206,13 +190,14 @@ export function stockRequestLineStatus(line: StockRequestLine): StockRequestLine
  *
  * `canceled` comes from the work order, because a cancelled job's demand is moot
  * whatever its lines say (UC-09). Otherwise a request is completed once nothing
- * is outstanding — every line fulfilled, or every line declined — and open until
- * then. The Awaiting tab is exactly the open ones; Closed holds the other two.
+ * is outstanding — every line fulfilled — and open until then. The Awaiting tab is exactly the open ones; Closed holds the other two.
  */
 export function stockRequestStatus(req: StockRequest): StockRequestStatus {
-  if (workOrderFor(req)?.status === 'canceled') return 'canceled'
+  // UC-09 — a cancelled work order's request, and a DELETED one's (v0.6: "the
+  // WO's stock request stays on the Stock requests page with status Canceled").
+  if (req.workOrderDeleted || workOrderFor(req)?.status === 'canceled') return 'canceled'
   if (req.lines.length === 0) return 'open'
-  const outstanding = req.lines.filter(l => !l.rejected && stockRequestLineStatus(l) !== 'fulfilled')
+  const outstanding = req.lines.filter(l => stockRequestLineStatus(l) !== 'fulfilled')
   return outstanding.length === 0 ? 'completed' : 'open'
 }
 
@@ -237,9 +222,8 @@ export function isOverdue(req: StockRequest, today: string): boolean {
   return req.lines.some(l => isLineOverdue(l, today))
 }
 
-/** W-7 per line — a rejected line is settled, so it is never overdue. */
+/** W-7 per line — past its required date and not yet fully covered. */
 export function isLineOverdue(line: StockRequestLine, today: string): boolean {
-  if (line.rejected) return false
   return line.requiredDate < today && lineCovered(line) < line.qty
 }
 
@@ -253,7 +237,7 @@ export function isLineOverdue(line: StockRequestLine, today: string): boolean {
  * warehouse happened to hold enough.
  */
 export function needsAction(req: StockRequest): boolean {
-  return req.lines.some(l => !l.rejected && lineCovered(l) < l.qty)
+  return req.lines.some(l => lineCovered(l) < l.qty)
 }
 
 /**
@@ -288,25 +272,13 @@ type SeedLine = {
   consumedPct: number
   destAvailable: number
   requiredOffset: number
-  /** W-7 — demand raised on top of the work order's original components. */
-  tag?: StockRequestLineTag
-  /** Declined by the stockist. Only legal on a tagged line. */
-  rejected?: boolean
   /** Who last changed this line's demand; defaults to the request's raiser. */
   staffIndex?: number
-  /**
-   * Which of the work order's raw materials this line is for. Defaults to the
-   * line's own position, so a plain request reads one line per component. A TAGGED
-   * line points back at a component that already has a line, which is exactly the
-   * case v0.5 introduces: an original line plus its Adjustment delta, same product,
-   * different required dates, separately rejectable.
-   */
-  rawIndex?: number
 }
 type Seed = {
   woIndex: number
   dayOffset: number
-  /** Who created the work order — the requestor of every untagged line. */
+  /** Who created the work order — the requestor of every line not set otherwise. */
   staffIndex: number
   /** Hand-written lines, for the cases the demo has to be exact about. */
   lines?: SeedLine[]
@@ -334,11 +306,7 @@ const SEED_WAREHOUSES = [
   { id: 'wh-003', name: 'Gudang Bandung Selatan' },
 ]
 
-/**
- * ONE request per work order (v0.5 C-4) — extra demand is extra LINES, never a
- * second request. The seed for WO index 3 is the worked case: an original line, an
- * Additional stock line and a rejected Adjustment line, all for the same component.
- */
+/** ONE request per work order (C-4), one line per component. */
 const SEED: Seed[] = [
   // Nothing reserved yet, but warehouse stock covers every line — "Reserve stock"
   // on this row succeeds, which is the happy path the demo needs.
@@ -347,15 +315,11 @@ const SEED: Seed[] = [
     { reservedPct: 0, consumedPct: 0, destAvailable: 6, requiredOffset: 9 },
     { reservedPct: 0, consumedPct: 0, destAvailable: 4, requiredOffset: 9 },
   ] },
-  // One request carrying all three line kinds for the SAME component (W-7):
-  // the original demand, an Additional stock line, and an Adjustment line the
-  // stockist declined. Their requestors differ — each line names whoever last
-  // changed it, which is the point of holding requestor per line (OPEN-17).
+  // Short at the destination, and its second line was last changed by someone
+  // other than the work order's creator — requestor is held per line (OPEN-17).
   { woIndex: 3, dayOffset: -5, staffIndex: 1, lines: [
     { reservedPct: 0, consumedPct: 0, destAvailable: 1, requiredOffset: 3 },
-    { reservedPct: 0, consumedPct: 0, destAvailable: 0, requiredOffset: 3 },
-    { reservedPct: 0, consumedPct: 0, destAvailable: 2, requiredOffset: 6, rawIndex: 0, tag: 'additional',  staffIndex: 5 },
-    { reservedPct: 0, consumedPct: 0, destAvailable: 2, requiredOffset: 8, rawIndex: 0, tag: 'adjustment', staffIndex: 5, rejected: true },
+    { reservedPct: 0, consumedPct: 0, destAvailable: 0, requiredOffset: 3, staffIndex: 5 },
   ] },
   // Fully reserved.
   { woIndex: 2, dayOffset: -8, staffIndex: 2, lines: [
@@ -388,14 +352,9 @@ const SEED: Seed[] = [
   { woIndex: 21, dayOffset: -5, staffIndex: 5, lines: [
     { reservedPct: 0, consumedPct: 0, destAvailable: 3, requiredOffset: 0 },
   ] },
-  // Finished by a rejection: the original demand is fully reserved, and the one
-  // Additional stock line on top of it was declined. Nothing is left to do, and
-  // what happened to it was a rejection — so it belongs in the terminal tab
-  // rather than falling out of Awaiting into nowhere.
   { woIndex: 6, dayOffset: -9, staffIndex: 3, lines: [
     { reservedPct: 1, consumedPct: 0, destAvailable: 5, requiredOffset: 2 },
     { reservedPct: 1, consumedPct: 0, destAvailable: 3, requiredOffset: 2 },
-    { reservedPct: 0, consumedPct: 0, destAvailable: 2, requiredOffset: 5, rawIndex: 0, tag: 'additional', staffIndex: 1, rejected: true },
   ] },
 
   // ── Volume ──────────────────────────────────────────────────────────────────
@@ -441,10 +400,11 @@ const SEED: Seed[] = [
 
 function buildSeed(): StockRequest[] {
   return SEED.map((s, i) => {
-    const wo = workOrders[s.woIndex]
+    // By id, not position: a work order the user creates is added to the FRONT of
+    // the list, which shifted every seeded request onto the wrong work order.
+    const wo = workOrders.find(w => w.id === `wo-${s.woIndex + 1}`)
     const bom = billOfMaterials.find(b => b.id === wo?.bomId)
-    // De-duplicate the BOM so each COMPONENT gets one original line; tagged lines
-    // then point back at one of them by `rawIndex`.
+    // De-duplicate the BOM so each COMPONENT gets exactly one line.
     const raws = [...new Map((bom?.rawMaterials ?? []).map(r => [r.productId, r])).values()]
     const requestDate = shiftDays(TODAY_ISO, s.dayOffset)
     /**
@@ -468,19 +428,15 @@ function buildSeed(): StockRequest[] {
     // components; those have nothing real to point at, so they are dropped rather
     // than rendered as a placeholder "Raw material" row.
     const lines: StockRequestLine[] = seedLines.flatMap((sl, li) => {
-      const ri = sl.rawIndex ?? li
+      const ri = li
       const raw = raws[ri]
       if (!raw) return []
       const product = catalogProduct(raw.productId)
       // The qty a request asks for is exactly the qty the work order's Raw
       // materials table calls "Needed qty" — the BOM line. Scaling it here would
-      // make the two surfaces disagree about the same number. A tagged line
-      // carries only its DELTA, so it asks for a fraction of that.
-      const base = raw.needed
-      const qty = sl.tag ? Math.max(1, Math.round(base * 0.2)) : base
+      // make the two surfaces disagree about the same number.
+      const qty = raw.needed
       const consumed = Math.round(qty * sl.consumedPct)
-      // A tagged line shares its component's destination, so the detail page still
-      // groups all three under one warehouse and one transfer.
       const wh = SEED_WAREHOUSES[ri % SEED_WAREHOUSES.length]!
       return [{
         productId: raw.productId,
@@ -495,8 +451,6 @@ function buildSeed(): StockRequest[] {
         destinationWarehouse: wh.name,
         destinationWarehouseId: wh.id,
         requestor: STAFF[sl.staffIndex ?? s.staffIndex] ?? STAFF[0]!,
-        ...(sl.tag ? { tag: sl.tag } : {}),
-        ...(sl.rejected ? { rejected: true } : {}),
       }]
     })
     return {
@@ -525,8 +479,11 @@ function buildSeed(): StockRequest[] {
  * v4 widens the bills of materials behind the seed (1–10 components each) and
  * adds the requests that fill both tabs. A v3 snapshot would still load, and
  * would quietly pin every machine that has one to the old five-row table.
+ *
+ * v5 — PRD v0.6 removes line tags and stockist rejection (L-12): a v4 snapshot
+ * would bring back tagged and rejected lines nothing can act on any more.
  */
-const SNAPSHOT_KEY = 'stockRequests.v4'
+const SNAPSHOT_KEY = 'stockRequests.v5'
 
 const snapshot = loadSnapshot<StockRequest>(SNAPSHOT_KEY)
 export const stockRequests = reactive<StockRequest[]>(snapshot ?? buildSeed())
@@ -584,6 +541,7 @@ export function isOnDashboard(_req: StockRequest): boolean {
 
 /** A Done or canceled work order is read-only — no reserve / transfer / purchase. */
 export function isActionable(req: StockRequest): boolean {
+  if (req.workOrderDeleted) return false
   const wo = workOrderFor(req)
   return !wo || ACTIVE_WO_STATUSES.has(wo.status)
 }
@@ -624,9 +582,8 @@ export const stockRequestOpenCount = (): number =>
 /** One work order's share of a SKU row — the expandable per-WO breakdown. */
 /**
  * One breakdown row under a component: ONE STOCK REQUEST, not one line. A request
- * can hold several lines for the same component at the same warehouse — an
- * original plus an Additional stock or Adjustment delta — and they are summed
- * here, because the breakdown is read as "who is asking for this component", and
+ * can hold several lines for the same component — the creation form lets one
+ * product be drawn twice — and they are summed here, because the breakdown is read as "who is asking for this component", and
  * the same request number appearing twice reads as a duplicate rather than as two
  * kinds of demand. The request is also the unit the row's actions operate on.
  */
@@ -690,15 +647,15 @@ export interface SkuDemandGroup {
 }
 
 /**
- * Aggregate request lines into one row per component (W-2). Rejected requests are
- * excluded — their demand no longer stands. `lineFilter` lets the page drop lines
+ * Aggregate request lines into one row per component (W-2). A cancelled job's
+ * lines are excluded — their demand no longer stands. `lineFilter` lets the page drop lines
  * outside the selected required-date range before aggregating (W-5).
  */
 export function skuDemandGroups(
   requests: StockRequest[],
   lineFilter?: (line: StockRequestLine, req: StockRequest) => boolean,
   /**
-   * Include settled lines — rejected ones, and those of a cancelled job. Off for
+   * Include settled lines — those of a cancelled job. Off for
    * the Awaiting tab, where settled demand would inflate a rollup of work still
    * to do. ON for the Closed tab, which is made OF settled requests: with it off
    * that tab's By product view came back all but empty while By transaction
@@ -711,11 +668,9 @@ export function skuDemandGroups(
   // warehouses is two different pieces of demand, fulfilled by two transfers.
   const byProduct = new Map<string, { line: StockRequestLine; req: StockRequest }[]>()
   for (const req of requests) {
-    const canceled = workOrderFor(req)?.status === 'canceled'
+    const canceled = stockRequestStatus(req) === 'canceled'
     for (const line of req.lines) {
-      // This is per LINE: rejecting an Adjustment delta leaves the original
-      // demand counted.
-      if (!includeSettled && (line.rejected || canceled)) continue
+      if (!includeSettled && canceled) continue
       if (lineFilter && !lineFilter(line, req)) continue
       const key = `${line.productId}::${line.destinationWarehouseId}`
       const bucket = byProduct.get(key) ?? []
@@ -812,7 +767,6 @@ export function skuDemandGroups(
  * path — auto, manual, per request, per product — now goes through this.)
  */
 export function reservableQty(line: StockRequestLine): number {
-  if (line.rejected) return 0
   return Math.max(0, Math.min(line.qty - lineCovered(line), line.destAvailable))
 }
 
@@ -829,7 +783,6 @@ export function reserveStock(id: string, ctx: ActivityContext = {}): number | un
   let reserved = 0
   const touched: string[] = []
   for (const line of req.lines) {
-    if (line.rejected) continue
     const take = reservableQty(line)
     if (take <= 0) continue
     line.reserved += take
@@ -846,93 +799,27 @@ export function reserveStock(id: string, ctx: ActivityContext = {}): number | un
   return reserved
 }
 
-/**
- * Reject ONE line (W-7) — production is notified.
- *
- * Rejection is a line-level decision. The stockist may decline extra demand raised
- * on top of a work order without touching what the work order itself committed to,
- * which is why only a tagged line can be rejected — and why the guard lives here
- * rather than only in the UI that offers the button.
- */
-export function rejectRequestLine(
-  requestId: string,
-  line: StockRequestLine,
-  ctx: ActivityContext = {},
-): boolean {
-  const req = stockRequests.find(r => r.id === requestId)
-  if (!req || !canRejectLine(line)) return false
-  line.rejected = true
-  persistStockRequests()
-  // W-7 — a rejection is a decision about somebody else's demand, so it is logged
-  // against the work order too; production resolves it by readjusting.
-  logRequestEvent(req, 'Line rejected', [
-    { label: 'Component', value: line.product },
-    { label: 'Qty declined', value: `${line.qty}` },
-    { label: 'Line', value: line.tag === 'adjustment' ? 'Adjustment' : 'Additional stock' },
-  ], ctx)
-  return true
-}
-
-/** Only a tagged line can be rejected, and only once (W-7). */
-export function canRejectLine(line: StockRequestLine): boolean {
-  return !!line.tag && !line.rejected
-}
-
-/** Does this request carry anything the stockist may still decline? */
-export function canReject(req: StockRequest): boolean {
-  return req.lines.some(canRejectLine)
-}
-
 // ── Work order side (UC-01 … UC-04) ────────────────────────────────────────────
 // The work order pages and this dashboard read the SAME request rows, so a
 // reservation made on either surface is immediately true on the other.
 
 /**
  * The stock request raised by a work order (C-4). There is exactly one, for the
- * work order's whole life — extra demand appends lines to it rather than raising
- * a second request, so this never has to pick between candidates.
+ * work order's whole life — changes update its lines rather than raising a second
+ * request, so this never has to pick between candidates.
  */
 export function requestForWorkOrder(workOrderId: string): StockRequest | undefined {
   return stockRequests.find(r => r.workOrderId === workOrderId)
 }
 
 /**
- * Every line for one component on one request.
- *
- * A component can hold more than one line — the original demand plus any
- * Adjustment deltas (UC-06) — so anything that acts "on a product" acts on this
- * list, never on the first match. Rejected lines are excluded: their demand has
- * been declined, so there is nothing left to reserve, consume or release.
+ * Every line for one component on one request. Normally one (v0.6: one line per
+ * component, updated in place), but the creation form lets the same product be
+ * drawn from two warehouses, and each becomes its own line — so anything that
+ * acts "on a product" acts on this list, never on the first match.
  */
 export function linesForProduct(req: StockRequest, productId: string): StockRequestLine[] {
-  return req.lines.filter(l => l.productId === productId && !l.rejected)
-}
-
-/**
- * The order to DRAW DOWN a component's lines: original demand first, Adjustment
- * deltas after.
- *
- * Used by consumption and release. Material issued to the floor satisfies what the
- * work order originally committed to before it satisfies a later top-up, so the
- * original line is the one that closes first.
- *
- * Note this is the OPPOSITE of {@link reductionOrder}. The two are deliberately
- * separate functions so the asymmetry is visible at each call site.
- */
-function drawdownOrder(lines: StockRequestLine[]): StockRequestLine[] {
-  return [...lines].sort((a, b) => Number(!!a.tag) - Number(!!b.tag))
-}
-
-/**
- * The order to REDUCE a component's lines when demand falls: Adjustment deltas
- * first, original demand last (UC-06).
- *
- * Cutting a quantity should release the most recently added extra before it
- * touches demand the work order committed to at creation — and a stockist may
- * still reject an Adjustment line, so draining it first keeps the original intact.
- */
-function reductionOrder(lines: StockRequestLine[]): StockRequestLine[] {
-  return [...lines].sort((a, b) => Number(!!b.tag) - Number(!!a.tag))
+  return req.lines.filter(l => l.productId === productId)
 }
 
 /** A work order's raw-material row with its LIVE demand and reservation. */
@@ -943,6 +830,11 @@ export interface WorkOrderMaterial extends WorkOrderRawMaterial {
   plannedNeeded: number
   /** reserved + already issued on this row's request lines */
   reserved: number
+  /**
+   * What is still held in the Reserved bucket for this row — total reserved minus
+   * total consumed (v0.6 UC-05). 0 once the work order completes (R-3).
+   */
+  remainingReserved: number
 }
 
 /**
@@ -957,22 +849,24 @@ export interface WorkOrderMaterial extends WorkOrderRawMaterial {
  * A row is matched to its lines by product AND warehouse, because the creation
  * form lets the same product be drawn from two warehouses and each becomes its own
  * line. Seeded work orders store no warehouse, so theirs match by product alone.
- * Rejected lines are left out — the warehouse declined that demand (W-7, OPEN-14).
  */
 export function workOrderMaterials(wo: WorkOrder): WorkOrderMaterial[] {
   const req = requestForWorkOrder(wo.id)
   return workOrderRawMaterials(wo).map((r) => {
     const p = catalogProduct(r.productId)
     const lines = req?.lines.filter(l =>
-      l.productId === r.productId && !l.rejected
+      l.productId === r.productId
       && (r.warehouseId === undefined || l.destinationWarehouseId === r.warehouseId)) ?? []
     return {
       ...r,
+      // Seeded work orders store no warehouse; their line's destination is it.
+      warehouseId: r.warehouseId ?? lines[0]?.destinationWarehouseId,
       product: p?.name ?? '—',
       sku: p?.sku ?? '—',
       plannedNeeded: r.needed,
       needed: lines.length ? lines.reduce((sum, l) => sum + l.qty, 0) : r.needed,
       reserved: lines.reduce((sum, l) => sum + lineCovered(l), 0),
+      remainingReserved: lines.reduce((sum, l) => sum + l.reserved, 0),
     }
   })
 }
@@ -1008,18 +902,17 @@ export function isFullyReserved(workOrderId: string): boolean {
 export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-reserved'
 
 /**
- * The start gate — UC-04 / D-8, decided by the partial mode (S-3) alone:
+ * The start gate — UC-04 / D-8, decided by the partial mode (S-3):
  *
  * | partialMode  | Start permitted when                      |
  * | ------------ | ----------------------------------------- |
- * | `consume`    | AT LEAST ONE component is reserved > 0     |
- * | `completion` | EVERY component is reserved > 0            |
- * | `none`       | EVERY component is fully reserved          |
+ * | `consume`    | AT LEAST ONE component holds stock > 0     |
+ * | `completion` | EVERY component holds stock > 0            |
+ * | `none`       | EVERY component holds its full need        |
  *
- * The PRD (12 Oct) no longer has a separate S-4 "start with limited stock" switch:
- * it "is not introduced as a separate toggle" and uses the partial consume /
- * partial completion setting instead. Turning a partial mode on already says the
- * job may run short; a second switch could only repeat that, or silently cancel it.
+ * There is no separate S-4 "start with limited stock" switch: it "is not
+ * introduced as a separate toggle" and uses the partial consume / partial
+ * completion setting instead.
  *
  * The rules protect different things. Partial consume lets work proceed with
  * whatever has arrived, so one secured component is enough to begin. Partial
@@ -1027,31 +920,36 @@ export type StartBlockReason = 'none-reserved' | 'some-unreserved' | 'not-fully-
  * set of components — fabric without buttons produces nothing — so every line must
  * hold something.
  *
- * This counts RESERVATION, never availability: stock sitting free in the warehouse
- * does not open the gate, because nobody has allocated it to this job yet.
- *
- * With reservation switched OFF (UC-00) there is nothing to gate — no request is
- * raised and nothing is allocated — so the work order starts freely. A work order
- * with no request at all passes for the same reason.
+ * What "holds" means depends on the setting the work order was CREATED under (S-0):
+ *  • reservation on — its RESERVATION, never availability: stock sitting free in
+ *    the warehouse does not open the gate, because nobody has allocated it yet;
+ *  • reservation off — stock ON HAND at each component's warehouse (v0.6: "the
+ *    start gate checks stock on hand only"), through the same table.
  */
 export function startGate(
   workOrderId: string,
   options: { reservationOn: boolean; partialMode: PartialMode },
 ): { allowed: boolean; reason?: StartBlockReason } {
-  if (!options.reservationOn) return { allowed: true }
-  const req = requestForWorkOrder(workOrderId)
-  if (!req || req.lines.length === 0) return { allowed: true }
-
-  const lines = req.lines
-  if (lines.every(l => lineCovered(l) >= l.qty)) return { allowed: true }
+  let held: { qty: number; have: number }[]
+  if (options.reservationOn) {
+    const req = requestForWorkOrder(workOrderId)
+    if (!req || req.lines.length === 0) return { allowed: true }
+    held = req.lines.map(l => ({ qty: l.qty, have: lineCovered(l) }))
+  } else {
+    const wo = workOrders.find(w => w.id === workOrderId)
+    if (!wo) return { allowed: true }
+    held = workOrderRawMaterials(wo).map(r => ({ qty: r.needed, have: onHandAt(r.productId, r.warehouseId) }))
+    if (held.length === 0) return { allowed: true }
+  }
+  if (held.every(h => h.have >= h.qty)) return { allowed: true }
 
   switch (options.partialMode) {
     case 'consume':
-      return lines.some(l => lineCovered(l) > 0)
+      return held.some(h => h.have > 0)
         ? { allowed: true }
         : { allowed: false, reason: 'none-reserved' }
     case 'completion':
-      return lines.every(l => lineCovered(l) > 0)
+      return held.every(h => h.have > 0)
         ? { allowed: true }
         : { allowed: false, reason: 'some-unreserved' }
     default:
@@ -1069,8 +967,7 @@ export function applyConsumption(workOrderId: string, productId: string, qty: nu
   if (!req || qty <= 0) return 0
   let left = qty
   let applied = 0
-  // Original line first, then Adjustment deltas — see `drawdownOrder`.
-  for (const line of drawdownOrder(linesForProduct(req, productId))) {
+  for (const line of linesForProduct(req, productId)) {
     if (left <= 0) break
     const take = Math.min(left, line.reserved)
     if (take <= 0) continue
@@ -1106,12 +1003,7 @@ export function reserveWorkOrderProducts(
   return reserveRequestProducts(requestForWorkOrder(workOrderId)?.id ?? '', productIds, ctx)
 }
 
-/**
- * Reserve selected components of ONE request, by request id. A work order can
- * carry an additional/adjustment request alongside its primary one, so anything
- * acting on a request the user is looking at must address it directly rather than
- * re-deriving "the work order's request".
- */
+/** Reserve selected components of ONE request, by request id. */
 export function reserveRequestProducts(
   requestId: string,
   productIds: string[],
@@ -1125,9 +1017,7 @@ export function reserveRequestProducts(
     if (lines.length === 0) continue
     let productQty = 0
     let productShort = false
-    // Original demand before Adjustment deltas: scarce stock should settle what the
-    // work order committed to first.
-    for (const line of drawdownOrder(lines)) {
+    for (const line of lines) {
       const outstanding = line.qty - lineCovered(line)
       if (outstanding <= 0) continue
       // Reserve what the warehouse can actually give (C-3, by available qty) — the
@@ -1155,29 +1045,23 @@ export function reserveRequestProducts(
   return result
 }
 
-/**
- * A material RETURN undoes consumption: qty comes back out of `consumed` and is
- * held as `reserved` again, so the line reads as it did before it was issued.
- */
-export function releaseConsumption(workOrderId: string, productId: string, qty: number): number {
+/** UC-09 — the raising work order was deleted; its request stays, as Canceled. */
+export function markWorkOrderDeleted(workOrderId: string): void {
   const req = requestForWorkOrder(workOrderId)
-  if (!req || qty <= 0) return 0
-  let left = qty
-  let applied = 0
-  // Undo consumption in the reverse of the order it was applied — the last line to
-  // be drawn down is the first to be given back, so a return leaves the lines the
-  // way they were before the issue.
-  for (const line of drawdownOrder(linesForProduct(req, productId)).reverse()) {
-    if (left <= 0) break
-    const take = Math.min(left, line.consumed)
-    if (take <= 0) continue
-    line.consumed -= take
-    line.reserved += take
-    left -= take
-    applied += take
-  }
-  if (applied > 0) persistStockRequests()
-  return applied
+  if (!req) return
+  req.workOrderDeleted = true
+  persistStockRequests()
+}
+
+/**
+ * UC-09 — the work order's stock adjustments were deleted (Cancel / Delete), so
+ * nothing on its request counts as issued any more.
+ */
+export function clearConsumption(workOrderId: string): void {
+  const req = requestForWorkOrder(workOrderId)
+  if (!req) return
+  for (const line of req.lines) line.consumed = 0
+  persistStockRequests()
 }
 
 /**
@@ -1227,12 +1111,11 @@ export function changedTrackingLines(req: StockRequest): StockRequestLine[] {
 /**
  * PPIC reserves specific batches for a component (Stock request detail).
  *
- * Applied to the component's ORIGINAL line: the batch picker reserves against the
- * demand the work order raised, and an Adjustment delta carries its own pick.
+ * Applied to the component's first line — the demand the work order raised.
  */
 export function setReservedBatches(requestId: string, productId: string, batches: { batchNo: string; qty: number }[]): void {
   const req = stockRequests.find(r => r.id === requestId)
-  const line = req && drawdownOrder(linesForProduct(req, productId))[0]
+  const line = req && linesForProduct(req, productId)[0]
   if (!line) return
   line.reservedBatches = batches.map(b => ({ ...b }))
   persistStockRequests()
@@ -1241,7 +1124,7 @@ export function setReservedBatches(requestId: string, productId: string, batches
 /** PPIC reserves specific serial numbers for a component (Stock request detail). */
 export function setReservedSerials(requestId: string, productId: string, serials: string[]): void {
   const req = stockRequests.find(r => r.id === requestId)
-  const line = req && drawdownOrder(linesForProduct(req, productId))[0]
+  const line = req && linesForProduct(req, productId)[0]
   if (!line) return
   line.reservedSerials = [...serials]
   persistStockRequests()
@@ -1442,7 +1325,7 @@ export function reserveProductEverywhere(productId: string): { transactions: num
     // A product can hold SEVERAL lines on one request now (original + Adjustment),
     // so this reserves each of them rather than the first one found — but still
     // counts the request once, because the row the user clicked is a transaction.
-    for (const line of req.lines.filter(l => l.productId === productId && !l.rejected)) {
+    for (const line of req.lines.filter(l => l.productId === productId)) {
       if (line.qty - lineCovered(line) <= 0) continue
       const take = reservableQty(line)
       if (take <= 0) { result.skipped++; continue }
@@ -1487,7 +1370,7 @@ function availabilityLookup(warehouseIds: string[]): (warehouseId: string, sku: 
 /** Qty of a component already held by open requests drawing on the same warehouse. */
 function reservedAtWarehouse(productId: string, warehouseId: string): number {
   return stockRequests.reduce((sum, r) => sum + r.lines.reduce((s, l) => (
-    l.productId === productId && l.destinationWarehouseId === warehouseId && !l.rejected
+    l.productId === productId && l.destinationWarehouseId === warehouseId
       ? s + l.reserved
       : s
   ), 0), 0)
@@ -1503,6 +1386,17 @@ export function destinationAvailableFor(productId: string, warehouseId: string):
   if (!sku || !warehouseId) return 0
   const lookup = availabilityLookup([warehouseId])
   return Math.max(0, lookup(warehouseId, sku) - reservedAtWarehouse(productId, warehouseId))
+}
+
+/**
+ * On hand for one component at one warehouse — available + reserved (the quantity
+ * model's `On Hand = Available + Reserved`). What the v0.6 consume limit (P-1) and
+ * the reservation-off start gate (UC-04) read.
+ */
+export function onHandAt(productId: string, warehouseId: string | undefined): number {
+  const sku = catalogProduct(productId)?.sku
+  if (!sku || !warehouseId) return 0
+  return getWarehouseDetail(warehouseId)?.stock.find(row => row.sku === sku)?.onHand ?? 0
 }
 
 /** One component line as a work order hands it over at save time. */
@@ -1569,37 +1463,6 @@ export function raiseStockRequestForWorkOrder(
   return { request, created: true, ...settled }
 }
 
-/**
- * Append demand to a work order's EXISTING request (v0.5 C-4) — an Adjust
- * increase, a new component, or an Additional stock request.
- *
- * A transaction never holds more than one request, so extra demand is extra LINES.
- * Each carries its own required date and its own requestor, and a tagged line is
- * separately rejectable — which is exactly why the delta cannot simply be added to
- * the original line's qty (UC-06).
- */
-export function appendStockRequestLines(
-  workOrderId: string,
-  lines: WorkOrderMaterialLine[],
-  requestor: string,
-  tag: StockRequestLineTag,
-  options: { autoReserve: boolean },
-): ({ request: StockRequest } & SettleResult) | undefined {
-  const request = requestForWorkOrder(workOrderId)
-  if (!request || lines.length === 0) return undefined
-  const added = buildLines(lines, requestor).map(l => ({ ...l, tag }))
-  request.lines.push(...added)
-  const settled = settleLines(added, options.autoReserve)
-  if (settled.reservedQty > 0) {
-    logRequestEvent(request, 'Reserved material', [
-      { label: 'Components', value: settled.reservedNames.join(', ') },
-      { label: 'Qty reserved', value: `${settled.reservedQty}` },
-    ], { user: requestor, source: 'automatic' })
-  }
-  persistStockRequests()
-  return { request, ...settled }
-}
-
 /** Turn the work order's hand-off lines into request lines with live availability. */
 function buildLines(lines: WorkOrderMaterialLine[], requestor: string): StockRequestLine[] {
   // One warehouse-stock read per distinct warehouse, shared by every line.
@@ -1629,21 +1492,19 @@ export interface SettleResult {
 const NOTHING_SETTLED: SettleResult = { reservedProducts: 0, reservedNames: [], reservedQty: 0, partialProducts: 0, shortProducts: 0 }
 
 /**
- * C-3 — auto-reserve is ALL-OR-NOTHING per line: a line reserves only when the
- * destination warehouse fully covers what is still outstanding on it. A line stock
- * covers only in part stays Requested, in full, for the stockist to settle.
- *
- * Why not reserve the covered part: a half-allocation reads as progress on the
- * dashboard while the job still cannot start, and it locks stock another work
- * order could have used in full. The manual Reserve modal (UC-02) is the opposite
- * — there a human is choosing to take what is there, so it reserves partially.
+ * C-3 (v0.6) — One-step auto-reserve takes each line UP TO the qty available at its
+ * destination warehouse: a fully covered line becomes Reserved, a partly covered
+ * one Partially reserved, an uncovered one stays Requested — and whatever is short
+ * stays with the stockist as a request. (v0.5 made this all-or-nothing; OPEN-12
+ * was re-decided in v0.6.) The same rule as the manual Reserve, so every reserve
+ * path goes through `reservableQty`.
  */
 function settleLines(lines: StockRequestLine[], autoReserve: boolean): SettleResult {
   const r: SettleResult = { ...NOTHING_SETTLED, reservedNames: [] }
   if (!autoReserve) return r
   for (const line of lines) {
     const outstanding = line.qty - lineCovered(line)
-    const take = reservableQty(line) >= outstanding ? outstanding : 0
+    const take = reservableQty(line)
     if (take <= 0) { if (outstanding > 0) r.shortProducts++; continue }
     line.reserved += take
     line.destAvailable -= take
@@ -1694,7 +1555,7 @@ export function shortfallLinesForRequest(requestId: string, warehouseId?: string
   const req = stockRequests.find(r => r.id === requestId)
   if (!req) return []
   return req.lines
-    .filter(l => !l.rejected && lineToTransfer(l) > 0)
+    .filter(l => lineToTransfer(l) > 0)
     .filter(l => !warehouseId || l.destinationWarehouseId === warehouseId)
     .map(l => toShortfallLine(l, req))
 }
@@ -1708,7 +1569,6 @@ export function shortfallLinesForProduct(productId: string): ShortfallLine[] {
   const byWarehouse = new Map<string, ShortfallLine>()
   for (const req of stockRequests) {
     for (const line of req.lines) {
-      if (line.rejected) continue
       if (line.productId !== productId || lineToTransfer(line) <= 0) continue
       const key = line.destinationWarehouseId || line.destinationWarehouse
       const existing = byWarehouse.get(key)
@@ -1720,61 +1580,53 @@ export function shortfallLinesForProduct(productId: string): ShortfallLine[] {
 }
 
 // ── UC-06 — WO Edit & Adjust (change management) ────────────────────────────────
-// How a demand change reaches the stock request depends on the work order's phase.
-// EDIT (Not started) updates the line in place; ADJUST (In progress) keeps the
-// delta on its own tagged line. The split is not decoration: a delta raised
-// mid-run has its own required date, which one line cannot carry alongside the
-// original's, and the stockist may reject the delta (W-7) without rejecting the
-// original demand, which the work order has already committed to. Merging them
-// would lose both.
+// v0.6: Edit (Not started) and Adjust (In progress) reach the stock request the
+// SAME way — the component's existing line is updated in place. There are no
+// Adjustment lines any more: with stockist rejection gone (L-12) nothing needs the
+// delta kept apart, and the line simply takes the new required date.
 
 /** One component's new state, as an Edit or Adjust hands it over. */
 export interface DemandChange {
   productId: string
   /** the component's TOTAL new qty across all its lines — not a delta */
   qty: number
-  /** required date; on an Adjust increase this becomes the new line's own date */
+  /** required date — the changed line takes it (Adjust: today or later) */
   requiredDate: string
+  /**
+   * A component NEW to the work order — the hand-off line to add ("New product
+   * added to the WO → New line", UC-06). Ignored for a component already on it.
+   */
+  newLine?: WorkOrderMaterialLine
 }
 
 /** What a change did — enough to word the toast and the log entry. */
 export interface DemandChangeResult {
   increased: { productId: string; product: string; delta: number }[]
   decreased: { productId: string; product: string; delta: number }[]
-  /** components whose reservation had to be released to make the cut (R-4) */
+  /** remaining reservation released by the change (R-4) */
   released: ReleaseResult
   /**
-   * What One-step reserved again on the same save (C-3, by available qty): the
-   * new Adjustment lines, and the components a cut had to release first. Always
-   * nothing under Two-step, where PPIC reserves from Stock requests.
+   * What One-step reserved again on the same save (C-3, up to the qty available).
+   * Always nothing under Two-step, where PPIC reserves from Stock requests.
    */
   reserved: SettleResult
 }
 
 /**
- * UC-06 — apply demand changes to a work order's request.
+ * UC-06 / R-4 — apply demand changes to a work order's request.
  *
- * `phase` decides how an INCREASE lands:
- *  • `edit` (Not started) — the existing line's qty is raised in place.
- *  • `adjust` (In progress) — a NEW line tagged Adjustment carries only the delta,
- *    with its own required date; the original line is left untouched.
+ * For every component whose qty changes, in Edit or Adjust alike:
+ *  1. its full remaining reservation is released (R-8 — never part of it), as the
+ *     table says: "System will unreserve remaining reserved qty";
+ *  2. its line is updated IN PLACE — new qty, the change's required date, and the
+ *     user making the change as requestor (OPEN-17);
+ *  3. on the same save the line goes back through the reservation method — up to
+ *     the qty available under One-step (C-3), by PPIC under Two-step (OPEN-31).
  *
- * A DECREASE always reduces in place, taking from the Adjustment line FIRST and
- * the original last (`reductionOrder`), so the most recent extra demand is given
- * up before anything the work order originally committed to.
- *
- * When a reservation is released (R-4, R-8 — always the component's FULL
- * remaining reserved qty, never part of it), the updated line goes back to the
- * request in the same save, to be reserved again by the reservation method (C-3
- * under One-step, PPIC under Two-step). Callers must treat any change as possibly
- * releasing stock, and log it. What releases depends on the phase:
- *  • `edit` (Not started) — ANY qty change, up or down, on a component that holds
- *    a reservation (UC-06, 12 Oct: "System will unreserve remaining reserved qty",
- *    then the line is updated in place). This replaced the "unreserve first" block.
- *  • `adjust` (In progress) — only a cut below what is already reserved + issued.
- *
- * Either way, the user making the change becomes the requestor of every line they
- * touched (OPEN-17).
+ * A component new to the work order adds a line (`newLine`), with the user as its
+ * requestor. A decrease never cuts a line below what has already been issued: that
+ * material has left the rack, and comes back, if at all, through a material return
+ * (UC-08). `phase` only labels the log; the rule is the same.
  */
 export function applyDemandChanges(
   workOrderId: string,
@@ -1790,117 +1642,62 @@ export function applyDemandChanges(
   if (!req) return result
   /** Lines to put through C-3 once every change is applied. */
   const toSettle: StockRequestLine[] = []
+  const ctx = options.ctx ?? { source: 'work-order' as const }
 
   for (const change of changes) {
     const lines = linesForProduct(req, change.productId)
-    if (lines.length === 0) continue
+    if (lines.length === 0) {
+      if (!change.newLine || change.qty <= 0) continue
+      const [added] = buildLines([{ ...change.newLine, qty: change.qty, requiredDate: change.requiredDate }], requestor)
+      req.lines.push(added!)
+      toSettle.push(added!)
+      result.increased.push({ productId: change.productId, product: added!.product, delta: change.qty })
+      continue
+    }
     const current = lines.reduce((s, l) => s + l.qty, 0)
     const delta = change.qty - current
     if (delta === 0) continue
     const product = lines[0]!.product
 
-    // UC-06 Edit — release the component's whole remaining reservation before the
-    // line changes, whichever way the qty moves; it is re-reserved below.
-    let editReleased = false
-    if (phase === 'edit' && lines.some(l => l.reserved > 0)) {
-      const released = releaseReservation(req.id, [change.productId], 'unreserve',
-        options.ctx ?? { source: 'work-order' })
+    if (lines.some(l => l.reserved > 0)) {
+      const released = releaseReservation(req.id, [change.productId], 'unreserve', ctx)
       result.released.qty += released.qty
       result.released.products.push(...released.products)
-      editReleased = true
     }
 
     if (delta > 0) {
-      if (phase === 'adjust') {
-        // The delta gets its own line, with its own required date and its own
-        // rejectability. `template` carries the component's identity and
-        // destination; nothing else about the original line is copied.
-        const template = drawdownOrder(lines)[0]!
-        const added: StockRequestLine = {
-          ...template,
-          qty: delta,
-          reserved: 0,
-          consumed: 0,
-          requiredDate: change.requiredDate,
-          requestor,
-          tag: 'adjustment',
-          rejected: false,
-          destAvailable: destinationAvailableFor(change.productId, template.destinationWarehouseId),
-        }
-        req.lines.push(added)
-        // Worked example step 4: MDF +8 against 6 available → the new line
-        // reserves 6 and stays Partially reserved for the other 2.
-        toSettle.push(added)
-      } else {
-        // Edit (Not started) — the existing line absorbs the increase in place;
-        // there is no mid-run delta to keep apart and no second required date to
-        // carry. Its reservation was released above, so the grown line goes back
-        // through the method as a whole: under One-step it re-reserves only if the
-        // warehouse covers the NEW total (C-3, all-or-nothing) — otherwise it waits
-        // as Requested, even if part of it was reserved before the edit.
-        const target = drawdownOrder(lines)[0]!
-        target.qty += delta
-        target.requiredDate = change.requiredDate
-        target.requestor = requestor
-        toSettle.push(target)
+      const target = lines[0]!
+      target.qty += delta
+    } else {
+      let cut = -delta
+      // Last line first, so a component drawn from two warehouses gives up its
+      // later line before its first.
+      for (const line of [...lines].reverse()) {
+        if (cut <= 0) break
+        const take = Math.min(cut, Math.max(0, line.qty - line.consumed))
+        if (take <= 0) continue
+        line.qty -= take
+        cut -= take
       }
-      result.increased.push({ productId: change.productId, product, delta })
-      continue
     }
-
-    // ── Decrease ───────────────────────────────────────────────────────────────
-    // R-4 — going below the reserved qty is only possible once that reservation is
-    // released, and release is all-or-nothing per component (R-8).
-    const reserved = lines.reduce((s, l) => s + l.reserved, 0)
-    const covered = lines.reduce((s, l) => s + l.reserved + l.consumed, 0)
-    const releasing = change.qty < covered && reserved > 0
-    if (releasing) {
-      const released = releaseReservation(req.id, [change.productId], 'unreserve',
-        options.ctx ?? { source: phase === 'adjust' ? 'work-order' : 'work-order' })
-      result.released.qty += released.qty
-      result.released.products.push(...released.products)
-    }
-
-    let cut = -delta
-    for (const line of reductionOrder(lines)) {
-      if (cut <= 0) break
-      // Never cut below what has already been issued: that material has left the
-      // rack, and a request line cannot un-ask for it (it comes back, if at all,
-      // through a material return — UC-08).
-      const floor = line.consumed
-      const take = Math.min(cut, Math.max(0, line.qty - floor))
-      if (take <= 0) continue
-      line.qty -= take
+    for (const line of lines) {
+      line.requiredDate = change.requiredDate || line.requiredDate
       line.requestor = requestor
-      cut -= take
+      toSettle.push(line)
     }
-    // A tagged line cut to nothing is demand that no longer exists — drop it
-    // rather than leave a zero-qty row cluttering the dashboard. An original line
-    // stays even at zero, because the work order still lists that component.
-    for (let i = req.lines.length - 1; i >= 0; i--) {
-      const l = req.lines[i]!
-      if (l.productId === change.productId && l.tag && l.qty <= 0) req.lines.splice(i, 1)
-    }
-    // R-4 — "the updated line is sent to the stock request on the same save", and
-    // re-reservation follows the method. Worked example: Baut 160 reserved → 150;
-    // the 160 is released, the line becomes 150, and One-step reserves 150 again.
-    if (releasing || editReleased) toSettle.push(...linesForProduct(req, change.productId))
-    result.decreased.push({ productId: change.productId, product, delta: -delta })
+    if (delta > 0) result.increased.push({ productId: change.productId, product, delta })
+    else result.decreased.push({ productId: change.productId, product, delta: -delta })
   }
 
-  // C-3 — under One-step both kinds of line go through auto-reserve, all-or-
-  // nothing each. Settled original-first, so scarce stock goes to committed demand
-  // before a top-up.
-  // De-duplicated: an edited line can be queued by both the increase and the release.
-  result.reserved = settleLines(drawdownOrder([...new Set(toSettle)]), options.autoReserve)
+  result.reserved = settleLines(toSettle, options.autoReserve)
   if (result.reserved.reservedQty > 0) {
     logRequestEvent(req, 'Reserved material', [
       { label: 'Components', value: result.reserved.reservedNames.join(', ') },
       { label: 'Qty reserved', value: `${result.reserved.reservedQty}` },
+      { label: 'Trigger', value: phase === 'edit' ? 'Work order edited' : 'Work order adjusted' },
     ], { user: requestor, source: 'automatic' })
   }
 
   if (result.increased.length || result.decreased.length) persistStockRequests()
   return result
 }
-

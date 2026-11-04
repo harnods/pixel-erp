@@ -28,12 +28,76 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wo-raw-on-hand',
+    title: 'Raw materials table shows On hand qty',
+    description:
+      'Work order › Raw materials now has an On hand qty column just before Needed qty: the stock on hand at each row\'s own warehouse — the figure the consume limit (min of reserved and on hand) and, for a work order created with reservation off, the start gate read.',
+    date: '2026-11-04',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'ps-reservation-forward-only',
+    title: 'Reservation is optional, off by default, and applies forward only (PRD v0.6 S-0)',
+    description:
+      '"Product components must be reserved" now starts off. Each work order keeps the setting — and the reservation method — it was created under: switching reservation on raises nothing for existing work orders, and switching it off releases nothing on ones already running. Work orders created with it off start and consume against stock on hand.',
+    date: '2026-11-04',
+    files: ['SettingsProductionPage.vue', 'productionSettings.ts', 'CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-v06-adjust-in-place',
+    title: 'Adjust updates the stock request line in place, like Edit (UC-06)',
+    description:
+      'Any qty change on a reserved component — up or down, in Edit or Adjust — releases its full remaining reservation, updates the existing request line with the new qty and the request date from the form, and reserves it again through the method. No more separate Adjustment lines. One-step now reserves each line up to the qty available, so a short line ends Partially reserved instead of Requested.',
+    date: '2026-11-04',
+    files: ['AdjustWorkOrderModal.vue', 'stockRequests.ts', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'sr-v06-no-reject',
+    title: 'No stockist rejection, no line tags, no Request additional stock (L-12)',
+    description:
+      'The Reject / Reject added lines actions, the Additional stock and Adjustment tags, and the work order\'s "Request additional stock" action are gone. A request the warehouse cannot cover stays open as Requested or Partially reserved; production asks for more through Adjust.',
+    date: '2026-11-04',
+    files: ['StockRequestDetailsPage.vue', 'StockRequestsPage.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-v06-material-record',
+    title: 'Consume / return form follows P-1…P-5',
+    description:
+      'Each line consumes or returns at its own destination warehouse (no record-level warehouse picker). Consume shows On hand · Needed · Reserved · Consumed, and blocks qty above min(reserved, on hand) with an inline error that names the limit. Return shows Max returnable and says returned qty goes to available stock — a return no longer changes the stock request.',
+    date: '2026-11-04',
+    files: ['NewMaterialRecordPage.vue', 'materialConsumeReturn.ts'],
+  },
+  {
+    id: 'wo-v06-cancel-delete',
+    title: 'Cancel and Delete reverse reservation and consumption (UC-09)',
+    description:
+      'Cancel (once started) and Delete (not started, completed or cancelled) both release the remaining reservation and delete the work order\'s consume/return records, restoring on hand. The confirmation names both quantities. Delete now removes the work order; its stock request stays as Canceled. A cancelled work order can be deleted, and Cancel is no longer offered before start.',
+    date: '2026-11-04',
+    files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-consume-reserved-col',
+    title: 'New consume record shows Reserved qty',
+    description:
+      'Work order › Material consume & return › New record (Consume): a Reserved qty column after Needed qty shows how much of each component the stock request holds for this work order — the same figure as the work order\'s Raw materials table. Hidden when "Product components must be reserved" is off, and on Return records.',
+    date: '2026-11-04',
+    files: ['NewMaterialRecordPage.vue'],
+  },
+  {
+    id: 'wo-reserved-consumed-plain',
+    title: 'Reserved qty and Consumed qty show the qty alone',
+    description:
+      'On the work order Raw materials table, Reserved qty and Consumed qty no longer read "x/y" against the needed qty — each shows its own qty. Needed qty already has its own column.',
+    date: '2026-11-04',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
     id: 'icon-names-fixed',
     title: 'Missing icons now show (no more 404s in the console)',
     description:
       'Several icons asked Pixel for names it does not have, so they rendered blank and left a 404 in the console on every page that mounted them — the work order page among them. Fixed to the real Pixel names: information → info (work order Adjust / Edit materials / Request additional stock modals, Production settings, product, sales and purchase invoice details, CRM deal), warning → warning-triangle (rejected-demand note on the work order), document → doc (attachment chips on New work order and New bill of materials), trash → delete (saved-view delete in the GL, budget variance and multidimensional reports), caret-left → chevrons-left (budget variance year picker), chevron-down → chevrons-down (shipping details), info-circle → info (knowledge-base warning). A test now checks every icon name against Pixel\'s own list.',
     date: '2026-11-03',
-    files: ['WorkOrderDetailsPage.vue', 'ProductionSettingsPage.vue', 'CreateWorkOrderPage.vue', 'CreateBillOfMaterialsPage.vue'],
+    files: ['WorkOrderDetailsPage.vue', 'SettingsProductionPage.vue', 'CreateWorkOrderPage.vue', 'CreateBillOfMaterialsPage.vue'],
   },
   {
     id: 'wo-raw-bulk-set',
@@ -81,7 +145,7 @@ export const DEV_CHANGES: DevChange[] = [
     description:
       'The PRD (12 Oct) restored "a toggle to disable / enable the reservation" and deleted L-12. Off: work orders raise no stock request, show no readiness, Reserved qty, Reservation menu, Adjust or Edit materials, and start without a reservation gate. Requests already raised stay on Stock requests.',
     date: '2026-10-14',
-    files: ['productionSettings.ts', 'ProductionSettingsPage.vue', 'WorkOrderDetailsPage.vue', 'CreateWorkOrderPage.vue'],
+    files: ['productionSettings.ts', 'SettingsProductionPage.vue', 'WorkOrderDetailsPage.vue', 'CreateWorkOrderPage.vue'],
   },
   {
     id: 'ps-start-gate-partial-mode',
@@ -89,7 +153,7 @@ export const DEV_CHANGES: DevChange[] = [
     description:
       'S-4 "is not introduced as a separate toggle" any more. The start gate follows the partial mode alone — partial consume: one component reserved; partial completion: every component holds some; neither: everything reserved in full. This note spells out the rule for the current setting.',
     date: '2026-10-14',
-    files: ['productionSettings.ts', 'stockRequests.ts', 'ProductionSettingsPage.vue'],
+    files: ['productionSettings.ts', 'stockRequests.ts', 'SettingsProductionPage.vue'],
   },
   {
     id: 'wo-request-date-plan-window',
@@ -279,7 +343,7 @@ export const DEV_CHANGES: DevChange[] = [
     description:
       'The work order start gate is its own setting again, separate from the partial toggles. Off, every component must be fully reserved whatever the partial mode says; on, partial consume needs one component reserved and partial completion needs every component to hold something.',
     date: '2026-10-02',
-    files: ['ProductionSettingsPage.vue', 'productionSettings.ts', 'stockRequests.ts'],
+    files: ['SettingsProductionPage.vue', 'productionSettings.ts', 'stockRequests.ts'],
   },
   {
     id: 'ps-reservation-method',
@@ -287,7 +351,7 @@ export const DEV_CHANGES: DevChange[] = [
     description:
       'Reservation is structural and cannot be switched off — the method (One step / Two steps) is the only choice. A tenant who had the old toggle OFF migrates to Two steps, so nothing auto-allocates on upgrade.',
     date: '2026-10-02',
-    files: ['ProductionSettingsPage.vue', 'productionSettings.ts'],
+    files: ['SettingsProductionPage.vue', 'productionSettings.ts'],
   },
   {
     id: 'wod-edit-materials',
@@ -296,14 +360,6 @@ export const DEV_CHANGES: DevChange[] = [
       'The Edit action now opens a materials modal. Changes update the existing request line in place and the editor becomes its requestor; a component cannot be removed, and a cut below the reserved qty is blocked inline with "unreserve first" instead of releasing silently. The warehouse is notified of any qty change.',
     date: '2026-10-02',
     files: ['EditWorkOrderMaterialsModal.vue', 'WorkOrderDetailsPage.vue'],
-  },
-  {
-    id: 'wod-request-additional',
-    title: 'Work order: Request additional stock (D-7)',
-    description:
-      'Production can ask the warehouse for extra material on top of the work order, with its own request date and a mandatory reason. Lines append to the work order\'s existing stock request tagged Additional stock, which the stockist can decline. It sits in Actions, not the Reservation menu, so it stays available under Two steps.',
-    date: '2026-10-02',
-    files: ['RequestAdditionalStockModal.vue', 'WorkOrderDetailsPage.vue'],
   },
   {
     id: 'sr-requested-tab',

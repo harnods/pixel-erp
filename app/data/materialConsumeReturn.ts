@@ -5,7 +5,7 @@ import { workOrders, type WorkOrderStatus, type WorkOrderMaterialReservation } f
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { warehouses } from './warehouses'
 import { isBatchTracked, isSerialized, autoSelectBatches, autoSelectSerials } from './warehouseDetails'
-import { applyConsumption, releaseConsumption } from './stockRequests'
+import { applyConsumption, clearConsumption } from './stockRequests'
 
 /**
  * A single material consume/return entry (Work order detail → Material consume &
@@ -191,9 +191,37 @@ export function addMaterialConsumeReturnRecord(data: Omit<MaterialConsumeReturnR
   materialConsumeReturnRecords.push(rec)
   persistMaterialConsumeReturn()
   // Producing draws the reservation DOWN: consumed stock has left the rack, so it
-  // must stop counting as held. A Return puts it back. Hooked here rather than at
-  // each call site so every consumption path stays in step with the stock request.
+  // must stop counting as held (UC-05). Hooked here rather than at each call site
+  // so every consumption path stays in step with the stock request.
+  //
+  // A Return does NOT touch the request (v0.6 UC-08, OPEN-33): it is a physical
+  // WIP → Available movement, the qty goes to AVAILABLE stock rather than back to
+  // this work order's reservation, and the request's consumed qty keeps showing
+  // what was issued against it. More material later means readjusting the WO.
   if (rec.qty > 0) applyConsumption(rec.workOrderId, rec.productId, rec.qty)
-  else if (rec.qty < 0) releaseConsumption(rec.workOrderId, rec.productId, -rec.qty)
   return rec
+}
+
+/**
+ * UC-09 — Cancel and Delete delete the work order's stock adjustments (its consume
+ * and return records), so consumed stock returns to on hand as if the job had
+ * never run, and the request lines stop counting it as issued. Returns the net qty
+ * restored to on hand — what the confirmation names (R-6).
+ */
+export function deleteRecordsForWorkOrder(workOrderId: string): number {
+  let restored = 0
+  for (let i = materialConsumeReturnRecords.length - 1; i >= 0; i--) {
+    const r = materialConsumeReturnRecords[i]!
+    if (r.workOrderId !== workOrderId) continue
+    restored += r.qty
+    materialConsumeReturnRecords.splice(i, 1)
+  }
+  persistMaterialConsumeReturn()
+  clearConsumption(workOrderId)
+  return Math.max(0, restored)
+}
+
+/** Net qty a work order has consumed (consumes − returns) — the R-6 preview. */
+export function netConsumedForWorkOrder(workOrderId: string): number {
+  return Math.max(0, recordsForWorkOrder(workOrderId).reduce((s, r) => s + r.qty, 0))
 }

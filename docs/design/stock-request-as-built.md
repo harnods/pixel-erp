@@ -5,7 +5,10 @@ diffed against **[PRD] Work Order: Material Reservation** on Confluence (page
 `51289981861`, space `PD`, status *Need feedback*). Requirement IDs below
 (S-x, C-x, D-x, W-x, R-x) are the PRD's own.
 
-**Last reconciled 14 Oct 2026**, against the PRD revision of **12 Oct** (page now
+**Last reconciled 4 Nov 2026, against Draft v0.6 — see §8.** Where v0.6 and the
+sections below disagree, §8 wins; the older sections are kept as history.
+
+**Reconciled 14 Oct 2026**, against the PRD revision of **12 Oct** (page now
 titled *[PRD] Work Order: Material Reservation*). That revision changed UC-00,
 C-1, UC-03 and UC-06 and deleted L-12; the build followed — see §3, "Resolved
 14 Oct". Earlier reconciliations (2 Oct) are kept below for history. The PRD's own "Known implementation gaps" list is now stale in
@@ -389,3 +392,65 @@ to be stated explicitly. As built on this branch:
 So all five are present as UI and state; what none of them do is post to a
 ledger, because this prototype has no journal layer at all. The only outright
 absence is WO **Delete**. None of the five was descoped by anyone.
+
+---
+
+## 8. Reconciled with Draft v0.6 (4 Nov 2026)
+
+v0.6 (Document History: "reservation made optional … a cancelled WO can be
+deleted") names this branch as its reference implementation. Every v0.6 change,
+and how the build now does it:
+
+| v0.6 | Build (4 Nov) | Where |
+| --- | --- | --- |
+| **S-0** — reservation optional, **default off**, forward only | `componentsMustBeReserved` defaults to `false`. Each work order captures `{ on, method }` at creation (`WorkOrder.reservation`) and every surface reads it through `woReservation()`, never the live setting. Seeded work orders predate the capture and read as *on, One-step*. Settings shows a forward-only note | `productionSettings.ts`, `CreateWorkOrderPage.vue`, `ProductionSettingsPage.vue` |
+| **C-3** — One-step reserves **up to the qty available** | `settleLines` takes `reservableQty` per line: Reserved / Partially reserved / Requested. The create toast names all three cases | `stockRequests.ts` |
+| **UC-06** — Edit **and** Adjust update the line in place | `applyDemandChanges` is one rule for both phases: any qty change on a reserved component releases its full remaining reservation (R-4, R-8), updates the line in place with the form's date and the user as requestor, then re-reserves through the method. A new product adds a line (`newLine`). No Adjustment lines | `stockRequests.ts`, `AdjustWorkOrderModal.vue` |
+| **L-12** — no stockist rejection | Removed: `rejected`, line `tag`s, `rejectRequestLine`, the Reject / Reject added lines / Reject request actions, the rejected notice on WO detail, the `rejected` line status. Snapshot key bumped to `stockRequests.v5` | `stockRequests.ts`, `StockRequestDetailsPage.vue`, `StockRequestsPage.vue` |
+| (implied) — no *Request additional stock* | Removed (PM ruling, 4 Nov): P-2 makes Adjust the route to more material | `WorkOrderDetailsPage.vue` |
+| **UC-04** — reservation off → "the start gate checks stock on hand only" | Same partial-mode table, counting on hand at each component's warehouse (`onHandAt`) — PM ruling, 4 Nov | `startGate` |
+| **P-1 … P-5** — consume limit and forms | Each line consumes / returns at its **own destination warehouse** (PM ruling) — the record-level picker is gone. Consume: On hand · Needed · Reserved · Consumed; the limit min(remaining reserved, on hand) — on hand with S-0 off — is not a column, but qty above it is refused with an inline error naming it. Return: Needed · Reserved · Consumed · Max returnable, plus "Returned qty goes to available stock". A tracked line's batch / serial pre-fill is capped at the limit | `NewMaterialRecordPage.vue` |
+| **UC-08** — a return does not change the request | `addMaterialConsumeReturnRecord` no longer touches the request on a Return; `releaseConsumption` deleted | `materialConsumeReturn.ts` |
+| **R-3** — reserved is 0 after completion | Already built (`releaseOnCompletion`). WO detail's Reserved qty column now shows what is **still** reserved (reserved − consumed), so it reads 0 after completion | `WorkOrderDetailsPage.vue` |
+| **UC-09** — Cancel and Delete reverse reservation **and** consumption; a cancelled WO can be deleted | `cancelWorkOrder` / `deleteWorkOrder` share `reverseWorkOrderStock`: release + delete the consume/return records (the stock adjustments) + zero the request's consumed. Cancel is offered only once started; Delete on Not started, Completed and Cancelled (moves nothing). Delete removes the record; the request is flagged `workOrderDeleted` and reads Canceled. The Cancel modal and the Delete confirm name the released and restored qty (R-6) | `woApproval.ts`, `WoTransactionModal.vue`, `WorkOrderDetailsPage.vue` |
+
+### 8.0 Settings page after the `main` sync (4 Nov)
+
+`main` replaced Production settings with the prod-parity `SettingsProductionPage`
+(General / Readiness / Integration, edited and saved per section). It is now the
+only Production settings page: it reads and writes the one `productionSettings`
+store, and carries a fourth section, **Component request & reservation** (S-0
+toggle, S-1 method, forward-only and Two-step notes), plus the start-rule note
+under Readiness. Its "partial production" is our partial *completion*. The
+branch's old `ProductionSettingsPage.vue` is deleted.
+
+### 8.1 PM rulings (4 Nov)
+
+1. *Request additional stock* is removed; Adjust is the only way to ask for more.
+2. Consumption draws from each line's own destination warehouse.
+3. With reservation off, the start gate applies the partial-mode table to on hand.
+4. Partial consume / partial completion stay as the two Figma toggles (the PRD's
+   three-way selection is offered, not required).
+
+### 8.2 v0.6 text still contradicting itself — resolved as before, PRD to fix
+
+- **Where Unreserve lives.** UC-02 says the button opens "the Reserve action only"
+  and Unreserve is handled from Stock requests; UC-03 and R-7 put it in the WO
+  Reservation menu while Not started. Built: **in the menu** (ruling of 14 Oct).
+- **Disposition.** UC-03 dropped it, but Key Concepts, US-4, QA-3 and the Audit
+  Log bullet still mention return-to-warehouse vs production-defect. Built:
+  **no disposition**.
+- **Edit below reserved.** The UC-06 notes still say "Qty cannot go below the
+  already-reserved amount"; the UC-06 table auto-unreserves. Built: **auto-unreserve**.
+- **Known implementation gaps** (Technical Documentation) is stale: reserve and
+  unreserve DO log, and the UC-04 gate IS built.
+
+### 8.3 Out of the prototype
+
+- R-9 email notification to another WO's owner — no mail layer.
+- Deleting a Completed WO's output posting and journal entries — no ledger.
+- OPEN-34 (P-1 on backflush) is still open: *Complete work order* auto-consumes
+  the remaining qty without the P-1 cap.
+- UC-08 says Return is available only with partial consume on; the form does not
+  gate it yet.
+

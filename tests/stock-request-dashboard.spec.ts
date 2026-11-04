@@ -8,15 +8,15 @@
  *   • W-3 — a product row takes the lowest status among the lines behind it.
  *   • W-4 — the Requested tab holds rows that are not fully reserved; free stock
  *     at the destination does not settle a row.
- *   • W-7 — overdue is derived per line, and a rejected line is settled, so it is
- *     never overdue and never counts as demand.
+ *   • W-7 — overdue is derived per line. There is no stockist rejection (v0.6
+ *     L-12): a line the warehouse cannot cover stays open.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   stockRequests, skuDemandGroups, isAwaitingTab, isTerminalRequest, stockRequestOpenCount,
   stockRequestStatus,
   stockRequestStatusOptions,
-  isOverdue, isLineOverdue, canRejectLine, rejectRequestLine,
+  isOverdue, isLineOverdue,
   type StockRequest, type StockRequestLine,
 } from '~/data/stockRequests'
 import { workOrders } from '~/data/workOrders'
@@ -112,7 +112,7 @@ describe('W-2 — the product rollup', () => {
   })
 })
 
-describe('W-7 — overdue and rejection', () => {
+describe('W-7 — overdue', () => {
   it('marks a line overdue when its required date has passed and it is not covered', () => {
     const l = line('mdf', 20, { requiredDate: '2026-06-01' })
     expect(isLineOverdue(l, TODAY)).toBe(true)
@@ -126,30 +126,6 @@ describe('W-7 — overdue and rejection', () => {
   it('carries overdue onto the product row, so the by-product view can show it', () => {
     seed('wo-dash-a', [line('mdf', 20, { requiredDate: '2026-06-01' })])
     expect(skuDemandGroups(mine())[0]!.overdue).toBe(true)
-  })
-
-  it('never calls a rejected line overdue — a declined line is settled', () => {
-    const l = line('mdf', 20, { requiredDate: '2026-06-01', tag: 'adjustment', rejected: true })
-    expect(isLineOverdue(l, TODAY)).toBe(false)
-  })
-
-  it('lets the stockist decline a tagged line only', () => {
-    const req = seed('wo-dash-a', [
-      line('mdf', 20),
-      line('kaki', 5, { tag: 'additional' }),
-    ])
-    expect(canRejectLine(req.lines[0]!)).toBe(false)
-    expect(canRejectLine(req.lines[1]!)).toBe(true)
-    expect(rejectRequestLine(req.id, req.lines[0]!)).toBe(false)
-    expect(rejectRequestLine(req.id, req.lines[1]!)).toBe(true)
-  })
-
-  it('drops a rejected line out of the rollup — its demand no longer stands', () => {
-    seed('wo-dash-a', [
-      line('mdf', 20),
-      line('mdf', 8, { tag: 'adjustment', rejected: true }),
-    ])
-    expect(skuDemandGroups(mine())[0]!.required).toBe(20)
   })
 
   it('reports a request overdue when any of its lines is', () => {
@@ -210,15 +186,6 @@ describe('W-4 — the Awaiting tab', () => {
     expect(isAwaitingTab(req)).toBe(true)
   })
 
-  it('keeps a request whose extra line was rejected but whose own demand still stands', () => {
-    const req = seedForWorkOrder([
-      line('mdf', 20, { reserved: 5 }),
-      line('kaki', 4, { tag: 'adjustment', rejected: true }),
-    ])
-    expect(isAwaitingTab(req)).toBe(true)
-    expect(isTerminalRequest(req)).toBe(false)
-  })
-
   it('counts the same rows for the open-count badge', () => {
     const before = stockRequestOpenCount()
     seedForWorkOrder([line('mdf', 20)])
@@ -254,8 +221,11 @@ describe('The Closed tab', () => {
     return req
   }
 
-  it('holds a request whose every line the stockist declined', () => {
-    const req = seedFor(activeWorkOrderId, [line('mdf', 20, { tag: 'adjustment', rejected: true })])
+  // v0.6 UC-09 — a DELETED work order's request stays listed, as Canceled.
+  it('holds a deleted work order\'s request, as Canceled', () => {
+    const req = seedFor(activeWorkOrderId, [line('mdf', 20, { reserved: 5 })])
+    req.workOrderDeleted = true // what markWorkOrderDeleted sets
+    expect(stockRequestStatus(req)).toBe('canceled')
     expect(isTerminalRequest(req)).toBe(true)
     expect(isAwaitingTab(req)).toBe(false)
   })
