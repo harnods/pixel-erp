@@ -21,7 +21,7 @@
 import { MpButton, MpBadge } from '@mekari/pixel3'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { successToast } from '~/utils/toasts'
-import { erpFakturOf, salesInvoiceTaxDocUrl, type ReconPair } from '~/data/vatReconciliation'
+import { erpFakturOf, salesInvoiceTaxDocUrl, ERP_FAKTUR_HINTS, type ReconPair } from '~/data/vatReconciliation'
 import { updateTaxDocumentStatus, DJP_STATUS_CONFIG } from '~/data/taxDocuments'
 import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermission'
 
@@ -32,21 +32,17 @@ const props = withDefaults(defineProps<{
   showHint?: boolean
   /** `sm` in the row panel; `md` in a drawer footer, beside its other buttons. */
   size?: 'sm' | 'md'
-}>(), { showHint: true, size: 'sm' })
+  /** `row` — buttons only, side by side (the workspace row shows the hint as
+   *  its own subtitle); `stack` — hint above the buttons. */
+  layout?: 'row' | 'stack'
+}>(), { showHint: true, size: 'sm', layout: 'stack' })
 
 const { t } = useLocale()
 const { canSubmitTaxDocument } = useTaxSubmissionPermission()
 
 const faktur = computed(() => erpFakturOf(props.pair))
 
-const HINTS = {
-  none: 'No tax document yet. Create one on the sales invoice, then submit it to DJP.',
-  draft: 'A draft tax document exists but has not been submitted to DJP.',
-  submitted: 'Submitted to DJP, waiting for approval.',
-  rejected: 'Rejected by DJP. Fix it on the sales invoice and resubmit.',
-  approved: 'Approved in ERP. Sync with Klikpajak to match it.',
-} as const
-const hint = computed(() => (faktur.value ? HINTS[faktur.value.state] : ''))
+const hint = computed(() => (faktur.value ? ERP_FAKTUR_HINTS[faktur.value.state] : ''))
 const badge = computed(() => (faktur.value?.doc ? DJP_STATUS_CONFIG[faktur.value.doc.status] : null))
 
 function openInNewTab(action: 'create' | 'edit' | 'view') {
@@ -75,23 +71,25 @@ function doSubmit() {
 </script>
 
 <template>
-  <div v-if="faktur" class="vrt" data-devchange="vat-recon-tax-doc-actions">
-    <div v-if="showHint" class="vrt-hint">
+  <div v-if="faktur" class="vrt" :class="`vrt--${layout}`" data-devchange="vat-recon-tax-doc-actions">
+    <div v-if="showHint && layout === 'stack'" class="vrt-hint">
       <MpBadge v-if="badge" :type="badge.type" for="tableStatus" size="sm">{{ t(badge.label) }}</MpBadge>
       <span>{{ t(hint) }}</span>
     </div>
     <div class="vrt-actions">
       <template v-if="faktur.state === 'none'">
-        <MpButton variant="secondary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
+        <MpButton variant="primary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
           {{ t('Create tax document') }}
         </MpButton>
       </template>
+      <!-- Draft: Edit (secondary) then Submit (primary) — the primary sits last,
+           where the eye ends, like every form footer. -->
       <template v-else-if="faktur.state === 'draft'">
-        <MpButton variant="secondary" v-bind="{ size }" is-rounded @click="askSubmit">
-          {{ t('Submit to DJP') }}
-        </MpButton>
         <MpButton variant="secondary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('edit')">
           {{ t('Edit tax document') }}
+        </MpButton>
+        <MpButton variant="primary" v-bind="{ size }" is-rounded @click="askSubmit">
+          {{ t('Submit to DJP') }}
         </MpButton>
       </template>
       <MpButton v-else variant="secondary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('view')">
@@ -116,6 +114,7 @@ function doSubmit() {
 
 <style scoped>
 .vrt { display: flex; flex-direction: column; gap: var(--mp-spacing-2); align-items: flex-start; }
+.vrt--row { align-items: flex-end; }
 .vrt-hint {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);

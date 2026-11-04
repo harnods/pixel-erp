@@ -28,6 +28,38 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-review-fixes',
+    title: 'VAT reconciliation: design-review P0 + P1 fixes',
+    description:
+      'A match whose sides differ is no longer one click: the ✓ opens a modal that states the difference and requires a reason. Manual matches are saved (Reconciled manual; KPIs and index follow; Unmatch reverts). The expand shows Activity built from real records (match + reason, waiting on buyer, tax document, engine, sync). The page scrolls as a whole with a sticky column header and footer, pages at 50 rows, and drafts can be selected and submitted to DJP in bulk.',
+    date: '2026-11-03',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationMatchConfirmModal.vue', 'VatReconciliationPairActions.vue', 'ReconciliationDetailDrawer.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-fixes',
+    title: 'VAT reconciliation: four PRD OD-001 gaps fixed',
+    description:
+      'Tax difference is now |PPN Sales − PPN Faktur| (US-020 AC-02) — it used to add the DPP gap in. Footer counts follow the status filter and search; the cards stay period-level (AC-04). A Finalized masa refuses Match / Unmatch / Confirm, not only Re-run (US-002 AC-05). Waiting on buyer is a real per-row toggle with a clock tag: only toggled rows leave "need review", status unchanged (US-012 AC-02).',
+    date: '2026-11-03',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationPairActions.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationUnmatchedPage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-first-period',
+    title: 'VAT reconciliation starts at masa 10/2026',
+    description:
+      'Release moves to November 2026, so the first masa pajak offered is 10/2026 (its SPT is still due end of November) instead of 01/2027. The six demo periods now run 10/2026 → 03/2027 and the prototype "today" is 18 Mar 2027.',
+    date: '2026-11-02',
+    files: ['vatReconciliation.ts', 'VatMatchingRulesPage.vue'],
+  },
+  {
+    id: 'vat-recon-bank-style',
+    title: 'VAT reconciliation rows: bank-reconciliation style',
+    description:
+      'Rows are grouped by date and read as one compact line — ERP amount ⋯ Coretax amount + status tag — like Bank reconciliation. Detail opens inside the row (no drawer): both sides field by field, or a radio list of candidates with Selected total and Difference. The round ✓ confirms a match (filled green = reconciled; pressed with nothing picked, it asks inline). Tax document actions (Edit / Submit to DJP / Create) sit on the line itself. Status filter is now ErpFilterSelect.',
+    date: '2026-11-02',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationPairActions.vue', 'VatReconciliationTaxDocActions.vue', 'ReconciliationDetailDrawer.vue', 'vatReconciliation.ts'],
+  },
+  {
     id: 'vat-recon-tax-doc-actions',
     title: 'Not found in Coretax: act on the invoice\'s tax document',
     description:

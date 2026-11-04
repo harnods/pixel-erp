@@ -15,7 +15,7 @@ import {
 
 const notInCoretax = () => [
   ...outputPairs.filter(p => p.match === 'not-in-coretax'),
-  ...pairsForPeriod('2027-06', 'output').filter(p => p.match === 'not-in-coretax'),
+  ...pairsForPeriod('2027-03', 'output').filter(p => p.match === 'not-in-coretax'),
 ]
 
 describe('Not found in Coretax — linked to real sales invoices', () => {
@@ -48,12 +48,12 @@ describe('Not found in Coretax — linked to real sales invoices', () => {
       expect(canGenerateTaxDocument(id), id).toBe(true)
     }
     // Every link list entry is used — a seed count change can't silently drop one.
-    expect(pairsForPeriod('2027-06', 'output').length).toBe(OUTPUT_NOT_IN_CORETAX_LINKS['2027-06']!.length)
+    expect(pairsForPeriod('2027-03', 'output').length).toBe(OUTPUT_NOT_IN_CORETAX_LINKS['2027-03']!.length)
   })
 
   it('fixture invoice numbers never collide with a real invoice', () => {
     const real = new Set(salesInvoices.map(s => String(s.number)))
-    for (const period of ['2027-01', '2027-02', '2027-03', '2027-04']) {
+    for (const period of ['2026-10', '2026-11', '2026-12', '2027-01']) {
       for (const p of pairsForPeriod(period, 'output')) {
         if (p.erp && !p.erp.salesInvoiceId) expect(real.has(p.erp.ref), p.erp.ref).toBe(false)
       }

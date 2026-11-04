@@ -3,7 +3,8 @@ import { loadSnapshot, saveSnapshot } from '~/data/persist'
 import { coaAccounts, type CoaAccount } from '~/data/wmsCutover'
 import { salesInvoices } from '~/data/salesInvoices'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
-import { currentTaxDocument, type TaxDocument } from '~/data/taxDocuments'
+import { currentTaxDocument, DJP_STATUS_CONFIG, type TaxDocument } from '~/data/taxDocuments'
+import { formatIDR } from '~/utils/currency'
 
 /**
  * VAT reconciliation — ERP records ↔ DJP Coretax faktur pajak.
@@ -26,7 +27,7 @@ import { currentTaxDocument, type TaxDocument } from '~/data/taxDocuments'
  * rather than being deleted and rebuilt — but its fixtures are illustrative and
  * the status model was written against the VAT Out conditions.
  *
- * Period: Masa pajak 05/2027. Tenant: PT Central Perk Indonesia.
+ * Period: Masa pajak 02/2027. Tenant: PT Central Perk Indonesia.
  */
 
 /**
@@ -360,7 +361,7 @@ export const SIDE_LABELS: Record<ReconSide, {
  * the invoice it opens never disagree on what is owed.
  */
 export const OUTPUT_NOT_IN_CORETAX_LINKS: Record<string, string[]> = {
-  '2027-06': ['SI103', 'SI097', 'SI061', 'SI050', 'SI043', 'SI013', 'SI002'],
+  '2027-03': ['SI103', 'SI097', 'SI061', 'SI050', 'SI043', 'SI013', 'SI002'],
 }
 
 export function linkToSalesInvoice(rec: ReconRecord, salesInvoiceId: string | undefined): ReconRecord {
@@ -424,86 +425,86 @@ export const outputPairs: ReconPair[] = [
   {
     // 1 — key, corroboration and direction all pass; faktur Approved.
     id: 'o-01', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: '40142', date: '02 May 2027', customer: 'PT Telkom Indonesia Tbk', npwp: '0010000131093000', dpp: 12500000, ppn: 1500000, total: 14000000 },
-    djp: { ref: '27000000039847291', date: '02 May 2027', customer: 'PT Telkom Indonesia Tbk', npwp: '0010000131093000', dpp: 12500000, ppn: 1500000, total: 14000000, approved: true },
+    erp: { ref: '40142', date: '02 Feb 2027', customer: 'PT Telkom Indonesia Tbk', npwp: '0010000131093000', dpp: 12500000, ppn: 1500000, total: 14000000 },
+    djp: { ref: '27000000039847291', date: '02 Feb 2027', customer: 'PT Telkom Indonesia Tbk', npwp: '0010000131093000', dpp: 12500000, ppn: 1500000, total: 14000000, approved: true },
   },
   {
     id: 'o-02', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: '40143', date: '03 May 2027', customer: 'PT Bank Central Asia Tbk', npwp: '0010010641091000', dpp: 42750000, ppn: 5130000, total: 47880000 },
-    djp: { ref: '27000000039847342', date: '03 May 2027', customer: 'PT Bank Central Asia Tbk', npwp: '0010010641091000', dpp: 42750000, ppn: 5130000, total: 47880000, approved: true },
+    erp: { ref: '40143', date: '03 Feb 2027', customer: 'PT Bank Central Asia Tbk', npwp: '0010010641091000', dpp: 42750000, ppn: 5130000, total: 47880000 },
+    djp: { ref: '27000000039847342', date: '03 Feb 2027', customer: 'PT Bank Central Asia Tbk', npwp: '0010010641091000', dpp: 42750000, ppn: 5130000, total: 47880000, approved: true },
   },
   {
     // 2 — the engine could not close it; a person did, and the log says so.
     id: 'o-03', match: 'matched', matchedBy: 'manual', confidence: 1,
-    erp: { ref: '40144', date: '05 May 2027', customer: 'PT Astra International Tbk', npwp: '0013025845092000', dpp: 87500000, ppn: 10500000, total: 98000000 },
-    djp: { ref: '27000000039847415', date: '05 May 2027', customer: 'PT Astra Intl. Tbk', npwp: '0013025845092000', dpp: 87500000, ppn: 10500000, total: 98000000, approved: true },
+    erp: { ref: '40144', date: '05 Feb 2027', customer: 'PT Astra International Tbk', npwp: '0013025845092000', dpp: 87500000, ppn: 10500000, total: 98000000 },
+    djp: { ref: '27000000039847415', date: '05 Feb 2027', customer: 'PT Astra Intl. Tbk', npwp: '0013025845092000', dpp: 87500000, ppn: 10500000, total: 98000000, approved: true },
     reason: 'Reference on the faktur was typed without the SI prefix. Matched by hand after checking NPWP and amounts.',
   },
   {
     // 5 (US-010) — the invoice moved after the faktur was approved.
     id: 'o-04', match: 'invoice-edited', confidence: 0,
-    erp: { ref: '40145', date: '08 May 2027', customer: 'PT Indofood Sukses Makmur Tbk', npwp: '0011060432092000', dpp: 24800000, ppn: 2976000, total: 27776000 },
-    djp: { ref: '27000000039847488', date: '08 May 2027', customer: 'PT Indofood Sukses Makmur Tbk', npwp: '0011060432092000', dpp: 25300000, ppn: 3036000, total: 28336000, approved: true },
+    erp: { ref: '40145', date: '08 Feb 2027', customer: 'PT Indofood Sukses Makmur Tbk', npwp: '0011060432092000', dpp: 24800000, ppn: 2976000, total: 27776000 },
+    djp: { ref: '27000000039847488', date: '08 Feb 2027', customer: 'PT Indofood Sukses Makmur Tbk', npwp: '0011060432092000', dpp: 25300000, ppn: 3036000, total: 28336000, approved: true },
     reason: 'Sales invoice edited on 14 Jan, after the faktur was approved on 09 Jan. DPP is Rp500.000 lower than the faktur.',
     fields: ['dpp', 'ppn', 'total'],
   },
   {
     id: 'o-05', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: '40146', date: '10 May 2027', customer: 'PT Trinusa Travelindo', npwp: '0025278154031000', dpp: 18900000, ppn: 2268000, total: 21168000 },
-    djp: { ref: '27000000039847561', date: '10 May 2027', customer: 'PT Trinusa Travelindo', npwp: '0025278154031000', dpp: 18900000, ppn: 2268000, total: 21168000, approved: true },
+    erp: { ref: '40146', date: '10 Feb 2027', customer: 'PT Trinusa Travelindo', npwp: '0025278154031000', dpp: 18900000, ppn: 2268000, total: 21168000 },
+    djp: { ref: '27000000039847561', date: '10 Feb 2027', customer: 'PT Trinusa Travelindo', npwp: '0025278154031000', dpp: 18900000, ppn: 2268000, total: 21168000, approved: true },
   },
   {
     // Faktur dated the day after its invoice — direction is fine, so this is a
     // clean match. The engine checks direction, not distance: there is no window.
     id: 'o-06', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: '40147', date: '12 May 2027', customer: 'PT Mitra Keluarga Karyasehat Tbk', npwp: '0010610927054000', dpp: 9800000, ppn: 1176000, total: 10976000 },
-    djp: { ref: '27000000039847634', date: '13 May 2027', customer: 'PT Mitra Keluarga Karyasehat Tbk', npwp: '0010610927054000', dpp: 9800000, ppn: 1176000, total: 10976000, approved: true },
+    erp: { ref: '40147', date: '12 Feb 2027', customer: 'PT Mitra Keluarga Karyasehat Tbk', npwp: '0010610927054000', dpp: 9800000, ppn: 1176000, total: 10976000 },
+    djp: { ref: '27000000039847634', date: '13 Feb 2027', customer: 'PT Mitra Keluarga Karyasehat Tbk', npwp: '0010610927054000', dpp: 9800000, ppn: 1176000, total: 10976000, approved: true },
   },
   {
     // 3 (US-008) — invoice raised, faktur never issued.
     id: 'o-07', match: 'not-in-coretax', confidence: 0,
-    erp: { ref: '40148', date: '15 May 2027', customer: 'PT GoTo Gojek Tokopedia Tbk', npwp: '0071058362092000', dpp: 31200000, ppn: 3744000, total: 34944000 },
+    erp: { ref: '40148', date: '15 Feb 2027', customer: 'PT GoTo Gojek Tokopedia Tbk', npwp: '0071058362092000', dpp: 31200000, ppn: 3744000, total: 34944000 },
     djp: null,
     reason: 'No Approved faktur pajak carries this invoice number as its Referensi.',
   },
   {
     id: 'o-08', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: '40149', date: '18 May 2027', customer: 'PT Trans Retail Indonesia', npwp: '0022187064046000', dpp: 56400000, ppn: 6768000, total: 63168000 },
-    djp: { ref: '27000000039847707', date: '18 May 2027', customer: 'PT Trans Retail Indonesia', npwp: '0022187064046000', dpp: 56400000, ppn: 6768000, total: 63168000, approved: true },
+    erp: { ref: '40149', date: '18 Feb 2027', customer: 'PT Trans Retail Indonesia', npwp: '0022187064046000', dpp: 56400000, ppn: 6768000, total: 63168000 },
+    djp: { ref: '27000000039847707', date: '18 Feb 2027', customer: 'PT Trans Retail Indonesia', npwp: '0022187064046000', dpp: 56400000, ppn: 6768000, total: 63168000, approved: true },
   },
   {
     // 4 (US-009) — faktur approved against an invoice that was never posted.
     id: 'o-09', match: 'no-match-in-erp', confidence: 0,
     erp: null,
-    djp: { ref: '27000000039847780', date: '20 May 2027', customer: 'CV Sinar Jaya Abadi', npwp: '0028345127027000', dpp: 4200000, ppn: 504000, total: 4704000, approved: true },
+    djp: { ref: '27000000039847780', date: '20 Feb 2027', customer: 'CV Sinar Jaya Abadi', npwp: '0028345127027000', dpp: 4200000, ppn: 504000, total: 4704000, approved: true },
     reason: 'No sales invoice, journal entry or bank deposit in Jurnal carries this Referensi.',
   },
   {
     // 6 (US-011) — invoice cancelled, faktur still live at DJP.
     id: 'o-10', match: 'invoice-voided', confidence: 0,
-    erp: { ref: '40150', date: '22 May 2027', customer: 'PT Bumi Berkah Boga', npwp: '0034289175031000', dpp: 6125000, ppn: 735000, total: 6860000, voided: true },
-    djp: { ref: '27000000039847853', date: '22 May 2027', customer: 'PT Bumi Berkah Boga', npwp: '0034289175031000', dpp: 6125000, ppn: 735000, total: 6860000, approved: true },
+    erp: { ref: '40150', date: '22 Feb 2027', customer: 'PT Bumi Berkah Boga', npwp: '0034289175031000', dpp: 6125000, ppn: 735000, total: 6860000, voided: true },
+    djp: { ref: '27000000039847853', date: '22 Feb 2027', customer: 'PT Bumi Berkah Boga', npwp: '0034289175031000', dpp: 6125000, ppn: 735000, total: 6860000, approved: true },
     reason: 'Sales invoice was voided on 25 Jan. The faktur is still Approved in Coretax and must be cancelled.',
   },
   {
     id: 'o-11', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: '40151', date: '25 May 2027', customer: 'PT Hungry Birds Indonesia', npwp: '0078123940058000', dpp: 3500000, ppn: 420000, total: 3920000 },
-    djp: { ref: '27000000039847926', date: '25 May 2027', customer: 'PT Hungry Birds Indonesia', npwp: '0078123940058000', dpp: 3500000, ppn: 420000, total: 3920000, approved: true },
+    erp: { ref: '40151', date: '25 Feb 2027', customer: 'PT Hungry Birds Indonesia', npwp: '0078123940058000', dpp: 3500000, ppn: 420000, total: 3920000 },
+    djp: { ref: '27000000039847926', date: '25 Feb 2027', customer: 'PT Hungry Birds Indonesia', npwp: '0078123940058000', dpp: 3500000, ppn: 420000, total: 3920000, approved: true },
   },
   {
     // 7 (US-012) — return booked in Jurnal after the faktur; buyer has not sent
     // a nota retur and no pengganti was issued. The common return path.
     id: 'o-12', match: 'return-not-reflected', confidence: 0,
-    erp: { ref: '40152', date: '26 May 2027', customer: 'PT Maju Sejahtera Abadi', npwp: '0017763285013000', dpp: 8400000, ppn: 1008000, total: 9408000, returnRef: 'SR-2027-014', returnDate: '30 May 2027', returnTotal: 2352000 },
-    djp: { ref: '27000000039847999', date: '27 May 2027', customer: 'PT Maju Sejahtera Abadi', npwp: '0017763285013000', dpp: 8400000, ppn: 1008000, total: 9408000, approved: true },
+    erp: { ref: '40152', date: '26 Feb 2027', customer: 'PT Maju Sejahtera Abadi', npwp: '0017763285013000', dpp: 8400000, ppn: 1008000, total: 9408000, returnRef: 'SR-2027-014', returnDate: '28 Feb 2027', returnTotal: 2352000 },
+    djp: { ref: '27000000039847999', date: '27 Feb 2027', customer: 'PT Maju Sejahtera Abadi', npwp: '0017763285013000', dpp: 8400000, ppn: 1008000, total: 9408000, approved: true },
     reason: 'Sales return SR-2027-014 (Rp2.352.000) booked on 30 Jan, after the faktur. No nota retur from the buyer and no pengganti.',
   },
   {
     // 9 — every field agrees, but the faktur predates its invoice, which is
     // impossible. This is what the removed ±3-day window used to swallow.
     id: 'o-13', match: 'faktur-predates', confidence: 0,
-    erp: { ref: '40153', date: '29 May 2027', customer: 'PT Sumber Alfaria Trijaya Tbk', npwp: '0010914763092000', dpp: 15600000, ppn: 1872000, total: 17472000 },
-    djp: { ref: '27000000039848072', date: '26 May 2027', customer: 'PT Sumber Alfaria Trijaya Tbk', npwp: '0010914763092000', dpp: 15600000, ppn: 1872000, total: 17472000, approved: true },
+    erp: { ref: '40153', date: '28 Feb 2027', customer: 'PT Sumber Alfaria Trijaya Tbk', npwp: '0010914763092000', dpp: 15600000, ppn: 1872000, total: 17472000 },
+    djp: { ref: '27000000039848072', date: '26 Feb 2027', customer: 'PT Sumber Alfaria Trijaya Tbk', npwp: '0010914763092000', dpp: 15600000, ppn: 1872000, total: 17472000, approved: true },
     reason: 'Faktur is dated 26 Jan, three days before its invoice. Correct the date on one side.',
     fields: ['date'],
   },
@@ -511,16 +512,16 @@ export const outputPairs: ReconPair[] = [
     // 11 (US-003) — original plus pengganti both carry the same Referensi.
     // Without OD-002 lineage the engine cannot pick, so a person does.
     id: 'o-14', match: 'duplicate-reference', confidence: 0,
-    erp: { ref: '40154', date: '29 May 2027', customer: 'PT Erajaya Swasembada Tbk', npwp: '0018452037091000', dpp: 21000000, ppn: 2520000, total: 23520000 },
-    djp: { ref: '27000000039848145', date: '29 May 2027', customer: 'PT Erajaya Swasembada Tbk', npwp: '0018452037091000', dpp: 21000000, ppn: 2520000, total: 23520000, approved: true },
+    erp: { ref: '40154', date: '28 Feb 2027', customer: 'PT Erajaya Swasembada Tbk', npwp: '0018452037091000', dpp: 21000000, ppn: 2520000, total: 23520000 },
+    djp: { ref: '27000000039848145', date: '28 Feb 2027', customer: 'PT Erajaya Swasembada Tbk', npwp: '0018452037091000', dpp: 21000000, ppn: 2520000, total: 23520000, approved: true },
     reason: 'Two Approved faktur carry this invoice number: 27000000039848145 and its pengganti 27000000039848218.',
   },
   {
     // 8 (US-017) — return booked *before* the faktur, and the faktur was issued
     // net of it. Legitimate, rare, and never auto-matched: a person confirms.
     id: 'o-15', match: 'return-netted', confidence: 0,
-    erp: { ref: '40155', date: '20 May 2027', customer: 'PT Ace Hardware Indonesia Tbk', npwp: '0016038291074000', dpp: 30000000, ppn: 3600000, total: 33600000, returnRef: 'SR-2027-011', returnDate: '24 May 2027', returnTotal: 5600000 },
-    djp: { ref: '27000000039848291', date: '28 May 2027', customer: 'PT Ace Hardware Indonesia Tbk', npwp: '0016038291074000', dpp: 25000000, ppn: 3000000, total: 28000000, approved: true },
+    erp: { ref: '40155', date: '20 Feb 2027', customer: 'PT Ace Hardware Indonesia Tbk', npwp: '0016038291074000', dpp: 30000000, ppn: 3600000, total: 33600000, returnRef: 'SR-2027-011', returnDate: '24 Feb 2027', returnTotal: 5600000 },
+    djp: { ref: '27000000039848291', date: '28 Feb 2027', customer: 'PT Ace Hardware Indonesia Tbk', npwp: '0016038291074000', dpp: 25000000, ppn: 3000000, total: 28000000, approved: true },
     reason: 'Invoice Rp33.600.000 less return SR-2027-011 Rp5.600.000 equals the faktur exactly. The return predates the faktur, so a net faktur is correct.',
   },
   {
@@ -528,13 +529,13 @@ export const outputPairs: ReconPair[] = [
     // it can never be mistaken for a missing document.
     id: 'o-16', match: 'no-match-in-erp', confidence: 0,
     erp: null,
-    djp: { ref: '27000000039848364', date: '30 May 2027', customer: 'PT Midi Utama Indonesia Tbk', npwp: '0019274056083000', dpp: 7350000, ppn: 882000, total: 8232000, approved: false },
+    djp: { ref: '27000000039848364', date: '28 Feb 2027', customer: 'PT Midi Utama Indonesia Tbk', npwp: '0019274056083000', dpp: 7350000, ppn: 882000, total: 8232000, approved: false },
     reason: 'Faktur is still Draft in Coretax, so it is excluded from matching until it is approved.',
   },
 ]
 
 /**
- * o-07 is the 05/2027 "invoice raised, faktur never issued" case — the row the
+ * o-07 is the 02/2027 "invoice raised, faktur never issued" case — the row the
  * user acts on by going to the invoice, so it has to BE one.
  */
 {
@@ -547,58 +548,171 @@ export const outputPairs: ReconPair[] = [
 export const inputPairs: ReconPair[] = [
   {
     id: 'i-01', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: 'PINV-2027-018', date: '04 May 2027', vendor: 'PT Pertamina Patra Niaga', npwp: '0010016543058000', dpp: 14500000, ppn: 1740000, total: 16240000 },
-    djp: { ref: '27000000071284091', date: '04 May 2027', vendor: 'PT Pertamina Patra Niaga', npwp: '0010016543058000', dpp: 14500000, ppn: 1740000, total: 16240000, approved: true },
+    erp: { ref: 'PINV-2027-018', date: '04 Feb 2027', vendor: 'PT Pertamina Patra Niaga', npwp: '0010016543058000', dpp: 14500000, ppn: 1740000, total: 16240000 },
+    djp: { ref: '27000000071284091', date: '04 Feb 2027', vendor: 'PT Pertamina Patra Niaga', npwp: '0010016543058000', dpp: 14500000, ppn: 1740000, total: 16240000, approved: true },
   },
   {
     id: 'i-02', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: 'PINV-2027-019', date: '06 May 2027', vendor: 'PT Aneka Gas Industri', npwp: '0010724988091000', dpp: 3250000, ppn: 390000, total: 3640000 },
-    djp: { ref: '27000000071284164', date: '06 May 2027', vendor: 'PT Aneka Gas Industri', npwp: '0010724988091000', dpp: 3250000, ppn: 390000, total: 3640000, approved: true },
+    erp: { ref: 'PINV-2027-019', date: '06 Feb 2027', vendor: 'PT Aneka Gas Industri', npwp: '0010724988091000', dpp: 3250000, ppn: 390000, total: 3640000 },
+    djp: { ref: '27000000071284164', date: '06 Feb 2027', vendor: 'PT Aneka Gas Industri', npwp: '0010724988091000', dpp: 3250000, ppn: 390000, total: 3640000, approved: true },
   },
   {
     id: 'i-03', match: 'no-match-in-erp', confidence: 0,
     erp: null,
-    djp: { ref: '27000000071284237', date: '09 May 2027', vendor: 'PT Mitra Logistik Cepat', npwp: '0023486712072000', dpp: 8750000, ppn: 1050000, total: 9800000, approved: true },
+    djp: { ref: '27000000071284237', date: '09 Feb 2027', vendor: 'PT Mitra Logistik Cepat', npwp: '0023486712072000', dpp: 8750000, ppn: 1050000, total: 9800000, approved: true },
     reason: 'Prepopulated from Coretax. No purchase invoice recorded in ERP yet — create it from this faktur.',
   },
   {
     id: 'i-04', match: 'matched', matchedBy: 'manual', confidence: 1,
-    erp: { ref: 'PINV-2027-021', date: '12 May 2027', vendor: 'PT Sinar Sosro', npwp: '0014281035091000', dpp: 4860000, ppn: 583200, total: 5443200 },
-    djp: { ref: '27000000071284310', date: '12 May 2027', vendor: 'PT Sinar Sosro', npwp: '0014281035091000', dpp: 4860000, ppn: 583200, total: 5443200, approved: true },
+    erp: { ref: 'PINV-2027-021', date: '12 Feb 2027', vendor: 'PT Sinar Sosro', npwp: '0014281035091000', dpp: 4860000, ppn: 583200, total: 5443200 },
+    djp: { ref: '27000000071284310', date: '12 Feb 2027', vendor: 'PT Sinar Sosro', npwp: '0014281035091000', dpp: 4860000, ppn: 583200, total: 5443200, approved: true },
     reason: 'Purchase invoice number is not stored on the faktur. Matched by hand on NPWP, amount and date.',
   },
   {
     id: 'i-05', match: 'invoice-edited', confidence: 0,
-    erp: { ref: 'PINV-2027-022', date: '14 May 2027', vendor: 'PT Wahana Komputer', npwp: '0016732814031000', dpp: 22500000, ppn: 2475000, total: 24975000 },
-    djp: { ref: '27000000071284383', date: '14 May 2027', vendor: 'PT Wahana Komputer', npwp: '0016732814031000', dpp: 22500000, ppn: 2700000, total: 25200000, approved: true },
+    erp: { ref: 'PINV-2027-022', date: '14 Feb 2027', vendor: 'PT Wahana Komputer', npwp: '0016732814031000', dpp: 22500000, ppn: 2475000, total: 24975000 },
+    djp: { ref: '27000000071284383', date: '14 Feb 2027', vendor: 'PT Wahana Komputer', npwp: '0016732814031000', dpp: 22500000, ppn: 2700000, total: 25200000, approved: true },
     reason: 'PPN differs — Coretax shows 12% but the purchase invoice recorded 11%.',
     fields: ['ppn', 'total'],
   },
   {
     id: 'i-06', match: 'matched', matchedBy: 'auto', confidence: 1,
-    erp: { ref: 'PINV-2027-024', date: '17 May 2027', vendor: 'PT Trans Multi Logistic', npwp: '0021068479064000', dpp: 1875000, ppn: 225000, total: 2100000 },
-    djp: { ref: '27000000071284456', date: '17 May 2027', vendor: 'PT Trans Multi Logistic', npwp: '0021068479064000', dpp: 1875000, ppn: 225000, total: 2100000, approved: true },
+    erp: { ref: 'PINV-2027-024', date: '17 Feb 2027', vendor: 'PT Trans Multi Logistic', npwp: '0021068479064000', dpp: 1875000, ppn: 225000, total: 2100000 },
+    djp: { ref: '27000000071284456', date: '17 Feb 2027', vendor: 'PT Trans Multi Logistic', npwp: '0021068479064000', dpp: 1875000, ppn: 225000, total: 2100000, approved: true },
   },
   {
     id: 'i-07', match: 'no-match-in-erp', confidence: 0,
     erp: null,
-    djp: { ref: '27000000071284529', date: '21 May 2027', vendor: 'CV Berkah Stationary', npwp: '0072159483052000', dpp: 980000, ppn: 117600, total: 1097600, approved: true },
+    djp: { ref: '27000000071284529', date: '21 Feb 2027', vendor: 'CV Berkah Stationary', npwp: '0072159483052000', dpp: 980000, ppn: 117600, total: 1097600, approved: true },
     reason: 'Prepopulated from Coretax. No purchase invoice recorded in ERP yet.',
   },
   {
     id: 'i-08', match: 'not-in-coretax', confidence: 0,
-    erp: { ref: 'PINV-2027-027', date: '24 May 2027', vendor: 'PT Solusi Bangun Indonesia', npwp: '0015472860091000', dpp: 11250000, ppn: 1350000, total: 12600000 },
+    erp: { ref: 'PINV-2027-027', date: '24 Feb 2027', vendor: 'PT Solusi Bangun Indonesia', npwp: '0015472860091000', dpp: 11250000, ppn: 1350000, total: 12600000 },
     djp: null,
     reason: "Purchase invoice exists in ERP but the vendor hasn't issued a faktur pajak.",
   },
 ]
 
-/** Alternative match candidates offered in the drawer for a non-matched pair. */
-export const matchCandidates = [
-  { ref: '26000000039847488', date: '08 Apr 2026', party: 'PT Indofood Sukses Makmur Tbk', dpp: 24800000, ppn: 2976500, total: 27776500, confidence: 0.78, why: 'NPWP and DPP match. PPN differs by Rp500.' },
-  { ref: '26000000039847412', date: '07 Apr 2026', party: 'PT Indofood Sukses Makmur Tbk', dpp: 24800000, ppn: 2976000, total: 27776000, confidence: 0.65, why: 'NPWP and amounts match. Date is one day earlier.' },
-  { ref: '26000000039847501', date: '09 Apr 2026', party: 'PT Indofood Distribusi', dpp: 25000000, ppn: 3000000, total: 28000000, confidence: 0.42, why: 'NPWP differs (group company). Amount slightly higher.' },
-]
+// ── Candidates, comparison and grouping (workspace rows + detail drawer) ──────
+
+export interface MatchCandidate {
+  ref: string
+  date: string
+  party: string
+  dpp: number
+  ppn: number
+  total: number
+  confidence: number
+  why: string
+}
+
+/** States where the pair is still open for a person to pick its counterpart. */
+export const CANDIDATE_STATES: MatchState[] = ['not-in-coretax', 'no-match-in-erp', 'duplicate-reference']
+
+export function hasCandidates(pair: ReconPair): boolean {
+  return CANDIDATE_STATES.includes(pair.match)
+}
+
+/**
+ * Plausible counterparts for an open pair, derived FROM the pair so the
+ * Selected total / Difference the user sees are about this row and not about a
+ * fixed sample. The first is the near-certain one (same amount and NPWP — the
+ * Referensi was typed differently), the others are the near misses the engine
+ * refused to auto-match. Deterministic per pair id, so a refresh shows the same.
+ */
+export function candidatesFor(pair: ReconPair): MatchCandidate[] {
+  if (!hasCandidates(pair)) return []
+  const base = pair.erp ?? pair.djp
+  if (!base) return []
+  // The counterpart lives on the other side: a faktur for an ERP-only row, an
+  // invoice for a Coretax-only one. Refs are shaped like that side's numbers.
+  const lookingForFaktur = !!pair.erp && !pair.djp
+  const seed = [...pair.id].reduce((n, c) => n + c.charCodeAt(0), 0)
+  const refAt = (k: number) => lookingForFaktur
+    ? `27${String(seed * 7919 + k * 104729).padStart(15, '0').slice(-15)}`
+    : String(42000 + ((seed * 13 + k * 7) % 900))
+  const party = partyOf(base)
+  const lines = (gross: number) => grossToLines(gross)
+  return [
+    { ref: refAt(1), date: base.date, party, ...lines(base.total), confidence: 0.82,
+      why: 'NPWP and amounts match. Referensi differs.' },
+    { ref: refAt(2), date: base.date, party, ...lines(base.total + 500_000), confidence: 0.61,
+      why: 'NPWP matches. Total is Rp500.000 higher.' },
+    { ref: refAt(3), date: base.date, party: `${party} (group)`, ...lines(base.total), confidence: 0.4,
+      why: 'Amounts match. NPWP differs (group company).' },
+  ]
+}
+
+/** Fields compared side by side, in reading order. */
+export interface CompareField { key: keyof ReconRecord; label: string; money?: boolean }
+
+export function compareFields(side: ReconSide): CompareField[] {
+  return [
+    { key: 'ref', label: 'Number' },
+    { key: 'date', label: 'Date' },
+    side === 'input' ? { key: 'vendor', label: 'Vendor' } : { key: 'customer', label: 'Customer' },
+    { key: 'npwp', label: 'NPWP' },
+    { key: 'dpp', label: 'DPP', money: true },
+    { key: 'ppn', label: 'PPN', money: true },
+    { key: 'total', label: 'Total', money: true },
+  ]
+}
+
+/** A field is shown as differing only when it is flagged AND the sides disagree. */
+export function isFieldDiff(pair: ReconPair, key: string): boolean {
+  if (!(pair.fields ?? []).includes(key)) return false
+  return pair.erp?.[key as keyof ReconRecord] !== pair.djp?.[key as keyof ReconRecord]
+}
+
+/** One line on where the invoice's own tax document stands (erpFakturOf). */
+export const ERP_FAKTUR_HINTS: Record<ErpFakturState, string> = {
+  none: 'No tax document yet. Create one on the sales invoice, then submit it to DJP.',
+  draft: 'A draft tax document exists but has not been submitted to DJP.',
+  submitted: 'Submitted to DJP, waiting for approval.',
+  rejected: 'Rejected by DJP. Fix it on the sales invoice and resubmit.',
+  approved: 'Approved in ERP. Sync with Klikpajak to match it.',
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+/** '05 Mar 2027' → epoch ms (UTC midnight). Unparseable → 0, so it sorts last. */
+export function reconDateValue(d: string): number {
+  const [dd, mon, yyyy] = (d ?? '').split(' ')
+  const m = MONTHS.indexOf(mon ?? '')
+  if (m < 0) return 0
+  return Date.UTC(Number(yyyy), m, Number(dd))
+}
+
+/** The date a row sits under — the invoice's, or the faktur's when there is no invoice. */
+export function pairDate(pair: ReconPair): string {
+  return pair.erp?.date ?? pair.djp?.date ?? ''
+}
+
+export interface ReconDateGroup { key: string; label: string; pairs: ReconPair[] }
+
+/**
+ * Rows grouped by date, newest date first — the bank-reconciliation reading
+ * order. Within a date the incoming order is kept, so a work queue still leads
+ * with the biggest exposure.
+ */
+export function groupPairsByDate(pairs: ReconPair[]): ReconDateGroup[] {
+  const byKey = new Map<string, ReconDateGroup>()
+  for (const p of pairs) {
+    const date = pairDate(p)
+    const key = String(reconDateValue(date))
+    if (!byKey.has(key)) {
+      const v = reconDateValue(date)
+      const label = v
+        ? new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
+            .format(new Date(v)).replace(/^(\w+)/, '$1,').replace(',,', ',')
+        : date
+      byKey.set(key, { key, label, pairs: [] })
+    }
+    byKey.get(key)!.pairs.push(p)
+  }
+  return [...byKey.values()].sort((a, b) => Number(b.key) - Number(a.key))
+}
 
 // ── Periods — the multi-period index ─────────────────────────────────────────
 
@@ -606,13 +720,13 @@ export const matchCandidates = [
  * The prototype's "today" — the fixtures are pinned to masa 04/2026, so any date
  * logic here works off this rather than `new Date()`, which would drift.
  */
-export const TODAY_ISO = '2027-06-18'
+export const TODAY_ISO = '2027-03-18'
 
 /** Timestamp of the last Coretax pull, shown in the workspace footer. */
-export const lastSyncedAt = '18 Jun 2027, 14:32'
+export const lastSyncedAt = '18 Mar 2027, 14:32'
 
 /** Date part of `lastSyncedAt` — when automatic matching last ran. */
-export const AUTO_SYNC_DATE = '2027-06-18'
+export const AUTO_SYNC_DATE = '2027-03-18'
 
 /**
  * Reconciliation state of one masa+side (PRD OD-001 v1.0 §5.2).
@@ -669,29 +783,29 @@ const PERIOD_SEEDS: ReconPeriodSeed[] = [
     // approved faktur for it yet, so automatic matching finds nothing to pair —
     // which is exactly the "Not reconciled" case in §5.2, without anybody having
     // to not-press a button.
-    id: '2027-06', masa: '06/2027',
+    id: '2027-03', masa: '03/2027',
     sides: {
       output: { erp: { amount: 89_100_000, count: 7 }, djp: { amount: 0, count: 0 }, matched: 0, total: 7 },
       input:  { erp: { amount: 47_850_000, count: 7 },  djp: { amount: 0, count: 0 }, matched: 0, total: 7 },
     },
   },
-  { id: '2027-05', masa: '05/2027', reconciledAt: '2027-06-18', sides: 'live' },
+  { id: '2027-02', masa: '02/2027', reconciledAt: '2027-03-18', sides: 'live' },
   {
-    id: '2027-04', masa: '04/2027', reconciledAt: '2027-05-15',
+    id: '2027-01', masa: '01/2027', reconciledAt: '2027-02-15',
     sides: {
       output: { erp: { amount: 512_750_000, count: 14 }, djp: { amount: 512_750_000, count: 14 }, matched: 14, total: 14 },
       input:  { erp: { amount: 128_400_000, count: 11 }, djp: { amount: 128_400_000, count: 11 }, matched: 11, total: 11 },
     },
   },
   {
-    id: '2027-03', masa: '03/2027', reconciledAt: '2027-04-18',
+    id: '2026-12', masa: '12/2026', reconciledAt: '2027-01-18',
     sides: {
       output: { erp: { amount: 448_900_000, count: 12 }, djp: { amount: 448_900_000, count: 12 }, matched: 12, total: 12 },
       input:  { erp: { amount: 96_750_000, count: 9 },   djp: { amount: 96_750_000, count: 9 },   matched: 9,  total: 9 },
     },
   },
   {
-    id: '2027-02', masa: '02/2027', reconciledAt: '2027-03-16',
+    id: '2026-11', masa: '11/2026', reconciledAt: '2026-12-16',
     sides: {
       output: { erp: { amount: 376_200_000, count: 10 }, djp: { amount: 376_200_000, count: 10 }, matched: 10, total: 10 },
       input:  { erp: { amount: 84_300_000, count: 8 },   djp: { amount: 84_300_000, count: 8 },   matched: 8,  total: 8 },
@@ -699,7 +813,7 @@ const PERIOD_SEEDS: ReconPeriodSeed[] = [
   },
   {
     // The first masa the feature covers. Nothing earlier is offered.
-    id: '2027-01', masa: '01/2027', reconciledAt: '2027-02-20',
+    id: '2026-10', masa: '10/2026', reconciledAt: '2026-11-20',
     sides: {
       output: { erp: { amount: 604_850_000, count: 16 }, djp: { amount: 604_850_000, count: 16 }, matched: 16, total: 16 },
       input:  { erp: { amount: 142_600_000, count: 12 }, djp: { amount: 142_600_000, count: 12 }, matched: 12, total: 12 },
@@ -711,7 +825,7 @@ const PERIOD_SEEDS: ReconPeriodSeed[] = [
  * The first masa pajak the feature covers. Fixed in production (PRD US-016);
  * nothing before it is offered, because the ERP surface starts here.
  */
-export const FIRST_PERIOD_ID = '2027-01'
+export const FIRST_PERIOD_ID = '2026-10'
 
 // ── Setup — which accounts hold PPN (US-016) ──────────────────────────────────
 /**
@@ -837,8 +951,8 @@ export function accountLabels(codes: string[]): string {
 export const periodLabel = (masa: string) => `Masa pajak ${masa}`
 
 /** The masa the pair fixtures describe — what the workspace opens on. */
-export const activePeriodId = '2027-05'
-export const activePeriod = periodLabel('05/2027')
+export const activePeriodId = '2027-02'
+export const activePeriod = periodLabel('02/2027')
 
 /** Options for the workspace period selector, newest first. */
 export const reconPeriods = PERIOD_SEEDS.map(p => periodLabel(p.masa))
@@ -1004,6 +1118,249 @@ function generatePairs(seed: ReconSideSeed, side: ReconSide, period: ReconPeriod
   return pairs
 }
 
+// ── Manual matches (US-002 AC-02) ─────────────────────────────────────────────
+/**
+ * A match a person confirmed. Stored as an overlay on the engine's pairs rather
+ * than by rewriting them, so Unmatch is exact (drop the overlay, the engine's
+ * own status comes back) and the record of who matched what, when and — for a
+ * match with a difference — why, survives a refresh (goal G4: an audit has to
+ * tell a decision from a rule).
+ */
+const MANUAL_MATCH_KEY = 'vat-recon-manual-matches'
+
+export interface ManualMatch {
+  pairId: string
+  periodId: string
+  side: ReconSide
+  candidate: MatchCandidate
+  /** Anchor total − candidate total. Non-zero means a reason was required. */
+  difference: number
+  reason?: string
+  by: string
+  at: string
+}
+
+let manualMatches: ManualMatch[] = loadSnapshot<ManualMatch>(MANUAL_MATCH_KEY) ?? []
+
+/**
+ * "Now" on the prototype's clock: TODAY_ISO's date with the wall-clock time, so
+ * a stamp never reads as months before the masa it belongs to.
+ */
+export function reconNowIso(): string {
+  const d = new Date()
+  return `${TODAY_ISO}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00`
+}
+
+export function manualMatchOf(pairId: string): ManualMatch | undefined {
+  void reconVersion.value
+  return manualMatches.find(m => m.pairId === pairId)
+}
+
+/**
+ * A pair whose two sides are both present (return netted, duplicate reference)
+ * is confirmed against its own faktur — the candidate is the Coretax side.
+ */
+export function ownFakturCandidate(pair: ReconPair): MatchCandidate | null {
+  if (!pair.djp) return null
+  return {
+    ref: pair.djp.ref, date: pair.djp.date, party: partyOf(pair.djp),
+    dpp: pair.djp.dpp, ppn: pair.djp.ppn, total: pair.djp.total, confidence: 1,
+    why: 'The faktur already paired with this invoice.',
+  }
+}
+
+/** For a netted return the faktur is issued for invoice − return (US-017). */
+export function nettedAnchor(pair: ReconPair): number {
+  return (pair.erp?.total ?? 0) - (pair.erp?.returnTotal ?? 0)
+}
+
+/** Matching needs a reason when the two sides don't agree to the rupiah. */
+export function matchNeedsReason(difference: number): boolean {
+  return difference !== 0
+}
+
+/**
+ * Record a manual match. Returns false (and saves nothing) when the sides
+ * differ and no reason was given — the guard lives here, not only in the UI,
+ * so no caller can file a silent mismatch as reconciled.
+ */
+export function confirmManualMatch(input: {
+  pair: ReconPair
+  periodId: string
+  side: ReconSide
+  candidate: MatchCandidate
+  reason?: string
+  /** What the candidate must equal. Defaults to the row's own total; a netted
+   *  return passes invoice − return, which is what its faktur was issued for. */
+  anchorTotal?: number
+}): boolean {
+  const anchor = input.anchorTotal ?? (input.pair.erp ?? input.pair.djp)?.total ?? 0
+  const difference = anchor - input.candidate.total
+  const reason = input.reason?.trim()
+  if (matchNeedsReason(difference) && !reason) return false
+  manualMatches = manualMatches.filter(m => m.pairId !== input.pair.id)
+  manualMatches.push({
+    pairId: input.pair.id, periodId: input.periodId, side: input.side,
+    candidate: input.candidate, difference, reason: reason || undefined,
+    by: CURRENT_USER, at: reconNowIso(),
+  })
+  saveSnapshot(MANUAL_MATCH_KEY, manualMatches)
+  reconVersion.value++
+  return true
+}
+
+/** Unmatch a manual match: the engine's own status comes back. */
+export function undoManualMatch(pairId: string): boolean {
+  const before = manualMatches.length
+  manualMatches = manualMatches.filter(m => m.pairId !== pairId)
+  if (manualMatches.length === before) return false
+  saveSnapshot(MANUAL_MATCH_KEY, manualMatches)
+  reconVersion.value++
+  return true
+}
+
+/** The counterpart a candidate stands for, as a record on the missing side. */
+function candidateRecord(c: MatchCandidate, like: ReconRecord, isDjp: boolean, side: ReconSide): ReconRecord {
+  return {
+    ref: c.ref, date: c.date,
+    ...(side === 'input' ? { vendor: c.party } : { customer: c.party }),
+    npwp: like.npwp, dpp: c.dpp, ppn: c.ppn, total: c.total,
+    ...(isDjp ? { approved: true } : {}),
+  }
+}
+
+function applyManualMatch(p: ReconPair, m: ManualMatch): ReconPair {
+  const erp = p.erp ?? (p.djp ? candidateRecord(m.candidate, p.djp, false, m.side) : null)
+  const djp = p.djp ?? (p.erp ? candidateRecord(m.candidate, p.erp, true, m.side) : null)
+  return {
+    ...p, erp, djp,
+    match: 'matched', matchedBy: 'manual', confidence: 1,
+    fields: m.difference !== 0 ? ['dpp', 'ppn', 'total'] : [],
+    reason: m.reason
+      ? `Matched by hand with a difference of ${formatIDR(Math.abs(m.difference))}. Reason: ${m.reason}`
+      : 'Matched by hand.',
+  }
+}
+
+// ── Activity (audit trail, goal G4) ───────────────────────────────────────────
+/**
+ * One line of a pair's history. `label` (and `status`) are copy keys the UI
+ * passes through t(); `detail` is data — a number, an amount, the user's own
+ * reason — and is shown as-is.
+ */
+export interface ActivityEntry {
+  icon: string
+  label: string
+  status?: string
+  detail?: string
+  who: string
+  time: string
+}
+
+function fmtStamp(iso: string): string {
+  const d = new Date(iso.length === 10 ? `${iso}T00:00:00` : iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const date = `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+  return iso.length === 10 ? date : `${date}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * What happened to a pair, newest first — from the records this module actually
+ * keeps, never invented: the manual match and its reason, the waiting-on-buyer
+ * mark, the invoice's tax document, the engine's verdict and the Coretax sync.
+ */
+export function pairActivity(pair: ReconPair, periodId: string): ActivityEntry[] {
+  void reconVersion.value
+  const out: { at: string; e: ActivityEntry }[] = []
+  const m = manualMatchOf(pair.id)
+  if (m) {
+    const diff = m.difference !== 0 ? ` · ${formatIDR(Math.abs(m.difference))}` : ''
+    out.push({ at: m.at, e: {
+      icon: 'link',
+      label: m.difference !== 0 ? 'Matched manually with a difference' : 'Matched manually',
+      detail: `${m.candidate.ref}${diff}${m.reason ? ` — “${m.reason}”` : ''}`,
+      who: m.by, time: fmtStamp(m.at),
+    } })
+  }
+  const w = waitingOnBuyerMark(pair)
+  if (w && canWaitOnBuyer(pair)) {
+    out.push({ at: w.at, e: { icon: 'time', label: 'Marked as waiting on buyer', who: w.by, time: fmtStamp(w.at) } })
+  }
+  const f = erpFakturOf(pair)
+  if (f?.doc) {
+    const [dd, mm, yy] = f.doc.date.split('/')
+    const iso = `${yy}-${mm}-${dd}`
+    out.push({ at: iso, e: {
+      icon: 'doc', label: 'Tax document', status: DJP_STATUS_CONFIG[f.doc.status].label,
+      who: 'Sales invoice', time: fmtStamp(iso),
+    } })
+  }
+  // The engine's verdict and the sync are the baseline every user action builds
+  // on, so they always sit at the bottom — a prototype stamp (wall-clock time on
+  // the pinned TODAY) can't be trusted to order them against a 14:32 run.
+  const ran = `${periodRanAt(periodId) ?? AUTO_SYNC_DATE}T14:32:00`
+  const autoMatched = pair.match === 'matched' && pair.matchedBy !== 'manual' && !m
+  const baseline: ActivityEntry[] = [
+    {
+      icon: 'magic',
+      label: autoMatched ? 'Auto-matched on NPWP, DPP, PPN and date' : 'Flagged for review by matching engine',
+      who: 'Reconciliation engine', time: fmtStamp(ran),
+    },
+    { icon: 'refresh', label: 'Synced from Coretax', who: 'System', time: lastSyncedAt },
+  ]
+  return [...out.sort((a, b) => b.at.localeCompare(a.at)).map(x => x.e), ...baseline]
+}
+
+// ── Waiting on buyer (US-012 AC-02) ───────────────────────────────────────────
+/**
+ * A "return not reflected" row can be parked on the buyer: the seller has
+ * nothing to issue until the buyer's nota retur arrives. It's a TOGGLE the user
+ * sets per row — not a status, and not every row in that state — so the row
+ * keeps its status and only the rows actually toggled leave the "need review"
+ * count. Persisted with who toggled it and when, so it survives a refresh and
+ * the trail can say who parked it.
+ */
+const WAITING_KEY = 'vat-recon-waiting-on-buyer'
+interface WaitingMark { pairId: string; by: string; at: string }
+
+let waitingMarks: WaitingMark[] = loadSnapshot<WaitingMark>(WAITING_KEY) ?? []
+
+/** Only a "return not reflected" row can wait on the buyer. */
+export function canWaitOnBuyer(pair: ReconPair): boolean {
+  return pair.match === 'return-not-reflected'
+}
+
+export function isWaitingOnBuyer(pair: ReconPair): boolean {
+  void reconVersion.value
+  return canWaitOnBuyer(pair) && waitingMarks.some(m => m.pairId === pair.id)
+}
+
+export function waitingOnBuyerMark(pair: ReconPair): WaitingMark | undefined {
+  void reconVersion.value
+  return waitingMarks.find(m => m.pairId === pair.id)
+}
+
+export function setWaitingOnBuyer(pair: ReconPair, on: boolean): void {
+  if (!canWaitOnBuyer(pair)) return
+  waitingMarks = waitingMarks.filter(m => m.pairId !== pair.id)
+  if (on) waitingMarks.push({ pairId: pair.id, by: CURRENT_USER, at: reconNowIso() })
+  saveSnapshot(WAITING_KEY, waitingMarks)
+  reconVersion.value++
+}
+
+/**
+ * Footer counts for a set of rows (US-020 AC-03): matched · need review ·
+ * unmatched · waiting on buyer. "Unmatched" is the two states where a document
+ * is missing outright; "waiting" is only the rows TOGGLED onto the buyer; need
+ * review is everything else that isn't matched.
+ */
+export function footerCounts(pairs: ReconPair[]) {
+  const matched = pairs.filter(p => p.match === 'matched').length
+  const unmatched = pairs.filter(p => p.match === 'not-in-coretax' || p.match === 'no-match-in-erp').length
+  const waiting = pairs.filter(isWaitingOnBuyer).length
+  return { matched, unmatched, waiting, review: pairs.length - matched - unmatched - waiting }
+}
+
 // ── Running a period (US-002) ─────────────────────────────────────────────────
 /**
  * Manual re-runs (US-002), on top of the automatic per-masa matching. Persisted
@@ -1123,10 +1480,26 @@ export function periodRanAt(periodId: string): string | undefined {
 const generatedPairs = new Map<string, ReconPair[]>()
 
 /**
+ * The pairs of one masa+side, with any manual matches the user confirmed laid
+ * over them (US-002 AC-02). Everything that reads pairs — KPIs, footer, period
+ * index, Unmatched page, nav badge — goes through here, so a confirmed match
+ * moves all of them together. With no overlay the base array is returned as-is.
+ */
+export function pairsForPeriod(periodId: string, side: ReconSide): ReconPair[] {
+  const base = basePairsForPeriod(periodId, side)
+  const overlays = manualMatches.filter(m => m.periodId === periodId && m.side === side)
+  if (!overlays.length) return base
+  return base.map(p => {
+    const m = overlays.find(o => o.pairId === p.id)
+    return m ? applyManualMatch(p, m) : p
+  })
+}
+
+/**
  * The pairs behind one masa + side. The live masa returns the hand-written
  * fixtures; every other masa is derived from its seed (see above).
  */
-export function pairsForPeriod(periodId: string, side: ReconSide): ReconPair[] {
+function basePairsForPeriod(periodId: string, side: ReconSide): ReconPair[] {
   if (periodId === activePeriodId) return side === 'output' ? outputPairs : inputPairs
   // A period nobody has run has no row statuses — matching hasn't happened, so
   // there is nothing to say about any pair yet. Returning invented statuses here

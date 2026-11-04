@@ -29,7 +29,7 @@ import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDeta
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import {
   MATCH_META, ATTENTION_STATES, reconIssues, issueRows, formatAmountPlain, periodLabelById, SIDE_LABELS,
-  activePeriodId,
+  activePeriodId, isPeriodFinalized,
   type ReconIssue, type MatchState, type ReconSide, type ReconIssueRow,
 } from '~/data/vatReconciliation'
 
@@ -251,6 +251,8 @@ function sourceLabel(side: ReconSide) {
     <ReconciliationDetailDrawer
       v-model:is-open="drawerOpen"
       :pair="activeIssue"
+      :finalized="isPeriodFinalized(scopedPeriodId)"
+      :period-id="scopedPeriodId"
       :side="activeSide"
       @action="infoToast"
     />

@@ -22,7 +22,7 @@ import {
   SIDE_LABELS, MATCH_META, ATTENTION_STATES, FIRST_PERIOD_ID, exposureOf,
   finalizePeriod, unfinalizePeriod, isPeriodFinalized, canFinalizePeriod,
   periodFinalization, reconUnfinishedCount, CURRENT_USER, TODAY_ISO,
-  saveVatSetup, reconSides, isSideInScope, SNAPSHOT_ACCOUNT_CODES,
+  saveVatSetup, reconSides, isSideInScope, SNAPSHOT_ACCOUNT_CODES, reconDateValue,
   type ReconSide,
 } from '~/data/vatReconciliation'
 
@@ -43,12 +43,12 @@ const row = (periodId: string, side: ReconSide) => {
 describe('period index — coverage', () => {
   it('lists every masa twice, newest first, keluaran before masukan', () => {
     expect(rows.map(r => `${r.masa} ${r.side}`)).toEqual([
-      '06/2027 output', '06/2027 input',
-      '05/2027 output', '05/2027 input',
-      '04/2027 output', '04/2027 input',
       '03/2027 output', '03/2027 input',
       '02/2027 output', '02/2027 input',
       '01/2027 output', '01/2027 input',
+      '12/2026 output', '12/2026 input',
+      '11/2026 output', '11/2026 input',
+      '10/2026 output', '10/2026 input',
     ])
   })
 
@@ -144,7 +144,7 @@ describe('period index — selisih and status agree', () => {
 
   it('a not-reconciled masa has nothing matched', () => {
     for (const side of SIDES) {
-      const r = row('2027-06', side)
+      const r = row('2027-03', side)
       expect(r.status).toBe('not reconciled')
       expect(r.matched).toBe(0)
       // It still carries a date: matching ran automatically and found nothing to
@@ -308,9 +308,22 @@ describe('VAT reconciliation — the status model matches the PRD', () => {
     }
   })
 
-  it('the first period offered is 01/2027 — nothing earlier', () => {
+  it('the first period offered is 10/2026 — nothing earlier', () => {
+    // Release is Nov 2026; masa 10/2026 is still open for SPT then (due end Nov).
+    expect(FIRST_PERIOD_ID).toBe('2026-10')
     const ids = [...new Set(reconPeriodRows().map(r => r.periodId))].sort()
     expect(ids[0]).toBe(FIRST_PERIOD_ID)
+  })
+
+  it('a reconciled pair never has its faktur dated before its invoice', () => {
+    for (const periodId of [...new Set(reconPeriodRows().map(r => r.periodId))]) {
+      for (const side of SIDES) {
+        for (const p of pairsForPeriod(periodId, side)) {
+          if (p.match !== 'matched' || !p.erp || !p.djp) continue
+          expect(reconDateValue(p.djp.date), `${p.id}`).toBeGreaterThanOrEqual(reconDateValue(p.erp.date))
+        }
+      }
+    }
   })
 
   it('a faktur that is not Approved is never matched', () => {

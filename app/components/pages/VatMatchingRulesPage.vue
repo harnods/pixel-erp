@@ -268,7 +268,7 @@ const fixedRules = [
           <MpIcon name="info" size="sm" color="icon.information" />
           <div class="vm-card-title">{{ t('What this affects') }}</div>
         </div>
-        <div class="vm-preview-note">
+        <div class="vm-preview-note" data-devchange="vat-recon-first-period">
           <span class="vm-preview-note-strong">{{ t('PPN Keluaran') }}:</span>
           {{ outputCodes.length ? accountLabels(outputCodes) : t('none yet') }}.
           <template v-if="scope === 'both'">

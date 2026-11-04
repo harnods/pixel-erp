@@ -17,9 +17,9 @@ import {
   MpButton, MpText, MpIcon,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
-import VatReconciliationTaxDocActions from '~/components/patterns/VatReconciliationTaxDocActions.vue'
+import VatReconciliationPairActions from '~/components/patterns/VatReconciliationPairActions.vue'
 import {
-  MATCH_META, matchCandidates, formatAmountPlain,
+  MATCH_META, candidatesFor, formatAmountPlain, pairActivity, activePeriodId,
   type ReconPair, type ReconSide,
 } from '~/data/vatReconciliation'
 
@@ -27,6 +27,10 @@ const props = defineProps<{
   isOpen: boolean
   pair: ReconPair | null
   side: ReconSide
+  /** The pair's masa is Finalized — match actions are refused (US-002 AC-05). */
+  finalized?: boolean
+  /** The pair's masa — to record a confirmed match and read its activity. */
+  periodId?: string
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +57,8 @@ const diffFields = computed(() => new Set(props.pair?.fields ?? []))
 const showCandidates = computed(() =>
   props.pair ? ['not-in-coretax', 'no-match-in-erp', 'duplicate-reference'].includes(props.pair.match) : false,
 )
+/** Derived from the pair, so they're about this row (candidatesFor). */
+const matchCandidates = computed(() => (props.pair ? candidatesFor(props.pair) : []))
 
 interface CompareField { key: string; label: string; money?: boolean }
 
@@ -90,28 +96,9 @@ const reasonTitle = computed(() => {
   return t(MATCH_META[props.pair.match].longLabel)
 })
 
-const activity = computed(() => [
-  { icon: 'refresh', text: t('Synced from Coretax'), who: t('System'), time: '21 May 2026, 14:32' },
-  ...(props.pair?.match === 'matched' && props.pair.matchedBy === 'manual'
-    ? [{
-        icon: 'done',
-        text: t('Matched manually after review'),
-        who: 'Rizal Candra', time: '21 May 2026, 15:04',
-      }]
-    : []),
-  {
-    icon: 'magic',
-    text: props.pair?.match === 'matched' && props.pair.matchedBy !== 'manual'
-      ? t('Auto-matched on NPWP, DPP, PPN and date')
-      : t('Flagged for review by matching engine'),
-    who: t('Reconciliation engine'), time: '21 May 2026, 14:32',
-  },
-  {
-    icon: 'doc',
-    text: props.side === 'input' ? t('Purchase invoice posted') : t('Sales invoice posted'),
-    who: 'Rizal Candra', time: '10 Apr 2026, 09:11',
-  },
-])
+/** Built from the records the module keeps (pairActivity) — never invented. */
+const activity = computed(() =>
+  props.pair ? pairActivity(props.pair, props.periodId ?? activePeriodId) : [])
 </script>
 
 <template>
@@ -246,8 +233,11 @@ const activity = computed(() => [
                     <MpIcon :name="a.icon" size="sm" />
                   </div>
                   <div>
-                    <div class="rdd-activity-text">{{ a.text }}</div>
-                    <div class="rdd-activity-meta">{{ a.who }} · {{ a.time }}</div>
+                    <div class="rdd-activity-text">
+                      {{ t(a.label) }}<template v-if="a.status">: {{ t(a.status) }}</template>
+                      <span v-if="a.detail" class="rdd-activity-detail">{{ a.detail }}</span>
+                    </div>
+                    <div class="rdd-activity-meta">{{ t(a.who) }} · {{ a.time }}</div>
                   </div>
                 </div>
               </div>
@@ -260,82 +250,13 @@ const activity = computed(() => [
               {{ t('Open in Coretax') }}
             </MpButton>
             <div class="rdd-footer-actions">
-              <!-- Rows 1-2: the only thing left to do is undo it. -->
-              <template v-if="pair.match === 'matched'">
-                <MpButton variant="secondary" is-rounded @click="act(t('Match canceled'), true)">
-                  {{ t('Unmatch') }}
-                </MpButton>
-              </template>
-              <!-- Rows 8 and 11: the engine will not decide; a person confirms. -->
-              <template v-else-if="pair.match === 'return-netted'">
-                <MpButton variant="primary" is-rounded left-icon="check" @click="act(t('Match confirmed'), true)">
-                  {{ t('Confirm match') }}
-                </MpButton>
-              </template>
-              <template v-else-if="pair.match === 'duplicate-reference'">
-                <MpButton variant="primary" is-rounded @click="act(t('Opening faktur list…'))">
-                  {{ t('Select faktur') }}
-                </MpButton>
-              </template>
-              <!-- Row 3 (US-008) / row 4 (US-009): a document is missing. -->
-              <template v-else-if="pair.match === 'not-in-coretax'">
-                <MpButton variant="secondary" is-rounded @click="act(t('Opening match picker…'))">
-                  {{ t('Find & match') }}
-                </MpButton>
-                <!-- Output rows are real invoices: the fix is on the invoice, and
-                     what it is depends on how far its tax document got. -->
-                <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId" :pair="pair" :show-hint="false" size="md" />
-                <MpButton v-else variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-                  {{ t('Create faktur pajak') }}
-                </MpButton>
-              </template>
-              <template v-else-if="pair.match === 'no-match-in-erp'">
-                <MpButton variant="secondary" is-rounded @click="act(t('Opening match picker…'))">
-                  {{ t('Find & match') }}
-                </MpButton>
-                <MpButton variant="primary" is-rounded @click="act(t('Opening sales invoice…'), true)">
-                  {{ side === 'input' ? t('Create purchase invoice') : t('Create sales invoice') }}
-                </MpButton>
-              </template>
-              <!-- Row 5 (US-010): correct the invoice, or supersede the faktur. -->
-              <template v-else-if="pair.match === 'invoice-edited'">
-                <MpButton variant="secondary" is-rounded left-icon="edit" @click="act(t('Opening sales invoice…'))">
-                  {{ t('Edit sales invoice') }}
-                </MpButton>
-                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-                  {{ t('Create faktur pengganti') }}
-                </MpButton>
-              </template>
-              <!-- Row 6 (US-011): the invoice is gone, the faktur must follow. -->
-              <template v-else-if="pair.match === 'invoice-voided'">
-                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-                  {{ t('Cancel faktur') }}
-                </MpButton>
-              </template>
-              <!-- Row 7 (US-012): pengganti net, or park it on the buyer. -->
-              <template v-else-if="pair.match === 'return-not-reflected'">
-                <MpButton variant="secondary" is-rounded left-icon="time" @click="act(t('Marked as waiting on buyer'), true)">
-                  {{ t('Waiting on buyer') }}
-                </MpButton>
-                <MpButton variant="primary" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-                  {{ t('Create faktur pengganti (net)') }}
-                </MpButton>
-              </template>
-              <!-- Rows 9-10: a date is wrong on one side or the other. -->
-              <template v-else-if="pair.match === 'faktur-predates' || pair.match === 'return-date-mismatch'">
-                <MpButton variant="secondary" is-rounded left-icon="edit" @click="act(t('Opening sales invoice…'))">
-                  {{ t('Correct invoice date') }}
-                </MpButton>
-                <MpButton variant="primary" is-rounded @click="act(t('Opening Coretax…'))">
-                  {{ t('Correct faktur date') }}
-                </MpButton>
-              </template>
-              <!-- Row 12: nothing can be matched into a finalized period. -->
-              <template v-else-if="pair.match === 'period-finalized'">
-                <MpButton variant="secondary" is-rounded @click="act(t('Opening period…'))">
-                  {{ t('Unfinalize period') }}
-                </MpButton>
-              </template>
+              <VatReconciliationPairActions
+                :pair="pair"
+                :side="side"
+                :finalized="!!finalized"
+                :period-id="periodId"
+                @action="(message, alsoClose) => act(message, alsoClose)"
+              />
             </div>
           </div>
         </div>
@@ -464,6 +385,7 @@ const activity = computed(() => [
 .rdd-candidate-why { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 
 /* ── Activity ── */
+.rdd-activity-detail { display: block; color: var(--mp-text-secondary); overflow-wrap: anywhere; }
 .rdd-activity { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
 .rdd-activity-row {
   display: flex; align-items: flex-start; gap: var(--mp-spacing-3);

@@ -219,7 +219,7 @@ function buildSeedTaxDocuments(): TaxDocument[] {
       serial: '', status: 'rejected', kind: 'normal', revision: 0,
       djpRemark: 'ETAX-API-10012: NITKU pembeli tidak terdaftar pada Coretax. Perbaiki data pembeli lalu kirim ulang.',
     },
-    // VAT reconciliation, masa 06/2027 — two of the invoices the engine reports
+    // VAT reconciliation, masa 03/2027 — two of the invoices the engine reports
     // as "Not found in Coretax" already have a faktur in ERP that never reached
     // DJP approval. Seeded so the row's draft (Submit / Edit) and submitted
     // (waiting on DJP) states are visible without staging them by hand.

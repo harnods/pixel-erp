@@ -17,19 +17,26 @@
  * [...slug].vue, which also owns the title-bar actions).
  */
 import type { Ref } from 'vue'
-import { MpIcon, MpButton, MpBadge, MpAireneButton } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpBadge, MpAireneButton, MpRadio, MpTooltip, MpCheckbox } from '@mekari/pixel3'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ErpPagination from '~/components/patterns/ErpPagination.vue'
+import VatReconciliationMatchConfirmModal from '~/components/patterns/VatReconciliationMatchConfirmModal.vue'
 import { formatIDR } from '~/utils/currency'
 import { infoToast } from '~/utils/toasts'
-import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDetailDrawer.vue'
 import VatReconciliationTaxDocActions from '~/components/patterns/VatReconciliationTaxDocActions.vue'
-import { reloadTaxDocumentsFromStorage, TAX_DOCUMENTS_STORE_KEY } from '~/data/taxDocuments'
+import VatReconciliationPairActions from '~/components/patterns/VatReconciliationPairActions.vue'
+import { reloadTaxDocumentsFromStorage, TAX_DOCUMENTS_STORE_KEY, DJP_STATUS_CONFIG, updateTaxDocumentStatus } from '~/data/taxDocuments'
+import { successToast } from '~/utils/toasts'
 import {
   MATCH_META, ATTENTION_STATES, SIDE_LABELS, pairsForPeriod, activePeriodId,
   periodLabelById, runPeriod, reconVersion, reconTotals, matchCounts,
   isPeriodFinalized, canFinalizePeriod, finalizePeriod, unfinalizePeriod, periodFinalization,
   lastSyncedAt, formatAmountPlain, partyOf, exposureOf,
-  type ReconPair, type ReconSide, type MatchState,
+  groupPairsByDate, candidatesFor, hasCandidates, compareFields, isFieldDiff,
+  erpFakturOf, ERP_FAKTUR_HINTS, footerCounts, isWaitingOnBuyer,
+  confirmManualMatch, ownFakturCandidate, nettedAnchor, pairActivity,
+  type ReconPair, type ReconSide, type MatchState, type ReconRecord, type MatchCandidate,
 } from '~/data/vatReconciliation'
 
 const { t } = useLocale()
@@ -160,21 +167,22 @@ const djpTotals = computed(() => reconTotals(pairs.value, 'djp'))
 
 const dppDelta = computed(() => djpTotals.value.dpp - erpTotals.value.dpp)
 const ppnDelta = computed(() => djpTotals.value.ppn - erpTotals.value.ppn)
-/** The headline number: total tax gap between the books and Coretax. */
-const taxGap = computed(() =>
-  (djpTotals.value.dpp + djpTotals.value.ppn) - (erpTotals.value.dpp + erpTotals.value.ppn))
-
-/** Pairs the engine wants a human to look at. */
 /**
- * Footer counts (US-020). "Unmatched" is only the two states where a document is
- * missing outright; everything else is a row that has both sides but needs a
- * correction or a confirmation, which is what "need review" means here.
+ * The headline number — US-020 AC-02: Tax difference = |PPN Sales − PPN Faktur|.
+ * PPN only: DPP has its own two cards and its own delta, and adding it in here
+ * overstated the tax at stake by the whole DPP gap.
  */
-const unmatchedCount = computed(() =>
-  counts.value['not-in-coretax']! + counts.value['no-match-in-erp']!)
-const waitingCount = computed(() => counts.value['return-not-reflected']!)
-const reviewCount = computed(() =>
-  pairs.value.length - counts.value.matched! - unmatchedCount.value - waitingCount.value)
+const taxGap = computed(() => djpTotals.value.ppn - erpTotals.value.ppn)
+
+/**
+ * Footer counts (US-020 AC-03/04) follow the filter — the cards above stay
+ * period-level, the footer describes the rows on screen. Only rows actually
+ * toggled Waiting on buyer leave "need review" (US-012 AC-02), not every row
+ * whose return isn't reflected yet.
+ */
+const footer = computed(() => { void reconVersion.value; return footerCounts(filtered.value) })
+/** Period-level, for the Airene action: is there anything to review at all? */
+const periodReviewCount = computed(() => { void reconVersion.value; return footerCounts(pairs.value).review })
 
 /**
  * Options for the `Status` select, scoped to the active tab. Under "Needs
@@ -215,31 +223,202 @@ function onStorage(e: StorageEvent) {
 onMounted(() => window.addEventListener('storage', onStorage))
 onUnmounted(() => window.removeEventListener('storage', onStorage))
 
-// ── Detail drawer ─────────────────────────────────────────────────────────────
-const drawerOpen = ref(false)
-const activePair = ref<ReconPair | null>(null)
+// ── Rows: date groups + inline expand (bank-reconciliation style) ─────────────
+/**
+ * The workspace reads like ERP's bank reconciliation: rows grouped under their
+ * date, one compact line per pair, and the detail opens IN the row rather than
+ * in a drawer — the user is working down a list, and a drawer covering it
+ * loses their place. The Unmatched & discrepancies page keeps the drawer.
+ */
+// ── Pagination (design review P1) ─────────────────────────────────────────────
+/**
+ * A masa at an LE client holds thousands of pairs (US-006). Rendering them all
+ * — each with its own buttons and candidate panel — is what freezes a browser,
+ * so the list pages like every other ERP index. Grouping is applied to the page,
+ * so a date can continue onto the next page; the footer counts stay on the
+ * whole filtered set (US-020 AC-04).
+ */
+const currentPage = ref(1)
+const perPage = ref(50)
+watch([statusFilter, query, side, isAttentionScope, periodId], () => { currentPage.value = 1 })
+watch(() => filtered.value.length, (n) => {
+  const last = Math.max(1, Math.ceil(n / perPage.value))
+  if (currentPage.value > last) currentPage.value = last
+})
+const pagedRows = computed(() =>
+  filtered.value.slice((currentPage.value - 1) * perPage.value, currentPage.value * perPage.value))
+function setPerPage(n: number) { perPage.value = n; currentPage.value = 1 }
 
-function openDetail(pair: ReconPair) {
-  activePair.value = pair
-  drawerOpen.value = true
+const groups = computed(() => groupPairsByDate(pagedRows.value))
+
+const collapsedGroups = ref(new Set<string>())
+function toggleGroup(key: string) {
+  const next = new Set(collapsedGroups.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  collapsedGroups.value = next
 }
+
+const expanded = ref(new Set<string>())
+function isExpanded(pair: ReconPair) { return expanded.value.has(pair.id) }
+function toggleRow(pair: ReconPair, open?: boolean) {
+  const next = new Set(expanded.value)
+  const shouldOpen = open ?? !next.has(pair.id)
+  if (shouldOpen) next.add(pair.id)
+  else next.delete(pair.id)
+  expanded.value = next
+}
+
+// ── Picking a candidate + the round ✓ ─────────────────────────────────────────
+/** The candidate ref picked per pair, and pairs whose ✓ was pressed without one. */
+const picked = ref<Record<string, string>>({})
+const pickError = ref(new Set<string>())
+/** Shown where the user tried to match (rule/form-errors-inline), per pair. */
+const finalizedBlocked = ref(new Set<string>())
+function pick(pair: ReconPair, ref: string) {
+  // A Finalized masa refuses Match (US-002 AC-05) — say so in place.
+  if (finalized.value) { finalizedBlocked.value = new Set(finalizedBlocked.value).add(pair.id); return }
+  picked.value = { ...picked.value, [pair.id]: ref }
+  const next = new Set(pickError.value)
+  next.delete(pair.id)
+  pickError.value = next
+}
+function pickedCandidate(pair: ReconPair) {
+  return candidatesFor(pair).find(c => c.ref === picked.value[pair.id]) ?? null
+}
+/** The side the user is matching FROM — its total is what a pick must equal. */
+function anchorTotal(pair: ReconPair) { return (pair.erp ?? pair.djp)?.total ?? 0 }
+function pickDifference(pair: ReconPair) {
+  return anchorTotal(pair) - (pickedCandidate(pair)?.total ?? 0)
+}
+
+/**
+ * What the ✓ means on this row (decided with the user):
+ *   reconciled — matched; a filled check that just opens the row (Unmatch inside)
+ *   confirm    — a person has to confirm: return netted, or a candidate state
+ *   none       — one-sided with nothing to pick, so there is nothing to confirm
+ */
+type ConfirmKind = 'reconciled' | 'confirm' | 'none'
+function confirmKind(pair: ReconPair): ConfirmKind {
+  if (pair.match === 'matched') return 'reconciled'
+  if (pair.match === 'return-netted' || hasCandidates(pair)) return 'confirm'
+  return 'none'
+}
+function onConfirm(pair: ReconPair) {
+  const kind = confirmKind(pair)
+  if (kind === 'reconciled') { toggleRow(pair); return }
+  if (kind !== 'confirm') return
+  if (finalized.value) {
+    finalizedBlocked.value = new Set(finalizedBlocked.value).add(pair.id)
+    toggleRow(pair, true)
+    return
+  }
+  if (hasCandidates(pair) && !pickedCandidate(pair)) {
+    // Never disabled (rule/btn-no-disabled): say what's missing, where it's fixed.
+    pickError.value = new Set(pickError.value).add(pair.id)
+    toggleRow(pair, true)
+    return
+  }
+  // A netted return is confirmed against its own faktur, for invoice − return.
+  const candidate = hasCandidates(pair) ? pickedCandidate(pair)! : ownFakturCandidate(pair)
+  if (!candidate) return
+  const anchor = pair.match === 'return-netted' ? nettedAnchor(pair) : anchorTotal(pair)
+  // Design review P0: a match whose sides differ is never one click — it would
+  // file a real PPN gap as reconciled. The modal states the gap and asks why.
+  if (anchor !== candidate.total) {
+    pendingMatch.value = { pair, candidate, anchor }
+    return
+  }
+  saveMatch(pair, candidate, anchor)
+}
+
+/** The match waiting on the difference modal. */
+const pendingMatch = ref<{ pair: ReconPair; candidate: MatchCandidate; anchor: number } | null>(null)
+function saveMatch(pair: ReconPair, candidate: MatchCandidate, anchor: number, reason?: string) {
+  const ok = confirmManualMatch({ pair, periodId: periodId.value, side: side.value, candidate, anchorTotal: anchor, reason })
+  if (!ok) return
+  pendingMatch.value = null
+  successToast(t('Match confirmed'))
+  toggleRow(pair, false)
+}
+function onMatchModalConfirm(reason: string) {
+  const m = pendingMatch.value
+  if (m) saveMatch(m.pair, m.candidate, m.anchor, reason)
+}
+
+// ── Activity in the expand (design review P1, goal G4) ────────────────────────
+const activityShowAll = ref(new Set<string>())
+function activityFor(pair: ReconPair) {
+  const all = pairActivity(pair, periodId.value)
+  return activityShowAll.value.has(pair.id) ? all : all.slice(0, 3)
+}
+function activityCount(pair: ReconPair) { return pairActivity(pair, periodId.value).length }
+function toggleActivity(pair: ReconPair) {
+  const next = new Set(activityShowAll.value)
+  if (next.has(pair.id)) next.delete(pair.id)
+  else next.add(pair.id)
+  activityShowAll.value = next
+}
+
+// ── Bulk: submit drafts to DJP (design review P1) ─────────────────────────────
+/**
+ * At the end of a masa the work is submitting the drafts that are waiting —
+ * one at a time doesn't scale. Only draft rows are selectable; a row that stops
+ * being a draft (submitted here, or in another tab) drops out of the selection.
+ */
+const { canSubmitTaxDocument } = useTaxSubmissionPermission()
+const selectedDrafts = ref(new Set<string>())
+function draftDocId(pair: ReconPair): string | null {
+  const f = erpFakturOf(pair)
+  return f?.state === 'draft' && f.doc ? f.doc.id : null
+}
+const draftRows = computed(() => { void reconVersion.value; return filtered.value.filter(p => !!draftDocId(p)) })
+const selectedDraftRows = computed(() => draftRows.value.filter(p => selectedDrafts.value.has(p.id)))
+function toggleDraft(pair: ReconPair, on: boolean) {
+  const next = new Set(selectedDrafts.value)
+  if (on) next.add(pair.id)
+  else next.delete(pair.id)
+  selectedDrafts.value = next
+  bulkError.value = false
+}
+function selectAllDrafts() { selectedDrafts.value = new Set(draftRows.value.map(p => p.id)); bulkError.value = false }
+function clearDrafts() { selectedDrafts.value = new Set(); bulkError.value = false }
+
+const bulkConfirmOpen = ref(false)
+/** Inline, in the bar (rule/form-errors-inline) — never a toast. */
+const bulkError = ref(false)
+function askBulkSubmit() {
+  bulkError.value = !canSubmitTaxDocument.value
+  if (bulkError.value) return
+  bulkConfirmOpen.value = true
+}
+function doBulkSubmit() {
+  const rows = selectedDraftRows.value
+  for (const p of rows) {
+    const id = draftDocId(p)
+    if (id) updateTaxDocumentStatus(id, 'awaiting-approval')
+  }
+  successToast(`${rows.length} ${t('tax documents submitted to DJP')}`)
+  clearDrafts()
+}
+
+function onPairAction(message: string) { infoToast(message) }
 
 // ── Row helpers ───────────────────────────────────────────────────────────────
 function metaFor(pair: ReconPair) { return MATCH_META[pair.match] }
-/**
- * One-sided pairs get an outline connector dot (nothing to connect to), the rest
- * a filled one. Drives both the dot treatment and which icon colour reads on it.
- */
-function isOutlineDot(pair: ReconPair) {
-  return pair.match === 'erp-only' || pair.match === 'djp-only'
+function isDiffField(pair: ReconPair, field: string) { return isFieldDiff(pair, field) }
+function fieldValue(row: ReconRecord | null, key: keyof ReconRecord, money?: boolean): string {
+  if (!row) return '—'
+  const v = row[key]
+  if (v == null || v === '') return '—'
+  return money ? formatIDR(Number(v)) : String(v)
 }
-function isDiffField(pair: ReconPair, field: string) { return (pair.fields ?? []).includes(field) }
-/** The AI banner only makes sense where the engine actually reasoned about the pair. */
-// Any row that is not a clean auto-match explains itself — the status names the
-// cause, the reason line gives the detail behind it.
-function showsReason(pair: ReconPair) {
-  return !!pair.reason
+/** Subtitle under the Coretax side of a "Not found in Coretax" row. */
+function fakturHint(pair: ReconPair): string {
+  const f = erpFakturOf(pair)
+  return f ? t(ERP_FAKTUR_HINTS[f.state]) : t('No matching faktur pajak issued in Coretax.')
 }
+const erpDocLabel = computed(() => (side.value === 'input' ? 'Purchase invoice' : 'Sales invoice'))
 
 /**
  * Re-run (US-002): re-pull both sides and recompute every status. This is the
@@ -331,7 +510,7 @@ function reviewWithAirene() {
         </div>
       </div>
 
-      <div class="vr-kpi" :class="taxGap === 0 ? 'is-clear' : 'is-gap'">
+      <div class="vr-kpi" :class="taxGap === 0 ? 'is-clear' : 'is-gap'" data-devchange="vat-recon-prd-fixes">
         <div class="vr-kpi-head">
           <span class="vr-kpi-label">{{ t('Tax difference') }}</span>
           <MpIcon name="finance" size="sm" />
@@ -352,17 +531,13 @@ function reviewWithAirene() {
              instead (titleMeta in [...slug].vue). -->
 
         <!-- Status — placeholder is the bare object noun per the UXW rule. -->
-        <div class="filter-select-wrap">
-          <select v-model="statusFilter" class="filter-select search-input" :aria-label="t('Status')">
-            <option value="">{{ t('Status') }}</option>
-            <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </option>
-          </select>
-          <svg class="filter-select-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </div>
+        <ErpFilterSelect
+          id="vr-status-filter"
+          v-model="statusFilter"
+          :placeholder="t('Status')"
+          :options="statusOptions"
+          width="200px"
+        />
       </div>
 
       <div class="filter-right">
@@ -371,7 +546,7 @@ function reviewWithAirene() {
         </MpButton>
 
         <MpAireneButton
-          v-if="reviewCount > 0"
+          v-if="periodReviewCount > 0"
           id="vr-airene-review"
           is-show-badge
           @click="reviewWithAirene"
@@ -398,188 +573,308 @@ function reviewWithAirene() {
     <!-- Workspace -->
     <div class="vr-workspace">
       <div class="vr-cols-head">
-        <div class="vr-col-head">
-          <div class="vr-col-icon"><MpIcon name="database" size="sm" /></div>
-          <div class="vr-col-text">
+        <span />
+        <div class="vr-col-head vr-col-head--right">
+          <div class="vr-col-text vr-col-text--right">
             <span class="vr-col-title">
               {{ t(L.erpHeader) }} <span class="vr-col-count">({{ erpTotals.count }})</span>
             </span>
             <span class="vr-col-sub">{{ L.erpHeaderSub }}</span>
           </div>
+          <div class="vr-col-icon"><MpIcon name="database" size="sm" /></div>
         </div>
-        <div />
-        <div class="vr-col-head vr-col-head--right">
-          <div class="vr-col-text vr-col-text--right">
+        <span />
+        <div class="vr-col-head">
+          <div class="vr-col-icon"><MpIcon name="cloud" size="sm" /></div>
+          <div class="vr-col-text">
             <span class="vr-col-title">
               {{ t(L.djpHeader) }} <span class="vr-col-count">({{ djpTotals.count }})</span>
             </span>
             <span class="vr-col-sub">{{ L.djpHeaderSub }}</span>
           </div>
-          <div class="vr-col-icon"><MpIcon name="cloud" size="sm" /></div>
         </div>
+        <span />
       </div>
 
-      <div class="vr-rows">
+      <div class="vr-rows" data-devchange="vat-recon-bank-style">
         <div v-if="filtered.length === 0" class="vr-empty">
           <div class="vr-empty-title">{{ t('No faktur match your filters') }}</div>
           <div class="vr-empty-body">{{ t('Recheck the filters you have applied and try filtering again.') }}</div>
         </div>
 
-        <div
-          v-for="pair in filtered"
-          :key="pair.id"
-          class="vr-row"
-          :style="pair.match === 'matched' ? { background: metaFor(pair).bg } : undefined"
-        >
-          <!-- ERP side -->
-          <template v-if="pair.erp">
-            <button type="button" class="btn-enterprise vr-side" @click="openDetail(pair)">
-              <div class="vr-side-head">
-                <MpIcon name="doc" size="sm" class="vr-side-icon" />
-                <span class="vr-side-ref">{{ pair.erp.ref }}</span>
-                <span class="vr-side-date">{{ pair.erp.date }}</span>
-              </div>
-              <div class="vr-side-party">{{ partyOf(pair.erp) }}</div>
-              <div class="vr-side-npwp">NPWP {{ pair.erp.npwp }}</div>
-              <div class="vr-money">
-                <div class="vr-money-cell" :class="{ 'is-diff': isDiffField(pair, 'dpp') }">
-                  <span class="vr-money-label">DPP{{ isDiffField(pair, 'dpp') ? ' *' : '' }}</span>
-                  <span class="vr-money-value">{{ formatAmountPlain(pair.erp.dpp) }}</span>
-                </div>
-                <div class="vr-money-cell" :class="{ 'is-diff': isDiffField(pair, 'ppn') }">
-                  <span class="vr-money-label">PPN{{ isDiffField(pair, 'ppn') ? ' *' : '' }}</span>
-                  <span class="vr-money-value">{{ formatAmountPlain(pair.erp.ppn) }}</span>
-                </div>
-                <div class="vr-money-cell" :class="{ 'is-diff': isDiffField(pair, 'total') }">
-                  <span class="vr-money-label">{{ t('Total') }}{{ isDiffField(pair, 'total') ? ' *' : '' }}</span>
-                  <span class="vr-money-value vr-money-value--strong">{{ formatAmountPlain(pair.erp.total) }}</span>
-                </div>
-              </div>
-            </button>
-          </template>
-          <div v-else class="vr-side vr-side--empty vr-side--empty-left">
-            <div class="vr-empty-head">
-              <MpIcon name="warning-triangle" size="sm" color="icon.danger" />
-              <span>{{ t('No match in ERP') }}</span>
-            </div>
-            <span class="vr-empty-hint">
-              {{ side === 'input' ? t('Create a purchase invoice from this faktur to reconcile.') : t('Create a sales invoice from this faktur to reconcile.') }}
-            </span>
-            <MpButton
-              variant="secondary" size="sm" is-rounded left-icon="add"
-              @click="infoToast(t(L.erpEmptyToast))"
-            >
-              {{ t(L.erpEmptyAction) }}
+        <!-- Bulk: submit the selected drafts in one go -->
+        <div v-if="draftRows.length" class="vr-bulk" :class="{ 'is-active': selectedDraftRows.length }" data-devchange="vat-recon-review-fixes">
+          <template v-if="selectedDraftRows.length">
+            <span class="vr-bulk-count">{{ selectedDraftRows.length }} {{ t('drafts selected') }}</span>
+            <MpButton v-if="selectedDraftRows.length < draftRows.length" variant="ghost" size="sm" @click="selectAllDrafts">
+              {{ t('Select all drafts') }} ({{ draftRows.length }})
             </MpButton>
-          </div>
-
-          <!-- Connector -->
-          <div class="vr-connector" :style="{ background: metaFor(pair).bg }">
-            <div
-              class="vr-connector-dot"
-              :class="{ 'is-outline': isOutlineDot(pair) }"
-              :style="isOutlineDot(pair)
-                ? { borderColor: metaFor(pair).dot }
-                : { background: metaFor(pair).dot, boxShadow: `0 0 0 4px ${metaFor(pair).bg}` }"
-            >
-              <!-- MpIcon ignores CSS `color` (it inline-styles --mp-icon-color on
-                   its own svg), so the colour has to come from the prop: inverse
-                   on the filled dot, the state colour on the outline one. -->
-              <MpIcon
-                :name="metaFor(pair).icon"
-                size="sm"
-                :color="isOutlineDot(pair) ? metaFor(pair).iconColorOutline : metaFor(pair).iconColor"
-              />
-            </div>
-            <!-- A match a person made is evidence of a decision, not of a rule, so
-                 it is flagged on the row rather than only in the activity trail:
-                 an auditor should see which matches were judged, not have to open
-                 each one to find out (PRD goal G4). -->
-            <span v-if="pair.match === 'matched' && pair.matchedBy === 'manual'" class="vr-manual-tag">
-              {{ t('Manual') }}
-            </span>
-          </div>
-
-          <!-- Coretax side -->
-          <template v-if="pair.djp">
-            <button type="button" class="btn-enterprise vr-side vr-side--right" @click="openDetail(pair)">
-              <div class="vr-side-head vr-side-head--right">
-                <MpIcon name="doc" size="sm" class="vr-side-icon" />
-                <span class="vr-side-ref">{{ pair.djp.ref }}</span>
-                <span class="vr-side-date">{{ pair.djp.date }}</span>
-                <MpBadge :type="pair.djp.approved ? 'completed' : 'critical'" for="tableStatus" size="sm">
-                  {{ pair.djp.approved ? t('Approved') : t('Not approved') }}
-                </MpBadge>
-              </div>
-              <div class="vr-side-party">{{ partyOf(pair.djp) }}</div>
-              <div class="vr-side-npwp">NPWP {{ pair.djp.npwp }}</div>
-              <div class="vr-money">
-                <div class="vr-money-cell" :class="{ 'is-diff': isDiffField(pair, 'dpp') }">
-                  <span class="vr-money-label">DPP{{ isDiffField(pair, 'dpp') ? ' *' : '' }}</span>
-                  <span class="vr-money-value">{{ formatAmountPlain(pair.djp.dpp) }}</span>
-                </div>
-                <div class="vr-money-cell" :class="{ 'is-diff': isDiffField(pair, 'ppn') }">
-                  <span class="vr-money-label">PPN{{ isDiffField(pair, 'ppn') ? ' *' : '' }}</span>
-                  <span class="vr-money-value">{{ formatAmountPlain(pair.djp.ppn) }}</span>
-                </div>
-                <div class="vr-money-cell" :class="{ 'is-diff': isDiffField(pair, 'total') }">
-                  <span class="vr-money-label">{{ t('Total') }}{{ isDiffField(pair, 'total') ? ' *' : '' }}</span>
-                  <span class="vr-money-value vr-money-value--strong">{{ formatAmountPlain(pair.djp.total) }}</span>
-                </div>
-              </div>
-            </button>
-          </template>
-          <div v-else class="vr-side vr-side--empty vr-side--empty-right">
-            <div class="vr-empty-head">
-              <MpIcon name="warning-triangle" size="sm" />
-              <span>{{ t('Not found in Coretax') }}</span>
-            </div>
-            <!-- Output: the row is a real invoice, so the panel says where its
-                 tax document stands and offers the fix for that state. -->
-            <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId" :pair="pair" />
-            <template v-else>
-              <span class="vr-empty-hint">{{ t('Issue a faktur pajak in Coretax to match this invoice.') }}</span>
-              <MpButton
-                variant="secondary" size="sm" is-rounded left-icon="add"
-                @click="infoToast(t(L.djpEmptyToast))"
-              >
-                {{ t(L.djpEmptyAction) }}
-              </MpButton>
-            </template>
-          </div>
-
-          <!-- Engine reasoning banner -->
-          <div
-            v-if="showsReason(pair)"
-            class="vr-reason"
-            :style="{ background: metaFor(pair).bg, borderTopColor: metaFor(pair).border, color: metaFor(pair).fg }"
-          >
-            <!-- Light tint behind it → state colour, not inverse. -->
-            <MpIcon :name="metaFor(pair).icon" size="sm" :color="metaFor(pair).iconColorOutline" />
-            <span class="vr-reason-title">{{ t(metaFor(pair).longLabel) }}</span>
-            <span class="vr-reason-body">· {{ pair.reason }}</span>
+            <MpButton variant="ghost" size="sm" @click="clearDrafts">{{ t('Clear') }}</MpButton>
             <div class="vr-toolbar-spacer" />
-            <MpButton variant="secondary" size="sm" is-rounded @click="openDetail(pair)">
-              {{ t('Review') }}
-            </MpButton>
-          </div>
+            <MpButton variant="primary" size="sm" is-rounded @click="askBulkSubmit">{{ t('Submit to DJP') }}</MpButton>
+          </template>
+          <template v-else>
+            <span class="vr-caption">{{ draftRows.length }} {{ t('draft tax documents are waiting to be submitted.') }}</span>
+            <MpButton variant="ghost" size="sm" @click="selectAllDrafts">{{ t('Select all drafts') }}</MpButton>
+          </template>
+          <p v-if="bulkError" class="vr-bulk-error" role="alert">
+            {{ t("You don't have permission to submit tax documents to DJP. Ask an administrator for access.") }}
+          </p>
         </div>
+
+        <section v-for="g in groups" :key="g.key" class="vr-group">
+          <button
+            type="button"
+            class="btn-enterprise vr-group-head"
+            :aria-expanded="!collapsedGroups.has(g.key)"
+            @click="toggleGroup(g.key)"
+          >
+            <MpIcon :name="collapsedGroups.has(g.key) ? 'chevrons-right' : 'chevrons-down'" size="sm" />
+            <span class="vr-group-label">{{ g.label }}</span>
+            <span class="vr-group-count">{{ g.pairs.length }}</span>
+          </button>
+
+          <template v-if="!collapsedGroups.has(g.key)">
+            <div
+              v-for="pair in g.pairs"
+              :key="pair.id"
+              class="vr-item"
+              :class="{ 'is-open': isExpanded(pair) }"
+            >
+              <!-- Compact line: chevron | ERP ⋯ Coretax | actions | ✓ -->
+              <div class="vr-line">
+                <MpButton
+                  variant="ghost" size="sm" class="vr-chevron"
+                  :aria-label="isExpanded(pair) ? t('Collapse') : t('Expand')"
+                  :aria-expanded="isExpanded(pair)"
+                  @click="toggleRow(pair)"
+                >
+                  <MpIcon :name="isExpanded(pair) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                </MpButton>
+
+                <!-- ERP side — right-aligned against the connector, like the bank side -->
+                <button type="button" class="btn-enterprise vr-erp" @click="toggleRow(pair)">
+                    <template v-if="pair.erp">
+                      <span class="vr-caption">{{ pair.erp.date }}</span>
+                      <span class="vr-amount" :class="{ 'is-diff': isDiffField(pair, 'total') }">
+                        {{ formatAmountPlain(pair.erp.total) }}{{ isDiffField(pair, 'total') ? ' *' : '' }}
+                      </span>
+                      <span class="vr-caption">{{ pair.erp.ref }} · {{ partyOf(pair.erp) }}</span>
+                    </template>
+                    <template v-else>
+                      <span class="vr-missing">{{ t('No match in ERP') }}</span>
+                      <span class="vr-caption">{{ side === 'input' ? t('No purchase invoice carries this faktur.') : t('No sales invoice carries this faktur.') }}</span>
+                    </template>
+                </button>
+
+                <span class="vr-dash" aria-hidden="true" />
+
+                <!-- Coretax side, with the fix-on-the-invoice actions at its end
+                     (on the line itself — no expand needed) -->
+                <div class="vr-djp-cell">
+                  <button type="button" class="btn-enterprise vr-djp" @click="toggleRow(pair)">
+                    <template v-if="pair.djp">
+                      <span class="vr-caption">{{ pair.djp.date }}</span>
+                      <span class="vr-amount-row">
+                        <span class="vr-amount" :class="{ 'is-diff': isDiffField(pair, 'total') }">
+                          {{ formatAmountPlain(pair.djp.total) }}{{ isDiffField(pair, 'total') ? ' *' : '' }}
+                        </span>
+                        <MpBadge :type="metaFor(pair).badgeType" for="tableStatus" size="sm">{{ t(metaFor(pair).label) }}</MpBadge>
+                        <span v-if="pair.match === 'matched' && pair.matchedBy === 'manual'" class="vr-manual-tag">{{ t('Manual') }}</span>
+                        <span v-if="isWaitingOnBuyer(pair)" class="vr-manual-tag vr-waiting-tag">
+                          <MpIcon name="time" size="sm" />{{ t('Waiting on buyer') }}
+                        </span>
+                      </span>
+                      <span class="vr-caption">
+                        {{ pair.djp.ref }} · {{ pair.djp.approved ? t('Approved') : t('Not approved') }}
+                      </span>
+                    </template>
+                    <template v-else>
+                      <span class="vr-amount-row">
+                        <span class="vr-missing">{{ t('Not found in Coretax') }}</span>
+                        <MpBadge
+                          v-if="erpFakturOf(pair)?.doc"
+                          :type="DJP_STATUS_CONFIG[erpFakturOf(pair)!.doc!.status].type"
+                          for="tableStatus" size="sm"
+                        >{{ t(DJP_STATUS_CONFIG[erpFakturOf(pair)!.doc!.status].label) }}</MpBadge>
+                      </span>
+                      <span class="vr-caption">{{ fakturHint(pair) }}</span>
+                    </template>
+                  </button>
+                  <label v-if="draftDocId(pair)" class="vr-draft-check">
+                    <MpCheckbox
+                      :id="`vr-draft-${pair.id}`"
+                      :is-checked="selectedDrafts.has(pair.id)"
+                      :aria-label="`${t('Select draft for')} ${pair.erp?.ref}`"
+                      @change="(v: boolean) => toggleDraft(pair, v)"
+                    />
+                  </label>
+                  <VatReconciliationTaxDocActions v-if="erpFakturOf(pair)" :pair="pair" layout="row" class="vr-line-actions" />
+                </div>
+
+                <!-- Round ✓ — reconciled (filled) or confirm match (outline) -->
+                <div class="vr-confirm-cell">
+                  <MpTooltip
+                    v-if="confirmKind(pair) !== 'none'"
+                    :id="`vr-confirm-${pair.id}`"
+                    :label="confirmKind(pair) === 'reconciled' ? t('Reconciled') : t('Confirm match')"
+                    placement="top"
+                    use-portal
+                  >
+                    <button
+                      type="button"
+                      class="btn-enterprise vr-confirm"
+                      :class="{ 'is-done': confirmKind(pair) === 'reconciled' }"
+                      :aria-label="confirmKind(pair) === 'reconciled' ? t('Reconciled') : t('Confirm match')"
+                      @click="onConfirm(pair)"
+                    >
+                      <MpIcon name="check" size="sm" :color="confirmKind(pair) === 'reconciled' ? 'icon.inverse' : 'icon.default'" />
+                    </button>
+                  </MpTooltip>
+                </div>
+              </div>
+
+              <!-- Inline detail -->
+              <div v-if="isExpanded(pair)" class="vr-detail">
+                <div class="vr-detail-col">
+                  <div class="vr-detail-title">{{ t(erpDocLabel) }}</div>
+                  <dl v-if="pair.erp" class="vr-kv">
+                    <template v-for="f in compareFields(side)" :key="f.key">
+                      <dt>{{ t(f.label) }}</dt>
+                      <dd :class="{ 'is-diff': isDiffField(pair, f.key) }">
+                        <NuxtLink
+                          v-if="f.key === 'ref' && pair.erp.salesInvoiceId"
+                          :to="`/sales-invoices/${pair.erp.salesInvoiceId}`"
+                          class="vr-link"
+                        >{{ pair.erp.ref }}</NuxtLink>
+                        <template v-else>{{ fieldValue(pair.erp, f.key, f.money) }}</template>
+                      </dd>
+                    </template>
+                  </dl>
+                  <p v-else class="vr-detail-empty">{{ t('No match in ERP') }}</p>
+                </div>
+
+                <div class="vr-detail-col">
+                  <!-- Open pair: pick the counterpart, bank-reconciliation style -->
+                  <template v-if="hasCandidates(pair)">
+                    <div class="vr-detail-title">{{ t('Select the correct match') }}</div>
+                    <p class="vr-detail-sub">{{ t('These possibly match this row. Select the correct one.') }}</p>
+                    <div class="vr-cands" role="radiogroup" :aria-label="t('Select the correct match')">
+                      <label v-for="c in candidatesFor(pair)" :key="c.ref" class="vr-cand">
+                        <MpRadio
+                          :id="`vr-cand-${pair.id}-${c.ref}`"
+                          :name="`vr-cand-${pair.id}`"
+                          :is-checked="picked[pair.id] === c.ref"
+                          :aria-label="c.ref"
+                          @change="pick(pair, c.ref)"
+                        />
+                        <span class="vr-cand-main">
+                          <span class="vr-cand-ref">{{ c.ref }}</span>
+                          <span class="vr-caption">{{ c.date }} · {{ t(c.why) }}</span>
+                        </span>
+                        <span class="vr-cand-party">{{ c.party }}</span>
+                        <span class="vr-cand-total">{{ formatIDR(c.total) }}</span>
+                      </label>
+                    </div>
+                    <div class="vr-cand-sum">
+                      <div>{{ t('Selected total') }}: <strong>{{ formatIDR(pickedCandidate(pair)?.total ?? 0) }}</strong></div>
+                      <div :class="pickDifference(pair) === 0 ? 'is-ok' : 'is-bad'">
+                        {{ t('Difference') }}: {{ formatIDR(Math.abs(pickDifference(pair))) }}
+                      </div>
+                    </div>
+                    <p v-if="finalizedBlocked.has(pair.id)" class="vr-pick-error" role="alert">{{ t('This period is finalized. Unfinalize it first to change matches.') }}</p>
+                    <p v-else-if="pickError.has(pair.id)" class="vr-pick-error" role="alert">{{ t('Select a match first, then confirm.') }}</p>
+                    <div class="vr-find-another">
+                      <span class="vr-caption">{{ t("Don't see the correct match?") }}</span>
+                      <MpButton variant="ghost" size="sm" @click="infoToast(t('Opening match picker…'))">{{ t('Find another') }}</MpButton>
+                    </div>
+                  </template>
+
+                  <!-- Both sides present: the faktur, field by field -->
+                  <template v-else>
+                    <div class="vr-detail-title">{{ pair.match === 'matched' ? t('Matched faktur') : t('Faktur pajak') }}</div>
+                    <dl v-if="pair.djp" class="vr-kv">
+                      <template v-for="f in compareFields(side)" :key="f.key">
+                        <dt>{{ t(f.label) }}</dt>
+                        <dd :class="{ 'is-diff': isDiffField(pair, f.key) }">{{ fieldValue(pair.djp, f.key, f.money) }}</dd>
+                      </template>
+                    </dl>
+                    <p v-else class="vr-detail-empty">{{ t('Not found in Coretax') }}</p>
+                  </template>
+                </div>
+
+                <div class="vr-detail-foot">
+                  <p v-if="pair.reason" class="vr-reason-line">
+                    <strong :style="{ color: metaFor(pair).fg }">{{ t(metaFor(pair).longLabel) }}</strong>
+                    · {{ pair.reason }}
+                  </p>
+                  <VatReconciliationPairActions :pair="pair" :side="side" inline size="sm" :finalized="finalized" :period-id="periodId" @action="onPairAction" />
+                </div>
+
+                <!-- Audit trail (goal G4): who matched what, when, and why -->
+                <div class="vr-activity" data-devchange="vat-recon-review-fixes">
+                  <div class="vr-activity-title">{{ t('Activity') }}</div>
+                  <div class="vr-activity-list" role="list">
+                    <div v-for="(a, i) in activityFor(pair)" :key="i" class="vr-activity-row" role="listitem">
+                      <MpIcon :name="a.icon" size="sm" class="vr-activity-icon" />
+                      <span class="vr-activity-text">
+                        {{ t(a.label) }}<template v-if="a.status">: {{ t(a.status) }}</template>
+                        <span v-if="a.detail" class="vr-activity-detail">{{ a.detail }}</span>
+                      </span>
+                      <span class="vr-caption vr-activity-meta">{{ t(a.who) }} · {{ a.time }}</span>
+                    </div>
+                  </div>
+                  <MpButton v-if="activityCount(pair) > 3" variant="ghost" size="sm" @click="toggleActivity(pair)">
+                    {{ activityShowAll.has(pair.id) ? t('Show less') : `${t('Show all')} (${activityCount(pair)})` }}
+                  </MpButton>
+                </div>
+              </div>
+            </div>
+          </template>
+        </section>
       </div>
 
-      <div class="vr-foot">
+      <div class="vr-foot" data-devchange="vat-recon-prd-fixes">
+        <ErpPagination
+          v-if="filtered.length"
+          class="vr-pagination"
+          :total="filtered.length"
+          :current-page="currentPage"
+          :per-page="perPage"
+          @page-change="(p: number) => (currentPage = p)"
+          @per-page-change="setPerPage"
+        />
         <span>
           {{ t('Showing') }} {{ filtered.length }} {{ t('of') }} {{ pairs.length }} {{ t('pairs') }}
-          · {{ counts.matched }} {{ t('matched') }}
-          · {{ reviewCount }} {{ t('need review') }}
-          · {{ unmatchedCount }} {{ t('unmatched') }}
+          · {{ footer.matched }} {{ t('matched') }}
+          · {{ footer.review }} {{ t('need review') }}
+          · {{ footer.unmatched }} {{ t('unmatched') }}
           <!-- Rows parked on the buyer are not work the user can do, so they are
                counted apart rather than inflating "need review" (US-020). -->
-          <template v-if="waitingCount">· {{ waitingCount }} {{ t('waiting on buyer') }}</template>
+          <template v-if="footer.waiting">· {{ footer.waiting }} {{ t('waiting on buyer') }}</template>
         </span>
         <span>{{ t('Last sync') }}: {{ lastSyncedAt }}</span>
       </div>
     </div>
 
+    <VatReconciliationMatchConfirmModal
+      :is-open="!!pendingMatch"
+      :row-ref="(pendingMatch?.pair.erp ?? pendingMatch?.pair.djp)?.ref ?? ''"
+      :row-total="pendingMatch?.anchor ?? 0"
+      :candidate-ref="pendingMatch?.candidate.ref ?? ''"
+      :candidate-total="pendingMatch?.candidate.total ?? 0"
+      @close="pendingMatch = null"
+      @confirm="onMatchModalConfirm"
+    />
+    <ConfirmModal
+      v-model:is-open="bulkConfirmOpen"
+      :title="`${t('Submit')} ${selectedDraftRows.length} ${t('tax documents to DJP?')}`"
+      :description="t('The selected drafts will be sent to DJP for approval. They can no longer be edited after this.')"
+      :confirm-label="t('Submit to DJP')"
+      :cancel-label="t('Cancel')"
+      :is-danger="false"
+      @confirm="doBulkSubmit"
+    />
     <ConfirmModal
       v-model:is-open="finalizeOpen"
       :title="`${t('Finalize')} ${periodName}?`"
@@ -599,12 +894,6 @@ function reviewWithAirene() {
       @confirm="doUnfinalize"
     />
 
-    <ReconciliationDetailDrawer
-      v-model:is-open="drawerOpen"
-      :pair="activePair"
-      :side="side"
-      @action="infoToast"
-    />
   </div>
 </template>
 
@@ -634,6 +923,11 @@ function reviewWithAirene() {
   --vr-delta-gap: 2px;
   --vr-dot-sz: 32px;
   --vr-tag-p: 1px var(--mp-spacing-2);
+  --vr-chevron-col: 40px;
+  --vr-dash-col: 40px;
+  --vr-confirm-col: 56px;
+  --vr-confirm-sz: 32px;
+  --vr-line-h: 64px;
   display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 0;
 }
 
@@ -708,52 +1002,38 @@ function reviewWithAirene() {
   border-radius: var(--mp-radii-full, 999px);
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
-/* Status select — mirrors the index-page filter bar (SalesInvoicesPage.vue). */
-.filter-select-wrap {
-  position: relative; display: inline-flex; align-items: center;
-  /* 160px fixed per index-page-format.md §A.3. */
-  width: var(--vr-status-w); height: var(--vr-search-h);
-  flex-shrink: 0;
+/* ── Workspace card ── */
+.vr-workspace {
+  /* White card; rows sit on it as light-grey cards (bank-reconciliation layering).
+     Note --mp-background-surface is #f8f9f9 in this build, not white. */
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-md);
+  /* clip, not hidden: keeps the rounded corners without making this a scroll
+     container, so the column header and footer can stick to the page scroll. */
+  display: flex; flex-direction: column; overflow: clip;
 }
-.filter-select {
-  appearance: none; background: transparent; border: none; outline: none;
-  width: 100%; height: 100%;
-  padding: 0 var(--mp-spacing-10) 0 var(--mp-spacing-3);
-  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-default); cursor: pointer;
-}
-/* Unset (placeholder) reads as placeholder text, like every other index page. */
-.filter-select:has(option[value=""]:checked) { color: var(--mp-text-placeholder); }
-.filter-select-chevron {
-  position: absolute; right: var(--mp-spacing-2);
-  pointer-events: none; color: var(--mp-text-default);
-  width: var(--vr-chevron-sz); height: var(--vr-chevron-sz);
-}
-
-/* ── Workspace card ── */
-.vr-workspace {
-  flex: 1; min-height: 0;
-  background: var(--mp-background-surface);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  display: flex; flex-direction: column; overflow: hidden;
+/* One grid for the header and every line, so ERP / Coretax columns align down
+   the whole list: chevron | ERP | connector | Coretax (+ actions) | ✓ */
+.vr-cols-head,
+.vr-line {
+  display: grid;
+  grid-template-columns: var(--vr-chevron-col) minmax(0, 1fr) var(--vr-dash-col) minmax(0, 1.4fr) var(--vr-confirm-col);
+  align-items: center;
 }
 .vr-cols-head {
-  display: grid; grid-template-columns: 1fr 56px 1fr;
-  background: var(--mp-background-neutral-subtle);
+  position: sticky; top: 0; z-index: 2;
+  background: var(--mp-background-neutral);
   border-bottom: 1px solid var(--mp-border-default);
 }
 .vr-col-head {
-  padding: var(--mp-spacing-3) var(--mp-spacing-5);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4);
   display: flex; align-items: center; gap: var(--mp-spacing-2); min-width: 0;
 }
 .vr-col-head--right { justify-content: flex-end; }
 .vr-col-icon {
   width: var(--vr-col-icon-sz); height: var(--vr-col-icon-sz); border-radius: var(--mp-radii-sm);
-  background: var(--mp-background-surface); border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   color: var(--mp-text-secondary);
 }
@@ -770,91 +1050,106 @@ function reviewWithAirene() {
   white-space: nowrap;
 }
 
-.vr-rows { flex: 1; min-height: 0; overflow: auto; }
-.vr-row {
-  display: grid; grid-template-columns: 1fr 56px 1fr;
-  align-items: stretch;
-  border-bottom: 1px solid var(--mp-border-default);
-}
+.vr-rows { padding: var(--mp-spacing-2) var(--mp-spacing-4) var(--mp-spacing-4); }
 
-/* ── Row sides ── */
-.vr-side {
-  all: unset;
-  cursor: pointer;
-  padding: var(--mp-spacing-4) var(--mp-spacing-5);
-  min-height: 80px;
-  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
-  align-items: flex-start; text-align: left;
-  transition: background 120ms;
-}
-.vr-side:hover { background: var(--mp-background-neutral-hovered); }
-.vr-side--right { align-items: flex-end; text-align: right; }
-.vr-side-head { display: flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; flex-wrap: wrap; }
-.vr-side-head--right { flex-direction: row-reverse; }
-.vr-side-icon { color: var(--mp-text-subtle); flex-shrink: 0; }
-.vr-side-ref {
-  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default); white-space: nowrap;
-}
-.vr-side-date { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); white-space: nowrap; }
-.vr-side-party {
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
-}
-.vr-side-npwp { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); white-space: nowrap; }
+/* Pushes what follows to the right edge (finalized banner, bulk bar). */
+.vr-toolbar-spacer { flex: 1; }
 
-.vr-money { display: flex; gap: var(--mp-spacing-6); margin-top: var(--mp-spacing-1); }
-.vr-money-cell { display: flex; flex-direction: column; }
-.vr-money-label {
-  font-size: 10px; font-weight: var(--mp-font-weights-bold);
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-text-subtle);
+/* ── Bulk bar ── */
+.vr-bulk {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3); margin-bottom: var(--mp-spacing-2);
+  border: 1px dashed var(--mp-border-default); border-radius: var(--mp-radii-md);
 }
-.vr-money-cell.is-diff .vr-money-label { color: var(--mp-colors-orange-600); }
-.vr-money-value {
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default); font-variant-numeric: tabular-nums;
-}
-.vr-money-value--strong { font-weight: var(--mp-font-weights-bold); }
-.vr-money-cell.is-diff .vr-money-value { color: var(--mp-colors-orange-800); }
+.vr-bulk.is-active { border-style: solid; border-color: var(--mp-colors-neutral-400); background: var(--mp-background-neutral-subtle); }
+.vr-bulk-count { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.vr-bulk-error { flex-basis: 100%; margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
+.vr-draft-check { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; }
 
-/* ── Missing-side empty state ── */
-.vr-side--empty {
-  cursor: default;
-  background: var(--mp-colors-red-100);
-  align-items: flex-start; text-align: left;
-  gap: var(--mp-spacing-2);
-  justify-content: center;
-}
-.vr-side--empty:hover { background: var(--mp-colors-red-100); }
-.vr-side--empty-left { border-right: 1px dashed var(--mp-colors-red-200); }
-.vr-side--empty-right { border-left: 1px dashed var(--mp-colors-red-200); }
-.vr-empty-head {
+/* ── Activity in the expand ── */
+.vr-activity { grid-column: 1 / -1; padding: var(--mp-spacing-3) var(--mp-spacing-5); border-top: 1px solid var(--mp-border-default); }
+.vr-activity-title { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2); }
+.vr-activity-list { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
+.vr-activity-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--mp-spacing-2); align-items: start; font-size: var(--mp-font-sizes-sm); }
+.vr-activity-icon { color: var(--mp-text-subtle); margin-top: 2px; }
+.vr-activity-text { color: var(--mp-text-default); }
+.vr-activity-detail { display: block; color: var(--mp-text-secondary); overflow-wrap: anywhere; }
+.vr-activity-meta { white-space: nowrap; }
+
+/* ── Date groups ── */
+.vr-group + .vr-group { margin-top: var(--mp-spacing-2); }
+.vr-group-head {
+  all: unset; cursor: pointer;
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  color: var(--mp-colors-red-800);
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
+  padding: var(--mp-spacing-3) var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
 }
-.vr-empty-hint { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
+.vr-group-count {
+  font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-subtle);
+}
 
-/* ── Connector ── */
-.vr-connector {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: var(--vr-connector-gap);
-  border-left: 1px dashed var(--mp-border-default);
-  border-right: 1px dashed var(--mp-border-default);
+/* ── One pair: a neutral card, the status lives in the tag ── */
+.vr-item {
+  background: var(--mp-background-neutral-subtle);
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  overflow: hidden;
 }
-.vr-connector-dot {
-  width: var(--vr-dot-sz); height: var(--vr-dot-sz); border-radius: var(--mp-radii-full);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+.vr-item + .vr-item { margin-top: var(--mp-spacing-2); }
+.vr-item.is-open { background: var(--mp-background-neutral); border-color: var(--mp-colors-neutral-400); }
+.vr-line { min-height: var(--vr-line-h); }
+.vr-chevron { justify-self: center; }
+
+.vr-erp,
+.vr-djp {
+  all: unset; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--mp-spacing-3) var(--mp-spacing-2);
+  min-width: 0;
 }
-.vr-connector-dot.is-outline {
-  background: var(--mp-background-surface);
-  border: 1.5px dashed currentColor;
+.vr-erp { align-items: flex-end; text-align: right; }
+.vr-djp { align-items: flex-start; text-align: left; flex: 1; }
+.vr-erp:focus-visible, .vr-djp:focus-visible { outline: 2px solid var(--mp-colors-neutral-400); outline-offset: -2px; }
+.vr-djp-cell { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; padding-right: var(--mp-spacing-2); }
+.vr-line-actions { flex-shrink: 0; }
+
+.vr-caption {
+  font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle);
+  max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.vr-connector-pct { font-size: 10px; font-weight: var(--mp-font-weights-bold); }
-/* Sits under the connector dot: quiet enough not to compete with the status,
-   loud enough that a column of matched rows shows which ones a person judged. */
+.vr-amount {
+  font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.vr-amount.is-diff { color: var(--mp-colors-orange-800); }
+.vr-amount-row { display: flex; align-items: center; gap: var(--mp-spacing-2); flex-wrap: wrap; }
+.vr-missing { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+
+/* The dotted connector between the two sides, like the bank reconciliation */
+.vr-dash {
+  justify-self: center; width: 24px;
+  border-top: 2px dotted var(--mp-border-default);
+}
+
+/* Round ✓ — outline = confirm match; filled green = reconciled */
+.vr-confirm-cell { display: flex; justify-content: center; }
+.vr-confirm {
+  all: unset; cursor: pointer;
+  width: var(--vr-confirm-sz); height: var(--vr-confirm-sz);
+  border-radius: var(--mp-radii-full);
+  border: 1.5px solid var(--mp-border-default);
+  background: var(--mp-background-neutral);
+  display: flex; align-items: center; justify-content: center;
+}
+.vr-confirm:hover { border-color: var(--mp-colors-neutral-400); }
+.vr-confirm:focus-visible { outline: 2px solid var(--mp-colors-neutral-400); outline-offset: 2px; }
+.vr-waiting-tag { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); }
+.vr-confirm.is-done { background: var(--mp-colors-emerald-700); border-color: var(--mp-colors-emerald-700); }
+
+/* Who judged it — quiet next to the status tag */
 .vr-manual-tag {
-  margin-top: var(--mp-spacing-1);
   padding: var(--vr-tag-p);
   border-radius: var(--mp-radii-full);
   background: var(--mp-colors-neutral-100);
@@ -864,17 +1159,53 @@ function reviewWithAirene() {
   white-space: nowrap;
 }
 
-/* ── Reasoning banner ── */
-.vr-reason {
-  grid-column: 1 / -1;
-  padding: var(--mp-spacing-2) var(--mp-spacing-5);
-  border-top: 1px solid transparent;
-  display: flex; align-items: center; gap: var(--mp-spacing-2);
-  font-size: var(--mp-font-sizes-xs);
-  flex-wrap: wrap;
+/* ── Inline detail ── */
+.vr-detail {
+  display: grid; grid-template-columns: 1fr 1.4fr;
+  border-top: 1px solid var(--mp-border-default);
 }
-.vr-reason-title { font-weight: var(--mp-font-weights-semi-bold); }
-.vr-reason-body { color: inherit; }
+.vr-detail-col { padding: var(--mp-spacing-4) var(--mp-spacing-5); min-width: 0; }
+.vr-detail-col + .vr-detail-col { border-left: 1px solid var(--mp-border-default); }
+.vr-detail-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin-bottom: var(--mp-spacing-3); }
+.vr-detail-sub { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.vr-detail-empty { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+.vr-kv {
+  margin: 0; display: grid; grid-template-columns: 120px minmax(0, 1fr);
+  row-gap: var(--mp-spacing-2); column-gap: var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-md);
+}
+.vr-kv dt { color: var(--mp-text-secondary); }
+.vr-kv dd { margin: 0; color: var(--mp-text-default); overflow-wrap: anywhere; }
+.vr-kv dd.is-diff { color: var(--mp-colors-orange-800); font-weight: var(--mp-font-weights-semi-bold); }
+.vr-link { color: var(--mp-text-link, var(--mp-colors-blue-700)); text-decoration: none; }
+.vr-link:hover { text-decoration: underline; }
+
+.vr-cands { display: flex; flex-direction: column; }
+.vr-cand {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  align-items: center; gap: var(--mp-spacing-3);
+  padding: var(--mp-spacing-2) 0; cursor: pointer;
+  border-bottom: 1px solid var(--mp-border-default);
+  font-size: var(--mp-font-sizes-md);
+}
+.vr-cand-main { display: flex; flex-direction: column; min-width: 0; }
+.vr-cand-ref { color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.vr-cand-party { color: var(--mp-text-default); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vr-cand-total { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vr-cand-sum { margin-top: var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); display: flex; flex-direction: column; gap: 2px; }
+.vr-cand-sum .is-ok { color: var(--mp-colors-emerald-800); font-weight: var(--mp-font-weights-semi-bold); }
+.vr-cand-sum .is-bad { color: var(--mp-colors-red-800); font-weight: var(--mp-font-weights-semi-bold); }
+.vr-pick-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
+.vr-find-another { margin-top: var(--mp-spacing-3); display: flex; align-items: center; gap: var(--mp-spacing-1); }
+
+.vr-detail-foot {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: var(--mp-spacing-4); justify-content: space-between;
+  padding: var(--mp-spacing-3) var(--mp-spacing-5);
+  border-top: 1px solid var(--mp-border-default);
+}
+.vr-reason-line { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.vr-detail-foot :deep(.vpa) { margin-left: auto; }
 
 /* ── Empty / footer ── */
 .vr-empty { padding: var(--mp-spacing-16) var(--mp-spacing-6); text-align: center; }
@@ -884,6 +1215,11 @@ function reviewWithAirene() {
 }
 .vr-empty-body { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
 .vr-foot {
+  /* Sticks to the bottom of the page scroll, so counts and paging stay in reach.
+     The page scroller (.stage in [...slug].vue) has an 80px bottom padding
+     (--mp-spacing-20) and sticky stops inside it — the negative offset lands
+     the footer on the visible bottom edge instead of 80px above it. */
+  position: sticky; bottom: calc(-1 * var(--mp-spacing-20, 80px)); z-index: 2;
   padding: var(--mp-spacing-2) var(--mp-spacing-4);
   border-top: 1px solid var(--mp-border-default);
   background: var(--mp-background-neutral-subtle);
@@ -891,4 +1227,5 @@ function reviewWithAirene() {
   font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle);
   flex-wrap: wrap;
 }
+.vr-pagination { flex-basis: 100%; }
 </style>
