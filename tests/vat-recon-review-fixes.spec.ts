@@ -173,9 +173,18 @@ describe('P1 — bulk submit drafts', () => {
     try {
       const w = await mountWorkspace()
       expect(w.find('.vr-bulk').exists()).toBe(true)
-      await w.findAll('.vr-bulk button').find(b => b.text() === 'Select all drafts')!.trigger('click')
+      // ErpTablePage bulk-bar anatomy (UI review 2026-11-04): select-all checkbox,
+      // then "Submit to DJP" from the secondary-sm Actions dropdown.
+      await w.find('.vr-bulk input[type="checkbox"]').setValue(true)
       expect(w.find('.vr-bulk-count').text()).toMatch(/^\d+ drafts selected$/)
-      await w.findAll('.vr-bulk button').find(b => b.text() === 'Submit to DJP')!.trigger('click')
+      await w.findAll('.vr-bulk button').find(b => b.text() === 'Actions')!.trigger('click')
+      await flushPromises()
+      // The menu portals to <body>; skip the per-row "Submit to DJP" buttons and
+      // click the list item itself (same lookup as the receipts bulk-menu spec).
+      const leaf = [...document.body.querySelectorAll('*')].find(el =>
+        el.children.length === 0 && el.textContent?.trim() === 'Submit to DJP' && !el.closest('.vr-item, .vr-bulk'))!
+      const item = (leaf.closest('li, [role="menuitem"], [role="option"]') ?? leaf) as HTMLElement
+      item.click()
       await flushPromises()
       const confirm = [...document.body.querySelectorAll('button')].filter(b => b.textContent?.trim() === 'Submit to DJP').at(-1)!
       confirm.click()

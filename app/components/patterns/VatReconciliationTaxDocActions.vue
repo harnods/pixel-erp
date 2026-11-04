@@ -42,6 +42,13 @@ const { canSubmitTaxDocument } = useTaxSubmissionPermission()
 
 const faktur = computed(() => erpFakturOf(props.pair))
 
+/**
+ * One primary per screen (rule/btn-one-primary): on a workspace row (`row`)
+ * the fix sits beside dozens of others and the title-bar Finalize, so it is
+ * secondary; in a drawer footer (`stack`) it is the drawer's one primary.
+ */
+const mainVariant = computed(() => (props.layout === 'row' ? 'secondary' : 'primary'))
+
 const hint = computed(() => (faktur.value ? ERP_FAKTUR_HINTS[faktur.value.state] : ''))
 const badge = computed(() => (faktur.value?.doc ? DJP_STATUS_CONFIG[faktur.value.doc.status] : null))
 
@@ -78,7 +85,7 @@ function doSubmit() {
     </div>
     <div class="vrt-actions">
       <template v-if="faktur.state === 'none'">
-        <MpButton variant="primary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
+        <MpButton :variant="mainVariant" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
           {{ t('Create tax document') }}
         </MpButton>
       </template>
@@ -88,7 +95,7 @@ function doSubmit() {
         <MpButton variant="secondary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('edit')">
           {{ t('Edit tax document') }}
         </MpButton>
-        <MpButton variant="primary" v-bind="{ size }" is-rounded @click="askSubmit">
+        <MpButton :variant="mainVariant" v-bind="{ size }" is-rounded @click="askSubmit">
           {{ t('Submit to DJP') }}
         </MpButton>
       </template>

@@ -24,7 +24,7 @@ import {
   type VatReconScope,
 } from '~/data/vatReconciliation'
 import { coaAccounts } from '~/data/wmsCutover'
-import { infoToast } from '~/utils/toasts'
+import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
 
@@ -113,9 +113,14 @@ const snapshotLabel = computed(() => scope.value === 'both'
   ? `${accountLabels(SNAPSHOT_ACCOUNT_CODES.output)}; ${accountLabels(SNAPSHOT_ACCOUNT_CODES.input)}`
   : accountLabels(SNAPSHOT_ACCOUNT_CODES.output))
 
+const router = useRouter()
+
 function save() {
   submitted.value = true
   if (outputError.value || inputError.value) return
+  // First run creates the setup; the index it unlocks is where the user goes next
+  // (US-016 AC-03). Later saves are edits and stay on the page.
+  const firstRun = !loadVatSetup()
   saved.value = saveVatSetup({
     outputAccountCodes: [...outputCodes.value],
     // VAT In accounts are kept only while VAT In is in scope.
@@ -123,7 +128,9 @@ function save() {
     scope: scope.value,
   })
   submitted.value = false
-  infoToast(t('Reconciliation setup saved'))
+  // rule/btn-save-toast — a save confirms with a success toast.
+  successToast(t('Reconciliation setup saved'))
+  if (firstRun) router.push('/vat-reconciliation')
 }
 
 // "Save changes" is a title-bar action (see [...slug].vue) — it bumps this

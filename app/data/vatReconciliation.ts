@@ -124,6 +124,12 @@ export interface ReconPair {
   reason?: string
   /** Field keys that differ between the two sides. */
   fields?: string[]
+  /**
+   * Duplicate reference (US-003) — the OTHER Approved faktur carrying this
+   * invoice number as Referensi (typically a pengganti). With `djp` they are
+   * the candidates the user picks between.
+   */
+  duplicates?: ReconRecord[]
 }
 
 /** A pair carrying the side it came from — used by the cross-cut Unmatched report. */
@@ -515,6 +521,9 @@ export const outputPairs: ReconPair[] = [
     erp: { ref: '40154', date: '28 Feb 2027', customer: 'PT Erajaya Swasembada Tbk', npwp: '0018452037091000', dpp: 21000000, ppn: 2520000, total: 23520000 },
     djp: { ref: '27000000039848145', date: '28 Feb 2027', customer: 'PT Erajaya Swasembada Tbk', npwp: '0018452037091000', dpp: 21000000, ppn: 2520000, total: 23520000, approved: true },
     reason: 'Two Approved faktur carry this invoice number: 27000000039848145 and its pengganti 27000000039848218.',
+    duplicates: [
+      { ref: '27000000039848218', date: '28 Feb 2027', customer: 'PT Erajaya Swasembada Tbk', npwp: '0018452037091000', dpp: 21000000, ppn: 2520000, total: 23520000, approved: true },
+    ],
   },
   {
     // 8 (US-017) — return booked *before* the faktur, and the faktur was issued
@@ -623,6 +632,16 @@ export function hasCandidates(pair: ReconPair): boolean {
  */
 export function candidatesFor(pair: ReconPair): MatchCandidate[] {
   if (!hasCandidates(pair)) return []
+  // Duplicate reference: the invoice is known — the choice is which of the
+  // Approved faktur carrying its number is the live one (US-003 AC-01).
+  if (pair.match === 'duplicate-reference') {
+    const fakturs = [pair.djp, ...(pair.duplicates ?? [])].filter((r): r is ReconRecord => !!r)
+    return fakturs.map((f, i) => ({
+      ref: f.ref, date: f.date, party: partyOf(f), dpp: f.dpp, ppn: f.ppn, total: f.total,
+      confidence: 1,
+      why: i === 0 ? 'Original faktur.' : 'Pengganti — also references this invoice.',
+    }))
+  }
   const base = pair.erp ?? pair.djp
   if (!base) return []
   // The counterpart lives on the other side: a faktur for an ERP-only row, an
@@ -1231,7 +1250,11 @@ function candidateRecord(c: MatchCandidate, like: ReconRecord, isDjp: boolean, s
 
 function applyManualMatch(p: ReconPair, m: ManualMatch): ReconPair {
   const erp = p.erp ?? (p.djp ? candidateRecord(m.candidate, p.djp, false, m.side) : null)
-  const djp = p.djp ?? (p.erp ? candidateRecord(m.candidate, p.erp, true, m.side) : null)
+  // A duplicate reference is settled by WHICH faktur was picked — keep that one.
+  const picked = p.match === 'duplicate-reference'
+    ? [p.djp, ...(p.duplicates ?? [])].find(r => r?.ref === m.candidate.ref) ?? null
+    : null
+  const djp = picked ?? p.djp ?? (p.erp ? candidateRecord(m.candidate, p.erp, true, m.side) : null)
   return {
     ...p, erp, djp,
     match: 'matched', matchedBy: 'manual', confidence: 1,

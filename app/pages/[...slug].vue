@@ -45,8 +45,15 @@ import { useRecommendationWarehouse } from '~/composables/useRecommendationWareh
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import {
   matchCounts, pairsForPeriod, activePeriodId, reconUnfinishedCount, periodLabelById,
-  reconVersion, isPeriodFinalized, canFinalizePeriod,
+  reconVersion, isPeriodFinalized, canFinalizePeriod, loadVatSetup,
 } from '~/data/vatReconciliation'
+
+/**
+ * VAT reconciliation is gated on setup (US-016): until it's saved the index is
+ * not reachable, so its tabs, badge and module actions stay out of the title bar
+ * — only the gate's own "Start setup" shows.
+ */
+const vatSetUp = computed(() => { void reconVersion.value; return !!loadVatSetup() })
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoicesAwaitingApproval } from '~/data'
@@ -1334,6 +1341,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
 const { hasWarehouseContext, activeWarehouse } = useWarehouseContext()
 const { activeScenario } = useScenario()
 const currentTabs = computed<string[]>(() => {
+  if (currentPageKey.value === 'Vat reconciliation' && !vatSetUp.value) return []
   const tabs = pageTabs[currentPageKey.value] ?? []
   const config = (hasWarehouseContext.value && activeWarehouse.value) ? getWarehouseConfig(activeWarehouse.value.id) : null
   return tabs.filter((tab) => {
@@ -2107,7 +2115,7 @@ function startResize(e: MouseEvent) {
              them. Matching rules is the module's settings destination, which is
              why it's here rather than a sidebar child. Per-row CSV download
              lives in the table's own action column. -->
-        <div v-else-if="currentPageKey === 'Vat reconciliation'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Vat reconciliation' && vatSetUp" class="page-title-actions">
           <!-- The issue queue is a working list, so it keeps its own actions;
                the period index gets the module-level ones. -->
           <template v-if="activeTab === 'Unmatched & discrepancies'">
@@ -2139,16 +2147,11 @@ function startResize(e: MouseEvent) {
             </button>
           </template>
         </div>
-        <!-- VAT reconciliation — both faktur sides share the same action set. -->
-        <div v-else-if="currentPageKey === 'Faktur keluaran' || currentPageKey === 'Faktur masukan'" class="page-title-actions">
-          <button
-            class="btn-enterprise btn-enterprise--secondary"
-            @click="infoToast(t('Export started'))"
-          >
-            {{ t('Export') }}
-          </button>
-          <!-- Finalize is only offered once the whole masa is reconciled; while
-               it isn't, the button says why rather than disappearing (US-021). -->
+        <!-- VAT reconciliation — both faktur sides share the same action set.
+             Export lives in the page's filter bar (rule/page-title-actions-group). -->
+        <div v-else-if="currentPageKey === 'Faktur keluaran' || currentPageKey === 'Faktur masukan'" class="page-title-actions" data-devchange="vat-recon-ui-review">
+          <!-- Finalize is never disabled (rule/btn-no-disabled-validation): pressed
+               before the masa is reconciled, the page explains why (US-021). -->
           <button
             v-if="vatFinalizeState.finalized"
             class="btn-enterprise btn-enterprise--secondary"
@@ -2159,19 +2162,26 @@ function startResize(e: MouseEvent) {
           <button
             v-else
             class="btn-enterprise btn-enterprise--primary"
-            :disabled="!vatFinalizeState.canFinalize"
-            :title="vatFinalizeState.canFinalize ? '' : t('Every faktur in this period must be reconciled first')"
             @click="vatFinalize++"
           >
             {{ t('Finalize') }}
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions" data-devchange="vat-recon-ui-review">
+          <!-- Cancel + primary, always both (rule/form-actions-always-present);
+               Cancel is ghost (rule/btn-cancel-ghost) and leaves without saving. -->
+          <button
+            class="btn-enterprise btn-enterprise--ghost"
+            @click="router.push('/vat-reconciliation')"
+          >
+            {{ t('Cancel') }}
+          </button>
           <button
             class="btn-enterprise btn-enterprise--primary"
             @click="vatSetupSave++"
           >
-            {{ t('Save changes') }}
+            <!-- Create vs edit (rule/form-edit-save-changes): first run creates. -->
+            {{ vatSetUp ? t('Save changes') : t('Save') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Approval workflows'" class="page-title-actions">

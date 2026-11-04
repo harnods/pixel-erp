@@ -8,19 +8,19 @@
  * an activity trail. The footer actions are state-driven — a matched pair can only
  * be unmatched, a suggestion can be accepted or rejected, and so on.
  *
- * 720px floating drawer. The size="full" + :deep width override is the same
- * workaround used by TaxDocumentDetailDrawer.vue (a fixed size preset's stale
- * width lookup fights the override and freezes the open animation).
+ * 720px, on the shared ErpDrawer Teleport shell (rule/drawer-custom-shell —
+ * MpDrawer has no structural CSS in this Pixel3 build). Like every ERP drawer it
+ * closes only via its × (rule/modal-drawer-close-explicit-only).
  */
-import {
-  MpDrawer, MpDrawerContent, MpDrawerBody, MpDrawerOverlay,
-  MpButton, MpText, MpIcon,
-} from '@mekari/pixel3'
+import { MpButton, MpText, MpIcon } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
+import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import VatReconciliationPairActions from '~/components/patterns/VatReconciliationPairActions.vue'
+import VatReconciliationMatchConfirmModal from '~/components/patterns/VatReconciliationMatchConfirmModal.vue'
+import { successToast } from '~/utils/toasts'
 import {
-  MATCH_META, candidatesFor, formatAmountPlain, pairActivity, activePeriodId,
-  type ReconPair, type ReconSide,
+  MATCH_META, candidatesFor, formatAmountPlain, pairActivity, activePeriodId, confirmManualMatch,
+  type ReconPair, type ReconSide, type MatchCandidate,
 } from '~/data/vatReconciliation'
 
 const props = defineProps<{
@@ -96,47 +96,65 @@ const reasonTitle = computed(() => {
   return t(MATCH_META[props.pair.match].longLabel)
 })
 
+/**
+ * "Match this" records a real manual match — the same path as the workspace's ✓
+ * (confirmManualMatch). A match whose totals differ goes through the shared
+ * difference modal, which asks for the reason (design review P0).
+ */
+const pendingCandidate = ref<MatchCandidate | null>(null)
+const anchorTotal = computed(() => (props.pair?.erp ?? props.pair?.djp)?.total ?? 0)
+const finalizedError = ref(false)
+watch(() => props.pair?.id, () => { finalizedError.value = false; pendingCandidate.value = null })
+function matchThis(c: MatchCandidate) {
+  if (props.finalized) { finalizedError.value = true; return }
+  if (anchorTotal.value !== c.total) { pendingCandidate.value = c; return }
+  saveMatch(c)
+}
+function saveMatch(c: MatchCandidate, reason?: string) {
+  if (!props.pair) return
+  const ok = confirmManualMatch({
+    pair: props.pair, periodId: props.periodId ?? activePeriodId, side: props.side, candidate: c, reason,
+  })
+  if (!ok) return
+  pendingCandidate.value = null
+  successToast(t('Match confirmed'))
+  close()
+}
+
 /** Built from the records the module keeps (pairActivity) — never invented. */
 const activity = computed(() =>
   props.pair ? pairActivity(props.pair, props.periodId ?? activePeriodId) : [])
 </script>
 
 <template>
-  <MpDrawer
-    id="reconciliation-detail-drawer"
-    :is-open="isOpen"
-    placement="right"
-    size="full"
-    variant="floating"
-    is-close-on-overlay-click
-    :is-keep-alive="false"
+  <ErpDrawer
+    :is-open="isOpen && !!pair"
+    :title="headerRef"
+    width="720px"
+    data-devchange="vat-recon-ui-review"
     @close="close"
   >
-    <MpDrawerContent>
-      <MpDrawerBody>
-        <div v-if="pair && meta" class="rdd-card">
-          <!-- Header -->
-          <div class="rdd-header">
-            <div class="rdd-header-main">
-              <div
-                class="rdd-state-icon"
-                :style="{ background: meta.bg, borderColor: meta.border }"
-              >
-                <!-- MpIcon ignores CSS `color`; the state colour must come from
-                     the prop. Light tint behind it → outline colour. -->
-                <MpIcon :name="meta.icon" size="md" :color="meta.iconColorOutline" />
-              </div>
-              <div class="rdd-header-text">
-                <MpText size="h3" weight="semiBold">{{ headerRef }}</MpText>
-                <span class="rdd-header-sub">
-                  {{ t('Reconciliation detail') }} · {{ t(meta.longLabel) }}
-                </span>
-              </div>
-            </div>
-            <MpButton left-icon="close" variant="ghost" size="sm" :aria-label="t('Close')" @click="close" />
-          </div>
+    <template #title>
+      <div v-if="pair && meta" class="rdd-header-main">
+        <div
+          class="rdd-state-icon"
+          :style="{ background: meta.bg, borderColor: meta.border }"
+        >
+          <!-- MpIcon ignores CSS `color`; the state colour must come from
+               the prop. Light tint behind it → outline colour. -->
+          <MpIcon :name="meta.icon" size="md" :color="meta.iconColorOutline" />
+        </div>
+        <div class="rdd-header-text">
+          <MpText size="h3" weight="semiBold">{{ headerRef }}</MpText>
+          <span class="rdd-header-sub">
+            {{ t('Reconciliation detail') }} · {{ t(meta.longLabel) }}
+          </span>
+        </div>
+      </div>
+    </template>
 
-          <div class="rdd-body">
+    <template #body>
+      <div v-if="pair && meta" class="rdd-body">
             <!-- Side-by-side comparison -->
             <div class="rdd-compare">
               <div class="rdd-compare-head">
@@ -214,14 +232,17 @@ const activity = computed(() =>
                   <div class="rdd-candidate-foot">
                     <span class="rdd-candidate-why">{{ c.why }}</span>
                     <MpButton
-                      variant="secondary" size="sm" is-rounded left-icon="link"
-                      @click="act(t('Match confirmed'))"
+                      variant="secondary" size="sm" is-rounded
+                      @click="matchThis(c)"
                     >
                       {{ t('Match this') }}
                     </MpButton>
                   </div>
                 </div>
               </div>
+              <p v-if="finalizedError" class="rdd-error" role="alert">
+                {{ t('This period is finalized. Unfinalize it first to change matches.') }}
+              </p>
             </div>
 
             <!-- Activity -->
@@ -242,51 +263,47 @@ const activity = computed(() =>
                 </div>
               </div>
             </div>
-          </div>
+      </div>
+    </template>
 
-          <!-- State-driven footer -->
-          <div class="rdd-footer">
-            <MpButton variant="ghost" is-rounded @click="act(t('Opening Coretax…'))">
-              {{ t('Open in Coretax') }}
-            </MpButton>
-            <div class="rdd-footer-actions">
-              <VatReconciliationPairActions
-                :pair="pair"
-                :side="side"
-                :finalized="!!finalized"
-                :period-id="periodId"
-                @action="(message, alsoClose) => act(message, alsoClose)"
-              />
-            </div>
-          </div>
+    <!-- State-driven footer -->
+    <template #footer>
+      <template v-if="pair">
+        <MpButton variant="ghost" is-rounded @click="act(t('Opening Coretax…'))">
+          {{ t('Open in Coretax') }}
+        </MpButton>
+        <div class="rdd-footer-actions">
+          <VatReconciliationPairActions
+            :pair="pair"
+            :side="side"
+            :finalized="!!finalized"
+            :period-id="periodId"
+            @action="(message, alsoClose) => act(message, alsoClose)"
+          />
         </div>
-      </MpDrawerBody>
-    </MpDrawerContent>
-    <MpDrawerOverlay />
-  </MpDrawer>
+      </template>
+    </template>
+  </ErpDrawer>
+
+  <VatReconciliationMatchConfirmModal
+    :is-open="!!pendingCandidate"
+    :row-ref="headerRef"
+    :row-total="anchorTotal"
+    :candidate-ref="pendingCandidate?.ref ?? ''"
+    :candidate-total="pendingCandidate?.total ?? 0"
+    @close="pendingCandidate = null"
+    @confirm="(reason: string) => pendingCandidate && saveMatch(pendingCandidate, reason)"
+  />
 </template>
 
 <style scoped>
-.rdd-card {
-  --rdd-panel-w: 720px;
+.rdd-header-main, .rdd-body {
   --rdd-icon-sz: 40px;
   --rdd-badge-p: 1px var(--mp-spacing-2);
   --rdd-confidence-p: 2px var(--mp-spacing-2);
   --rdd-activity-sz: 24px;
-  display: flex; flex-direction: column; height: 100%;
-  background: var(--mp-background-surface);
 }
-:deep([data-pixel-component="MpDrawerContent"]) {
-  width: var(--rdd-panel-w) !important;
-  max-width: 92vw !important;
-}
-
-.rdd-header {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3) var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
-}
+/* ErpDrawer owns the panel, header bar, scrolling body and footer. */
 .rdd-header-main { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
 .rdd-state-icon {
   width: var(--rdd-icon-sz); height: var(--rdd-icon-sz); border-radius: var(--mp-radii-md);
@@ -296,11 +313,8 @@ const activity = computed(() =>
 .rdd-header-text { display: flex; flex-direction: column; min-width: 0; }
 .rdd-header-sub { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 
-.rdd-body {
-  flex: 1; overflow-y: auto;
-  padding: var(--mp-spacing-4);
-  display: flex; flex-direction: column; gap: var(--mp-spacing-4);
-}
+.rdd-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
+.rdd-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
 
 /* ── Comparison table ── */
 .rdd-compare { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; }
@@ -402,11 +416,5 @@ const activity = computed(() =>
 .rdd-activity-meta { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 
 /* ── Footer ── */
-.rdd-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-4);
-  border-top: 1px solid var(--mp-border-default);
-}
 .rdd-footer-actions { display: flex; gap: var(--mp-spacing-2); }
 </style>

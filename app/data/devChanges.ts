@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-ui-review',
+    title: 'VAT reconciliation: UI review fixes on shared ERP patterns',
+    description:
+      'Every screen now reuses the documented patterns other modules ship. Index & Unmatched: ErpTablePage with column kinds, ErpFilterSelect, PurchaseOrdersPage filter bar (Airene / columns / Export icon group + pill search), ExportModal everywhere (no silent "Export started"), a bulk "Actions" bar for selected periods, the […] row menu and the illustrated empty state. The detail drawer moved onto the ErpDrawer shell (closes only via ×) and "Match this" now records a real match (with a reason when totals differ). Workspace: Export moved from the title bar into the filter bar, Re-run is the search-side tertiary, the draft bulk bar mirrors ErpTablePage, row fixes are secondary (one primary per screen), Finalize is never disabled and explains what is left, duplicate reference lists the two faktur, and no red Difference shows before a pick. Setup: Cancel + Save ("Save" on first run, then back to the index) with a success toast; the tabs stay hidden behind the setup gate.',
+    date: '2026-11-04',
+    files: ['VatReconciliationPeriodsPage.vue', 'VatReconciliationUnmatchedPage.vue', 'VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationPairActions.vue', 'VatReconciliationTaxDocActions.vue', 'VatMatchingRulesPage.vue', '[...slug].vue', 'vatReconciliation.ts'],
+  },
+  {
     id: 'vat-recon-review-fixes',
     title: 'VAT reconciliation: design-review P0 + P1 fixes',
     description:

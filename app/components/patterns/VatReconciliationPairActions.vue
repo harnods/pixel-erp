@@ -41,6 +41,13 @@ const { t } = useLocale()
 function act(message: string, alsoClose = false) { emit('action', message, alsoClose) }
 
 /**
+ * One primary per screen (rule/btn-one-primary). In a drawer footer the fix is
+ * THE action; on a workspace row it sits among many rows and the title bar's
+ * Finalize, so there it drops to secondary.
+ */
+const mainVariant = computed(() => (props.inline ? 'secondary' : 'primary'))
+
+/**
  * Anything that makes or breaks a match. A Finalized masa is the record of what
  * was reconciled, so it refuses these until it is unfinalized — same as Re-run.
  */
@@ -83,7 +90,7 @@ function toggleWaiting() {
 </script>
 
 <template>
-  <div class="vpa">
+  <div class="vpa" data-devchange="vat-recon-ui-review">
     <!-- Rows 1-2: the only thing left to do is undo it. -->
     <template v-if="pair.match === 'matched'">
       <MpButton variant="secondary" :size="size" is-rounded @click="unmatch">
@@ -92,12 +99,12 @@ function toggleWaiting() {
     </template>
     <!-- Rows 8 and 11: the engine will not decide; a person confirms. -->
     <template v-else-if="pair.match === 'return-netted' && !inline">
-      <MpButton variant="primary" :size="size" is-rounded left-icon="check" @click="confirmNetted">
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="confirmNetted">
         {{ t('Confirm match') }}
       </MpButton>
     </template>
-    <template v-else-if="pair.match === 'duplicate-reference'">
-      <MpButton variant="primary" :size="size" is-rounded @click="matchAct(t('Opening faktur list…'))">
+    <template v-else-if="pair.match === 'duplicate-reference' && !inline">
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="matchAct(t('Opening faktur list…'))">
         {{ t('Select faktur') }}
       </MpButton>
     </template>
@@ -110,7 +117,7 @@ function toggleWaiting() {
            what it is depends on how far its tax document got. -->
       <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId && !inline" :pair="pair" :show-hint="false" :size="size" />
       <template v-else-if="pair.erp?.salesInvoiceId" />
-      <MpButton v-else variant="primary" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+      <MpButton v-else :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
         {{ t('Create faktur pajak') }}
       </MpButton>
     </template>
@@ -118,40 +125,40 @@ function toggleWaiting() {
       <MpButton v-if="!inline" variant="secondary" :size="size" is-rounded @click="matchAct(t('Opening match picker…'))">
         {{ t('Find & match') }}
       </MpButton>
-      <MpButton variant="primary" :size="size" is-rounded @click="act(t('Opening sales invoice…'), true)">
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening sales invoice…'), true)">
         {{ side === 'input' ? t('Create purchase invoice') : t('Create sales invoice') }}
       </MpButton>
     </template>
     <!-- Row 5 (US-010): correct the invoice, or supersede the faktur. -->
     <template v-else-if="pair.match === 'invoice-edited'">
-      <MpButton variant="secondary" :size="size" is-rounded left-icon="edit" @click="act(t('Opening sales invoice…'))">
+      <MpButton variant="secondary" :size="size" is-rounded @click="act(t('Opening sales invoice…'))">
         {{ t('Edit sales invoice') }}
       </MpButton>
-      <MpButton variant="primary" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
         {{ t('Create faktur pengganti') }}
       </MpButton>
     </template>
     <!-- Row 6 (US-011): the invoice is gone, the faktur must follow. -->
     <template v-else-if="pair.match === 'invoice-voided'">
-      <MpButton variant="primary" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
         {{ t('Cancel faktur') }}
       </MpButton>
     </template>
     <!-- Row 7 (US-012): pengganti net, or park it on the buyer. -->
     <template v-else-if="pair.match === 'return-not-reflected'">
-      <MpButton variant="secondary" :size="size" is-rounded left-icon="time" :aria-pressed="waiting" @click="toggleWaiting">
+      <MpButton variant="secondary" :size="size" is-rounded :aria-pressed="waiting" @click="toggleWaiting">
         {{ waiting ? t('Stop waiting on buyer') : t('Waiting on buyer') }}
       </MpButton>
-      <MpButton variant="primary" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
         {{ t('Create faktur pengganti (net)') }}
       </MpButton>
     </template>
     <!-- Rows 9-10: a date is wrong on one side or the other. -->
     <template v-else-if="pair.match === 'faktur-predates' || pair.match === 'return-date-mismatch'">
-      <MpButton variant="secondary" :size="size" is-rounded left-icon="edit" @click="act(t('Opening sales invoice…'))">
+      <MpButton variant="secondary" :size="size" is-rounded @click="act(t('Opening sales invoice…'))">
         {{ t('Correct invoice date') }}
       </MpButton>
-      <MpButton variant="primary" :size="size" is-rounded @click="act(t('Opening Coretax…'))">
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Coretax…'))">
         {{ t('Correct faktur date') }}
       </MpButton>
     </template>

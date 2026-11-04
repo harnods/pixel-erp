@@ -17,9 +17,13 @@
  * [...slug].vue, which also owns the title-bar actions).
  */
 import type { Ref } from 'vue'
-import { MpIcon, MpButton, MpBadge, MpAireneButton, MpRadio, MpTooltip, MpCheckbox } from '@mekari/pixel3'
+import {
+  MpIcon, MpButton, MpButtonGroup, MpBadge, MpAireneButton, MpRadio, MpTooltip, MpCheckbox,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+} from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import VatReconciliationMatchConfirmModal from '~/components/patterns/VatReconciliationMatchConfirmModal.vue'
 import { formatIDR } from '~/utils/currency'
@@ -101,13 +105,26 @@ function formatDate(iso: string) {
 const finalizeOpen = ref(false)
 const unfinalizeOpen = ref(false)
 
+// rule/btn-save-toast — a sign-off is a save; it confirms with a success toast.
 function doFinalize() {
   finalizePeriod(periodId.value)
-  infoToast(`${periodName.value} ${t('finalized')}`)
+  successToast(`${periodName.value} ${t('finalized')}`)
 }
 function doUnfinalize() {
   unfinalizePeriod(periodId.value)
-  infoToast(`${periodName.value} ${t('unfinalized')}`)
+  successToast(`${periodName.value} ${t('unfinalized')}`)
+}
+
+/**
+ * Finalize is never disabled (rule/btn-no-disabled-validation): a disabled
+ * primary still painted full green, so it looked live and did nothing. Pressed
+ * too early it says why and offers the way forward — the pairs left to review.
+ */
+const notReadyOpen = ref(false)
+const openPairCount = computed(() => { void reconVersion.value; return pairs.value.filter(p => p.match !== 'matched').length })
+const router = useRouter()
+function showPairsToReview() {
+  router.push({ query: { ...route.query, tab: 'Needs attention' } })
 }
 
 /** Title-bar Finalize/Unfinalize, wired from [...slug].vue like the other actions. */
@@ -115,7 +132,24 @@ const finalizeSignal = inject<Ref<number>>('vatFinalize', ref(0))
 watch(finalizeSignal, () => {
   if (finalized.value) unfinalizeOpen.value = true
   else if (canFinalize.value) finalizeOpen.value = true
+  else notReadyOpen.value = true
 })
+
+// ── Export (rule/export-modal) ────────────────────────────────────────────────
+// The shared ExportModal, from the filter bar's icon group — never the title bar
+// (rule/page-title-actions-group) and never a silent download.
+const exportOpen = ref(false)
+const exportColumns = computed(() => [
+  { key: 'status', label: t('Status'), required: true },
+  { key: 'erpRef', label: t(erpDocLabel.value), required: true },
+  { key: 'djpRef', label: t('Faktur pajak') },
+  { key: 'party', label: side.value === 'input' ? t('Vendor') : t('Customer') },
+  { key: 'npwp', label: 'NPWP' },
+  { key: 'dpp', label: 'DPP' },
+  { key: 'ppn', label: 'PPN' },
+  { key: 'total', label: t('Total') },
+  { key: 'reason', label: t('Remarks') },
+])
 
 const isAttentionScope = computed(() => route.query.tab !== 'All faktur')
 
@@ -383,6 +417,10 @@ function toggleDraft(pair: ReconPair, on: boolean) {
 }
 function selectAllDrafts() { selectedDrafts.value = new Set(draftRows.value.map(p => p.id)); bulkError.value = false }
 function clearDrafts() { selectedDrafts.value = new Set(); bulkError.value = false }
+// Select-all checkbox, same anatomy as ErpTablePage's bulk bar.
+const allDraftsSelected = computed(() => draftRows.value.length > 0 && selectedDraftRows.value.length === draftRows.value.length)
+const someDraftsSelected = computed(() => selectedDraftRows.value.length > 0 && !allDraftsSelected.value)
+function toggleAllDrafts() { if (allDraftsSelected.value) clearDrafts(); else selectAllDrafts() }
 
 const bulkConfirmOpen = ref(false)
 /** Inline, in the bar (rule/form-errors-inline) — never a toast. */
@@ -457,7 +495,7 @@ function reviewWithAirene() {
         {{ t('Sales invoices stay editable in Jurnal; changes will be flagged here.') }}
       </span>
       <div class="vr-toolbar-spacer" />
-      <MpButton variant="secondary" size="sm" is-rounded @click="unfinalizeOpen = true">
+      <MpButton variant="secondary" is-rounded @click="unfinalizeOpen = true">
         {{ t('Unfinalize') }}
       </MpButton>
     </div>
@@ -540,11 +578,7 @@ function reviewWithAirene() {
         />
       </div>
 
-      <div class="filter-right">
-        <MpButton variant="secondary" size="sm" is-rounded left-icon="refresh" @click="reRun">
-          {{ t('Re-run') }}
-        </MpButton>
-
+      <div class="filter-right" data-devchange="vat-recon-ui-review">
         <MpAireneButton
           v-if="periodReviewCount > 0"
           id="vr-airene-review"
@@ -554,19 +588,25 @@ function reviewWithAirene() {
           {{ t('Review with Airene') }}
         </MpAireneButton>
 
+        <!-- Icon tools = ghost icon MpButtons in one MpButtonGroup + tooltips
+             (rule/filter-bar-icon-group); Export lives here, not in the title bar. -->
+        <MpButtonGroup class="filter-btn-group">
+          <MpTooltip id="vr-tt-export" :label="t('Export')" placement="bottom">
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
+          </MpTooltip>
+        </MpButtonGroup>
+
+        <!-- Pill search (sanctioned ErpFilterBar pill) -->
         <div class="filter-search">
           <MpIcon name="search" size="sm" class="vr-search-icon" />
           <input v-model="query" class="filter-search-input" type="text" :placeholder="t('Search...')" >
-          <button
-            v-if="query"
-            type="button"
-            class="search-clear-btn"
-            :aria-label="t('Clear search')"
-            @click="query = ''"
-          >
-            <MpIcon name="close" size="16px" />
-          </button>
+          <MpButton v-if="query" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="query = ''" />
         </div>
+
+        <!-- Search-adjacent action = black tertiary (rule/filter-bar-action-tertiary) -->
+        <MpButton variant="tertiary" is-rounded @click="reRun">
+          {{ t('Re-run') }}
+        </MpButton>
       </div>
     </div>
 
@@ -603,20 +643,32 @@ function reviewWithAirene() {
         </div>
 
         <!-- Bulk: submit the selected drafts in one go -->
-        <div v-if="draftRows.length" class="vr-bulk" :class="{ 'is-active': selectedDraftRows.length }" data-devchange="vat-recon-review-fixes">
-          <template v-if="selectedDraftRows.length">
-            <span class="vr-bulk-count">{{ selectedDraftRows.length }} {{ t('drafts selected') }}</span>
-            <MpButton v-if="selectedDraftRows.length < draftRows.length" variant="ghost" size="sm" @click="selectAllDrafts">
-              {{ t('Select all drafts') }} ({{ draftRows.length }})
-            </MpButton>
-            <MpButton variant="ghost" size="sm" @click="clearDrafts">{{ t('Clear') }}</MpButton>
-            <div class="vr-toolbar-spacer" />
-            <MpButton variant="primary" size="sm" is-rounded @click="askBulkSubmit">{{ t('Submit to DJP') }}</MpButton>
-          </template>
-          <template v-else>
-            <span class="vr-caption">{{ draftRows.length }} {{ t('draft tax documents are waiting to be submitted.') }}</span>
-            <MpButton variant="ghost" size="sm" @click="selectAllDrafts">{{ t('Select all drafts') }}</MpButton>
-          </template>
+        <!-- Same anatomy as ErpTablePage's bulk bar (rule/table-bulk-actions-bar):
+             select-all checkbox → count → one secondary-sm "Actions" dropdown. -->
+        <div v-if="draftRows.length" class="vr-bulk" :class="{ 'is-active': selectedDraftRows.length }" data-devchange="vat-recon-ui-review">
+          <div class="vr-bulk-left">
+            <MpCheckbox
+              id="vr-bulk-select-all"
+              :is-checked="allDraftsSelected"
+              :is-indeterminate="someDraftsSelected"
+              :aria-label="t('Select all drafts')"
+              @change="toggleAllDrafts"
+            />
+            <template v-if="selectedDraftRows.length">
+              <span class="vr-bulk-count">{{ selectedDraftRows.length }} {{ t('drafts selected') }}</span>
+              <MpPopover id="vr-bulk-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                <MpPopoverTrigger>
+                  <MpButton size="sm" variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('Actions') }}</MpButton>
+                </MpPopoverTrigger>
+                <MpPopoverContent class="erp-dropdown-menu">
+                  <MpPopoverList>
+                    <MpPopoverListItem @click="askBulkSubmit">{{ t('Submit to DJP') }}</MpPopoverListItem>
+                  </MpPopoverList>
+                </MpPopoverContent>
+              </MpPopover>
+            </template>
+            <span v-else class="vr-caption">{{ draftRows.length }} {{ t('draft tax documents are waiting to be submitted.') }}</span>
+          </div>
           <p v-if="bulkError" class="vr-bulk-error" role="alert">
             {{ t("You don't have permission to submit tax documents to DJP. Ask an administrator for access.") }}
           </p>
@@ -644,7 +696,7 @@ function reviewWithAirene() {
               <!-- Compact line: chevron | ERP ⋯ Coretax | actions | ✓ -->
               <div class="vr-line">
                 <MpButton
-                  variant="ghost" size="sm" class="vr-chevron"
+                  variant="ghost" is-rounded class="vr-chevron"
                   :aria-label="isExpanded(pair) ? t('Collapse') : t('Expand')"
                   :aria-expanded="isExpanded(pair)"
                   @click="toggleRow(pair)"
@@ -757,8 +809,16 @@ function reviewWithAirene() {
                 <div class="vr-detail-col">
                   <!-- Open pair: pick the counterpart, bank-reconciliation style -->
                   <template v-if="hasCandidates(pair)">
-                    <div class="vr-detail-title">{{ t('Select the correct match') }}</div>
-                    <p class="vr-detail-sub">{{ t('These possibly match this row. Select the correct one.') }}</p>
+                    <!-- Duplicate reference: the invoice is known, the choice is between
+                         the Approved faktur that carry its number (US-003). -->
+                    <template v-if="pair.match === 'duplicate-reference'">
+                      <div class="vr-detail-title">{{ t('Select the correct faktur') }}</div>
+                      <p class="vr-detail-sub">{{ t('More than one Approved faktur carries this invoice number. Select the one that is current.') }}</p>
+                    </template>
+                    <template v-else>
+                      <div class="vr-detail-title">{{ t('Select the correct match') }}</div>
+                      <p class="vr-detail-sub">{{ t('These possibly match this row. Select the correct one.') }}</p>
+                    </template>
                     <div class="vr-cands" role="radiogroup" :aria-label="t('Select the correct match')">
                       <label v-for="c in candidatesFor(pair)" :key="c.ref" class="vr-cand">
                         <MpRadio
@@ -776,17 +836,20 @@ function reviewWithAirene() {
                         <span class="vr-cand-total">{{ formatIDR(c.total) }}</span>
                       </label>
                     </div>
-                    <div class="vr-cand-sum">
-                      <div>{{ t('Selected total') }}: <strong>{{ formatIDR(pickedCandidate(pair)?.total ?? 0) }}</strong></div>
+                    <!-- Nothing picked yet → no verdict. A red "Difference: <whole
+                         amount>" before any choice read as an error on first view. -->
+                    <div v-if="pickedCandidate(pair)" class="vr-cand-sum" data-devchange="vat-recon-ui-review">
+                      <div>{{ t('Selected total') }}: <strong>{{ formatIDR(pickedCandidate(pair)!.total) }}</strong></div>
                       <div :class="pickDifference(pair) === 0 ? 'is-ok' : 'is-bad'">
                         {{ t('Difference') }}: {{ formatIDR(Math.abs(pickDifference(pair))) }}
                       </div>
                     </div>
+                    <p v-else class="vr-caption vr-cand-hint">{{ t('Select a match to see the difference.') }}</p>
                     <p v-if="finalizedBlocked.has(pair.id)" class="vr-pick-error" role="alert">{{ t('This period is finalized. Unfinalize it first to change matches.') }}</p>
                     <p v-else-if="pickError.has(pair.id)" class="vr-pick-error" role="alert">{{ t('Select a match first, then confirm.') }}</p>
                     <div class="vr-find-another">
                       <span class="vr-caption">{{ t("Don't see the correct match?") }}</span>
-                      <MpButton variant="ghost" size="sm" @click="infoToast(t('Opening match picker…'))">{{ t('Find another') }}</MpButton>
+                      <MpButton variant="ghost" is-rounded @click="infoToast(t('Opening match picker…'))">{{ t('Find another') }}</MpButton>
                     </div>
                   </template>
 
@@ -808,7 +871,7 @@ function reviewWithAirene() {
                     <strong :style="{ color: metaFor(pair).fg }">{{ t(metaFor(pair).longLabel) }}</strong>
                     · {{ pair.reason }}
                   </p>
-                  <VatReconciliationPairActions :pair="pair" :side="side" inline size="sm" :finalized="finalized" :period-id="periodId" @action="onPairAction" />
+                  <VatReconciliationPairActions :pair="pair" :side="side" inline :finalized="finalized" :period-id="periodId" @action="onPairAction" />
                 </div>
 
                 <!-- Audit trail (goal G4): who matched what, when, and why -->
@@ -824,7 +887,7 @@ function reviewWithAirene() {
                       <span class="vr-caption vr-activity-meta">{{ t(a.who) }} · {{ a.time }}</span>
                     </div>
                   </div>
-                  <MpButton v-if="activityCount(pair) > 3" variant="ghost" size="sm" @click="toggleActivity(pair)">
+                  <MpButton v-if="activityCount(pair) > 3" variant="ghost" is-rounded @click="toggleActivity(pair)">
                     {{ activityShowAll.has(pair.id) ? t('Show less') : `${t('Show all')} (${activityCount(pair)})` }}
                   </MpButton>
                 </div>
@@ -883,6 +946,25 @@ function reviewWithAirene() {
       :cancel-label="t('Cancel')"
       :is-danger="false"
       @confirm="doFinalize"
+    />
+    <!-- Finalize pressed before every pair is reconciled: say why, offer the way on. -->
+    <ConfirmModal
+      v-model:is-open="notReadyOpen"
+      :title="`${periodName} ${t('is not ready to finalize')}`"
+      :description="`${openPairCount} ${t('pairs still need review. Reconcile every pair in this period, then finalize it.')}`"
+      :confirm-label="t('Show pairs to review')"
+      :cancel-label="t('Close')"
+      :is-danger="false"
+      @confirm="showPairsToReview"
+    />
+    <ExportModal
+      :open="exportOpen"
+      :title="`${t('Export')} ${periodName}`"
+      :entity-label="t('pairs')"
+      :columns="exportColumns"
+      :total="filtered.length"
+      @close="exportOpen = false"
+      @export="exportOpen = false"
     />
     <ConfirmModal
       v-model:is-open="unfinalizeOpen"
@@ -1002,6 +1084,10 @@ function reviewWithAirene() {
   border-radius: var(--mp-radii-full, 999px);
 }
 .search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+/* Icon tools sit 8px apart (MpButtonGroup default) — rule/btn-group-gap-8,
+   same as PurchaseOrdersPage's filter bar. */
+.filter-btn-group { display: flex; align-items: center; }
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
 /* ── Workspace card ── */
 .vr-workspace {
   /* White card; rows sit on it as light-grey cards (bank-reconciliation layering).
@@ -1062,7 +1148,10 @@ function reviewWithAirene() {
   border: 1px dashed var(--mp-border-default); border-radius: var(--mp-radii-md);
 }
 .vr-bulk.is-active { border-style: solid; border-color: var(--mp-colors-neutral-400); background: var(--mp-background-neutral-subtle); }
-.vr-bulk-count { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.vr-bulk-left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+/* Count reads like ErpTablePage's bulk bar (sm, regular). */
+.vr-bulk-count { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); white-space: nowrap; }
+.vr-cand-hint { margin: var(--mp-spacing-3) 0 0; }
 .vr-bulk-error { flex-basis: 100%; margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
 .vr-draft-check { display: flex; align-items: center; flex-shrink: 0; cursor: pointer; }
 
