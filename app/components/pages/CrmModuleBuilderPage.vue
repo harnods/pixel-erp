@@ -250,7 +250,7 @@ const statusBadge = computed(() => STATUS_BADGE[mod.value?.status ?? 'draft'] ??
 // Deals gets Pipeline + Layout; custom modules keep Fields & layout + Views.
 const isDeals = computed(() => isDealLikeModule(mod.value?.id ?? ''))
 const tabs = computed(() => isDeals.value
-  ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'layout', label: 'Layout' }, { key: 'pipeline', label: 'Pipeline' }]
+  ? [{ key: 'setup', label: 'Setup' }, { key: 'properties', label: 'Properties' }, { key: 'layout', label: 'Layout' }, { key: 'pipeline', label: 'Pipeline' }, { key: 'checkin', label: 'Check-in' }]
   : [{ key: 'fields', label: 'Fields & layout' }, { key: 'views', label: 'Views' }])
 const activeTab = ref<string>(isDealLikeModule(props.orderId) ? 'setup' : 'fields')
 const isLayoutTab = computed(() => activeTab.value === 'fields' || activeTab.value === 'layout')
@@ -1019,6 +1019,9 @@ function askPublishNew() {
   publishNewConfirmOpen.value = true
 }
 function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModule('published') }
+
+// ── Check-in tab ──────────────────────────────────────────────────────────
+const checkinEnabled = ref(false)
 </script>
 
 <template>
@@ -1526,6 +1529,19 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
           <div v-if="activeTab === 'layout'" class="builder-panel builder-panel--layout">
             <MpButton v-if="viewMode" class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
             <CrmDetailLayoutBuilder :detail="draft.detailLayout" :properties="propList" :create-property="createDealProperty" :module-icon="draft.icon" :module-id="props.orderId" :readonly="viewMode" @update:erp-target="onErpTargetChange" />
+          </div>
+
+          <!-- ════════ CHECK-IN (Deals) — toggle to enable location check-in ════════ -->
+          <div v-show="activeTab === 'checkin'" class="builder-panel" data-devchange="crm-module-checkin">
+            <div class="checkin-section">
+              <div class="checkin-toggle-row">
+                <div class="checkin-toggle-text">
+                  <p class="checkin-toggle-label">{{ t('Enable check-in for this module') }}</p>
+                  <p class="checkin-toggle-desc">{{ t('Allow team members to check in at customer or prospect locations to log visits and track field activity.') }}</p>
+                </div>
+                <MpToggle v-model="checkinEnabled" :aria-label="t('Enable check-in for this module')" />
+              </div>
+            </div>
           </div>
 
           <!-- ════════ FIELDS (form layout — custom modules only) ════════ -->
@@ -2266,4 +2282,11 @@ function confirmPublishNew() { publishNewConfirmOpen.value = false; saveNewModul
 .builder-option-name { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .builder-option-add { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .builder-option-add :deep([data-pixel-component="MpInput"]) { flex: 1; }
+
+/* Check-in tab */
+.checkin-section { max-width: 600px; }
+.checkin-toggle-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
+.checkin-toggle-text { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.checkin-toggle-label { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; line-height: 24px; color: var(--mp-text-default); }
+.checkin-toggle-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #6b7678); }
 </style>

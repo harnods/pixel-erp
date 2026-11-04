@@ -2501,6 +2501,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Customers, products, and orders stay linked across CRM and your ERP modules.": "Pelanggan, produk, dan pesanan tetap terhubung antara CRM dan modul ERP Anda.",
   "Shape CRM around your process": "Sesuaikan CRM dengan proses Anda",
   "Create modules with customizable fields, layout, and team availability — all based on your own needs.": "Buat modul dengan field, layout, dan akses tim yang bisa disesuaikan — semuanya berdasarkan kebutuhan Anda.",
+  "Enable check-in for this module": "Aktifkan check-in untuk modul ini",
+  "Allow team members to check in at customer or prospect locations to log visits and track field activity.": "Izinkan anggota tim check-in di lokasi pelanggan atau prospek untuk mencatat kunjungan dan melacak aktivitas lapangan.",
   "Set up your pipeline": "Siapkan pipeline Anda",
   "Import your deals, contacts, and companies from a spreadsheet.": "Impor deal, kontak, dan perusahaan Anda dari spreadsheet.",
   "Shape the pipeline stages to match your real sales process.": "Sesuaikan tahapan pipeline dengan proses penjualan Anda yang sebenarnya.",

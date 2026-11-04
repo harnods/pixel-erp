@@ -860,9 +860,17 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-module-view-mode',
     title: 'Module settings open in view mode',
     description:
-      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown: Draft modules get Edit/Publish/Delete; Published modules get Edit/Deactivate/Delete (Delete on a published module shows an info toast requiring deactivation first). Tab order: Setup → Properties → Layout → Pipeline. Deals module cannot be deleted or deactivated.',
+      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown: Draft modules get Edit/Publish/Delete; Published modules get Edit/Deactivate/Delete (Delete on a published module shows an info toast requiring deactivation first). Tab order: Setup → Properties → Layout → Pipeline → Check-in. Deals module cannot be deleted or deactivated.',
     date: '2026-09-20',
     files: ['CrmModuleBuilderPage.vue', 'CrmDetailLayoutBuilder.vue'],
+  },
+  {
+    id: 'crm-module-checkin',
+    title: 'Check-in tab on module settings',
+    description:
+      'New Check-in tab on deal-like module settings. Contains a toggle "Enable check-in for this module" with a description explaining that team members can check in at customer/prospect locations to log visits and track field activity.',
+    date: '2026-11-04',
+    files: ['CrmModuleBuilderPage.vue'],
   },
   {
     id: 'crm-layout-erp-target',
