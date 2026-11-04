@@ -17,7 +17,7 @@
  * Figures: financialStatements.ts → canonical COA ledger. Profit (Loss) for the
  * financial year to date equals the Balance sheet's Current Period Earnings.
  */
-import { MpIcon, MpTooltip, MpDatePicker, MpCheckbox, MpRadio, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSkeleton, css } from '@mekari/pixel3'
+import { MpIcon, MpTooltip, MpDatePicker, MpCheckbox, MpRadio, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSkeleton, css, MpButton, MpTextlink } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { useReportFullscreen } from '~/composables/useReportFullscreen'
 import { formatIDR } from '~/utils/currency'
@@ -240,7 +240,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
   <div class="plr" :class="{ 'plr--full': fullscreen, 'plr--compact': settings.density === 'compact' }">
     <header v-if="!fullscreen" class="plr-titlebar">
       <div class="plr-titlebar-left">
-        <button class="plr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</button>
+        <MpTextlink as="a" class="plr-breadcrumb" @click.prevent="router.push('/financial-report')">{{ t('Financials') }}</MpTextlink>
         <h1 class="plr-title">{{ t('Profit & Loss') }} <span class="plr-title-cur">(IDR)</span></h1>
       </div>
       <button class="btn-enterprise btn-enterprise--secondary" type="button" @click="notInPrototype">{{ t('See profit & loss bugeting') }}</button>
@@ -270,7 +270,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
         <div class="plr-controls-right">
           <MpPopover id="plr-density" use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="plr-icon-btn" type="button" :aria-label="t('Table density')"><MpIcon name="table-view-column" size="md" /></button>
+              <MpButton variant="ghost" class="plr-icon-btn" :aria-label="t('Table density')"><MpIcon name="table-view-column" size="md" /></MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '280px', padding: '16px' })">
               <p class="plr-pop-title">{{ t('Density') }}</p>
@@ -285,7 +285,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
             </MpPopoverContent>
           </MpPopover>
           <MpTooltip id="plr-fs" :label="t('Expand')" placement="bottom" use-portal>
-            <button class="plr-icon-btn" type="button" :aria-label="t('Expand')" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
+            <MpButton variant="ghost" class="plr-icon-btn" :aria-label="t('Expand')" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></MpButton>
           </MpTooltip>
           <!-- Select layout (prod select-layout.vue) -->
           <MpPopover id="plr-layout" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
@@ -320,7 +320,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
         <div v-if="fullscreen" class="plr-fs-topbar">
           <span class="plr-fs-title">{{ t('Profit & Loss') }} <span class="plr-title-cur">(IDR)</span></span>
           <MpTooltip id="plr-fs-exit" :label="t('Minimize')" placement="bottom-end" use-portal>
-            <button class="plr-icon-btn" type="button" :aria-label="t('Minimize')" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
+            <MpButton variant="ghost" class="plr-icon-btn" :aria-label="t('Minimize')" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></MpButton>
           </MpTooltip>
         </div>
 
@@ -350,9 +350,9 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
                   <th class="plr-th">
                     <span class="plr-th-inner">{{ t('Date') }}
                       <MpTooltip v-if="isCompare && applied!.period !== 'this_financial_year'" id="plr-sort" :label="t('You can sort your report period in ascending or descending.')" placement="top" use-portal>
-                        <button class="plr-sort" type="button" :aria-label="t('Sort periods')" @click="toggleOrder">
+                        <MpButton variant="ghost" class="plr-sort" :aria-label="t('Sort periods')" @click="toggleOrder">
                           <MpIcon name="caret-right" size="sm" :class="{ 'plr-sort--desc': applied!.order === 'desc' }" />
-                        </button>
+                        </MpButton>
                       </MpTooltip>
                     </span>
                   </th>
@@ -429,7 +429,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
         <div class="plr-dr-panel" role="dialog" :aria-label="t('Report filter')">
           <header class="plr-dr-head">
             <span class="plr-dr-title">{{ t('Report filter') }}</span>
-            <button class="plr-dr-close" type="button" :aria-label="t('Close')" @click="drawerOpen = false"><MpIcon name="close" size="md" /></button>
+            <MpButton variant="ghost" class="plr-dr-close" :aria-label="t('Close')" @click="drawerOpen = false"><MpIcon name="close" size="md" /></MpButton>
           </header>
           <div class="plr-dr-body">
             <div class="plr-dr-row">
@@ -478,7 +478,7 @@ const lastUpdated = computed(() => `${t('Last updated on')} ${bsPlDayLabel(SIM_T
             </label>
           </div>
           <footer class="plr-dr-foot">
-            <button class="plr-dr-clear" type="button" @click="resetDrawer">{{ t('Clear filter') }}</button>
+            <MpButton variant="ghost" class="plr-dr-clear" @click="resetDrawer">{{ t('Clear filter') }}</MpButton>
             <div class="plr-dr-actions">
               <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="drawerOpen = false">{{ t('Cancel') }}</button>
               <button class="btn-enterprise btn-enterprise--primary" type="button" @click="applyDrawer">{{ t('Apply') }}</button>

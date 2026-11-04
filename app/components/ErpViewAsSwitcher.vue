@@ -16,13 +16,13 @@
     v-slot="{ onClosePopover }"
   >
     <MpPopoverTrigger>
-      <button type="button" class="va-trigger" :aria-label="t('View as')">
+      <MpButton variant="ghost" class="va-trigger" :aria-label="t('View as')">
         <span class="va-label">
           <span class="va-caption">{{ t('View as') }}</span>
           <span class="va-role">{{ t(viewAs) }}</span>
         </span>
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="va-menu" is-unstyled>
       <p class="va-heading">{{ t('View the asset module as') }}</p>
@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpButton } from '@mekari/pixel3'
 import { viewAs, setViewAs, VIEW_AS_ROLES, type ViewAsRole } from '~/data/assetStore'
 
 const { t } = useLocale()

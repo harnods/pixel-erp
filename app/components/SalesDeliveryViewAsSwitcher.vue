@@ -15,13 +15,13 @@
     :is-keep-alive="false"
   >
     <MpPopoverTrigger>
-      <button type="button" class="va-trigger" data-tour="sales-delivery-view-as" :aria-label="t('View as')">
+      <MpButton variant="ghost" class="va-trigger" data-tour="sales-delivery-view-as" :aria-label="t('View as')">
         <span class="va-label">
           <span class="va-caption">{{ t('View as') }}</span>
           <span class="va-role">{{ currentUser.name }}</span>
         </span>
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu va-menu">
       <p class="va-heading">{{ t('View sales deliveries as') }}</p>
@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpButton } from '@mekari/pixel3'
 import { SALES_DELIVERY_VIEW_AS_USERS, useSalesDeliveryViewAs, type SalesDeliveryViewAs } from '~/composables/useSalesDeliveryViewAs'
 import { resetInputBasisReleases } from '~/data/salesDeliveries'
 import { successToast } from '~/utils/toasts'

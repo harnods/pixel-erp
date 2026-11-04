@@ -141,7 +141,7 @@ function goToCreate() { router.push('/payment-terms/new') }
 .filter-btn-group { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral);
   border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-full, 999px);

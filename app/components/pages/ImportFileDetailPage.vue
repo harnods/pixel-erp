@@ -6,7 +6,7 @@
  * carries the import status. Full-page: /export-and-import/:id via detailMatch.
  */
 import {
-  MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon,
+  MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpTextlink,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
@@ -76,7 +76,7 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
     <header class="detail-bar">
       <div class="detail-bar-left">
         <div class="detail-breadcrumb-row">
-          <button class="detail-breadcrumb" @click="back">{{ t('Export & import') }}</button>
+          <MpTextlink as="a" class="detail-breadcrumb" @click.prevent="back">{{ t('Export & import') }}</MpTextlink>
         </div>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ file?.fileName ?? t('Import group') }}</h1>

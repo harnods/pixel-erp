@@ -1,7 +1,7 @@
 <!-- prod-parity: jurnal-accounting-frontend/src/modules/assets/views/AssetShowView.vue + components/DepreciationHistoryTable.vue -->
 <script setup lang="ts">
 import {
-  MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
+  MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, MpTextlink,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -82,7 +82,7 @@ function openJournal() { infoToast(t('Not in this prototype')) }
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goIndex">{{ t('Fixed assets (current)') }}</button>
+        <MpTextlink as="a" class="detail-breadcrumb" @click.prevent="goIndex">{{ t('Fixed assets (current)') }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ asset?.name ?? t('Asset not found') }}</h1>
           <MpBadge v-if="statusLabel" for="additionalInformation" :type="asset?.status === 'pending' ? 'warning' : 'announcement'" size="md">{{ statusLabel }}</MpBadge>

@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea, MpDatePicker, MpCheckbox,
-  MpInputTag, MpIcon, MpTooltip, type DataInterface,
+  MpInputTag, MpIcon, MpTooltip, type DataInterface, MpTextlink,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { formatIDR } from '~/utils/currency'
@@ -179,7 +179,7 @@ function goIndex() { router.push('/current-assets') }
   <div class="caf-page">
     <div class="caf-titlebar">
       <div class="caf-titlebar-left">
-        <button class="caf-breadcrumb" @click="goIndex">{{ t('Fixed assets (current)') }}</button>
+        <MpTextlink as="a" class="caf-breadcrumb" @click.prevent="goIndex">{{ t('Fixed assets (current)') }}</MpTextlink>
         <h1 class="caf-title">{{ title }}</h1>
       </div>
     </div>

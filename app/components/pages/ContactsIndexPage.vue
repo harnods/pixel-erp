@@ -393,7 +393,7 @@ function lastUpdated(iso: string) {
       <div class="cfd-panel" role="dialog" :aria-label="t('All filters')">
         <header class="cfd-head">
           <span class="cfd-title">{{ t('All filters') }}</span>
-          <button class="cfd-close" type="button" :aria-label="t('Close')" @click="filterOpen = false"><MpIcon name="close" size="md" /></button>
+          <MpButton variant="ghost" class="cfd-close" :aria-label="t('Close')" @click="filterOpen = false"><MpIcon name="close" size="md" /></MpButton>
         </header>
         <div class="cfd-body">
           <div v-if="list.outstandingEnabled" class="cfd-group">
@@ -405,7 +405,7 @@ function lastUpdated(iso: string) {
           <MpCheckbox id="cfd-archived" :is-checked="draft.showArchived" @change="draft.showArchived = !draft.showArchived">{{ t(list.showArchivedLabel) }}</MpCheckbox>
         </div>
         <footer class="cfd-foot">
-          <button class="cfd-reset" type="button" @click="resetDraft">{{ t('Reset') }}</button>
+          <MpButton variant="ghost" class="cfd-reset" @click="resetDraft">{{ t('Reset') }}</MpButton>
           <div class="cfd-foot-actions">
             <MpButton variant="ghost" is-rounded @click="filterOpen = false">{{ t('Cancel') }}</MpButton>
             <MpButton variant="primary" is-rounded @click="applyFilters">{{ draftCount ? `${t('Apply')} (${draftCount})` : t('Apply') }}</MpButton>

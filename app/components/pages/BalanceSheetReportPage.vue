@@ -15,7 +15,7 @@
  * Figures: financialStatements.ts → canonical COA ledger (asserts assets =
  * liabilities + equity and that Current Period Earnings = P&L net profit).
  */
-import { MpIcon, MpTooltip, MpDatePicker, MpCheckbox, MpRadio, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSkeleton, css } from '@mekari/pixel3'
+import { MpIcon, MpTooltip, MpDatePicker, MpCheckbox, MpRadio, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpSkeleton, css, MpButton, MpTextlink } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { useReportFullscreen } from '~/composables/useReportFullscreen'
@@ -203,7 +203,7 @@ const notes = computed(() => t('Notes: Inventory account is calculated based on 
   <div class="bsr" :class="{ 'bsr--full': fullscreen, 'bsr--compact': settings.density === 'compact' }">
     <header v-if="!fullscreen" class="bsr-titlebar">
       <div class="bsr-titlebar-left">
-        <button class="bsr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</button>
+        <MpTextlink as="a" class="bsr-breadcrumb" @click.prevent="router.push('/financial-report')">{{ t('Financials') }}</MpTextlink>
         <h1 class="bsr-title">{{ t('Balance Sheet') }} <span class="bsr-title-cur">(IDR)</span></h1>
       </div>
     </header>
@@ -229,7 +229,7 @@ const notes = computed(() => t('Notes: Inventory account is calculated based on 
         <div class="bsr-controls-right">
           <MpPopover id="bsr-density" use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
-              <button class="bsr-icon-btn" type="button" :aria-label="t('Table density')"><MpIcon name="table-view-column" size="md" /></button>
+              <MpButton variant="ghost" class="bsr-icon-btn" :aria-label="t('Table density')"><MpIcon name="table-view-column" size="md" /></MpButton>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '280px', padding: '16px' })">
               <p class="bsr-pop-title">{{ t('Density') }}</p>
@@ -245,7 +245,7 @@ const notes = computed(() => t('Notes: Inventory account is calculated based on 
           </MpPopover>
           <ColumnSettingsMenu id="bsr-columns" :items="columnItems" :visibility="colVis" :tooltip="t('Column settings')" />
           <MpTooltip id="bsr-fs" :label="t('Full screen')" placement="bottom" use-portal>
-            <button class="bsr-icon-btn" type="button" :aria-label="t('Full screen')" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></button>
+            <MpButton variant="ghost" class="bsr-icon-btn" :aria-label="t('Full screen')" @click="fullscreen = true"><MpIcon name="full-screen" size="md" /></MpButton>
           </MpTooltip>
           <MpPopover id="bsr-export" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
             <MpPopoverTrigger>
@@ -268,7 +268,7 @@ const notes = computed(() => t('Notes: Inventory account is calculated based on 
         <div v-if="fullscreen" class="bsr-fs-topbar">
           <span class="bsr-fs-title">{{ t('Balance Sheet') }} <span class="bsr-title-cur">(IDR)</span></span>
           <MpTooltip id="bsr-fs-exit" :label="t('Minimize')" placement="bottom-end" use-portal>
-            <button class="bsr-icon-btn" type="button" :aria-label="t('Minimize')" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></button>
+            <MpButton variant="ghost" class="bsr-icon-btn" :aria-label="t('Minimize')" @click="fullscreen = false"><MpIcon name="minimize" size="md" /></MpButton>
           </MpTooltip>
         </div>
 
@@ -300,9 +300,9 @@ const notes = computed(() => t('Notes: Inventory account is calculated based on 
                   <th class="bsr-th">
                     <span class="bsr-th-inner">{{ t('Account name') }}
                       <MpTooltip v-if="isCompare && !isMonthly" id="bsr-sort" :label="t('You can sort your report period in ascending or descending.')" placement="top" use-portal>
-                        <button class="bsr-sort" type="button" :aria-label="t('Sort periods')" @click="settings.order = settings.order === 'asc' ? 'desc' : 'asc'; runFilter()">
+                        <MpButton variant="ghost" class="bsr-sort" :aria-label="t('Sort periods')" @click="settings.order = settings.order === 'asc' ? 'desc' : 'asc'; runFilter()">
                           <MpIcon name="caret-right" size="sm" :class="{ 'bsr-sort--desc': applied!.order === 'desc' }" />
-                        </button>
+                        </MpButton>
                       </MpTooltip>
                     </span>
                   </th>
@@ -437,7 +437,7 @@ const notes = computed(() => t('Notes: Inventory account is calculated based on 
         <div class="bsr-dr-panel" role="dialog" :aria-label="t('Report filter')">
           <header class="bsr-dr-head">
             <span class="bsr-dr-title">{{ t('Report filter') }}</span>
-            <button class="bsr-dr-close" type="button" :aria-label="t('Close')" @click="drawerOpen = false"><MpIcon name="close" size="md" /></button>
+            <MpButton variant="ghost" class="bsr-dr-close" :aria-label="t('Close')" @click="drawerOpen = false"><MpIcon name="close" size="md" /></MpButton>
           </header>
           <div class="bsr-dr-body">
             <div class="bsr-field">
@@ -476,7 +476,7 @@ const notes = computed(() => t('Notes: Inventory account is calculated based on 
             </label>
           </div>
           <footer class="bsr-dr-foot">
-            <button class="bsr-dr-clear" type="button" @click="clearDrawer">{{ t('Clear filter') }}</button>
+            <MpButton variant="ghost" class="bsr-dr-clear" @click="clearDrawer">{{ t('Clear filter') }}</MpButton>
             <div class="bsr-dr-actions">
               <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="drawerOpen = false">{{ t('Cancel') }}</button>
               <button class="btn-enterprise btn-enterprise--primary" type="button" @click="applyDrawer">{{ t('Filter') }}</button>

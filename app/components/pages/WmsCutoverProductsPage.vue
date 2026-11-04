@@ -1304,7 +1304,7 @@ onUnmounted(() => {
 
 /* "Add new tax" — the dropdown's trailing create action. */
 .cut-tax-divider {
-  height: 1px;
+  height: var(--mp-sizes-px, 1px); /* pixel-police-allow: divider thickness */
   background: var(--mp-border-default);
   margin: var(--mp-spacing-1) 0;
 }

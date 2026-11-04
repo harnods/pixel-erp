@@ -17,13 +17,13 @@
     :is-keep-alive="false"
   >
     <MpPopoverTrigger>
-      <button type="button" class="va-trigger" data-tour="payroll-viewas" :aria-label="t('View as')">
+      <MpButton variant="ghost" class="va-trigger" data-tour="payroll-viewas" :aria-label="t('View as')">
         <span class="va-label" data-tour="payroll-view-as">
           <span class="va-caption">{{ t('View as') }}</span>
           <span class="va-role">{{ t(payroll.viewAs) }}</span>
         </span>
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu va-menu">
       <p class="va-heading">{{ t('View payroll as') }}</p>
@@ -53,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpButton } from '@mekari/pixel3'
 import { payroll, setPayrollViewAs, resetPayroll } from '~/data/payrollStore'
 import { PAYROLL_PEOPLE } from '~/data/payrollMaster'
 import { successToast } from '~/utils/toasts'

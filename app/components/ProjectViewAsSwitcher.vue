@@ -14,13 +14,13 @@
     :is-keep-alive="false"
   >
     <MpPopoverTrigger>
-      <button type="button" class="va-trigger" data-tour="project-view-as" :aria-label="t('View as')">
+      <MpButton variant="ghost" class="va-trigger" data-tour="project-view-as" :aria-label="t('View as')">
         <span class="va-label">
           <span class="va-caption">{{ t('View as') }}</span>
           <span class="va-role">{{ currentUser.name }}</span>
         </span>
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="erp-dropdown-menu va-menu">
       <p class="va-heading">{{ t('View Project accounting as') }}</p>
@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpIcon, MpButton } from '@mekari/pixel3'
 import { PROJECT_VIEW_AS_USERS, useProjectViewAs, type ProjectViewAs } from '~/composables/useProjectViewAs'
 import { resetProjectAccounting } from '~/data/projectAccounting'
 import { successToast } from '~/utils/toasts'

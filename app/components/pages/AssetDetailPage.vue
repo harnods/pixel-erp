@@ -16,7 +16,7 @@
 import { computed, ref, watch } from 'vue'
 import {
   MpButton, MpIcon, MpTextlink, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, css, MpSegmentedControl,
+  MpPopoverList, MpPopoverListItem, css, MpSegmentedControl, MpInput,
 } from '@mekari/pixel3'
 import { formatIDRWhole } from '~/utils/currency'
 import { infoToast, successToast } from '~/utils/toasts'
@@ -293,12 +293,12 @@ watch(() => [route.query.breakdown, route.query.versions, asset.value?.id], (_no
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '304px' })">
               <div class="ad__jumpwrap">
-                <input v-model="jumpSearch" class="ad__jumpsearch" type="text" :placeholder="t('Search...')" />
+                <MpInput v-model="jumpSearch" class="ad__jumpsearch" :placeholder="t('Search...')" is-full-width />
                 <div class="ad__jumplist">
-                  <button v-for="o in jumpResults" :key="o.id" class="ad__jumpitem" @click="jumpTo(o.id)">
+                  <MpButton variant="ghost" v-for="o in jumpResults" :key="o.id" class="ad__jumpitem" @click="jumpTo(o.id)">
                     <span class="ad__jumpname">{{ o.name }}</span>
                     <span class="ad__jumpsub">{{ o.id }}</span>
-                  </button>
+                  </MpButton>
                 </div>
               </div>
             </MpPopoverContent>

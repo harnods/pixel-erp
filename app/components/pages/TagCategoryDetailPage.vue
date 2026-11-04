@@ -1,7 +1,7 @@
 <!-- prod-parity: jurnal-non-core-feature-frontend/src/modules/tags/views/TagCategoryDetailView.vue -->
 <script setup lang="ts">
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, MpIcon, MpTooltip, css,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, MpIcon, MpTooltip, css, MpTextlink,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -140,7 +140,7 @@ function confirmBulkDelete() {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goToCategories">{{ t('Tag categories') }}</button>
+        <MpTextlink as="a" class="detail-breadcrumb" @click.prevent="goToCategories">{{ t('Tag categories') }}</MpTextlink>
         <h1 class="detail-title">{{ title }}</h1>
       </div>
       <div v-if="!notFound" class="detail-bar-right">
@@ -326,7 +326,7 @@ function confirmBulkDelete() {
 .filter-left { flex: 1 1 auto; display: flex; }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }

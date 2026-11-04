@@ -136,7 +136,7 @@ function start(t: AssetTour, closePopover: () => void) {
 .gt-progress {
   flex: none;
   /* The house tab underline's weight, so the rail reads as app furniture. */
-  height: 2px;
+  height: calc(var(--mp-sizes-px, 1px) * 2); /* pixel-police-allow: divider thickness */
   border-radius: var(--mp-radii-sm, 4px);
   background: var(--mp-colors-border-default, #d0d6dd);
   overflow: hidden;

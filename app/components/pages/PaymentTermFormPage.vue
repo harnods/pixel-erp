@@ -1,6 +1,6 @@
 <!-- prod-parity: jurnal-non-core-feature-frontend/src/modules/payment-terms/views/PaymentTermCreateView.vue + components/PaymentTermForm.vue -->
 <script setup lang="ts">
-import { MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput } from '@mekari/pixel3'
+import { MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextlink } from '@mekari/pixel3'
 import {
   addPaymentTerm, paymentTermNameTaken, PAYMENT_TERM_NAME_MAX_LENGTH,
 } from '~/data/paymentTerms'
@@ -49,7 +49,7 @@ async function save() {
   <div class="ptf-page">
     <div class="ptf-titlebar">
       <div class="ptf-titlebar-left">
-        <button class="ptf-breadcrumb" @click="goToList">{{ t('Payment terms') }}</button>
+        <MpTextlink as="a" class="ptf-breadcrumb" @click.prevent="goToList">{{ t('Payment terms') }}</MpTextlink>
         <h1 class="ptf-title">{{ t('New payment term') }}</h1>
       </div>
     </div>

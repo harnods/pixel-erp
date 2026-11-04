@@ -13,13 +13,13 @@
     v-slot="{ onClosePopover }"
   >
     <MpPopoverTrigger>
-      <button type="button" class="va-trigger" data-tour="budget-view-as" :aria-label="t('View as')">
+      <MpButton variant="ghost" class="va-trigger" data-tour="budget-view-as" :aria-label="t('View as')">
         <span class="va-label">
           <span class="va-caption">{{ t('View as') }}</span>
           <span class="va-role">{{ t(budget.viewAs) }}</span>
         </span>
         <MpIcon name="chevrons-down" size="sm" color="icon.inverse" />
-      </button>
+      </MpButton>
     </MpPopoverTrigger>
     <MpPopoverContent class="va-menu" is-unstyled>
       <p class="va-heading">{{ t('View budgets as') }}</p>
@@ -38,15 +38,15 @@
           <MpIcon v-if="p.role === budget.viewAs" name="check" size="md" color="icon.brand" />
         </button>
       </nav>
-      <button type="button" class="va-item va-reset" @click="reset(onClosePopover)">
+      <MpButton variant="ghost" class="va-item va-reset" @click="reset(onClosePopover)">
         <span class="va-item-name">{{ t('Reset sample data') }}</span>
-      </button>
+      </MpButton>
     </MpPopoverContent>
   </MpPopover>
 </template>
 
 <script setup lang="ts">
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon } from '@mekari/pixel3'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpIcon, MpButton } from '@mekari/pixel3'
 import { budget, setBudgetViewAs, resetBudget } from '~/data/budgetStore'
 import { BUDGET_PEOPLE, type BudgetRole } from '~/data/budgetMaster'
 import { successToast } from '~/utils/toasts'

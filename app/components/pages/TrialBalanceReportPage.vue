@@ -12,7 +12,7 @@
  * column pair on every build.
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
-import { MpIcon, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpIcon, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, MpTextlink } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { infoToast } from '~/utils/toasts'
@@ -66,7 +66,7 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
     <!-- ── Title bar ── -->
     <header class="tbr-titlebar">
       <div class="tbr-titlebar-left">
-        <button class="tbr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</button>
+        <MpTextlink as="a" class="tbr-breadcrumb" @click.prevent="router.push('/financial-report')">{{ t('Financials') }}</MpTextlink>
         <h1 class="tbr-title">{{ t('Trial Balance') }} <span class="tbr-title-cur">(IDR)</span></h1>
       </div>
     </header>

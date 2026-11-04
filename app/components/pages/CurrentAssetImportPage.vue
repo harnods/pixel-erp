@@ -1,5 +1,6 @@
 <!-- prod-parity: jurnal-accounting-frontend/src/modules/assets/views/AssetImportView.vue -->
 <script setup lang="ts">
+import { MpButton, MpTextlink, MpInput } from '@mekari/pixel3'
 import ErpDropzoneIcon from '~/components/patterns/ErpDropzoneIcon.vue'
 import { infoToast } from '~/utils/toasts'
 
@@ -43,7 +44,7 @@ function doImport() {
     <!-- ── Page title bar (neutral-subtle bg, 72px, matches ErpTablePage title pattern) ── -->
     <div class="iw-titlebar">
       <div class="iw-titlebar-left">
-        <button class="iw-breadcrumb" @click="goBack">{{ t('Fixed assets (current)') }}</button>
+        <MpTextlink as="a" class="iw-breadcrumb" @click.prevent="goBack">{{ t('Fixed assets (current)') }}</MpTextlink>
         <h1 class="iw-title">{{ t('Import assets') }}</h1>
       </div>
     </div>
@@ -71,10 +72,10 @@ function doImport() {
                   <div class="iw-spacer" />
                 </div>
                 <div class="iw-step-form">
-                  <button class="iw-btn-download" @click="notInPrototype">{{ t('Download template file') }}</button>
+                  <MpButton variant="ghost" class="iw-btn-download" @click="notInPrototype">{{ t('Download template file') }}</MpButton>
                   <!-- Accordion: Format requirements -->
                   <div class="iw-accordion" :class="{ 'iw-accordion--open': formatOpen }">
-                    <button class="iw-accordion-header" @click="formatOpen = !formatOpen">
+                    <MpButton variant="ghost" class="iw-accordion-header" @click="formatOpen = !formatOpen">
                       <span class="iw-accordion-label">{{ t('Format requirements') }}</span>
                       <svg
                         class="iw-accordion-chevron"
@@ -83,7 +84,7 @@ function doImport() {
                       >
                         <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                       </svg>
-                    </button>
+                    </MpButton>
                     <div v-if="formatOpen" class="iw-accordion-body">
                       <ul class="iw-accordion-list">
                         <li>{{ t('Date format: DD/MM/YYYY') }}</li>
@@ -130,7 +131,7 @@ function doImport() {
                       {{ t('Drop your file here or') }}
                       <label class="iw-dropzone-link">
                         {{ t('choose') }}
-                        <input type="file" accept=".csv,.xls,.xlsx" @change="onFileInput" hidden />
+                        <MpInput type="file" accept=".csv,.xls,.xlsx" @change="onFileInput" hidden is-full-width />
                       </label>
                     </p>
                     <p class="iw-dropzone-hint">{{ t('Supported formats: CSV, XLS, XLSX.') }}</p>
@@ -157,11 +158,11 @@ function doImport() {
                     <span class="iw-file-name">{{ uploadedFile.name }}</span>
                     <span class="iw-file-size">{{ fmtBytes(uploadedFile.size) }}</span>
                   </div>
-                  <button class="iw-file-remove" :aria-label="t('Remove file')" @click="removeFile">
+                  <MpButton variant="ghost" class="iw-file-remove" :aria-label="t('Remove file')" @click="removeFile">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
-                  </button>
+                  </MpButton>
                 </div>
 
               </div>
@@ -172,7 +173,7 @@ function doImport() {
           <!-- ── Action group ── -->
           <div class="iw-action-group">
             <div class="iw-action-right">
-              <button class="iw-btn-cancel" @click="goBack">{{ t('Cancel') }}</button>
+              <MpButton variant="ghost" class="iw-btn-cancel" @click="goBack">{{ t('Cancel') }}</MpButton>
               <button
                 class="iw-btn-import"
                 @click="doImport"

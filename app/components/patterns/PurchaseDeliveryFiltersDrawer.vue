@@ -210,9 +210,9 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
               <div class="sdf-tags-field">
                 <span v-for="(tag, i) in draft.tags" :key="`${i}-${tag}`" class="sdf-tag-chip">
                   {{ tag }}
-                  <button type="button" class="sdf-tag-remove" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
+                  <MpButton variant="ghost" class="sdf-tag-remove" :aria-label="`Remove ${tag}`" @click="removeTag(i)">
                     <MpIcon name="close" size="sm" />
-                  </button>
+                  </MpButton>
                 </span>
                 <input
                   :id="`${id}-tags-input`"

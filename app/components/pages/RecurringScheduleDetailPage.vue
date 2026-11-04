@@ -6,7 +6,7 @@
  * Person · Status · Total · Tags). Footer: Delete, Cancel, Edit. Full-page:
  * routed via detailMatch (/recurring-transactions/:id), owns its title bar.
  */
-import { MpButton, MpButtonGroup } from '@mekari/pixel3'
+import { MpButton, MpButtonGroup, MpTextlink } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -61,7 +61,7 @@ function confirmDelete() {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <div class="detail-breadcrumb-row">
-          <button class="detail-breadcrumb" @click="back">{{ t('Recurring transactions') }}</button>
+          <MpTextlink as="a" class="detail-breadcrumb" @click.prevent="back">{{ t('Recurring transactions') }}</MpTextlink>
         </div>
         <h1 class="detail-title">{{ schedule?.name ?? t('Recurring Schedule') }}</h1>
       </div>

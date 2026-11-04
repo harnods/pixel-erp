@@ -1,7 +1,7 @@
 <!-- prod-parity: jurnal-non-core-feature-frontend/src/modules/tagging-rules/views/TaggingRuleFormView.vue + components/TaggingRuleForm.vue + components/SelectUsersDrawer.vue -->
 <script setup lang="ts">
 import {
-  MpButton, MpIcon, MpRadio, MpTag, MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpInput,
+  MpButton, MpIcon, MpRadio, MpTag, MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText, MpInput, MpTextlink,
 } from '@mekari/pixel3'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import MultiSelectDropdown from '~/components/patterns/MultiSelectDropdown.vue'
@@ -109,7 +109,7 @@ function saveDrawer() {
   <div class="trf-page">
     <div class="trf-titlebar">
       <div class="trf-titlebar-left">
-        <button class="trf-breadcrumb" @click="goToList">{{ t('Tagging rules') }}</button>
+        <MpTextlink as="a" class="trf-breadcrumb" @click.prevent="goToList">{{ t('Tagging rules') }}</MpTextlink>
         <h1 class="trf-title">{{ pageTitle }}</h1>
       </div>
     </div>
@@ -226,13 +226,13 @@ function saveDrawer() {
                   <MpButton variant="textLink" is-rounded @click="addAll">{{ t('Add all') }}</MpButton>
                 </div>
                 <div class="sud-list">
-                  <button v-for="u in availableUsers" :key="u.id" class="sud-row" @click="addUser(u)">
+                  <MpButton variant="ghost" v-for="u in availableUsers" :key="u.id" class="sud-row" @click="addUser(u)">
                     <span class="sud-row-text">
                       <span class="sud-row-name">{{ u.name }}</span>
                       <span class="sud-row-email">{{ u.email }}</span>
                     </span>
                     <MpIcon name="add-circular" size="sm" />
-                  </button>
+                  </MpButton>
                   <p v-if="!availableUsers.length" class="sud-empty">{{ t('No users found') }}</p>
                 </div>
               </section>
@@ -247,13 +247,13 @@ function saveDrawer() {
                     <MpButton variant="textLink" is-rounded @click="removeAll">{{ t('Remove all') }}</MpButton>
                   </div>
                   <div class="sud-list">
-                    <button v-for="u in filteredDraftUsers" :key="u.id" class="sud-row" @click="removeDraft(u)">
+                    <MpButton variant="ghost" v-for="u in filteredDraftUsers" :key="u.id" class="sud-row" @click="removeDraft(u)">
                       <span class="sud-row-text">
                         <span class="sud-row-name">{{ u.name }}</span>
                         <span class="sud-row-email">{{ u.email }}</span>
                       </span>
                       <MpIcon name="minus-circular" size="sm" />
-                    </button>
+                    </MpButton>
                     <p v-if="!filteredDraftUsers.length" class="sud-empty">{{ t('No users found') }}</p>
                   </div>
                 </template>

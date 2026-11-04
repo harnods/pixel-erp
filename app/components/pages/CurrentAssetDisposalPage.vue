@@ -1,6 +1,6 @@
 <!-- prod-parity: jurnal-accounting-frontend/src/modules/assets/views/AssetDisposalDetailView.vue + components/TransactionHistoryTable.vue -->
 <script setup lang="ts">
-import { MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpBadge, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, MpTextlink } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { formatIDR } from '~/utils/currency'
@@ -35,7 +35,7 @@ function goAsset() { if (asset.value) router.push(`/current-assets/${asset.value
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goIndex">{{ t('Fixed assets (current)') }}</button>
+        <MpTextlink as="a" class="detail-breadcrumb" @click.prevent="goIndex">{{ t('Fixed assets (current)') }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ asset?.name ?? t('Asset not found') }}</h1>
           <MpBadge v-if="disposal" for="additionalInformation" type="announcement" size="md">{{ t('Disposed') }}</MpBadge>

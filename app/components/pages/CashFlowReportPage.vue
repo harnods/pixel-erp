@@ -15,7 +15,7 @@
  * Cash & bank balance for every column.
  */
 import { ref, computed, reactive, watch, onBeforeUnmount } from 'vue'
-import { MpIcon, MpCheckbox, MpRadio, MpFormControl, MpFormLabel, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
+import { MpIcon, MpCheckbox, MpRadio, MpFormControl, MpFormLabel, MpSkeleton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css, MpButton, MpTextlink } from '@mekari/pixel3'
 import AdvancedDateRangePicker from '~/components/patterns/AdvancedDateRangePicker.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import { infoToast } from '~/utils/toasts'
@@ -133,7 +133,7 @@ function openAccount(id: string) { router.push(`/chart-of-accounts/${id}`) }
     <!-- ── Title bar ── -->
     <header class="cfr-titlebar">
       <div class="cfr-titlebar-left">
-        <button class="cfr-breadcrumb" type="button" @click="router.push('/financial-report')">{{ t('Financials') }}</button>
+        <MpTextlink as="a" class="cfr-breadcrumb" @click.prevent="router.push('/financial-report')">{{ t('Financials') }}</MpTextlink>
         <h1 class="cfr-title">{{ t('Cash flow') }} <span class="cfr-title-cur">(IDR)</span></h1>
       </div>
     </header>
@@ -283,7 +283,7 @@ function openAccount(id: string) { router.push(`/chart-of-accounts/${id}`) }
         <div class="cff-panel" role="dialog" :aria-label="t('Report filter')">
           <header class="cff-head">
             <span class="cff-title">{{ t('Report filter') }}</span>
-            <button class="cff-close" type="button" :aria-label="t('Close')" @click="drawerOpen = false"><MpIcon name="close" size="md" /></button>
+            <MpButton variant="ghost" class="cff-close" :aria-label="t('Close')" @click="drawerOpen = false"><MpIcon name="close" size="md" /></MpButton>
           </header>
           <div class="cff-body">
             <MpFormControl id="cff-period-fc">
@@ -301,7 +301,7 @@ function openAccount(id: string) { router.push(`/chart-of-accounts/${id}`) }
             <MpCheckbox id="cff-show-account" :is-checked="draft.showAccounts" @change="draft.showAccounts = !draft.showAccounts">{{ t('Show accounts') }}</MpCheckbox>
           </div>
           <footer class="cff-foot">
-            <button class="cff-reset" type="button" @click="resetDraft">{{ t('Reset filter') }}</button>
+            <MpButton variant="ghost" class="cff-reset" @click="resetDraft">{{ t('Reset filter') }}</MpButton>
             <div class="cff-foot-actions">
               <button class="btn-enterprise btn-enterprise--ghost" type="button" @click="drawerOpen = false">{{ t('Cancel') }}</button>
               <button class="btn-enterprise btn-enterprise--primary" type="button" @click="applyDrawer">{{ t('Apply') }}</button>

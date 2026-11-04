@@ -1,6 +1,6 @@
 <!-- prod-parity: jurnal-non-core-feature-frontend/src/modules/tags/views/TagDetailView.vue -->
 <script setup lang="ts">
-import { MpButton, MpIcon, MpBadge } from '@mekari/pixel3'
+import { MpButton, MpIcon, MpBadge, MpTextlink } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import TagFormModal from '~/components/tags/TagFormModal.vue'
 import { tags, tagCategoryName, transactionsForTag, updateTag, type TagTransaction } from '~/data/tags'
@@ -46,7 +46,7 @@ function submitEdit(v: { name: string; categoryId: string | null }) {
   <div class="detail-page">
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <button class="detail-breadcrumb" @click="goToIndex">{{ t('Tags') }}</button>
+        <MpTextlink as="a" class="detail-breadcrumb" @click.prevent="goToIndex">{{ t('Tags') }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ tag?.name ?? t('Tag not found') }}</h1>
           <MpButton v-if="tag" variant="ghost" left-icon="edit" :aria-label="t('Edit tag name')" is-rounded @click="editOpen = true" />
@@ -156,7 +156,7 @@ function submitEdit(v: { name: string; categoryId: string | null }) {
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
-  width: 248px; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  width: var(--mp-sizes-62, 248px); padding: var(--mp-spacing-2) var(--mp-spacing-3);
   background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
 }
