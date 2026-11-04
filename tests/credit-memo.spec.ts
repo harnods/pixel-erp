@@ -20,7 +20,7 @@ import {
   syncInvoiceBalances, memoJournal, applicationJournal, refundJournal,
 } from '~/data/creditMemos'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
-import { creditMemoLedger, remainingOf, statusOf, entryRows, creditMemoReport, emptyCmReportFilters } from '~/data/creditMemoReport'
+import { creditMemoReport, emptyCmReportFilters } from '~/data/creditMemoReport'
 
 const inv = (id: string) => salesInvoices.find((i) => i.id === id)!
 
@@ -183,21 +183,20 @@ describe('journals balance', () => {
 
 describe('credit memo report is derived from the documents', () => {
   it('report remaining equals document remaining for every memo', () => {
-    for (const c of creditMemoLedger()) for (const cm of c.cms) expect(remainingOf(cm)).toBe(memoRemaining(cm.id))
+    for (const c of creditMemoReport({ ...emptyCmReportFilters(), docType: 'CM' })) for (const cm of c.memos) expect(cm.remaining).toBe(memoRemaining(cm.id))
   })
   it('a new application appears in the report immediately', () => {
     createApplication({ customerId: 'C013', creditMemoId: 'cm-10088', date: '2026-08-22', memo: '', attachments: [], allocations: [{ invoiceId: 'SI138', amount: 2_000_000 }] })
-    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.cms).find((x) => x.id === 'cm-10088')!
-    expect(cm.mutations.some((m) => m.type === 'Applied' && m.amount === -2_000_000)).toBe(true)
-    expect(entryRows(cm).map((r) => [r.type, r.movement, r.linkedNo])).toEqual([['Applied', -2_000_000, 'Sales Invoice #40138']])
-    expect(remainingOf(cm)).toBe(8_000_000)
-    expect(statusOf(cm)).toBe('Open')
+    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.memos).find((x) => x.id === 'cm-10088')!
+    expect(cm.entries.map((r) => [r.type, r.movement, r.linkedNo])).toEqual([['Applied', -2_000_000, 'Sales Invoice #40138']])
+    expect(cm.remaining).toBe(8_000_000)
+    expect(cm.status).toBe('Open')
   })
   it('a memo used up in the period stays in the default report as Closed', () => {
     expect(memoStatus('cm-10086')).toBe('used-up')
-    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.cms).find((x) => x.id === 'cm-10086')!
-    expect(statusOf(cm)).toBe('Closed')
-    expect(entryRows(cm).at(-1)?.balance).toBe(0)
+    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.memos).find((x) => x.id === 'cm-10086')!
+    expect(cm.status).toBe('Closed')
+    expect(cm.entries.at(-1)?.balance).toBe(0)
   })
   it('cash paid is unchanged by credit', () => {
     expect(invoiceCashPaid('SI131')).toBe(0)

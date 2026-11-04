@@ -28,12 +28,12 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
-    id: 'cm-report-figma-v2',
-    title: 'Credit Memo report — aligned to latest Figma',
+    id: 'cm-report-poc-v3',
+    title: 'Credit Memo report: aligned to engineering prototype',
     description:
-      'Reports › Sales › Credit Memo now follows Figma 4531-72195. Statuses are Open / Closed, and closed (zero-balance) memos show by default. Filter them with the new Status filter; the "Show fully-used" toggle is gone. Each memo row shows its description and opening balance. Below it, every applied / refund / reversal entry shows its linked invoice, signed movement and running balance, with tree guides under the carets. Customers and memos open on every Apply. The toolbar gains Airene, Column settings and an Export ▾ menu (Excel / PDF); Refresh and Collapse all are removed. Also new: an All views drawer, the Figma loading skeleton, and the "Report data will appear here" idle state.',
+      'Reports › Sales › Credit Memo now follows the engineering prototype, PRD and RFC. It uses one As of date instead of a date range, and every memo issued on or before it is listed with its applications and refunds up to that date. There is no opening balance: each memo row shows its original amount, then the running balance. Debit memos appear under their vendor, with a Vendor label. All filters gains transaction type, customer, customer group (Include all / Either), customer and credit memo balance ranges, credit memo number, and Rp 0 toggles. Each active filter shows as a removable badge, and Reset filter keeps the date. Document numbers open in a new tab. Export now offers Excel only and downloads a real .xlsx with Customer summary and Credit memo detail sheets. The report keeps the Figma table, tree guides, views, skeleton and idle state.',
     date: '2026-11-04',
-    files: ['CreditMemoReportPage.vue', 'creditMemoReport.ts', 'CreditMemoFiltersDrawer.vue', 'creditMemos.ts'],
+    files: ['CreditMemoReportPage.vue', 'creditMemoReport.ts', 'CreditMemoFiltersDrawer.vue', 'translations.ts'],
   },
   {
     id: 'wo-start-date-modal',
