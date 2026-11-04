@@ -226,6 +226,11 @@ function bulkSetRawDate(date: string) {
   if (!date) return
   for (const row of selectedRawRows.value) row.requiredDate = date
 }
+/** Commit whatever the apply row holds onto every ticked component. */
+function applyBulkToRaw() {
+  if (bulkWarehouseId.value) bulkSetRawWarehouse(bulkWarehouseId.value)
+  if (bulkRequiredDate.value) bulkSetRawDate(bulkRequiredDate.value)
+}
 // Esc deselects, as on every table with a bulk bar.
 function onRawEsc(e: KeyboardEvent) {
   if (e.key === 'Escape' && selectedRaw.value.size) clearRawSelection()
@@ -868,7 +873,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       id="raw-bulk-wh" v-model="bulkWarehouseId" :data="warehouseOptions"
                       label-prop="name" value-prop="id" :placeholder="t('Select warehouse')"
                       is-searchable is-clearable use-portal is-full-width
-                      @update:model-value="(v: string) => bulkSetRawWarehouse(v)"
                     />
                   </td>
                   <td class="wo-td" /><td class="wo-td" />
@@ -877,11 +881,20 @@ onUnmounted(() => { stageObserver?.disconnect() })
                       <MpDatePicker
                         id="raw-bulk-date" v-model="bulkRequiredDate" format="DD/MM/YYYY" value-type="format"
                         placeholder="DD/MM/YYYY" is-clearable use-portal :disabled-date="isOutsidePlan"
-                        @update:model-value="(v: string) => bulkSetRawDate(v)"
                       />
                     </div>
                   </td>
-                  <td class="wo-td" /><td class="wo-td wo-td--del" />
+                  <td class="wo-td" />
+                  <!-- The tick commits what the row above has staged, so the two
+                       values can be chosen and applied together rather than each
+                       writing through the moment it is picked. -->
+                  <td class="wo-td wo-td--del">
+                    <MpButton
+                      id="raw-bulk-apply" variant="ghost" left-icon="check" is-rounded
+                      :aria-label="t('Apply to selected components')"
+                      @click="applyBulkToRaw"
+                    />
+                  </td>
                 </tr>
                 <tr v-for="row in rawRows" :key="row.id" class="wo-tr" :class="{ 'wo-tr--selected': selectedRaw.has(row.id) }">
                   <td class="wo-td wo-td--check">
@@ -891,7 +904,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
                   </td>
                   <td class="wo-td wo-td--num"><template v-if="row.productId">{{ row.purchaseCost ? formatIDR(row.purchaseCost) : '—' }}</template></td>
-                  <td class="wo-td wo-td--input wo-td--bulk-driven">
+                  <td class="wo-td wo-td--input">
                     <MpAutocomplete v-if="row.productId" :id="`raw-wh-${row.id}`" v-model="row.warehouseId" :data="warehouseOptions" label-prop="name" value-prop="id" :placeholder="t('Select warehouse')" is-searchable is-clearable use-portal is-full-width @update:model-value="onRawWarehouse(row)" />
                   </td>
                   <td class="wo-td wo-td--input">
@@ -904,7 +917,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
-                  <td class="wo-td wo-td--input wo-td--bulk-driven">
+                  <td class="wo-td wo-td--input">
                     <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal :disabled-date="isOutsidePlan" :is-invalid="rowDateOutside(row)" /></div>
                   </td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
@@ -1389,17 +1402,17 @@ onUnmounted(() => { stageObserver?.disconnect() })
      control, not a cell with content to align left. */
   background: transparent;
 }
-.wo-th.wo-th--check :deep(label), .wo-td.wo-td--check :deep(label) { justify-content: center; }
-.wo-td.wo-td--check { text-align: center; }
-.wo-td.wo-td--check > * { margin-inline: auto; }
+.wo-th.wo-th--check, .wo-td.wo-td--check { text-align: center; }
+.wo-th.wo-th--check :deep(label), .wo-td.wo-td--check :deep(label) {
+  display: inline-flex; justify-content: center; margin: 0;
+}
+.wo-th.wo-th--check > *, .wo-td.wo-td--check > * { display: inline-flex; margin-inline: auto; }
 
 /* The apply row reads as part of the table, set apart by its fill alone. */
 .wo-tr--apply .wo-td { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .wo-td--apply-label { white-space: nowrap; color: var(--mp-text-default); }
-/* A ticked row dims ONLY the two cells the apply row above is driving — its
-   warehouse and required date. Dimming the whole row said the product, qty and
-   unit were out of the user's hands too, which they are not. */
-.wo-tr--selected .wo-td--bulk-driven { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+/* A ticked row is styled no differently: every cell stays editable, because
+   ticking it offers a bulk change, it does not take the row over. */
 .wo-th.wo-th--bulk {
   padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
   background: var(--mp-background-neutral-subtle, #f8f9f9);
