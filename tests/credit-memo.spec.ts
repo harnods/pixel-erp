@@ -20,7 +20,7 @@ import {
   syncInvoiceBalances, memoJournal, applicationJournal, refundJournal,
 } from '~/data/creditMemos'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
-import { creditMemoLedger, remainingOf, creditMemoReport, emptyCmReportFilters } from '~/data/creditMemoReport'
+import { creditMemoLedger, remainingOf, statusOf, entryRows, creditMemoReport, emptyCmReportFilters } from '~/data/creditMemoReport'
 
 const inv = (id: string) => salesInvoices.find((i) => i.id === id)!
 
@@ -53,6 +53,7 @@ describe('seed coherence', () => {
     expect(memoStatus('cm-10088')).toBe('active')
     expect(memoStatus('cm-10089')).toBe('partially-used')
     expect(memoStatus('cm-10087')).toBe('used-up')
+    expect(memoStatus('cm-10086')).toBe('used-up')
   })
   it('seeded credit shows on invoices: fully credited → paid, partly → stays overdue', () => {
     expect(inv('SI031').balance).toBe(0)
@@ -186,9 +187,17 @@ describe('credit memo report is derived from the documents', () => {
   })
   it('a new application appears in the report immediately', () => {
     createApplication({ customerId: 'C013', creditMemoId: 'cm-10088', date: '2026-08-22', memo: '', attachments: [], allocations: [{ invoiceId: 'SI138', amount: 2_000_000 }] })
-    const cm = creditMemoReport({ ...emptyCmReportFilters(), showZero: true }).flatMap((c) => c.cms).find((x) => x.id === 'cm-10088')!
+    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.cms).find((x) => x.id === 'cm-10088')!
     expect(cm.mutations.some((m) => m.type === 'Applied' && m.amount === -2_000_000)).toBe(true)
+    expect(entryRows(cm).map((r) => [r.type, r.movement, r.linkedNo])).toEqual([['Applied', -2_000_000, 'Sales Invoice #40138']])
     expect(remainingOf(cm)).toBe(8_000_000)
+    expect(statusOf(cm)).toBe('Open')
+  })
+  it('a memo used up in the period stays in the default report as Closed', () => {
+    expect(memoStatus('cm-10086')).toBe('used-up')
+    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.cms).find((x) => x.id === 'cm-10086')!
+    expect(statusOf(cm)).toBe('Closed')
+    expect(entryRows(cm).at(-1)?.balance).toBe(0)
   })
   it('cash paid is unchanged by credit', () => {
     expect(invoiceCashPaid('SI131')).toBe(0)

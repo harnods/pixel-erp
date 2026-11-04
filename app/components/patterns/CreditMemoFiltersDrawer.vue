@@ -3,23 +3,25 @@
  * Credit Memo report — "All filters" drawer. Mirrors the Bills/Expenses filter
  * pattern: a Keywords field (free text + column scope) and a Customer field
  * styled as tags with an "Is any of / Is none of" comparator (type + Enter →
- * chip), plus a Transaction-type checklist. Same right-hand overlay pattern as
- * the other ERP filter drawers; edits a local draft, commits on Apply.
+ * chip), a Status checklist (Open / Closed — empty = both) and a
+ * Transaction-type checklist. Same right-hand overlay pattern as the other ERP
+ * filter drawers; edits a local draft, commits on Apply.
  */
-import type { CmMutationType, CmComparator } from '~/data/creditMemoReport'
+import type { CmMutationType, CmComparator, CmStatus } from '~/data/creditMemoReport'
 export interface CmDrawerValue {
   keyword: string
   keywordColumn: string
   customerComparator: CmComparator
   customers: string[]
   txnTypes: CmMutationType[]
+  statuses: CmStatus[]
 }
 </script>
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue'
 import { MpIcon, MpButton, MpCheckbox, MpFormControl, MpFormLabel, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
-import { CM_MUTATION_TYPES } from '~/data/creditMemoReport'
+import { CM_MUTATION_TYPES, CM_STATUSES } from '~/data/creditMemoReport'
 
 const props = defineProps<{
   id: string
@@ -44,10 +46,11 @@ const COMPARATORS: { key: CmComparator; label: string }[] = [
 const TXN_LABELS: Record<CmMutationType, string> = {
   Issued: 'Credit memo issued', Applied: 'Credit memo applied', Refund: 'Credit memo refund', Reversal: 'Credit memo reversal',
 }
+const STATUS_LABELS: Record<CmStatus, string> = { Open: 'Open', Closed: 'Closed' }
 
 const draft = reactive<CmDrawerValue>(clone(props.modelValue))
 function clone(v: CmDrawerValue): CmDrawerValue {
-  return { keyword: v.keyword, keywordColumn: v.keywordColumn, customerComparator: v.customerComparator, customers: [...v.customers], txnTypes: [...v.txnTypes] }
+  return { keyword: v.keyword, keywordColumn: v.keywordColumn, customerComparator: v.customerComparator, customers: [...v.customers], txnTypes: [...v.txnTypes], statuses: [...(v.statuses ?? [])] }
 }
 watch(() => props.isOpen, (open) => { if (open) { Object.assign(draft, clone(props.modelValue)); custDraft.value = '' } })
 
@@ -84,7 +87,7 @@ function onCustBackspace() { if (!custDraft.value && draft.customers.length) dra
 function onCustBlur() { setTimeout(() => { custFocused.value = false }, 120) }
 
 function close() { emit('update:isOpen', false) }
-function clearAll() { draft.keyword = ''; draft.keywordColumn = 'all'; draft.customerComparator = 'isAnyOf'; draft.customers = []; draft.txnTypes = [] }
+function clearAll() { draft.keyword = ''; draft.keywordColumn = 'all'; draft.customerComparator = 'isAnyOf'; draft.customers = []; draft.txnTypes = []; draft.statuses = [] }
 function apply() { emit('apply', clone(draft)); close() }
 function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); if (i === -1) list.push(v); else list.splice(i, 1) }
 </script>
@@ -141,6 +144,17 @@ function toggle<T extends string>(list: T[], v: T) { const i = list.indexOf(v); 
             </MpPopoverContent>
           </MpPopover>
         </div>
+      </div>
+
+      <!-- Status — Open / Closed (none checked = both) -->
+      <div class="cmfd-field">
+        <span class="cmfd-field-label">Status</span>
+        <ul class="cmfd-checklist">
+          <li v-for="st in CM_STATUSES" :key="st" class="cmfd-check-item" @click="toggle(draft.statuses, st)">
+            <span @click.stop><MpCheckbox :id="`${id}-st-${st}`" :is-checked="draft.statuses.includes(st)" @change="() => toggle(draft.statuses, st)" /></span>
+            <span class="cmfd-check-label">{{ STATUS_LABELS[st] }}</span>
+          </li>
+        </ul>
       </div>
 
       <!-- Transaction type -->

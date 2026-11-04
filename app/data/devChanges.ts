@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'cm-report-figma-v2',
+    title: 'Credit Memo report — aligned to latest Figma',
+    description:
+      'Reports › Sales › Credit Memo now follows Figma 4531-72195. Statuses are Open / Closed, and closed (zero-balance) memos show by default. Filter them with the new Status filter; the "Show fully-used" toggle is gone. Each memo row shows its description and opening balance. Below it, every applied / refund / reversal entry shows its linked invoice, signed movement and running balance, with tree guides under the carets. Customers and memos open on every Apply. The toolbar gains Airene, Column settings and an Export ▾ menu (Excel / PDF); Refresh and Collapse all are removed. Also new: an All views drawer, the Figma loading skeleton, and the "Report data will appear here" idle state.',
+    date: '2026-11-04',
+    files: ['CreditMemoReportPage.vue', 'creditMemoReport.ts', 'CreditMemoFiltersDrawer.vue', 'creditMemos.ts'],
+  },
+  {
     id: 'wo-start-date-modal',
     title: 'Start work order asks for the actual start date',
     description:

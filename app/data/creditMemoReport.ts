@@ -1,17 +1,23 @@
 /**
  * Credit Memo Detail Report (Reports › Sales › Credit Memo). PRD "[PRD] Credit
- * Memo Report" (Accounting & Tax) + Figma 4531-72196.
+ * Memo Report" (Accounting & Tax) + Figma 4531-72195 (frames 72196 / 73269 /
+ * 75341).
  *
  * Mutation-based model per the PRD Key Logic:
  *  • Each CM carries a Saldo Awal (beginning balance) for the period and an
  *    ordered list of in-period mutations (Issued +, Applied −, Refund −,
- *    Reversal +). Running balance = Saldo Awal + cumulative mutations.
- *  • remaining = last running balance. Status: Active (remaining == original),
- *    Sebagian (0 < remaining < original), Habis (remaining == 0).
- *  • Customer total = Σ remaining WHERE remaining > 0 (immutable; zero-balance
- *    CMs never contribute). Customers sorted by total desc.
- *  • Zero-balance CMs/customers hidden unless the "Tampilkan CM habis" toggle
- *    is ON. Case C (no prior data, no in-period activity) excluded entirely.
+ *    Reversal +). remaining = Saldo Awal + Σ mutations.
+ *  • The report shows each CM row at its OPENING balance for the period
+ *    (Case A, issued before the period → Saldo Awal; Case B, issued in the
+ *    period → original amount) followed by one entry row per in-period
+ *    application / refund / reversal (`entryRows`) with a running balance
+ *    that ends at `remainingOf(cm)`.
+ *  • Status: Open (remaining > 0) · Closed (remaining = 0).
+ *  • Customer total = Σ remaining WHERE remaining > 0 (immutable; Closed CMs
+ *    never contribute). Customers sorted by total desc.
+ *  • Closed CMs are visible by default (Figma shows a Closed CM ending at Rp0);
+ *    the "Status" filter narrows to Open / Closed. Case C (no prior data, no
+ *    in-period activity) is excluded entirely.
  *  • Voided / soft-deleted CMs excluded from every query.
  *
  * Figures are DERIVED from the credit memo mini-DB (creditMemos.ts) — the same
@@ -26,9 +32,10 @@ import {
 } from './creditMemos'
 
 export type CmMutationType = 'Issued' | 'Applied' | 'Refund' | 'Reversal'
-/** CM lifecycle status derived from remaining vs original. */
-export type CmStatus = 'Active' | 'Sebagian' | 'Habis'
+/** CM status derived from the remaining balance: Open (> 0) · Closed (= 0). */
+export type CmStatus = 'Open' | 'Closed'
 export const CM_MUTATION_TYPES: CmMutationType[] = ['Issued', 'Applied', 'Refund', 'Reversal']
+export const CM_STATUSES: CmStatus[] = ['Open', 'Closed']
 
 export interface CmMutation {
   id: string
@@ -37,6 +44,11 @@ export interface CmMutation {
   transactionNo: string     // linked source doc, e.g. "Sales Invoice #10222"
   transactionHref?: string  // deep link target (mock: '#')
   description: string
+  /** Second line under the number — linked invoice(s) for an application
+   *  ("Sales Invoice #40031, Sales Invoice #40131"), the reason for a refund. */
+  linkedNo?: string
+  /** Route of the first linked invoice, when there is one. */
+  linkedHref?: string
   /** Signed amount: Issued/Reversal positive, Applied/Refund negative. */
   amount: number
 }
@@ -46,6 +58,8 @@ export interface CreditMemo {
   customerId: string
   cmNumber: string          // "Credit Memo #12333"
   issueDate: string         // ISO
+  /** CM-row description — the memo's first line reason, e.g. "Returned goods credit". */
+  description: string
   originalAmount: number
   /** Saldo Awal — remaining as of (period start − 1 day). Case B → 0. */
   beginningBalance: number
@@ -63,18 +77,69 @@ export interface CmCustomer {
 }
 
 // ── Derived helpers (the "server-side" computation, done here for the mock) ────
-/** Running-balance rows for a CM: a Saldo Awal row then one row per mutation. */
+export function remainingOf(cm: CreditMemo): number {
+  return cm.beginningBalance + cm.mutations.reduce((s, m) => s + m.amount, 0)
+}
+/** Open while credit remains; Closed once fully applied / refunded. */
+export function statusOf(cm: CreditMemo): CmStatus {
+  return remainingOf(cm) > 0 ? 'Open' : 'Closed'
+}
+/**
+ * Balance shown on the CM row — the CM's value at the start of its period life:
+ *   Case A (issued before the period) → Saldo Awal (`beginningBalance`)
+ *   Case B (issued in the period)     → original amount (Saldo Awal 0 + Issued)
+ * Computed as Saldo Awal + Σ in-period Issued, so the entry rows (everything
+ * except Issued) always run from here down to `remainingOf(cm)`.
+ */
+export function openingBalanceOf(cm: CreditMemo): number {
+  return cm.beginningBalance + cm.mutations.reduce((s, m) => s + (m.type === 'Issued' ? m.amount : 0), 0)
+}
+
+/** One application / refund / reversal row under a CM (Figma L3 row). */
+export interface CmEntryRow {
+  id: string
+  date: string                 // ISO
+  type: 'Applied' | 'Refund' | 'Reversal'
+  title: string                // "Credit Memo Applied #90100" / "Credit Memo Refund #10020"
+  titleHref?: string           // /credit-memo-applications/:id · /credit-memo-refunds/:id
+  linkedNo?: string            // "Sales Invoice #40031, Sales Invoice #40131" · refund reason
+  linkedHref?: string          // /sales-invoices/:id of the first linked invoice
+  status: 'Closed'             // applications/refunds are settled documents
+  movement: number             // signed: Applied/Refund negative, Reversal positive
+  balance: number              // running, from openingBalanceOf(cm); last === remainingOf(cm)
+}
+/** In-period mutations except "Issued", oldest first, with a running balance. */
+export function entryRows(cm: CreditMemo): CmEntryRow[] {
+  let bal = openingBalanceOf(cm)
+  return cm.mutations
+    .filter((m): m is CmMutation & { type: CmEntryRow['type'] } => m.type !== 'Issued')
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => a.m.date.localeCompare(b.m.date) || a.i - b.i)
+    .map(({ m }) => {
+      bal += m.amount
+      return {
+        id: m.id, date: m.date, type: m.type,
+        title: m.transactionNo, titleHref: m.transactionHref,
+        linkedNo: m.linkedNo, linkedHref: m.linkedHref,
+        status: 'Closed' as const, movement: m.amount, balance: bal,
+      }
+    })
+}
+
+/** @deprecated Pre-Figma-v2 history (Saldo Awal row + every mutation). Use
+ *  `openingBalanceOf` + `entryRows`; kept only until no caller imports it. */
 export interface CmHistoryRow {
   id: string
   date: string
   type: CmMutationType | 'Saldo Awal'
-  label: string             // number for a mutation; "Saldo Awal" for the opener
+  label: string
   transactionNo?: string
   transactionHref?: string
   description?: string
-  movement: number | null   // null on the Saldo Awal row
-  balance: number           // running balance after this row
+  movement: number | null
+  balance: number
 }
+/** @deprecated See CmHistoryRow. */
 export function historyRows(cm: CreditMemo): CmHistoryRow[] {
   const rows: CmHistoryRow[] = [{
     id: `${cm.id}-open`, date: cm.issueDate, type: 'Saldo Awal', label: 'Saldo Awal',
@@ -90,20 +155,6 @@ export function historyRows(cm: CreditMemo): CmHistoryRow[] {
     })
   }
   return rows
-}
-export function remainingOf(cm: CreditMemo): number {
-  return cm.beginningBalance + cm.mutations.reduce((s, m) => s + m.amount, 0)
-}
-export function statusOf(cm: CreditMemo): CmStatus {
-  const r = remainingOf(cm)
-  if (r <= 0) return 'Habis'
-  if (r >= cm.originalAmount) return 'Active'
-  return 'Sebagian'
-}
-/** A CM is inactive-for-period (hidden unless toggle ON) when it ends at 0 OR it
- *  opened at 0 with no in-period activity. */
-function isZeroForPeriod(cm: CreditMemo): boolean {
-  return remainingOf(cm) <= 0 || (cm.beginningBalance === 0 && cm.mutations.length === 0)
 }
 /** Case C — no prior balance data AND no in-period mutations → excluded entirely. */
 function isCaseC(cm: CreditMemo): boolean {
@@ -130,14 +181,18 @@ function ledgerFor(m: SalesCreditMemo): CreditMemo {
   for (const a of apps) {
     const amt = a.allocations.reduce((s, al) => s + al.amount, 0)
     const invs = a.allocations.map((al) => invoiceLabel(invoiceById(al.invoiceId)?.number ?? 0)).join(', ')
-    usage.push({ date: a.date, m: { id: `${m.id}-${a.id}`, date: a.date, type: 'Applied', transactionNo: applicationLabel(a.number), transactionHref: `/credit-memo-applications/${a.id}`, description: `Applied to ${invs}`, amount: -amt } })
+    const firstInv = a.allocations[0]?.invoiceId
+    usage.push({ date: a.date, m: {
+      id: `${m.id}-${a.id}`, date: a.date, type: 'Applied', transactionNo: applicationLabel(a.number), transactionHref: `/credit-memo-applications/${a.id}`,
+      description: `Applied to ${invs}`, linkedNo: invs || undefined, linkedHref: firstInv ? `/sales-invoices/${firstInv}` : undefined, amount: -amt,
+    } })
   }
   for (const r of refunds) {
     const amt = r.lines.filter((l) => l.creditMemoId === m.id).reduce((s, l) => s + l.amount, 0)
-    const reason = r.lines.find((l) => l.creditMemoId === m.id)?.reason || 'Cash refund to customer'
-    usage.push({ date: r.date, m: { id: `${m.id}-${r.id}`, date: r.date, type: 'Refund', transactionNo: refundLabel(r.number), transactionHref: `/credit-memo-refunds/${r.id}`, description: reason, amount: -amt } })
+    const reason = r.lines.find((l) => l.creditMemoId === m.id)?.reason?.trim() || 'Refund to customer'
+    usage.push({ date: r.date, m: { id: `${m.id}-${r.id}`, date: r.date, type: 'Refund', transactionNo: refundLabel(r.number), transactionHref: `/credit-memo-refunds/${r.id}`, description: reason, linkedNo: reason, amount: -amt } })
   }
-  usage.sort((a, b) => a.date.localeCompare(b.date))
+  usage.sort((a, b) => a.date.localeCompare(b.date))  // stable: applications before refunds on the same day
   const issuedBefore = m.date < REPORT_PERIOD_START
   const usedBefore = usage.filter((u) => u.date < REPORT_PERIOD_START).reduce((s, u) => s - u.m.amount, 0)
   const mutations: CmMutation[] = []
@@ -150,6 +205,7 @@ function ledgerFor(m: SalesCreditMemo): CreditMemo {
     customerId: m.customerId,
     cmNumber: memoLabel(m.number),
     issueDate: m.date,
+    description: m.lines[0]?.reason?.trim() || 'Credit memo',
     originalAmount: total,
     beginningBalance: issuedBefore ? total - usedBefore : 0,
     hasPriorData: issuedBefore,
@@ -170,7 +226,7 @@ export function creditMemoLedger(): CmCustomer[] {
   return [...byCustomer.values()]
 }
 
-// ── Report query — filters + zero-balance toggle + Case C + voided exclusion ──
+// ── Report query — filters + status + Case C + voided exclusion ─────────────────
 export type CmComparator = 'isAnyOf' | 'isNoneOf'
 export interface CmReportFilters {
   keyword: string             // free-text over the chosen column(s)
@@ -178,23 +234,25 @@ export interface CmReportFilters {
   customerComparator: CmComparator
   customers: string[]         // customer name fragments (tags) — empty = all
   txnTypes: CmMutationType[]  // empty = all
-  showZero: boolean           // "Show fully-used credit memos"
+  statuses: CmStatus[]        // Open / Closed — empty = all
 }
 export interface CmReportCustomer {
   id: string
   name: string
   total: number               // Σ remaining WHERE remaining > 0
   activeCount: number         // count of CMs with remaining > 0
-  cms: CreditMemo[]           // visible CMs (respecting toggle)
+  cms: CreditMemo[]           // visible CMs (respecting the filters)
 }
 
-/** A CM is visible given the toggle, txn-type filter, and keyword search. */
+/** A CM is visible given the txn-type, status and keyword filters. Closed CMs
+ *  show by default; Case C and voided / deleted CMs never do. */
 function cmVisible(cm: CreditMemo, f: CmReportFilters): boolean {
   if (cm.voided || cm.deleted) return false
   if (isCaseC(cm)) return false
   const tt = f.txnTypes ?? []
   if (tt.length && !cm.mutations.some((m) => tt.includes(m.type))) return false
-  if (!f.showZero && isZeroForPeriod(cm)) return false
+  const st = f.statuses ?? []
+  if (st.length && !st.includes(statusOf(cm))) return false
   if (!keywordMatch(cm, f.keyword, f.keywordColumn)) return false
   return true
 }
@@ -203,8 +261,8 @@ function keywordMatch(cm: CreditMemo, keyword: string | undefined, column: strin
   if (!q) return true
   const col = column ?? 'all'
   const hay: string[] = []
-  if (col === 'all' || col === 'number') hay.push(cm.cmNumber, ...cm.mutations.map((m) => m.transactionNo))
-  if (col === 'all' || col === 'description') hay.push(...cm.mutations.map((m) => m.description))
+  if (col === 'all' || col === 'number') hay.push(cm.cmNumber, ...cm.mutations.flatMap((m) => [m.transactionNo, m.linkedNo ?? '']))
+  if (col === 'all' || col === 'description') hay.push(cm.description, ...cm.mutations.map((m) => m.description))
   return hay.some((h) => h.toLowerCase().includes(q))
 }
 /** Customer name matches the tag list under the chosen comparator (contains, CI). */
@@ -216,8 +274,13 @@ function customerMatch(name: string, f: CmReportFilters): boolean {
 }
 
 export function creditMemoReport(f: CmReportFilters): CmReportCustomer[] {
+  return reportFromLedger(creditMemoLedger(), f)
+}
+/** The report query over an explicit ledger (creditMemoReport = this over the
+ *  live mini-DB ledger). Exposed so tests can feed Case C / voided rows. */
+export function reportFromLedger(ledger: CmCustomer[], f: CmReportFilters): CmReportCustomer[] {
   const groups: CmReportCustomer[] = []
-  for (const c of creditMemoLedger()) {
+  for (const c of ledger) {
     if (!customerMatch(c.name, f)) continue
     const cms = c.cms.filter((cm) => cmVisible(cm, f))
     if (!cms.length) continue
@@ -225,8 +288,8 @@ export function creditMemoReport(f: CmReportFilters): CmReportCustomer[] {
     const activeCount = cms.filter((cm) => remainingOf(cm) > 0).length
     groups.push({ id: c.id, name: c.name, total, activeCount, cms })
   }
-  // Sort customers by total remaining balance, descending (PRD TS-02).
-  return groups.sort((a, b) => b.total - a.total)
+  // Sort customers by total remaining balance, descending (PRD TS-02); name breaks ties.
+  return groups.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
 }
 
 /** All distinct customer names (for the customer filter autocomplete). */
@@ -234,17 +297,45 @@ export function cmCustomerNames(): string[] { return creditMemoLedger().map((c) 
 
 // ── Saved views (Default + user views) — same concept as CRM Customers. ────────
 export interface CmSavedView { id: string; name: string; filters: CmReportFilters }
-export function emptyCmReportFilters(): CmReportFilters { return { keyword: '', keywordColumn: 'all', customerComparator: 'isAnyOf', customers: [], txnTypes: [], showZero: false } }
-export const creditMemoViews = reactive<CmSavedView[]>(loadSnapshot<CmSavedView>('credit-memo-views-v2') ?? [])
-function persistViews() { saveSnapshot('credit-memo-views-v2', creditMemoViews) }
+export function emptyCmReportFilters(): CmReportFilters { return { keyword: '', keywordColumn: 'all', customerComparator: 'isAnyOf', customers: [], txnTypes: [], statuses: [] } }
+/**
+ * Coerce stored / partial filters into the current shape. Views saved before the
+ * Status filter carry `showZero` and no `statuses` — `showZero` is dropped and
+ * `statuses` defaults to [] (all). Unknown status / type values are discarded.
+ */
+export function normalizeCmFilters(raw: (Partial<CmReportFilters> & { showZero?: unknown }) | null | undefined): CmReportFilters {
+  const base = emptyCmReportFilters()
+  const r = raw ?? {}
+  const list = <T extends string>(v: unknown, allowed?: readonly T[]): T[] =>
+    Array.isArray(v) ? v.filter((x): x is T => typeof x === 'string' && (!allowed || allowed.includes(x as T))) : []
+  return {
+    keyword: typeof r.keyword === 'string' ? r.keyword : base.keyword,
+    keywordColumn: typeof r.keywordColumn === 'string' ? r.keywordColumn : base.keywordColumn,
+    customerComparator: r.customerComparator === 'isNoneOf' ? 'isNoneOf' : 'isAnyOf',
+    customers: list<string>(r.customers),
+    txnTypes: list(r.txnTypes, CM_MUTATION_TYPES),
+    statuses: list(r.statuses, CM_STATUSES),
+  }
+}
+/** A stored view in the current shape (legacy `showZero` views included). */
+export function normalizeCmView(raw: { id: string; name: string; filters?: Parameters<typeof normalizeCmFilters>[0] }): CmSavedView {
+  return { id: raw.id, name: raw.name, filters: normalizeCmFilters(raw.filters) }
+}
+const K_VIEWS = 'credit-memo-views-v2'
+export const creditMemoViews = reactive<CmSavedView[]>(
+  (loadSnapshot<Parameters<typeof normalizeCmView>[0]>(K_VIEWS) ?? []).map(normalizeCmView),
+)
+function persistViews() { saveSnapshot(K_VIEWS, creditMemoViews) }
 let viewSeq = creditMemoViews.length + 1
 export function addCmView(v: Omit<CmSavedView, 'id'>): CmSavedView {
-  const view: CmSavedView = { ...v, id: `cmview-${Date.now()}-${viewSeq++}` }
+  const view: CmSavedView = { name: v.name, filters: normalizeCmFilters(v.filters), id: `cmview-${Date.now()}-${viewSeq++}` }
   creditMemoViews.push(view); persistViews(); return view
 }
 export function updateCmView(id: string, patch: Partial<Omit<CmSavedView, 'id'>>): void {
   const v = creditMemoViews.find((x) => x.id === id); if (!v) return
-  Object.assign(v, patch); persistViews()
+  if (patch.name !== undefined) v.name = patch.name
+  if (patch.filters !== undefined) v.filters = normalizeCmFilters(patch.filters)
+  persistViews()
 }
 export function deleteCmView(id: string): void {
   const i = creditMemoViews.findIndex((x) => x.id === id)
