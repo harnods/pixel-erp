@@ -226,10 +226,16 @@ function bulkSetRawDate(date: string) {
   if (!date) return
   for (const row of selectedRawRows.value) row.requiredDate = date
 }
-/** Commit whatever the apply row holds onto every ticked component. */
+/**
+ * Commit whatever the apply row holds onto every ticked component, then close
+ * the row: the bulk change is done, and leaving it open with its values still
+ * in it invites a second application nobody asked for. Clearing the selection
+ * is what closes it, and it drops the staged values with it.
+ */
 function applyBulkToRaw() {
   if (bulkWarehouseId.value) bulkSetRawWarehouse(bulkWarehouseId.value)
   if (bulkRequiredDate.value) bulkSetRawDate(bulkRequiredDate.value)
+  clearRawSelection()
 }
 // Esc deselects, as on every table with a bulk bar.
 function onRawEsc(e: KeyboardEvent) {
