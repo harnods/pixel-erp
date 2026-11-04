@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'cm-report-poc-v3',
+    title: 'Credit Memo report: aligned to engineering prototype',
+    description:
+      'Reports › Sales › Credit Memo now follows the engineering prototype, PRD and RFC. It uses one As of date instead of a date range, and every memo issued on or before it is listed with its applications and refunds up to that date. There is no opening balance: each memo row shows its original amount, then the running balance. Debit memos appear under their vendor, with a Vendor label. All filters gains transaction type, customer, customer group (Include all / Either), customer and credit memo balance ranges, credit memo number, and Rp 0 toggles. Each active filter shows as a removable badge, and Reset filter keeps the date. Document numbers open in a new tab. Export now offers Excel only and downloads a real .xlsx with Customer summary and Credit memo detail sheets. The report keeps the Figma table, tree guides, views, skeleton and idle state.',
+    date: '2026-11-04',
+    files: ['CreditMemoReportPage.vue', 'creditMemoReport.ts', 'CreditMemoFiltersDrawer.vue', 'translations.ts'],
+  },
+  {
     id: 'sd-input-method-table',
     title: 'Sales delivery: one input method for the whole table',
     description:
