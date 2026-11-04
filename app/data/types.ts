@@ -1,3 +1,4 @@
+import type { BatchAttributeValues } from './batchAttributes'
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue' | 'partially-paid'
@@ -71,6 +72,7 @@ export interface SalesInvoice {
   /** false for a small subset of invoices — those carry no PPN component at
    *  all, so "Create tax document" has nothing to document and is hidden. */
   hasPpn: boolean
+  recurringId?: string
 }
 
 export interface PurchaseInvoice {
@@ -86,6 +88,7 @@ export interface PurchaseInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+  recurringId?: string
 }
 
 export interface BillAttachment {
@@ -144,6 +147,7 @@ export interface Bill {
   payment?: BillPayment
   /** true once the payment has been matched against a bank transaction */
   reconciled?: boolean
+  recurringId?: string
 }
 
 export interface ReviewFile {
@@ -212,6 +216,7 @@ export interface SalesOrder {
   items: SalesOrderItem[]
   globalDiscount: number                  // IDR, order-level discount
   shippingFee: number                     // IDR
+  recurringId?: string
 }
 
 /** A requested line on a purchase request — the source rows a purchase order
@@ -310,6 +315,22 @@ export interface PurchaseDelivery {
   billingStatus: BillingStatus            // unbilled | invoiced
   total: number                           // delivery total IDR
   tags?: string[]
+  /** Lines as entered on the New purchase delivery form. Seeded deliveries have none —
+   *  the details page synthesises their lines. */
+  lines?: PurchaseDeliveryLine[]
+}
+
+export interface PurchaseDeliveryLine {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number
+  discountPct: number
+  taxLabel: string
+  /** Batch-tracked lines: which batches received the qty (Batch Attribute story 10). */
+  batches?: { batchId: string; batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
 }
 
 export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'
@@ -332,4 +353,5 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  recurringId?: string
 }

@@ -29,24 +29,26 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 /**
- * The width is an INLINE style, not a Panda atomic class. Panda extracts classes
- * statically at build time, so a class built from a prop — `min(${props.width},
- * …)` — is emitted on the element with no rule behind it, and every drawer fell
- * back to the flex default regardless of the width its caller asked for.
+ * `panelClass` is a plain const, not a computed: it no longer depends on a prop.
+ *
+ * The width is an INLINE style. Panda extracts classes statically at build time,
+ * so a class built from a prop — `min(${props.width}, …)` — was emitted on the
+ * element with no rule behind it, and every drawer fell back to the flex default
+ * regardless of the width its caller asked for.
  */
-const panelStyle = computed(() => ({ width: `min(${props.width}, calc(100% - 24px))` }))
+const panelClass = css({
+  margin: '3',
+  height: 'calc(100% - 24px)',
+  display: 'flex',
+  flexDirection: 'column',
+  bg: 'background.stage',
+  rounded: 'xl',
+  overflow: 'hidden',
+})
 
-const panelClass = computed(() =>
-  css({
-    margin: '3',
-    height: 'calc(100% - 24px)',
-    display: 'flex',
-    flexDirection: 'column',
-    bg: 'background.stage',
-    rounded: 'xl',
-    overflow: 'hidden',
-  }),
-)
+const panelStyle = computed(() => ({
+  width: `min(${props.width}, calc(100% - 24px))`,
+}))
 
 const overlayClass = css({
   position: 'fixed',

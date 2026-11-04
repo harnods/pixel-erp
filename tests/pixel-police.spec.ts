@@ -321,3 +321,37 @@ describe('pixel-police — CRM module: Pixel + sanctioned overrides only (full s
     expect(hits, `Drop-shadow on a surface — use a 1px border, not box-shadow:\n${hits.join('\n')}`).toEqual([])
   })
 })
+
+/**
+ * Row kebab icon (rule/table-row-kebab-icon): ~45 tables render the row "⋯"
+ * trigger as <MpButton class="row-kebab"> with a raw inline <svg> child. Pixel's
+ * 16px+16px button padding inside the 32px square leaves a 0px content box and
+ * the svg collapses to 0 wide — an invisible (but clickable) button. erp.css owns
+ * the one global fix; this guards it from being dropped, and stops a page from
+ * re-adding horizontal padding that would collapse the icon again.
+ */
+describe('pixel-police — row kebab icon never collapses (rule/table-row-kebab-icon)', () => {
+  const erpCss = readFileSync(join(ROOT, 'app/assets/css/erp.css'), 'utf8')
+
+  it('erp.css zeroes .row-kebab horizontal padding and keeps its svg from shrinking', () => {
+    const pad = erpCss.match(/\n\.row-kebab\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(pad).toMatch(/padding-left:\s*0/)
+    expect(pad).toMatch(/padding-right:\s*0/)
+    expect(erpCss).toMatch(/\.row-kebab\s*>\s*svg\s*\{[^}]*flex-shrink:\s*0/)
+  })
+
+  it('a raw-svg MpButton.row-kebab page never sets horizontal padding ≥ 8px on .row-kebab', () => {
+    const files = walk(join(ROOT, 'app/components')).filter((f) => f.endsWith('.vue'))
+    const hits: string[] = []
+    for (const f of files) {
+      const src = readFileSync(f, 'utf8')
+      if (!/<MpButton[^>]*class="row-kebab"[^>]*>\s*<svg/.test(src)) continue
+      for (const m of src.matchAll(/\n\.row-kebab\s*\{([^}]*)\}/g)) {
+        const px = m[1].match(/padding:\s*(\d+)px|padding:\s*var\(--mp-spacing-(\d+)/)
+        const val = px ? Number(px[1] ?? Number(px[2]) * 4) : 0
+        if (val >= 8) hits.push(`${f.replace(ROOT + '/', '')}: padding ${val}px`)
+      }
+    }
+    expect(hits, `Row kebab padding would collapse its 20px icon in a 32px button:\n${hits.join('\n')}`).toEqual([])
+  })
+})

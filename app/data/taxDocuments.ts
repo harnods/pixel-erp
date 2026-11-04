@@ -15,18 +15,40 @@ import { loadSnapshot, saveSnapshot } from './persist'
 import type { DetectedTaxChange, SalesInvoiceTaxSnapshot, TaxAction } from './taxDocumentChanges'
 
 export type TaxDocumentPaymentStage = 'full-payment' | 'down-payment' | 'settlement'
+/**
+ * What DJP has said about this document, and NOTHING else — the approval axis.
+ *
+ * Deliberately does NOT carry `replaced` / `cancelled`: those describe where the
+ * document sits in its lineage, not a reply from DJP, and a faktur that was later
+ * superseded was still *approved* by DJP (PER-11/PJ/2025 Lampiran D.2.b.3)b) — the
+ * NSFP is only issued on "persetujuan dari Direktorat Jenderal Pajak"). The lineage
+ * lives on `kind` + `supersededAs` and surfaces as `taxDocumentStatus()`.
+ * See rule/efaktur-status-axes.
+ */
 export type TaxDocumentStatus =
   | 'draft' | 'awaiting-approval' | 'approved' | 'rejected'
-  /** Superseded by an approved replacement — kept as the historical record. */
-  | 'replaced'
-  /** Withdrawn by an approved cancellation — kept as the historical record. */
-  | 'cancelled'
   /**
    * Return note only: raised against a sales return and waiting for the BUYER to
    * issue and send the nota retur. Never goes to DJP from here — the seller
    * doesn't submit this document, they chase it.
+   *
+   * Strictly not a DJP state, and the one value on this axis that isn't. Left in
+   * place until nota retur gets a design of its own.
    */
   | 'awaiting-from-buyer'
+
+/**
+ * The faktur's own status — DJP's "kode status" axis, widened to cover the passive
+ * side of a lineage. PER-11/PJ/2025 Lampiran D.2.b.2) only defines 00 = normal and
+ * 01.. = pengganti ke-N, D.6 adds pembatalan; a document that has been superseded
+ * reads as `replaced` (Diganti) or `cancelled` (Dibatalkan).
+ *
+ * Note what is NOT here: `pembetulan`. D.5.f is explicit that a faktur may only be
+ * corrected by issuing a pengganti — "pembetulan" is the verb for that act, and a
+ * state only on SPT and Bukti Potong. See rule/efaktur-status-axes.
+ */
+export type TaxDocumentStatusValue =
+  | 'normal' | 'replacement' | 'cancellation' | 'replaced' | 'cancelled' | 'return-note'
 /** Which drawer form produced this document — Domestic (VAT Code) or Foreign
  *  (Transaction detail export classification). Drives which fields the "View
  *  details" drawer shows and how the Summary's PPN is computed. */
@@ -118,6 +140,13 @@ export interface TaxDocument {
   /** Set on the superseded document once its successor is approved by DJP. */
   replacedById?: string
   /**
+   * What happened to this document AFTER DJP approved it — set once an approved
+   * successor supersedes it. Its `status` deliberately stays `approved`, because
+   * that is what DJP replied; this field is the lineage, not the reply.
+   * Drives `taxDocumentStatus()` and the DIGANTI / BATAL print cap.
+   */
+  supersededAs?: 'replaced' | 'cancelled'
+  /**
    * A faktur this document RELATES to without acting on it — used by a return
    * note, which points at the faktur the returned goods were delivered under.
    *
@@ -144,6 +173,10 @@ const STORE_KEY = 'tax-documents'
  *  - documents saved while this kind was spelled `original` predate the switch
  *    to DJP's "Normal" wording — both normalise to `normal`, so an old snapshot
  *    still renders and still matches the `kind === 'normal'` checks below;
+ *  - documents saved while `replaced` / `cancelled` were DJP statuses predate the
+ *    split of the approval axis from the lineage axis: DJP had approved them, and
+ *    what followed was a supersession, so they migrate to
+ *    `status: 'approved'` + `supersededAs`;
  *  - documents saved before the number was split into kode transaksi + kode
  *    status + NSFP carry a 15-digit serial, which would now render an 18-digit
  *    faktur number. Keep the LAST 13 digits so the number stays the right
@@ -152,8 +185,12 @@ const STORE_KEY = 'tax-documents'
  */
 const SERIAL_LENGTH = 13
 
-function normalize(doc: TaxDocument): TaxDocument {
+export function normalizeTaxDocument(doc: TaxDocument): TaxDocument {
   const kind = (!doc.kind || (doc.kind as string) === 'original') ? 'normal' : doc.kind
+  const legacy = doc.status as string
+  const supersededAs = doc.supersededAs
+    ?? (legacy === 'replaced' || legacy === 'cancelled' ? legacy : undefined)
+  const status = (legacy === 'replaced' || legacy === 'cancelled') ? 'approved' : doc.status
   const stored = doc.serial ?? ''
   // An empty serial is a document that HAS no NSFP of ours (a return note), not a
   // short one to be padded — zero-filling it would mint 0000000000000 as a number.
@@ -164,7 +201,7 @@ function normalize(doc: TaxDocument): TaxDocument {
   // form's two lanes map cleanly: the Foreign lane only ever produced exports,
   // which are DK; the Domestic lane produced fakturs, which are FK.
   const docKind = doc.docKind ?? (doc.lane === 'foreign' ? 'DK' : 'FK')
-  return { ...doc, kind, serial, docKind, revision: doc.revision ?? 0 }
+  return { ...doc, kind, status, supersededAs, serial, docKind, revision: doc.revision ?? 0 }
 }
 
 /**
@@ -192,7 +229,7 @@ function buildSeedTaxDocuments(): TaxDocument[] {
     // SI150 — replaced → pengganti
     {
       ...common, id: 'taxdoc-seed-si150-normal', salesInvoiceId: 'SI150', date: '19/08/2026',
-      serial: '2500001234567', status: 'replaced', kind: 'normal', revision: 0,
+      serial: '2500001234567', status: 'approved', supersededAs: 'replaced', kind: 'normal', revision: 0,
       replacedById: 'taxdoc-seed-si150-pengganti',
     },
     {
@@ -203,7 +240,7 @@ function buildSeedTaxDocuments(): TaxDocument[] {
     // SI149 — cancelled → re-issued
     {
       ...common, id: 'taxdoc-seed-si149-cancelled', salesInvoiceId: 'SI149', date: '12/08/2026',
-      serial: '2500007654321', status: 'cancelled', kind: 'normal', revision: 0,
+      serial: '2500007654321', status: 'approved', supersededAs: 'cancelled', kind: 'normal', revision: 0,
     },
     {
       ...common, id: 'taxdoc-seed-si149-reissued', salesInvoiceId: 'SI149', date: '02/09/2026',
@@ -225,7 +262,7 @@ function buildSeedTaxDocuments(): TaxDocument[] {
 // A present snapshot always wins — once the user has created or advanced any tax
 // document, that state is theirs and the seed must not reappear underneath it.
 const store = reactive<TaxDocument[]>(
-  (loadSnapshot<TaxDocument>(STORE_KEY) ?? buildSeedTaxDocuments()).map(normalize),
+  (loadSnapshot<TaxDocument>(STORE_KEY) ?? buildSeedTaxDocuments()).map(normalizeTaxDocument),
 )
 
 function persist() { saveSnapshot(STORE_KEY, [...store]) }
@@ -285,14 +322,12 @@ const ATTENTION_RANK: Record<TaxDocumentStatus, number> = {
   'awaiting-from-buyer': 2,
   'awaiting-approval':  3,   // with DJP, nothing to do but wait
   'approved':           4,   // settled
-  'cancelled':          5,   // history
-  'replaced':           6,   // history
 }
 
 /** True for a document that has been superseded — kept as a record, but it no
  *  longer describes the invoice's tax position. */
 function isHistorical(doc: TaxDocument): boolean {
-  return doc.status === 'replaced' || doc.status === 'cancelled'
+  return doc.supersededAs !== undefined
 }
 
 /**
@@ -334,6 +369,9 @@ export function getTaxDocument(id: string): TaxDocument | undefined {
 export function getApprovedTaxDocument(salesInvoiceId: string): TaxDocument | null {
   const standing = store.filter(d =>
     d.salesInvoiceId === salesInvoiceId && d.status === 'approved'
+    // A superseded faktur keeps status 'approved' (DJP did approve it) but no
+    // longer reports the delivery, so an edit must not diff against it.
+    && !d.supersededAs
     // Neither of these is a faktur that reports the delivery, so neither is
     // something an edit has to correct.
     && d.kind !== 'cancellation' && d.kind !== 'return-note',
@@ -557,8 +595,9 @@ function statusDigit(doc: TaxDocument): string {
  */
 export function formatTaxDocumentNumber(doc: TaxDocument): string {
   if (doc.kind === 'return-note') return '—'
-  const issued = doc.status === 'approved' || doc.status === 'replaced' || doc.status === 'cancelled'
-  return issued ? `${doc.djpCode}${statusDigit(doc)}${doc.serial}` : '—'
+  // A superseded faktur still has its number — it keeps status 'approved' and
+  // prints as the historical record (BR-007), so this stays a single check.
+  return doc.status === 'approved' ? `${doc.djpCode}${statusDigit(doc)}${doc.serial}` : '—'
 }
 
 /**
@@ -598,42 +637,66 @@ export function updateTaxDocumentStatus(id: string, status: TaxDocumentStatus): 
   if (status === 'approved' && doc.replacesId) {
     const superseded = store.find(d => d.id === doc.replacesId)
     if (superseded) {
-      superseded.status = doc.kind === 'cancellation' ? 'cancelled' : 'replaced'
+      // Its DJP status stays 'approved' — DJP approved it and never said otherwise.
+      // What changed is its place in the lineage.
+      superseded.supersededAs = doc.kind === 'cancellation' ? 'cancelled' : 'replaced'
       superseded.replacedById = doc.id
     }
   }
   persist()
 }
 
-/** DJP Status badge — its own colour set, independent of ErpStatusBadge's
+/** DJP status badge — its own colour set, independent of ErpStatusBadge's
  *  shared status map (which already uses 'awaiting approval' for something else). */
 export const DJP_STATUS_CONFIG: Record<TaxDocumentStatus, { label: string; type: 'announcement' | 'warning' | 'completed' | 'critical' }> = {
   'draft':             { label: 'Draft',             type: 'announcement' },
-  'awaiting-approval': { label: 'Awaiting approval', type: 'warning'      },
-  'approved':          { label: 'Approved',          type: 'completed'   },
-  'rejected':          { label: 'Rejected',          type: 'critical'    },
-  'replaced':          { label: 'Replaced',          type: 'announcement' },
-  'cancelled':         { label: 'Cancelled',         type: 'announcement' },
+  'awaiting-approval': { label: 'Processing at DJP', type: 'warning'      },
+  'approved':          { label: 'Approved by DJP',   type: 'completed'   },
+  'rejected':          { label: 'Rejected by DJP',   type: 'critical'    },
   // Warning, same as awaiting-approval: something is outstanding. It is not a
   // DJP status at all strictly speaking — nothing has been sent to DJP — but it
-  // is the invoice's tax position, which is what this column reports.
+  // is the invoice's tax position, which is what this column reports. The one
+  // value on this axis that isn't DJP's; see TaxDocumentStatus.
   'awaiting-from-buyer': { label: 'Awaiting from buyer', type: 'warning'   },
 }
 
 /**
- * "Type" column label — DJP's e-Faktur classification, and nothing more. Which
- * pembetulan a replacement is doesn't belong here: the faktur number's 3rd digit
- * already says it (see statusDigit), so repeating it as "(rev. 2)" would just be
- * the same fact told twice.
+ * "Tax document status" — the faktur's own status (DJP's kode status), resolved
+ * from the two fields that carry the lineage.
  *
- * Kept a bare translatable term so it can go straight through `t()` without
- * interpolation.
+ * Order matters: a return note is never a faktur, so it answers first; a
+ * supersession outranks what the document was authored as (a Normal faktur that
+ * has been replaced reads Diganti, not Normal); only then does `kind` speak.
+ *
+ * Which pengganti a replacement is doesn't belong here — the faktur number's 3rd
+ * digit already says it (see statusDigit), so repeating it as "(rev. 2)" would be
+ * the same fact told twice.
  */
-export function formatTaxDocumentKind(doc: TaxDocument): string {
-  if (doc.kind === 'cancellation') return 'Cancellation'
-  if (doc.kind === 'replacement') return 'Replacement'
-  if (doc.kind === 'return-note') return 'Return note'
-  return 'Normal'
+export function taxDocumentStatus(doc: TaxDocument): TaxDocumentStatusValue {
+  if (doc.kind === 'return-note') return 'return-note'
+  if (doc.supersededAs) return doc.supersededAs
+  if (doc.kind === 'cancellation') return 'cancellation'
+  if (doc.kind === 'replacement') return 'replacement'
+  return 'normal'
+}
+
+/**
+ * Label per tax document status — a bare translatable term, rendered as PLAIN
+ * TEXT, never a badge.
+ *
+ * Deliberately carries no MpBadge tone: this column classifies the document,
+ * while the DJP status beside it reports a state that changes and needs
+ * watching. Badging both put two chips in one row competing for the same
+ * attention, and the colour on this one meant nothing — there is no good or bad
+ * way for a faktur to be a Pengganti.
+ */
+export const TAX_DOCUMENT_STATUS_LABELS: Record<TaxDocumentStatusValue, string> = {
+  'normal':       'Normal',
+  'replacement':  'Replacement',
+  'cancellation': 'Cancellation',
+  'replaced':     'Replaced',
+  'cancelled':    'Cancelled',
+  'return-note':  'Return note',
 }
 
 /**
@@ -650,8 +713,8 @@ export function formatTaxDocumentKind(doc: TaxDocument): string {
  * Empty for anything still current (draft, awaiting approval, approved, rejected).
  */
 export function taxDocumentStamp(doc: TaxDocument): string {
-  if (doc.status === 'replaced') return 'DIGANTI'
-  if (doc.status === 'cancelled') return 'BATAL'
+  if (doc.supersededAs === 'replaced') return 'DIGANTI'
+  if (doc.supersededAs === 'cancelled') return 'BATAL'
   return ''
 }
 
@@ -662,18 +725,22 @@ export interface TaxDocMenuItemDef { label: string; disabled?: boolean; tooltip?
  *  "Tax documents" table row kebab and the detail drawer's "Actions" button —
  *  callers wire their own onClick handlers by matching `label`, and may drop
  *  "View details" once already inside the detail drawer. */
-export function taxDocMenuItemDefs(status: TaxDocumentStatus): TaxDocMenuItemDef[] {
+export function taxDocMenuItemDefs(doc: TaxDocument): TaxDocMenuItemDef[] {
+  const status = doc.status
+  // A superseded faktur is history (BR-007): nothing may be submitted, edited or
+  // deleted on it, whatever DJP last replied. Checked first so the approval axis
+  // below only ever decides for a document that is still standing.
+  const superseded = doc.supersededAs !== undefined
+
   const items: TaxDocMenuItemDef[] = [{ label: 'View details' }]
-  if (status === 'draft') items.push({ label: 'Submit to DJP' })
+  // A superseded faktur stays printable — it is the historical record, and it
+  // prints with its DIGANTI/BATAL cap so nobody mistakes it for current (see
+  // taxDocumentStamp).
+  if (superseded) items.push({ label: 'Print e-faktur' })
+  else if (status === 'draft') items.push({ label: 'Submit to DJP' })
   else if (status === 'awaiting-approval') items.push({ label: 'Refresh DJP status' })
   else if (status === 'rejected') items.push({ label: 'Resubmit to DJP' })
-  // A superseded faktur stays printable — it is the historical record (BR-007),
-  // and it prints with its DIGANTI/BATAL cap so nobody mistakes it for current
-  // (see taxDocumentStamp). Cancelled used to be missing here, which left a
-  // voided faktur with no way to view it at all.
-  else if (status === 'approved' || status === 'replaced' || status === 'cancelled') {
-    items.push({ label: 'Print e-faktur' })
-  }
+  else if (status === 'approved') items.push({ label: 'Print e-faktur' })
   // A return note is the one document we can withdraw: nothing was ever sent to
   // DJP, it is our own record that we are waiting on the buyer. Without this the
   // invoice is stuck — Delete is locked below, and raising a replacement one is
@@ -691,9 +758,9 @@ export function taxDocMenuItemDefs(status: TaxDocumentStatus): TaxDocMenuItemDef
    * Empty for a draft, which stays fully editable.
    */
   const lockReason =
-    status === 'draft' ? ''
-    : status === 'replaced' || status === 'cancelled'
+    superseded
       ? 'Cannot be changed because it is kept as a historical record'
+    : status === 'draft' ? ''
     : status === 'awaiting-from-buyer'
       ? 'Cannot be changed because the return note is issued by the buyer'
     : 'Cannot be edited because it has been submitted to DJP'

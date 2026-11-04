@@ -23,6 +23,7 @@ import {
   customers, products, salesDeliveries,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
+import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
@@ -207,7 +208,10 @@ function fmtPlain(n: number) {
 // ── Notes + attachments ───────────────────────────────────────────────────────
 const message = ref('')
 const memo    = ref('')
-const attachments = ref<{ name: string; sizeKB: number }[]>([])
+// Seeded from the File manager's "Add file › Create a new transaction"
+// hand-off, so the form opens with those files already attached. Reading it
+// clears it, so a later visit starts empty. Empty on every other entry.
+const attachments = ref<{ name: string; sizeKB: number }[]>(takePendingAttachments())
 function iconForFile(name: string): 'pdf' | 'excel-document' | 'word-document' | 'doc' {
   if (name.endsWith('.pdf')) return 'pdf'
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return 'excel-document'

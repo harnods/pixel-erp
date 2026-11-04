@@ -1,122 +1,106 @@
 import { reactive } from 'vue'
-import { loadSnapshot, saveSnapshot } from './persist'
-import type { ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
-import { useLocale } from '~/composables/useLocale'
 
 /**
- * Activity log — the audit trail behind "Last updated by …" on a detail page.
+ * Activity log (Other lists) — the company-wide audit trail
+ * (Figma Other-Lists 4215-21752).
  *
- * PRD v0.5 requires reservation activity to be LOGGED, not merely toasted: every
- * reserve, unreserve and release must be traceable to an actor with its component
- * and qty, and every release must name which of the three triggers produced it
- * (UC-02, UC-03, UC-11 R-1, US-8). A release with no log entry is indistinguishable
- * from stock that went missing.
+ * Same shape the CRM already renders (`CrmActivityEntry` in crm.ts), contextualised
+ * for the ERP: features are ERP modules, numbers use "<Feature> #NNNNN", and an
+ * update detail reads old → new. A busy entry carries many detail lines; the page
+ * shows the first 3 with a "+N more" toggle (rule/activity-log-structure).
  *
- * That is why this is an append-only STORE rather than a derivation. The repo's
- * `rule/activity-log-entries` says to build entries from the record's own data,
- * because the prototype has no audit store — true for records whose history can be
- * read off their current state. It cannot be true here: "who released 8 sacks, and
- * why" leaves no trace in the resulting numbers. Pages merge these entries with the
- * derived ones (see `entriesFor`), so a record with no logged history still reads
- * the way it always did.
- *
- * **Language.** Entries are STORED in English and translated on read (see
- * `entriesFor`). A log is a record of what happened, not of which language the
- * actor had selected at the time; storing the rendered string would freeze a
- * German-- or Indonesian-rendered entry into a trail somebody else reads in
- * English.
- *
- * **Retention.** v0.5 keeps stock transitions — reserve, release, issue, return —
- * with the stock history, never pruned with the UI changelog: they are financial
- * records, and pruning them would erase the trail of an allocation while its
- * balance remains. Nothing is pruned here.
+ * `recordLink` points at the module index, not a record: these numbers are the
+ * Figma's, not ids from the real stores, so a per-record route would 404. Entries
+ * for modules with no route at all (Journal entry, Product conversion) carry no
+ * link and render as plain text rather than a dead one.
  */
 
-/** What a logged event is attached to. */
-export type ActivitySubject = 'work-order' | 'stock-request'
+export const ACTIVITY_ACTIONS = ['Create', 'Update', 'Delete', 'Send email', 'Recurring', 'Login'] as const
+export type ActivityAction = typeof ACTIVITY_ACTIONS[number]
 
-export interface ActivityLogEntry {
-  subjectType: ActivitySubject
-  /** id of the work order or stock request this happened to */
-  subjectId: string
-  /** ISO timestamp */
+/** ERP modules that generate activity, in the order the Figma lists them. */
+export const ACTIVITY_FEATURES = [
+  'Sales invoice', 'Sales quote', 'Purchase invoice', 'Warehouse transfer',
+  'Stock adjustment', 'Bank deposit', 'Bank withdrawal', 'Product conversion',
+  'Journal entry', 'Product',
+] as const
+
+/** One detail line: a plain `text`, or a labelled `from → to` edit. */
+export interface ActivityDetail { label?: string; from?: string; to?: string; text?: string }
+
+export interface ActivityEntry {
+  id: string
+  /** ISO datetime — the column renders it with formatDateTime. */
   date: string
-  /** who did it */
+  /** Actor, or 'System' for anything the app did on its own. */
   user: string
-  /** short verb phrase, e.g. "Reserved material" */
-  activity: string
-  /** label/value pairs shown in the DETAILS column */
-  details: { label: string; value: string }[]
+  action: ActivityAction
+  /** '' when the action isn't about a record (Login). */
+  feature: string
+  /** NUMBER column, e.g. 'Sales invoice #10129'. */
+  recordLabel?: string
+  /** Module index route, when one exists. */
+  recordLink?: string
+  details: ActivityDetail[]
 }
 
-const SNAPSHOT_KEY = 'activityLog'
+const SEED: ActivityEntry[] = [
+  { id: 'AL-0001', date: '2026-01-30T11:00:00', user: 'Rizal Candra', action: 'Create', feature: 'Sales invoice',
+    recordLabel: 'Sales invoice #10129', recordLink: '/sales-invoices',
+    details: [{ text: 'Draft created' }] },
+  { id: 'AL-0002', date: '2026-01-30T11:00:00', user: 'Rizal Candra', action: 'Create', feature: 'Warehouse transfer',
+    recordLabel: 'Warehouse transfer #22382', recordLink: '/warehouse-transfers',
+    details: [{ label: 'Warehouse', from: 'Unassigned', to: 'Tanjung Priok Warehouse' }] },
+  // The Figma's "+3 more" row. Six lines, so three show and the toggle reads
+  // "+3 more" — the rule caps the visible lines at three, not at one.
+  { id: 'AL-0003', date: '2026-01-30T11:00:00', user: 'Fajar Nugraha', action: 'Update', feature: 'Purchase invoice',
+    recordLabel: 'Purchase invoice #48874', recordLink: '/purchase-invoices',
+    details: [
+      { label: 'Vendor', from: 'PT. Central Perk Indonesia', to: 'PT. Central Perk Food' },
+      { label: 'Due date', from: '28/02/2026', to: '15/03/2026' },
+      { label: 'Payment terms', from: 'Net 30', to: 'Net 45' },
+      { label: 'Tags', from: 'Operational', to: 'Operational, Priority' },
+      { label: 'Memo', from: '—', to: 'Revised after vendor merger' },
+      { label: 'Total', from: 'Rp12.400.000', to: 'Rp13.100.000' },
+    ] },
+  { id: 'AL-0004', date: '2026-01-22T08:00:00', user: 'Rizal Candra', action: 'Update', feature: 'Stock adjustment',
+    recordLabel: 'Stock adjustment #10112', recordLink: '/stock-adjustments',
+    details: [{ label: 'Stock', from: '102 Pcs', to: '110 Pcs' }] },
+  { id: 'AL-0005', date: '2026-01-19T13:30:00', user: 'Evelyn Belinda', action: 'Send email', feature: 'Sales quote',
+    recordLabel: 'Sales quote #16554', recordLink: '/sales-quotes',
+    details: [{ label: 'Sent to', text: 'joko@centralperk.com, rizalcandra@centralperk.com' }] },
+  { id: 'AL-0006', date: '2026-01-15T13:30:00', user: 'System', action: 'Recurring', feature: 'Sales invoice',
+    recordLabel: 'Sales invoice #22348', recordLink: '/sales-invoices',
+    details: [{ text: '1 transaction created' }] },
+  { id: 'AL-0007', date: '2026-01-12T16:45:00', user: 'Evelyn Belinda', action: 'Delete', feature: 'Bank withdrawal',
+    recordLabel: 'Bank withdrawal #12212', recordLink: '/cash-management',
+    details: [] },
+  { id: 'AL-0008', date: '2026-01-12T16:45:00', user: 'Fajar Nugraha', action: 'Create', feature: 'Bank deposit',
+    recordLabel: 'Bank deposit #73632', recordLink: '/cash-management',
+    details: [{ label: 'Stock', from: '3 Pcs', to: '10 Pcs' }] },
+  { id: 'AL-0009', date: '2026-01-05T17:15:00', user: 'Bunga Setianingsih', action: 'Create', feature: 'Product conversion',
+    recordLabel: 'Product conversion #93022',
+    details: [] },
+  { id: 'AL-0010', date: '2026-01-01T09:15:00', user: 'Rizal Candra', action: 'Login', feature: '', details: [] },
+  { id: 'AL-0011', date: '2026-01-01T10:00:00', user: 'Bunga Setianingsih', action: 'Update', feature: 'Journal entry',
+    recordLabel: 'Journal entry #84222',
+    details: [{ label: 'Account', from: '4002 Sales Revenue', to: '4003 Monthly Recurring Revenue' }] },
+  { id: 'AL-0012', date: '2026-01-01T10:00:00', user: 'Bunga Setianingsih', action: 'Login', feature: '', details: [] },
+  { id: 'AL-0013', date: '2026-01-01T10:00:00', user: 'Fajar Nugraha', action: 'Create', feature: 'Product',
+    recordLabel: 'Coffee Table 01', recordLink: '/products',
+    details: [] },
+]
 
-export const activityLog = reactive<ActivityLogEntry[]>(
-  loadSnapshot<ActivityLogEntry>(SNAPSHOT_KEY) ?? [],
-)
+// Read-only: nothing in the app writes to the audit trail, so there is no
+// snapshot to persist or restore.
+export const activityLog = reactive<ActivityEntry[]>([...SEED])
 
-function persist(): void {
-  saveSnapshot(SNAPSHOT_KEY, activityLog)
+/** The Feature filter's options — every feature present in the log. */
+export function activityFeatures(): string[] {
+  return [...new Set(activityLog.map(e => e.feature).filter(Boolean))]
 }
 
-/**
- * Record one event. Appends, never updates — an audit trail that can be edited is
- * not an audit trail.
- */
-export function logActivity(entry: Omit<ActivityLogEntry, 'date'> & { date?: string }): void {
-  activityLog.push({ ...entry, date: entry.date ?? new Date().toISOString() })
-  persist()
-}
-
-/** Log the same event against two records at once — e.g. a work order and its request. */
-export function logActivityFor(
-  subjects: { type: ActivitySubject; id: string }[],
-  event: { user: string; activity: string; details: { label: string; value: string }[] },
-): void {
-  const date = new Date().toISOString()
-  for (const s of subjects) {
-    activityLog.push({ subjectType: s.type, subjectId: s.id, date, ...event })
-  }
-  persist()
-}
-
-/**
- * Entries for one record, newest first, ready for `ActivityLogModal`.
- *
- * `fallback` is the derived history the page would have shown before anything was
- * logged (creation, seeded edits). Logged events are merged on top and the whole
- * list re-sorted, so a seeded record reads coherently and a record the user has
- * acted on shows those actions in place (`rule/activity-log-entries`).
- */
-export function entriesFor(
-  subjectType: ActivitySubject,
-  subjectId: string,
-  fallback: ActivityEntry[] = [],
-): ActivityEntry[] {
-  const { t } = useLocale()
-  const logged: ActivityEntry[] = activityLog
-    .filter(e => e.subjectType === subjectType && e.subjectId === subjectId)
-    .map(e => ({
-      date: e.date,
-      user: e.user,
-      activity: t(e.activity),
-      // Labels and the fixed value vocabulary (triggers, sources, dispositions)
-      // translate; a free-text reason or a product name has no key and falls
-      // through unchanged.
-      details: e.details.map(d => ({ label: t(d.label), value: t(d.value) })),
-    }))
-  return [...logged, ...fallback].sort((a, b) => b.date.localeCompare(a.date))
-}
-
-/** Most recent logged event for a record — drives the "Last updated by …" line. */
-export function lastActivity(
-  subjectType: ActivitySubject,
-  subjectId: string,
-): ActivityLogEntry | undefined {
-  return activityLog
-    .filter(e => e.subjectType === subjectType && e.subjectId === subjectId)
-    .reduce<ActivityLogEntry | undefined>(
-      (latest, e) => (!latest || e.date > latest.date ? e : latest),
-      undefined,
-    )
+/** The All-filters drawer's User options. */
+export function activityUsers(): string[] {
+  return [...new Set(activityLog.map(e => e.user))].sort()
 }

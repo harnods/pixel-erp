@@ -24,7 +24,7 @@ import {
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
-import { entriesFor, lastActivity } from '~/data/activityLog'
+import { entriesFor, lastActivity } from '~/data/reservationActivityLog'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'

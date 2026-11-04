@@ -39,7 +39,11 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   /** Tick several options; `modelValue` becomes a string[]. */
   multiple?: boolean
-}>(), { width: '176px', isClearable: true, disabled: false, multiple: false })
+  /** Same as `disabled`, for callers using the Pixel prop name. */
+  isDisabled?: boolean
+}>(), { width: '176px', isClearable: true, disabled: false, isDisabled: false, multiple: false })
+
+const isInert = computed(() => props.disabled || props.isDisabled)
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string | string[]): void }>()
 
@@ -71,7 +75,7 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-function focusOpen() { if (props.disabled || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
+function focusOpen() { if (isInert.value || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 /**
  * Single-select closes on blur — the pick is the whole interaction, so losing
@@ -125,7 +129,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 </script>
 
 <template>
-  <div ref="rootEl" class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !disabled, 'efs--disabled': disabled, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
+  <div ref="rootEl" class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !isInert, 'efs--disabled': isInert, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -135,9 +139,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="hasSelection ? selectedLabel : placeholder"
-            :disabled="disabled"
-            :readonly="disabled"
-            :tabindex="disabled ? -1 : undefined"
+            :disabled="isInert"
+            :readonly="isInert"
+            :tabindex="isInert ? -1 : undefined"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -170,7 +174,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
       </MpPopoverContent>
     </MpPopover>
 
-    <MpButton v-if="hasSelection && isClearable && !open && !disabled" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="clearAll">
+    <MpButton v-if="hasSelection && isClearable && !open && !isInert" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="clearAll">
       <MpIcon name="close" size="sm" />
     </MpButton>
   </div>

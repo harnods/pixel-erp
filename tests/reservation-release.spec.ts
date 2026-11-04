@@ -23,7 +23,7 @@ import {
   unreserveWorkOrderProducts, reservedProductIds,
   type StockRequest, type StockRequestLine,
 } from '~/data/stockRequests'
-import { activityLog } from '~/data/activityLog'
+import { activityLog } from '~/data/reservationActivityLog'
 
 const WO_ID = 'wo-release-test'
 const REQ_ID = `sr-wo-${WO_ID}`

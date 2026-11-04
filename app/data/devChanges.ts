@@ -440,6 +440,317 @@ export const DEV_CHANGES: DevChange[] = [
       'Choosing transaction type "Work order" shows a second dropdown under it to pick the work order transaction the workflow gates (Start work order, adjustment, partial completion, completion, cancel/close). A type can have only one ACTIVE workflow — types another active workflow already has are not offered, and turning on a workflow whose type is already covered asks to turn the other one off. Approvers are limited to users with Work order access, up to 4 levels, and the list shows "Applies to: …". Requests still waiting for approval follow the rule live: saving a workflow updates their levels and approvers (a removed level lets the request move on or execute; decided requests keep their history).',
     date: '2026-10-10',
     files: ['CreateApprovalWorkflowPage.vue', 'ApprovalWorkflowsPage.vue', 'approvalWorkflows.ts'],
+  },
+  {
+    id: 'wo-start-date-modal',
+    title: 'Start work order asks for the actual start date',
+    description:
+      'Starting a work order now opens a modal for its actual start date, up to today. Routing start dates are limited by this date.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-drag',
+    title: 'Drag routing cards between columns',
+    description:
+      'Drag a card to the next column to start or finish it (the date modal opens), or to the previous column to move it back.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue'],
+  },
+  {
+    id: 'wo-adjust-page',
+    title: 'Adjust work order page',
+    description:
+      'Record field differences before closing a work order: produced and needed qty, cost multipliers, other outputs, and production waste. Changes apply to this work order only, never the BOM, and show on its detail page.',
+    date: '2026-11-02',
+    files: ['AdjustWorkOrderPage.vue', 'workOrderAdjustment.ts'],
+  },
+  {
+    id: 'wo-routing-confirmation',
+    title: 'Complete work order asks for routing confirmation',
+    description:
+      'Completing a tracked work order now asks whether the field process matched, offers Adjust work order, and captures the actual end date.',
+    date: '2026-11-02',
+    files: ['RoutingConfirmationModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-track-routing-page',
+    title: 'Track routing page',
+    description:
+      'New board to move a work order\'s routing steps through Not started, In progress, and Completed with actual dates. Progress is saved to the work order and drives the Routing section and primary action on its detail page.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue', 'workOrderRouting.ts'],
+  },
+  {
+    id: 'wo-primary-track-routing',
+    title: 'Work order primary action follows routing',
+    description:
+      'Start work order now starts the work order. With Track routing set to Yes, the primary action becomes Track routing, then Complete work order once every routing step is completed.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-status-badge',
+    title: 'Routing status uses the status badge',
+    description:
+      'The Routing section status is now a status badge, and tracked work orders show each step\'s own status and actual dates.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'batch-drawer-desc-column-fit',
+    title: 'Batch drawers: Description keeps its own column',
+    description:
+      'In the Manage batch (stock in/out, transfer, put-away, picking, receiving), work order batch and View batch drawers, the Description column no longer collapses to zero width when attribute columns are added, so it never overlaps Vendor. Every column is now sized to its content, so the whole table — including the qty field you type into — fits a full-width drawer without scrolling sideways. A batch with no description shows "—" instead of demo text.',
+    date: '2026-10-28',
+    files: [
+      'app/components/patterns/ManageBatchDrawer.vue',
+      'app/components/patterns/PickBatchDrawer.vue',
+      'app/components/patterns/ViewBatchDrawer.vue',
+    ],
+  },
+  {
+    id: 'batch-export-write-error',
+    title: 'Batch export: a failed file shows an inline error',
+    description: 'If the template, export or error file can’t be created, an inline message says so under the button (no silent failure). The button stays to retry.',
+    date: '2026-10-28',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue', 'app/components/patterns/BatchExportModal.vue'],
+  },
+  {
+    id: 'batch-drawer-typed-expiry-locked',
+    title: 'Receiving drawer: a typed existing batch keeps its expiry',
+    description: 'Typing a new number that matches an existing batch with an expiry shows that expiry read-only (like its other attributes) and saves it; a batch with no expiry stays fillable.',
+    date: '2026-10-28',
+    files: ['app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'view-batch-drawer-attributes',
+    title: 'Batch attributes in View batch and Pick batch drawers',
+    description:
+      'The batch detail and pick drawers show the product\'s batch attributes (Vendor, Grade, ...) after Expiry date, read-only. A saved line shows the values it was saved with; a lot with no batch record shows only its expiry. Put-away, picking and purchase delivery lines now keep that attribute snapshot.',
+    date: '2026-10-28',
+    files: ['app/components/patterns/ViewBatchDrawer.vue', 'app/components/patterns/PickBatchDrawer.vue', 'app/data/pickingTasks.ts', 'app/data/putAwayTasks.ts', 'app/data/purchaseDeliveryBatches.ts'],
+  },
+  {
+    id: 'receiving-batch-attributes',
+    title: 'WMS receiving saves batch attributes to the batch master',
+    description:
+      'Finishing receiving creates a product batch for each new batch number and fills its empty attributes; existing values are never overwritten. A new row prefills Vendor from the PO, and existing batches recorded with another vendor ask for one confirmation first.',
+    date: '2026-10-28',
+    files: ['app/data/receivingTasks.ts', 'app/components/pages/ReceiveItemsPage.vue', 'app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'stock-in-batch-attributes',
+    title: 'Stock in saves its batches with their attributes',
+    description:
+      'A saved stock in/out keeps each line\'s batches and creates them in the batch master, filling only empty attributes. The adjustment details batch drawer shows the saved batches.',
+    date: '2026-10-28',
+    files: ['app/data/stockAdjustments.ts', 'app/components/pages/StockInOutFormPage.vue', 'app/components/pages/StockAdjustmentDetailsPage.vue'],
+  },
+  {
+    id: 'batch-drawer-attributes',
+    title: 'Batch attributes in every Manage batch drawer',
+    description:
+      'Stock in/out, transfer and WMS receiving, put-away and picking drawers show the product\'s batch attributes (Vendor, Grade, dates) as columns and under each Select-batch option. Receiving drawers take values for new batches and empty ones, and block Save on an empty required attribute; issuing drawers only show them.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/ManageBatchDrawer.vue', 'app/composables/useBatchAttributeColumns.ts'],
+  },
+  {
+    id: 'batch-export-modal',
+    title: 'Product Export batches uses the import template',
+    description:
+      'Exports this product\'s batches in the Update batches template format, with an optional "only batches with an empty required attribute" filter and an inline message when nothing matches.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/BatchExportModal.vue', 'app/components/pages/ProductDetailsPage.vue'],
+  },
+  {
+    id: 'batch-export-filters',
+    title: 'Export batches from the Update batches page',
+    description:
+      'Step 1 filters by product and by batches missing a required attribute; the file can be edited and imported back.',
+    date: '2026-10-27',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue'],
+    id: 'crm-invite-edit-disabled-options',
+    title: 'Invite / Edit user: options disabled up front, with the reason',
+    description:
+      'Instead of failing on save, options that would be blocked are disabled before the admin picks them, with the reason inline and on hover: CRM ("No CRM seats left. Contact Sales to add seats." / over quota "Remove CRM from some users or contact Sales to add seats." / expired "CRM subscription has ended. Contact Sales to renew."), CRM Administrator ("No CRM Administrator seat left" — CRM Basic is selected instead) and the ERP roles ("No ERP seats left" — CRM stays selectable). Counts come from the saved users, so an option the user already holds is never disabled: Administrator → Basic is always allowed and unticking CRM frees a seat. The save-time seat check stays as a safety net.',
+    date: '2026-10-28',
+    files: ['InviteUserPage.vue', 'DisabledReasonTooltip.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
+    id: 'crm-invite-edit-states-fab',
+    title: 'Invite / Edit states (demo)',
+    description:
+      'The scenario button now lists the 12 states of the Invite / Edit user CRM spec (default, CRM-only Administrator, Ultimate + Basic, custom role + Basic, no CRM seat, only Basic seats, ERP full, no CRM, edit user, over quota, expired, custom role editor). Each sets the mock Billing and pre-fills the form, opens Edit user, or opens the custom-role drawer. Picking state 1 restores the default seed. On the User list and Custom role pages the same section sits below the Billing presets.',
+    date: '2026-10-28',
+    files: ['CrmSeatsScenarioFab.vue', 'useInviteEditStates.ts', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
+    id: 'crm-user-seats-list-type',
+    title: 'Type = account type (Member / Partner)',
+    description:
+      'The User list Type column and the "All types" filter now use production\'s account types, Member (briefcase) and Partner (team), taken from jurnal-frontend-app user_management (button_filter_type). Partner users — e.g. the company\'s outside accountant — are not counted against the ERP user limit.',
+    date: '2026-10-28',
+    files: ['UsersListPage.vue', 'usersRoles.ts', 'crmSubscription.ts'],
+  },
+  {
+    id: 'crm-user-seats-invite-selected-roles',
+    title: 'Selected roles + Terms (Invite / Edit user)',
+    description:
+      'Right column matched to production: a sticky "Selected roles" card listing the ticked Existing roles (including the CRM tier, e.g. "CRM Administrator") and Custom roles (or "-"), above a collapsible "Terms for selecting roles" card with one CRM line: CRM combines with any role, including Ultimate and custom roles, and uses a CRM seat, not an ERP seat, unless the user also has an ERP role.',
+    date: '2026-10-28',
+    files: ['InviteUserPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-invite-crm-role',
+    title: 'CRM row on Invite / Edit user',
+    description:
+      'CRM is a row in the Existing role list: caret + CRM checkbox and four description lines ("Use Mekari CRM from the product switcher." / CRM Basic / CRM Administrator / "Detailed CRM permissions are set in CRM."). Ticking it shows a "CRM access level" radio pair — CRM Basic / CRM Administrator, Administrator by default (updated 2026-10-28). It is stored as the user\'s CRM role, not an ERP role, so CRM-only takes a CRM seat and no ERP seat; ERP roles + CRM take both. Ticking Ultimate never clears CRM, and the choice is kept on the Custom role tab, so custom role + CRM works. Read-only once CRM expired; locked for the Owner. A CRM block message sits inside the CRM row. PRD US-001, US-003, US-010, US-011.',
+    files: ['InviteUserPage.vue', 'crmSubscription.ts', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-invite-summary',
+    title: 'Seat usage card on Invite / Edit user',
+    description:
+      'A "Seat usage" card in the right column, above Selected roles (same card style): ERP users and CRM users as total · used · left ("5 total · 7 used · 2 over" in the warning colour when over quota), where the CRM seats come from ("5 included", "+ 2 Basic, + 1 Administrator add-on" only when add-ons exist, or N trial seats) and "Up to N can be CRM Administrator" (hidden at 0). As soon as a role is ticked or unticked the title reads "Seat usage (after saving)" and the numbers show the result after saving (updated 2026-10-28). The CRM part hides without the CRM add-on. "Need more ERP or CRM seats? Contact Sales." opens the Contact Sales dialog. This is now the only place seat counts are shown — the User list title bar has no Seat usage button, as in prod. PRD US-002, US-010.',
+    files: ['InviteUserPage.vue', 'SeatUsageSummary.vue', 'useCrmSubscriptionScenario.ts'],
+    date: '2026-10-27',
+  },
+
+  {
+    id: 'crm-user-seats-list-banners',
+    title: 'Seat state banners on the User list',
+    description:
+      'Only when they apply: over quota (everyone keeps access, new access is blocked — points to the Seat usage card on Invite / Edit user and to Contact Sales), CRM expired (read-only) and Billing down (last confirmed seats, or "try again later" when nothing was ever confirmed). PRD US-006, US-008.',
+    date: '2026-10-27',
+    files: ['UsersListPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-list-column',
+    title: 'Role chips include the CRM tier',
+    description:
+      'The Role column (matched to production) shows the ERP role chips, then the CRM tier ("CRM Basic" / "CRM Administrator"), then "List manager". A CRM-only user shows only the CRM chip; the Owner shows "Owner" and, with CRM active, "CRM Administrator". Replaces the separate CRM access column. Deleting a user or cancelling an invite frees their CRM seat. PRD US-004, US-005.',
+    files: ['UsersListPage.vue'],
+    date: '2026-10-27',
+  },
+  {
+    id: 'crm-user-seats-custom-role-note',
+    title: 'No CRM inside custom roles',
+    description:
+      'The CRM category and the "Access to CRM module" row are gone from the custom-role permission matrix — CRM is given only through the CRM role on the user, which combines with any custom role. PRD US-011 AC-04.',
+    date: '2026-10-27',
+    files: ['CustomRoleDrawer.vue', 'usersRoles.ts'],
+  },
+  {
+    id: 'crm-user-seats-product-switcher',
+    title: 'CRM in the product switcher',
+    description:
+      'CRM is always listed. It opens CRM only when the company has the CRM add-on and you hold the CRM role; otherwise it lands on a CRM page that offers Contact Sales (no add-on) or says to ask your admin (no CRM role). PRD US-013.',
+    date: '2026-10-27',
+    files: ['ErpProductSwitcher.vue', 'ErpNavbarGroup.vue', 'CrmLandingPage.vue'],
+  },
+  {
+    id: 'crm-user-seats-landing',
+    title: 'CRM landing page',
+    description:
+      'Where the product switcher sends users who can\'t open CRM: what CRM is plus Contact Sales without the add-on, "You don\'t have CRM access" without the CRM role, or "try again later" while Billing can\'t confirm. Content is a placeholder; the CRM team owns the real landing page. PRD US-013.',
+    date: '2026-10-27',
+    files: ['CrmLandingPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'crm-user-seats-scenario-fab',
+    title: 'CRM add-on scenarios (demo)',
+    description:
+      'The Users & roles scenario button switches the mock Billing between No CRM, Trial, Essential, seat add-on only, expired, Billing down and ERP-limit-full, includes the PRD §3b "Owner + 5 CRM Administrators" example (8 total · 6 used, Administrator 6 of 6 → Basic only; leaving the preset restores the seed), no-CRM-seat-left, Basic-only and over-quota presets, steps the Basic / Administrator add-ons and the ERP limit up and down (step an add-on below usage to simulate a seat reduction), previews a user without the CRM role, and lists the defaults assumed for the PRD\'s open questions.',
+    date: '2026-10-27',
+    files: ['CrmSeatsScenarioFab.vue', 'ScenarioFab.vue', 'useCrmSubscriptionScenario.ts'],
+  },
+  {
+    id: 'dm-step-layout',
+    title: 'Data migration step-based layout',
+    description:
+      'Settings → Data migration now uses a two-column layout with an ordered step list on the left (Company info, Opening balance, Products, Contacts, Sales, Purchases, Expenses) and the active step form on the right. Company info step is fully built.',
+    date: '2026-10-26',
+    files: ['DataMigrationPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'recurring-receive-money-form',
+    title: 'New recurring receive money form',
+    description:
+      'The Receive money option in the Recurring transactions type picker now opens a real form instead of the placeholder (Bank deposit was renamed to Receive money). Layout follows the Cash management "New receive money" design: Deposit to + Payer + Total, the recurring schedule, transaction no./reference/tags, the Account-Description-Tax-Amount line items, message/memo/attachment and the Subtotal/PPN/Total breakdown. Shell and table are the InternalTransferFormPage and New expense patterns verbatim (docs/patterns/FormTable.md), not new components. Saving creates a Receive money template whose payer becomes the index\'s Name.',
+    date: '2026-10-23',
+    files: ['NewRecurringReceiveMoneyPage.vue', 'recurringTransactions.ts', '[...slug].vue'],
+  },
+  {
+    id: 'recurring-transactions-index',
+    title: 'Recurring transactions index (Other lists)',
+    description:
+      'Other lists > Recurring transactions is now a real index instead of a placeholder. It aggregates every recurring template across all 11 transaction types — the five that own a module store (sales invoice/order, purchase invoice/order, expense) plus six cash/journal types seeded here. Name shows the customer/vendor, as on every module recurring list, and links to that module\'s recurring detail page where one exists. Filter by transaction type and status on the left, search on the right; each row has a [...] menu with Edit and Delete, and selecting rows reveals a bulk Delete — both behind a confirm. The title bar\'s + New recurring transaction opens a type picker.',
+    date: '2026-10-23',
+    files: ['RecurringTransactionsPage.vue', 'recurringTransactions.ts', '[...slug].vue'],
+  },
+  {
+    id: 'recurring-bulk-delete',
+    title: 'Bulk delete on recurring index pages',
+    description:
+      'Selecting rows on any recurring index (sales invoices, sales orders, purchase invoices, purchase orders, expenses) now reveals a Delete action in the shared ErpTablePage bulk bar. Delete is a dedicated button beside the Actions dropdown, behind its own confirm modal (rule/bulk-actions-delete-confirmed). Deleting persists and the selection clears.',
+    date: '2026-10-22',
+    files: [
+      'RecurringSalesInvoicesPage.vue', 'RecurringSalesOrdersPage.vue',
+      'RecurringPurchaseInvoicesPage.vue', 'RecurringPurchaseOrdersPage.vue',
+      'RecurringBillsPage.vue', 'salesInvoices.ts',
+    ],
+  },
+  {
+    id: 'rbill-detail-template',
+    title: 'Recurring expense template detail',
+    description:
+      'The recurring expense detail now mirrors the expense detail page as a template — beneficiary + total, meta grid (next expense, start date, repeats every, end repeat, frequency, category, generated, tags), account line items, memo and the Subtotal/PPN/Total breakdown — with recurring history below. Matches the pattern already used by recurring sales invoices, sales orders, purchase invoices and purchase orders.',
+    date: '2026-10-22',
+    files: ['RecurringBillDetailsPage.vue', 'bills.ts'],
+  },
+  {
+    id: 'location-deepest-level',
+    title: 'No "Add sub-location" under a Bin',
+    description:
+      'Bin is the deepest storage level, so the Storage locations menus no longer offer "Add sub-location" on Bin rows (it opened a drawer with an empty Level picker). If the drawer is opened under a Bin anyway, it shows an info banner and a Close button instead of the form.',
+    date: '2026-10-21',
+    files: ['StorageLocationTree.vue', 'WarehouseDetailsPage.vue', 'NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
+    id: 'new-location-drawer-shell',
+    title: 'New / Edit location drawer on the standard drawer shell',
+    description:
+      'The location drawer moved off Pixel MpDrawer onto the shared ErpDrawer Teleport shell (filled header, × close, pinned footer with enterprise Cancel / Save), and Description is now a Pixel MpTextarea. Description is also saved when creating a location (it was only kept on edit).',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue', 'storageLocations.ts'],
+  },
+  {
+    id: 'new-location-storage-preference-radio',
+    title: 'Storage preference uses the standard radio list',
+    description:
+      'New / Edit location drawer: Storage preference was two uneven, bordered button-cards with a mint selected fill. It is now the standard MpRadio title + caption list (same as Edit classification), so it reads like every other single-choice field.',
+    date: '2026-10-21',
+    files: ['NewLocationDrawer.vue'],
+  },
+  {
+    id: 'row-kebab-icon-visible',
+    title: 'Row actions (⋯) icon visible again',
+    description:
+      'Row kebab buttons on ~45 tables (warehouses, storage locations, products, receipts, picking, packing, CRM, BOM, work orders…) rendered an invisible 0px icon — Pixel MpButton padding squeezed the 20px svg out of the 32px button. One global erp.css override restores the three-dot icon everywhere.',
+    date: '2026-10-21',
+    files: ['erp.css', 'WarehousesPage.vue', 'pixel-enterprise-overrides.md'],
+  },
+  {
+    id: 'settings-inventory-page',
+    title: 'Settings > Inventory page',
+    description:
+      'New Inventory settings page following the Sales settings pattern: Product settings with hover Edit → inline edit (costing method, stock-info / barcode / variant / serial / batch toggles) and Batch reminders (expiry email toggle). Inventory costing method is locked (disabled field + hint) once inventory transactions exist, since changing it would alter COGS on posted documents.',
+    date: '2026-10-16',
+    files: ['SettingsInventoryPage.vue'],
+  },
+  {
     id: 'settings-purchase-page',
     title: 'Settings > Purchases page',
     description:
@@ -808,6 +1119,46 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['CrmModuleBuilderPage.vue'],
   },
   {
+    id: 'pm-completion-true-up',
+    title: 'Projects: completion true-up before close',
+    description:
+      'When every work package is technically complete but a cost-to-cost or unit-measured project measured under 100%, "Recognise remaining revenue" posts the rest of the contract value. The close gate now checks recognised revenue against contract value, so a job finished under plan can close.',
+    date: '2026-09-22',
+    files: ['CompletionTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-draft-project-documents',
+    title: 'Projects: Draft projects accept only draft purchase requests',
+    description:
+      'Firm documents (PO, expense, timesheet) can no longer post to a Draft project, and Draft projects consume no actual cost (PRD Story 7). A purchase request to a Draft project saves as a draft that commits nothing.',
+    date: '2026-09-22',
+    files: ['ProjectNewDocumentPage.vue', 'projectActions.ts', 'projectTransactions.ts'],
+  },
+  {
+    id: 'pm-eco-affected-units',
+    title: 'Projects: ECO cost delta counts only affected units',
+    description:
+      'The ECO diff and the budget revision on approval now count only future work orders plus the work orders in the effectivity scope — in-progress and unselected work orders keep their BOM version. Affected work orders keep line budgets within their set-aside.',
+    date: '2026-09-22',
+    files: ['EcoDiff.vue', 'ChangesTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-pixel-rework',
+    title: 'Projects: rebuilt on Pixel components',
+    description:
+      'The whole Projects module now uses Pixel 3 / ERP patterns: MpTabs on the project page, ErpFilterSelect for every dropdown, MpBanner, ErpStatusBadge, MpProgress, MpModal and the custom drawer shell, ActivityLogModal from the “Last updated by” line, and ErpTablePage on every index. Actions never disable for validation — they show an inline error instead — and success is a toast.',
+    date: '2026-09-22',
+    files: ['components/projects/**', 'project-mto.css', 'useProjectAction.ts', 'projectStatus.ts'],
+  },
+  {
+    id: 'pm-release-approval',
+    title: 'Projects: Finance approves project release (OQ7, provisional)',
+    description:
+      'Draft → Active is approved by Finance / Controller only, never by the project’s own PM. Other roles see "Waiting for Finance approval" and the reason in the dialog.',
+    date: '2026-09-22',
+    files: ['ProjectDetailPage.vue', 'projectActions.ts'],
+  },
+  {
     id: 'crm-module-per-tab-save',
     title: 'Module builder: per-tab save with unsaved-changes prompt',
     description:
@@ -1158,6 +1509,94 @@ export const DEV_CHANGES: DevChange[] = [
       'The table on the custom module index page now shows ALL properties as columns instead of only those placed in layout sections.',
     date: '2026-09-30',
     files: ['CrmGenericModulePage.vue'],
+  },
+  {
+    id: 'rsi-schedule-fields',
+    title: 'New recurring sales invoice form',
+    description:
+      'A new form page for creating recurring sales invoices, with fields for repeat interval/unit, end repeat options, start date, next transaction date, and automatic email sending.',
+    date: '2026-10-22',
+    files: ['NewRecurringSalesInvoicePage.vue'],
+  },
+  {
+    id: 'si-set-as-recurring',
+    title: 'Set as recurring action',
+    description:
+      'Row action in All sales invoices to convert an invoice into a recurring template via a drawer with repeats every, end repeat, start date, and send automatic email fields.',
+    date: '2026-10-22',
+    files: ['SalesInvoicesPage.vue'],
+  },
+  {
+    id: 'si-detail-recurring-btn',
+    title: 'Recurring settings on invoice detail',
+    description:
+      'Icon button in the invoice detail title bar (visible for invoices linked to a recurring template). Opens a drawer showing the schedule (view/edit), auto-email toggle, and recurring history.',
+    date: '2026-10-22',
+    files: ['SalesInvoiceDetailsPage.vue'],
+  },
+  {
+    id: 'file-manager-index',
+    title: 'File manager index',
+    description:
+      'Other lists \u203a File manager: every file attached anywhere in the account, with Page and Number filters, search, and row actions. A file with no transaction number has no page yet, so its row offers Attach to an existing transaction / Create a new transaction; an attached file offers Change page instead.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'fileManager.ts'],
+  },
+  {
+    id: 'file-manager-drop',
+    title: 'Drag & drop to upload',
+    description:
+      'Dropping files anywhere on the File manager page uploads them straight away \u2014 no modal, no staging step. They land unattached, so each new row offers Attach to an existing transaction from its row menu. Reuses GlobalFileDropOverlay.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'GlobalFileDropOverlay.vue'],
+  },
+  {
+    id: 'file-manager-add-drawer',
+    title: 'Add file drawer',
+    description:
+      'Add file in the File manager title bar now opens a drawer: stage the files, then either attach them to an existing transaction (Page + transaction number, both read from the real module stores) or pick the transaction to create. Continue routes to that create form with the files already attached. Only pages whose form has an Attachment field are offered under Create.',
+    date: '2026-10-23',
+    files: ['AddFileDrawer.vue', 'FileManagerPage.vue', 'fileAttachmentHandoff.ts'],
+  },
+  {
+    id: 'file-manager-bulk-actions',
+    title: 'File manager bulk actions',
+    description:
+      'Selecting rows shows one secondary-sm Actions dropdown holding the same four entries as the row menu: Download, Attach to an existing transaction, Create a new transaction, Delete. Attach and Create reuse the Add file drawer in its existing-files mode, so the Application section behaves identically however it is reached.',
+    date: '2026-10-23',
+    files: ['FileManagerPage.vue', 'AddFileDrawer.vue'],
+  },
+  {
+    id: 'bom-bulk-archive',
+    title: 'Bulk archive on Bill of materials',
+    description:
+      'The bulk bar on the BOM index shipped a Delete button wired to no handler — selecting rows and pressing it did nothing. It now archives the selection behind a confirm that names how many BOMs go, and is labelled Archive, because this module has no hard delete: the row menu archives too and an archived BOM stays reachable via Show archived BOM. Rows already archived are left out of the count.',
+    date: '2026-10-23',
+    files: ['BillOfMaterialsIndexPage.vue'],
+  },
+  {
+    id: 'activity-log-index',
+    title: 'Activity log index',
+    description:
+      'Other lists \u203a Activity log: the company-wide audit trail (Figma Other-Lists 4215-21752) as DATE \u00b7 USER \u00b7 ACTIONS \u00b7 FEATURE \u00b7 NUMBER \u00b7 DETAIL. An update reads old \u2192 new; a busy entry shows three lines plus a "+N more" toggle. Filter by Actions, Feature, or All filters (date range + user), and search across every column. Same table the CRM already renders from the same Figma node, contextualised for ERP modules.',
+    date: '2026-10-23',
+    files: ['ActivityLogPage.vue', 'activityLog.ts'],
+  },
+  {
+    id: 'mp-upload-change-payload',
+    title: 'Upload fields stage what you pick',
+    description:
+      'MpUpload emits the native Event (ev.target.files), but 17 attachment fields typed their handler as a FileList, so nothing was ever staged — the picked file silently vanished. All of them now accept both shapes.',
+    date: '2026-10-23',
+    files: ['AddFileDrawer.vue', 'NewCreditMemoPage.vue', 'SpendMoneyPage.vue'],
+  },
+  {
+    id: 'crm-paywall',
+    title: 'CRM paywall — first-run + trial-expired',
+    description:
+      'A tenant without active CRM access hits a full-bleed paywall on every /crm route (no level-1 CRM sidebar). Two faces: "none" (educational first-run) and "expired" (trial ended). Updated per feedback: 4 value props (added Custom Module), revised step copy with module builder mention, "Sync to ERP" step-2 item, heading changed to "How easy the Sales tracking can be?", removed Schedule a demo button, CTA buttons moved inline with titles on both faces. 2×2 grid value-prop layout.',
+    date: '2026-11-01',
+    files: ['CrmPaywallPage.vue', 'useCrmAccess.ts', '[...slug].vue', 'CrmDealsPage.vue', 'default.vue'],
   },
 ]
 

@@ -24,7 +24,7 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ReserveMaterialsModal from '~/components/patterns/ReserveMaterialsModal.vue'
 import UnreserveMaterialsModal from '~/components/patterns/UnreserveMaterialsModal.vue'
-import { entriesFor } from '~/data/activityLog'
+import { entriesFor } from '~/data/reservationActivityLog'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import StockRequestFiltersDrawer, {

@@ -4,7 +4,7 @@ import { workOrders, workOrderRawMaterials, type WorkOrder, type WorkOrderStatus
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { getWarehouseDetail, isBatchTracked, isSerialized } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
-import { logActivityFor } from './activityLog'
+import { logActivityFor } from './reservationActivityLog'
 import type { PartialMode } from './productionSettings'
 
 /**

@@ -637,13 +637,14 @@ function revert(req: WoApprovalRequest): void {
 }
 
 /**
- * Start a work order — status In progress, start date today, and the material planned on
- * the create form is reserved now (never earlier). Called directly when Start isn't gated,
- * or on final approval of a Start request.
+ * Start a work order — status In progress, the material planned on the create form is
+ * reserved now (never earlier), and `startDate` is the actual start date the planner
+ * gave on the Start work order modal. Called directly when Start isn't gated, or on
+ * final approval of a Start request (which has no modal, so it starts today).
  */
-export function startWorkOrder(wo: WorkOrder): void {
+export function startWorkOrder(wo: WorkOrder, startDate?: string): void {
   wo.status = 'in progress'
-  wo.startDate = new Date().toISOString().slice(0, 10)
+  wo.startDate = startDate ?? new Date().toISOString().slice(0, 10)
   if (wo.reservationPlan) {
     wo.materialReservations = wo.reservationPlan
     wo.reservationPlan = undefined

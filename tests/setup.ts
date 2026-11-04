@@ -25,7 +25,23 @@
  * English text every spec asserts against. Reactive `locale` via a plain ref so
  * switching is harmless if any component reads it.
  */
-import { ref } from 'vue'
+import { computed, reactive, ref, shallowRef, toRef, toRefs, readonly, watch, watchEffect, nextTick, onMounted, onUnmounted, onBeforeMount, onBeforeUnmount, provide, inject, useSlots, useAttrs, getCurrentInstance } from 'vue'
+
+/**
+ * Nuxt auto-imports Vue's reactivity API into every SFC, so components written
+ * against it use bare `reactive` / `watch` / `computed` with no import line.
+ * Vitest has no auto-import layer, so mounting one of those components throws
+ * "reactive is not defined" before a single assertion runs. Put the real Vue
+ * functions on the global scope — a component that DOES import from 'vue'
+ * still binds to its own import, so this only fills the gap.
+ */
+Object.assign(globalThis, {
+  computed, reactive, ref, shallowRef, toRef, toRefs, readonly,
+  watch, watchEffect, nextTick,
+  onMounted, onUnmounted, onBeforeMount, onBeforeUnmount,
+  provide, inject, useSlots, useAttrs, getCurrentInstance,
+})
+
 const _locale = ref<'en' | 'id'>('en')
 ;(globalThis as unknown as { useLocale: () => unknown }).useLocale = () => ({
   locale: _locale,
@@ -47,6 +63,42 @@ const _dimensionsActivated = ref(false)
   dimensionsActivated: _dimensionsActivated,
   activateDimensions: () => { _dimensionsActivated.value = true },
 })
+
+/**
+ * happy-dom provides a working `localStorage` on its own Window, but vitest 1.6's
+ * happy-dom environment copies window's OWN enumerable keys onto the test global,
+ * and happy-dom 20 exposes Storage through a prototype getter — so neither
+ * `globalThis.localStorage` nor `window.localStorage` is defined here. The repo
+ * has no lockfile, so `happy-dom: ^20.10.6` resolves to whatever is newest
+ * (20.11.1 today) against vitest 1.6.1, and every spec that touches storage dies
+ * on `localStorage.clear()` before its first assertion.
+ *
+ * Fill the gap with a spec-faithful in-memory Storage. The app only ever stores
+ * JSON strings through loadSnapshot/saveSnapshot, so this behaves exactly as the
+ * browser does for the data under test; it is the same kind of environment patch
+ * as the getBoundingClientRect fill below, not a stub of app behaviour.
+ */
+function createStorage(): Storage {
+  let map = new Map<string, string>()
+  return {
+    get length() { return map.size },
+    key(i: number) { return [...map.keys()][i] ?? null },
+    getItem(k: string) { return map.has(String(k)) ? map.get(String(k))! : null },
+    setItem(k: string, v: string) { map.set(String(k), String(v)) },
+    removeItem(k: string) { map.delete(String(k)) },
+    clear() { map = new Map() },
+  } as Storage
+}
+
+for (const key of ['localStorage', 'sessionStorage'] as const) {
+  if (typeof (globalThis as Record<string, unknown>)[key] === 'undefined') {
+    const store = createStorage()
+    Object.defineProperty(globalThis, key, { value: store, configurable: true, writable: true })
+    if (typeof (globalThis as { window?: object }).window !== 'undefined') {
+      Object.defineProperty((globalThis as unknown as { window: object }).window, key, { value: store, configurable: true, writable: true })
+    }
+  }
+}
 
 const g = globalThis as unknown as { Node?: { prototype: Record<string, unknown> } }
 

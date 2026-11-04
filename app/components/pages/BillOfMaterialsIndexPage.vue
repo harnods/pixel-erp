@@ -133,6 +133,39 @@ function confirmDelete() {
   bomToDelete.value = null
 }
 
+// ─── Bulk archive ───────────────────────────────────────────────────────────
+// This module has no hard delete — the row menu archives too, and an archived
+// BOM stays reachable through the "Show archived BOM" filter. The bulk action
+// is the same operation over the selection (rule/bulk-actions-delete-confirmed:
+// behind a confirm that names the count).
+const isBulkArchiveOpen = ref(false)
+const bulkArchiveRows = ref<BillOfMaterials[]>([])
+let bulkArchiveDeselect: (() => void) | null = null
+
+function askBulkArchive(sel: Set<number>, deselectAll: () => void) {
+  // Already-archived rows are only visible with the filter on; re-archiving
+  // them would inflate the count the confirm promises.
+  bulkArchiveRows.value = [...sel]
+    .map(i => paginated.value[i] as unknown as BillOfMaterials | undefined)
+    .filter((b): b is BillOfMaterials => !!b && !b.archived)
+  if (!bulkArchiveRows.value.length) return
+  bulkArchiveDeselect = deselectAll
+  isBulkArchiveOpen.value = true
+}
+
+function confirmBulkArchive() {
+  for (const row of bulkArchiveRows.value) row.archived = true
+  const n = bulkArchiveRows.value.length
+  if (n) persistBillOfMaterials()
+  bulkArchiveRows.value = []
+  bulkArchiveDeselect?.()
+  bulkArchiveDeselect = null
+  toast.notify({
+    variant: 'success',
+    title: `${n} ${n === 1 ? t('bill of materials') : t('bills of materials')} ${t('archived')}`,
+  })
+}
+
 function duplicateBom(row: BillOfMaterials) {
   router.push(`/bill-of-materials/new?duplicate=${encodeURIComponent(row.id)}`)
 }
@@ -305,8 +338,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Bulk selection actions ── -->
-    <template #bulk-actions>
-      <MpButton class="bulk-action-btn" variant="secondary" size="sm">{{ t('Delete') }}</MpButton>
+    <template #bulk-actions="{ selectedRows, deselectAll }">
+      <MpButton
+        class="bulk-action-btn"
+        variant="secondary"
+        size="sm"
+        @click="askBulkArchive(selectedRows as Set<number>, deselectAll)"
+      >
+        {{ t('Archive') }}
+      </MpButton>
     </template>
 
     <!-- ── Full empty state (first run) ── -->
@@ -329,6 +369,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     :description="`${bomToDelete?.number ?? ''} ${t('will be removed from the list. You can still find it via the Show archived BOM filter.')}`"
     :confirm-label="t('Archive')"
     @confirm="confirmDelete"
+  />
+
+  <!-- ── Bulk archive confirmation ── -->
+  <ConfirmModal
+    v-model:is-open="isBulkArchiveOpen"
+    :title="t('Archive bill of materials?')"
+    :description="`${bulkArchiveRows.length} ${bulkArchiveRows.length === 1 ? t('bill of materials') : t('bills of materials')} ${t('will be removed from the list. You can still find them via the Show archived BOM filter.')}`"
+    :confirm-label="t('Archive')"
+    @confirm="confirmBulkArchive"
   />
 
   <!-- ── All filters drawer ── -->
