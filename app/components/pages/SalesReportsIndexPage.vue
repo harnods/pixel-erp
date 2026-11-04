@@ -1,15 +1,13 @@
+<!-- prod-parity: quickbook/app/services/reports/report_authorization_service.rb (sales_tab) + jurnal-frontend-app/src/pages/reports/index/i18n.json -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
-// Reports → Sales index (Reports module → Sales submenu). Lists the Sales
-// reports; each "View report" opens its raw-data table. Design: Figma Reports/
-// Sales/Index (node 4534-76212). Same flush edge-to-edge card grid as the WMS
-// reports index (WmsReportsIndexPage), Pixel 3 DT 2.4 enterprise tokens.
-//
-// Cards fill the full stage width as an equal-column grid. On narrower widths the
-// column count drops; the last row is padded with empty filler cells so the grid
-// stays a complete rectangle. The outer right + bottom borders are clipped, so the
-// rightmost column never shows a border.
+// Reports → Sales index (page key 'Sales report'). Card order follows prod's
+// ERP report list for this tab; titles and descriptions are prod's English copy.
+// Same flush edge-to-edge card grid as every Reports index: cards fill the stage
+// width as an equal-column grid, the last row is padded with empty filler cells so
+// the grid stays a complete rectangle, and the outer right + bottom borders are
+// clipped so the rightmost column never shows a border.
 import { infoToast } from '~/utils/toasts'
 const { t } = useLocale()
 const router = useRouter()
@@ -18,19 +16,23 @@ interface ReportCard {
   slug: string
   title: string
   description: string
+  /** Route of the built report; cards without one show "Not in this prototype". */
+  to?: string
+  /** Button label when prod's card action is not "View report". */
+  action?: string
 }
 const reports: ReportCard[] = [
-  { slug: 'sales-list',            title: 'Sales list',            description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
-  { slug: 'product-profitability', title: 'Product profitability', description: "A snapshot of your company's financial position—including assets, liabilities, and equity—at a specific point in time." },
-  { slug: 'sales-order-completion',title: 'Sales order completion',description: 'Tracks the movement of cash in and out of your business to help you analyze liquidity and cash availability.' },
-  { slug: 'sales-delivery',        title: 'Sales delivery',        description: 'A complete record of all transactions posted to your accounts, sorted by date. Useful for detailed transaction auditing.' },
-  { slug: 'sales-by-customer',     title: 'Sales by customer',     description: 'A summary of closing balances for all accounts in your chart of accounts to ensure debits and credits match.' },
-  { slug: 'sales-by-product',      title: 'Sales by product',      description: 'Displays the chronological record of all journal entries, showing the debits and credits affected by each transaction.' },
-  { slug: 'customer-balance',      title: 'Customer balance',      description: 'A high-level overview of key financial ratios and performance indicators designed for business owners and stakeholders.' },
-  { slug: 'aged-receivable',       title: 'Aged receivable',       description: "Details the changes in the owner's equity throughout the period, including capital injections and retained earnings." },
-  { slug: 'credit-memo',           title: 'Credit memo',           description: 'Shows the comparison between actual transaction amount and arranged budget per account.' },
-  { slug: 'proforma-invoice-list', title: 'Proforma invoice list', description: 'Set up and manage monthly or yearly budgets for your income and expense accounts.' },
-  { slug: 'join-invoice-list',     title: 'Join invoice list',     description: 'Finds unusual patterns in your transactions and accounts (COA) based on AI analysis.' },
+  { slug: 'sales-list', title: 'Sales list', description: 'Shows sales transactions chronologically based on type in a certain period. This report template is customizable.', to: '/sales-report/sales-list' },
+  { slug: 'sales-by-customer', title: 'Sales by customer', description: 'Shows all sales transactions from each customer in a certain period.', to: '/sales-report/sales-by-customer' },
+  { slug: 'customer-balance', title: 'Customer balance', description: 'Shows all unpaid invoices and credit memo balances of customers in a specific date.' },
+  { slug: 'aged-receivable', title: 'Aged receivable', description: 'Shows the account receivable total from each customer based on various ages (30, 60, 90, and after 90 days).' },
+  { slug: 'sales-delivery', title: 'Sales delivery', description: 'Shows all delivered products for sales transactions in a certain period.' },
+  { slug: 'sales-by-product', title: 'Sales by product', description: 'Shows all sold product quantities, return quantities, net sales, and average selling price in a certain period.', to: '/sales-report/sales-by-product' },
+  { slug: 'sales-order-completion', title: 'Sales order completion', description: 'Shows business process summary of this company. You can identify each sales quote and order completion until its invoice and payment are made.' },
+  { slug: 'product-profitability', title: 'Product profitability', description: 'Shows gained total profit from sold products in a certain period.' },
+  { slug: 'proforma-invoice-list', title: 'Proforma invoice list', description: 'Shows all created proforma invoices in a certain period.' },
+  { slug: 'join-invoice-list', title: 'Join invoice list', description: 'Shows all join invoices in a certain period.' },
+  { slug: 'credit-memo', title: 'Credit memo', description: 'Shows all credit memos of each customer with their status and remaining balance in a certain period.', to: '/sales-report/credit-memo' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
@@ -58,12 +60,9 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
-// Built report detail pages navigate; the rest show a coming-soon toast for now.
-const BUILT: Record<string, string> = { 'credit-memo': '/sales-report/credit-memo' }
 function viewReport(r: ReportCard) {
-  const to = BUILT[r.slug]
-  if (to) router.push(to)
-  else infoToast(`${t(r.title)} report — coming soon`)
+  if (r.to) router.push(r.to)
+  else infoToast(t('Not in this prototype'))
 }
 </script>
 
@@ -75,7 +74,7 @@ function viewReport(r: ReportCard) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</MpButton>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t(r.action ?? 'View report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />
@@ -115,7 +114,7 @@ function viewReport(r: ReportCard) {
   white-space: nowrap;
 }
 .report-card-desc {
-  height: 96px;
+  height: var(--mp-sizes-24, 96px);
   margin: 0;
   font-size: var(--mp-font-sizes-md, 14px);
   font-weight: var(--mp-font-weights-regular, 400);

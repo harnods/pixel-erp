@@ -36,6 +36,21 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['CreditMemoReportPage.vue', 'creditMemoReport.ts', 'CreditMemoFiltersDrawer.vue', 'translations.ts'],
   },
   {
+    id: 'sd-input-method-table',
+    title: 'Sales delivery: one input method for the whole table',
+    description:
+      'Quantity / Percentage is now a single dropdown above the line table instead of a per-line column; Qty delivered is still typed per line. The Percentage lock and its Release cover the whole sales order. A hand-added line in Percentage takes its base qty in the Qty ordered cell. The delivery detail page shows the method once above the lines, with the typed % under each quantity.',
+    date: '2026-10-29',
+    files: ['NewSalesDeliveryPage.vue', 'SalesDeliveryDetailsPage.vue', 'ReleaseInputBasisModal.vue', 'salesDeliveries.ts'],
+  },
+  {
+    id: 'sd-ordered-caption',
+    title: 'Qty ordered: progress reads label left, figure right',
+    description: 'Under the ordered qty, "Delivered" and "Remaining" sit on the left and their qty and percentage on the right, so the figures line up.',
+    date: '2026-10-29',
+    files: ['NewSalesDeliveryPage.vue'],
+  },
+  {
     id: 'wo-start-date-modal',
     title: 'Start work order asks for the actual start date',
     description:

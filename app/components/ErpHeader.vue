@@ -32,6 +32,19 @@
         <IconButton icon="inbox" @click="goToInbox" />
       </MpFlex>
 
+      <!-- Fixed-asset prototype: simulated roles, on the asset screens only. -->
+      <ErpViewAsSwitcher v-if="isAssetScreen" />
+      <!-- Advanced Budgeting prototype: simulated roles on budget and purchase screens. -->
+      <BudgetViewAsSwitcher v-if="isBudgetScreen" />
+      <!-- Payroll to Ledger prototype: simulated roles on the payroll screens. -->
+      <PayrollViewAsSwitcher v-if="isPayrollScreen" />
+      <!-- Project accounting prototype: who submits (PM) and who approves. -->
+      <ProjectViewAsSwitcher v-if="isProjectScreen" />
+      <!-- Sales delivery prototype: who may release a Percentage lock (R-16). -->
+      <SalesDeliveryViewAsSwitcher v-if="isSalesDeliveryScreen" />
+      <!-- Demo layer (app/tours), not a product requirement. One Guided tours
+           menu for every module, always in this spot (ERP screens, not WMS). -->
+      <TourLauncher v-if="!isWms" />
       <!-- User snapshot menu (avatar + name → account popover) -->
       <ErpUserMenu />
     </MpFlex>
@@ -41,6 +54,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { MpFlex } from "@mekari/pixel3";
+import TourLauncher from "~/tours/TourLauncher.vue";
 import UploadActivityCenter from "~/components/patterns/UploadActivityCenter.vue";
 import erpLogo from "~/assets/images/mekari-erp-logo.svg?url";
 
@@ -68,6 +82,34 @@ const router = useRouter();
 // lands on Deals), so CRM keeps the header search like other module pages.
 const showHeaderSearch = computed(
   () => currentPageKey.value !== 'Home' && currentPageKey.value !== 'Hr',
+);
+
+// The asset module's screens, where the simulated "View as" roles apply.
+const ASSET_SCREENS = new Set([
+  'Assets', 'Depreciation schedule', 'Tax book', 'Impairment tests', 'Period self check',
+  'Custody and counts', 'Asset approvals', 'Leases', 'Asset settings',
+  'Tax differences', 'Lampiran 9', 'Asset roll forward', 'Asset migration',
+]);
+const route = useRoute();
+const isAssetScreen = computed(
+  () => ASSET_SCREENS.has(currentPageKey.value) || route.path.startsWith('/assets'),
+);
+const BUDGET_SCREENS = new Set([
+  'Budget lines', 'Budget changes', 'Saving bucket', 'Commitments', 'Budget report', 'Budget settings',
+  'Purchase requests', 'Purchase orders', 'Purchase invoices',
+]);
+const isBudgetScreen = computed(
+  () => BUDGET_SCREENS.has(currentPageKey.value) || /^\/(budget-|purchase-requests|purchase-orders|purchase-invoices)/.test(route.path),
+);
+const PAYROLL_SCREENS = new Set([
+  'Payroll inbox', 'Payroll payables', 'Payroll settings',
+]);
+const isPayrollScreen = computed(
+  () => PAYROLL_SCREENS.has(currentPageKey.value) || /^\/payroll-/.test(route.path),
+);
+const isSalesDeliveryScreen = computed(() => route.path.startsWith('/sales-deliveries'))
+const isProjectScreen = computed(
+  () => currentPageKey.value === 'Project accounting' || route.path.startsWith('/project-accounting'),
 );
 function goToInbox() {
   setActiveMenuLabel("Notifications");

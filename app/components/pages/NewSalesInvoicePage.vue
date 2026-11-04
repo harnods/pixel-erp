@@ -1,4 +1,6 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/invoices/views/SalesInvoiceCreateView.vue -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
 /**
  * "New sales invoice" form — Sales ▸ Sales invoices ▸ New sales invoice
  * (Figma: Sales - Sales Invoices node 9152-107281).
@@ -27,11 +29,12 @@ import {
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import {
-  customers, products, salesInvoices,
+  customers, products, salesInvoices, salesDeliveries,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
 import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesInvoice, SILineItem } from '~/data/types'
+import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
@@ -188,6 +191,41 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
 
 const newRowSearch = ref('')
 function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
+/**
+ * Invoice from a delivery (`?delivery=SD102`). The lines are the delivery's own —
+ * at the quantities delivered, to six decimals where a percentage produced them,
+ * and at the order's prices — so a 5,28 unit tranche invoices as 5,28 unit, not
+ * 5 or 6. This is the downstream view TS-004 of the percentage-based delivery
+ * plan checks for silent rounding. Deliveries with no order behind them keep
+ * opening a blank invoice, as before.
+ */
+const route = useRoute()
+const sourceDelivery = computed(() => {
+  const id = String(route.query.delivery ?? '')
+  return id ? salesDeliveries.find(d => d.id === id && d.orderId && d.items?.length) ?? null : null
+})
+watch(sourceDelivery, (d) => {
+  if (!d) return
+  customerId.value = d.customer.id
+  onCustomerChange(d.customer.id)
+  referenceNo.value = `${t('Sales Delivery')} #${d.number}`
+  items.value = getSalesDeliveryDetail(d.id).lineItems.map(l => ({
+    _key: ++_seq,
+    product: l.product,
+    sku: l.sku,
+    description: l.description,
+    qty: l.qty,
+    unit: l.unit,
+    unitPrice: l.unitPrice,
+    discountPct: l.discountPct,
+    taxLabel: 'PPN 11%',
+    productError: false,
+    qtyError: false,
+    dimensions: {},
+    dimensionErrors: {},
+  }))
+}, { immediate: true })
+
 function selectNewProduct(p: typeof products[number]) {
   items.value.push({
     _key: ++_seq,
@@ -612,9 +650,21 @@ function onSave() {
     hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t2 => String(t2.value)),
     hasPpn: taxAmount.value > 0,
+    // Keep the real lines when billing a delivery, and mark that delivery
+    // invoiced — so the detail page shows what was actually billed.
+    ...(sourceDelivery.value
+      ? {
+          deliveryId: sourceDelivery.value.id,
+          items: items.value.map(it => ({
+            product: it.product, sku: it.sku, description: it.description, qty: it.qty, unit: it.unit,
+            unitPrice: it.unitPrice, discountPct: it.discountPct, amount: lineAmount(it),
+          })),
+        }
+      : {}),
   }
   salesInvoices.push(invoice)
-  toast.notify({ variant: 'success', title: t('Sales invoice created'), rootProps: { class: 'toast-enterprise' } })
+  if (sourceDelivery.value) sourceDelivery.value.billingStatus = 'invoiced'
+  toast.notify({ variant: 'success', title: t('Invoice has been created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/sales-invoices/${invoice.id}`)
 }
 </script>
@@ -663,7 +713,7 @@ function onSave() {
 
         <MpFormControl id="f-email" class="si-field">
           <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
+          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('Enter email and press Enter')" @change="onEmailChange" />
         </MpFormControl>
 
         <div class="si-header1-total">
@@ -682,7 +732,7 @@ function onSave() {
 
           <div class="si-checkbox-stack">
             <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
-            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
+            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to a different address') }}</MpCheckbox>
           </div>
 
           <MpFormControl v-if="shipToDifferent" id="f-ship-to" class="si-field">
@@ -712,7 +762,7 @@ function onSave() {
         <!-- Col 3: shipping — only when "Requires shipping" is on -->
         <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
-            <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Delivery date') }}</MpFormLabel>
             <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
@@ -755,7 +805,7 @@ function onSave() {
         <!-- Col 5: tags — last column, same 24px gap as every other pair -->
         <div class="si-header2-col">
           <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
             <ErpDimensionTagUpsell id="si-dim-upsell" />
           </MpFormControl>
@@ -1006,7 +1056,7 @@ function onSave() {
             </MpButton>
             <div class="si-discount-rows">
               <div class="si-totals-row">
-                <span>{{ t('Discount per line') }}</span>
+                <span>{{ t('Discounts per line') }}</span>
                 <span class="si-deduction">({{ fmt(discountTotal) }})</span>
               </div>
               <div class="si-totals-row">

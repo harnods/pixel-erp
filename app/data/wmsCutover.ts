@@ -17,7 +17,7 @@
  * Intl.NumberFormat('id-ID', …) per DESIGN.md → Number format (IDR).
  */
 
-import { reactive } from 'vue'
+import { reactive, computed } from 'vue'
 import { productIndexRows } from './productsIndex'
 
 // ── Chart of accounts ────────────────────────────────────────────────────────
@@ -220,7 +220,167 @@ export function importOwnCoa(list: CoaAccount[] = OWN_COA_SAMPLE) {
   coaSourceState.importedCount = list.length
 }
 
-export const taxOptions: string[] = ['PPN 11%', 'Non-PPN', 'Bebas PPN (Exempt)']
+// ── Chart-of-accounts REVIEW (Step 1 of the cutover) ─────────────────────────
+//
+// A WMS-only customer upgrading to ERP already HAS a chart of accounts — they
+// are not starting from nothing. So Step 1 is a review, not a source choice:
+// look at the accounts you have, add or edit the ones the WMS split needs, or
+// bring more in by import (FR1 — reuse the existing Set Account flow). The
+// list stays the same live `coaAccounts` the product mapping reads from.
+
+/**
+ * The account's accounting classification, derived from the first digit of its
+ * code — the same five types the import template accepts (Asset, Liability,
+ * Equity, Income, Expense). Separate from `type`, which is the narrower
+ * routing slot the product mapping picks from.
+ */
+export type AccountCategory = 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense'
+
+export const COA_CATEGORIES: AccountCategory[] = ['Asset', 'Liability', 'Equity', 'Income', 'Expense']
+
+const CATEGORY_BY_PREFIX: Record<string, AccountCategory> = {
+  '1': 'Asset',
+  '2': 'Liability',
+  '3': 'Equity',
+  '4': 'Income',
+  '5': 'Expense',
+  '6': 'Expense',
+  '7': 'Income',
+  '8': 'Expense',
+  '9': 'Expense',
+}
+
+/** Classify an account by its code prefix. Unknown prefixes fall back to Asset. */
+export function accountCategory(code: string): AccountCategory {
+  return CATEGORY_BY_PREFIX[code.trim().charAt(0)] ?? 'Asset'
+}
+
+export interface CoaReviewState {
+  /** true once the customer confirms the chart is right — the Step 1 gate. */
+  reviewed: boolean
+  /** Accounts added by hand during the review (for the summary line). */
+  addedCount: number
+  /** Accounts brought in by the last import. */
+  importedCount: number
+}
+
+export const coaReviewState = reactive<CoaReviewState>({
+  reviewed: false,
+  addedCount: 0,
+  importedCount: 0,
+})
+
+/** Is this code already taken? Account codes are the chart's unique key. */
+export function isCoaCodeTaken(code: string, exceptCode?: string): boolean {
+  const c = code.trim().toLowerCase()
+  return coaAccounts.some((a) => a.code.toLowerCase() === c && a.code !== exceptCode)
+}
+
+/** How many products route to this account — an account in use can't be deleted. */
+export function coaAccountUsage(code: string): number {
+  return cutoverProducts.filter(
+    (p) => p.inventoryAccount === code || p.revenueAccount === code || p.cogsAccount === code,
+  ).length
+}
+
+function sortCoa() {
+  coaAccounts.sort((a, b) => a.code.localeCompare(b.code))
+}
+
+/** Add one account by hand. Returns an error message, or '' on success. */
+export function addCoaAccount(account: CoaAccount): string {
+  if (isCoaCodeTaken(account.code)) return 'This account code is already used'
+  coaAccounts.push({ ...account })
+  sortCoa()
+  applyCoa([...coaAccounts])
+  coaReviewState.addedCount += 1
+  return ''
+}
+
+/** Edit an existing account, keyed by its original code. */
+export function updateCoaAccount(originalCode: string, account: CoaAccount): string {
+  if (isCoaCodeTaken(account.code, originalCode)) return 'This account code is already used'
+  const i = coaAccounts.findIndex((a) => a.code === originalCode)
+  if (i === -1) return 'That account no longer exists'
+  coaAccounts.splice(i, 1, { ...account })
+  sortCoa()
+  applyCoa([...coaAccounts])
+  return ''
+}
+
+/** Remove an account. Blocked while any product still routes to it. */
+export function deleteCoaAccount(code: string): string {
+  if (coaAccountUsage(code) > 0) return 'This account is used by a product and cannot be deleted'
+  const i = coaAccounts.findIndex((a) => a.code === code)
+  if (i === -1) return 'That account no longer exists'
+  coaAccounts.splice(i, 1)
+  applyCoa([...coaAccounts])
+  return ''
+}
+
+/**
+ * Bring more accounts in from a file. Imported accounts are ADDED to the
+ * existing chart — they never replace it (mirrors Jurnal's "Import new
+ * accounts"). Codes already present are skipped. Returns how many landed.
+ */
+export function importCoaAccounts(list: CoaAccount[] = OWN_COA_SAMPLE): number {
+  const added = list.filter((a) => !isCoaCodeTaken(a.code))
+  coaAccounts.push(...added.map((a) => ({ ...a })))
+  sortCoa()
+  applyCoa([...coaAccounts])
+  coaReviewState.importedCount = added.length
+  return added.length
+}
+
+/** Confirm the chart is right — completes Step 1. */
+export function confirmCoaReview() {
+  coaReviewState.reviewed = true
+}
+
+// ── Tax rates ────────────────────────────────────────────────────────────────
+//
+// The product template's "Default Sell Tax Name" / "Default Buy Tax Name" are
+// tax NAMES, so a product row stores the name. The list is reactive and can be
+// extended in place: the setup table's tax dropdown offers "Add new tax", the
+// same escape hatch the sales-invoice tax picker has, so a customer whose WMS
+// uses a tax ERP doesn't know yet isn't blocked mid-migration.
+
+export interface TaxRate {
+  name: string
+  /** Percent, e.g. 11 for PPN 11%. */
+  rate: number
+  /** Account the tax posts to when selling. */
+  salesAccount: string
+  /** Account the tax posts to when buying. */
+  purchaseAccount: string
+  /** Deducts from the total payment rather than adding to it (e.g. PPh 23). */
+  isWithholding: boolean
+  /** Subject to the PMK-131/2024 "DPP Nilai Lain" basis. */
+  isDppNilaiLain: boolean
+}
+
+export const taxRates = reactive<TaxRate[]>([
+  { name: 'PPN 11%', rate: 11, salesAccount: '2-20500', purchaseAccount: '1-10500', isWithholding: false, isDppNilaiLain: false },
+  { name: 'Non-PPN', rate: 0, salesAccount: '2-20500', purchaseAccount: '1-10500', isWithholding: false, isDppNilaiLain: false },
+  { name: 'Bebas PPN (Exempt)', rate: 0, salesAccount: '2-20500', purchaseAccount: '1-10500', isWithholding: false, isDppNilaiLain: false },
+])
+
+/** Is this tax name already taken? Names are the list's key. */
+export function isTaxNameTaken(name: string): boolean {
+  const n = name.trim().toLowerCase()
+  return taxRates.some((r) => r.name.toLowerCase() === n)
+}
+
+/** Add a tax rate. Returns an error message, or '' on success. */
+export function addTaxRate(rate: TaxRate): string {
+  if (!rate.name.trim()) return 'You must fill in tax name'
+  if (isTaxNameTaken(rate.name)) return 'This tax name is already used'
+  taxRates.push({ ...rate, name: rate.name.trim() })
+  return ''
+}
+
+/** Names only — what a product row stores and the dropdown lists. */
+export const taxOptions = computed<string[]>(() => taxRates.map((r) => r.name))
 
 // ── Products that need individual set-up ─────────────────────────────────────
 
@@ -336,17 +496,23 @@ export function applyBulkImport(): { imported: number; skipped: number } {
 }
 
 /**
- * A product is set up when the always-required fields are filled, plus the
- * sell group (if it sells) and the buy group (if it is bought). Fields in a
- * group that is switched off are not applicable and are not required.
+ * A product is set up when the always-mandatory fields are filled, plus the
+ * price and account of each group whose checkbox is ticked.
+ *
+ *   - Always mandatory      → Default inventory account, Inventory value
+ *   - Optional              → I sell this product, I buy this product, and
+ *                             both tax fields (a product can be sold without a
+ *                             default tax; the tax is applied per transaction)
+ *   - Mandatory once ticked → Default sales price + account (when I sell);
+ *                             default purchase cost + account (when I buy)
+ * Fields in a group that is switched off are not applicable and not required.
  */
 export function isCutoverProductComplete(p: CutoverProduct): boolean {
   if (!p.inventoryAccount) return false
   if (p.inventoryValue === null) return false
-  // When sold/bought, only the routing ACCOUNT is mandatory — the default
-  // price and tax are optional pre-fills.
-  if (p.isSold && !p.revenueAccount) return false
-  if (p.isBought && !p.cogsAccount) return false
+  // Required only once the group's checkbox is ticked.
+  if (p.isSold && (p.sellPrice === null || !p.revenueAccount)) return false
+  if (p.isBought && (p.buyPrice === null || !p.cogsAccount)) return false
   return true
 }
 
@@ -355,8 +521,14 @@ export function missingCutoverFields(p: CutoverProduct): string[] {
   const missing: string[] = []
   if (!p.inventoryAccount) missing.push('inventoryAccount')
   if (p.inventoryValue === null) missing.push('inventoryValue')
-  if (p.isSold && !p.revenueAccount) missing.push('revenueAccount')
-  if (p.isBought && !p.cogsAccount) missing.push('cogsAccount')
+  if (p.isSold) {
+    if (p.sellPrice === null) missing.push('sellPrice')
+    if (!p.revenueAccount) missing.push('revenueAccount')
+  }
+  if (p.isBought) {
+    if (p.buyPrice === null) missing.push('buyPrice')
+    if (!p.cogsAccount) missing.push('cogsAccount')
+  }
   return missing
 }
 
@@ -387,9 +559,9 @@ export const CUTOVER_STEPS: { key: CutoverStep; label: string }[] = [
   { key: 'opening-balance',   label: 'Opening balance' },
 ]
 
-/** Step 1 is done once a COA source has been chosen (default adopted or own imported). */
+/** Step 1 is done once the customer has reviewed and confirmed the chart. */
 export function isCoaStepComplete(): boolean {
-  return coaSourceState.source !== null
+  return coaReviewState.reviewed
 }
 
 /** Step 2 is done once every product is set up (Story 1's 100% gate). */
