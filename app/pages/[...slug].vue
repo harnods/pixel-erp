@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { defineAsyncComponent, defineComponent, type Component, h, ref, computed, watch, provide, nextTick, onMounted, onUnmounted } from 'vue'
+import { newAssetDrawerOpen } from '~/data/fixedAssetSession'
+import { currentApplyAllRequested, currentAssetTabCounts, currentDepreciationSchedule } from '~/data/currentAssets'
+import { gateFinancialPage } from '~/utils/assetRoleGate'
 import { infoToast } from '~/utils/toasts'
+import { budget as budgetChangesState } from '~/data/budgetStore'
 import { MpAvatar, MpBadge, MpIcon, MpSpinner, MpTooltip, MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription, MpBannerLink, MpButton, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css } from '@mekari/pixel3'
 
 // Shown while a page chunk is being fetched. 200ms delay = no flash for cached chunks.
@@ -40,6 +44,7 @@ import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
 import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
+import BudgetLinesTitleActions from '~/components/patterns/BudgetLinesTitleActions.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
@@ -159,9 +164,51 @@ const pageRegistry: Record<string, Component> = {
   'Cowork knowledge':  defineAsyncComponent(() => import('~/components/pages/CoworkKbPage.vue')),
   'Hr':                defineAsyncComponent(() => import('~/components/pages/HrHomePage.vue')),
   'Employee directory': defineAsyncComponent(() => import('~/components/pages/EmployeeDirectoryPage.vue')),
+  // Accounting › Fixed assets. The register is the module's spine; the rest
+  // link back to it.
+  //
+  // The registry key is derived from the URL slug, not from the sidebar label:
+  // `/period-self-check` becomes 'Period self check' and `Custody & counts`
+  // slugs to `/custody-and-counts`, so the key is 'Custody and counts'. Keys
+  // below match what pathToLabel() produces, not what the sidebar displays.
+  'Assets':            defineAsyncComponent(() => import('~/components/pages/AssetsIndexPage.vue')),
+  // Accounting › Budgets (Advanced Budgeting prototype, PRD FG-1 to FG-7)
+  'Budget lines':      defineAsyncComponent(() => import('~/components/pages/BudgetLinesPage.vue')),
+  'Budget changes':    defineAsyncComponent(() => import('~/components/pages/BudgetChangesPage.vue')),
+  'Saving bucket':     defineAsyncComponent(() => import('~/components/pages/BudgetSavingBucketPage.vue')),
+  'Commitments':       defineAsyncComponent(() => import('~/components/pages/BudgetCommitmentsPage.vue')),
+  'Budget report':     defineAsyncComponent(() => import('~/components/pages/BudgetReportPage.vue')),
+  'Budget settings':   defineAsyncComponent(() => import('~/components/pages/BudgetSettingsPage.vue')),
+  // Accounting › Payroll (Payroll to Ledger prototype, PRD FG-1 to FG-7)
+  'Payroll inbox':          defineAsyncComponent(() => import('~/components/pages/PayrollInboxPage.vue')),
+  'Payroll payables':       defineAsyncComponent(() => import('~/components/pages/PayrollPayablesPage.vue')),
+  'Payroll settings':       defineAsyncComponent(() => import('~/components/pages/PayrollSettingsPage.vue')),
+  // Accounting › Fixed assets (current) — prod's current asset module, beside the new one.
+  'Current assets':    defineAsyncComponent(() => import('~/components/pages/CurrentAssetsPage.vue')),
+  'Current asset depreciation': defineAsyncComponent(() => import('~/components/pages/CurrentAssetDepreciationPage.vue')),
+  // LR-6: pages holding accounting or tax figures are gated for General Affairs.
+  'Depreciation schedule': gateFinancialPage(() => import('~/components/pages/AssetDepreciationSchedulePage.vue')),
+  'Tax book':          gateFinancialPage(() => import('~/components/pages/AssetFiscalBookPage.vue')),
+  'Tax differences':   gateFinancialPage(() => import('~/components/pages/AssetTaxDifferencesPage.vue')),
+  'Lampiran 9':        gateFinancialPage(() => import('~/components/pages/AssetLampiranPage.vue')),
+  // `/asset-roll-forward` slugs to 'Asset roll forward' (the hyphen is a word break).
+  'Asset roll forward': gateFinancialPage(() => import('~/components/pages/AssetRollForwardPage.vue')),
+  'Asset migration':   gateFinancialPage(() => import('~/components/pages/AssetMigrationPage.vue')),
+  'Impairment tests':  gateFinancialPage(() => import('~/components/pages/AssetImpairmentPage.vue')),
+  'Period self check': gateFinancialPage(() => import('~/components/pages/AssetSelfCheckPage.vue')),
+  'Custody and counts': defineAsyncComponent(() => import('~/components/pages/AssetCustodyCountsPage.vue')),
+  'Asset approvals':   defineAsyncComponent(() => import('~/components/pages/AssetApprovalsPage.vue')),
+  'Leases':            gateFinancialPage(() => import('~/components/pages/AssetLeasesPage.vue')),
+  'Asset settings':    defineAsyncComponent(() => import('~/components/pages/AssetSettingsPage.vue')),
   'Sales invoices':    defineAsyncComponent(() => import('~/components/pages/SalesInvoicesPage.vue')),
   'Purchase invoices': defineAsyncComponent(() => import('~/components/pages/PurchaseInvoicesPage.vue')),
+  // Sales › Join invoice / Purchases › Join purchase invoices (prod merged invoices; new/:id/edit via detailMatch)
+  'Join invoice':           defineAsyncComponent(() => import('~/components/pages/JoinInvoicesPage.vue')),
+  'Join purchase invoices': defineAsyncComponent(() => import('~/components/pages/JoinInvoicesPage.vue')),
   'Sales orders':      defineAsyncComponent(() => import('~/components/pages/SalesOrdersPage.vue')),
+  // Sales › Progress invoice (prod proforma_type) / Proforma invoice (prod order_proforma_type).
+  'Progress invoice':  defineAsyncComponent(() => import('~/components/pages/ProgressInvoicesPage.vue')),
+  'Proforma invoice':  defineAsyncComponent(() => import('~/components/pages/ProgressInvoicesPage.vue')),
   'Sales quotes':      defineAsyncComponent(() => import('~/components/pages/SalesQuotesPage.vue')),
   'Sales deliveries':  defineAsyncComponent(() => import('~/components/pages/SalesDeliveriesPage.vue')),
   'Warehouses':        defineAsyncComponent(() => import('~/components/pages/WarehousesPage.vue')),
@@ -190,7 +237,6 @@ const pageRegistry: Record<string, Component> = {
   'Inbox':             defineAsyncComponent(() => import('~/components/pages/InboxPage.vue')),
   'Stock adjustments':  defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock requests':    defineAsyncComponent(() => import('~/components/pages/StockRequestsPage.vue')),
-  'Production settings': defineAsyncComponent(() => import('~/components/pages/ProductionSettingsPage.vue')),
   'Cycle counts':      defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Stock inout':       defineAsyncComponent(() => import('~/components/pages/StockAdjustmentsPage.vue')),
   'Purchase orders':   defineAsyncComponent(() => import('~/components/pages/PurchaseOrdersPage.vue')),
@@ -198,6 +244,10 @@ const pageRegistry: Record<string, Component> = {
   'Purchase quotes':     defineAsyncComponent(() => import('~/components/pages/PurchaseQuotesPage.vue')),
   'Purchase deliveries': defineAsyncComponent(() => import('~/components/pages/PurchaseDeliveriesPage.vue')),
   'Cash management':   defineAsyncComponent(() => import('~/components/pages/CashManagementPage.vue')),
+  // Accounting › Reconciliations is full-bleed (own rail + title bar) — resolved via detailMatch below;
+  // this entry keeps the key resolvable. Accounting › Bank rules index (prod parity, wave 2).
+  'Reconciliations':   defineAsyncComponent(() => import('~/components/pages/ReconciliationsPage.vue')),
+  'Bank rules':        defineAsyncComponent(() => import('~/components/pages/BankRulesPage.vue')),
   // ── VAT reconciliation (Reports › Tax › VAT reconciliation) ──────────────────
   // The whole module is off-nav: Reports › Tax is the card index, and the card
   // opens the period index below. Everything else is reached from inside it (a
@@ -216,9 +266,21 @@ const pageRegistry: Record<string, Component> = {
   // Settings → Data migration. Key must match the sidebar label character-for-character.
   'Data migration':     defineAsyncComponent(() => import('~/components/pages/DataMigrationPage.vue')),
   'Warehouse settings': defineAsyncComponent(() => import('~/components/pages/SettingsWarehousePage.vue')),
+  // Settings → Billing / Sales / Purchases / Default accounts (company setting tabs).
+  'Billing':            defineAsyncComponent(() => import('~/components/pages/SettingsBillingPage.vue')),
   'Sales settings':     defineAsyncComponent(() => import('~/components/pages/SettingsSalesPage.vue')),
   'Purchase settings':  defineAsyncComponent(() => import('~/components/pages/SettingsPurchasePage.vue')),
+  'Default accounts':   defineAsyncComponent(() => import('~/components/pages/SettingsDefaultAccountsPage.vue')),
+  // Settings → Templates (prod /company/setting#email_template_*, #pdf_signature, ondemand_pdf, #whatsapp_*).
+  'Templates':          defineAsyncComponent(() => import('~/components/pages/SettingsTemplatesPage.vue')),
+  // Accounting › Consolidation (prod-parity: one page, in-page left nav across the consolidation sub-areas).
+  'Consolidation':      defineAsyncComponent(() => import('~/components/pages/ConsolidationPage.vue')),
   'Inventory settings': defineAsyncComponent(() => import('~/components/pages/SettingsInventoryPage.vue')),
+  'Production settings': defineAsyncComponent(() => import('~/components/pages/SettingsProductionPage.vue')),
+  'Payment terms':      defineAsyncComponent(() => import('~/components/pages/PaymentTermsPage.vue')),
+  'Payment methods':    defineAsyncComponent(() => import('~/components/pages/PaymentMethodsPage.vue')),
+  'Tags':               defineAsyncComponent(() => import('~/components/pages/TagsPage.vue')),
+  'Tagging rules':      defineAsyncComponent(() => import('~/components/pages/TaggingRulesPage.vue')),
   'Approval workflows':  defineAsyncComponent(() => import('~/components/pages/ApprovalWorkflowsPage.vue')),
   // Settings → Users & roles. '/users-and-roles' → pathToLabel → 'Users and roles'.
   // The page itself is served by its tabs (User list / Custom role) — this entry
@@ -228,6 +290,13 @@ const pageRegistry: Record<string, Component> = {
   'Mekari pay':         defineAsyncComponent(() => import('~/components/pages/MekariPayPaywallPage.vue')),
   'Tax':                defineAsyncComponent(() => import('~/components/pages/TaxPaywallPage.vue')),
   'Dimensions':         defineAsyncComponent(() => import('~/components/pages/DimensionsPage.vue')),
+  // Prod-parity settings lists (copies of the production screens).
+  'Tax rates':          defineAsyncComponent(() => import('~/components/pages/TaxRatesPage.vue')),
+  'Currencies':         defineAsyncComponent(() => import('~/components/pages/CurrenciesPage.vue')),
+  'Custom fields':      defineAsyncComponent(() => import('~/components/pages/CustomFieldsPage.vue')),
+  'Contact groups':     defineAsyncComponent(() => import('~/components/pages/ContactGroupsPage.vue')),
+  // Integrations › Mekari Expense — /mekari-expense → 'Mekari expense'.
+  'Mekari expense':     defineAsyncComponent(() => import('~/components/pages/MekariExpenseIntegrationPage.vue')),
   // Reports → Financials index (report cards). The Multidimensional report itself
   // resolves via detailMatch (/financial-report/multidimensional).
   'Financial report':   defineAsyncComponent(() => import('~/components/pages/FinancialReportsIndexPage.vue')),
@@ -238,14 +307,19 @@ const pageRegistry: Record<string, Component> = {
   // Reports → Inventory index (report cards). The Dual Unit Inventory report itself
   // resolves via detailMatch (/inventory-report/dual-unit).
   'Inventory report':   defineAsyncComponent(() => import('~/components/pages/InventoryReportsIndexPage.vue')),
-  // Reports → Purchases / Tax / Cash & bank indexes (same flush report-card grid
-  // as Sales). Tax is the only one with a built card — VAT reconciliation opens
-  // /vat-reconciliation; every other card shows the coming-soon toast.
+  // Reports → Purchases / Fixed assets / Cash & bank / Tax indexes (prod ERP card lists).
   'Purchase report':    defineAsyncComponent(() => import('~/components/pages/PurchaseReportsIndexPage.vue')),
-  'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
+  'Fixed assets report': defineAsyncComponent(() => import('~/components/pages/FixedAssetsReportsIndexPage.vue')),
   'Cash and bank report': defineAsyncComponent(() => import('~/components/pages/CashBankReportsIndexPage.vue')),
+  'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
+  // Accounting → Project accounting. Engagement detail/forms resolve via detailMatch.
+  'Project accounting': defineAsyncComponent(() => import('~/components/pages/ProjectAccountingPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
+  // Dashboard › Business performance (prod business-overview widget grid); Custom dashboard / Mekari Insight stay out of scope.
+  'Business performance': defineAsyncComponent(() => import('~/components/pages/BusinessPerformancePage.vue')),
+  'Custom dashboard':     defineAsyncComponent(() => import('~/components/pages/DashboardNotInPrototypePage.vue')),
+  'Mekari insight':       defineAsyncComponent(() => import('~/components/pages/DashboardNotInPrototypePage.vue')),
 
   // ── XPM (Mekari Expense) scenario pages ──────────────────────────────────────
   // Registered globally like every other scenario's pages; the XPM sidebar is the
@@ -270,8 +344,27 @@ const pageRegistry: Record<string, Component> = {
   'Xpm vendors':        defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm policy':         defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
   'Xpm integration':    defineAsyncComponent(() => import('~/components/pages/XpmPlaceholderPage.vue')),
-}
 
+  // ── Other lists + WMS data migration (prod-parity copies) ──
+  'Export and import':  defineAsyncComponent(() => import('~/components/pages/ExportImportPage.vue')),
+  'Cost recalculation': defineAsyncComponent(() => import('~/components/pages/CostRecalculationPage.vue')),
+  'Wms data migration': defineAsyncComponent(() => import('~/components/pages/WmsDataMigrationPage.vue')),
+  // Accounting → Chart of accounts / Close books (prod-parity). Detail/form/wizard resolve via detailMatch.
+  'Chart of accounts':  defineAsyncComponent(() => import('~/components/pages/ChartOfAccountsPage.vue')),
+  'Close books':        defineAsyncComponent(() => import('~/components/pages/CloseBooksPage.vue')),
+  // Accounting settings = prod /company/setting#account_mapping — the same page as Settings › Default accounts.
+  'Accounting settings': defineAsyncComponent(() => import('~/components/pages/SettingsDefaultAccountsPage.vue')),
+}
+const RecurringScheduleDetailPage = asyncPage(() => import('~/components/pages/RecurringScheduleDetailPage.vue'))
+const ImportFileDetailPage = asyncPage(() => import('~/components/pages/ImportFileDetailPage.vue'))
+const ChartOfAccountDetailPage = asyncPage(() => import('~/components/pages/ChartOfAccountDetailPage.vue'))
+const ChartOfAccountFormPage = asyncPage(() => import('~/components/pages/ChartOfAccountFormPage.vue'))
+const CloseBooksWizardPage = asyncPage(() => import('~/components/pages/CloseBooksWizardPage.vue'))
+
+const ProjectEngagementDetailsPage = asyncPage(() => import('~/components/pages/ProjectEngagementDetailsPage.vue'))
+const NewEngagementPage = asyncPage(() => import('~/components/pages/NewEngagementPage.vue'))
+const ProjectExpensePage = asyncPage(() => import('~/components/pages/ProjectExpensePage.vue'))
+const ProjectInvoicePage = asyncPage(() => import('~/components/pages/ProjectInvoicePage.vue'))
 const SalesOrderDetailsPage = asyncPage(() => import('~/components/pages/SalesOrderDetailsPage.vue'))
 const SalesInvoiceDetailsPage = asyncPage(() => import('~/components/pages/SalesInvoiceDetailsPage.vue'))
 const RecurringSalesInvoicesPage = asyncPage(() => import('~/components/pages/RecurringSalesInvoicesPage.vue'))
@@ -325,7 +418,15 @@ const CoworkKbDocDetailPage = asyncPage(() => import('~/components/pages/CoworkK
 const CashConnectBankPage = asyncPage(() => import('~/components/pages/CashConnectBankPage.vue'))
 const InternalTransferFormPage = asyncPage(() => import('~/components/pages/InternalTransferFormPage.vue'))
 const InternalTransferDetailsPage = asyncPage(() => import('~/components/pages/InternalTransferDetailsPage.vue'))
+const CashTransactionFormPage = asyncPage(() => import('~/components/pages/CashTransactionFormPage.vue'))
+const CashTransactionDetailsPage = asyncPage(() => import('~/components/pages/CashTransactionDetailsPage.vue'))
+const JournalEntryFormPage = asyncPage(() => import('~/components/pages/JournalEntryFormPage.vue'))
+const JournalEntryDetailsPage = asyncPage(() => import('~/components/pages/JournalEntryDetailsPage.vue'))
+const JoinInvoiceFormPage = asyncPage(() => import('~/components/pages/JoinInvoiceFormPage.vue'))
+const JoinInvoiceDetailsPage = asyncPage(() => import('~/components/pages/JoinInvoiceDetailsPage.vue'))
 const BankStatementReviewPage = asyncPage(() => import('~/components/pages/BankStatementReviewPage.vue'))
+const ReconciliationsPage = asyncPage(() => import('~/components/pages/ReconciliationsPage.vue'))
+const BankRuleBuilderPage = asyncPage(() => import('~/components/pages/BankRuleBuilderPage.vue'))
 const PlaceholderPage = asyncPage(() => import('~/components/pages/PlaceholderPage.vue'))
 const NewContactPage = asyncPage(() => import('~/components/pages/NewContactPage.vue'))
 const ContactDetailsPage = asyncPage(() => import('~/components/pages/ContactDetailsPage.vue'))
@@ -425,6 +526,12 @@ function addCustomRole() {
 }
 const UsersListPage = asyncPage(() => import('~/components/pages/UsersListPage.vue'))
 const CustomRolesPage = asyncPage(() => import('~/components/pages/CustomRolesPage.vue'))
+const PaymentTermFormPage = asyncPage(() => import('~/components/pages/PaymentTermFormPage.vue'))
+const TagsTabPage = asyncPage(() => import('~/components/pages/TagsPage.vue'))
+const TagCategoriesTabPage = asyncPage(() => import('~/components/pages/TagCategoriesPage.vue'))
+const TagDetailPage = asyncPage(() => import('~/components/pages/TagDetailPage.vue'))
+const TagCategoryDetailPage = asyncPage(() => import('~/components/pages/TagCategoryDetailPage.vue'))
+const TaggingRuleFormPage = asyncPage(() => import('~/components/pages/TaggingRuleFormPage.vue'))
 
 // ── Purchase Orders overlay state (list/detail/form share the URL /purchase-orders
 // without real sub-routes yet — mirrors the pattern this feature was originally
@@ -457,6 +564,7 @@ provide('rejectPurchaseOrder', (id: string, reason: string) => {
     o.rejection = { user: 'You', date: `${day} ${month} ${d.getFullYear()}`, reason }
   }
 })
+provide('openNewPurchaseOrderForm', () => openNewPurchaseOrderForm())
 function openNewPurchaseOrderForm() {
   poFormOpen.value = true
   poFormDuplicateId.value = null
@@ -494,6 +602,13 @@ watch(() => [currentPageKey.value, route.query.tab] as const, ([key, tab]) => {
   if (key === 'Purchase orders' && tab === 'Recurring orders') purchaseOrdersTab.value = 'recurring'
 }, { immediate: true })
 const NewExpensePage = asyncPage(() => import('~/components/pages/NewExpensePage.vue'))
+const AssetDetailPage = asyncPage(() => import('~/components/pages/AssetDetailPage.vue'))
+const CurrentAssetDetailPage = asyncPage(() => import('~/components/pages/CurrentAssetDetailPage.vue'))
+const ProgressInvoiceDetailPage = asyncPage(() => import('~/components/pages/ProgressInvoiceDetailPage.vue'))
+const ProgressInvoiceFormPage = asyncPage(() => import('~/components/pages/ProgressInvoiceFormPage.vue'))
+const CurrentAssetFormPage = asyncPage(() => import('~/components/pages/CurrentAssetFormPage.vue'))
+const CurrentAssetDisposalPage = asyncPage(() => import('~/components/pages/CurrentAssetDisposalPage.vue'))
+const CurrentAssetImportPage = asyncPage(() => import('~/components/pages/CurrentAssetImportPage.vue'))
 const CrmPaywallPage = asyncPage(() => import('~/components/pages/CrmPaywallPage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
@@ -559,6 +674,7 @@ const NewSalesQuotePage = asyncPage(() => import('~/components/pages/NewSalesQuo
 const NewSalesDeliveryPage = asyncPage(() => import('~/components/pages/NewSalesDeliveryPage.vue'))
 const NewPurchaseQuotePage = asyncPage(() => import('~/components/pages/NewPurchaseQuotePage.vue'))
 const NewPurchaseDeliveryPage = asyncPage(() => import('~/components/pages/NewPurchaseDeliveryPage.vue'))
+const NewPurchaseInvoicePage = asyncPage(() => import('~/components/pages/NewPurchaseInvoicePage.vue'))
 const BillReviewPage = asyncPage(() => import('~/components/pages/BillReviewPage.vue'))
 const InvoiceReviewPage = asyncPage(() => import('~/components/pages/InvoiceReviewPage.vue'))
 const ReceiptReviewPage = asyncPage(() => import('~/components/pages/ReceiptReviewPage.vue'))
@@ -567,9 +683,26 @@ const WmsOverviewPage = asyncPage(() => import('~/components/pages/WmsOverviewPa
 const WmsReportDetailPage = asyncPage(() => import('~/components/pages/WmsReportDetailPage.vue'))
 const DualUnitInventoryReportPage = asyncPage(() => import('~/components/pages/DualUnitInventoryReportPage.vue'))
 const CreditMemoReportPage = asyncPage(() => import('~/components/pages/CreditMemoReportPage.vue'))
+const SalesListReportPage = asyncPage(() => import('~/components/pages/SalesListReportPage.vue'))
+const SalesByCustomerReportPage = asyncPage(() => import('~/components/pages/SalesByCustomerReportPage.vue'))
+const SalesByProductReportPage = asyncPage(() => import('~/components/pages/SalesByProductReportPage.vue'))
 const MultidimensionalReportPage = asyncPage(() => import('~/components/pages/MultidimensionalReportPage.vue'))
 const GeneralLedgerReportPage = asyncPage(() => import('~/components/pages/GeneralLedgerReportPage.vue'))
+const InventoryValuationReportPage = asyncPage(() => import('~/components/pages/InventoryValuationReportPage.vue'))
+const FixedAssetSummaryReportPage = asyncPage(() => import('~/components/pages/FixedAssetSummaryReportPage.vue'))
+const CashBankReportPage = asyncPage(() => import('~/components/pages/CashBankReportPage.vue'))
+const BalanceSheetReportPage = asyncPage(() => import('~/components/pages/BalanceSheetReportPage.vue'))
+const ProfitLossReportPage = asyncPage(() => import('~/components/pages/ProfitLossReportPage.vue'))
 const BudgetVarianceReportPage = asyncPage(() => import('~/components/pages/BudgetVarianceReportPage.vue'))
+const BudgetLineDetailPage = asyncPage(() => import('~/components/pages/BudgetLineDetailPage.vue'))
+const BudgetChangeFormPage = asyncPage(() => import('~/components/pages/BudgetChangeFormPage.vue'))
+const BudgetChangeDetailPage = asyncPage(() => import('~/components/pages/BudgetChangeDetailPage.vue'))
+const PayrollRunDetailPage = asyncPage(() => import('~/components/pages/PayrollRunDetailPage.vue'))
+const PurchasesListReportPage = asyncPage(() => import('~/components/pages/PurchasesListReportPage.vue'))
+const PurchasesByVendorReportPage = asyncPage(() => import('~/components/pages/PurchasesByVendorReportPage.vue'))
+const PurchasesByProductReportPage = asyncPage(() => import('~/components/pages/PurchasesByProductReportPage.vue'))
+const CashFlowReportPage = asyncPage(() => import('~/components/pages/CashFlowReportPage.vue'))
+const TrialBalanceReportPage = asyncPage(() => import('~/components/pages/TrialBalanceReportPage.vue'))
 const BillDetailsPage = asyncPage(() => import('~/components/pages/BillDetailsPage.vue'))
 const EmployeeDetailsPage = asyncPage(() => import('~/components/pages/EmployeeDetailsPage.vue'))
 const SpendMoneyPage = asyncPage(() => import('~/components/pages/SpendMoneyPage.vue'))
@@ -722,6 +855,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'sales-report' && segs[1] === 'credit-memo') {
     return { component: CreditMemoReportPage, id: segs[1]! }
   }
+  // /sales-report/{sales-list|sales-by-customer|sales-by-product} → the Sales reports.
+  if (segs.length >= 2 && segs[0] === 'sales-report') {
+    if (segs[1] === 'sales-list') return { component: SalesListReportPage, id: segs[1] }
+    if (segs[1] === 'sales-by-customer') return { component: SalesByCustomerReportPage, id: segs[1] }
+    if (segs[1] === 'sales-by-product') return { component: SalesByProductReportPage, id: segs[1] }
+  }
   // /financial-report/:slug → the built Financials reports (Reports → Financials
   // → View report). Only these slugs match; anything else falls through to the
   // Financials reports index.
@@ -729,6 +868,18 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[1] === 'multidimensional') return { component: MultidimensionalReportPage, id: segs[1] }
     if (segs[1] === 'general-ledger') return { component: GeneralLedgerReportPage, id: segs[1] }
     if (segs[1] === 'budget-variance') return { component: BudgetVarianceReportPage, id: segs[1] }
+    if (segs[1] === 'cash-flows') return { component: CashFlowReportPage, id: segs[1] }
+    if (segs[1] === 'trial-balance') return { component: TrialBalanceReportPage, id: segs[1] }
+    if (segs[1] === 'balance-sheet') return { component: BalanceSheetReportPage, id: segs[1] }
+    if (segs[1] === 'profit-and-loss') return { component: ProfitLossReportPage, id: segs[1] }
+  }
+  // /purchase-report/:slug → the built Purchases reports (Reports → Purchases →
+  // View report). Only these slugs match; anything else falls through to the
+  // Purchases reports index.
+  if (segs.length >= 2 && segs[0] === 'purchase-report') {
+    if (segs[1] === 'purchases-list') return { component: PurchasesListReportPage, id: segs[1] }
+    if (segs[1] === 'purchases-by-vendor') return { component: PurchasesByVendorReportPage, id: segs[1] }
+    if (segs[1] === 'purchases-by-product') return { component: PurchasesByProductReportPage, id: segs[1] }
   }
   // /inventory-report/dual-unit → Dual Unit Inventory Report (Reports → Inventory →
   // View report). Only the built slug matches; anything else falls through to the
@@ -736,6 +887,29 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'dual-unit') {
     return { component: DualUnitInventoryReportPage, id: segs[1]! }
   }
+  // /inventory-report/inventory-valuation → Inventory valuation (Reports → Inventory).
+  if (segs.length >= 2 && segs[0] === 'inventory-report' && segs[1] === 'inventory-valuation') {
+    return { component: InventoryValuationReportPage, id: segs[1]! }
+  }
+  // /fixed-assets-report/fixed-asset-summary → Fixed asset summary (Reports → Fixed assets).
+  if (segs.length >= 2 && segs[0] === 'fixed-assets-report' && segs[1] === 'fixed-asset-summary') {
+    return { component: FixedAssetSummaryReportPage, id: segs[1]! }
+  }
+  // /cash-and-bank-report/cash-and-bank → Bank statement report (Reports → Cash & bank).
+  if (segs.length >= 2 && segs[0] === 'cash-and-bank-report' && segs[1] === 'cash-and-bank') {
+    return { component: CashBankReportPage, id: segs[1]! }
+  }
+  // /chart-of-accounts/new · /:id · /:id/edit → account form / detail (full page).
+  if (segs.length >= 2 && segs[0] === 'chart-of-accounts') {
+    if (segs[1] === 'new') return { component: ChartOfAccountFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: ChartOfAccountFormPage, id: segs[1]! }
+    return { component: ChartOfAccountDetailPage, id: segs[1]! }
+  }
+  // /close-books/new · /:id[/step] → the closing-book / period-lock wizard and its result pages.
+  if (segs.length >= 2 && segs[0] === 'close-books') return { component: CloseBooksWizardPage, id: segs.slice(1).join('/') }
+  // /recurring-transactions/:id and /export-and-import/:id → Other lists detail pages.
+  if (segs.length >= 2 && segs[0] === 'recurring-transactions') return { component: RecurringScheduleDetailPage, id: segs[1]! }
+  if (segs.length >= 2 && segs[0] === 'export-and-import') return { component: ImportFileDetailPage, id: segs[1]! }
   // /data-migration/wms-cutover/:step → the WMS→Jurnal cutover setup screens.
   // Full-bleed form pages (own title bar + stage); the bare index falls through
   // to the registry's 'Data migration' landing.
@@ -744,6 +918,44 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[2] === 'opening-balance') return { component: WmsCutoverOpeningBalancePage, id: 'opening-balance' }
     if (segs[2] === 'pending') return { component: WmsPendingSetupPage, id: 'pending' }
     return { component: WmsCutoverProductsPage, id: 'products' }
+  }
+  // /project-accounting/… → the engagement wizard, its two project-tagged
+  // transaction forms, and the engagement detail. The bare index falls through to
+  // the registry. Keep the literal segments ahead of the /:id catch-all.
+  if (segs.length >= 2 && segs[0] === 'project-accounting') {
+    if (segs[1] === 'new') return { component: NewEngagementPage, id: 'new' }
+    if (segs[1] === 'expense') return { component: ProjectExpensePage, id: 'new' }
+    if (segs[1] === 'invoice') return { component: ProjectInvoicePage, id: 'new' }
+    return { component: ProjectEngagementDetailsPage, id: segs[1]! }
+  }
+  // /progress-invoices/{new|:id} and /proforma-invoices/{new|:id} → Sales › Progress / Proforma invoice.
+  if (segs.length >= 2 && (segs[0] === 'progress-invoices' || segs[0] === 'proforma-invoices')) {
+    if (segs[1] === 'new') return { component: ProgressInvoiceFormPage, id: 'new' }
+    return { component: ProgressInvoiceDetailPage, id: segs[1]! }
+  }
+  // /current-assets/{new|import|:id|:id/edit|:id/disposal} → Fixed assets (current).
+  if (segs.length >= 2 && segs[0] === 'current-assets') {
+    if (segs[1] === 'new') return { component: CurrentAssetFormPage, id: 'new' }
+    if (segs[1] === 'import') return { component: CurrentAssetImportPage, id: 'import' }
+    if (segs[2] === 'edit') return { component: CurrentAssetFormPage, id: segs[1]! }
+    if (segs[2] === 'disposal') return { component: CurrentAssetDisposalPage, id: segs[1]! }
+    return { component: CurrentAssetDetailPage, id: segs[1]! }
+  }
+  // /assets/:id → the asset record. Full-page: it owns its own title bar and
+  // stage padding, so it routes through detailMatch rather than pageRegistry.
+  if (segs.length >= 2 && segs[0] === 'assets') {
+    return { component: AssetDetailPage, id: segs[1]! }
+  }
+  // Accounting › Budgets: line record, change form and change record (full page).
+  if (segs.length >= 2 && segs[0] === 'budget-lines') {
+    return { component: BudgetLineDetailPage, id: segs[1]! }
+  }
+  if (segs.length >= 2 && segs[0] === 'budget-changes') {
+    return { component: segs[1] === 'new' ? BudgetChangeFormPage : BudgetChangeDetailPage, id: segs[1]! }
+  }
+  // Accounting › Payroll: run record with versions, draft and compare (full page).
+  if (segs.length >= 2 && segs[0] === 'payroll-runs') {
+    return { component: PayrollRunDetailPage, id: segs[1]! }
   }
   // /expenses/new → New expense form (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'expenses' && segs[1] === 'new') {
@@ -800,6 +1012,37 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /expenses/:id → bill/expense detail page
   if (segs.length >= 2 && segs[0] === 'expenses') {
     return { component: BillDetailsPage, id: segs[1]! }
+  }
+  // /reconciliations[/:accountId[/:tab]] → reconciliation workspace (full-bleed: rail + own title bar).
+  if (segs[0] === 'reconciliations') {
+    return { component: ReconciliationsPage, id: segs[1] ?? '' }
+  }
+  // /bank-rules/new · /bank-rules/:id/edit · /bank-rules/:id/duplicate → rule builder. Bare index → registry.
+  if (segs.length >= 2 && segs[0] === 'bank-rules') {
+    return { component: BankRuleBuilderPage, id: segs[1] === 'new' ? 'new' : segs[1]! }
+  }
+  // /bank-deposits|bank-withdrawals/new|:id|:id/edit → Receive money / Spend money (prod bank-deposits, bank-withdrawals)
+  if (segs.length >= 2 && (segs[0] === 'bank-deposits' || segs[0] === 'bank-withdrawals')) {
+    if (segs[1] === 'new') return { component: CashTransactionFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: CashTransactionFormPage, id: segs[1]! }
+    return { component: CashTransactionDetailsPage, id: segs[1]! }
+  }
+  // /bank-transfers/new|:id → prod's bank-transfer routes map onto the existing Internal transfer pages
+  if (segs.length >= 2 && segs[0] === 'bank-transfers') {
+    if (segs[1] === 'new') return { component: InternalTransferFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: InternalTransferFormPage, id: segs[1]! }
+    return { component: InternalTransferDetailsPage, id: segs[1]! }
+  }
+  // /join-invoices/new|:id|:id/edit · /join-purchase-invoices/… → prod merged invoices create/show/edit
+  if (segs.length >= 2 && (segs[0] === 'join-invoices' || segs[0] === 'join-purchase-invoices')) {
+    if (segs[1] === 'new') return { component: JoinInvoiceFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: JoinInvoiceFormPage, id: segs[1]! }
+    return { component: JoinInvoiceDetailsPage, id: segs[1]! }
+  }
+  // /journal-entries/new|:id → Create journal entry / General Journal show (prod journal-entries)
+  if (segs.length >= 2 && segs[0] === 'journal-entries') {
+    if (segs[1] === 'new') return { component: JournalEntryFormPage, id: 'new' }
+    return { component: JournalEntryDetailsPage, id: segs[1]! }
   }
   // /cash-management/review/:id → OCR review for an imported bank statement
   if (segs.length >= 3 && segs[0] === 'cash-management' && segs[1] === 'review') {
@@ -1038,6 +1281,13 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /purchase-invoices/recurring/:id → recurring purchase invoice detail
   if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[1] === 'recurring' && segs[2] !== 'new') {
     return { component: RecurringPurchaseInvoiceDetailsPage, id: segs[2] }
+  }
+  // /purchase-invoices/{new,:id/edit} → New/Edit purchase invoice form (prod-parity w4)
+  if (segs.length >= 2 && segs[0] === 'purchase-invoices' && segs[1] === 'new') {
+    return { component: NewPurchaseInvoicePage, id: 'new' }
+  }
+  if (segs.length >= 3 && segs[0] === 'purchase-invoices' && segs[2] === 'edit') {
+    return { component: NewPurchaseInvoicePage, id: segs[1] }
   }
   // /purchase-invoices/:id → detail (index has tabs; guard the tab slugs)
   if (segs.length >= 2 && segs[0] === 'purchase-invoices'
@@ -1283,6 +1533,11 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'xpm-cards') {
     return { component: XpmCardDetailPage, id: segs[1]! }
   }
+  // Settings → Payment terms / Tags / Tagging rules sub-pages (full-page, own title bar).
+  if (segs.length >= 2 && segs[0] === 'payment-terms' && segs[1] === 'new') return { component: PaymentTermFormPage, id: 'new' }
+  if (segs.length >= 3 && segs[0] === 'tags' && segs[1] === 'categories') return { component: TagCategoryDetailPage, id: segs[2]! }
+  if (segs.length >= 2 && segs[0] === 'tags') return { component: TagDetailPage, id: segs[1]! }
+  if (segs.length >= 2 && segs[0] === 'tagging-rules') return { component: TaggingRuleFormPage, id: segs[1] === 'new' ? 'new' : segs[1]! }
   // /my-claims/create → request claim form; /my-claims/:id → claim detail;
   // /my-claims/:id/edit → edit claim (reuses the form in edit mode).
   if (segs.length >= 2 && segs[0] === 'my-claims') {
@@ -1317,6 +1572,7 @@ const pageTabs: Record<string, string[]> = {
   // Stock requests (PRD W-4): Awaiting = demand still to fulfil (default),
   // Closed = the two terminal states, which are not work any more.
   'Stock requests':    ['Awaiting', 'Closed'],
+  'Export and import': ['Import', 'Export'],
   // WMS analytics — Inbound/Outbound as page tabs (outside the stage). Reached in ERP
   // via Dashboard › WMS analytics (/wms-analytics → key 'Wms analytics'); in WMS
   // Standalone it IS the Dashboard page (key 'Dashboard').
@@ -1326,11 +1582,14 @@ const pageTabs: Record<string, string[]> = {
   'Inbound delivery': ['Receipts', 'Receiving', 'Put-away'],
   'Warehouse transfers': ['All warehouse transfers', 'Awaiting approval'],
   'Expenses': ['Bills', 'Awaiting Approval', 'Dropbox', 'Recurring expenses'],
-  'Purchase invoices': ['All purchase invoices', 'Awaiting Approval', 'Dropbox', 'Recurring invoices'],
+  'Purchase invoices': ['All purchase invoices', 'Awaiting approval', 'Dropbox', 'Recurring invoices'],
   'Purchase requests': ['All requests', 'Awaiting approval'],
+  'Purchase deliveries': ['All purchase deliveries', 'Awaiting approval'],
   'Sales invoices': ['All sales invoices', 'Awaiting approval', 'Recurring invoices'],
+  'Sales deliveries': ['All sales deliveries', 'Awaiting approval'],
   'Sales orders': ['All sales orders', 'Awaiting approval', 'Recurring orders'],
   'Sales quotes': ['All sales quotes', 'Awaiting approval'],
+  'Purchase quotes': ['All purchase quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
   // Work order approval (PRD "Require approval" tab — named Awaiting approval like every
@@ -1349,6 +1608,8 @@ const pageTabs: Record<string, string[]> = {
   'Faktur masukan':  ['Needs attention', 'All faktur'],
   // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
   'Users and roles':   ['User list', 'Custom role'],
+  'Tags':              ['All tags', 'Categories'],
+  'Current assets':    ['Active assets', 'Draft assets', 'Disposed assets'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
   'Xpm transactions':  ['All', 'Card', 'Reimbursement', 'Cash advance', 'Bill', 'Travel'],
   'Xpm cards':         ['Virtual cards', 'Physical cards'],
@@ -1430,7 +1691,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   }
   if (currentPageKey.value === 'Purchase invoices') {
     const out: Record<string, number> = {}
-    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting Approval'] = purchaseInvoicesAwaitingApproval.length
+    if (purchaseInvoicesAwaitingApproval.length) out['Awaiting approval'] = purchaseInvoicesAwaitingApproval.length
     if (purchaseInvoiceReviewFiles.length) out['Dropbox'] = purchaseInvoiceReviewFiles.length
     return out
   }
@@ -1461,6 +1722,7 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     if (recommendations) out['Recommendations'] = recommendations
     return out
   }
+  if (currentPageKey.value === 'Current assets') return currentAssetTabCounts()
   if (currentPageKey.value === 'Product list') {
     const awaiting = pendingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
@@ -1619,12 +1881,16 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'Awaiting': StockRequestsPage,
     'Closed': StockRequestsPage,
   },
+  'Export and import': { 'Import': pageRegistry['Export and import']!, 'Export': pageRegistry['Export and import']! },
   'Wms analytics': wmsOverviewTabComponents,
   'Dashboard':     wmsOverviewTabComponents,
   // Sales modules — one index page serves both tabs; it self-filters on ?tab=.
   'Sales invoices':   { 'All sales invoices':   pageRegistry['Sales invoices']!,   'Awaiting approval': pageRegistry['Sales invoices']!, 'Recurring invoices': RecurringSalesInvoicesPage },
+  'Sales deliveries': { 'All sales deliveries': pageRegistry['Sales deliveries']!, 'Awaiting approval': pageRegistry['Sales deliveries']! },
+  'Purchase deliveries': { 'All purchase deliveries': pageRegistry['Purchase deliveries']!, 'Awaiting approval': pageRegistry['Purchase deliveries']! },
   'Sales orders':     { 'All sales orders':     pageRegistry['Sales orders']!,     'Awaiting approval': pageRegistry['Sales orders']!, 'Recurring orders': RecurringSalesOrdersPage },
   'Sales quotes':     { 'All sales quotes':     pageRegistry['Sales quotes']!,     'Awaiting approval': pageRegistry['Sales quotes']! },
+  'Purchase quotes':  { 'All purchase quotes':  pageRegistry['Purchase quotes']!,  'Awaiting approval': pageRegistry['Purchase quotes']! },
   'Inbound delivery': {
     'Receipts': ReceiptIndexPage,
     'Receiving': ReceivingIndexPage,
@@ -1665,7 +1931,7 @@ const tabComponents: Record<string, Record<string, Component>> = {
   // the `surface` prop swaps both the data and the review route.
   'Purchase invoices': {
     'All purchase invoices': PurchaseInvoicesPage,
-    'Awaiting Approval': PurchaseInvoicesAwaitingApprovalPage,
+    'Awaiting approval': PurchaseInvoicesAwaitingApprovalPage,
     'Dropbox': () => h(BillsReviewFilesPage, { surface: 'purchase-invoices' }),
     'Recurring invoices': RecurringPurchaseInvoicesPage,
   },
@@ -1701,6 +1967,15 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Users and roles': {
     'User list': UsersListPage,
     'Custom role': CustomRolesPage,
+  },
+  'Current assets': {
+    'Active assets': pageRegistry['Current assets']!,
+    'Draft assets': pageRegistry['Current assets']!,
+    'Disposed assets': pageRegistry['Current assets']!,
+  },
+  'Tags': {
+    'All tags': TagsTabPage,
+    'Categories': TagCategoriesTabPage,
   },
   // XPM (Mekari Expense) — each tab renders the same page; the page filters by ?tab=.
   'Xpm transactions': {
@@ -1763,7 +2038,25 @@ function msgAgent(msg: { role: string; agentId?: string }) {
 // ── Couriers: "Add courier" lives here in the title bar, but its modal state
 // lives in CouriersPage.vue — signal it to open, same mechanism as toggleAirene.
 const courierAddSignal = ref(0)
+// Prod-parity settings pages (Tax rates, Currencies, Custom fields, Contact groups).
+const parityActions = useParityActions()
 provide('courierAddSignal', courierAddSignal)
+// Other lists title-bar actions signal their page the same way.
+// Accounting → Chart of accounts / Close books title-bar menus signal their page.
+const coaAction = ref({ kind: '', n: 0 })
+provide('coaAction', coaAction)
+function coaMenu(kind: string) { coaAction.value = { kind, n: coaAction.value.n + 1 } }
+const closeBooksAction = ref({ kind: '', n: 0 })
+provide('closeBooksAction', closeBooksAction)
+function closeBooksStart(kind: 'ctb' | 'lp') { closeBooksAction.value = { kind, n: closeBooksAction.value.n + 1 } }
+
+// ── Payment methods / Tags: title-bar create buttons open modals owned by the pages.
+const paymentMethodAddSignal = ref(0)
+provide('paymentMethodAddSignal', paymentMethodAddSignal)
+const tagAddSignal = ref(0)
+provide('tagAddSignal', tagAddSignal)
+const tagCategoryAddSignal = ref(0)
+provide('tagCategoryAddSignal', tagCategoryAddSignal)
 
 // ── Contacts: "+ Contact" in the title bar; the index page owns the navigation
 // (it knows which role list is active), so signal it the same way.
@@ -1778,10 +2071,14 @@ provide('fileManagerAddSignal', fileManagerAddSignal)
 const isContactsIndex = computed(() =>
   ['Customers', 'Vendors', 'Other contacts'].includes(currentPageKey.value))
 // Type-specific create label for the contacts index page-title button.
-const contactAddLabel = computed(() =>
-  currentPageKey.value === 'Vendors' ? 'New vendor'
-  : currentPageKey.value === 'Other contacts' ? 'New contact'
-  : 'New customer')
+const contactAddLabel = computed(() => 'New contact')
+// Contacts title-bar Import menu (prod ContactListView importMenuItems).
+const contactImportItems = computed(() => [
+  'Import from spreadsheet',
+  ...(currentPageKey.value === 'Customers' ? ['Import credit memo'] : []),
+  ...(currentPageKey.value === 'Vendors' ? ['Import debit memo'] : []),
+  'Download import template',
+])
 
 // ── Import dropdown ───────────────────────────────────────────────────────
 const importDropdownOpen = ref(false)
@@ -2215,17 +2512,23 @@ function startResize(e: MouseEvent) {
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('New sales order') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/sales-orders/new')">{{ t('New sales order') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push('/sales-orders/recurring/new')">{{ t('New recurring sales order') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
         </div>
+        <!-- Accounting › Budgeting › Commitments: year-end close is Release 2. -->
+        <div v-else-if="currentPageKey === 'Commitments'" class="page-title-actions">
+          <button id="commitments-close-year" class="btn-enterprise btn-enterprise--secondary" @click="infoToast(t('Not in this prototype'))">
+            {{ t('Close budget year') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">
-          <button class="btn-enterprise btn-enterprise--secondary">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="infoToast('Not in this prototype')">
             {{ t('Import') }}
           </button>
-          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-requests/new')">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -2245,7 +2548,61 @@ function startResize(e: MouseEvent) {
         </div>
         <!-- Sales deliveries: no title-bar New/Import — a delivery is created from a
              sales order (fulfillment), never standalone. -->
-        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions" />
+        <div v-else-if="currentPageKey === 'Sales deliveries'" class="page-title-actions">
+          <!-- prod SalesDeliveryListView: Import menu only (no standalone create) -->
+          <MpPopover id="sd-import-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-after">
+                {{ t('Import') }}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Import from spreadsheet') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="infoToast(t('Not in this prototype'))">{{ t('Import from other applications') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <!-- Accounting › Fixed assets › Assets. rule/btn-icon-add-only — the
+             create button is the one button that carries a leading icon. -->
+        <!-- Accounting › Budgets › Budget lines (FG-1): actions by role and year status. -->
+        <div v-else-if="currentPageKey === 'Budget lines'" class="page-title-actions">
+          <BudgetLinesTitleActions />
+        </div>
+        <div v-else-if="currentPageKey === 'Assets'" class="page-title-actions">
+          <MpButton is-rounded left-icon="add" @click="newAssetDrawerOpen = true">
+            {{ t('New asset') }}
+          </MpButton>
+        </div>
+        <!-- Accounting › Budgeting › Saving bucket: fills are budget changes (FG-5). -->
+        <div v-else-if="currentPageKey === 'Saving bucket'" class="page-title-actions">
+          <MpButton is-rounded left-icon="add" data-testid="sb-fill" @click="router.push({ path: '/budget-changes/new', query: { kind: 'Saving fill' } })">
+            {{ t('Fill bucket') }}
+          </MpButton>
+        </div>
+        <!-- Sales › Progress invoice / Proforma invoice: + New. -->
+        <div v-else-if="currentPageKey === 'Progress invoice' || currentPageKey === 'Proforma invoice'" class="page-title-actions">
+          <MpButton is-rounded left-icon="add" @click="router.push(currentPageKey === 'Progress invoice' ? '/progress-invoices/new' : '/proforma-invoices/new')">
+            {{ currentPageKey === 'Progress invoice' ? t('New progress invoice') : t('New proforma invoice') }}
+          </MpButton>
+        </div>
+        <!-- Accounting › Fixed assets (current) › Asset list: Import + New asset. -->
+        <div v-else-if="currentPageKey === 'Current assets'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/current-assets/import')">{{ t('Import') }}</button>
+          <MpButton is-rounded left-icon="add" @click="router.push('/current-assets/new')">
+            {{ t('New asset') }}
+          </MpButton>
+        </div>
+        <!-- Accounting › Fixed assets (current) › Depreciation: Apply all (confirms first). -->
+        <div v-else-if="currentPageKey === 'Current asset depreciation'" class="page-title-actions">
+          <MpButton v-if="currentDepreciationSchedule.length" is-rounded @click="currentApplyAllRequested = true">
+            {{ t('Apply all') }}
+          </MpButton>
+        </div>
         <div v-else-if="currentPageKey === 'Cash management'" class="page-title-actions">
           <!-- Secondary: "+ New account" -->
           <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="router.push('/cash-management/new')">
@@ -2272,12 +2629,21 @@ function startResize(e: MouseEvent) {
 
             <div v-if="importDropdownOpen" class="import-dropdown" @click.stop>
               <div class="import-group">
-                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/cash-management/internal-transfer')">{{ t('Internal transfer') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Receive money') }}</MpButton>
-                <MpButton variant="ghost" class="import-item import-item--start">{{ t('Spend money') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/cash-management/internal-transfer')">{{ t('New internal transfer') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/bank-deposits/new')">{{ t('New receive money') }}</MpButton>
+                <MpButton variant="ghost" class="import-item import-item--start" @click="importDropdownOpen = false; router.push('/bank-withdrawals/new')">{{ t('New spend money') }}</MpButton>
               </div>
             </div>
           </div>
+        </div>
+        <div v-else-if="currentPageKey === 'Join invoice'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/join-invoices/new')">{{ t('New join invoice') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Join purchase invoices'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/join-purchase-invoices/new')">{{ t('New join purchase invoice') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Bank rules'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/bank-rules/new')">{{ t('New bank rules') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Warehouses'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--secondary" @click="router.push('/warehouses/import')">
@@ -2386,6 +2752,44 @@ function startResize(e: MouseEvent) {
             {{ t('New approval workflow') }}
           </button>
         </div>
+        <div v-else-if="currentPageKey === 'Payment terms'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/payment-terms/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New payment term') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Payment methods'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="paymentMethodAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New payment method') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Tags'" class="page-title-actions">
+          <button v-if="activeTab === 'Categories'" class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="tagCategoryAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New category') }}
+          </button>
+          <button v-else class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="tagAddSignal++">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New tag') }}
+          </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Tagging rules'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/tagging-rules/new')">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ t('New tagging rule') }}
+          </button>
+        </div>
         <div v-else-if="currentPageKey === 'Dimensions' && dimensionsActivated" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="requestDimensionCreate()">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2394,7 +2798,6 @@ function startResize(e: MouseEvent) {
             {{ t('New dimension') }}
           </button>
         </div>
-        <!-- Settings → Users & roles: the create action follows the active tab. -->
         <!-- Settings › Users & roles — production's title bar, same on both tabs:
              (?) help · Add custom role · Invite user. Seat counts live in the
              Invite / Edit user "Seat usage" card. -->
@@ -2414,6 +2817,13 @@ function startResize(e: MouseEvent) {
             variant="primary" is-rounded data-test-id="usr-invite-user"
             @click="router.push('/users-and-roles/invite')"
           >{{ t('Invite user') }}</MpButton>
+        </div>
+        <!-- Two buttons, not one menu: an action launcher needs a shared object noun
+             for its label (New transaction → New spend money), and a project and an
+             expense have none. Creation pattern instead (uxw-mekari-erp-terms). -->
+        <div v-else-if="currentPageKey === 'Project accounting'" class="page-title-actions">
+          <MpButton variant="secondary" is-rounded @click="router.push('/project-accounting/expense/new')">{{ t('New expense') }}</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/project-accounting/new')">{{ t('New project') }}</MpButton>
         </div>
         <!-- Inventory › Grades: the modal lives in GradesPage (useGradeModal). -->
         <div v-else-if="currentPageKey === 'Grades'" class="page-title-actions">
@@ -2543,7 +2953,7 @@ function startResize(e: MouseEvent) {
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
               <MpPopoverList>
-                <MpPopoverListItem>{{ t('New purchase invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/purchase-invoices/new')">{{ t('New purchase invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="router.push('/purchase-invoices/recurring/new')">{{ t('New recurring purchase invoice') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
@@ -2657,7 +3067,63 @@ function startResize(e: MouseEvent) {
           </div>
         </div>
         <div v-else-if="isContactsIndex" class="page-title-actions">
+          <MpPopover id="contacts-import" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Import') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem v-for="item in contactImportItems" :key="item" @click="infoToast(t('Not in this prototype'))">{{ t(item) }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
           <MpButton variant="primary" is-rounded left-icon="add" @click="contactAddSignal++">{{ t(contactAddLabel) }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Chart of accounts'" class="page-title-actions">
+          <MpPopover id="coa-title-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="secondary" is-rounded right-icon="chevrons-down">{{ t('Actions') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <div class="coa-menu-group">{{ t('Management') }}</div>
+                <MpPopoverListItem @click="coaMenu('setup-account')">{{ t('Setup account') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="coaMenu('opening-balance')">{{ t('Setup opening balance') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/close-books')">{{ t('Closing book & Locking period') }}</MpPopoverListItem>
+                <div class="coa-menu-group">{{ t('Import & export') }}</div>
+                <MpPopoverListItem @click="coaMenu('import-je')">{{ t('Import jurnal entry') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="coaMenu('export')">{{ t('Export account') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+          <MpPopover id="coa-title-create" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Create account/transaction') }}</MpButton>
+            </MpPopoverTrigger>
+            <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
+              <MpPopoverList>
+                <MpPopoverListItem @click="router.push('/chart-of-accounts/new')">{{ t('Create new account') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="coaMenu('journal-entry')">{{ t('Create journal entry') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <div v-else-if="currentPageKey === 'Close books'" class="page-title-actions">
+          <MpButton variant="secondary" is-rounded @click="closeBooksStart('lp')">{{ t('Start locking period') }}</MpButton>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="closeBooksStart('ctb')">{{ t('Start closing book') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Tax rates'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newTax++">{{ t('Create tax') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Currencies'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newCurrency++">{{ t('Add new currency') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Custom fields'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary" @click="parityActions.reorderCustomFields++">{{ t('Reorder custom fields') }}</button>
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newCustomField++">{{ t('Add custom field') }}</MpButton>
+        </div>
+        <div v-else-if="currentPageKey === 'Contact groups'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="parityActions.newContactGroup++">{{ t('New contact group') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Couriers'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="courierAddSignal++">
@@ -2682,6 +3148,7 @@ function startResize(e: MouseEvent) {
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase quotes'" class="page-title-actions">
+          <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="infoToast('Not in this prototype')"><MpIcon name="upload" size="md" />{{ t('Import') }}</button>
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/purchase-quotes/new')">
             <MpIcon name="add" size="md" color="icon.inverse" />
             {{ t('New purchase quote') }}
@@ -2692,6 +3159,26 @@ function startResize(e: MouseEvent) {
             <MpIcon name="add" size="md" color="icon.inverse" />
             {{ t('New purchase delivery') }}
           </button>
+        </div>
+        <div v-else-if="currentPageKey === 'Budget changes' && (budgetChangesState.viewAs === 'Budget Controller' || budgetChangesState.viewAs === 'Requester')" class="page-title-actions">
+          <MpPopover id="budget-changes-new-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" data-tour="change-new">
+                <MpIcon name="add" size="md" color="icon.inverse" />
+                {{ t('New change') }}
+              </button>
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <MpPopoverList v-if="budgetChangesState.viewAs === 'Budget Controller'">
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Transfer' } })">{{ t('Transfer') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Revision' } })">{{ t('Revision') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Mid-year insert' } })">{{ t('Mid-year insert') }}</MpPopoverListItem>
+              </MpPopoverList>
+              <MpPopoverList v-else>
+                <MpPopoverListItem @click="router.push({ path: '/budget-changes/new', query: { kind: 'Funding request' } })">{{ t('Funding request') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
         </div>
         <!-- ── XPM (Mekari Expense) title-bar actions ── -->
         <div v-else-if="currentPageKey === 'Budgeting'" class="page-title-actions">
@@ -2787,7 +3274,7 @@ function startResize(e: MouseEvent) {
         </button>
       </div>
 
-      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Tax report' || currentPageKey === 'Cash and bank report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
+      <div class="stage" :class="{ 'stage--flush': currentPageKey === 'Wms report' || currentPageKey === 'Sales report' || currentPageKey === 'Inventory report' || currentPageKey === 'Financial report' || currentPageKey === 'Purchase report' || currentPageKey === 'Fixed assets report' || currentPageKey === 'Cash and bank report' || currentPageKey === 'Tax report', 'stage--flush-top': currentPageKey === 'Hr' || currentPageKey === 'Home' }">
         <!-- Several warehouses in scope: where the work is, not which products. -->
         <MpBanner v-if="cycleCountBannerMulti" variant="info" class="cycle-count-banner">
           <MpBannerIcon name="info" />
@@ -3171,6 +3658,8 @@ function startResize(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* Chart of accounts › Actions menu group captions (prod MANAGEMENT / IMPORT & EXPORT). */
+.coa-menu-group { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-transform: uppercase; letter-spacing: 0.06em; }
 /* ── Page layout (flex row) ───────────────────────────────────────────────── */
 
 .page-layout {

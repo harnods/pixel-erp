@@ -79,6 +79,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'out for delivery':{ type: 'information', label: 'Out for delivery' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
+  billing:    { type: 'warning',      label: 'Billing'    },
   'in review':{ type: 'warning',      label: 'In review'  },
   'partially reconciled': { type: 'warning', label: 'Partially reconciled' },
   'on progress':{ type: 'warning',    label: 'On progress'},
@@ -100,6 +101,17 @@ const statusConfig: Record<string, StatusConfig> = {
   low:        { type: 'critical',     label: 'Low'        },
   'needs review':{ type: 'critical',  label: 'Needs review' },
 
+  // ── Fixed assets ──────────────────────────────────────
+  // An asset's status says where it is in its life, so the colour follows what
+  // the reader must do about it: green = depreciating normally, yellow = value
+  // has been written down, blue = reached the end of its life as planned, gray
+  // = no longer held, red = cannot reach the fiscal book until it is fixed.
+  impaired:   { type: 'warning',      label: 'Impaired'   },
+  disposed:   { type: 'announcement', label: 'Disposed'   },
+  split:      { type: 'announcement', label: 'Split'      },
+  'fully depreciated': { type: 'information', label: 'Fully depreciated' },
+  incomplete: { type: 'critical',     label: 'Incomplete' },
+
   // ── announcement — GRAY (neutral / final / inactive) ──
   draft:      { type: 'announcement', label: 'Draft'      },
   'awaiting approval':{ type: 'announcement', label: 'Draft' },
@@ -116,6 +128,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'issued / picked':{ type: 'announcement', label: 'Issued / picked' },
   not_started:{ type: 'warning',      label: 'Open'        },
   'to do':    { type: 'announcement', label: 'To do'      },
+  setup:      { type: 'announcement', label: 'Setup'      },
   direct:     { type: 'announcement', label: 'Direct'     },
   unclassified:{ type: 'announcement', label: 'Other documents' },
 
@@ -135,6 +148,7 @@ const statusConfig: Record<string, StatusConfig> = {
   'partially shipped': { type: 'information', label: 'Partially shipped' },
   'partially fulfilled': { type: 'information', label: 'Partially fulfilled' },
   'partially reserved': { type: 'information', label: 'Partially reserved' },
+  'partially delivered': { type: 'information', label: 'Partially delivered' },
   'in progress':{ type: 'information',  label: 'In progress' },
   in_progress:{ type: 'information',  label: 'In progress' },
   'task created':{ type: 'information', label: 'Task created' },

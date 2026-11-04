@@ -19,11 +19,11 @@ import {
 
 const { t } = useLocale()
 
-/** A menu option. `description` is optional — when present the menu renders it
- *  under the label (settings selects whose choices need explaining, e.g.
- *  Production settings › Reservation method). The trigger always shows the label
- *  alone. */
-type Opt = { value: string; label: string; description?: string }
+/** A menu option. `description` (optional) renders under the label — settings
+ *  selects whose choices need explaining, e.g. Production settings › Reservation
+ *  method; the trigger always shows the label alone. `group` (optional) prints a
+ *  small header above the first option of each run of the same group. */
+type Opt = { value: string; label: string; description?: string; group?: string }
 
 const props = withDefaults(defineProps<{
   id: string
@@ -34,14 +34,22 @@ const props = withDefaults(defineProps<{
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
+  /**
+   * `cell` drops the field border/height so the control can fill a table cell
+   * edge-to-edge (the cell itself draws the boundary). Same searchable
+   * behaviour — only the chrome changes. Used by the WMS cutover product table.
+   */
+  variant?: 'field' | 'cell'
+  /** Greys out and blocks input — for a cell whose group checkbox is off. */
+  isDisabled?: boolean
+  /** No-match copy. UXW blank-slate pattern: "No matching {object} found". */
+  emptyText?: string
   /** Read-only: the menu never opens and the × is withheld. Also used for a
    *  value forced by another field — a cascade's auto-filled level. */
   disabled?: boolean
   /** Tick several options; `modelValue` becomes a string[]. */
   multiple?: boolean
-  /** Same as `disabled`, for callers using the Pixel prop name. */
-  isDisabled?: boolean
-}>(), { width: '176px', isClearable: true, disabled: false, isDisabled: false, multiple: false })
+}>(), { width: '176px', isClearable: true, variant: 'field', disabled: false, isDisabled: false, multiple: false, emptyText: 'No results found' })
 
 const isInert = computed(() => props.disabled || props.isDisabled)
 
@@ -65,6 +73,8 @@ const selectedLabel = computed(() => {
   if (selected.value.length === 1) return labelOf(selected.value[0]!)
   return `${selected.value.length} ${t('selected')}`
 })
+/** The group header to print before option i of the filtered list (when it starts a new group). */
+const groupHead = (i: number) => { const g = filtered.value[i]?.group; return g && filtered.value[i - 1]?.group !== g ? g : '' }
 
 // Combobox state: the trigger input is typeable while open.
 const open = ref(false)
@@ -129,7 +139,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 </script>
 
 <template>
-  <div ref="rootEl" class="efs" :class="{ 'efs--filled': hasSelection && isClearable && !open && !isInert, 'efs--disabled': isInert, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
+  <div ref="rootEl" class="efs" :class="[`efs--${variant}`, { 'efs--filled': hasSelection && isClearable && !open && !isInert, 'efs--disabled': isInert, 'efs--full': width === '100%' }]" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -153,23 +163,25 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
       </MpPopoverTrigger>
       <MpPopoverContent :class="contentClass">
         <MpPopoverList>
-          <MpPopoverListItem
-            v-for="o in filtered" :key="o.value"
-            :is-active="!multiple && o.value === modelValue"
-            @mousedown.prevent
-            @click="pick(o.value)"
-          >
-            <span v-if="multiple" class="efs-check">
-              <MpCheckbox :id="`${id}-${o.value}`" :is-checked="selected.includes(o.value)" @change="() => pick(o.value)" />
-              <span class="efs-check-label">{{ o.label }}</span>
-            </span>
-            <span v-else-if="o.description" class="efs-opt">
-              <span class="efs-opt-label">{{ o.label }}</span>
-              <span class="efs-opt-desc">{{ o.description }}</span>
-            </span>
-            <template v-else>{{ o.label }}</template>
-          </MpPopoverListItem>
-          <div v-if="!filtered.length" class="efs-empty">No results</div>
+          <template v-for="(o, i) in filtered" :key="o.value">
+            <div v-if="groupHead(i)" class="efs-group" role="presentation">{{ groupHead(i) }}</div>
+            <MpPopoverListItem
+              :is-active="!multiple && o.value === modelValue"
+              @mousedown.prevent
+              @click="pick(o.value)"
+            >
+              <span v-if="multiple" class="efs-check">
+                <MpCheckbox :id="`${id}-${o.value}`" :is-checked="selected.includes(o.value)" @change="() => pick(o.value)" />
+                <span class="efs-check-label">{{ o.label }}</span>
+              </span>
+              <span v-else-if="o.description" class="efs-opt">
+                <span class="efs-opt-label">{{ o.label }}</span>
+                <span class="efs-opt-desc">{{ o.description }}</span>
+              </span>
+              <template v-else>{{ o.label }}</template>
+            </MpPopoverListItem>
+          </template>
+          <div v-if="!filtered.length" class="efs-empty">{{ emptyText }}</div>
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
@@ -224,6 +236,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 .efs--filled:hover .efs-clear { display: inline-flex; }
 .efs-clear:hover { color: var(--mp-text-default); }
 
+.efs-group { align-self: stretch; width: 100%; box-sizing: border-box; text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); border-top: 1px solid var(--mp-colors-border-default, #e7edf5); }
+.efs-group:first-child { border-top: 0; }
 .efs--disabled .efs-trigger {
   background: var(--mp-colors-background-disabled, #f5f5f5);
   border-color: var(--mp-colors-border-form, #1d1f2429);
@@ -231,6 +245,27 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
 }
 .efs--disabled .efs-input { color: var(--mp-text-secondary); cursor: default; }
 .efs--disabled .efs-chevron { color: var(--mp-text-disabled, #9ca3af); }
-
 .efs-empty { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── `cell` variant — fills a table cell edge-to-edge ──────────────────────
+   The cell draws the boundary, so the control drops its own border and radius
+   and inherits the row height. Same searchable combobox behaviour otherwise. */
+.efs--cell { display: flex; width: 100%; }
+.efs--cell .efs-trigger {
+  width: 100%;
+  height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-3);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.efs--cell .efs-trigger:focus-within {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
+}
+.efs--cell .efs-clear { right: var(--mp-spacing-6); }
+
+.efs--disabled .efs-trigger { cursor: not-allowed; }
+.efs--disabled .efs-input { cursor: not-allowed; color: var(--mp-text-disabled, #9aa4a6); }
+.efs--disabled .efs-chevron { opacity: 0.4; }
 </style>

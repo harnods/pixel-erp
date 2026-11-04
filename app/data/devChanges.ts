@@ -442,6 +442,21 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['CreateApprovalWorkflowPage.vue', 'ApprovalWorkflowsPage.vue', 'approvalWorkflows.ts'],
   },
   {
+    id: 'sd-input-method-table',
+    title: 'Sales delivery: one input method for the whole table',
+    description:
+      'Quantity / Percentage is now a single dropdown above the line table instead of a per-line column; Qty delivered is still typed per line. The Percentage lock and its Release cover the whole sales order. A hand-added line in Percentage takes its base qty in the Qty ordered cell. The delivery detail page shows the method once above the lines, with the typed % under each quantity.',
+    date: '2026-10-29',
+    files: ['NewSalesDeliveryPage.vue', 'SalesDeliveryDetailsPage.vue', 'ReleaseInputBasisModal.vue', 'salesDeliveries.ts'],
+  },
+  {
+    id: 'sd-ordered-caption',
+    title: 'Qty ordered: progress reads label left, figure right',
+    description: 'Under the ordered qty, "Delivered" and "Remaining" sit on the left and their qty and percentage on the right, so the figures line up.',
+    date: '2026-10-29',
+    files: ['NewSalesDeliveryPage.vue'],
+  },
+  {
     id: 'wo-start-date-modal',
     title: 'Start work order asks for the actual start date',
     description:
@@ -1274,9 +1289,17 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-module-view-mode',
     title: 'Module settings open in view mode',
     description:
-      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown: Draft modules get Edit/Publish/Delete; Published modules get Edit/Deactivate/Delete (Delete on a published module shows an info toast requiring deactivation first). Tab order: Setup → Properties → Layout → Pipeline. Deals module cannot be deleted or deactivated.',
+      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown: Draft modules get Edit/Publish/Delete; Published modules get Edit/Deactivate/Delete (Delete on a published module shows an info toast requiring deactivation first). Tab order: Setup → Properties → Layout → Pipeline → Check-in. Deals module cannot be deleted or deactivated.',
     date: '2026-09-20',
     files: ['CrmModuleBuilderPage.vue', 'CrmDetailLayoutBuilder.vue'],
+  },
+  {
+    id: 'crm-module-checkin',
+    title: 'Check-in tab on module settings',
+    description:
+      'New Check-in tab on deal-like module settings. Contains a toggle "Enable check-in for this module" with a description explaining that team members can check in at customer/prospect locations to log visits and track field activity.',
+    date: '2026-11-04',
+    files: ['CrmModuleBuilderPage.vue'],
   },
   {
     id: 'crm-layout-erp-target',

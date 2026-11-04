@@ -1,4 +1,6 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/invoices/views/SalesInvoiceShowView.vue -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink,
@@ -207,7 +209,7 @@ const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
-  toast.notify({ variant: 'success', title: t('Sales invoice deleted'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: `${t('Invoice')} #${invoice.value.number} ${t('has been deleted')}`, rootProps: { class: 'toast-enterprise' } })
   router.push('/sales-invoices')
 }
 const taxDocDrawerOpen = ref(false)
@@ -636,6 +638,7 @@ function dismissCreditModal() {
 onMounted(() => {
   if (invoice.value && canApplyCredit.value && !dismissedCreditCustomers.value.has(invoice.value.customer.id)) applyModalOpen.value = true
 })</script>
+function notInPrototype() { infoToast(t('Not in this prototype')) }
 
 <template>
   <div v-if="invoice" class="detail-page">
@@ -732,8 +735,8 @@ onMounted(() => {
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">{{ t('Total') }}</span>
-            <span class="detail-total-amount">{{ formatIDR(invoice.totals.total) }}</span>
+            <span class="detail-total-amount">{{ t('Balance due') }} {{ formatIDR(invoice.balance) }}</span>
+            <a class="detail-journal-link" @click.prevent="notInPrototype">{{ t('View journal entry') }}</a>
           </div>
         </div>
 
@@ -751,11 +754,6 @@ onMounted(() => {
             <ContentList :label="t('Transaction date')" :value="formatDateLong(invoice.date)" />
             <ContentList :label="t('Due date')" :value="formatDateLong(invoice.dueDate)" />
             <ContentList :label="t('Payment terms')" :value="invoice.paymentTerms" />
-          </div>
-          <!-- col 3: settlement -->
-          <div class="content-list-col">
-            <ContentList :label="t('Amount paid')" :value="formatIDR(invoice.amountPaid)" />
-            <ContentList :label="t('Balance due')" :value="formatIDR(invoice.balance)" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
@@ -801,7 +799,9 @@ onMounted(() => {
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.qty }}</td>
+              <!-- Six decimals at most, decimal comma: a delivered 5,28 unit must not
+                   print as "5.28" or round to 5 (percentage-based delivery, TS-004). -->
+              <td class="detail-td detail-td--num">{{ it.qty.toLocaleString('id-ID', { maximumFractionDigits: 6 }) }}</td>
               <td class="detail-td">{{ it.unit }}</td>
               <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
               <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
@@ -834,7 +834,7 @@ onMounted(() => {
           <ContentList :label="t('Memo')">
             <p class="detail-note-text">{{ invoice.memo }}</p>
           </ContentList>
-          <ContentList :label="`${t('Attachment')} (${invoice.attachments.length})`">
+          <ContentList :label="`${t('Attachments')} (${invoice.attachments.length})`">
             <div class="detail-attach-list">
               <a v-for="(a, i) in invoice.attachments" :key="i" class="detail-attach" @click.prevent>
                 <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -853,11 +853,11 @@ onMounted(() => {
             <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(invoice.totals.subtotal) }}</span>
           </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Discount per line') }}</span>
+          <div v-if="invoice.totals.discountPerLine > 0" class="detail-total-row">
+            <span class="detail-total-row-label">{{ t('Discounts per line') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(invoice.totals.discountPerLine) }}</span>
           </div>
-          <div class="detail-total-row">
+          <div v-if="invoice.totals.globalDiscount > 0" class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Global discount') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(invoice.totals.globalDiscount) }}</span>
           </div>
@@ -883,8 +883,8 @@ onMounted(() => {
             <span class="detail-total-row-label">{{ t('Amount paid') }}</span>
             <span class="detail-total-row-amt">{{ formatDeduction(0) }}</span>
           </div>
-          <div class="detail-total-rule" />
-          <div class="detail-total-row">
+          <div v-if="invoice.amountPaid > 0" class="detail-total-rule" />
+          <div v-if="invoice.amountPaid > 0" class="detail-total-row">
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Balance due') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(invoice.balance) }}</span>
           </div>
@@ -1110,9 +1110,7 @@ onMounted(() => {
         <!-- Paid: a plain "Actions" primary dropdown (no payment left to record) -->
         <DetailActionsMenu v-if="invoice.status === 'paid'" id="si-actions" :groups="siPaidActionGroups" />
 
-        <!-- Open/Overdue: "Add payment" primary split button — main segment records
-             a payment; chevron segment opens the rest (Reject + the create-document
-             actions that only make sense before the invoice is settled). -->
+        <!-- Open/Overdue: "Add payment" primary split button (prod ButtonActionPopover) -->
         <div v-else class="detail-split-btn">
           <MpButton variant="primary" class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="receivePayment">
             {{ t('Add payment') }}
@@ -1125,8 +1123,8 @@ onMounted(() => {
               <MpPopoverList>
                 <MpPopoverListItem @click="previewOpen = true">{{ t('Preview') }}</MpPopoverListItem>
                 <MpPopoverListItem v-if="!hasRecurring" @click="openSetRecurringDrawer">{{ t('Set as recurring') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Create join invoice') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Create progress invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/join-invoice')">{{ t('Create join invoice') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="router.push('/progress-invoice')">{{ t('Create progress invoice') }}</MpPopoverListItem>
                 <MpPopoverListItem @click="createSalesReturn">{{ t('Create sales return') }}</MpPopoverListItem>
                 <!-- BR-008: one STANDING document per invoice. Locked with its reason
                      rather than hidden, so it is clear why it can't be used — a
@@ -1146,10 +1144,10 @@ onMounted(() => {
               <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
               <MpPopoverList>
                 <MpPopoverListItem @click="editInvoice">{{ t('Edit') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Reject') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Void') }}</MpPopoverListItem>
-                <MpPopoverListItem>{{ t('Delete') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Duplicate') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Reject') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="notInPrototype">{{ t('Void') }}</MpPopoverListItem>
+                <MpPopoverListItem @click="deleteOpen = true">{{ t('Delete') }}</MpPopoverListItem>
               </MpPopoverList>
             </MpPopoverContent>
           </MpPopover>
@@ -1206,9 +1204,9 @@ onMounted(() => {
 
     <ConfirmModal
       v-model:is-open="deleteOpen"
-      :title="t('Delete sales invoice?')"
-      :description="`${t('Sales Invoice')} #${invoice.number} ${t('will be permanently deleted. This cannot be undone.')}`"
-      :confirm-label="`${t('Delete')} ${t('sales invoice')}`"
+      :title="t('Delete invoice')"
+      :description="t('Are you sure you want to delete this invoice? This action cannot be undone.')"
+      :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
 
@@ -1376,6 +1374,8 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.detail-journal-link { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; text-align: right; }
+.detail-journal-link:hover { text-decoration: underline; }
 .detail-notfound {
   display: flex; flex-direction: column; align-items: center; text-align: center;
   gap: var(--mp-spacing-2); padding: var(--mp-spacing-9) var(--mp-spacing-4);

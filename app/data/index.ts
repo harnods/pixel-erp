@@ -30,6 +30,7 @@ export * from './warehouses'
 export * from './warehouseDetails'
 export * from './warehouseConfig'
 export * from './warehouseSettings'
+export * from './templateSettings'
 export * from './warehouseTeam'
 export * from './warehouseTransactions'
 export * from './storageLevels'
@@ -46,6 +47,7 @@ export * from './putAwayTasks'
 export * from './putAwayTaskDetails'
 export * from './purchaseReceivings'
 export * from './purchaseInvoices'
+export * from './purchaseReports'
 export * from './inboundSync'
 
 // ── Outbound (order → picking → packing → delivery → shipment) ──────────────
@@ -71,6 +73,7 @@ export * from './purchaseDeliveryDetails'
 export * from './purchaseInvoiceDetails'
 export * from './purchaseRequestDetails'
 export * from './salesInvoices'
+export * from './salesReports'
 // Credit memo / applied / refund — also overlays credit onto invoice balance+status.
 export * from './creditMemos'
 export * from './salesDeliveries'
@@ -92,9 +95,14 @@ export * from './productionRequests'
 export * from './cashAccounts'
 export * from './bankStatementLines'
 export * from './bankStatementReviewFiles'
+export * from './bankTransactions'
+export * from './journalEntries'
 
 // ── Expenses (bills / uploaded files review) ────────────────────────────────
 export * from './bills'
+export * from './fixedAssets'
+export * from './fixedAssetScreens'
+export * from './depreciationSchedule'
 export * from './reviewFiles'
 
 // ── HR (Employees) ──────────────────────────────────────────────────────────
@@ -102,10 +110,17 @@ export * from './employees'
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 export * from './approvalWorkflows'
+export * from './companySettings'
+export * from './companyTaxes'
+export * from './currencyList'
+export * from './customFields'
+export * from './contactGroups'
 export * from './crmSubscription'
 
 // ── Data migration (WMS → Jurnal cutover) ───────────────────────────────────
 export * from './wmsCutover'
+export * from './wmsDataMigration'
+export * from './otherLists'
 
 // ── Cross-module integrity guards ───────────────────────────────────────────
 export * from './integrityGuards'
@@ -126,3 +141,22 @@ export * from './activityLog'
 // ── Seed status coverage — runs LAST (after every base seed has initialised) so
 // the mock DB has ≥1 record in every inbound/outbound status. ─────────────────
 import './seedCoverage'
+
+// ── Settings: inventory, production, payment terms/methods, tags, tagging rules ──
+export * from './inventorySettings'
+export * from './productionSettings'
+export * from './paymentTerms'
+export * from './paymentMethods'
+export * from './tags'
+export * from './taggingRules'
+export * from './consolidation'
+export * from './currentAssets'
+export * from './reconciliations'
+export * from './bankRules'
+export * from './chartOfAccounts'
+export * from './inventoryValuationReport'
+export * from './fixedAssetSummaryReport'
+export * from './cashBankReport'
+export * from './cashFlowTrialBalance'
+export * from './joinInvoices'
+export * from './progressInvoices'

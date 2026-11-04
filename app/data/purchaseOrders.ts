@@ -3,7 +3,7 @@ import type { PurchaseOrder, PurchaseOrderStatus } from './types'
 import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 import type { RecurringSchedule } from './salesInvoices'
-import { loadSnapshot, saveSnapshot } from './persist'
+import { loadCreated, saveCreated, loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * Purchase orders — a deterministic TIME SERIES spanning 1 Jan 2026 → today
@@ -74,6 +74,15 @@ export const purchaseOrders: PurchaseOrder[] = reactive<PurchaseOrder[]>(
 
 export function persistPurchaseOrders(): void {
   saveSnapshot(K_PO, purchaseOrders)
+}
+
+
+// User-created orders (New purchase order / Duplicate) survive a reload; the seed is untouched.
+const PO_CREATED_KEY = 'purchase-orders-created'
+for (const o of loadCreated<PurchaseOrder>(PO_CREATED_KEY)) if (!purchaseOrders.some(x => x.id === o.id)) purchaseOrders.push(o)
+export function addPurchaseOrder(order: PurchaseOrder): void {
+  purchaseOrders.push(order)
+  saveCreated(PO_CREATED_KEY, [...loadCreated<PurchaseOrder>(PO_CREATED_KEY).filter(x => x.id !== order.id), order])
 }
 
 // ── Recurring Purchase Orders ──────────────────────────────────────────────────

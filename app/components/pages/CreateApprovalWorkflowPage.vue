@@ -3,7 +3,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage, MpFormHelpText,
-  MpInput, MpInputTag, MpSelect, MpRadio, MpToggle, MpTextarea, MpText, MpButton, MpTooltip,
+  MpInput, MpInputTag, MpAutocomplete, MpRadio, MpToggle, MpTextarea, MpText, MpButton, MpTooltip, MpTextlink,
   MpInputGroup, MpInputLeftAddon, toast, type DataInterface,
 } from '@mekari/pixel3'
 import {
@@ -31,13 +31,20 @@ const name = ref('')
 const description = ref('')
 const appliesTo = ref<ApprovalAppliesTo>('transaction')
 
-// Demo FAB toggle (Settings > Approval workflows) — when Project Accounting billing doesn't
+// Scenario FAB (Settings > Approval workflows) — when Project accounting billing doesn't
 // exist for this tenant, the "Applies to" condition is dropped entirely and the form behaves
-// like the pre-Project-Action version (transaction type only). Force back to 'transaction' if
+// like the pre-Project-action version (transaction type only). Force back to 'transaction' if
 // the flag flips off mid-edit so a hidden 'project' selection can't be silently submitted.
 watch(projectAccountingEnabled, (enabled) => {
-  if (!enabled) appliesTo.value = 'transaction'
+  if (!enabled && !savedProjectAction.value) appliesTo.value = 'transaction'
 })
+// A saved rule that already uses projects keeps those fields when the component is off,
+// so saving never quietly turns a Project action rule into a transaction rule, or widens
+// a rule scoped to some projects to every project.
+const savedProjectAction = ref(false)
+const savedProjectScope = ref(false)
+const appliesToOn = computed(() => projectAccountingEnabled.value || savedProjectAction.value)
+const projectScopeOn = computed(() => projectAccountingEnabled.value || savedProjectAction.value || savedProjectScope.value)
 const transactionType = ref<ApprovalTransactionType | ''>('')
 const projectAction = ref<ProjectAction | ''>('')
 const projectScope = ref<'all' | 'some'>('all')
@@ -51,7 +58,7 @@ const minAmount = ref<number | null>(0)
 const isWorkOrder = computed(() => appliesTo.value === 'transaction' && transactionType.value === 'work-order')
 const showAmountField = computed(() => !isWorkOrder.value && amountFieldVisible(appliesTo.value, projectAction.value))
 const amountLabel = computed(() => t(amountFieldLabel(appliesTo.value, projectAction.value)))
-const showProjectScopeField = computed(() => !isWorkOrder.value && projectScopeFieldVisible(appliesTo.value, projectAction.value))
+const showProjectScopeField = computed(() => !isWorkOrder.value && projectScopeOn.value && projectScopeFieldVisible(appliesTo.value, projectAction.value))
 
 // ── Work order — the work order transaction this workflow gates ──────────────────
 // Choosing transaction type "Work order" shows a second dropdown under it. A workflow
@@ -135,17 +142,19 @@ const TRANSACTION_TYPE_LABELS: Record<ApprovalTransactionType, string> = {
   'work-order': t('Work order'),
 }
 
-const PROJECT_ACTION_LABELS: Record<ProjectAction, string> = {
-  'project-creation': t('Project creation'),
-  'variation-order': t('Variation order'),
-  'milestone-verification': t('Milestone verification'),
-}
+// Labels come from the data layer (approvalWorkflows.ts owns the wording: "Addendum").
+const transactionTypeOptions = computed(() =>
+  TRANSACTION_TYPE_OPTIONS.map((o) => ({ value: o.value, label: TRANSACTION_TYPE_LABELS[o.value] })))
+const projectActionOptions = computed(() =>
+  PROJECT_ACTION_OPTIONS.map((o) => ({ value: o.value, label: t(o.label) })))
 
 // Edit mode — prefill the form from the existing rule.
 onMounted(() => {
   if (!isEdit.value) return
   const rule = getApprovalWorkflowById(props.orderId!)
   if (!rule) return
+  savedProjectAction.value = rule.appliesTo === 'project'
+  savedProjectScope.value = rule.projectScope === 'some'
   name.value = rule.name
   description.value = rule.description ?? ''
   appliesTo.value = rule.appliesTo
@@ -202,7 +211,7 @@ function validate(): boolean {
     projectActionError.value = ''
     createdByError.value = createdByScope.value === 'some' && createdByUsers.value.length === 0
   } else {
-    // "Transaction created by" is omitted entirely for Project Action rules — nothing to validate.
+    // "Transaction created by" is omitted entirely for Project action rules — nothing to validate.
     transactionTypeError.value = ''
     projectActionError.value = projectAction.value ? '' : t('You must select action type')
     createdByError.value = false
@@ -225,7 +234,7 @@ async function save() {
     appliesTo: appliesTo.value,
     transactionType: appliesTo.value === 'transaction' ? (transactionType.value as ApprovalTransactionType) : '',
     projectAction: appliesTo.value === 'project' ? (projectAction.value as ProjectAction) : '',
-    projectScope: projectScope.value,
+    projectScope: showProjectScopeField.value ? projectScope.value : 'all',
     projectIds: showProjectScopeField.value && projectScope.value === 'some' ? projectTagDataToIds(someProjects.value) : [],
     minAmount: showAmountField.value ? minAmount.value : null,
     createdByScope: appliesTo.value === 'transaction' ? createdByScope.value : 'all',
@@ -254,7 +263,7 @@ async function save() {
     <!-- ── Page title bar (neutral-subtle bg, 72px, breadcrumb + title) ── -->
     <div class="caw-titlebar">
       <div class="caw-titlebar-left">
-        <MpButton variant="link" class="caw-breadcrumb btn-enterprise" @click="goBack">{{ t('Approval workflows') }}</MpButton>
+        <MpTextlink id="awf-breadcrumb" as="a" class="caw-breadcrumb" @click.prevent="goBack">{{ t('Approval workflows') }}</MpTextlink>
         <h1 class="caw-title">{{ isEdit ? t('Edit approval workflow') : t('New approval workflow') }}</h1>
       </div>
     </div>
@@ -269,7 +278,7 @@ async function save() {
             <MpFormLabel>{{ t('Workflow name') }}</MpFormLabel>
             <span class="caw-counter">{{ name.length }} / {{ NAME_MAX }}</span>
           </div>
-          <MpInput id="awf-name-input" v-model="name" :maxlength="NAME_MAX" :placeholder="t('Example: Sales Invoice Rule 001')" is-full-width @update:model-value="nameError = ''" />
+          <MpInput id="awf-name-input" v-model="name" :maxlength="NAME_MAX" is-full-width @update:model-value="nameError = ''" />
           <MpFormErrorMessage>{{ nameError }}</MpFormErrorMessage>
         </MpFormControl>
 
@@ -278,7 +287,7 @@ async function save() {
             <MpFormLabel>{{ t('Description') }}</MpFormLabel>
             <span class="caw-counter">{{ description.length }} / {{ DESC_MAX }}</span>
           </div>
-          <MpTextarea id="awf-description-input" v-model="description" :maxlength="DESC_MAX" :placeholder="t('Optional')" is-full-width />
+          <MpTextarea id="awf-description-input" v-model="description" :maxlength="DESC_MAX" is-full-width />
         </MpFormControl>
 
         <div class="caw-divider" />
@@ -286,37 +295,38 @@ async function save() {
         <!-- ── Section: Conditions ── -->
         <div class="caw-section">
           <h2 class="caw-section-title">{{ t('Conditions') }}</h2>
-          <p class="caw-section-desc">{{ t('Define transaction conditions that require approval.') }}</p>
+          <p class="caw-section-desc">{{ t('Define the conditions that require approval.') }}</p>
 
           <div class="caw-fields">
             <!-- Only shown when the Project Accounting billing component exists for this
                  tenant (Settings > Approval workflows demo FAB) — otherwise the form behaves
-                 like the pre-Project-Action version (Transaction type only, no selector). -->
-            <MpFormControl v-if="projectAccountingEnabled" id="awf-applies-to">
+                 like the pre-Project-action version (Transaction type only, no selector). -->
+            <MpFormControl v-if="appliesToOn" id="awf-applies-to">
               <MpFormLabel>{{ t('Applies to') }}</MpFormLabel>
               <div class="caw-radio-group caw-radio-group--inline">
                 <MpRadio id="awf-applies-to-transaction" name="awf-applies-to" value="transaction" v-model="appliesTo">
                   {{ t('Transaction') }}
                 </MpRadio>
                 <MpRadio id="awf-applies-to-project" name="awf-applies-to" value="project" v-model="appliesTo">
-                  {{ t('Project Action') }}
+                  {{ t('Project action') }}
                 </MpRadio>
               </div>
             </MpFormControl>
 
             <MpFormControl v-if="appliesTo === 'transaction'" id="awf-transaction-type" class="caw-field-half" is-required :is-invalid="!!transactionTypeError || !!woTypeError">
               <MpFormLabel>{{ t('Transaction type') }}</MpFormLabel>
-              <MpSelect
+              <MpAutocomplete
                 id="awf-transaction-type-input"
-                :model-value="transactionType"
-                :placeholder="transactionType ? undefined : t('Select transaction type')"
+                :model-value="transactionType || undefined"
+                :data="transactionTypeOptions"
+                label-prop="label"
+                value-prop="value"
+                :placeholder="t('Select transaction type')"
+                use-portal
                 is-full-width
-                @change="(_e: Event, v: string) => { transactionType = v as ApprovalTransactionType; transactionTypeError = '' }"
-              >
-                <option v-for="opt in TRANSACTION_TYPE_OPTIONS" :key="opt.value" :value="opt.value">
-                  {{ TRANSACTION_TYPE_LABELS[opt.value] }}
-                </option>
-              </MpSelect>
+                :is-invalid="!!transactionTypeError"
+                @update:model-value="(v: unknown) => { transactionType = (v ?? '') as ApprovalTransactionType | ''; transactionTypeError = '' }"
+              />
               <!-- Work order — which work order transaction this workflow gates (one type per
                    workflow; types another workflow already has aren't offered). -->
               <div v-if="isWorkOrder" class="caw-wo-type" data-devchange="wo-approval-rules">
@@ -339,22 +349,23 @@ async function save() {
             <template v-else>
               <MpFormControl id="awf-project-action" class="caw-field-half" is-required :is-invalid="!!projectActionError">
                 <MpFormLabel>{{ t('Action type') }}</MpFormLabel>
-                <MpSelect
+                <MpAutocomplete
                   id="awf-project-action-input"
-                  :model-value="projectAction"
-                  :placeholder="projectAction ? undefined : t('Select action type')"
+                  :model-value="projectAction || undefined"
+                  :data="projectActionOptions"
+                  label-prop="label"
+                  value-prop="value"
+                  :placeholder="t('Select action type')"
+                  use-portal
                   is-full-width
-                  @change="(_e: Event, v: string) => { projectAction = v as ProjectAction; projectActionError = '' }"
-                >
-                  <option v-for="opt in PROJECT_ACTION_OPTIONS" :key="opt.value" :value="opt.value">
-                    {{ PROJECT_ACTION_LABELS[opt.value] }}
-                  </option>
-                </MpSelect>
+                  :is-invalid="!!projectActionError"
+                  @update:model-value="(v: unknown) => { projectAction = (v ?? '') as ProjectAction | ''; projectActionError = '' }"
+                />
                 <MpFormErrorMessage>{{ projectActionError }}</MpFormErrorMessage>
               </MpFormControl>
             </template>
 
-            <!-- Amount / Contract value / Variation delta — same control, label + presence
+            <!-- Amount / Contract value / Addendum value change — same control, label + presence
                  depend on appliesTo + the selected Project action. Never shown for milestone
                  verification (no amount condition for that action). -->
             <MpFormControl v-if="showAmountField" id="awf-min-amount" class="caw-field-half">
@@ -371,12 +382,14 @@ async function save() {
                 />
               </MpInputGroup>
               <MpFormHelpText>
-                {{ t('Enter the smallest value if you want to create more than one rule for the same transaction type') }}
+                {{ appliesTo === 'project'
+                  ? t('Enter the smallest value if you want to create more than one rule for the same action type')
+                  : t('Enter the smallest value if you want to create more than one rule for the same transaction type') }}
               </MpFormHelpText>
             </MpFormControl>
 
-            <!-- "Applies to projects" — shown for the Transaction path, and for Project Action
-                 variation-order/milestone-verification; project-creation has no project yet at
+            <!-- "Applies to projects" — shown for the Transaction path, and for Project action
+                 addendum/milestone-verification; project-creation has no project yet at
                  submission time, so it's omitted entirely (not shown-disabled). -->
             <MpFormControl v-if="showProjectScopeField" id="awf-project-scope" :is-invalid="projectsError">
               <MpFormLabel>{{ t('Applies to projects') }}</MpFormLabel>
@@ -397,7 +410,7 @@ async function save() {
                   :is-show-suggestions="true"
                   :is-enable-create-new-tag="false"
                   :is-show-icon-chevron-down="true"
-                  :placeholder="t('Select project(s)')"
+                  :placeholder="t('Select projects')"
                   :is-invalid="projectsError"
                   @change="(data: DataInterface[]) => { someProjects = data; if (data.length > 0) projectsError = false }"
                 />
@@ -406,7 +419,7 @@ async function save() {
             </MpFormControl>
 
             <!-- "Transaction created by" — Transaction path only; omitted entirely (not
-                 shown-disabled) for every Project Action rule. -->
+                 shown-disabled) for every Project action rule. -->
             <MpFormControl v-if="appliesTo === 'transaction'" id="awf-created-by" :is-invalid="createdByError">
               <MpFormLabel>{{ t('Transaction created by') }}</MpFormLabel>
               <div class="caw-radio-group">
@@ -459,7 +472,7 @@ async function save() {
               </div>
 
               <MpFormControl :id="`awf-level-match-${idx}`">
-                <MpFormLabel>{{ t('Transaction require approval from') }}</MpFormLabel>
+                <MpFormLabel>{{ appliesTo === 'project' ? t('Action requires approval from') : t('Transaction requires approval from') }}</MpFormLabel>
                 <div class="caw-radio-group caw-radio-group--inline">
                   <MpRadio :id="`awf-level-match-${idx}-any`" :name="`awf-level-match-${idx}`" value="any" v-model="level.matchType">
                     {{ t('Any') }}
@@ -489,12 +502,7 @@ async function save() {
             </div>
           </div>
 
-          <MpButton type="button" class="caw-add-level-btn btn-enterprise btn-enterprise--secondary btn-enterprise--icon-before" @click="addLevel">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ t('Add approver level') }}
-          </MpButton>
+          <MpButton class="caw-add-level-btn" variant="secondary" left-icon="add" is-rounded @click="addLevel">{{ t('Add approver level') }}</MpButton>
           <p v-if="maxLevelsReached" class="caw-criteria-helper" data-devchange="wo-approval-rules">{{ t('You can add up to 4 approval levels') }}</p>
 
           <!-- Work order — requester self-approval (Rev 3: off by default) -->
@@ -506,10 +514,10 @@ async function save() {
           </div>
         </div>
 
-        <div class="caw-divider" />
-
-        <!-- ── Section: Apply workflow ── -->
-        <div class="caw-section">
+        <!-- ── Section: Apply workflow ── Transaction path only: no project action
+             has a saved draft for it to apply to, so it is omitted (not shown-disabled). -->
+        <div v-if="appliesTo === 'transaction'" class="caw-divider" />
+        <div v-if="appliesTo === 'transaction'" class="caw-section">
           <div class="caw-toggle-row">
             <MpToggle
               id="awf-apply-to-draft"
@@ -524,9 +532,9 @@ async function save() {
         <!-- ── Action group ── -->
         <div class="caw-action-group">
           <div class="caw-action-right">
-            <MpButton class="btn-enterprise btn-enterprise--ghost" @click="goBack">{{ t('Cancel') }}</MpButton>
-            <MpButton class="btn-enterprise btn-enterprise--primary caw-btn-save" :is-disabled="isSaving" @click="save">
-              {{ isSaving ? t('Saving…') : (isEdit ? t('Save changes') : t('Save')) }}
+            <MpButton variant="ghost" is-rounded @click="goBack">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded :is-loading="isSaving" @click="save">
+              {{ isEdit ? t('Save changes') : t('Save') }}
             </MpButton>
           </div>
         </div>
@@ -569,15 +577,11 @@ async function save() {
   gap: 0;
 }
 .caw-breadcrumb {
-  background: none;
-  border: none;
+  align-self: flex-start;
   cursor: pointer;
-  padding: 0;
-  font-size: 12px;
-  font-weight: var(--mp-font-weights-regular);
-  line-height: var(--mp-line-heights-md);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm, 16px);
   color: var(--mp-text-link);
-  font-family: inherit;
   white-space: nowrap;
 }
 .caw-breadcrumb:hover { text-decoration: underline; text-underline-offset: 2px; }
@@ -705,7 +709,4 @@ async function save() {
   gap: var(--mp-spacing-3);
   margin-left: auto;
 }
-/* Cancel/Save reuse the global .btn-enterprise / --ghost / --primary classes (erp.css) —
-   only the disabled state is specific to this form. */
-.caw-btn-save:disabled { opacity: 0.6; cursor: default; }
 </style>

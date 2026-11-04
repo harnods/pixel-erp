@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-frontend-app/src/pages/settings/pages/user-management/composition-user_management.vue -->
 <script setup lang="ts">
 /**
  * Settings › Users & roles → "User list" tab.
@@ -133,13 +134,21 @@ const loading = ref(true)
 onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
 
 // ─── Row actions ────────────────────────────────────────────────────────────
-function resendInvitation(user: AccountUser) {
-  successToast(`${t('Invitation sent to')} ${user.email}`)
+function resendInvitation(_user: AccountUser) {
+  successToast(t('Invitation resent'))
 }
 
 function reactivate(user: AccountUser) {
   setAccountUserStatus(user.id, 'active')
-  successToast(t('User reactivated'))
+  successToast(t('User activated'))
+}
+
+const deactivateTarget = ref<AccountUser | null>(null)
+function confirmDeactivate() {
+  if (!deactivateTarget.value) return
+  setAccountUserStatus(deactivateTarget.value.id, 'inactive')
+  successToast(t('User deactivated'))
+  deactivateTarget.value = null
 }
 
 const viewTarget = ref<AccountUser | null>(null)
@@ -314,6 +323,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <template v-if="!(row as unknown as AccountUser).isOwner">
               <MpPopoverListItem @click="goEdit(row as unknown as AccountUser)">{{ t('Edit') }}</MpPopoverListItem>
               <MpPopoverListItem
+                v-if="(row as unknown as AccountUser).status === 'active'"
+                @click="deactivateTarget = (row as unknown as AccountUser)"
+              >{{ t('Deactivate user') }}</MpPopoverListItem>
+              <MpPopoverListItem
                 v-if="(row as unknown as AccountUser).status === 'invited'"
                 @click="resendInvitation(row as unknown as AccountUser)"
               >{{ t('Resend invitation') }}</MpPopoverListItem>
@@ -335,8 +348,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-        <p class="empty-full-title">{{ t('No users') }}</p>
-        <p class="empty-full-desc">{{ t('Invited users will appear here.') }}</p>
+        <p class="empty-full-title">{{ t('User list will appear here') }}</p>
+        <p class="empty-full-desc">{{ t('Invite new users from Invite user button.') }}</p>
         <MpButton
           variant="secondary" is-rounded left-icon="add"
           @click="router.push('/users-and-roles/invite')"
@@ -380,6 +393,36 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <MpModalOverlay />
   </MpModal>
 
+  <!-- ── Deactivate confirmation (prod modal-deactivate-user) ── -->
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="usr-deactivate-modal"
+    :is-open="!!deactivateTarget"
+    size="md"
+    :is-keep-alive="false"
+    @close="deactivateTarget = null"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Deactivate this user?') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <p class="usr-modal-text">
+          <strong>{{ deactivateTarget?.name }}</strong>
+          {{ t('will not be able to access this company account temporarily. You can activate this user again if needed.') }}
+        </p>
+        <div class="usr-modal-banner">
+          <MpIcon name="info" size="sm" />
+          <span>{{ t('Deactivating users will not reduce Jurnal subscription billing.') }}</span>
+        </div>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButton variant="ghost" is-rounded @click="deactivateTarget = null">{{ t('Cancel') }}</MpButton>
+        <MpButton variant="primary" is-rounded @click="confirmDeactivate">{{ t('Deactivate') }}</MpButton>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
   <SeatContactSalesModal v-model:is-open="contactSalesOpen" id="usr-contact-sales" :topic="contactSalesTopic" />
 
   <!-- Demo: CRM add-on states, add-on quantities, ERP limit (rule/index-scenario-fab). -->
@@ -434,6 +477,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   white-space: normal; word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ── Deactivate modal ── */
+.usr-modal-text { margin: 0; }
+.usr-modal-banner {
+  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
+  margin-top: var(--mp-spacing-3); padding: var(--mp-spacing-3);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  background: var(--mp-colors-background-warning); color: var(--mp-text-default);
+}
 
 /* ── Empty state ── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }

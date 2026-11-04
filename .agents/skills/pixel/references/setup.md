@@ -1,46 +1,21 @@
 # Setup
 
-Use this file before implementation when project readiness is uncertain.
+Use this implementation when project readiness is uncertain.
 
 ## Package Check
 
-- Confirm `@mekari/pixel3` is installed.
-- Confirm the app already renders Pixel components or can be updated to do so.
+Confirm `@mekari/pixel3` and `@mekari/pixel3-postcss` are installed.
 
-## Project Variants
+| Situation                 | Action                                                                      |
+| ------------------------- | --------------------------------------------------------------------------- |
+| Both installed            | Proceed                                                                     |
+| Missing, existing project | `get-docs("setup pixel3 nuxt")` or `get-docs("setup pixel3 vue vite")`      |
+| New project from scratch  | `get-template("general starter")` or `get-template("general starter nuxt")` |
 
-### Nuxt
+## Project scan
 
-```bash
-pnpm add @mekari/pixel3
-```
-
-Register Pixel according to project convention and ensure global Pixel styles are loaded.
-
-### Vue 3 + Vite
-
-```bash
-pnpm add @mekari/pixel3
-```
-
-Register the Pixel plugin and required composables in app bootstrap based on official docs from `get-docs`.
-
-## Token Mode Check
-
-1. Identify whether the project uses Design Token 2.1 or 2.4.
-2. Prefer 2.4 semantic tokens for new work when the project is already on 2.4.
-3. Preserve 2.1 when the app has not migrated and the user did not request migration.
-
-## Minimal Readiness Checklist
-
-- Pixel package present
-- Global setup loaded
-- Token mode known
-- Required icons and assets available
-
-## Useful MCP Queries
-
-- `get-docs("setup pixel3 nuxt")`
-- `get-docs("setup pixel3 vue vite")`
-- `get-docs("design token 2.1 vs 2.4")`
-- `get-docs("pixel3 theming")`
+| Check                   | How                                                                                                                           |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Token mode (2.1 vs 2.4) | Search `setNextTheme` in `main.ts`, `app.vue`, or any `*.ts`/`*.vue`. If `true`, token is 2.4. Ask only if no signal found.   |
+| Existing blocks         | Scan `pixel-blocks/`, `src/pixel-blocks/`, `app/pixel-blocks/`. Note names — don't duplicate.                                 |
+| Existing layouts        | Scan `layouts/default.vue`, `src/layouts/`, `app/layouts/`. Check if `Navbar`, `Sidebar`, `SidebarChild` are already present. |

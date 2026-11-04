@@ -1,4 +1,5 @@
 import type { SalesQuote, SalesQuoteStatus } from './types'
+import { loadCreated, saveCreated } from './persist'
 
 /**
  * Mock sales quotes for a wholesale + retail coffee business
@@ -79,6 +80,22 @@ function build(): SalesQuote[] {
 }
 
 export const salesQuotes: SalesQuote[] = build()
+
+// User-created quotes (New sales quote form) survive a reload — appended after the seed.
+const CREATED_KEY = 'sales-quotes-created'
+for (const q of loadCreated<SalesQuote>(CREATED_KEY)) if (!salesQuotes.some(x => x.id === q.id)) salesQuotes.push(q)
+export function addSalesQuote(quote: SalesQuote): SalesQuote {
+  salesQuotes.push(quote)
+  saveCreated(CREATED_KEY, [...loadCreated<SalesQuote>(CREATED_KEY), quote])
+  return quote
+}
+/** Edit of a user-created quote is persisted; edits to seed quotes stay in session. */
+export function updateSalesQuote(quote: SalesQuote): void {
+  const i = salesQuotes.findIndex(q => q.id === quote.id)
+  if (i >= 0) salesQuotes[i] = quote
+  const created = loadCreated<SalesQuote>(CREATED_KEY)
+  if (created.some(q => q.id === quote.id)) saveCreated(CREATED_KEY, created.map(q => (q.id === quote.id ? quote : q)))
+}
 
 /** "Awaiting approval" queue for the Sales quotes › Awaiting approval tab. */
 export function awaitingSalesQuotes(): SalesQuote[] {

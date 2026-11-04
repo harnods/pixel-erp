@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-requests/views/PurchaseRequestShowView.vue + components/show/* -->
 <script setup lang="ts">
 import {
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
@@ -12,7 +13,10 @@ import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
-import { purchaseRequests } from '~/data/purchaseRequests'
+import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data/purchaseRequests'
+import { infoToast } from '~/utils/toasts'
+import BudgetPRCard from '~/components/patterns/BudgetPRCard.vue'
+import { budgetPRForRequest, syncLinkedRequests } from '~/data/budgetUiPurchaseRequests'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -23,23 +27,38 @@ const hasApproval = true
 
 const router = useRouter()
 const request = computed(() => getPurchaseRequestDetail(props.orderId))
+// The budget record behind this request (FG-3), when it has one.
+const budgetPR = computed(() => budgetPRForRequest(props.orderId))
+watchEffect(syncLinkedRequests)
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
+  deletePurchaseRequests([props.orderId])
   toast.notify({ variant: 'success', title: t('Purchase request deleted'), rootProps: { class: 'toast-enterprise' } })
   router.push('/purchase-requests')
+}
+function notInPrototype() { infoToast('Not in this prototype') }
+// prod: Create purchase order + Mark as completed only while open / partially processed.
+const isProcessable = computed(() => request.value.status === 'open' || request.value.status === 'partially processed')
+const createPurchaseOrderFromRequests = inject<(ids: string[]) => void>('createPurchaseOrderFromRequests', () => {})
+function onCreatePurchaseOrder() { createPurchaseOrderFromRequests([props.orderId]) }
+function onMarkCompleted() {
+  updatePurchaseRequest(props.orderId, { status: 'closed', awaitingApproval: false })
+  toast.notify({ variant: 'success', title: t('Purchase request marked as completed'), rootProps: { class: 'toast-enterprise' } })
 }
 
 const urgencyLabel = computed(() => request.value.urgency.charAt(0).toUpperCase() + request.value.urgency.slice(1))
 
 const prActionGroups = computed<ActionItem[][]>(() => [
   [
-    { label: 'Edit' },
-    { label: 'Create purchase order' },
-    { label: 'Duplicate' },
-    { label: 'Void' },
+    // Open / partially processed requests can be completed or turned into a PO.
+    { label: 'Mark as completed', show: isProcessable.value, onClick: onMarkCompleted },
+    { label: 'Edit', onClick: () => { router.push(`/purchase-requests/${request.value.id}/edit`) } },
+    { label: 'Create purchase order', show: isProcessable.value, onClick: onCreatePurchaseOrder },
+    { label: 'Duplicate', onClick: notInPrototype },
+    { label: 'Void', onClick: notInPrototype },
     { label: 'Delete', onClick: () => { deleteOpen.value = true } },
   ],
 ])
@@ -48,8 +67,8 @@ const activityEntries = computed(() => [{
   user: request.value.lastUpdatedBy,
   activity: t('Created'),
   details: [
-    { label: t('Request no.'), value: `${t('Purchase Request')} #${request.value.number}` },
-    { label: t('Request date'), value: formatDateLong(request.value.date) },
+    { label: t('Transaction no.'), value: `${t('Purchase Request')} #${request.value.number}` },
+    { label: t('Transaction date'), value: formatDateLong(request.value.date) },
     { label: t('Procurement staff'), value: request.value.procurementStaff },
     { label: t('Required date'), value: formatDateLong(request.value.requiredDate) },
   ],
@@ -176,42 +195,23 @@ function goBack() { router.push('/purchase-requests') }
 
       <!-- ── Header summary ── -->
       <section class="detail-summary">
-        <!-- Primary row -->
+        <!-- Row 1 (prod): Procurement staff | Transaction date | Related budget year | Transaction no. | Tags -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Procurement staff')" :value="request.procurementStaff" />
-          </div>
-          <div class="content-list-col">
-            <ContentList :label="t('Department')" :value="request.department" />
-          </div>
-        </div>
-
-        <div class="detail-divider" />
-
-        <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
-        <div class="content-list-grid">
-          <!-- col 1: deliver to -->
-          <div class="content-list-col">
-            <ContentList :label="t('Deliver to')" :value="request.deliverTo" />
-            <ContentList :label="t('Warehouse')" :value="request.warehouse" />
-          </div>
-          <!-- col 2: dates -->
-          <div class="content-list-col">
-            <ContentList :label="t('Request date')" :value="formatDateLong(request.date)" />
-            <ContentList :label="t('Required date')" :value="formatDateLong(request.requiredDate)" />
-          </div>
-          <!-- col 3: urgency + products -->
-          <div class="content-list-col">
-            <ContentList :label="t('Urgency')">
-              <ErpStatusBadge :status="request.urgency" badge-for="tableStatus" />
+            <ContentList :label="t('Procurement staff')">
+              <span class="content-list__line">{{ request.procurementStaff }}</span>
+              <span class="content-list__line">{{ request.procurementStaffEmail }}</span>
             </ContentList>
-            <ContentList :label="t('Total products')" :value="String(request.totalProducts)" />
           </div>
-          <!-- col 4: references -->
           <div class="content-list-col">
-            <ContentList :label="t('Request no.')" :value="`${t('Purchase Request')} #${request.number}`" />
+            <ContentList :label="t('Transaction date')" :value="formatDateLong(request.date)" />
           </div>
-          <!-- col 5: tags -->
+          <div class="content-list-col">
+            <ContentList :label="t('Related budget year')" :value="request.budgetYear" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Request')} #${request.number}`" />
+          </div>
           <div class="content-list-col">
             <ContentList :label="t('Tags')">
               <ErpTagList v-if="request.tags?.length" :tags="request.tags" />
@@ -219,7 +219,33 @@ function goBack() { router.push('/purchase-requests') }
             </ContentList>
           </div>
         </div>
+
+        <div class="detail-divider" />
+
+        <!-- Row 2 (prod): Requestor | Required date | Urgency level; then local-only Department / Deliver to / Warehouse / Total products (kept) -->
+        <div class="content-list-grid">
+          <div class="content-list-col">
+            <ContentList :label="t('Requestor')" :value="request.requestor" />
+            <ContentList :label="t('Deliver to')" :value="request.deliverTo" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Required date')" :value="formatDateLong(request.requiredDate)" />
+            <ContentList :label="t('Warehouse')" :value="request.warehouse" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Urgency level')">
+              <ErpStatusBadge :status="request.urgency" badge-for="tableStatus" />
+            </ContentList>
+            <ContentList :label="t('Total products')" :value="String(request.totalProducts)" />
+          </div>
+          <div class="content-list-col">
+            <ContentList :label="t('Department')" :value="request.department" />
+          </div>
+        </div>
       </section>
+
+      <!-- ── Budget (FG-3): status, line check, approval chain, funding request ── -->
+      <BudgetPRCard v-if="budgetPR" :key="budgetPR.id" :pr="budgetPR" :purchase-request-id="props.orderId" />
 
       <!-- ── Line items table (read-only) — auto lazy-load, internal scroll ── -->
       <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
@@ -230,6 +256,7 @@ function goBack() { router.push('/purchase-requests') }
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
               <th class="detail-th detail-th--num">{{ t('Requested qty') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Processed qty') }}</th>
               <th class="detail-th detail-th--num">{{ t('Available qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
             </tr>
@@ -246,6 +273,7 @@ function goBack() { router.push('/purchase-requests') }
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
               <td class="detail-td detail-td--num">{{ it.requestedQty }}</td>
+              <td class="detail-td detail-td--num">{{ request.processedQty[i] ?? 0 }}</td>
               <td class="detail-td detail-td--num">{{ it.availableQty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
             </tr>
@@ -265,7 +293,7 @@ function goBack() { router.push('/purchase-requests') }
       <!-- ── Note + attachments ── -->
       <section class="detail-notes">
         <div class="detail-notes-left">
-          <ContentList :label="t('Note')">
+          <ContentList :label="t('Memo')">
             <p class="detail-note-text">{{ request.note }}</p>
           </ContentList>
           <ContentList :label="`${t('Attachment')} (${request.attachments.length})`">
@@ -287,7 +315,7 @@ function goBack() { router.push('/purchase-requests') }
       <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ request.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(request.lastUpdatedAt) }}</a>
 
       <!-- ── Tabs ── -->
-      <MpTabs id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+      <MpTabs v-if="request.linkedTransactions.length" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
         </MpTabList>
@@ -347,8 +375,8 @@ function goBack() { router.push('/purchase-requests') }
     <ConfirmModal
       v-model:is-open="deleteOpen"
       :title="t('Delete purchase request?')"
-      :description="`${t('Purchase Request')} #${request.number} ${t('will be permanently deleted. This cannot be undone.')}`"
-      :confirm-label="`${t('Delete')} ${t('purchase request')}`"
+      :description="t('Deleted purchase request cannot be restored.')"
+      :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
   </div>

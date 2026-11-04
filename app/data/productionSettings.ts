@@ -69,6 +69,10 @@ export interface ProductionSettings {
    *    point on work order surfaces is HIDDEN (S-2).
    */
   reservationMethod: ReservationMethod
+
+  // ── Integration ──────────────────────────────────────────────────────────
+  /** Request a work order straight from a sales order (Settings › Production › Integration). */
+  salesOrderIntegration: boolean
 }
 
 /** S-3 — the two toggles the Figma draws, mapped onto the single {@link PartialMode}. */
@@ -113,6 +117,7 @@ function load(): ProductionSettings {
     partialMode: 'none',
     componentsMustBeReserved: true,
     reservationMethod: 'one-step',
+    salesOrderIntegration: false,
   }
   if (typeof localStorage === 'undefined') return fallback
   try {

@@ -1,4 +1,6 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/deliveries/views/SalesDeliveryShowView.vue -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent,
   MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
@@ -16,6 +18,8 @@ import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getContactIdByName } from '~/data/contacts'
 import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 import { salesDeliveries } from '~/data'
+import { isInClosedPeriod } from '~/data/salesDeliveries'
+import { lockDate } from '~/data/closeBooks'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -29,13 +33,18 @@ const showBanner = false
 const hasApproval = true
 
 const router = useRouter()
+function notInPrototype() { infoToast(t('Not in this prototype')) }
+
+/** R-19 — a delivery inside a closed accounting period is not editable, and the
+ *  option is not offered at all (PRD UX flow), rather than offered and refused. */
+const editLocked = computed(() => !!delivery.value && isInClosedPeriod(delivery.value, lockDate()))
 const delivery = computed(() => getSalesDeliveryDetail(props.orderId))
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
-  toast.notify({ variant: 'success', title: t('Sales delivery deleted'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: t('Delivery deleted successfully'), rootProps: { class: 'toast-enterprise' } })
   router.push('/sales-deliveries')
 }
 const previewOpen = ref(false)
@@ -49,13 +58,19 @@ if (import.meta.client) {
 const sdActionGroups = computed<ActionItem[][]>(() => [
   [
     { label: 'Preview', onClick: () => { previewOpen.value = true } },
-    { label: 'Create sales invoice' },
+    // An unbilled delivery raises its invoice from here (TS-004); once billed it's gone.
+    {
+      label: 'Create sales invoice',
+      show: delivery.value.billingStatus === 'unbilled',
+      onClick: () => { router.push({ path: '/sales-invoices/new', query: { delivery: delivery.value.id } }) },
+    },
   ],
   [
-    { label: 'Edit' },
-    { label: 'Set as recurring' },
-    { label: 'Duplicate' },
-    { label: 'Void' },
+    // A delivery in a closed period can't be edited.
+    { label: 'Edit', show: !editLocked.value, onClick: () => { router.push(`/sales-deliveries/${delivery.value.id}/edit`) } },
+    { label: 'Set as recurring', onClick: notInPrototype },
+    { label: 'Duplicate', onClick: notInPrototype },
+    { label: 'Void', onClick: notInPrototype },
     { label: 'Delete', onClick: () => { deleteOpen.value = true } },
   ],
 ])
@@ -77,6 +92,35 @@ const PAGE_SIZE = 10
 const shownCount = ref(PAGE_SIZE)               // show 10 by default
 const loadingMore = ref(false)
 const visibleItems = computed(() => delivery.value.lineItems.slice(0, shownCount.value))
+
+/**
+ * TS-001 — the audit trail. A contract delivery shows how each quantity was
+ * arrived at: the input method and the figure typed, the derived quantity, and
+ * how far the order line stood once this delivery posted. Generated deliveries
+ * have no order line behind them, so their table stays as it was.
+ */
+const hasAudit = computed(() => delivery.value.lineItems.some(it => !!it.audit))
+/** Six decimals at most, trailing zeros trimmed, decimal comma — as entered. */
+function formatQty(n: number): string {
+  return n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 6 })
+}
+function formatPct(n: number): string {
+  return `${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
+}
+/** OD-001 — one input method per delivery, shown once above the lines. */
+const deliveryMethod = computed(() => {
+  const a = delivery.value.lineItems.find(it => !!it.audit)?.audit
+  return a ? (a.inputMode === 'percent' ? t('Percentage') : t('Quantity')) : ''
+})
+/** What was typed on a line in Percentage — "33%" under the quantity it produced. */
+function typedPct(it: (typeof delivery.value.lineItems)[number]): string {
+  const a = it.audit
+  return a && a.inputMode === 'percent' ? formatPct(a.inputValue) : ''
+}
+function cumulativeLabel(it: (typeof delivery.value.lineItems)[number]): string {
+  const a = it.audit
+  return a && a.orderedQty > 0 ? formatPct((a.cumulativeQty / a.orderedQty) * 100) : ''
+}
 const hasMoreItems = computed(() => shownCount.value < delivery.value.lineItems.length)
 // progressive pagination kicks in past the default page → the table becomes a
 // bordered, internally-scrolling panel
@@ -251,8 +295,7 @@ function goBack() { router.push('/sales-deliveries') }
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">{{ t('Total') }}</span>
-            <span class="detail-total-amount">{{ formatIDR(delivery.totals.total) }}</span>
+            <a class="detail-journal-link" @click.prevent="notInPrototype">{{ t('View journal entry') }}</a>
           </div>
         </div>
 
@@ -260,17 +303,13 @@ function goBack() { router.push('/sales-deliveries') }
 
         <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
         <div class="content-list-grid">
-          <!-- col 1: addresses -->
+          <!-- col 1: ship-to address (prod SalesDeliveryDetailFields) -->
           <div class="content-list-col">
-            <ContentList :label="t('Billing address')" :value="delivery.billingAddress" />
             <ContentList :label="t('Ship to')" :value="delivery.shipTo" />
           </div>
-          <!-- col 2: delivery date -->
+          <!-- col 2: shipping -->
           <div class="content-list-col">
-            <ContentList :label="t('Transaction date')" :value="formatDateLong(delivery.date)" />
-          </div>
-          <!-- col 3: shipping -->
-          <div class="content-list-col">
+            <ContentList :label="t('Ship date')" :value="formatDateLong(delivery.date)" />
             <ContentList :label="t('Ship via')" :value="delivery.shipVia" />
             <ContentList :label="t('Tracking no.')" :value="delivery.trackingNo" />
             <ContentList :label="t('Driver')" :value="delivery.driver" />
@@ -293,18 +332,19 @@ function goBack() { router.push('/sales-deliveries') }
 
       <!-- ── Line items table (read-only) — auto lazy-load, internal scroll ── -->
       <section class="detail-items-section" :class="{ 'detail-items-section--bordered': isProgressive }">
+        <!-- One input method for the whole delivery (OD-001), above the lines. -->
+        <div v-if="deliveryMethod" class="sd-detail-method" data-devchange="sd-input-method-table">
+          <ContentList :label="t('Input method')" :value="deliveryMethod" />
+        </div>
         <div ref="itemsScrollEl" class="detail-items-scroll">
         <table class="detail-items">
           <thead>
             <tr>
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Qty') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Delivered qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Unit price') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Discount') }}</th>
-              <th class="detail-th">{{ t('Tax') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
+              <th v-if="hasAudit" class="detail-th detail-th--num">{{ t('Cumulative') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -318,12 +358,14 @@ function goBack() { router.push('/sales-deliveries') }
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.qty }}</td>
+              <!-- The quantity posted; in Percentage, what was typed sits under it. -->
+              <td class="detail-td detail-td--num">
+                {{ formatQty(it.qty) }}
+                <span v-if="typedPct(it)" class="sd-detail-typed">{{ typedPct(it) }}</span>
+              </td>
               <td class="detail-td">{{ it.unit }}</td>
-              <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
-              <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
-              <td class="detail-td">{{ it.taxLabel }}</td>
-              <td class="detail-td detail-td--num">{{ formatIDR(it.amount) }}</td>
+              <!-- The order line's progress once THIS delivery posted, not today's. -->
+              <td v-if="hasAudit" class="detail-td detail-td--num">{{ cumulativeLabel(it) }}</td>
             </tr>
           </tbody>
         </table>
@@ -348,7 +390,7 @@ function goBack() { router.push('/sales-deliveries') }
           <ContentList :label="t('Memo')">
             <p class="detail-note-text">{{ delivery.memo }}</p>
           </ContentList>
-          <ContentList :label="`${t('Attachment')} (${delivery.attachments.length})`">
+          <ContentList :label="`${t('Attachments')} (${delivery.attachments.length})`">
             <div class="detail-attach-list">
               <a v-for="(a, i) in delivery.attachments" :key="i" class="detail-attach" @click.prevent>
                 <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -361,32 +403,11 @@ function goBack() { router.push('/sales-deliveries') }
           </ContentList>
         </div>
 
-        <!-- Right: totals summary -->
+        <!-- Right: shipping fee only — a delivery carries no prices (prod SalesDeliveryShippingFee) -->
         <div class="detail-totals">
-          <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(delivery.totals.subtotal) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Discount per line') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(delivery.totals.discountPerLine) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Global discount') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(delivery.totals.globalDiscount) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ delivery.totals.taxLabel }}</span>
-            <span class="detail-total-row-amt">{{ formatIDR(delivery.totals.taxAmount) }}</span>
-          </div>
           <div class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Shipping fee') }}</span>
             <span class="detail-total-row-amt">{{ formatIDR(delivery.totals.shippingFee) }}</span>
-          </div>
-          <div class="detail-total-rule" />
-          <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(delivery.totals.total) }}</span>
           </div>
         </div>
       </section>
@@ -454,9 +475,9 @@ function goBack() { router.push('/sales-deliveries') }
 
     <ConfirmModal
       v-model:is-open="deleteOpen"
-      :title="t('Delete sales delivery?')"
-      :description="`${t('Sales Delivery')} #${delivery.number} ${t('will be permanently deleted. This cannot be undone.')}`"
-      :confirm-label="`${t('Delete')} ${t('sales delivery')}`"
+      :title="t('Delete delivery')"
+      :description="t('Are you sure you want to delete this delivery? This action cannot be undone.')"
+      :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
 
@@ -465,6 +486,22 @@ function goBack() { router.push('/sales-deliveries') }
 </template>
 
 <style scoped>
+.detail-split-btn {
+  display: inline-flex;
+  align-items: stretch;
+}
+.detail-split-btn__main {
+  border-radius: var(--mp-radii-full, 999px) 0 0 var(--mp-radii-full, 999px);
+}
+.detail-split-btn__chevron {
+  padding-left: var(--mp-spacing-3);
+  padding-right: var(--mp-spacing-3);
+  border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.detail-journal-link { font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer; }
+.detail-journal-link:hover { text-decoration: underline; }
 .detail-page {
   height: 100%;
   display: flex;
@@ -695,6 +732,8 @@ function goBack() { router.push('/sales-deliveries') }
 }
 /* table scrolls internally past ~10 rows so the page doesn't grow unbounded */
 .detail-items-scroll { max-height: 484px; overflow-y: auto; overflow-x: auto; }
+.sd-detail-method { margin-bottom: var(--mp-spacing-2); }
+.sd-detail-typed { display: block; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
 /* header stays visible while the body scrolls */
 .detail-items thead .detail-th { position: sticky; top: 0; z-index: 1; }
 .detail-items-sentinel { height: var(--mp-sizes-px, 1px); }

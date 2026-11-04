@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-frontend-app/src/pages/settings/pages/user-management/invite/user_invite.vue -->
 <script setup lang="ts">
 /**
  * Settings › Users & roles → "Invite user" (also serves "Edit user" for an
@@ -73,9 +74,9 @@ const isEdit = computed(() => !!props.orderId && props.orderId !== 'invite')
 const router = useRouter()
 const { t } = useLocale()
 
-// Project Manager is a billing-component role — a tenant without Project
+// Project manager is a billing-component role — a tenant without Project
 // Accounting never sees it in the picker (same gate as the matching authority
-// feature and the Approval workflows "Applies to: Project Action" condition).
+// feature and the Approval workflows "Applies to: Project action" condition).
 const { projectAccountingEnabled } = useApprovalWorkflowScenario()
 const existingRoles = computed(() => systemRolesFor(projectAccountingEnabled.value))
 
@@ -328,14 +329,14 @@ function clearErrors() {
 function validate(): boolean {
   nameError.value = name.value.trim() ? '' : t('You must fill in user name')
   if (!email.value.trim()) emailError.value = t('You must fill in email')
-  else if (!EMAIL_RE.test(email.value.trim())) emailError.value = t('Enter a valid email address')
+  else if (!EMAIL_RE.test(email.value.trim())) emailError.value = t('Enter email based on format. Example: name@email.com')
   else emailError.value = ''
 
   const hasErpRole = selectedSystemRoles.value.length > 0 || selectedCustomRoles.value.length > 0
   const hasCrm = crmVisible.value ? crmOn.value : !!savedCrmRole.value
   roleError.value = hasErpRole || hasCrm
     ? ''
-    : crmVisible.value ? t('Select at least one ERP role or the CRM role') : t('You must select at least one role')
+      : crmVisible.value ? t('Select at least one ERP role or the CRM role') : t('You must select at least 1 role')
 
   timeError.value = applyTimeLimit.value && timeLimit.startHour >= timeLimit.endHour
     ? t('End hour must be later than start hour')
@@ -398,10 +399,10 @@ async function save() {
 
   if (isEdit.value) {
     updateAccountUser(props.orderId!, payload)
-    successToast(t('User access changes saved'))
+    successToast(t('Changes saved'))
   } else {
     addAccountUser(payload)
-    successToast(t('Invitation sent'))
+    successToast(t('User invited'))
   }
   isSaving.value = false
   goBack()
@@ -491,7 +492,7 @@ watch([pendingPrefill, () => props.orderId], ([req]) => {
                 :is-checked="applyTimeLimit"
                 @change="(on: boolean) => applyTimeLimit = on"
               >
-                {{ t('Apply access time limits') }}
+                {{ t('Access time limits') }}
                 <template #description>{{ t(ACCESS_TIME_LIMIT_NOTE) }}</template>
               </MpCheckbox>
 

@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/orders/views/SalesOrderShowView.vue -->
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent,
@@ -44,14 +45,14 @@ function handleCreateProductionRequest() {
     toast.notify({ variant: 'warning', title: t('No registered products on this order to produce') })
     return
   }
-  toast.notify({ variant: 'success', title: t('Production request saved') })
+  toast.notify({ variant: 'success', title: created.length === 1 ? t('Production requested for 1 product') : `${t('Production requested for')} ${created.length} ${t('products')}` })
   router.push('/production-request')
 }
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
-  toast.notify({ variant: 'success', title: t('Sales order deleted'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: `${t('Sales Order')} #${order.value.number} ${t('has been deleted')}`, rootProps: { class: 'toast-enterprise' } })
   router.push('/sales-orders')
 }
 
@@ -61,7 +62,37 @@ const canMarkCompleted = computed(() => order.value.status === 'open' || order.v
 const markCompleteOpen = ref(false)
 const markCompleteRows = computed(() => salesOrderCompletionRows(order.value))
 function confirmMarkComplete() {
-  toast.notify({ variant: 'success', title: t('Sales order marked as completed'), rootProps: { class: 'toast-enterprise' } })
+  toast.notify({ variant: 'success', title: t('Marked as completed'), rootProps: { class: 'toast-enterprise' } })
+}
+
+// ── Prod parity: status wording, header figure, payments ─────────────────────
+// Prod list/detail call the mock's 'partially processed' state "Partially sent";
+// Open / Partially sent are warning (yellow), Closed is announcement (gray).
+const STATUS_BADGE: Record<string, { label: string; type: 'warning' | 'announcement' | 'critical' }> = {
+  'open':                { label: t('Open'),           type: 'warning'      },
+  'partially processed': { label: t('Partially sent'), type: 'warning'      },
+  'closed':              { label: t('Closed'),         type: 'announcement' },
+  'voided':              { label: t('Voided'),         type: 'critical'     },
+}
+const statusBadge = computed(() => STATUS_BADGE[order.value.status])
+// Paid so far = total − balance due (voided orders carry no payment).
+const paidAmount = computed(() => order.value.status === 'voided' ? 0 : Math.max(0, order.value.totals.total - order.value.balanceDue))
+// Prod header: "Balance due" once something is paid, otherwise "Total".
+const showBalanceDue = computed(() => order.value.balanceDue < order.value.totals.total && order.value.status !== 'voided')
+const PAYMENT_METHODS = ['Bank transfer', 'Cash', 'Credit card']
+const PAYMENT_ACCOUNTS = ['1-10002 - Bank BCA', '1-10001 - Cash', '1-10003 - Bank Mandiri']
+const payments = computed(() => paidAmount.value > 0
+  ? [{
+      date: order.value.date,
+      number: `${t('Payment Received')} #${order.value.number + 5000}`,
+      method: PAYMENT_METHODS[order.value.number % 3]!,
+      account: PAYMENT_ACCOUNTS[order.value.number % 3]!,
+      referenceNo: `PAY/${order.value.number}`,
+      amountPaid: paidAmount.value,
+    }]
+  : [])
+function notInPrototype() {
+  toast.notify({ variant: 'success', title: t('Not in this prototype'), rootProps: { class: 'toast-enterprise' } })
 }
 const previewOpen = ref(false)
 const pdfUrl = ref('')
@@ -212,14 +243,21 @@ function saveSetRecurring() {
 const soActionGroups = computed<ActionItem[][]>(() => [
   [
     { label: 'Preview', onClick: () => { previewOpen.value = true } },
+    // Downstream documents, only while the order still has something to fulfil.
+    { label: 'Create sales delivery', show: isOpenish.value, onClick: () => { router.push({ path: '/sales-deliveries/new', query: { order: order.value.id } }) } },
+    { label: 'Create sales invoice', show: isOpenish.value, onClick: () => { router.push('/sales-invoices/new') } },
+    { label: 'Create progress invoice', show: isOpenish.value, onClick: () => { router.push('/progress-invoice') } },
+    { label: 'Create proforma invoice', show: isOpenish.value, onClick: () => { router.push('/proforma-invoice') } },
+    { label: 'Add payment', show: isOpenish.value, onClick: notInPrototype },
+    { label: 'Send to fulfillment', show: isOpenish.value, onClick: sendToFulfillment },
     { label: 'Create production request', onClick: handleCreateProductionRequest },
     { label: 'Mark as completed', onClick: () => { markCompleteOpen.value = true }, show: canMarkCompleted.value },
   ],
   [
-    { label: 'Edit' },
+    { label: 'Edit', onClick: () => { router.push(`/sales-orders/${order.value.id}/edit`) } },
     { label: 'Set as recurring', onClick: openSetRecurringDrawer, show: !hasRecurring.value },
-    { label: 'Duplicate' },
-    { label: 'Void' },
+    { label: 'Duplicate', onClick: () => { router.push('/sales-orders/new') } },
+    { label: 'Void', onClick: notInPrototype },
     { label: 'Delete', onClick: () => { deleteOpen.value = true } },
   ],
 ])
@@ -324,6 +362,19 @@ function attachmentIcon(name: string): string {
 }
 
 function goBack() { router.push('/sales-orders') }
+
+const isOpenish = computed(() => order.value.status === 'open' || order.value.status === 'partially processed')
+const detailTabs = computed(() => [
+  ...(payments.value.length ? [{ key: 'payments', label: t('Payment') }] : []),
+  { key: 'linked', label: t('Linked transactions') },
+])
+function sendToFulfillment() {
+  toast.notify({ variant: 'success', title: t('Sent to fulfillment'), rootProps: { class: 'toast-enterprise' } })
+}
+function copyLink() {
+  void navigator.clipboard?.writeText(`https://mkrierp.id/${order.value.id}`).catch(() => {})
+  toast.notify({ variant: 'success', title: t('Link copied to clipboard'), rootProps: { class: 'toast-enterprise' } })
+}
 </script>
 
 <template>
@@ -335,7 +386,7 @@ function goBack() { router.push('/sales-orders') }
         <MpTextlink id="detail-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ t('Sales orders') }}</MpTextlink>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Sales Order') }} #{{ order.number }}</h1>
-          <ErpStatusBadge :status="order.status" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="order.status" :label="statusBadge?.label" :type="statusBadge?.type" badge-for="additionalInformation" size="md" />
 
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
@@ -368,7 +419,7 @@ function goBack() { router.push('/sales-orders') }
                     <span class="detail-jump-item-number">{{ t('Sales Order') }} #{{ o.number }}</span>
                     <span class="detail-jump-item-customer">{{ o.customer.name }}</span>
                   </MpButton>
-                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No transactions found') }}</p>
+                  <p v-if="!jumpResults.length" class="detail-jump-empty">{{ t('No orders found') }}</p>
                 </div>
               </div>
             </MpPopoverContent>
@@ -421,8 +472,8 @@ function goBack() { router.push('/sales-orders') }
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">{{ t('Total') }}</span>
-            <span class="detail-total-amount">{{ formatIDR(order.totals.total) }}</span>
+            <span class="detail-total-label">{{ showBalanceDue ? t('Balance due') : t('Total') }}</span>
+            <span class="detail-total-amount">{{ formatIDR(showBalanceDue ? order.balanceDue : order.totals.total) }}</span>
           </div>
         </div>
 
@@ -520,7 +571,7 @@ function goBack() { router.push('/sales-orders') }
           <ContentList :label="t('Memo')">
             <p class="detail-note-text">{{ order.memo }}</p>
           </ContentList>
-          <ContentList :label="`${t('Attachment')} (${order.attachments.length})`">
+          <ContentList :label="`${order.attachments.length === 1 ? t('Attachment') : t('Attachments')} (${order.attachments.length})`">
             <div class="detail-attach-list">
               <a v-for="(a, i) in order.attachments" :key="i" class="detail-attach" @click.prevent>
                 <span class="detail-attach-icon"><MpIcon :name="attachmentIcon(a.name)" size="md" /></span>
@@ -560,6 +611,16 @@ function goBack() { router.push('/sales-orders') }
             <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
             <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(order.totals.total) }}</span>
           </div>
+          <template v-if="paidAmount > 0">
+            <div class="detail-total-row">
+              <span class="detail-total-row-label">{{ t('Payment paid') }}</span>
+              <span class="detail-total-row-amt">{{ formatDeduction(paidAmount) }}</span>
+            </div>
+            <div class="detail-total-row">
+              <span class="detail-total-row-label detail-total-row-label--total">{{ t('Balance due') }}</span>
+              <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(order.balanceDue) }}</span>
+            </div>
+          </template>
         </div>
       </section>
 
@@ -567,11 +628,36 @@ function goBack() { router.push('/sales-orders') }
       <a class="detail-updated" @click.prevent="activityOpen = true">{{ t('Last updated by') }} {{ order.lastUpdatedBy }} {{ t('on') }} {{ formatUpdatedAt(order.lastUpdatedAt) }}</a>
 
       <!-- ── Tabs ── -->
-      <MpTabs id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
+      <MpTabs :key="`tabs-${order.id}`" id="detail-tabs" :default-value="0" variant-color="green" class="detail-tabs">
         <MpTabList>
-          <MpTab id="detail-tab-linked" value="linked">{{ t('Linked transactions') }}</MpTab>
+          <MpTab v-for="tb in detailTabs" :id="`detail-tab-${tb.key}`" :key="tb.key" :value="tb.key">{{ tb.label }}</MpTab>
         </MpTabList>
         <MpTabPanels>
+          <MpTabPanel v-if="payments.length" value="payments">
+            <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
+            <table class="detail-linked">
+              <thead>
+                <tr>
+                  <th class="detail-th">{{ t('Date') }}</th>
+                  <th class="detail-th">{{ t('Number') }}</th>
+                  <th class="detail-th">{{ t('Payment method') }}</th>
+                  <th class="detail-th">{{ t('Account') }}</th>
+                  <th class="detail-th">{{ t('Reference no.') }}</th>
+                  <th class="detail-th detail-th--num">{{ t('Amount paid') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(pm, i) in payments" :key="i" class="detail-item-row">
+                  <td class="detail-td">{{ formatDateNumeric(pm.date) }}</td>
+                  <td class="detail-td"><a class="cell-link cell-text" @click.stop>{{ pm.number }}</a></td>
+                  <td class="detail-td">{{ pm.method }}</td>
+                  <td class="detail-td">{{ pm.account }}</td>
+                  <td class="detail-td">{{ pm.referenceNo }}</td>
+                  <td class="detail-td detail-td--num">{{ formatIDR(pm.amountPaid) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </MpTabPanel>
           <MpTabPanel value="linked">
             <h3 class="detail-tab-heading">{{ t('Transactions') }}</h3>
             <table class="detail-linked">
@@ -627,8 +713,8 @@ function goBack() { router.push('/sales-orders') }
     <ConfirmModal
       v-model:is-open="deleteOpen"
       :title="t('Delete sales order?')"
-      :description="`${t('Sales Order')} #${order.number} ${t('will be permanently deleted. This cannot be undone.')}`"
-      :confirm-label="`${t('Delete')} ${t('sales order')}`"
+      :description="t('Deleted sales order cannot be restored.')"
+      :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
 
