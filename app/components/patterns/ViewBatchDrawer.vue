@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
+import { batchAttributesFor, findProductBatch } from '~/data/productDetails'
+import type { BatchAttributeKey, BatchAttributeValues } from '~/data/batchAttributes'
+import { useBatchAttributeColumns } from '~/composables/useBatchAttributeColumns'
 
 const DEMO_DESCS = [
   'Ethiopia Yirgacheffe, Grade 1, washed – harvest 2025',
@@ -15,6 +18,9 @@ const DEMO_DESCS = [
 export interface PickedBatchRow {
   batchNo: string; expiryDate: string; desc: string; qty: number; unit: string
   location?: string
+  /** The attribute values saved with this line (snapshot). When absent, the batch master's
+   *  current values are shown instead (ATINV-9082). */
+  attributes?: BatchAttributeValues
   /** Put-away only — this batch's qty split across 2+ destination bins. When
    *  given (and non-empty), the table shows ONE ROW PER BIN instead of a
    *  single combined row (with `location`/`qty` above ignored in favor of
@@ -100,6 +106,13 @@ const props = defineProps<{
    *  be able to see the system's on-hand record before the count reaches Awaiting
    *  approval, where the reviewing manager needs it. Other kinds never pass this. */
   hideOnHand?: boolean
+  /** Packing mode — hides the Storage location column for a stage that has no bin
+   *  to show (a purchase delivery records which batches arrived, not where they
+   *  were put). WMS callers leave it off and keep the column. */
+  hideLocation?: boolean
+  /** In/out mode: the batches the adjustment saved. When given, the table shows exactly
+   *  these (ATINV-9082) instead of splitting the delta across the warehouse's lots. */
+  savedBatches?: { batchNo: string; qty: number; description?: string; attributes: Partial<Record<string, string>> }[]
 }>()
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
@@ -143,6 +156,8 @@ interface BatchRow {
   newOnHand: number    // only used in in-out mode
   unit: string
   location?: string
+  /** Read-only attribute values for this batch: the line snapshot, else the master's. */
+  attributes: BatchAttributeValues
   /** Put-away only — this row's own bin, when the batch's destination is
    *  split across 2+ of them (one BatchRow per bin instead of one per
    *  batch). Null for every other caller (single location or none at all). */
@@ -154,6 +169,35 @@ interface BatchRow {
   groupSize: number
 }
 
+const attrCols = useBatchAttributeColumns(toRef(props, 'sku'))
+const attrKeys = attrCols.keys
+const attrLabel = attrCols.label
+/** The line's snapshot when it has one, else the batch master's current values (or just
+ *  the lot's expiry when the lot has no record). */
+function attrsFor(batchNo: string, expiryDate: string, snapshot?: BatchAttributeValues): BatchAttributeValues {
+  return snapshot && Object.keys(snapshot).length ? snapshot : batchAttributesFor(props.sku, batchNo, expiryDate || undefined)
+}
+function attrText(row: BatchRow, key: BatchAttributeKey) { return attrCols.text(key, row.attributes) }
+/** A line's description: its own, else the batch master's — an empty one stays empty
+ *  and renders "—". Only a seeded lot with no batch record borrows the demo filler. */
+function descFor(batchNo: string, saved: string | undefined, i: number): string {
+  if (saved?.trim()) return saved.trim()
+  const rec = findProductBatch(props.sku, batchNo)
+  return rec ? rec.description : DEMO_DESCS[i % DEMO_DESCS.length]!
+}
+
+// Column widths in px — mirror the .vbd-col-* rules in <style>. Description is the one
+// width-less column, so the table's floor is the rendered columns plus a Description
+// floor; below it the wrap scrolls instead of collapsing Description to zero width.
+const COL_PX = { batch: 170, expiry: 140, desc: 180, attr: 152, loc: 150, num: 144, unit: 78 }
+const tableMinWidth = computed(() => {
+  const showLoc = isPacking.value && !isVerify.value && !props.hideLocation
+  const nums = (!isPacking.value && !props.hideOnHand ? 1 : 0) + (hasPlanned.value ? 1 : 0) + 1
+    + (hasVerifiedCol.value ? 1 : 0) + (isInOut.value ? 1 : 0)
+  return COL_PX.batch + COL_PX.expiry + COL_PX.desc + attrKeys.value.length * COL_PX.attr
+    + (showLoc ? COL_PX.loc : 0) + nums * COL_PX.num + COL_PX.unit
+})
+
 /** Expands one batch entry into one row per destination bin (Storage
  *  location/Put-away qty split, everything else merged via groupIndex/
  *  groupSize) — or a single row when there's nothing to split (no
@@ -164,17 +208,19 @@ function expandByBin(
   batchNo: string, expiryDate: string, desc: string, unit: string,
   plannedValue: number, fallbackValue: number, fallbackLocation: string | undefined,
   destLocations: { locationId: string; qty: number }[] | undefined,
+  snapshot?: BatchAttributeValues,
 ): BatchRow[] {
+  const attributes = attrsFor(batchNo, expiryDate, snapshot)
   const bins = (destLocations ?? []).filter((d) => d.qty > 0)
   if (!bins.length) {
     return [{
       batchNo, expiryDate, desc, onHand: 0, value: fallbackValue, plannedValue, verifiedValue: 0, newOnHand: 0,
-      unit, location: fallbackLocation, bin: fallbackLocation ?? null, groupIndex: 0, groupSize: 1,
+      unit, location: fallbackLocation, attributes, bin: fallbackLocation ?? null, groupIndex: 0, groupSize: 1,
     }]
   }
   return bins.map((d, bIdx) => ({
     batchNo, expiryDate, desc, onHand: 0, value: d.qty, plannedValue, verifiedValue: 0, newOnHand: 0,
-    unit, bin: d.locationId, groupIndex: bIdx, groupSize: bins.length,
+    unit, attributes, bin: d.locationId, groupIndex: bIdx, groupSize: bins.length,
   }))
 }
 
@@ -216,19 +262,34 @@ function buildRows(): BatchRow[] {
         const picked = pickedMap.get(batchNo)
         const src = picked ?? planned!
         return expandByBin(
-          batchNo, src.expiryDate, src.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, src.unit,
+          batchNo, src.expiryDate, descFor(batchNo, src.desc, i), src.unit,
           planned?.qty ?? 0, picked?.qty ?? 0, picked?.location, picked?.destLocations,
+          src.attributes,
         )
       })
     }
     return (props.pickedBatches ?? []).flatMap((b, i) =>
-      expandByBin(b.batchNo, b.expiryDate, b.desc || DEMO_DESCS[i % DEMO_DESCS.length]!, b.unit, 0, b.qty, b.location, b.destLocations),
+      expandByBin(b.batchNo, b.expiryDate, descFor(b.batchNo, b.desc, i), b.unit, 0, b.qty, b.location, b.destLocations, b.attributes),
     )
   }
 
   const batches = warehouseStock.value?.batches ?? []
   const unit = warehouseStock.value?.unit ?? productBySku(props.sku)?.unit ?? ''
   const totalOnHand = batches.reduce((s, b) => s + b.onHand, 0)
+
+  if (isInOut.value && props.savedBatches?.length) {
+    return props.savedBatches.map((sb, i) => {
+      const lot = batches.find(l => l.batchNo.toLowerCase() === sb.batchNo.toLowerCase())
+      const before = Math.max(0, (lot?.onHand ?? 0) - sb.qty)
+      return {
+        batchNo: sb.batchNo,
+        expiryDate: sb.attributes.expiry_date ?? lot?.expiryDate ?? '',
+        desc: descFor(sb.batchNo, sb.description, i),
+        onHand: before, value: sb.qty, plannedValue: 0, verifiedValue: 0, newOnHand: before + sb.qty,
+        unit, attributes: attrsFor(sb.batchNo, sb.attributes.expiry_date ?? lot?.expiryDate ?? '', sb.attributes), bin: null, groupIndex: 0, groupSize: 1,
+      }
+    })
+  }
 
   if (isInOut.value) {
     const totalDelta = props.deltaTotal ?? 0
@@ -237,13 +298,14 @@ function buildRows(): BatchRow[] {
       return {
         batchNo: b.batchNo,
         expiryDate: b.expiryDate,
-        desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+        desc: descFor(b.batchNo, undefined, i),
         onHand: b.onHand,
         value: delta,
         plannedValue: 0,
         verifiedValue: 0,
         newOnHand: b.onHand + delta,
         unit,
+        attributes: attrsFor(b.batchNo, b.expiryDate),
         bin: null, groupIndex: 0, groupSize: 1,
       }
     })
@@ -254,13 +316,14 @@ function buildRows(): BatchRow[] {
   return batches.map((b, i) => ({
     batchNo: b.batchNo,
     expiryDate: b.expiryDate,
-    desc: DEMO_DESCS[i % DEMO_DESCS.length]!,
+    desc: descFor(b.batchNo, undefined, i),
     onHand: b.onHand,
     value: totalOnHand > 0 ? Math.round((b.onHand / totalOnHand) * counted) : 0,
     plannedValue: 0,
     verifiedValue: 0,
     newOnHand: 0,
     unit,
+    attributes: attrsFor(b.batchNo, b.expiryDate),
     bin: null, groupIndex: 0, groupSize: 1,
   }))
 }
@@ -377,18 +440,19 @@ function close() { emit('update:open', false) }
 
         <!-- Table -->
         <div class="vbd-table-wrap">
-          <table class="vbd-table" :class="{ 'vbd-table--split': isSplit }">
+          <table class="vbd-table" data-devchange="batch-drawer-desc-column-fit" :class="{ 'vbd-table--split': isSplit }" :style="{ minWidth: `${tableMinWidth}px` }">
             <colgroup>
               <col class="vbd-col-batch" />
               <col class="vbd-col-expiry" />
               <col class="vbd-col-desc" />
+              <col v-for="k in attrKeys" :key="k" class="vbd-col-attr" />
               <col v-if="!isPacking && !hideOnHand" class="vbd-col-num" />
               <template v-if="qtyBeforeLocation">
                 <col v-if="hasPlanned" class="vbd-col-num" />
-                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify && !hideLocation" class="vbd-col-loc" />
               </template>
               <template v-else>
-                <col v-if="isPacking && !isVerify" class="vbd-col-loc" />
+                <col v-if="isPacking && !isVerify && !hideLocation" class="vbd-col-loc" />
                 <col v-if="hasPlanned" class="vbd-col-num" />
               </template>
               <col class="vbd-col-num" />
@@ -401,13 +465,17 @@ function close() { emit('update:open', false) }
                 <th class="vbd-th">{{ t('Batch') }}</th>
                 <th class="vbd-th">{{ t('Expiry date') }}</th>
                 <th class="vbd-th">{{ t('Description') }}</th>
+                <th
+                  v-for="(k, i) in attrKeys" :key="k" class="vbd-th"
+                  :data-devchange="i === 0 ? 'view-batch-drawer-attributes' : undefined"
+                >{{ attrLabel(k) }}</th>
                 <th v-if="!isPacking && !hideOnHand" class="vbd-th vbd-th--num">{{ t('On hand qty') }}</th>
                 <template v-if="qtyBeforeLocation">
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
-                  <th v-if="isPacking && !isVerify" class="vbd-th">{{ t('Storage location') }}</th>
+                  <th v-if="isPacking && !isVerify && !hideLocation" class="vbd-th">{{ t('Storage location') }}</th>
                 </template>
                 <template v-else>
-                  <th v-if="isPacking && !isVerify" class="vbd-th">{{ t('Storage location') }}</th>
+                  <th v-if="isPacking && !isVerify && !hideLocation" class="vbd-th">{{ t('Storage location') }}</th>
                   <th v-if="hasPlanned" class="vbd-th vbd-th--num">{{ t(plannedQtyLabel) }}</th>
                 </template>
                 <th v-if="isPacking" class="vbd-th vbd-th--num">{{ t(hasPlanned ? qtyLabel : tableQtyLabel) }}</th>
@@ -424,14 +492,17 @@ function close() { emit('update:open', false) }
               <tr v-for="row in rows" :key="`${row.batchNo}::${row.bin ?? ''}::${row.groupIndex}`" class="vbd-tr">
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.batchNo }}</td>
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ isoToDisplay(row.expiryDate) }}</td>
-                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc }}</td>
+                <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ row.desc || '—' }}</td>
+                <template v-for="k in attrKeys" :key="k">
+                  <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted">{{ attrText(row, k) }}</td>
+                </template>
                 <td v-if="!isPacking && !hideOnHand" class="vbd-td vbd-td--num vbd-td--muted">{{ fmt(row.onHand) }}</td>
                 <template v-if="qtyBeforeLocation">
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
-                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify && !hideLocation" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                 </template>
                 <template v-else>
-                  <td v-if="isPacking && !isVerify" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
+                  <td v-if="isPacking && !isVerify && !hideLocation" class="vbd-td vbd-td--muted">{{ row.bin ?? '—' }}</td>
                   <td v-if="hasPlanned && row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--num">{{ fmt(row.plannedValue) }}</td>
                 </template>
                 <td v-if="isPacking || !isInOut" class="vbd-td vbd-td--num">{{ fmt(row.value) }}</td>
@@ -447,7 +518,7 @@ function close() { emit('update:open', false) }
                 <td v-if="row.groupIndex === 0" :rowspan="row.groupSize" class="vbd-td vbd-td--muted vbd-td--unit">{{ row.unit }}</td>
               </tr>
               <tr v-if="!rows.length" class="vbd-tr">
-                <td :colspan="(isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)) + (hasVerifiedCol ? 1 : 0)" class="vbd-td vbd-td--empty">{{ t('No batch data available.') }}</td>
+                <td :colspan="(isPacking ? (hasPlanned ? 7 : (isVerify ? 5 : 6)) : (isInOut ? 7 : 6)) + (hasVerifiedCol ? 1 : 0) + attrKeys.length" class="vbd-td vbd-td--empty">{{ t('No batch data available.') }}</td>
               </tr>
             </tbody>
           </table>
@@ -492,8 +563,8 @@ function close() { emit('update:open', false) }
 .vbd-header {
   flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   padding: var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .vbd-title { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular, 400); color: var(--mp-text-default); }
 .vbd-close {
@@ -502,7 +573,7 @@ function close() { emit('update:open', false) }
   border: none; background: none; border-radius: var(--mp-radii-md);
   cursor: pointer; color: var(--mp-icon-default);
 }
-.vbd-close:hover { background: var(--mp-background-neutral-hovered); }
+.vbd-close:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .vbd-content {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -513,18 +584,18 @@ function close() { emit('update:open', false) }
 .vbd-info-bar {
   display: flex; align-items: center; gap: var(--mp-spacing-4);
   padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border: 1px solid var(--mp-border-default);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  border: 1px solid var(--mp-border-default, #e3e7e9);
   border-radius: var(--mp-radii-md);
 }
 .vbd-info-product { display: flex; align-items: center; gap: var(--mp-spacing-3); flex: 1; min-width: 0; }
 .vbd-info-thumb {
   width: 40px; height: 40px; border-radius: var(--mp-radii-md);
   object-fit: cover; flex-shrink: 0;
-  border: 1px solid var(--mp-border-subtle);
-  background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-subtle, #e5e7e7);
+  background: var(--mp-background-neutral, #ffffff);
 }
-.vbd-info-thumb--empty { background: var(--mp-background-neutral-subtle); }
+.vbd-info-thumb--empty { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .vbd-info-names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .vbd-info-name { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vbd-info-sku { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
@@ -537,7 +608,7 @@ function close() { emit('update:open', false) }
 
 .vbd-scan { margin-bottom: var(--mp-spacing-3); }
 .vbd-table-wrap {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
   overflow-x: auto;
@@ -547,23 +618,25 @@ function close() { emit('update:open', false) }
 .vbd-col-expiry  { width: 140px; }
 .vbd-col-desc    { /* flexible */ }
 .vbd-col-loc     { width: 150px; }
-.vbd-col-num     { width: 120px; }
+/* Matches ManageBatchDrawer's attribute column; a long vendor name wraps. */
+.vbd-col-attr    { width: var(--mp-sizes-38, 152px); }
+.vbd-col-num     { width: 144px; } /* fits the widest header, "NEW ON HAND QTY" (118px text + 24px padding) */
 .vbd-col-unit    { width: 78px; }
 
 .vbd-th {
   height: var(--mp-sizes-7, 28px); text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary); text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default); white-space: nowrap;
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9); white-space: nowrap;
 }
 .vbd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
 
 .vbd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: top;
   background: var(--mp-background-neutral, #fff);
 }
@@ -581,7 +654,7 @@ function close() { emit('update:open', false) }
    than the header and its own last rendered cell isn't reliably the table's
    true right edge. */
 .vbd-table--split .vbd-th,
-.vbd-table--split .vbd-td { border-right: 1px solid var(--mp-border-default); }
+.vbd-table--split .vbd-td { border-right: 1px solid var(--mp-border-default, #e3e7e9); }
 .vbd-table--split .vbd-th--unit,
 .vbd-table--split .vbd-td--unit { border-right: none; }
 

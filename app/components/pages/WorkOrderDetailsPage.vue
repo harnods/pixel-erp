@@ -13,18 +13,23 @@ import { formatIDR } from '~/utils/currency'
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
+  MpFormControl, MpFormErrorMessage, MpFormLabel,
+  MpModal, MpModalBody, MpModalCloseButton, MpModalContent, MpModalFooter, MpModalHeader, MpModalOverlay,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import RoutingConfirmationModal from '~/components/patterns/RoutingConfirmationModal.vue'
 import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import { canTrackRouting, isRoutingComplete, isWithinWindow, routingStepsFor, todayIso, workOrderEndWindow } from '~/data/workOrderRouting'
+import { neededQtyFor } from '~/data/workOrderAdjustment'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
@@ -70,19 +75,18 @@ const bomNo = computed(() => bom.value?.number ?? '—')
 const planRange = computed(() => wo.value ? `${formatDate(wo.value.planStartDate)} - ${formatDate(wo.value.planEndDate)}` : '—')
 
 // ── Header status → primary action ──────────────────────────────────────────────
-const STATUS_LABEL: Record<WorkOrderStatus, string> = {
-  'not started': t('Not started'), 'in progress': t('In progress'), 'partially produced': t('Partially produced'),
-  'partially completed': t('Partially completed'), 'completed': t('Completed'), 'canceled': t('Canceled'),
-}
-const primaryAction = computed(() => {
-  switch (wo.value?.status) {
-    case 'not started': return t('Start work order')
+const primaryActionKey = computed(() => {
+  if (!wo.value) return ''
+  switch (wo.value.status) {
+    case 'not started': return 'Start work order'
     case 'in progress':
-    case 'partially produced': return t('Complete work order')
-    case 'partially completed': return t('Complete work order')
+    case 'partially produced':
+      return canTrackRouting(wo.value) && !isRoutingComplete(routingSteps.value) ? 'Track routing' : 'Complete work order'
+    case 'partially completed': return 'Complete work order'
     default: return '' // completed / canceled → no primary action
   }
 })
+const primaryAction = computed(() => primaryActionKey.value ? t(primaryActionKey.value) : '')
 // Actions menu items — terminal statuses drop the destructive/edit options.
 const actionItems = computed(() => {
   const s = wo.value?.status
@@ -101,9 +105,6 @@ const attachments = [
 const collapsed = reactive<Record<string, boolean>>({
   raw: false, cost: false, routing: false, finished: false,
 })
-
-// ── Line-item status derivation (from the work order status) ─────────────────────
-const routingLineStatus = computed(() => STATUS_LABEL[wo.value?.status ?? 'not started'])
 
 // Consumed = the real total from this work order's Material consume & return
 // records (Consume qty net of any Return qty) — the same records the Material
@@ -124,7 +125,7 @@ const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].
 const EXECUTION_WAREHOUSE = 'Production Jakarta'
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
+  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: neededQtyFor(wo.value, r.productId, r.needed), unit: r.unit }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
@@ -174,16 +175,15 @@ const viewTrackingType = computed<'serial' | 'batch' | undefined>(() => {
   if (isBatchTracked(category)) return 'batch'
   return undefined
 })
-function completeWorkOrder() {
+function completeWorkOrder(endDate: string = todayIso()) {
   if (!wo.value) return
   wo.value.status = 'completed'
-  wo.value.endDate = new Date().toISOString().slice(0, 10)
+  wo.value.endDate = endDate
   persistWorkOrders()
   toast.notify({ variant: 'success', title: 'Work order completed' })
 }
-function onAutoConsumeAndComplete() {
+function autoConsumeRemaining(isoDate: string) {
   if (!wo.value) return
-  const isoDate = new Date().toISOString().slice(0, 10)
   remainingRawMaterials.value.forEach((r) => {
     addMaterialConsumeReturnRecord({
       workOrderId: wo.value!.id,
@@ -205,12 +205,84 @@ function onAutoConsumeAndComplete() {
       serialSelection: r.reservedSerial,
     })
   })
+}
+function onAutoConsumeAndComplete() {
+  // A tracked work order still asks for its actual end date, so nothing is
+  // consumed until that's confirmed — cancelling leaves the work order untouched.
+  if (usesRoutingCompletion.value) { autoConsumeOnFinish.value = true; openEndDateModal(); return }
+  const isoDate = todayIso()
+  autoConsumeRemaining(isoDate)
+  completeWorkOrder(isoDate)
+}
+
+// ── Complete a tracked work order (Figma: finish wo with actual date) ────────
+// Confirm routing (or adjust first) → settle remaining materials → actual end date.
+const usesRoutingCompletion = computed(() => !!wo.value && canTrackRouting(wo.value))
+const showRoutingConfirm = ref(false)
+const autoConsumeOnFinish = ref(false)
+function goAdjust() { router.push(`/work-orders/${props.orderId}/adjust`) }
+function continueCompletion() {
+  showRoutingConfirm.value = false
+  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
+  if (usesRoutingCompletion.value) { autoConsumeOnFinish.value = false; openEndDateModal(); return }
   completeWorkOrder()
 }
+
+// Actual date modal — shared by Start work order and the end of the flow above.
+const showDateModal = ref(false)
+const dateModalMode = ref<'start' | 'end'>('end')
+const dateValue = ref('') // DD/MM/YYYY
+const dateError = ref('')
+const dateWindow = computed(() => dateModalMode.value === 'start'
+  ? { min: '', max: todayIso() }
+  : wo.value ? workOrderEndWindow(wo.value, routingSteps.value) : { min: '', max: '' })
+const dateHint = computed(() => dateModalMode.value === 'start'
+  ? t('You can only select dates until today.')
+  : t('You can only select dates from the routing end date until today.'))
+function openDateModal(mode: 'start' | 'end') {
+  dateModalMode.value = mode
+  dateValue.value = ''
+  dateError.value = ''
+  showDateModal.value = true
+}
+function openEndDateModal() { openDateModal('end') }
+function isDateDisabled(date: Date): boolean {
+  const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return !isWithinWindow(iso, dateWindow.value)
+}
+function confirmDate() {
+  const m = dateValue.value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) { dateError.value = t('Select a date.'); return }
+  const iso = `${m[3]}-${m[2]}-${m[1]}`
+  if (!isWithinWindow(iso, dateWindow.value)) { dateError.value = dateHint.value; return }
+  if (dateModalMode.value === 'start') {
+    startWorkOrder(iso)
+  } else {
+    if (autoConsumeOnFinish.value) autoConsumeRemaining(iso)
+    completeWorkOrder(iso)
+  }
+  showDateModal.value = false
+}
+
+// Adjust work order's Save & finish lands here with ?finish=1 to continue the flow.
+onMounted(() => {
+  if (route.query.finish !== '1') return
+  router.replace(`/work-orders/${props.orderId}`)
+  if (primaryActionKey.value === 'Complete work order') continueCompletion()
+})
+function startWorkOrder(startDate: string) {
+  if (!wo.value) return
+  wo.value.status = 'in progress'
+  wo.value.startDate = startDate
+  persistWorkOrders()
+  toast.notify({ variant: 'success', title: t('Work order started') })
+}
 function handlePrimaryAction() {
-  if (primaryAction.value !== 'Complete work order') return
-  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
-  completeWorkOrder()
+  if (primaryActionKey.value === 'Start work order') { openDateModal('start'); return }
+  if (primaryActionKey.value === 'Track routing') { router.push(`/work-orders/${props.orderId}/track-routing`); return }
+  if (primaryActionKey.value !== 'Complete work order') return
+  if (usesRoutingCompletion.value) { showRoutingConfirm.value = true; return }
+  continueCompletion()
 }
 
 // ── Material consume & return — sourced from the persisted store ────────────
@@ -301,25 +373,34 @@ const crrVisibleColumns = computed<TableColumn[]>(() => crrColumns.filter(c => c
 const PRODUCTION_COST_GROUPS = ['Labor', 'Overhead', 'Other'] as const
 const productionCost = computed(() => PRODUCTION_COST_GROUPS.map(g => {
   const row = (bom.value?.productionCost ?? []).find(c => c.group === g)
-  return { group: `${g} cost`, account: row?.account ?? '', driver: row?.costDriver ?? '', unitCost: row?.amount ?? 0, multiplier: row ? 1 : 0 }
+  return { group: `${g} cost`, account: row?.account ?? '', driver: row?.costDriver ?? '', unitCost: row?.amount ?? 0, multiplier: row ? wo.value?.adjustment?.costMultipliers[g] ?? 1 : 0 }
 }))
 const costAmount = (c: { unitCost: number; multiplier: number }) => c.unitCost * c.multiplier
 const productionCostSubtotal = computed(() => productionCost.value.reduce((s, c) => s + costAmount(c), 0))
 
-const routing = computed(() => (bom.value?.routing ?? []).map(r => ({
-  process: r.process, description: r.description, mapping: r.accountMapping,
-  planStart: wo.value?.planStartDate ?? '', planEnd: wo.value?.planEndDate ?? '', amount: r.amount,
-})))
+const routingSteps = computed(() => wo.value ? routingStepsFor(wo.value, bom.value) : [])
+// Tracked work orders show each step's own progress. Untracked or canceled ones
+// have none, so their steps mirror the work order itself.
+const routing = computed(() => routingSteps.value.map((r) => {
+  const followsSteps = !!wo.value?.trackRouting && wo.value.status !== 'canceled'
+  return {
+    process: r.process, description: r.description, mapping: r.accountMapping,
+    planStart: r.planStart, planEnd: r.planEnd, amount: r.amount,
+    startDate: followsSteps ? r.startDate : (showStart.value ? r.planStart : undefined),
+    endDate: followsSteps ? r.endDate : (showEnd.value ? r.planEnd : undefined),
+    status: followsSteps ? r.status : wo.value?.status ?? 'not started',
+  }
+}))
 const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amount, 0))
 const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
 
-const otherOutputs = computed(() => (bom.value?.otherOutputs ?? []).map(o => {
+const otherOutputs = computed(() => (wo.value?.adjustment?.otherOutputs ?? bom.value?.otherOutputs ?? []).map(o => {
   const p = catalogProduct(o.productId)
   return { product: p?.name ?? '—', sku: p?.sku ?? '—', qty: o.qty, unit: o.unit, percentage: o.percentage, estCost: o.estCost }
 }))
 const otherOutputsSubtotal = computed(() => otherOutputs.value.reduce((s, r) => s + r.estCost, 0))
 
-const productionWaste = computed(() => (bom.value?.productionWaste ?? []).map(w => ({
+const productionWaste = computed(() => (wo.value?.adjustment?.productionWaste ?? bom.value?.productionWaste ?? []).map(w => ({
   mapping: w.accountMapping, method: w.allocationMethod, percentage: w.percentage, amount: w.amount,
 })))
 const wasteSubtotal = computed(() => productionWaste.value.reduce((s, r) => s + r.amount, 0))
@@ -333,7 +414,7 @@ const mainOutput = computed(() => {
     sku: fg?.sku ?? '—',
     qty: wo.value?.producedQty || bom.value?.finishedGoodQty || 0,
     unit: bom.value?.finishedGoodUnit ?? 'Pcs',
-    percentage: bom.value?.finishedGoodPercentage ?? 100,
+    percentage: wo.value?.adjustment?.mainPercentage ?? bom.value?.finishedGoodPercentage ?? 100,
     estCost,
   }
 })
@@ -435,7 +516,7 @@ function suppressFabClick(e: MouseEvent) {
           </MpPopoverContent>
         </MpPopover>
 
-        <MpButton v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
+        <MpButton v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" data-devchange="wo-primary-track-routing" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
       </div>
     </header>
 
@@ -591,9 +672,9 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--wrap">{{ r.description }}</td>
                   <td class="wod-td">{{ r.mapping }}</td>
                   <td class="wod-td">{{ formatDate(r.planStart) }} - {{ formatDate(r.planEnd) }}</td>
-                  <td class="wod-td">{{ showStart ? formatDate(r.planStart) : '—' }}</td>
-                  <td class="wod-td">{{ showEnd ? formatDate(r.planEnd) : '—' }}</td>
-                  <td class="wod-td"><span class="wod-line-status wod-line-status--muted">{{ routingLineStatus }}</span></td>
+                  <td class="wod-td">{{ r.startDate ? formatDate(r.startDate) : '—' }}</td>
+                  <td class="wod-td">{{ r.endDate ? formatDate(r.endDate) : '—' }}</td>
+                  <td class="wod-td" data-devchange="wo-routing-status-badge"><ErpStatusBadge :status="r.status" :label="t(r.status.charAt(0).toUpperCase() + r.status.slice(1))" /></td>
                   <td class="wod-td wod-td--num">{{ formatIDR(r.amount) }}</td>
                 </tr>
               </tbody>
@@ -897,9 +978,49 @@ function suppressFabClick(e: MouseEvent) {
     <CompleteWorkOrderModal
       v-model:is-open="showCompleteModal"
       :rows="remainingRawMaterials"
+      @adjust="goAdjust"
       @complete="onAutoConsumeAndComplete"
       @view-tracking="onViewTracking"
     />
+
+    <RoutingConfirmationModal
+      :is-open="showRoutingConfirm"
+      data-devchange="wo-routing-confirmation"
+      @close="showRoutingConfirm = false"
+      @adjust="goAdjust"
+      @save="continueCompletion"
+    />
+
+    <MpModal
+      id="wod-date-modal" :is-open="showDateModal" size="md" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="showDateModal = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          {{ dateModalMode === 'start' ? t('Start work order') : t('Confirm work order completion') }}
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <MpFormControl id="wod-date" is-required :is-invalid="!!dateError" data-devchange="wo-start-date-modal">
+            <MpFormLabel>{{ dateModalMode === 'start' ? t('Actual start date') : t('Actual end date') }}</MpFormLabel>
+            <MpDatePicker
+              id="wod-date-picker" v-model="dateValue" format="DD/MM/YYYY" value-type="format"
+              :placeholder="t('Select date')" use-portal :disabled-date="isDateDisabled"
+              :class="css({ width: '100%' })" @update:model-value="dateError = ''"
+            />
+            <MpFormErrorMessage v-if="dateError">{{ dateError }}</MpFormErrorMessage>
+            <p v-else class="wod-date-hint">{{ dateHint }}</p>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="wod-date-footer">
+            <MpButton variant="ghost" is-rounded @click="showDateModal = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="confirmDate">{{ dateModalMode === 'start' ? t('Start') : t('Confirm') }}</MpButton>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
     <!-- "View batch" / "View serial number" from the complete-work-order modal —
          same pick drawer used elsewhere, just for looking at what's still
@@ -1146,11 +1267,6 @@ function suppressFabClick(e: MouseEvent) {
 .wod-table tbody tr:first-child .wod-th { border-top: none; }
 
 /* line status text */
-.wod-line-status { font-size: var(--mp-font-sizes-md); }
-.wod-line-status--warning { color: var(--mp-colors-text-warning, #a14a0b); }
-.wod-line-status--information { color: var(--mp-colors-text-information, #4b61dc); }
-.wod-line-status--success { color: var(--mp-colors-text-success, #0f6d4d); }
-.wod-line-status--muted { color: var(--mp-text-secondary); }
 
 /* ── Subtotal + summary ──────────────────────────────────────────────────── */
 .wod-subtotal-row {
@@ -1166,4 +1282,7 @@ function suppressFabClick(e: MouseEvent) {
 }
 .wod-summary-row > :last-child { min-width: 200px; text-align: right; font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .wod-summary-row--total { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+
+.wod-date-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wod-date-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

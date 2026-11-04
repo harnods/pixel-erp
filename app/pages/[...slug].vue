@@ -60,6 +60,8 @@ const { pageTitle, currentPageKey } = useNavigation()
 const { t } = useLocale()
 const { dimensionsActivated } = useDimensionsActivation()
 const { requestDimensionCreate } = useDimensionsFormDrawer()
+// Gate for the CRM (Qontak) app — when off, every /crm route renders the paywall.
+const { hasCrmAccess } = useCrmAccess()
 const route = useRoute()
 const router = useRouter()
 
@@ -215,6 +217,7 @@ const pageRegistry: Record<string, Component> = {
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
+  'Grades':            defineAsyncComponent(() => import('~/components/pages/GradesPage.vue')),
   // Contacts — one index page serves all three role lists; the route slug picks
   // which role it filters by. New/detail/edit resolve via detailMatch below.
   'Customers':         defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
@@ -389,6 +392,7 @@ const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const ImportBatchUpdatePage = asyncPage(() => import('~/components/pages/ImportBatchUpdatePage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
@@ -467,8 +471,14 @@ const CreateDeliveryOrderPage = asyncPage(() => import('~/components/pages/Creat
 const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
+// Projects module (Project MTO) — every route under these first segments renders
+// through ProjectsRouter, which owns its title bars (full-bleed, like CRM).
+const ProjectsRouter = asyncPage(() => import('~/components/projects/ProjectsRouter.vue'))
+const PROJECT_SEGMENTS = ['projects', 'project-approvals', 'project-documents', 'stock-availability', 'site-change-capture', 'project-audit-log', 'project-settings']
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
+const TrackRoutingPage = asyncPage(() => import('~/components/pages/TrackRoutingPage.vue'))
+const AdjustWorkOrderPage = asyncPage(() => import('~/components/pages/AdjustWorkOrderPage.vue'))
 const BillOfMaterialsDetailsPage = asyncPage(() => import('~/components/pages/BillOfMaterialsDetailsPage.vue'))
 const CreateBillOfMaterialsPage = asyncPage(() => import('~/components/pages/CreateBillOfMaterialsPage.vue'))
 const ProductionRequestIndexPage = asyncPage(() => import('~/components/pages/ProductionRequestIndexPage.vue'))
@@ -500,6 +510,9 @@ const CrmLandingPage = asyncPage(() => import('~/components/pages/CrmLandingPage
 // The "New custom role" title-bar button lives here, but the drawer it opens is
 // rendered inside CustomRolesPage — the two talk through this shared intent.
 const { openCreate: openCustomRoleCreate } = useCustomRoleDrawer()
+// Same pattern for Inventory › Grades: "New grade" here, the modal in GradesPage.
+const { openCreate: openGradeCreate } = useGradeModal()
+
 /** "Add custom role" works from both tabs (as in prod): the drawer lives on the
  *  Custom role tab, so switch there first, then open it. */
 function addCustomRole() {
@@ -591,6 +604,7 @@ const ProgressInvoiceFormPage = asyncPage(() => import('~/components/pages/Progr
 const CurrentAssetFormPage = asyncPage(() => import('~/components/pages/CurrentAssetFormPage.vue'))
 const CurrentAssetDisposalPage = asyncPage(() => import('~/components/pages/CurrentAssetDisposalPage.vue'))
 const CurrentAssetImportPage = asyncPage(() => import('~/components/pages/CurrentAssetImportPage.vue'))
+const CrmPaywallPage = asyncPage(() => import('~/components/pages/CrmPaywallPage.vue'))
 const CrmDealsPage = asyncPage(() => import('~/components/pages/CrmDealsPage.vue'))
 const CrmDealDetailPage = asyncPage(() => import('~/components/pages/CrmDealDetailPage.vue'))
 const NewCrmDealPage = asyncPage(() => import('~/components/pages/NewCrmDealPage.vue'))
@@ -720,6 +734,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
   if (segs[0] === 'crm') {
+    // No CRM access → the paywall takes over every /crm route. Reactive on
+    // hasCrmAccess, so the paywall CTA (which flips it on) swaps straight to the
+    // real workspace without a route change.
+    if (!hasCrmAccess.value) return { component: CrmPaywallPage, id: '' }
     const sub = segs[1] ?? ''
     const id = segs[2]
     // /crm/contacts → Contacts list; /crm/contacts/:id → contact detail.
@@ -1047,6 +1065,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'cash-management') {
     return { component: CashManagementDetailPage, id: segs[1]! }
   }
+  // Projects module — /projects[/:id[/…]], /project-approvals, /project-documents, …
+  if (segs.length >= 1 && PROJECT_SEGMENTS.includes(segs[0]!)) {
+    return { component: ProjectsRouter, id: segs.join('/') }
+  }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
     return { component: CreateWorkOrderPage, id: 'new' }
@@ -1054,6 +1076,14 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /work-orders/:id/material-record/new → new consume/return record (full page)
   if (segs.length >= 4 && segs[0] === 'work-orders' && segs[2] === 'material-record' && segs[3] === 'new') {
     return { component: NewMaterialRecordPage, id: segs[1]! }
+  }
+  // /work-orders/:id/track-routing → routing tracker board (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'track-routing') {
+    return { component: TrackRoutingPage, id: segs[1]! }
+  }
+  // /work-orders/:id/adjust → adjust before completing (full page)
+  if (segs.length >= 3 && segs[0] === 'work-orders' && segs[2] === 'adjust') {
+    return { component: AdjustWorkOrderPage, id: segs[1]! }
   }
   // /work-orders/:id → work order detail (read-only, status-aware)
   if (segs.length >= 2 && segs[0] === 'work-orders') {
@@ -1379,6 +1409,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   }
   if (segs.length >= 2 && segs[0] === 'product-list' && segs[1] === 'new') {
     return { component: NewProductPage, id: 'new' }
+  }
+  // /product-list/import-batches?sku= → Update batches from spreadsheet (must precede /product-list/:sku)
+  if (segs.length === 2 && segs[0] === 'product-list' && segs[1] === 'import-batches') {
+    return { component: ImportBatchUpdatePage, id: 'import-batches' }
   }
   // /product-list/:sku/edit → reuse the product form in edit mode
   if (segs.length >= 3 && segs[0] === 'product-list' && segs[2] === 'edit') {
@@ -2759,6 +2793,10 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Project accounting'" class="page-title-actions">
           <MpButton variant="secondary" is-rounded @click="router.push('/project-accounting/expense/new')">{{ t('New expense') }}</MpButton>
           <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/project-accounting/new')">{{ t('New project') }}</MpButton>
+        </div>
+        <!-- Inventory › Grades: the modal lives in GradesPage (useGradeModal). -->
+        <div v-else-if="currentPageKey === 'Grades'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="openGradeCreate()">{{ t('New grade') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">

@@ -36,7 +36,9 @@ const props = withDefaults(defineProps<{
   /** Read-only: the menu never opens and the × is withheld. Also used for a
    *  value forced by another field — a cascade's auto-filled level. */
   disabled?: boolean
-}>(), { width: '176px', isClearable: true, variant: 'field', isDisabled: false, disabled: false, emptyText: 'No results found' })
+}>(), { width: '176px', isClearable: true, variant: 'field', disabled: false, isDisabled: false, emptyText: 'No results found' })
+
+const isInert = computed(() => props.disabled || props.isDisabled)
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -56,9 +58,7 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-// `disabled` (main) and `isDisabled` (WMS cutover cells) mean the same thing.
-const isOff = computed(() => props.disabled || props.isDisabled)
-function focusOpen() { if (isOff.value || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
+function focusOpen() { if (isInert.value || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
@@ -69,7 +69,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="[`efs--${variant}`, { 'efs--filled': !!modelValue && isClearable && !open && !isOff, 'efs--disabled': isOff, 'efs--full': width === '100%' }]" :style="{ '--efs-w': width }">
+  <div class="efs" :class="[`efs--${variant}`, { 'efs--filled': !!modelValue && isClearable && !open && !isInert, 'efs--disabled': isInert, 'efs--full': width === '100%' }]" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -79,9 +79,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="modelValue ? selectedLabel : placeholder"
-            :disabled="isOff"
-            :readonly="isOff"
-            :tabindex="isOff ? -1 : undefined"
+            :disabled="isInert"
+            :readonly="isInert"
+            :tabindex="isInert ? -1 : undefined"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -106,7 +106,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
       </MpPopoverContent>
     </MpPopover>
 
-    <MpButton v-if="modelValue && isClearable && !open && !isOff" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
+    <MpButton v-if="modelValue && isClearable && !open && !isInert" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
       <MpIcon name="close" size="sm" />
     </MpButton>
   </div>

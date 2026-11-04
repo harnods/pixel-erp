@@ -43,6 +43,134 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['NewSalesDeliveryPage.vue'],
   },
   {
+    id: 'wo-start-date-modal',
+    title: 'Start work order asks for the actual start date',
+    description:
+      'Starting a work order now opens a modal for its actual start date, up to today. Routing start dates are limited by this date.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-drag',
+    title: 'Drag routing cards between columns',
+    description:
+      'Drag a card to the next column to start or finish it (the date modal opens), or to the previous column to move it back.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue'],
+  },
+  {
+    id: 'wo-adjust-page',
+    title: 'Adjust work order page',
+    description:
+      'Record field differences before closing a work order: produced and needed qty, cost multipliers, other outputs, and production waste. Changes apply to this work order only, never the BOM, and show on its detail page.',
+    date: '2026-11-02',
+    files: ['AdjustWorkOrderPage.vue', 'workOrderAdjustment.ts'],
+  },
+  {
+    id: 'wo-routing-confirmation',
+    title: 'Complete work order asks for routing confirmation',
+    description:
+      'Completing a tracked work order now asks whether the field process matched, offers Adjust work order, and captures the actual end date.',
+    date: '2026-11-02',
+    files: ['RoutingConfirmationModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-track-routing-page',
+    title: 'Track routing page',
+    description:
+      'New board to move a work order\'s routing steps through Not started, In progress, and Completed with actual dates. Progress is saved to the work order and drives the Routing section and primary action on its detail page.',
+    date: '2026-11-02',
+    files: ['TrackRoutingPage.vue', 'workOrderRouting.ts'],
+  },
+  {
+    id: 'wo-primary-track-routing',
+    title: 'Work order primary action follows routing',
+    description:
+      'Start work order now starts the work order. With Track routing set to Yes, the primary action becomes Track routing, then Complete work order once every routing step is completed.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-routing-status-badge',
+    title: 'Routing status uses the status badge',
+    description:
+      'The Routing section status is now a status badge, and tracked work orders show each step\'s own status and actual dates.',
+    date: '2026-11-02',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'batch-drawer-desc-column-fit',
+    title: 'Batch drawers: Description keeps its own column',
+    description:
+      'In the Manage batch (stock in/out, transfer, put-away, picking, receiving), work order batch and View batch drawers, the Description column no longer collapses to zero width when attribute columns are added, so it never overlaps Vendor. Every column is now sized to its content, so the whole table — including the qty field you type into — fits a full-width drawer without scrolling sideways. A batch with no description shows "—" instead of demo text.',
+    date: '2026-10-28',
+    files: [
+      'app/components/patterns/ManageBatchDrawer.vue',
+      'app/components/patterns/PickBatchDrawer.vue',
+      'app/components/patterns/ViewBatchDrawer.vue',
+    ],
+  },
+  {
+    id: 'batch-export-write-error',
+    title: 'Batch export: a failed file shows an inline error',
+    description: 'If the template, export or error file can’t be created, an inline message says so under the button (no silent failure). The button stays to retry.',
+    date: '2026-10-28',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue', 'app/components/patterns/BatchExportModal.vue'],
+  },
+  {
+    id: 'batch-drawer-typed-expiry-locked',
+    title: 'Receiving drawer: a typed existing batch keeps its expiry',
+    description: 'Typing a new number that matches an existing batch with an expiry shows that expiry read-only (like its other attributes) and saves it; a batch with no expiry stays fillable.',
+    date: '2026-10-28',
+    files: ['app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'view-batch-drawer-attributes',
+    title: 'Batch attributes in View batch and Pick batch drawers',
+    description:
+      'The batch detail and pick drawers show the product\'s batch attributes (Vendor, Grade, ...) after Expiry date, read-only. A saved line shows the values it was saved with; a lot with no batch record shows only its expiry. Put-away, picking and purchase delivery lines now keep that attribute snapshot.',
+    date: '2026-10-28',
+    files: ['app/components/patterns/ViewBatchDrawer.vue', 'app/components/patterns/PickBatchDrawer.vue', 'app/data/pickingTasks.ts', 'app/data/putAwayTasks.ts', 'app/data/purchaseDeliveryBatches.ts'],
+  },
+  {
+    id: 'receiving-batch-attributes',
+    title: 'WMS receiving saves batch attributes to the batch master',
+    description:
+      'Finishing receiving creates a product batch for each new batch number and fills its empty attributes; existing values are never overwritten. A new row prefills Vendor from the PO, and existing batches recorded with another vendor ask for one confirmation first.',
+    date: '2026-10-28',
+    files: ['app/data/receivingTasks.ts', 'app/components/pages/ReceiveItemsPage.vue', 'app/components/patterns/ManageBatchDrawer.vue'],
+  },
+  {
+    id: 'stock-in-batch-attributes',
+    title: 'Stock in saves its batches with their attributes',
+    description:
+      'A saved stock in/out keeps each line\'s batches and creates them in the batch master, filling only empty attributes. The adjustment details batch drawer shows the saved batches.',
+    date: '2026-10-28',
+    files: ['app/data/stockAdjustments.ts', 'app/components/pages/StockInOutFormPage.vue', 'app/components/pages/StockAdjustmentDetailsPage.vue'],
+  },
+  {
+    id: 'batch-drawer-attributes',
+    title: 'Batch attributes in every Manage batch drawer',
+    description:
+      'Stock in/out, transfer and WMS receiving, put-away and picking drawers show the product\'s batch attributes (Vendor, Grade, dates) as columns and under each Select-batch option. Receiving drawers take values for new batches and empty ones, and block Save on an empty required attribute; issuing drawers only show them.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/ManageBatchDrawer.vue', 'app/composables/useBatchAttributeColumns.ts'],
+  },
+  {
+    id: 'batch-export-modal',
+    title: 'Product Export batches uses the import template',
+    description:
+      'Exports this product\'s batches in the Update batches template format, with an optional "only batches with an empty required attribute" filter and an inline message when nothing matches.',
+    date: '2026-10-27',
+    files: ['app/components/patterns/BatchExportModal.vue', 'app/components/pages/ProductDetailsPage.vue'],
+  },
+  {
+    id: 'batch-export-filters',
+    title: 'Export batches from the Update batches page',
+    description:
+      'Step 1 filters by product and by batches missing a required attribute; the file can be edited and imported back.',
+    date: '2026-10-27',
+    files: ['app/components/pages/ImportBatchUpdatePage.vue'],
     id: 'crm-invite-edit-disabled-options',
     title: 'Invite / Edit user: options disabled up front, with the reason',
     description:
@@ -592,6 +720,46 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['CrmModuleBuilderPage.vue'],
   },
   {
+    id: 'pm-completion-true-up',
+    title: 'Projects: completion true-up before close',
+    description:
+      'When every work package is technically complete but a cost-to-cost or unit-measured project measured under 100%, "Recognise remaining revenue" posts the rest of the contract value. The close gate now checks recognised revenue against contract value, so a job finished under plan can close.',
+    date: '2026-09-22',
+    files: ['CompletionTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-draft-project-documents',
+    title: 'Projects: Draft projects accept only draft purchase requests',
+    description:
+      'Firm documents (PO, expense, timesheet) can no longer post to a Draft project, and Draft projects consume no actual cost (PRD Story 7). A purchase request to a Draft project saves as a draft that commits nothing.',
+    date: '2026-09-22',
+    files: ['ProjectNewDocumentPage.vue', 'projectActions.ts', 'projectTransactions.ts'],
+  },
+  {
+    id: 'pm-eco-affected-units',
+    title: 'Projects: ECO cost delta counts only affected units',
+    description:
+      'The ECO diff and the budget revision on approval now count only future work orders plus the work orders in the effectivity scope — in-progress and unselected work orders keep their BOM version. Affected work orders keep line budgets within their set-aside.',
+    date: '2026-09-22',
+    files: ['EcoDiff.vue', 'ChangesTab.vue', 'projectActions.ts'],
+  },
+  {
+    id: 'pm-pixel-rework',
+    title: 'Projects: rebuilt on Pixel components',
+    description:
+      'The whole Projects module now uses Pixel 3 / ERP patterns: MpTabs on the project page, ErpFilterSelect for every dropdown, MpBanner, ErpStatusBadge, MpProgress, MpModal and the custom drawer shell, ActivityLogModal from the “Last updated by” line, and ErpTablePage on every index. Actions never disable for validation — they show an inline error instead — and success is a toast.',
+    date: '2026-09-22',
+    files: ['components/projects/**', 'project-mto.css', 'useProjectAction.ts', 'projectStatus.ts'],
+  },
+  {
+    id: 'pm-release-approval',
+    title: 'Projects: Finance approves project release (OQ7, provisional)',
+    description:
+      'Draft → Active is approved by Finance / Controller only, never by the project’s own PM. Other roles see "Waiting for Finance approval" and the reason in the dialog.',
+    date: '2026-09-22',
+    files: ['ProjectDetailPage.vue', 'projectActions.ts'],
+  },
+  {
     id: 'crm-module-per-tab-save',
     title: 'Module builder: per-tab save with unsaved-changes prompt',
     description:
@@ -707,9 +875,17 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'crm-module-view-mode',
     title: 'Module settings open in view mode',
     description:
-      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown: Draft modules get Edit/Publish/Delete; Published modules get Edit/Deactivate/Delete (Delete on a published module shows an info toast requiring deactivation first). Tab order: Setup → Properties → Layout → Pipeline. Deals module cannot be deleted or deactivated.',
+      'Clicking a module in Settings now opens a read-only view first — Setup as ContentList, Properties table without add/edit, Pipeline without sidebar or drag, Layout without drag-and-drop. Header shows an Actions dropdown: Draft modules get Edit/Publish/Delete; Published modules get Edit/Deactivate/Delete (Delete on a published module shows an info toast requiring deactivation first). Tab order: Setup → Properties → Layout → Pipeline → Check-in. Deals module cannot be deleted or deactivated.',
     date: '2026-09-20',
     files: ['CrmModuleBuilderPage.vue', 'CrmDetailLayoutBuilder.vue'],
+  },
+  {
+    id: 'crm-module-checkin',
+    title: 'Check-in tab on module settings',
+    description:
+      'New Check-in tab on deal-like module settings. Contains a toggle "Enable check-in for this module" with a description explaining that team members can check in at customer/prospect locations to log visits and track field activity.',
+    date: '2026-11-04',
+    files: ['CrmModuleBuilderPage.vue'],
   },
   {
     id: 'crm-layout-erp-target',
@@ -1022,6 +1198,14 @@ export const DEV_CHANGES: DevChange[] = [
       'MpUpload emits the native Event (ev.target.files), but 17 attachment fields typed their handler as a FileList, so nothing was ever staged — the picked file silently vanished. All of them now accept both shapes.',
     date: '2026-10-23',
     files: ['AddFileDrawer.vue', 'NewCreditMemoPage.vue', 'SpendMoneyPage.vue'],
+  },
+  {
+    id: 'crm-paywall',
+    title: 'CRM paywall — first-run + trial-expired',
+    description:
+      'A tenant without active CRM access hits a full-bleed paywall on every /crm route (no level-1 CRM sidebar). Two faces: "none" (educational first-run) and "expired" (trial ended). Updated per feedback: 4 value props (added Custom Module), revised step copy with module builder mention, "Sync to ERP" step-2 item, heading changed to "How easy the Sales tracking can be?", removed Schedule a demo button, CTA buttons moved inline with titles on both faces. 2×2 grid value-prop layout.',
+    date: '2026-11-01',
+    files: ['CrmPaywallPage.vue', 'useCrmAccess.ts', '[...slug].vue', 'CrmDealsPage.vue', 'default.vue'],
   },
 ]
 
