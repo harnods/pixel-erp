@@ -23,7 +23,8 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # package.json engines needs ^22.19 (scripts/check-node.mjs runs as pretest).
+          node-version: 22
         # No npm cache / npm ci: this repo gitignores package-lock.json and pins
         # its Pixel deps to `latest`, so there is no lockfile to cache or ci-install.
 
