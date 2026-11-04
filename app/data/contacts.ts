@@ -68,6 +68,8 @@ export interface Contact {
   currency: string
   memo: string
   updatedBy: string
+  /** Archived contacts are hidden from the lists unless "Show archived …" is on. */
+  archived?: boolean
   /** ISO timestamp of the last edit. */
   updatedAt: string
 }
@@ -79,7 +81,7 @@ export function nitkuFull(c: Pick<Contact, 'npwp' | 'nitkuSuffix'>): string {
 
 /** Options for the fixed-value selects on the New contact form. */
 export const TITLE_OPTIONS = ['Mr', 'Mrs', 'Ms']
-export const IDENTITY_TYPE_OPTIONS = ['KTP', 'SIM', 'Passport', 'KITAS']
+export const IDENTITY_TYPE_OPTIONS = ['KTP', 'Passport', 'SIM', 'KITAS']
 export const CONTACT_GROUP_OPTIONS = [
   'VIP Customers',
   'Food & Beverages',
@@ -95,6 +97,9 @@ export const BANK_OPTIONS = [
 export const AR_ACCOUNT_OPTIONS = ['1-10100 Account Receivable', '1-10200 Other Receivable']
 export const AP_ACCOUNT_OPTIONS = ['2-20100 Trade Payable', '2-20200 Other Payable']
 export const PAYMENT_TERMS_OPTIONS = ['Net 7', 'Net 14', 'Net 30', 'Net 60', 'Cash on delivery']
+export const COUNTRY_OPTIONS = [
+  'Indonesia', 'Singapore', 'Malaysia', 'Thailand', 'Philippines', 'Vietnam', 'Australia', 'United States',
+]
 export const CURRENCY_OPTIONS = ['Indonesian Rupiah (Rp)', 'US Dollar ($)', 'Singapore Dollar (S$)']
 
 /** Empty-ish record used to seed the create form and to fill sparse seed rows. */
@@ -209,6 +214,9 @@ const SEED: Contact[] = [
   },
 ]
 
+// An archived customer — only listed with "Show archived customers" on.
+SEED.push({ ...account('CT043', 'Warung Kopi Modern', 'CV Warung Kopi Modern', 'admin@warungkopimodern.id', '021-5550016', 'Depok', [], 0, '2025-12-12T10:00:00+07:00'), creditLimit: null, archived: true })
+
 // Vendors and "other" contacts share the same store — the role checkboxes on the
 // form decide which index a record shows up in.
 SEED[6]!.types = ['customer', 'vendor']
@@ -264,10 +272,22 @@ const VENDOR_SEED: Contact[] = [
 SEED.push(...VENDOR_SEED)
 
 const STORE_KEY = 'contacts-v1'
+// Seed ids added after the first release — merged into an older saved snapshot
+// once (tracked by key), so returning sessions also get the vendor contacts.
+const SEED_V2_KEY = 'contacts-v1-seed2'
 
-export const contacts = reactive<Contact[]>(
-  loadSnapshot<Contact>(STORE_KEY) ?? SEED.map((c) => ({ ...c, banks: c.banks.map((b) => ({ ...b })) })),
-)
+function cloneSeed(c: Contact): Contact { return { ...c, banks: c.banks.map((b) => ({ ...b })) } }
+function initialContacts(): Contact[] {
+  const saved = loadSnapshot<Contact>(STORE_KEY)
+  if (!saved) return SEED.map(cloneSeed)
+  if (import.meta.client && !localStorage.getItem(SEED_V2_KEY)) {
+    localStorage.setItem(SEED_V2_KEY, '1')
+    const have = new Set(saved.map((c) => c.id))
+    for (const c of SEED) if (!have.has(c.id) && Number(c.id.slice(2)) >= 13) saved.push(cloneSeed(c))
+  }
+  return saved
+}
+export const contacts = reactive<Contact[]>(initialContacts())
 
 export function persistContacts(): void {
   saveSnapshot(STORE_KEY, contacts)

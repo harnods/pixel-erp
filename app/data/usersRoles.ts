@@ -172,13 +172,13 @@ export const SYSTEM_ROLES: SystemRole[] = [
   },
   {
     id: 'project-manager',
-    name: 'Project Manager',
+    name: 'Project manager',
     requiresProjectAccounting: true,
     permissions: [
       'Create and set up projects, including budget and milestones.',
       'View and record project costs.',
       'View and submit revenue recognition and project billing.',
-      'Create and submit variation orders and other change requests.',
+      'Create and submit addenda to the project contract.',
       'View all project health and profitability reports.',
       'Edit and delete project data if ticking List manager.',
     ],
@@ -206,7 +206,7 @@ export function getSystemRole(id: string): SystemRole | undefined {
 /**
  * The existing roles this tenant can actually assign. Pass whether the Project
  * Accounting billing component is installed (useApprovalWorkflowScenario) —
- * without it, Project Manager is dropped from the picker.
+ * without it, Project manager is dropped from the picker.
  */
 export function systemRolesFor(hasProjectAccounting: boolean): SystemRole[] {
   return SYSTEM_ROLES.filter((r) => !r.requiresProjectAccounting || hasProjectAccounting)
@@ -303,6 +303,14 @@ export interface AuthorityFeature {
    * list for a row where some actions have no meaning (they're hidden).
    */
   actions?: AuthorityAction[]
+  /**
+   * Feature only exists for tenants that bought the Project Accounting billing
+   * component — the same gate the Approval workflows "Applies to: Project
+   * Accounting" option uses. A tenant without the component can't grant
+   * authority over a module they don't have, so the row is dropped from the
+   * matrix entirely rather than shown disabled. See authorityFeaturesFor().
+   */
+  requiresProjectAccounting?: boolean
 }
 
 /** The full permission matrix — verbatim from Figma "Drawer / Custom Role / Add"
@@ -331,6 +339,17 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
   { id: 'acc-chart-of-accounts', label: 'Chart of accounts', category: 'accounting', subfeatures: [] },
   { id: 'acc-close-books', label: 'Close books', category: 'accounting', subfeatures: [] },
   { id: 'acc-fixed-assets', label: 'Fixed assets', category: 'accounting', subfeatures: [] },
+  {
+    id: 'project-accounting', label: 'Project accounting', category: 'accounting',
+    requiresProjectAccounting: true,
+    subfeatures: [
+      { id: 'project-setup', label: 'Project setup' },
+      { id: 'cost-tracking', label: 'Cost tracking' },
+      { id: 'recognition-and-billing', label: 'Recognition and billing' },
+      { id: 'change-management', label: 'Addenda' },
+      { id: 'project-health', label: 'Project health' },
+    ],
+  },
 
   // ── Sales ──
   { id: 'sales-quotes', label: 'Sales quotes', category: 'sales', subfeatures: [] },
@@ -493,6 +512,16 @@ export function authorityRowKeys(feature: AuthorityFeature): string[] {
 export function authorityActionsFor(feature: AuthorityFeature): AuthorityAction[] {
   if (feature.actions) return feature.actions
   return feature.viewOnly ? ['view'] : ['view', 'create', 'edit', 'delete']
+}
+
+/**
+ * The features this tenant can actually grant. Pass whether the Project
+ * Accounting billing component is installed (useApprovalWorkflowScenario) —
+ * without it, that feature is dropped from the matrix rather than shown
+ * disabled: you cannot grant authority over a module you do not have.
+ */
+export function authorityFeaturesFor(hasProjectAccounting: boolean): AuthorityFeature[] {
+  return AUTHORITY_FEATURES.filter((f) => !f.requiresProjectAccounting || hasProjectAccounting)
 }
 
 /** How many features have at least one granted action — the "Feature (n)" count. */
@@ -689,6 +718,14 @@ export interface AccountUser {
   lastActiveAt: string | null
   /** ISO date the user was invited/created. */
   joinedAt: string
+  /** Prod "Type" column: a company Member, or an outside Partner (e.g. the
+   *  accounting firm). Absent = 'member'. */
+  partnerType?: AccountUserPartnerType
+}
+
+export type AccountUserPartnerType = 'member' | 'partner'
+export function userPartnerType(user: AccountUser): AccountUserPartnerType {
+  return user.partnerType ?? 'member'
 }
 
 /**
@@ -795,6 +832,7 @@ const ACCOUNT_USER_SEED: AccountUser[] = [
     status: 'invited',
     lastActiveAt: null,
     joinedAt: '2026-09-09',
+    partnerType: 'partner',
   },
   {
     id: 'au-11',

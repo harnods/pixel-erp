@@ -96,6 +96,10 @@ const props = defineProps<{
   tagOptions: string[]
   taxDocStatusOptions: { value: string; label: string }[]
   djpStatusOptions: { value: string; label: string }[]
+  /** Copy overrides (prod parity); defaults keep the original wording. */
+  keywordLabel?: string
+  keywordPlaceholder?: string
+  resetLabel?: string
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
@@ -171,13 +175,13 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
     <template #body>
       <!-- Keywords — text input with an inline column-scope dropdown suffix. -->
       <MpFormControl :id="`${id}-keyword-fc`">
-        <MpFormLabel>Keywords</MpFormLabel>
+        <MpFormLabel>{{ keywordLabel ?? 'Keywords' }}</MpFormLabel>
         <div class="sif-keyword">
           <input
             v-model="draft.keyword"
             class="sif-keyword-input"
             type="text"
-            placeholder="Search keywords..."
+            :placeholder="keywordPlaceholder ?? 'Search keywords...'"
             @keydown.enter.prevent="apply"
           >
           <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
@@ -352,7 +356,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
     </template>
 
     <template #footer>
-      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">Reset filter</MpButton>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">{{ resetLabel ?? 'Reset filter' }}</MpButton>
       <div class="sif-footer-right">
         <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
         <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">Apply</MpButton>

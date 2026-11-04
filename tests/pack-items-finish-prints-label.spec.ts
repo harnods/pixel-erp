@@ -71,15 +71,15 @@ function modalButton(modalId: string, text: string): HTMLElement {
   return btn as HTMLElement
 }
 
-/** Dismiss a modal via its × — since 92cddfaf ("every modal and drawer closes
- *  ONLY via its × button") the PDF preview has no Cancel in its footer, just
- *  "Open template settings" and "Print PDF". The × is the header's text-less
- *  ghost button. */
-function closeModal(modalId: string): HTMLElement {
+// The preview has no Cancel: per rule/modal-drawer-close-explicit-only a modal is
+// dismissed only by its × (MpModalCloseButton), and rule/pdf-preview-modal fixes
+// the footer to Template settings + Print PDF. The × renders no text, so it is
+// matched on Pixel's component marker rather than a label.
+function modalCloseButton(modalId: string): HTMLElement {
   const modal = document.querySelector(`#modal-${modalId}`)
   if (!modal) throw new Error(`Modal #modal-${modalId} not found`)
-  const btn = Array.from(modal.querySelectorAll('button')).find((b) => !b.textContent?.trim())
-  if (!btn) throw new Error(`No × button in #modal-${modalId}`)
+  const btn = modal.querySelector('[data-pixel-component="MpModalCloseButton"]')
+  if (!btn) throw new Error(`Close (×) button not found in #modal-${modalId}`)
   return btn as HTMLElement
 }
 
@@ -116,7 +116,7 @@ describe('PackItemsPage — Finish packing prints the shipping label (D4 AC#5)',
     expect(push).not.toHaveBeenCalled() // still on this page, previewing the label
 
     // Dismiss the preview (×) → now it leaves.
-    closeModal('pdf-preview-modal').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    modalCloseButton('pdf-preview-modal').dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
     expect(push).toHaveBeenCalledWith(`/packing/${pk.id}`)
     wrapper.unmount()

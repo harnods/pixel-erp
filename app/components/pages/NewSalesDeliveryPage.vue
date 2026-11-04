@@ -1,6 +1,7 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/deliveries/views/SalesDeliveryCreateView.vue -->
 <script setup lang="ts">
 /**
- * "New sales invoice" form — Sales ▸ Sales invoices ▸ New sales invoice
+ * "Create sales delivery" form (adapted from the sales invoice form) — Sales ▸ Sales invoices ▸ New sales invoice
  * (Figma: Sales - Sales Invoices node 9152-107281).
  *
  * Page shell / header grid / footer follow PurchaseOrderFormPage.vue; the
@@ -11,7 +12,7 @@
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
-  MpInputGroup, MpInputLeftAddon,
+  MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
   MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpAutocomplete, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -23,13 +24,56 @@ import {
   customers, products, salesDeliveries,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
+import { salesOrders } from '~/data/salesOrders'
+import { deliveredByLine, derivedQty, orderLock, releaseInputBasis, canReleaseInputBasis, isInClosedPeriod, isFullyDelivered } from '~/data/salesDeliveries'
+import { lockDate } from '~/data/closeBooks'
+import ReleaseInputBasisModal from '~/components/patterns/ReleaseInputBasisModal.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { useSalesDeliveryViewAs } from '~/composables/useSalesDeliveryViewAs'
 import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesDelivery } from '~/data/types'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 
 const router = useRouter()
+const route = useRoute()
 const { t } = useLocale()
+
+/**
+ * A delivery raised from a sales order (`?order=SO101`) draws down that order's
+ * lines, so the form carries the ordered quantity and how much of it has already
+ * gone out. Without the order there is nothing to take a percentage OF, which is
+ * why this link is Wave 0 of docs/plans/percentage-based-sales-delivery.md.
+ * Deliveries created straight from the list keep working with no order.
+ */
+/**
+ * OD-010. `/sales-deliveries/:id/edit` reuses this form; the router passes the
+ * delivery id as `orderId` (its generic id prop), `'new'` on create. An edit of a
+ * contract delivery takes its order from the delivery itself, not the query.
+ */
+const props = defineProps<{ orderId?: string }>()
+const editing = computed(() => {
+  const id = props.orderId && props.orderId !== 'new' ? props.orderId : null
+  return id ? salesDeliveries.find(d => d.id === id) ?? null : null
+})
+/** A delivery inside a closed accounting period cannot be edited (R-19). */
+const editLocked = computed(() => !!editing.value && isInClosedPeriod(editing.value, lockDate()))
+
+/**
+ * Nothing left to deliver on the source order — every line at 100%. A NEW delivery
+ * has nothing to draw down, so the table gives way to an empty state (PRD UX flow ›
+ * Empty state). An edit is unaffected: it re-checks against everything else.
+ */
+const nothingLeft = computed(() => !editing.value && !!sourceOrder.value && isFullyDelivered(sourceOrder.value))
+
+const sourceOrder = computed(() => {
+  const id = editing.value?.orderId ?? String(route.query.order ?? '')
+  return id ? salesOrders.find(o => o.id === id) ?? null : null
+})
+// On edit, everything ELSE delivered against the order — the limit re-check must
+// not count the delivery being edited against itself (R-17).
+const deliveredSoFar = computed(() =>
+  sourceOrder.value ? deliveredByLine(sourceOrder.value.id, editing.value?.id) : {})
 
 function todayISO() { return new Date().toISOString().slice(0, 10) }
 function isoToDMY(iso: string) {
@@ -98,13 +142,208 @@ interface LineItem {
   taxLabel: string
   productError: boolean
   qtyError: boolean
+  /** A hand-added line in Percentage: the base quantity typed in Qty ordered is missing. */
+  baseQtyError: boolean
+  /** Set only on an order-sourced line: which order line it draws down, and that
+   *  line's ordered quantity. `null` on a free-standing delivery. */
+  orderLineIndex: number | null
+  orderedQty: number | null
+  /**
+   * OD-001. `qty` above is always the posting basis (R-03). In percent mode the
+   * user types `inputValue` and `qty` is derived from it; in qty mode the two are
+   * the same number. Both are saved, so the document can show what was typed.
+   */
+  inputMode: 'qty' | 'percent'
+  inputValue: number
+  /** A hand-added line has no ordered quantity, so in Percentage the user types
+   *  the base the percentage applies to (in the Qty ordered cell). */
+  baseQty: number
+}
+
+/** What a percentage is taken of: the ordered qty, or a hand-added line's typed base. */
+function basisOf(item: LineItem): number | null {
+  if (item.orderedQty !== null) return item.orderedQty
+  return item.baseQty > 0 ? item.baseQty : null
+}
+
+/**
+ * Re-derives `qty` from whatever the user typed. Percent is always against the
+ * ORDERED quantity, never the remaining balance (R-02), so a second tranche of
+ * 33% means the same number of units as the first.
+ */
+function applyInput(item: LineItem, value: number) {
+  item.inputValue = Number.isFinite(value) ? value : 0
+  const basis = basisOf(item)
+  item.qty = item.inputMode === 'percent'
+    ? (basis === null ? 0 : derivedQty(basis, item.inputValue))
+    : item.inputValue
+  item.qtyError = false
+}
+
+/** A hand-added line's base changed — re-derive what its percentage produces. */
+function setBaseQty(item: LineItem, value: number) {
+  item.baseQty = Number.isFinite(value) ? value : 0
+  item.baseQtyError = false
+  applyInput(item, item.inputValue)
+}
+
+/**
+ * OD-001. One input method for the whole delivery, set above the table — every
+ * line is entered the same way. Quantity is preselected unless the order is
+ * locked to Percentage (see orderLockInfo).
+ */
+const inputMode = ref<'qty' | 'percent'>('qty')
+
+function setInputMode(mode: unknown) {
+  const next = mode === 'percent' ? 'percent' : 'qty'
+  if (next === inputMode.value) return
+  // Belt and braces: the dropdown is disabled while locked, but the lock is a
+  // rule, not a UI state (R-09).
+  if (next === 'qty' && orderLockInfo.value) return
+  inputMode.value = next
+  // Switching method clears every figure rather than reinterpreting it: 5 units
+  // and 5 percent are different claims, and silently converting one into the
+  // other is exactly the unrecorded arithmetic this feature removes.
+  for (const it of items.value) {
+    it.inputMode = next
+    applyInput(it, 0)
+  }
+}
+
+// "Percentage", not "Percent" — the BOM form's Allocation method already uses it.
+const MODE_OPTIONS = computed(() => [
+  { value: 'qty', label: t('Quantity') },
+  { value: 'percent', label: t('Percentage') },
+])
+
+/**
+ * OD-003. An order first delivered by percent is locked to percent: two people
+ * must not record progress on the same order on different bases. `lockBump`
+ * re-reads the lock after a release, which mutates module state the template
+ * cannot track on its own.
+ */
+const lockBump = ref(0)
+/** Who is acting — the prototype's View as switch in the header (R-16). */
+const { currentUser: actingUser } = useSalesDeliveryViewAs()
+const mayRelease = computed(() => canReleaseInputBasis(actingUser.value))
+const orderLockInfo = computed(() => {
+  void lockBump.value
+  return sourceOrder.value ? orderLock(sourceOrder.value.id) : null
+})
+
+const releaseOpen = ref(false)
+const releaseLabel = computed(() => (sourceOrder.value ? `${t('Sales Order')} #${sourceOrder.value.number}` : ''))
+const releaseLockedBy = computed(() => (orderLockInfo.value ? `${t('Sales Delivery')} #${orderLockInfo.value.number}` : ''))
+function doRelease(reason: string) {
+  if (!sourceOrder.value) return
+  if (!releaseInputBasis(sourceOrder.value.id, actingUser.value, reason)) return
+  lockBump.value += 1
+  toast.notify({ variant: 'success', title: t('Input method released'), rootProps: { class: 'toast-enterprise' } })
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
 
+/** Delivered to date on this line, in the order's units (PRD R-05). */
+function deliveredQtyOf(item: LineItem): number {
+  return item.orderLineIndex === null ? 0 : (deliveredSoFar.value[item.orderLineIndex] ?? 0)
+}
+/** What is still owed on the line — the ceiling the over-delivery check uses (R-06). */
+function remainingQtyOf(item: LineItem): number {
+  if (item.orderedQty === null) return 0
+  return Math.max(0, item.orderedQty - deliveredQtyOf(item))
+}
+
+/**
+ * OD-004. The same progress as a percentage of the ordered quantity. Users think
+ * in cumulative contract percentage but entry is per-document and incremental, so
+ * both numbers are shown beside the increment being typed (R-05) — that pairing
+ * is half the control against double-delivering the same progress.
+ */
+function pctOf(qty: number, ordered: number | null): number | null {
+  return ordered && ordered > 0 ? (qty / ordered) * 100 : null
+}
+/** Percent for display — up to two decimals, trailing zeros trimmed. */
+function formatPct(n: number): string {
+  return `${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`
+}
+function pctText(qty: number, ordered: number | null): string {
+  const p = pctOf(qty, ordered)
+  return p === null ? '' : formatPct(p)
+}
+
+/**
+ * The order's progress as one figure, or `Mixed` when its lines disagree (E-01).
+ * A single number would hide that one line is at 50% and another at nothing —
+ * exactly the state a return leaves behind — so the per-line figures above stay
+ * visible either way and this only summarises when it honestly can.
+ */
+const orderProgress = computed<string | null>(() => {
+  const o = sourceOrder.value
+  if (!o) return null
+  const pcts = items.value
+    .filter(it => it.orderedQty !== null)
+    .map(it => pctOf(deliveredQtyOf(it), it.orderedQty))
+    .filter((p): p is number => p !== null)
+  if (!pcts.length) return null
+  const first = pcts[0]!
+  // Tolerance, not equality: these are derived from six-decimal quantities.
+  return pcts.every(p => Math.abs(p - first) < 0.005) ? formatPct(first) : t('Mixed')
+})
+
+// Prefill every order line, so the user draws the order down rather than
+// retyping it. Customer comes from the order too — it cannot differ.
+watch(sourceOrder, (o) => {
+  if (!o) return
+  customerId.value = o.customer.id
+  onCustomerChange(o.customer.id)
+  if (editing.value) txDate.value = isoToDMY(editing.value.date)
+  // An edit keeps the method it was saved in (R-17 — "uses the locked basis").
+  // Otherwise a locked order opens in Percentage; a free one defaults to Quantity
+  // (PRD: "Quantity is preselected when nothing has been delivered").
+  inputMode.value = editing.value?.items?.[0]?.inputMode ?? (orderLock(o.id) ? 'percent' : 'qty')
+  items.value = o.items.map((it, i) => {
+    // What this delivery recorded on the line, when editing (mode, typed figure, qty).
+    const mine = editing.value?.items?.find(l => l.orderLineIndex === i)
+    return {
+    _key: ++_seq,
+    product: it.product,
+    sku: it.sku,
+    description: mine?.description ?? it.description,
+    qty: mine?.qty ?? 0,
+    unit: it.unit,
+    unitPrice: it.unitPrice,
+    discountPct: it.discountPct,
+    taxLabel: 'PPN 11%',
+    productError: false,
+    qtyError: false,
+    baseQtyError: false,
+    orderLineIndex: i,
+    orderedQty: it.qty,
+    inputMode: inputMode.value,
+    inputValue: mine?.inputValue ?? 0,
+    baseQty: 0,
+  } as LineItem
+  })
+}, { immediate: true })
+
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
 function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
+}
+
+/**
+ * OD-002. What the typed percentage produces, shown while it is typed so the
+ * figure can be checked against the BAST before saving — "5,28 unit ·
+ * Rp132.000.000". Only in percent mode: in quantity mode the number typed IS
+ * the quantity, so there is no derivation to preview.
+ */
+function showPreview(item: LineItem): boolean {
+  return item.inputMode === 'percent' && basisOf(item) !== null
+}
+
+/** Up to six decimals, trailing zeros trimmed, decimal comma (PRD R-03). */
+function formatQty(n: number): string {
+  return n.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 6 })
 }
 
 function productMatches(query: string) {
@@ -140,6 +379,14 @@ function selectNewProduct(p: typeof products[number]) {
     taxLabel: 'PPN 11%',
     productError: false,
     qtyError: false,
+    baseQtyError: false,
+    // An ad-hoc row draws down no order line, so there is no ordered quantity —
+    // in Percentage the user types a base for it instead (1, at 100%, by default).
+    orderLineIndex: null,
+    orderedQty: null,
+    inputMode: inputMode.value,
+    inputValue: inputMode.value === 'percent' ? 100 : 1,
+    baseQty: 1,
   })
   newRowSearch.value = ''
   openProductRow.value = null
@@ -175,8 +422,55 @@ const taxOptions  = computed(() => Array.from(new Set([...TAX_OPTIONS, ...items.
 
 // Banner above the table whenever any line cell is flagged — same convention as
 // NewExpensePage's line-items error banner.
-const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError))
+const hasLineItemErrors = computed(() => items.value.some(it => it.productError || it.qtyError || it.baseQtyError))
 const noItemsError = ref(false)   // set on save attempt with zero line items (inline, not a toast)
+
+/**
+ * OD-005. Cumulative delivered may not exceed the ordered quantity (R-06). The
+ * check runs on SAVE, not on every keystroke: a user mid-way through typing 40
+ * has momentarily typed 4, and flagging that would be noise.
+ *
+ * The whole document is rejected even when only one line is over (E-02), and the
+ * entry is never silently adjusted (R-07) — the user fixes the number, because a
+ * system that quietly trims a figure is how revenue stops matching the contract.
+ */
+const overDeliveryErrors = ref<string[]>([])
+
+/**
+ * OD-006. Fills every order line with exactly what is left (R-14). A balance after
+ * several rounded tranches is rarely a round percentage (E-03), so this is the
+ * intended way to close a contract — no subtraction, no figure to land on.
+ *
+ * `qty` is set to the remaining balance DIRECTLY rather than re-derived from a
+ * percentage, so it cannot overshoot by a truncation hair and can never breach
+ * R-06. A percent-locked line stays in percent (R-09): its typed figure becomes the
+ * percentage that balance represents, so the audit trail still reads truthfully.
+ */
+const hasRemaining = computed(() => items.value.some(it => it.orderedQty !== null && remainingQtyOf(it) > 1e-6))
+function fillRemaining() {
+  for (const it of items.value) {
+    if (it.orderedQty === null) continue
+    const rem = remainingQtyOf(it)
+    it.qty = rem
+    it.inputValue = it.inputMode === 'percent'
+      ? Math.round((rem / it.orderedQty) * 100 * 1e6) / 1e6
+      : rem
+    it.qtyError = false
+  }
+  overDeliveryErrors.value = []
+}
+
+function overDeliveryMessage(item: LineItem): string | null {
+  if (item.orderedQty === null || !(item.qty > 0)) return null
+  const remaining = remainingQtyOf(item)
+  // Tolerance: both sides come from six-decimal arithmetic, so a line landing
+  // exactly on its balance must not fail by a float hair.
+  if (item.qty <= remaining + 1e-6) return null
+  const asked = item.inputMode === 'percent'
+    ? `${formatPct(item.inputValue)}`
+    : `${formatQty(item.qty)} ${item.unit}`
+  return `${item.product}: ${asked} ${t('is more than the')} ${formatQty(remaining)} ${item.unit} ${t('still available')}.`
+}
 
 // ── Totals ────────────────────────────────────────────────────────────────────
 const subtotal      = computed(() => items.value.reduce((s, it) => s + it.qty * it.unitPrice, 0))
@@ -234,9 +528,22 @@ function validate(): boolean {
   noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
+  overDeliveryErrors.value = []
+  // A tranche needn't touch every order line: an order line left at 0 is simply
+  // not part of this delivery. Only ad-hoc lines must carry a quantity — and the
+  // delivery as a whole must deliver something.
+  const orderLines = items.value.filter(it => it.orderLineIndex !== null)
+  if (orderLines.length && !orderLines.some(it => it.qty > 0) && !items.value.some(it => it.orderLineIndex === null)) {
+    orderLines.forEach(it => { it.qtyError = true })
+    ok = false
+  }
   items.value.forEach(it => {
     if (!it.product) { it.productError = true; ok = false }
-    if (!(it.qty > 0)) { it.qtyError = true; ok = false }
+    // A hand-added line in Percentage needs a base to take the percentage of.
+    if (it.orderLineIndex === null && it.inputMode === 'percent' && !(it.baseQty > 0)) { it.baseQtyError = true; ok = false }
+    else if (it.orderLineIndex === null && !(it.qty > 0)) { it.qtyError = true; ok = false }
+    const over = overDeliveryMessage(it)
+    if (over) { it.qtyError = true; overDeliveryErrors.value.push(over); ok = false }
   })
   return ok
 }
@@ -255,21 +562,47 @@ function nextDeliveryId(): string {
 function onCancel() { router.push('/sales-deliveries') }
 
 function onSave() {
+  // A closed-period delivery is not editable at all; the banner already says so,
+  // and save refuses rather than writing past the lock (R-19).
+  if (editLocked.value) return
+  // Nothing to deliver — the empty state already says so; Save stays present but
+  // writes nothing (CLAUDE.md › Form & modal actions, never disabled).
+  if (nothingLeft.value) return
   // Validation errors surface INLINE (per-field + the banner below), never as a toast.
+  // On edit this re-runs the same limit check against everything else delivered (R-17).
   if (!validate()) return
   const customer = customers.find(c => c.id === customerId.value)!
   const delivery: SalesDelivery = {
-    id: nextDeliveryId(),
-    number: nextDeliveryNumber(),
+    id: editing.value?.id ?? nextDeliveryId(),
+    number: editing.value?.number ?? nextDeliveryNumber(),
     customer: { id: customer.id, name: customer.name },
     date: dmyToIso(txDate.value),
     fulfillmentStatus: 'in transit',
     billingStatus: 'unbilled',
     total: total.value,
     tags: tagsList.value.map(t2 => String(t2.value)),
+    ...(sourceOrder.value
+      ? {
+          orderId: sourceOrder.value.id,
+          items: items.value
+            .filter(it => it.orderLineIndex !== null && it.qty > 0)
+            .map(it => ({
+              orderLineIndex: it.orderLineIndex!,
+              product: it.product,
+              sku: it.sku,
+              description: it.description,
+              unit: it.unit,
+              qty: it.qty,
+              inputMode: it.inputMode,
+              inputValue: it.inputValue,
+            })),
+        }
+      : {}),
   }
-  salesDeliveries.push(delivery)
-  toast.notify({ variant: 'success', title: t('Sales delivery created'), rootProps: { class: 'toast-enterprise' } })
+  const at = editing.value ? salesDeliveries.findIndex(d => d.id === editing.value!.id) : -1
+  if (at >= 0) salesDeliveries[at] = { ...salesDeliveries[at]!, ...delivery }
+  else salesDeliveries.push(delivery)
+  toast.notify({ variant: 'success', title: editing.value ? t('Sales delivery changes saved') : t('Sales delivery saved'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/sales-deliveries/${delivery.id}`)
 }
 </script>
@@ -281,7 +614,7 @@ function onSave() {
     <header class="si-form-bar">
       <div class="si-form-bar-left">
         <MpTextlink id="si-crumb" as="a" class="si-crumb" @click.prevent="onCancel">{{ t('Sales deliveries') }}</MpTextlink>
-        <h1 class="si-form-h1">{{ t('New sales delivery') }}</h1>
+        <h1 class="si-form-h1">{{ editing ? `${t('Edit sales delivery')} #${editing.number}` : t('Create sales delivery') }}</h1>
       </div>
     </header>
 
@@ -306,46 +639,22 @@ function onSave() {
           <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
         </MpFormControl>
 
-        <div class="si-header1-total">
-          <h3 class="si-header1-total-value">{{ t('Delivery total') }} {{ fmt(orderTotal) }}</h3>
-        </div>
+        <!-- prod: no header total on a delivery (prices live on the sales order) -->
+        <div class="si-header1-total" />
       </section>
 
       <!-- ── Header section 2 — fixed-width fields that wrap, never stretch ── -->
       <section class="si-header2">
-        <!-- Col 1 (318px): addresses + shipping toggles -->
+        <!-- Col 1 (318px): ship-to address (prod SalesDeliveryDetailFields) -->
         <div class="si-header2-col si-header2-col--wide">
-          <MpFormControl id="f-billing" class="si-field">
-            <MpFormLabel>{{ t('Billing address') }}</MpFormLabel>
-            <MpTextarea id="f-billing-inp" v-model="billingAddress" is-full-width />
-          </MpFormControl>
-
-          <div class="si-checkbox-stack">
-            <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
-            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
-          </div>
-
-          <MpFormControl v-if="shipToDifferent" id="f-ship-to" class="si-field">
+          <MpFormControl id="f-ship-to" class="si-field">
             <MpFormLabel>{{ t('Ship to') }}</MpFormLabel>
             <MpTextarea id="f-ship-to-inp" v-model="shipTo" is-full-width />
           </MpFormControl>
         </div>
 
-        <!-- Col 2: dates + terms -->
+        <!-- Col 2: shipping -->
         <div class="si-header2-col">
-          <MpFormControl id="f-tx-date" class="si-field">
-            <MpFormLabel>{{ t('Transaction date') }}</MpFormLabel>
-            <MpDatePicker id="f-tx-date-inp" v-model="txDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
-          </MpFormControl>
-
-          <MpFormControl id="f-payment" class="si-field">
-            <MpFormLabel>{{ t('Payment terms') }}</MpFormLabel>
-            <MpAutocomplete id="f-payment-inp" v-model="paymentTerms" :data="PAYMENT_TERMS" use-portal is-clearable is-full-width />
-          </MpFormControl>
-        </div>
-
-        <!-- Col 3: shipping — only when "Requires shipping" is on -->
-        <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
             <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
             <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
@@ -362,8 +671,13 @@ function onSave() {
           </MpFormControl>
         </div>
 
-        <!-- Col 4: references -->
+        <!-- Col 3: warehouse + numbering -->
         <div class="si-header2-col">
+          <MpFormControl id="f-warehouse" class="si-field">
+            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
+          </MpFormControl>
+
           <MpFormControl id="f-tx-no" class="si-field">
             <MpFormLabel>
               <span class="si-label-row">
@@ -380,17 +694,22 @@ function onSave() {
             <MpFormLabel>{{ t('Reference no.') }}</MpFormLabel>
             <MpInput id="f-ref-inp" v-model="referenceNo" is-full-width />
           </MpFormControl>
-
-          <MpFormControl id="f-warehouse" class="si-field">
-            <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
-          </MpFormControl>
         </div>
 
-        <!-- Col 5: tags — last column, same 24px gap as every other pair -->
+        <!-- Col 4: source order (read-only) + tags -->
         <div class="si-header2-col">
+          <MpFormControl id="f-so-no" class="si-field">
+            <MpFormLabel>{{ t('Sales order no.') }}</MpFormLabel>
+            <span class="si-readonly-value">{{ sourceOrder ? `#${sourceOrder.number}` : '-' }}</span>
+          </MpFormControl>
+
+          <MpFormControl v-if="orderProgress" id="f-order-progress" class="si-field">
+            <MpFormLabel>{{ t('Delivered so far') }}</MpFormLabel>
+            <span class="si-readonly-value">{{ orderProgress }}</span>
+          </MpFormControl>
+
           <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
           </MpFormControl>
         </div>
@@ -398,28 +717,80 @@ function onSave() {
 
       <!-- ── Line items ── -->
       <section class="si-items-section">
-        <div class="si-items-header-row">
-          <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
-        </div>
+        <!-- R-19: reached only by a direct link — the detail page does not offer
+             Edit for a locked period. Says why, rather than failing on save. -->
+        <MpBanner v-if="editLocked" id="sd-period-locked" variant="warning" align-items="center">
+          <MpBannerIcon id="sd-period-locked-icon" />
+          <MpBannerTitle>{{ t('This delivery is in a closed period') }}</MpBannerTitle>
+          <MpBannerDescription>{{ t('Transactions up to') }} {{ isoToDMY(lockDate() ?? '') }} {{ t('are locked by Close books, so this delivery cannot be edited.') }}</MpBannerDescription>
+        </MpBanner>
+
 
         <MpBanner v-if="hasLineItemErrors || noItemsError" id="si-lineitems-error-banner" variant="danger" align-items="center" class="si-items-error-banner">
           <MpBannerIcon id="si-lineitems-error-banner-icon" />
-          <MpBannerTitle>{{ noItemsError && !hasLineItemErrors ? t('Add at least one product') : t('Failed to save') }}</MpBannerTitle>
-          <MpBannerDescription>{{ noItemsError && !hasLineItemErrors ? t('A sales invoice needs at least one line item before you can save.') : t('The transaction contains incomplete or invalid data. Review the highlighted fields.') }}</MpBannerDescription>
+          <MpBannerTitle>
+            {{ overDeliveryErrors.length ? t('More than the order has left to deliver')
+              : noItemsError && !hasLineItemErrors ? t('Add at least one product')
+              : t('Failed to save delivery') }}
+          </MpBannerTitle>
+          <MpBannerDescription>
+            <!-- Names the line and the balance available, so the fix takes seconds
+                 even when one line of many is over (R-07). -->
+            <ul v-if="overDeliveryErrors.length" class="sd-over-list">
+              <li v-for="m in overDeliveryErrors" :key="m">{{ m }}</li>
+            </ul>
+            <template v-else>{{ noItemsError && !hasLineItemErrors ? t('A sales delivery needs at least one line item before you can save.') : t('Please review the highlighted fields and try again.') }}</template>
+          </MpBannerDescription>
         </MpBanner>
 
-        <div class="si-items-scroll">
+        <!-- OD-001 — one input method for the whole table (left); Fill Remaining sits
+             with the table it acts on (right) — a tertiary pill, text only
+             (rule/btn-icon-add-only keeps the + for create actions). -->
+        <div v-if="!nothingLeft" class="si-items-header-row" data-devchange="sd-input-method-table">
+          <MpFormControl id="f-input-method" class="sd-method">
+            <MpFormLabel>{{ t('Input method') }}</MpFormLabel>
+            <div class="sd-method-row">
+              <ErpFilterSelect
+                id="sd-input-method" :model-value="inputMode" :options="MODE_OPTIONS"
+                :is-clearable="false" :disabled="!!orderLockInfo"
+                @update:model-value="setInputMode"
+              />
+              <MpButton v-if="sourceOrder && hasRemaining" id="sd-fill-remaining" is-rounded variant="tertiary" @click="fillRemaining">{{ t('Fill remaining') }}</MpButton>
+            </div>
+            <!-- Disabled, never hidden — and always says why and which delivery did
+                 it (OD-003). -->
+            <span v-if="orderLockInfo" class="sd-lock sd-caption">
+              {{ t('Locked by') }} {{ t('Sales Delivery') }} #{{ orderLockInfo.number }}.
+              <MpTextlink v-if="mayRelease" id="f-release" as="a"
+                class="sd-lock-release" @click.prevent="releaseOpen = true"
+              >
+                <!-- Sized on a span: Pixel's unstyled-button font rule lives in a
+                     cascade layer and outranks any page-level override on the <a>. -->
+                <span class="sd-lock-release-label">{{ t('Release') }}</span>
+              </MpTextlink>
+              <!-- Says who can, rather than leaving the way out unexplained (R-16). -->
+              <template v-else>{{ t('Only a finance manager can release it.') }}</template>
+            </span>
+          </MpFormControl>
+        </div>
+
+        <div v-if="nothingLeft" class="empty-full sd-nothing-left">
+          <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
+          <p class="empty-full-title">{{ t('No items left to deliver') }}</p>
+          <p class="empty-full-desc">{{ t('Every line on this sales order has been delivered in full.') }}</p>
+          <MpButton id="sd-view-order" class="sd-empty-cta" is-rounded variant="secondary"
+            @click="router.push(`/sales-orders/${sourceOrder!.id}`)">{{ t('View sales order') }}</MpButton>
+        </div>
+
+        <div v-else class="si-items-scroll">
           <table class="si-items-table">
             <colgroup>
               <col class="si-col-drag" />
               <col class="si-col-product" />
               <col class="si-col-desc" />
+              <col class="si-col-ordered" />
               <col class="si-col-qty" />
               <col class="si-col-unit" />
-              <col class="si-col-price" />
-              <col class="si-col-discount" />
-              <col class="si-col-tax" />
-              <col class="si-col-amount" />
               <col class="si-col-del" />
             </colgroup>
             <thead>
@@ -427,12 +798,9 @@ function onSave() {
                 <th class="si-th si-th--drag" />
                 <th class="si-th">{{ t('Product') }}</th>
                 <th class="si-th">{{ t('Description') }}</th>
-                <th class="si-th">{{ t('Qty') }}</th>
+                <th class="si-th">{{ t('Qty ordered') }}</th>
+                <th class="si-th">{{ t('Qty delivered') }}</th>
                 <th class="si-th">{{ t('Unit') }}</th>
-                <th class="si-th">{{ t('Unit price') }}</th>
-                <th class="si-th">{{ t('Discount') }}</th>
-                <th class="si-th">{{ t('Tax') }}</th>
-                <th class="si-th">{{ t('Amount') }}</th>
                 <th class="si-th si-th--del" />
               </tr>
             </thead>
@@ -483,53 +851,72 @@ function onSave() {
                   <MpInput v-model="item.description" is-full-width />
                 </td>
 
+                <!-- Qty ordered — read-only, from the source sales order. Progress reads
+                     label left, figure right: "Delivered · 0,5 (50%)". A hand-added line
+                     in Percentage takes its base here instead, typed by the user. -->
+                <td v-if="item.orderedQty === null && inputMode === 'percent'"
+                  class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.baseQtyError }"
+                >
+                  <MpTooltip v-if="item.baseQtyError" :id="`si-base-tt-${item._key}`"
+                    :label="t('You must fill in qty to take the percentage of')" placement="top" use-portal
+                    class="si-error-tooltip-wrap"
+                  >
+                    <MpInput type="number" :model-value="item.baseQty" is-full-width :is-invalid="true"
+                      @update:model-value="(v) => setBaseQty(item, Number(v))" />
+                  </MpTooltip>
+                  <MpInput v-else type="number" :model-value="item.baseQty" is-full-width
+                    @update:model-value="(v) => setBaseQty(item, Number(v))" />
+                </td>
+                <td v-else class="si-td si-td--border si-td--calc sd-ordered">
+                  <span class="sd-ordered-qty">{{ item.orderedQty === null ? '-' : formatQty(item.orderedQty) }}</span>
+                  <span v-if="item.orderedQty !== null" class="sd-band-info" data-devchange="sd-ordered-caption">
+                    <span class="sd-progress-line sd-caption">
+                      <span>{{ t('Delivered') }}</span>
+                      <span>{{ formatQty(deliveredQtyOf(item)) }} ({{ pctText(deliveredQtyOf(item), item.orderedQty) }})</span>
+                    </span>
+                    <span class="sd-progress-line sd-caption">
+                      <span>{{ t('Remaining') }}</span>
+                      <span>{{ formatQty(remainingQtyOf(item)) }} ({{ pctText(remainingQtyOf(item), item.orderedQty) }})</span>
+                    </span>
+                  </span>
+                </td>
+
                 <td class="si-td si-td--input si-td--border" :class="{ 'si-td--error': item.qtyError }">
                   <MpTooltip
                     v-if="item.qtyError" :id="`si-qty-tt-${item._key}`"
-                    :label="t('Qty must be more than 0')" placement="top" use-portal
-                    class="si-error-tooltip-wrap"
+                    :label="item.inputMode === 'percent' ? t('Percentage must be more than 0') : t('Qty must be more than 0')"
+                    placement="top" use-portal class="si-error-tooltip-wrap"
                   >
-                    <MpInput type="number" :model-value="item.qty" is-full-width
+                    <MpInputGroup v-if="item.inputMode === 'percent'" :id="`f-pct-group-${item._key}`" is-full-width>
+                      <MpInput type="number" :model-value="item.inputValue" is-full-width :is-invalid="item.qtyError"
+                        @update:model-value="(v) => applyInput(item, Number(v))" />
+                      <MpInputRightAddon has-background>%</MpInputRightAddon>
+                    </MpInputGroup>
+                    <MpInput v-else type="number" :model-value="item.inputValue" is-full-width
                       :is-invalid="item.qtyError"
-                      @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                      @update:model-value="(v) => applyInput(item, Number(v))" />
                   </MpTooltip>
-                  <MpInput v-else type="number" :model-value="item.qty" is-full-width
-                    @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                  <template v-else>
+                    <MpInputGroup v-if="item.inputMode === 'percent'" :id="`f-pct-group-${item._key}`" is-full-width>
+                      <MpInput type="number" :model-value="item.inputValue" is-full-width
+                        @update:model-value="(v) => applyInput(item, Number(v))" />
+                      <MpInputRightAddon has-background>%</MpInputRightAddon>
+                    </MpInputGroup>
+                    <MpInput v-else type="number" :model-value="item.inputValue" is-full-width
+                      @update:model-value="(v) => applyInput(item, Number(v))" />
+                  </template>
+                  <!-- OD-002 — what the percentage produces, quantity above amount. Shown
+                       from 0% so the line never jumps when the first digit lands. -->
+                  <span v-if="item.orderedQty !== null || inputMode === 'percent'" class="sd-band-info">
+                    <template v-if="showPreview(item)">
+                      <span class="sd-preview-line sd-caption">{{ formatQty(item.qty) }} {{ item.unit }}</span>
+                      <span class="sd-preview-line sd-caption">{{ formatIDR(lineAmount(item)) }}</span>
+                    </template>
+                  </span>
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
                   <MpAutocomplete v-model="item.unit" :data="unitOptions" use-portal is-full-width />
-                </td>
-
-                <!-- Prefix box is a plain span, not MpInputLeftAddon — see
-                     NewExpensePage's .ex-amount-prefix (the ERP reference). -->
-                <td class="si-td si-td--input si-td--border si-td--affix">
-                  <div class="si-affix-cell">
-                    <span class="si-affix">Rp</span>
-                    <MpInput type="number" :model-value="item.unitPrice" is-full-width class="si-affix-input"
-                      @update:model-value="(v) => item.unitPrice = Number(v)" />
-                  </div>
-                </td>
-
-                <td class="si-td si-td--input si-td--border si-td--affix">
-                  <div class="si-affix-cell">
-                    <MpInput type="number" :model-value="item.discountPct" is-full-width class="si-affix-input"
-                      @update:model-value="(v) => item.discountPct = Number(v)" />
-                    <span class="si-affix">%</span>
-                  </div>
-                </td>
-
-                <td class="si-td si-td--input si-td--border">
-                  <MpAutocomplete v-model="item.taxLabel" :data="taxOptions" use-portal is-full-width />
-                </td>
-
-                <!-- Amount is derived (qty × price − discount), so it reads as a
-                     value with the same prefix chrome rather than an input. -->
-                <td class="si-td si-td--border si-td--affix si-td--calc">
-                  <div class="si-affix-cell">
-                    <span class="si-affix">Rp</span>
-                    <span class="si-affix-value">{{ fmtPlain(lineAmount(item)) }}</span>
-                  </div>
                 </td>
 
                 <td class="si-td si-td--del">
@@ -569,7 +956,7 @@ function onSave() {
                     </MpPopoverContent>
                   </MpPopover>
                 </td>
-                <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
+                <!-- Description · Qty ordered · Qty delivered · Unit · delete -->
                 <td class="si-td si-td--border" /><td class="si-td si-td--border" /><td class="si-td si-td--border" />
                 <td class="si-td si-td--border" /><td class="si-td si-td--del" />
               </tr>
@@ -595,7 +982,7 @@ function onSave() {
           </MpFormControl>
 
           <div class="si-attachment-section">
-            <span class="si-attachment-label">{{ t('Attachment') }}</span>
+            <span class="si-attachment-label">{{ t('Attachments') }}</span>
             <MpUpload
               id="f-attachment" :button-text="t('Choose file')" :placeholder="t('or drag and drop here')"
               is-multiple is-full-width @change="onFilesChange"
@@ -611,55 +998,8 @@ function onSave() {
           </div>
         </div>
 
+        <!-- Right: shipping fee only — a delivery carries no prices (prod) -->
         <div class="si-totals-col">
-          <div class="si-totals-row si-totals-row--h3">
-            <span>{{ t('Subtotal') }}</span>
-            <span>{{ fmt(subtotal) }}</span>
-          </div>
-
-          <!-- Discount block — the swap affordance sits in the gutter, as designed -->
-          <div class="si-discount-block">
-            <MpButton class="si-discount-swap" :aria-label="t('Switch discount mode')">
-              <MpIcon name="sort-default" size="sm" />
-            </MpButton>
-            <div class="si-discount-rows">
-              <div class="si-totals-row">
-                <span>{{ t('Discount per line') }}</span>
-                <span class="si-deduction">({{ fmt(discountTotal) }})</span>
-              </div>
-              <div class="si-totals-row">
-                <span class="si-inline-field-label">
-                  <span>{{ t('Global discount') }}</span>
-                  <MpInputGroup id="f-global-discount-group" class="si-unit-field">
-                    <MpInputLeftAddon has-background class="si-unit-addon">
-                      <MpPopover id="f-global-discount-unit" is-close-on-select placement="bottom-start" use-portal :is-keep-alive="false">
-                        <MpPopoverTrigger>
-                          <MpButton class="si-unit-trigger">
-                            <span>{{ globalDiscountType }}</span>
-                            <MpIcon name="chevrons-down" size="sm" />
-                          </MpButton>
-                        </MpPopoverTrigger>
-                        <MpPopoverContent :class="css({ minWidth: '64px', width: 'max-content' })">
-                          <MpPopoverList>
-                            <MpPopoverListItem :is-active="globalDiscountType === 'Rp'" @click="globalDiscountType = 'Rp'">Rp</MpPopoverListItem>
-                            <MpPopoverListItem :is-active="globalDiscountType === '%'" @click="globalDiscountType = '%'">%</MpPopoverListItem>
-                          </MpPopoverList>
-                        </MpPopoverContent>
-                      </MpPopover>
-                    </MpInputLeftAddon>
-                    <MpInput type="number" :model-value="globalDiscountValue" is-full-width
-                      @update:model-value="(v) => globalDiscountValue = Number(v)" />
-                  </MpInputGroup>
-                </span>
-                <span class="si-deduction">({{ fmt(globalDiscountAmount) }})</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="si-totals-row">
-            <span>PPN 11%</span>
-            <span>{{ fmt(taxAmount) }}</span>
-          </div>
           <div class="si-totals-row">
             <span>{{ t('Shipping fee') }}</span>
             <MpInputGroup id="f-shipping-fee-group" class="si-unit-field">
@@ -668,39 +1008,39 @@ function onSave() {
                 @update:model-value="(v) => shippingFee = Number(v)" />
             </MpInputGroup>
           </div>
-
-          <div class="si-total-rule" />
-          <div class="si-totals-row si-totals-row--h3">
-            <span>{{ t('Total') }}</span>
-            <span>{{ fmt(total) }}</span>
-          </div>
         </div>
       </section>
 
-      <!-- ── Footer ── ghost Cancel · secondary "More" dropdown · primary "Save" (rightmost) -->
+      <!-- ── Footer (prod TransactionFooter for deliveries): ghost Cancel · primary
+           "Save & close" · kebab (Sales settings) ── -->
       <MpButtonGroup class="erp-action-footer si-form-footer">
         <MpButton variant="ghost" is-rounded @click="onCancel">{{ t('Cancel') }}</MpButton>
-
-        <MpPopover id="si-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
+        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save & close') }}</MpButton>
+        <MpPopover id="sd-form-menu" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
           <MpPopoverTrigger>
-            <MpButton variant="secondary" right-icon="chevrons-down" is-rounded>{{ t('More') }}</MpButton>
+            <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More options')" is-rounded />
           </MpPopoverTrigger>
           <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
-              <MpPopoverListItem @click="onSave">{{ t('Save & close') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via WhatsApp') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save & share via email') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="onSave">{{ t('Save as draft') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Preview') }}</MpPopoverListItem>
-              <MpPopoverListItem>{{ t('Print draft PDF') }}</MpPopoverListItem>
+              <MpPopoverListItem @click="navigateTo('/sales-settings')">{{ t('Sales settings') }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
-
-        <MpButton variant="primary" is-rounded @click="onSave">{{ t('Save') }}</MpButton>
       </MpButtonGroup>
 
     </div><!-- /si-form-stage -->
+
+    <ReleaseInputBasisModal
+
+      v-model:is-open="releaseOpen"
+
+      :subject="releaseLabel"
+
+      :locked-by="releaseLockedBy"
+
+      @confirm="doRelease"
+
+    />
 
     <NumberFormatSettingsModal
       v-model:open="noSettingsOpen"
@@ -714,6 +1054,7 @@ function onSave() {
 </template>
 
 <style scoped>
+.si-readonly-value { display: block; padding: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 /* Fixed field widths, straight off the Figma: the address column is 318px and
    every other header field 228px. They never stretch with the container — same
    principle as NewExpensePage's --ex-field-width. */
@@ -805,6 +1146,47 @@ function onSave() {
 .si-field { min-width: 0; }
 /* MpInputTag and MpDatePicker need explicit full-width hooks */
 .si-field :deep(.input-tag__root) { width: 100%; }
+/* Delivered / remaining sits under the ordered quantity — a caption, so 12px
+   secondary (rule/type-*), not a second value competing with the figure. Stacked
+   rather than one line: a six-decimal quantity makes any fixed width a guess. */
+/* Two-band cells (docs/patterns/FormTable.md › Two-band cells). Every cell that
+   carries information under its value splits into a 40px control band — where
+   the value or control sits, on the same text line as every other cell — and an
+   info band below a 1px rule. All info bands start on the same line, so the
+   captions of the ordered quantity, the lock and the preview read across. */
+.sd-band-info {
+  display: flex; flex-direction: column;
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+}
+/* One caption style for every info band — 12px secondary, 16px line. */
+.sd-caption { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
+/* Qty ordered — figure right-aligned on the input's text line (10px down in a
+   40px control); each progress line reads label left, figure right. */
+/* `.si-td` sets `padding: 0 8px` at the same specificity and wins on order, so
+   the ordered cell qualifies with it — the bands supply their own padding. */
+.si-td.sd-ordered { padding: 0; text-align: right; }
+.sd-ordered-qty { display: block; height: var(--mp-sizes-10, 40px); line-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); }
+.sd-ordered .sd-band-info { align-items: stretch; }
+.sd-cell-dash { display: block; padding: var(--mp-spacing-2\.5) var(--mp-spacing-1); color: var(--mp-text-default); }
+.sd-progress-line { display: flex; justify-content: space-between; gap: var(--mp-spacing-2); white-space: nowrap; }
+/* What the percentage produces, under the input — quantity, then amount. Caption
+   size and colour (rule/type-*), indented to the input's own text. */
+.sd-preview-line { white-space: nowrap; }
+/* Why the method is locked, and the way out (OD-003). Release is the same 12px
+   as the sentence it finishes — it's part of the caption, not a separate action. */
+.sd-lock { display: block; white-space: normal; margin-top: var(--mp-spacing-1); }
+.sd-lock-release { margin-left: var(--mp-spacing-0\.5); vertical-align: baseline; }
+.sd-lock-release-label { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); }
+/* The reset strips list-style, so a bulleted list needs both back (CLAUDE.md). */
+/* Empty state — same shape as the module's index (rule/empty-state-structure). */
+.sd-nothing-left { display: flex; flex-direction: column; align-items: center; padding: var(--mp-spacing-8) 0; }
+.sd-nothing-left .empty-illustration { width: 288px; height: 240px; object-fit: contain; }
+.sd-nothing-left .empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.sd-nothing-left .empty-full-desc { margin: var(--mp-spacing-0\.5) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.sd-empty-cta { margin-top: var(--mp-spacing-4); }
+.sd-over-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-5); }
+.sd-over-list li { display: list-item; }
 .si-datepicker { width: 100%; }
 .si-datepicker :deep(.mp-datepicker__root) { width: 100%; }
 
@@ -820,21 +1202,32 @@ function onSave() {
 }
 
 /* ── Line items ─────────────────────────────────────────────────────────────
-   Column widths are the Figma's exact values and sum to the 1340px stage width;
-   Description is the one flexible column so the table still fills a wider stage. */
+   Column widths are the Figma's exact values; Description is the one flexible
+   column. With the per-line Input method column gone (OD-001, now above the
+   table) the floor drops by its 184px, so the table fits a 1440 stage unscrolled. */
 .si-items-section { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
-.si-items-header-row { display: flex; justify-content: flex-end; }
+.si-items-header-row { display: flex; }
+/* The table-wide input method — a field, label above (OD-001); Fill remaining
+   shares the dropdown's line, at the right edge of the table. */
+.sd-method { display: flex; flex-direction: column; gap: var(--mp-spacing-1); flex: 1; }
+.sd-method-row { display: flex; justify-content: space-between; align-items: center; gap: var(--mp-spacing-4); }
 .si-items-error-banner { margin-bottom: var(--mp-spacing-2); }
 .si-items-scroll { overflow-x: auto; }
 
 .si-items-table {
-  width: 100%; min-width: 1340px;
+  width: 100%; min-width: 1140px;
   table-layout: fixed; border-collapse: collapse; border-spacing: 0;
 }
 .si-col-drag     { width: 44px; }
 .si-col-product  { width: 280px; }
 .si-col-desc     { width: auto; }
-.si-col-qty      { width: 64px; }
+/* Wide enough for the ordered figure plus its delivered/remaining caption; the
+   64px qty column cannot hold "Delivered 11,68 · Remaining 4,32". */
+.si-col-ordered  { width: 140px; }
+/* Holds the two-segment Quantity / Percent control without wrapping its labels. */
+/* 64px fits a bare count, but not the percent input plus the quantity and value
+   it produces (OD-002) — "5,28 unit · Rp132.000.000". */
+.si-col-qty      { width: 220px; }
 .si-col-unit     { width: 104px; }
 .si-col-price    { width: 164px; }
 .si-col-discount { width: 88px; }
@@ -895,6 +1288,13 @@ function onSave() {
   content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
   box-shadow: inset 0 0 0 2px var(--mp-border-focused, #2563eb); /* pixel-police-allow-shadow: focus ring over collapsed borders */
 }
+/* The CELL is the field, as on the BOM form: white, the full row height, its
+   control docked to the top. Rows grow past 40px (the ordered-quantity caption,
+   the percentage preview), so a 40px control alone left a dead band under it —
+   the control is transparent and the cell carries the field's surface instead. */
+.si-td--input { background: var(--mp-background-neutral, #fff); }
+.si-td--input :deep(input),
+.si-td--input :deep(.mp-input__control) { background: transparent; }
 .si-select--product :deep(.mp-input__control)::placeholder { color: var(--mp-text-placeholder); }
 .si-quickadd :deep(*), .si-quickadd { color: var(--mp-colors-text-link, #165082); }
 

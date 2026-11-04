@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  MpIcon, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
-  MpButton, toast, css,
+  MpButton, MpButtonGroup, MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import {
   approvalWorkflows, setApprovalWorkflowActive, deleteApprovalWorkflow,
   transactionTypeLabel, projectActionLabel, type ApprovalWorkflowRule,
@@ -17,32 +18,52 @@ const { t } = useLocale()
 const router = useRouter()
 const { projectAccountingEnabled, setProjectAccountingEnabled } = useApprovalWorkflowScenario()
 
+// Prototype-only scenario control (shared ScenarioFab) mapped onto the billing-component flag.
+const paScenarios = [
+  { label: t('Project accounting: on'), value: 'on' },
+  { label: t('Project accounting: off'), value: 'off' },
+]
+const paScenario = computed<string>({
+  get: () => (projectAccountingEnabled.value ? 'on' : 'off'),
+  set: (v) => setProjectAccountingEnabled(v === 'on'),
+})
+
 function goEdit(id: string) { router.push(`/approval-workflows/${id}/edit`) }
 
 // ─── Column definitions ────────────────────────────────────────────────────
-// Widths are sized to fit each column's longest real content (see appliesToText /
-// amountText below) plus truncation on the cell itself, so a long value never
-// bleeds into the next column.
+// Description rides under the workflow name (secondary line) so the eight facts fit
+// a 1440 stage without horizontal scroll.
+// Widths come from each column's kind (rule/table-column-kind); every column sorts on
+// the value it shows, so the keys point at the derived fields on Row below.
 const columns: TableColumn[] = [
-  { key: 'name',            label: 'Workflow name',     kind: 'name', sortType: 'text' },
-  { key: 'description',     label: 'Description',       kind: 'address' },
-  { key: 'appliesTo',       label: 'Applies to',        sortType: 'text' },
-  { key: 'minAmount',       label: 'Amount higher than', kind: 'amount', align: 'right', sortType: 'number' },
-  { key: 'levels',          label: 'Approval levels'  },
-  { key: 'createdBy',       label: 'Transaction created by' },
-  { key: 'status',          label: 'Status',            kind: 'status', sortType: 'text' },
-  { key: 'lastUpdated',     label: 'Last updated',      kind: 'date' },
+  { key: 'name',          label: 'Workflow name',          kind: 'name',   sortType: 'text' },
+  { key: 'appliesToText', label: 'Applies to',                             sortType: 'text' },
+  { key: 'minAmount',     label: 'Amount higher than',     kind: 'amount', align: 'right', sortType: 'number' },
+  { key: 'levelCount',    label: 'Levels',                                 sortType: 'number' },
+  { key: 'createdByText', label: 'Transaction created by',                 sortType: 'text' },
+  { key: 'status',        label: 'Status',                 kind: 'status', sortType: 'text' },
+  { key: 'date',          label: 'Last updated',           kind: 'date',   sortType: 'date' },
 ]
 
+/** A rule plus the values its cells show, for sorting and the default newest-first order. */
+type Row = ApprovalWorkflowRule & {
+  appliesToText: string
+  levelCount: number
+  createdByText: string
+  status: 'active' | 'inactive'
+  /** updatedAt — `date` is what useTableState sorts newest-first by default. */
+  date: string
+}
+
 function appliesToText(row: ApprovalWorkflowRule) {
-  if (row.appliesTo === 'project') return `${t('Project Action')} — ${t(projectActionLabel(row.projectAction))}`
+  if (row.appliesTo === 'project') return `${t('Project action')} · ${t(projectActionLabel(row.projectAction))}`
   return t(transactionTypeLabel(row.transactionType))
 }
 function amountText(row: ApprovalWorkflowRule) {
   return row.minAmount == null ? '—' : formatIDR(row.minAmount)
 }
 function createdByText(row: ApprovalWorkflowRule) {
-  // "Transaction created by" is omitted from the Project Action form entirely, so those rows
+  // "Transaction created by" is omitted from the Project action form entirely, so those rows
   // stay at the field's default (createdByScope: 'all') — show that default rather than a dash.
   if (row.createdByScope === 'all') return t('All users')
   const n = row.createdByUserIds.length
@@ -53,16 +74,23 @@ function levelsText(row: ApprovalWorkflowRule) {
 }
 
 // ─── Table state ────────────────────────────────────────────────────────────
-const rows = computed<ApprovalWorkflowRule[]>(() => approvalWorkflows)
+const rows = computed<Row[]>(() => approvalWorkflows.map((r) => ({
+  ...r,
+  appliesToText: appliesToText(r),
+  levelCount: r.levels.length,
+  createdByText: createdByText(r),
+  status: r.isActive ? 'active' : 'inactive',
+  date: r.updatedAt,
+})))
 
 const {
   search, statusFilter, currentPage, paginated, total, perPage,
   setPage, setPerPage, sortKey, sortDir, toggleSort, setSort,
-} = useTableState<ApprovalWorkflowRule>(rows, {
+} = useTableState<Row>(rows, {
   perPage: 25,
   filterFn: (row, s, status) => {
-    const matchesSearch = row.name.toLowerCase().includes(s) || appliesToText(row).toLowerCase().includes(s)
-    const matchesStatus = !status || (row.isActive ? 'active' : 'inactive') === status
+    const matchesSearch = row.name.toLowerCase().includes(s) || row.appliesToText.toLowerCase().includes(s)
+    const matchesStatus = !status || row.status === status
     return matchesSearch && matchesStatus
   },
 })
@@ -72,9 +100,6 @@ const statusOptions = [
   { label: t('Active'),   value: 'active'   },
   { label: t('Inactive'), value: 'inactive' },
 ]
-const statusLabel = computed(
-  () => statusOptions.find(o => o.value === statusFilter.value)?.label ?? '',
-)
 
 function formatUpdatedAt(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -143,58 +168,27 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <!-- ── Filter bar (Status select + search) ── -->
     <template #filters>
       <div class="filter-left">
-        <MpPopover id="awf-status-filter" is-close-on-select>
-          <!-- placeholder = filter name ("Status"); is-clearable shows (x) when a
-               value is picked → @clear resets to show-all. -->
-          <MpPopoverTrigger>
-            <MpSelect
-              id="awf-status-select"
-              :placeholder="t('Status')"
-              :model-value="statusFilter"
-              is-clearable
-              :class="css({ width: '160px' })"
-              @mousedown.prevent
-              @clear="statusFilter = ''"
-            >
-              <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-            </MpSelect>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
-            <MpPopoverList>
-              <MpPopoverListItem
-                v-for="opt in statusOptions"
-                :key="opt.value"
-                :is-active="opt.value === statusFilter"
-                @click="statusFilter = opt.value"
-              >
-                {{ opt.label }}
-              </MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
+        <ErpFilterSelect id="awf-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" />
       </div>
       <div class="filter-right">
         <div class="filter-search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M22 22L20 20M21 11.5C21 16.747 16.747 21 11.5 21C6.253 21 2 16.747 2 11.5C2 6.253 6.253 2 11.5 2C16.747 2 21 6.253 21 11.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <MpIcon name="search" size="sm" />
           <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+          <button v-if="search" class="search-clear-btn" type="button" :aria-label="t('Clear search')" @click="search = ''">
+            <MpIcon name="close" size="sm" />
+          </button>
         </div>
       </div>
     </template>
 
     <!-- ── Cell: Workflow name ── -->
     <template #cell-name="{ value, row }">
-      <a class="cell-link" @click.stop="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ value }}</a>
-    </template>
-
-    <!-- ── Cell: Description ── -->
-    <template #cell-description="{ row }">
-      <span class="cell-truncate">{{ (row as unknown as ApprovalWorkflowRule).description || '—' }}</span>
+      <span class="cell-link" @click.stop="goEdit((row as unknown as ApprovalWorkflowRule).id)">{{ value }}</span>
+      <span v-if="(row as unknown as ApprovalWorkflowRule).description" class="cell-sub">{{ (row as unknown as ApprovalWorkflowRule).description }}</span>
     </template>
 
     <!-- ── Cell: Transaction type ── -->
-    <template #cell-appliesTo="{ row }">
+    <template #cell-appliesToText="{ row }">
       <span class="cell-truncate">{{ appliesToText(row as unknown as ApprovalWorkflowRule) }}</span>
     </template>
 
@@ -204,12 +198,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Cell: Approval levels ── -->
-    <template #cell-levels="{ row }">
+    <template #cell-levelCount="{ row }">
       {{ levelsText(row as unknown as ApprovalWorkflowRule) }}
     </template>
 
     <!-- ── Cell: Created by ── -->
-    <template #cell-createdBy="{ row }">
+    <template #cell-createdByText="{ row }">
       {{ createdByText(row as unknown as ApprovalWorkflowRule) }}
     </template>
 
@@ -219,7 +213,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     </template>
 
     <!-- ── Cell: Last updated ── -->
-    <template #cell-lastUpdated="{ row }">
+    <template #cell-date="{ row }">
       <div class="cell-last-updated">
         <span class="cell-last-updated__date">{{ formatUpdatedAt((row as unknown as ApprovalWorkflowRule).updatedAt) }}</span>
         <span class="cell-last-updated__by">{{ (row as unknown as ApprovalWorkflowRule).updatedBy }}</span>
@@ -230,13 +224,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #actions="{ row }">
       <MpPopover :id="`awf-actions-${(row as unknown as ApprovalWorkflowRule).id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
         <MpPopoverTrigger>
-          <MpButton class="row-kebab btn-enterprise" :aria-label="t('More actions')">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </MpButton>
+          <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
@@ -245,7 +233,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
               {{ (row as unknown as ApprovalWorkflowRule).isActive ? t('Turn off') : t('Turn on') }}
             </MpPopoverListItem>
             <MpPopoverListItem
-              :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
+              :class="css({ color: 'var(--mp-text-danger)' })"
               @click="openDeleteModal(row as unknown as ApprovalWorkflowRule)"
             >
               {{ t('Delete') }}
@@ -283,10 +271,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         {{ t('Deleted approval workflow cannot be restored.') }}
       </MpModalBody>
       <MpModalFooter>
-        <div class="modal-footer-btns">
-          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="closeDeleteModal">{{ t('Cancel') }}</MpButton>
-          <MpButton class="btn-enterprise btn-enterprise--danger" @click="confirmDelete">{{ t('Delete') }}</MpButton>
-        </div>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="closeDeleteModal">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="danger" is-rounded @click="confirmDelete">{{ t('Delete') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -310,35 +298,18 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         {{ t('This workflow will no longer apply to new transactions. You can turn it on again anytime.') }}
       </MpModalBody>
       <MpModalFooter>
-        <div class="modal-footer-btns">
-          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="closeTurnOffModal">{{ t('Cancel') }}</MpButton>
-          <MpButton class="btn-enterprise btn-enterprise--primary" @click="confirmTurnOff">{{ t('Turn off') }}</MpButton>
-        </div>
+        <MpButtonGroup>
+          <MpButton variant="ghost" is-rounded @click="closeTurnOffModal">{{ t('Cancel') }}</MpButton>
+          <MpButton variant="primary" is-rounded @click="confirmTurnOff">{{ t('Turn off') }}</MpButton>
+        </MpButtonGroup>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
   </MpModal>
 
-  <!-- ── Demo scenario FAB — switch whether this tenant has the Project Accounting
-       billing component, to preview the Approval workflows form both ways ──── -->
-  <MpPopover id="awf-demo-fab" is-close-on-select use-portal placement="top-end">
-    <MpPopoverTrigger>
-      <MpButton class="demo-fab btn-enterprise" :aria-label="t('Change scenario state')">
-        <MpIcon name="sliders" size="md" color="icon.inverse" />
-      </MpButton>
-    </MpPopoverTrigger>
-    <MpPopoverContent :class="css({ minWidth: '260px', width: 'max-content' })">
-      <p class="demo-fab-heading">{{ t('Project Accounting billing component') }}</p>
-      <MpPopoverList>
-        <MpPopoverListItem :is-active="projectAccountingEnabled" @click="setProjectAccountingEnabled(true)">
-          {{ t('Component exists') }}
-        </MpPopoverListItem>
-        <MpPopoverListItem :is-active="!projectAccountingEnabled" @click="setProjectAccountingEnabled(false)">
-          {{ t('Component does not exist') }}
-        </MpPopoverListItem>
-      </MpPopoverList>
-    </MpPopoverContent>
-  </MpPopover>
+  <!-- ── Prototype scenario: whether this tenant has the Project accounting billing
+       component (shows or hides the Project action condition and PA roles). ── -->
+  <ScenarioFab v-model="paScenario" :scenarios="paScenarios" :aria-label="t('Project accounting billing component')" />
 </template>
 
 <style scoped>
@@ -372,6 +343,14 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   outline: none;
 }
 .filter-search-input::placeholder { color: var(--mp-text-placeholder); }
+.search-clear-btn {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 18px !important; height: 18px !important; min-width: 0 !important; padding: 0 !important;
+  border: none !important; background: none !important; cursor: pointer;
+  color: var(--mp-icon-default, var(--mp-text-secondary));
+  border-radius: var(--mp-radii-full, 999px) !important;
+}
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 .cell-link {
   display: block;
@@ -381,6 +360,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
   word-break: break-word;
 }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cell-sub {
+  display: block;
+  margin-top: var(--mp-spacing-0\.5);
+  font-size: var(--mp-font-sizes-sm);
+  line-height: var(--mp-line-heights-sm, 16px);
+  color: var(--mp-text-secondary);
+  white-space: normal;
+  word-break: break-word;
+}
 .cell-truncate {
   display: block;
   white-space: normal;
@@ -391,39 +379,4 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-last-updated__date { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
 .cell-last-updated__by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 
-.row-kebab {
-  /* Overrides every .btn-enterprise base property that would otherwise leak through
-     (padding especially — width/height are fixed here, so unset padding would inflate
-     the box beyond 32x32 under content-box sizing). */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mp-sizes-8, 32px);
-  height: var(--mp-sizes-8, 32px);
-  padding: 0;
-  border: none;
-  background: none;
-  border-radius: var(--mp-radii-md);
-  cursor: pointer;
-  color: var(--mp-text-secondary);
-}
-.row-kebab:hover { background: var(--mp-background-neutral-hovered); }
-
-.modal-footer-btns { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
-
-/* Demo scenario FAB — matches SettingsCompanyProfilePage.vue's convention exactly. */
-.demo-fab {
-  /* padding:0 overrides .btn-enterprise's base padding — width/height are fixed here, so
-     unset padding would inflate the box beyond 48x48 under content-box sizing. */
-  position: fixed; right: var(--mp-spacing-6); bottom: var(--mp-spacing-6);
-  width: var(--mp-spacing-12, 48px); height: var(--mp-spacing-12, 48px);
-  padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: var(--mp-radii-full, 999px);
-  background: var(--mp-background-inverse, #080d0e); color: var(--mp-text-inverse);
-  cursor: pointer; z-index: 1200;
-  box-shadow: 0 4px 6px -2px rgba(0,0,0,0.1), 0 10px 15px -3px rgba(0,0,0,0.2); /* pixel-police-allow-shadow: floating FAB, not a surface/card */
-}
-.demo-fab:hover { opacity: 0.9; }
-.demo-fab-heading { padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 </style>
