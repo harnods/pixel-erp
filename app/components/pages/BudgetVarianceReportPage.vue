@@ -412,9 +412,9 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ width: 'max-content', padding: '12px' })">
                 <div class="bvr-monthgrid-head">
-                  <MpButton class="bvr-monthnav" variant="ghost" type="button" left-icon="caret-left" :aria-label="t('Previous year')" @click="monthPickerYear--" />
+                  <MpButton class="bvr-monthnav" variant="ghost" type="button" left-icon="chevrons-left" :aria-label="t('Previous year')" @click="monthPickerYear--" />
                   <span class="bvr-monthgrid-year">{{ monthPickerYear }}</span>
-                  <MpButton class="bvr-monthnav" variant="ghost" type="button" left-icon="caret-right" :aria-label="t('Next year')" @click="monthPickerYear++" />
+                  <MpButton class="bvr-monthnav" variant="ghost" type="button" left-icon="chevrons-right" :aria-label="t('Next year')" @click="monthPickerYear++" />
                 </div>
                 <div class="bvr-monthgrid">
                   <MpButton
@@ -693,7 +693,7 @@ function exportPdf() { infoToast(t('PDF export — coming soon')) }
             <MpButton class="bvr-view-item" variant="ghost" :class="{ 'is-active': activeViewId === 'default' }" type="button" @click="selectView('default'); allViewsOpen = false">{{ t('Default view') }}</MpButton>
             <div v-for="v in views" :key="v.id" class="bvr-view-item-row">
               <MpButton class="bvr-view-item" variant="ghost" :class="{ 'is-active': activeViewId === v.id }" type="button" @click="selectView(v.id); allViewsOpen = false">{{ v.name }}</MpButton>
-              <MpButton class="bvr-view-del" variant="ghost" type="button" left-icon="trash" :aria-label="t('Delete')" @click="askDeleteView(v)" />
+              <MpButton class="bvr-view-del" variant="ghost" type="button" left-icon="delete" :aria-label="t('Delete')" @click="askDeleteView(v)" />
             </div>
             <p v-if="!views.length" class="bvr-vd-hint">{{ t('Saved views will appear here.') }}</p>
           </div>

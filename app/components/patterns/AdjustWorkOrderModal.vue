@@ -240,7 +240,7 @@ function submit() {
 
         <!-- R-4 / R-8 — say what saving will release, before it happens. -->
         <div v-if="releasingRows.length" class="aw-banner">
-          <MpIcon name="information" size="md" />
+          <MpIcon name="info" size="md" />
           <span>
             {{ t('Saving releases the full remaining reservation of') }}
             {{ releasingRows.map(r => r.product).join(', ') }}

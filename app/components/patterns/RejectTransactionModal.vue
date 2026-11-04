@@ -7,6 +7,10 @@ import {
 const props = defineProps<{
   isOpen: boolean
   docType: string
+  /** Overrides the default "Reject {docType}?" title (e.g. bulk "Reject 3 requests?"). */
+  title?: string
+  /** Optional consequence sentence above the reason field. */
+  description?: string
 }>()
 
 const emit = defineEmits<{
@@ -21,7 +25,8 @@ const touched = ref(false)
 const charCount = computed(() => reason.value.length)
 const isInvalid = computed(() => touched.value && reason.value.trim() === '')
 
-const title = computed(() => `Reject ${props.docType.toLowerCase()}?`)
+const { t } = useLocale()
+const title = computed(() => props.title ?? `Reject ${props.docType.toLowerCase()}?`)
 
 function handleReject() {
   touched.value = true
@@ -55,10 +60,11 @@ watch(() => props.isOpen, (open) => {
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
+        <p v-if="description" class="rtm-description">{{ description }}</p>
         <div class="rtm-field">
           <div class="rtm-label-row">
             <label class="rtm-label" for="reject-reason">
-              Reasons for rejection<span class="rtm-required">*</span>
+              {{ t('Reasons for rejection') }}<span class="rtm-required">*</span>
             </label>
             <span class="rtm-count">{{ charCount }} / {{ MAX_CHARS }}</span>
           </div>
@@ -71,14 +77,14 @@ watch(() => props.isOpen, (open) => {
             :is-invalid="isInvalid"
             placeholder=""
           />
-          <p v-if="isInvalid" class="rtm-error">This field is required.</p>
-          <p v-else class="rtm-helper">Notes will be visible to your team.</p>
+          <p v-if="isInvalid" class="rtm-error">{{ t('This field is required.') }}</p>
+          <p v-else class="rtm-helper">{{ t('Notes will be visible to your team.') }}</p>
         </div>
       </MpModalBody>
       <MpModalFooter>
         <div class="rtm-actions">
-          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="handleClose">Cancel</MpButton>
-          <MpButton class="btn-enterprise btn-enterprise--danger" @click="handleReject">Reject</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--ghost" @click="handleClose">{{ t('Cancel') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--danger" @click="handleReject">{{ t('Reject') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -87,6 +93,12 @@ watch(() => props.isOpen, (open) => {
 </template>
 
 <style scoped>
+.rtm-description {
+  margin: 0 0 var(--mp-spacing-4);
+  font-size: var(--mp-font-sizes-md);
+  color: var(--mp-text-default);
+}
+
 .rtm-field {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,5 @@
 import type { Receipt } from './receipts'
-import { CATALOG } from './catalog'
+import { CATALOG, TRADING_CATALOG } from './catalog'
 import { binForSku } from './warehouseDetails'
 
 export interface ReceiptLineItem {
@@ -71,15 +71,15 @@ export function lineItemsForReceipt(receipt: Receipt): ReceiptLineItem[] {
     })
   }
   const seed = receipt.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-  const count = Math.min(receipt.skuQty, CATALOG.length)
+  const count = Math.min(receipt.skuQty, TRADING_CATALOG.length)
   const used = new Set<number>()
   const picks: (typeof CATALOG)[number][] = []
 
   for (let i = 0; i < count; i++) {
-    let idx = (seed * 3 + i * 7) % CATALOG.length
-    while (used.has(idx)) idx = (idx + 1) % CATALOG.length
+    let idx = (seed * 3 + i * 7) % TRADING_CATALOG.length
+    while (used.has(idx)) idx = (idx + 1) % TRADING_CATALOG.length
     used.add(idx)
-    picks.push(CATALOG[idx]!)
+    picks.push(TRADING_CATALOG[idx]!)
   }
 
   // Distribute purchaseQty with variance so not all items have the same qty

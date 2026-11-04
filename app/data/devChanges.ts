@@ -28,6 +28,116 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'icon-names-fixed',
+    title: 'Missing icons now show (no more 404s in the console)',
+    description:
+      'Several icons asked Pixel for names it does not have, so they rendered blank and left a 404 in the console on every page that mounted them — the work order page among them. Fixed to the real Pixel names: information → info (work order Adjust / Edit materials / Request additional stock modals, Production settings, product, sales and purchase invoice details, CRM deal), warning → warning-triangle (rejected-demand note on the work order), document → doc (attachment chips on New work order and New bill of materials), trash → delete (saved-view delete in the GL, budget variance and multidimensional reports), caret-left → chevrons-left (budget variance year picker), chevron-down → chevrons-down (shipping details), info-circle → info (knowledge-base warning). A test now checks every icon name against Pixel\'s own list.',
+    date: '2026-11-03',
+    files: ['WorkOrderDetailsPage.vue', 'ProductionSettingsPage.vue', 'CreateWorkOrderPage.vue', 'CreateBillOfMaterialsPage.vue'],
+  },
+  {
+    id: 'wo-raw-bulk-set',
+    title: 'New work order: bulk set warehouse and required date',
+    description:
+      'UC-01 C-2. Raw materials now has a tickbox per component and a select-all in the header. With components ticked, the header row becomes a bulk bar: "Set warehouse" puts one warehouse on every ticked component (a batch or serial pick made for the old warehouse is cleared), and "Set required date" puts one required date on all of them — days outside the production plan stay greyed out (C-1). The selection stays after a set, so both can be set in turn; Esc deselects. This replaces the old "Bulk set warehouse" tickbox above the table, which did nothing.',
+    date: '2026-11-03',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'bom-teak-wood-table',
+    title: 'Sample data: Teak Wood Table and its bill of materials',
+    description:
+      'A furniture sample alongside the coffee range. New products: Teak Wood Table 120x60 (Furniture, SKU 4001) and its wood materials (SKU 41xx): Teak Wood Plank, Teak Table Leg, Wood Screw, Wood Glue, Wood Varnish, and Teak Wood Offcuts. Bill of Materials #10011 builds one table from 3 planks, 4 legs, screws, glue and varnish, through Fitting, Assembly, Painting and Quality control, with direct labor, machine depreciation and electricity. The offcuts come off as an Other output (2%) beside 3% production waste, so the table keeps 95% of the Rp3.330.000 production cost. The products are stocked in every warehouse but kept out of the seeded orders, receipts and invoices, which stay exactly as before. They have no photo yet, so the product page shows the coloured initial tile instead of a broken image.',
+    date: '2026-11-03',
+    files: ['catalog.ts', 'billOfMaterials.ts', 'inventory.ts', 'productsIndex.ts', 'ProductDetailsPage.vue'],
+  },
+  {
+    id: 'wo-finished-goods-sample',
+    title: 'Finished goods: sample Other outputs, and empty states',
+    description:
+      'Six of the ten seed bills of materials now make by-products, so the Other outputs table under Finished goods has rows on the bill and on every work order made from it: roast batches pack their tail end as Signature Espresso 250g bags or Cold Brew Coarse, and machine builds pack a Knock Box or Distribution Tool into the box. Each by-product takes a percentage of the production cost and the main output keeps the rest, so the subtotals still add up to the total production cost. The other four bills keep none, and on a work order Other outputs and Production waste now show an empty state instead of a blank table.',
+    date: '2026-11-03',
+    files: ['billOfMaterials.ts', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-hide-locked',
+    title: 'Work order: Start / Complete is hidden while approval runs',
+    description:
+      'Clicking Start (or Complete) on a work order with a pending request used to show a red "locked" banner. Every other module with approval — Stock adjustment, Warehouse transfer, Purchase order, Bill — simply leaves actions that aren\'t allowed out of the page, so the work order now does the same: Start / Complete and Material consume & return\'s New record are hidden until the request is decided. The pending notice still says who it is waiting for.',
+    date: '2026-10-15',
+    files: ['WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wod-adjust-materials',
+    title: 'Work order: "Adjust materials" sits beside the approval "Adjust work order"',
+    description:
+      'Merged feature/work-order-approval. Its "Adjust work order" (planned qty, approval-aware) and material-reserve\'s UC-06 Adjust (material qty and request dates on the stock request) are different changes, so both stay — the latter renamed "Adjust materials". Both hide while an approval request is pending. Cancel is now approval\'s "Cancel/close work order", which also releases the stock-request reservation; Start runs the reservation gate before going to approval.',
+    date: '2026-10-15',
+    files: ['WorkOrderDetailsPage.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'ps-reservation-toggle',
+    title: 'Production settings: reservation can be switched off again',
+    description:
+      'The PRD (12 Oct) restored "a toggle to disable / enable the reservation" and deleted L-12. Off: work orders raise no stock request, show no readiness, Reserved qty, Reservation menu, Adjust or Edit materials, and start without a reservation gate. Requests already raised stay on Stock requests.',
+    date: '2026-10-14',
+    files: ['productionSettings.ts', 'ProductionSettingsPage.vue', 'WorkOrderDetailsPage.vue', 'CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'ps-start-gate-partial-mode',
+    title: 'Production settings: no separate "start with limited stock" toggle',
+    description:
+      'S-4 "is not introduced as a separate toggle" any more. The start gate follows the partial mode alone — partial consume: one component reserved; partial completion: every component holds some; neither: everything reserved in full. This note spells out the rule for the current setting.',
+    date: '2026-10-14',
+    files: ['productionSettings.ts', 'stockRequests.ts', 'ProductionSettingsPage.vue'],
+  },
+  {
+    id: 'wo-request-date-plan-window',
+    title: 'New work order: request dates stay inside the production plan',
+    description:
+      'C-1 — a raw material\'s request date can\'t be before the planned start or after the planned finish. Rows default to the plan start, follow it when the plan moves, days outside the plan are greyed out, and Save names any row still outside.',
+    date: '2026-10-14',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'unreserve-no-disposition',
+    title: 'Unreserve: no disposition to choose',
+    description:
+      'UC-03 dropped the return-to-warehouse / production-defect choice. Released stock always goes back to available warehouse stock; the modal says so instead of asking.',
+    date: '2026-10-14',
+    files: ['UnreserveMaterialsModal.vue', 'stockRequests.ts', 'WorkOrderDetailsPage.vue', 'StockRequestDetailsPage.vue'],
+  },
+  {
+    id: 'wo-edit-auto-unreserve',
+    title: 'Edit materials: a qty change on a reserved component releases it',
+    description:
+      'UC-06 (12 Oct): "System will unreserve remaining reserved qty", then the line is updated in place. The old "unreserve first" block is gone; the modal warns before saving, and under One-step the line is re-reserved on the same save when stock covers it in full.',
+    date: '2026-10-14',
+    files: ['stockRequests.ts', 'EditWorkOrderMaterialsModal.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-cost-routing-as-created',
+    title: 'Work order: production cost and routing are the ones you entered',
+    description:
+      'Like raw materials, the production cost and routing rows on New work order were never saved, so the work order page showed the BOM\'s — one line per cost group at most. Both are now stored on the work order; each cost group lists every line it has, and the estimated total and main-output cost follow. Older work orders fall back to their BOM.',
+    date: '2026-10-06',
+    files: ['workOrders.ts', 'CreateWorkOrderPage.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-create-remove-row',
+    title: 'New work order: the ⊖ remove button works again',
+    description:
+      'Every ⊖ on New work order (raw materials, production cost, routing, other outputs, waste) threw an error and removed nothing: the template passed the auto-unwrapped row array to a helper that expected the ref. The helper now removes the row from the array in place.',
+    date: '2026-10-06',
+    files: ['CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-raw-materials-as-created',
+    title: 'Work order: raw materials are the ones you entered, not the BOM\'s',
+    description:
+      'Raw materials added, removed or re-quantified on New work order were saved to the stock request but never to the work order, so its detail page and the material consume / return form listed the BOM instead. The rows are now stored on the work order (with the warehouse picked per row) and both surfaces read them; older work orders fall back to their BOM.',
+    date: '2026-10-06',
+    files: ['workOrders.ts', 'stockRequests.ts', 'CreateWorkOrderPage.vue', 'WorkOrderDetailsPage.vue', 'NewMaterialRecordPage.vue'],
     id: 'wod-material-reservation',
     title: 'Work order: Material reservation moves onto the materials it acts on',
     description:
@@ -212,6 +322,124 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['StockRequestsPage.vue', 'stockRequests.ts'],
   },
   {
+    id: 'wo-approval-status',
+    title: 'Work order status while approval is pending',
+    description:
+      'Grooming 2026-10-09: the work order status stays as-is while a request is pending (the earlier Draft / Waiting approval display statuses are removed); once approved, Start → In progress, completion → Completed, cancel/close → Canceled. Approval notices now sit inside the content under the Overview / Material consume & return tabs. Partial completion is out of MVP scope and no longer a gated type. If the requester is the only approver at a level (self-approval off), that level is skipped and logged, so the request moves to the next level instead of getting stuck.',
+    date: '2026-10-09',
+    files: ['woApproval.ts', 'WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'ErpStatusBadge.vue'],
+  },
+  {
+    id: 'wo-approval-mvp-scope',
+    title: 'Work order approval — MVP scope',
+    description:
+      'Awaiting approval lists every pending request for all users (badge = all pending); Approve, Reject and the checkbox appear only where you are the current-level approver, with a "Waiting for" column. Start work order replaces Work order creation as a gated type — creation saves Not started, and material is reserved when the start is approved. Material consume / return and partial completion are not gated. A Work order transaction type can belong to only one workflow.',
+    date: '2026-10-05',
+    files: ['woApproval.ts', 'WorkOrdersAwaitingApprovalPage.vue', 'WorkOrderDetailsPage.vue', 'CreateApprovalWorkflowPage.vue', 'CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-approval-rev3',
+    title: 'Work order approval aligned to PRD Rev 3',
+    description:
+      'Cancel/close is a gated type (work order Actions menu); new Work order workflows are pre-filled with Start, Adjustment, Completion and Cancel/close; a per-workflow "Allow requester to approve own request" toggle (off by default); adjustments need a reason and an adjustment date, shown in the approval log; the approval log shows a Completion summary (output and cost vs plan), tagged "Out of scope for MVP".',
+    date: '2026-10-05',
+    files: ['woApproval.ts', 'WoTransactionModal.vue', 'CreateApprovalWorkflowPage.vue', 'NewMaterialRecordPage.vue', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-queue',
+    title: 'Work orders: Awaiting approval tab',
+    description:
+      'Approver queue (PRD "Require approval" tab, named Awaiting approval like other modules) with Approval log, Comments, Approve and Reject (reason required), plus bulk Approve / Reject. Switch "View as" in the scenario FAB to check level 1, level 2 and requester views. Table styled like the other approval queues (Purchase requests / Bills): "Work order #n" number link, Awaiting approval status badge, plain cells, Airene / Column settings / Export tools, inline Approve + quiet icon buttons. UXW copy: columns Date · Number · Transaction type · Warehouse · Requester · Status · Approver; types Start / Adjustment / Completion / Cancellation; search "Search...".',
+    date: '2026-10-14',
+    files: ['WorkOrdersAwaitingApprovalPage.vue', 'woApproval.ts', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-list-indicator',
+    title: 'Work order list: approval icon + status filter',
+    description:
+      'Approval status filter (Waiting for approval / Rejected). The status badge stays as-is; a work order with a request waiting for approval shows a 12px "Awaiting approval" caption under the badge (no icon, no approver details).',
+    date: '2026-10-14',
+    files: ['WorkOrdersIndexPage.vue'],
+  },
+  {
+    id: 'wo-approval-detail',
+    title: 'Work order detail: approval notices and guards',
+    description:
+      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled). The notice sits at the top of the scrolling content of the open tab, so it scrolls with the page. Notices carry no text buttons (the log opens from the header icon; Cancel approval request is in the Actions menu). Only ONE notice shows at a time — the latest: an inline refusal right after a click, otherwise the newest of the pending request (with its adjust / cancel reason), the undismissed rejection and the Adjust / Cancel-close reason.',
+    date: '2026-10-10',
+    files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue'],
+  },
+  {
+    id: 'wo-approval-forms',
+    title: 'Gated transactions: pre-submit notice and Submit for approval',
+    description:
+      'Start work order, Adjust work order, Partial completion, Complete and Cancel/close show "This transaction needs approval from level 1: …" when a Work order workflow gates them, and save a request instead of executing. Adjust and Partial completion are stand-in modals (no form existed before). Material consume / return post immediately but are refused while an adjustment, completion or cancel/close is pending, and consume is capped at the planned qty.',
+    date: '2026-10-02',
+    files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WoTransactionModal.vue'],
+  },
+  {
+    id: 'wo-approval-resubmit',
+    title: 'Resubmit a rejected request',
+    description:
+      'A rejected request shows a notice on the work order with Submit again (start) or Create again (other types), which reopens the form pre-filled with the original data and date.',
+    date: '2026-10-02',
+    files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-freeze',
+    title: 'Work order frozen while a request waits for approval',
+    description:
+      'Grooming 2026-10-09: while any approval request is pending, every work order action (Start, Complete, Adjust, Cancel/close, Edit, Delete, Replace attachment, New record) refuses with an inline notice — buttons stay enabled per the no-disabled-buttons rule. Print and the requester\'s Cancel approval request stay available. The status badge stays as-is (no Draft / Waiting approval status). In the list, row Cancel is hidden while frozen.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'NewMaterialRecordPage.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-val',
+    title: 'Confirmation modal reads the approval rule from VAL',
+    description:
+      'Start, Adjust, Complete and Cancel/close all confirm in one modal. On open it asks VAL (stand-in client with a 600 ms delay; demo FAB can make it fail) which approval rule applies and shows it in a blue info banner, with loading and error / Try again states. When every level would be skipped (the requester is the only approver) the banner says it\'s approved automatically. Adjust and Cancel/close need a reason.',
+    date: '2026-10-09',
+    files: ['WoTransactionModal.vue', 'valApprovalRule.ts'],
+  },
+  {
+    id: 'wo-approval-reason-banner',
+    title: 'Adjust / Cancel-close reason on the work order',
+    description:
+      'After Adjust or Cancel/close the detail page shows the reason given, who gave it and whether it\'s still waiting for approval. A pending adjustment\'s new planned qty shows on the list and detail right away and is reverted if the request is rejected or canceled.',
+    date: '2026-10-09',
+    files: ['WoActionReasonBanner.vue', 'WorkOrderDetailsPage.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-reject-banner',
+    title: 'Sticky rejection notice',
+    description:
+      'A rejected request shows a danger notice with the reject reason that stays until the user dismisses it (×, remembered). No Submit again / Create again on it — the action is started again from the header or Actions menu. While a request is pending, the Actions menu hides Adjust, Cancel/close, Edit, Replace attachment and Delete (Print and Cancel approval request remain).',
+    date: '2026-10-09',
+    files: ['WoRejectBanner.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-cancel-request',
+    title: 'Cancel approval request',
+    description:
+      'The requester can withdraw a pending request until the first approver approves it — from the Actions menu and the pending notice on the detail page, and the row menu on Awaiting approval. Nothing is applied and the work order unlocks; the approval log records it.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'WorkOrdersAwaitingApprovalPage.vue', 'ApprovalLogModal.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-log-tab',
+    title: 'Approval log icon in the work order header',
+    description:
+      'Like the transaction detail pages (rule/detail-approval-header), the work order header has the Approval log and Comments icon buttons left of Actions (Comments = the pending request\'s thread, else the latest request\'s). It opens the Approval log modal with every request on the work order (pending first, then the latest decided): requester, levels, approved / rejected with reason / skipped / canceled. Replaces the Approval log tab.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-rules',
+    title: 'Approval workflows: Work order transaction type',
+    description:
+      'Choosing transaction type "Work order" shows a second dropdown under it to pick the work order transaction the workflow gates (Start work order, adjustment, partial completion, completion, cancel/close). A type can have only one ACTIVE workflow — types another active workflow already has are not offered, and turning on a workflow whose type is already covered asks to turn the other one off. Approvers are limited to users with Work order access, up to 4 levels, and the list shows "Applies to: …". Requests still waiting for approval follow the rule live: saving a workflow updates their levels and approvers (a removed level lets the request move on or execute; decided requests keep their history).',
+    date: '2026-10-10',
+    files: ['CreateApprovalWorkflowPage.vue', 'ApprovalWorkflowsPage.vue', 'approvalWorkflows.ts'],
     id: 'settings-purchase-page',
     title: 'Settings > Purchases page',
     description:

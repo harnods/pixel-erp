@@ -8,7 +8,8 @@
  * Sections: Work order info · Raw materials · Production cost · Routing ·
  * (cost summary) · Finished goods (Main output / Other outputs / Production waste).
  */
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { planWindowOf, isOutsideWindow, displayDateOutside, toDDMMYYYY } from '~/utils/planWindow'
 import { formatIDR } from '~/utils/currency'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
@@ -21,9 +22,9 @@ import { warehouses } from '~/data/warehouses'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { formatDate } from '~/utils/date'
 import { billOfMaterials, catalogProduct, type BillOfMaterials } from '~/data/billOfMaterials'
-import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation } from '~/data/workOrders'
+import { addWorkOrder, type WorkOrderStatus, type WorkOrderMaterialReservation, type WorkOrderRawMaterial, type WorkOrderCostLine, type WorkOrderRoutingStep } from '~/data/workOrders'
 import { raiseStockRequestForWorkOrder } from '~/data/stockRequests'
-import { reservationOnWorkOrder } from '~/data/productionSettings'
+import { reservationOnWorkOrder, reservationEnabled } from '~/data/productionSettings'
 import { STAFF } from '~/data/master'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
@@ -177,8 +178,54 @@ interface RawRow {
 let rawSeq = 0
 const makeRaw = (): RawRow => ({ id: rawSeq++, productId: '', purchaseCost: 0, warehouseId: '', needed: '', unit: '', requiredDate: '', batchSelection: [], serialSelection: [] })
 const rawRows = ref<RawRow[]>([makeRaw()])
-const bulkSetWarehouse = ref(false)
+
+// ── C-2 — bulk set warehouse / required date ────────────────────────────────
+// Tick components (or all of them) and the header row becomes a bulk bar that sets
+// ONE warehouse or ONE required date on every ticked row (rule/table-bulk-actions-bar,
+// rule/table-checkbox-implies-bulk). It replaces the old "Bulk set warehouse" tickbox,
+// which only promised the warehouse half. Only rows holding a product can be ticked —
+// the trailing empty row is where a new component is typed. The selection stays after
+// a set, so the warehouse and the date can be set one after the other.
+const selectedRaw = ref<Set<number>>(new Set())
+const selectableRaw = computed(() => rawRows.value.filter(r => r.productId))
+const allRawSelected = computed(() =>
+  selectableRaw.value.length > 0 && selectableRaw.value.every(r => selectedRaw.value.has(r.id)))
+const someRawSelected = computed(() => selectedRaw.value.size > 0 && !allRawSelected.value)
+const selectedRawRows = computed(() => rawRows.value.filter(r => selectedRaw.value.has(r.id)))
+function toggleRaw(id: number) {
+  const next = new Set(selectedRaw.value)
+  if (next.has(id)) next.delete(id); else next.add(id)
+  selectedRaw.value = next
+}
+function toggleAllRaw() {
+  selectedRaw.value = allRawSelected.value ? new Set() : new Set(selectableRaw.value.map(r => r.id))
+}
+function clearRawSelection() { selectedRaw.value = new Set() }
+// A removed row, or one whose product was cleared, drops out of the selection.
+watch(selectableRaw, (rows) => {
+  const live = new Set(rows.map(r => r.id))
+  if ([...selectedRaw.value].some(id => !live.has(id)))
+    selectedRaw.value = new Set([...selectedRaw.value].filter(id => live.has(id)))
+})
+function bulkSetRawWarehouse(warehouseId: string) {
+  for (const row of selectedRawRows.value) {
+    if (row.warehouseId === warehouseId) continue
+    row.warehouseId = warehouseId
+    onRawWarehouse(row) // a batch/serial pick belongs to the old warehouse
+  }
+}
+function bulkSetRawDate(date: string) {
+  if (!date) return
+  for (const row of selectedRawRows.value) row.requiredDate = date
+}
+// Esc deselects, as on every table with a bulk bar.
+function onRawEsc(e: KeyboardEvent) {
+  if (e.key === 'Escape' && selectedRaw.value.size) clearRawSelection()
+}
+onMounted(() => window.addEventListener('keydown', onRawEsc))
+onUnmounted(() => window.removeEventListener('keydown', onRawEsc))
 function onRawProduct(row: RawRow, id: string) {
+  if (id && !row.requiredDate) row.requiredDate = defaultRequiredDate()
   const p = CATALOG.find(c => c.id === id)
   row.purchaseCost = p?.price ?? 0
   if (p && !row.unit) row.unit = p.unit
@@ -269,9 +316,14 @@ function appendIfLast<T extends { id: number }>(rowsRef: { value: T[] }, rowId: 
   const last = arr[arr.length - 1]
   if (last && last.id === rowId) rowsRef.value.push(make())
 }
-function removeRow<T extends { id: number }>(rowsRef: { value: T[] }, id: number) {
-  if (rowsRef.value.length === 1) return
-  rowsRef.value = rowsRef.value.filter(r => r.id !== id)
+// Called from the TEMPLATE, where refs are auto-unwrapped — so this receives the
+// row ARRAY, not the ref. It used to assign `rowsRef.value = …`, which threw on
+// every ⊖ click (`.value` of an array is undefined), so no row in any section of
+// this form could be removed. Mutate the reactive array in place instead.
+function removeRow<T extends { id: number }>(rows: T[], id: number) {
+  if (rows.length === 1) return
+  const i = rows.findIndex(r => r.id === id)
+  if (i !== -1) rows.splice(i, 1)
 }
 
 // ── Fill from the selected BOM ──────────────────────────────────────────────────
@@ -281,15 +333,37 @@ function removeRow<T extends { id: number }>(rowsRef: { value: T[] }, id: number
 // example. Option ids come from this form's fixed lists where they match, else a
 // matching option is synthesized (ensureOption) so the BOM's real values display.
 function todayDDMMYYYY(): string {
-  const d = new Date()
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  return toDDMMYYYY(new Date())
 }
+
+// ── C-1 — a raw material's request date lives inside the production plan ──────
+// The picker greys out days outside the plan, rows default to the plan start, and
+// Save explains a row that still falls outside (rule/form-errors-inline; Save
+// stays enabled). The rule itself lives in ~/utils/planWindow.
+const planWindow = computed(() => planWindowOf(planDates.value))
+const isOutsidePlan = (d: Date) => isOutsideWindow(d, planWindow.value)
+const rowDateOutside = (row: { requiredDate: string }) => displayDateOutside(row.requiredDate, planWindow.value)
+/** The plan start once a plan is set; today until then. */
+function defaultRequiredDate(): string {
+  return planWindow.value ? toDDMMYYYY(planWindow.value.start) : todayDDMMYYYY()
+}
+const rawDateError = ref('')
+// When the plan moves, a row dated outside it (or not dated yet) follows the new
+// plan start, so the user isn't left holding dates the form will then refuse.
+watch(planWindow, () => {
+  for (const r of rawRows.value) {
+    if (r.productId && (!r.requiredDate || rowDateOutside(r))) r.requiredDate = defaultRequiredDate()
+  }
+  rawDateError.value = ''
+})
+watch(rawRows, () => { rawDateError.value = '' }, { deep: true })
 function fillFromBom(id: string) {
   const bom = findBom(id)
   if (!bom) { resetLineItems(); return }
   const wh = warehouseOptions[0]?.id ?? ''
-  const reqDate = todayDDMMYYYY()
+  const reqDate = defaultRequiredDate()
 
+  clearRawSelection()
   rawRows.value = bom.rawMaterials.map(r => ({
     id: rawSeq++, productId: r.productId, purchaseCost: r.purchaseCost, warehouseId: wh,
     needed: String(r.needed), unit: r.unit, requiredDate: reqDate,
@@ -348,6 +422,7 @@ function fillFromBom(id: string) {
 
 // Clearing the BOM removes its (BOM-derived) line items.
 function resetLineItems() {
+  clearRawSelection()
   rawRows.value = [makeRaw()]
   costRows.value = [makeCost()]
   routeRows.value = [makeRoute()]
@@ -363,6 +438,13 @@ function validate() {
   if (!bomId.value) { bomError.value = true; ok = false }
   if (!workOrderType.value) { workOrderTypeError.value = true; ok = false }
   if (!planDates.value.length) { planDatesError.value = true; ok = false }
+  // C-1 — every request date inside the plan window.
+  const outside = filledRawRows().find(rowDateOutside)
+  if (outside) {
+    const name = catalogProduct(outside.productId)?.name ?? t('A raw material')
+    rawDateError.value = `${name}: ${t('the request date must fall within the production plan dates.')}`
+    ok = false
+  }
   return ok
 }
 // [startDate, endDate] → ISO start/end (planDates is validated non-empty before this runs).
@@ -377,8 +459,10 @@ function parseDateRange(v: Date[]): { start: string; end: string } {
   return { start, end: v[1] ? toLocalIso(v[1]) : start }
 }
 
-// Reservation attached to the saved WorkOrder — only tracked rows with an
-// actual pick contribute an entry.
+// Batch/serial picks attached to the saved WorkOrder — only tracked rows with an
+// actual pick contribute an entry. Work order approval (MVP): they're held as the
+// work order's unreserved `reservationPlan` — material is reserved only when the work
+// order starts (or its Start request is approved).
 function buildMaterialReservations(): Record<string, WorkOrderMaterialReservation> | undefined {
   const out: Record<string, WorkOrderMaterialReservation> = {}
   for (const row of rawRows.value) {
@@ -409,25 +493,96 @@ function saveWorkOrder() {
     planStartDate: start,
     planEndDate: end,
     sourceProductionRequestNo: fromProductionRequest.value ? (route.query.prNumber as string | undefined) : undefined,
-    materialReservations: buildMaterialReservations(),
+    // Approval MVP — batch / serial picks are held as a PLAN until the work order
+    // starts (startWorkOrder moves them into materialReservations).
+    reservationPlan: buildMaterialReservations(),
+    rawMaterials: buildRawMaterials(start),
+    productionCost: buildProductionCost(),
+    routing: buildRouting(),
   })
+}
+
+/** The label behind an option id — rows hold ids, a saved work order holds labels. */
+const optionName = (options: { id: string; name: string }[], id: string) =>
+  options.find(o => o.id === id)?.name ?? ''
+
+/**
+ * Which group a cost account sits under on the work order page (Labor / Overhead /
+ * Other). The form is a flat list with no group of its own, so it is derived:
+ * this form's own accounts map directly; an account that came from the BOM keeps
+ * the group the BOM gave it; anything else is Other.
+ */
+const COST_ACCOUNT_GROUP: Record<string, WorkOrderCostLine['group']> = {
+  labour: 'Labor', overhead: 'Overhead', electricity: 'Overhead', depreciation: 'Overhead',
+}
+function costGroupFor(accountId: string, accountLabel: string): WorkOrderCostLine['group'] {
+  return COST_ACCOUNT_GROUP[accountId]
+    ?? findBom(bomId.value)?.productionCost.find(c => c.account === accountLabel)?.group
+    ?? 'Other'
+}
+
+/** Production cost exactly as entered — stored so the work order page shows it, not the BOM's. */
+function buildProductionCost(): WorkOrderCostLine[] {
+  return costRows.value.filter(r => r.account).map((r) => {
+    const account = optionName(COST_ACCOUNT_OPTIONS, r.account)
+    return {
+      group: costGroupFor(r.account, account),
+      account,
+      costDriver: optionName(COST_DRIVER_OPTIONS, r.costDriver),
+      unitCost: num(r.estUnitCost),
+      multiplier: num(r.multiplier),
+    }
+  })
+}
+
+/** Routing exactly as entered — stored so the work order page shows it, not the BOM's. */
+function buildRouting(): WorkOrderRoutingStep[] {
+  return routeRows.value.filter(r => r.process).map(r => ({
+    process: optionName(PROCESS_OPTIONS, r.process),
+    description: r.description,
+    accountMapping: optionName(ACCOUNT_MAPPING_OPTIONS, r.accountMapping),
+    amount: num(r.amount),
+  }))
+}
+
+/**
+ * The raw materials exactly as entered — added rows, removed rows, changed qty,
+ * the warehouse picked per row. Stored on the work order so its detail page and
+ * the material consume / return form list THESE, not the BOM the form was seeded
+ * from. Same filter as the stock request below, so the two never disagree.
+ */
+function buildRawMaterials(planStart: string): WorkOrderRawMaterial[] {
+  return filledRawRows().map(r => ({
+    productId: r.productId,
+    needed: num(r.needed),
+    unit: r.unit || catalogProduct(r.productId)?.unit || 'Unit',
+    purchaseCost: r.purchaseCost,
+    warehouseId: r.warehouseId,
+    requiredDate: displayToIso(r.requiredDate, planStart),
+  }))
+}
+
+/** Rows that actually describe a material: a product and a positive qty. */
+const filledRawRows = () => rawRows.value.filter(r => r.productId && num(r.needed) > 0)
+
+/** The Required date column holds the picker's DISPLAY value (DD/MM/YYYY); stored dates are ISO. */
+function displayToIso(display: string, fallback: string): string {
+  const m = display.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : (display || fallback)
 }
 /**
  * C-4 — saving a work order pushes a stock request carrying its component lines,
- * so it is on the warehouse's dashboard immediately. Reservation is always on
- * (L-12), so this runs for every work order. C-3 — under One-step a line reserves
+ * so it is on the warehouse's dashboard immediately — unless reservation is
+ * switched off in Production settings (UC-00). C-3 — under One-step a line reserves
  * only when destination stock covers it in FULL; partly covered lines stay
  * Requested for the stockist. The toast says which case applied.
  */
 function raiseStockRequest(wo: { id: string; number: string }) {
+  // UC-00 — with "Product components must be reserved" off, no request is raised.
+  if (!reservationEnabled()) return
   const planStart = parseDateRange(planDates.value).start
-  // The row's Required date is the picker's DISPLAY value (DD/MM/YYYY); every date
-  // stored on a request is ISO, so normalise before handing it over.
-  const toIso = (display: string): string => {
-    const m = display.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-    return m ? `${m[3]}-${m[2]}-${m[1]}` : (display || planStart)
-  }
-  const filled = rawRows.value.filter(r => r.productId && num(r.needed) > 0)
+  const toIso = (display: string): string => displayToIso(display, planStart)
+  const filled = filledRawRows()
   const lines = filled.map(r => {
     const p = catalogProduct(r.productId)
     return {
@@ -643,7 +798,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             <p class="wo-helper-text">{{ t('Files must be in XLS, DOC, PDF, JPG, PNG, or ZIP with a maximum of 10 MB per file and 3 files per work order') }}</p>
             <ul v-if="attachedFiles.length" class="wo-file-list">
               <li v-for="f in attachedFiles" :key="f.name" class="wo-file-item">
-                <MpIcon name="document" size="sm" />
+                <MpIcon name="doc" size="sm" />
                 <span class="wo-file-name">{{ f.name }}</span>
                 <MpButton class="wo-file-remove" variant="ghost" type="button" left-icon="minus-circular" @click="removeFile(f.name)" />
               </li>
@@ -661,19 +816,57 @@ onUnmounted(() => { stageObserver?.disconnect() })
         <section v-if="hasBom" class="wo-section">
           <h2 class="wo-section-title">{{ t('Raw materials') }}</h2>
           <p class="wo-section-desc">{{ t('Unit purchase cost may change when inventory value adjusts.') }}</p>
-          <label class="wo-checkbox-row wo-checkbox-row--tight">
-            <MpCheckbox id="wo-bulk-wh" :is-checked="bulkSetWarehouse" @change="bulkSetWarehouse = !bulkSetWarehouse" />
-            <span>{{ t('Bulk set warehouse') }}</span>
-          </label>
           <div class="wo-table-scroll">
-            <table class="wo-table">
+            <table class="wo-table" data-devchange="wo-create-remove-row">
               <colgroup>
+                <col class="wo-col-check" />
                 <col /><col style="width:150px" /><col style="width:180px" />
                 <col style="width:110px" /><col style="width:110px" /><col style="width:150px" />
                 <col style="width:150px" /><col style="width:44px" />
               </colgroup>
-              <thead>
-                <tr>
+              <thead data-devchange="wo-raw-bulk-set">
+                <!-- C-2 — with components ticked, the header row becomes the bulk bar
+                     (rule/table-bulk-actions-bar): secondary sm buttons only. -->
+                <tr v-if="selectedRaw.size > 0" class="wo-tr-bulk">
+                  <th colspan="9" class="wo-th wo-th--bulk">
+                    <div class="wo-bulk-bar">
+                      <div class="wo-bulk-bar__left">
+                        <MpCheckbox id="raw-select-all-bulk" :is-checked="allRawSelected" :is-indeterminate="someRawSelected" @change="toggleAllRaw" />
+                        <span class="wo-bulk-bar__count">{{ selectedRaw.size }} {{ selectedRaw.size === 1 ? t('component selected') : t('components selected') }}</span>
+                        <MpPopover id="raw-bulk-wh" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
+                          <MpPopoverTrigger>
+                            <MpButton variant="secondary" size="sm" is-rounded right-icon="chevrons-down">{{ t('Set warehouse') }}</MpButton>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ minWidth: '220px', maxHeight: '300px', overflowY: 'auto' })">
+                            <MpPopoverList>
+                              <MpPopoverListItem v-for="w in warehouseOptions" :key="w.id" @click="bulkSetRawWarehouse(w.id)">{{ w.name }}</MpPopoverListItem>
+                            </MpPopoverList>
+                          </MpPopoverContent>
+                        </MpPopover>
+                        <MpPopover id="raw-bulk-date" v-slot="{ onClosePopover }" use-portal :is-keep-alive="false" placement="bottom-start">
+                          <MpPopoverTrigger>
+                            <MpButton variant="secondary" size="sm" is-rounded right-icon="chevrons-down">{{ t('Set required date') }}</MpButton>
+                          </MpPopoverTrigger>
+                          <MpPopoverContent :class="css({ padding: '0' })">
+                            <!-- C-1 still holds: days outside the production plan are greyed out. -->
+                            <MpDatePicker
+                              id="raw-bulk-date-picker" model-value="" format="DD/MM/YYYY" value-type="format"
+                              is-inline :disabled-date="isOutsidePlan"
+                              @update:model-value="(v: string) => { bulkSetRawDate(v); onClosePopover() }"
+                            />
+                          </MpPopoverContent>
+                        </MpPopover>
+                      </div>
+                      <div class="wo-bulk-bar__right">
+                        <span>{{ t('Press') }}</span><kbd class="wo-bulk-bar__kbd">Esc</kbd><span>{{ t('to deselect') }}</span>
+                      </div>
+                    </div>
+                  </th>
+                </tr>
+                <tr v-else>
+                  <th class="wo-th wo-th--check">
+                    <MpCheckbox v-if="selectableRaw.length" id="raw-select-all" :is-checked="false" @change="toggleAllRaw" />
+                  </th>
                   <th class="wo-th">{{ t('Product') }}</th><th class="wo-th">{{ t('Purchase cost') }}</th><th class="wo-th">{{ t('Warehouse') }}</th>
                   <th class="wo-th">{{ t('Needed qty') }}</th><th class="wo-th">{{ t('Unit') }}</th><th class="wo-th">{{ t('Required date') }}</th>
                   <th class="wo-th wo-th--right">{{ t('Estimated cost') }}</th><th class="wo-th wo-th--del" />
@@ -681,12 +874,16 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </thead>
               <tbody v-if="bomLoading">
                 <tr v-for="n in 3" :key="`sk${n}`" class="wo-tr">
+                  <td class="wo-td wo-td--check" />
                   <td v-for="c in 7" :key="c" class="wo-td"><span class="wo-skel" /></td>
                   <td class="wo-td wo-td--del" />
                 </tr>
               </tbody>
               <tbody v-else>
-                <tr v-for="row in rawRows" :key="row.id" class="wo-tr">
+                <tr v-for="row in rawRows" :key="row.id" class="wo-tr" :class="{ 'wo-tr--selected': selectedRaw.has(row.id) }">
+                  <td class="wo-td wo-td--check">
+                    <MpCheckbox v-if="row.productId" :id="`raw-sel-${row.id}`" :is-checked="selectedRaw.has(row.id)" @change="toggleRaw(row.id)" />
+                  </td>
                   <td class="wo-td wo-td--input">
                     <MpAutocomplete :id="`raw-prod-${row.id}`" v-model="row.productId" :data="productOptions" label-prop="name" value-prop="id" :placeholder="t('Select product')" is-searchable is-clearable use-portal is-full-width @update:model-value="(v: string) => onRawProduct(row, v)" />
                   </td>
@@ -705,7 +902,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                     <MpAutocomplete v-if="row.productId" :id="`raw-unit-${row.id}`" v-model="row.unit" :data="UNIT_OPTIONS" label-prop="name" value-prop="id" :placeholder="t('Select unit')" is-searchable use-portal is-full-width />
                   </td>
                   <td class="wo-td wo-td--input">
-                    <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal /></div>
+                    <div v-if="row.productId" class="wo-datepicker"><MpDatePicker :id="`raw-date-${row.id}`" v-model="row.requiredDate" format="DD/MM/YYYY" value-type="format" placeholder="DD/MM/YYYY" is-clearable use-portal :disabled-date="isOutsidePlan" :is-invalid="rowDateOutside(row)" /></div>
                   </td>
                   <td class="wo-td wo-td--num wo-td--right"><template v-if="row.productId">{{ formatIDR(rawEstimated(row)) }}</template></td>
                   <td class="wo-td wo-td--del">
@@ -715,6 +912,8 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </tbody>
             </table>
           </div>
+          <!-- C-1 — said below the table, Save stays enabled (rule/form-errors-inline). -->
+          <p v-if="rawDateError" class="wo-inline-error" data-devchange="wo-request-date-plan-window">{{ rawDateError }}</p>
           <div class="wo-subtotal-row">
             <span>{{ t('Estimated raw materials subtotal') }}</span>
             <span class="wo-subtotal-amount">{{ formatIDR(rawSubtotal) }}</span>
@@ -1035,6 +1234,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 </template>
 
 <style scoped>
+.wo-inline-error {
+  margin: var(--mp-spacing-2) 0 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-critical, #a8352d);
+}
 /* ── Demo flow scenario switcher ─────────────────────────────────────────── */
 .wo-flow-fab {
   position: fixed; right: var(--mp-spacing-6); bottom: 84px;
@@ -1132,7 +1335,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-file-remove:hover { color: var(--mp-text-critical); }
 
 .wo-checkbox-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); margin-top: var(--mp-spacing-6); cursor: pointer; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.wo-checkbox-row--tight { margin-top: 0; margin-bottom: var(--mp-spacing-4); }
 
 /* ── Line-item tables (shared .cr-table pattern) ─────────────────────────── */
 /* Borderless ERP table: top + bottom horizontal rules frame it, internal grid
@@ -1175,6 +1377,29 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .wo-th:nth-last-child(2), .wo-td:nth-last-child(2) { border-right: none; }
 .wo-th--del { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .wo-td--del { background: var(--mp-background-neutral, #ffffff); }
+/* C-2 — selection column and the bulk bar that replaces the header row. The bar
+   mirrors ErpTablePage's erp-bulk-bar, and keeps the 28px header height. */
+.wo-col-check { width: var(--mp-sizes-11, 44px); }
+.wo-th.wo-th--check, .wo-td.wo-td--check { width: 44px; padding: 0; text-align: center; vertical-align: middle; }
+.wo-tr--selected .wo-td { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+.wo-th.wo-th--bulk {
+  padding: 0 var(--mp-spacing-2) 0 var(--mp-spacing-3);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
+  text-transform: none; font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default);
+}
+.wo-bulk-bar { display: flex; align-items: center; justify-content: space-between; height: 28px; gap: var(--mp-spacing-3); }
+.wo-bulk-bar__left { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.wo-bulk-bar__count { font-size: var(--mp-font-sizes-sm); white-space: nowrap; }
+.wo-bulk-bar__right {
+  display: flex; align-items: center; gap: var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap;
+}
+.wo-bulk-bar__kbd {
+  display: inline-flex; align-items: center; padding: 0 var(--mp-spacing-1);
+  background: var(--mp-background-neutral, #ffffff); border: 1px solid var(--mp-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-sm); font-size: var(--mp-font-sizes-sm); font-family: inherit;
+  color: var(--mp-text-secondary);
+}
 .wo-td {
   /* vertical padding kept under the 38px input-control height so read-only text
      cells don't out-tall the inputs — the inputs define the row height and fill it,

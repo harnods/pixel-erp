@@ -3,7 +3,7 @@ import { salesInvoices } from './salesInvoices'
 import { getSalesInvoiceEdit } from './salesInvoiceEdits'
 import { invoiceCreditApplied } from './creditMemos'
 import { invoiceCashReceived, paymentsForInvoice, paymentLabel, cashAccountLabel } from './paymentsReceived'
-import { CATALOG } from './catalog'
+import { TRADING_CATALOG } from './catalog'
 import type { SalesInvoice, SalesOrderItem, SILineItem } from './types'
 
 export type { SILineItem }
@@ -78,7 +78,7 @@ export interface SalesInvoiceDetail extends SalesInvoice {
 }
 
 /** Catalogue lines, same master catalog the sales orders use. */
-const PRODUCTS: Omit<SalesOrderItem, 'qty' | 'discountPct' | 'amount'>[] = CATALOG.map(item => ({
+const PRODUCTS: Omit<SalesOrderItem, 'qty' | 'discountPct' | 'amount'>[] = TRADING_CATALOG.map(item => ({
   product: item.name,
   sku: item.sku,
   description: item.desc,

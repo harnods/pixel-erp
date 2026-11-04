@@ -12,6 +12,8 @@ import {
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
+import ProductThumb from '~/components/patterns/ProductThumb.vue'
+import { CATALOG } from '~/data/catalog'
 import ClampText from '~/components/patterns/ClampText.vue'
 import ActivityLogModal, { type ActivityEntry } from '~/components/patterns/ActivityLogModal.vue'
 import ErpPagination from '~/components/patterns/ErpPagination.vue'
@@ -34,6 +36,9 @@ const router = useRouter()
 const route = useRoute()
 
 const product = computed(() => getProductDetail(props.orderId))
+// A product without a photo (the furniture range, or one saved without an upload)
+// shows the catalog's hue tile instead of a broken image.
+const productHue = computed(() => CATALOG.find(c => c.sku === product.value?.sku)?.hue)
 
 // WMS doesn't deal in pricing/costing/accounting — those fields/sections are ERP-only.
 const { activeScenario } = useScenario()
@@ -357,7 +362,8 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         <h2 class="pd-section-title">Product info</h2>
         <div class="pd-info-row">
           <div class="pd-image-col">
-            <img :src="product.img" :alt="product.name" class="pd-image" />
+            <img v-if="product.img" :src="product.img" :alt="product.name" class="pd-image" />
+            <ProductThumb v-else :name="product.name" :hue="productHue" :size="172" data-devchange="bom-teak-wood-table" />
           </div>
           <div class="pd-field-col" style="width: 368px">
             <ContentList label="SKU" :value="product.sku" />
@@ -427,7 +433,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
         <section v-if="!isWms" class="pd-section pd-section--flex">
           <h2 class="pd-section-title">Tax info</h2>
           <div v-if="!hasTaxInfo" class="pd-tax-empty">
-            <MpIcon name="information" size="sm" color="icon.subtle" />
+            <MpIcon name="info" size="sm" color="icon.subtle" />
             <span>
               Tax info is incomplete.
               <a class="pd-link" @click.prevent="router.push(`/product-list/${product.sku}/edit`)">Add tax info</a>

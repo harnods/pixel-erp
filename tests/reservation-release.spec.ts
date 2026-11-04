@@ -127,17 +127,12 @@ describe('UC-11 R-8 / L-8 — no partial release', () => {
   })
 })
 
-describe('UC-03 — disposition', () => {
-  it('return-to-warehouse puts the qty back into available stock', () => {
-    unreserveWorkOrderProducts(WO_ID, ['p2'], 'return-to-warehouse')
-    expect(stockRequests.find(r => r.id === REQ_ID)!.lines[1]!.destAvailable).toBe(5)
-  })
-
-  it('production-defect does NOT: it is charged to production cost', () => {
-    unreserveWorkOrderProducts(WO_ID, ['p2'], 'production-defect')
+describe('UC-03 — no disposition: released stock always returns to the warehouse', () => {
+  it('puts the unreserved qty back into available stock', () => {
+    unreserveWorkOrderProducts(WO_ID, ['p2'])
     const l = stockRequests.find(r => r.id === REQ_ID)!.lines[1]!
     expect(l.reserved).toBe(0)
-    expect(l.destAvailable).toBe(0)
+    expect(l.destAvailable).toBe(5)
   })
 })
 
@@ -155,26 +150,26 @@ describe('UC-11 R-1 / R-7 — all three triggers, one entry shape', () => {
     expect(detail(releaseEntries().at(-1)!, 'Trigger')).toBe('Work order cancellation')
   })
 
-  it('manual unreserve names its trigger, disposition and reason', () => {
-    unreserveWorkOrderProducts(WO_ID, ['p1'], 'production-defect', {
+  it('manual unreserve names its trigger and reason, and no disposition', () => {
+    unreserveWorkOrderProducts(WO_ID, ['p1'], {
       user: 'Citra', source: 'work-order', reason: 'Panel damaged in handling',
     })
     const entry = releaseEntries().at(-1)!
     expect(detail(entry, 'Trigger')).toBe('Manual unreserve')
-    expect(detail(entry, 'Disposition')).toBe('Charged to production cost')
+    expect(detail(entry, 'Disposition')).toBeUndefined()
     expect(detail(entry, 'Reason')).toBe('Panel damaged in handling')
     expect(entry.user).toBe('Citra')
   })
 
   it('writes exactly one entry per release, against BOTH the work order and its request', () => {
-    releaseReservation(REQ_ID, ['p1'], 'return-to-warehouse', 'cancellation')
+    releaseReservation(REQ_ID, ['p1'], 'cancellation')
     const entries = activityLog.filter(e => e.activity === 'Released reservation')
     expect(entries).toHaveLength(2)
     expect(entries.map(e => e.subjectType).sort()).toEqual(['stock-request', 'work-order'])
   })
 
   it('records the surface a release came from, so a PPIC release is distinguishable', () => {
-    unreserveWorkOrderProducts(WO_ID, ['p1'], 'return-to-warehouse', { source: 'stock-request' })
+    unreserveWorkOrderProducts(WO_ID, ['p1'], { source: 'stock-request' })
     expect(detail(releaseEntries().at(-1)!, 'Source')).toBe('Stock request (PPIC / stockist)')
   })
 })

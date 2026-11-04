@@ -1,14 +1,15 @@
 /**
- * The work order START gate — PRD v0.5 UC-04 / D-8.
+ * The work order START gate — UC-04 / D-8, PRD revision of 12 Oct.
  *
- * The gate is a four-row table over two settings, and every row matters:
+ * S-4 "start with limited stock" is no longer a separate toggle; the partial mode
+ * (S-3) decides the gate alone, and switching reservation off lifts it:
  *
- *   | S-4 (start with limited stock) | partial mode | start permitted when      |
- *   | ------------------------------ | ------------ | ------------------------- |
- *   | off                            | any          | every component FULL      |
- *   | on                             | consume      | at least ONE reserved > 0 |
- *   | on                             | completion   | EVERY component > 0       |
- *   | on                             | none         | every component FULL      |
+ *   | reservation | partial mode | start permitted when      |
+ *   | ----------- | ------------ | ------------------------- |
+ *   | on          | consume      | at least ONE reserved > 0 |
+ *   | on          | completion   | EVERY component > 0       |
+ *   | on          | none         | every component FULL      |
+ *   | off         | any          | always                    |
  *
  * The rule under test, in one sentence: the gate counts RESERVATION, never
  * availability — stock sitting free in the warehouse does not open it, because
@@ -57,44 +58,31 @@ function seedRequest(lines: StockRequestLine[]): void {
   stockRequests.push(req)
 }
 
-const OFF = { startWithLimitedStock: false }
-const ON = { startWithLimitedStock: true }
+const ON = { reservationOn: true }
 
 beforeEach(() => {
   seedRequest([line('p1', 10, 0), line('p2', 5, 0)])
 })
 
-describe('UC-04 — S-4 off: full reservation, whatever the partial mode says', () => {
+describe('UC-04 — neither partial mode: full reservation', () => {
   it('blocks when nothing is reserved', () => {
-    const gate = startGate(WO_ID, { partialMode: 'none', ...OFF })
+    const gate = startGate(WO_ID, { partialMode: 'none', ...ON })
     expect(gate.allowed).toBe(false)
     expect(gate.reason).toBe('not-fully-reserved')
   })
 
   it('blocks when only some of a component is reserved', () => {
     seedRequest([line('p1', 10, 9), line('p2', 5, 5)])
-    expect(startGate(WO_ID, { partialMode: 'none', ...OFF }).allowed).toBe(false)
+    expect(startGate(WO_ID, { partialMode: 'none', ...ON }).allowed).toBe(false)
   })
 
   it('allows when every component is fully reserved', () => {
     seedRequest([line('p1', 10, 10), line('p2', 5, 5)])
-    expect(startGate(WO_ID, { partialMode: 'none', ...OFF }).allowed).toBe(true)
-  })
-
-  it('stays blocked under partial consume — S-4 is what relaxes the gate, not the partial mode', () => {
-    seedRequest([line('p1', 10, 10), line('p2', 5, 0)])
-    const gate = startGate(WO_ID, { partialMode: 'consume', ...OFF })
-    expect(gate.allowed).toBe(false)
-    expect(gate.reason).toBe('not-fully-reserved')
-  })
-
-  it('stays blocked under partial completion', () => {
-    seedRequest([line('p1', 10, 1), line('p2', 5, 1)])
-    expect(startGate(WO_ID, { partialMode: 'completion', ...OFF }).allowed).toBe(false)
+    expect(startGate(WO_ID, { partialMode: 'none', ...ON }).allowed).toBe(true)
   })
 })
 
-describe('UC-04 — S-4 on + partial consume: one secured component is enough', () => {
+describe('UC-04 — partial consume: one secured component is enough (no S-4 needed)', () => {
   it('allows once ANY component holds a reservation', () => {
     seedRequest([line('p1', 10, 3), line('p2', 5, 0)])
     expect(startGate(WO_ID, { partialMode: 'consume', ...ON }).allowed).toBe(true)
@@ -107,7 +95,7 @@ describe('UC-04 — S-4 on + partial consume: one secured component is enough', 
   })
 })
 
-describe('UC-04 — S-4 on + partial completion: every component must hold something', () => {
+describe('UC-04 — partial completion: every component must hold something', () => {
   it('allows when every component is at least partially reserved', () => {
     seedRequest([line('p1', 10, 1), line('p2', 5, 1)])
     expect(startGate(WO_ID, { partialMode: 'completion', ...ON }).allowed).toBe(true)
@@ -121,31 +109,30 @@ describe('UC-04 — S-4 on + partial completion: every component must hold somet
   })
 })
 
-describe('UC-04 — S-4 on + neither partial mode: S-4 has no effect', () => {
-  it('still demands full reservation', () => {
-    seedRequest([line('p1', 10, 9), line('p2', 5, 5)])
-    const gate = startGate(WO_ID, { partialMode: 'none', ...ON })
-    expect(gate.allowed).toBe(false)
-    expect(gate.reason).toBe('not-fully-reserved')
+describe('UC-00 — reservation switched off lifts the gate', () => {
+  it('allows a work order with nothing reserved, whatever the partial mode', () => {
+    for (const partialMode of ['none', 'consume', 'completion'] as const) {
+      expect(startGate(WO_ID, { partialMode, reservationOn: false }).allowed).toBe(true)
+    }
   })
 })
 
 describe('UC-04 — what the gate counts', () => {
   it('ignores available stock: free stock at the destination does not open the gate', () => {
     seedRequest([line('p1', 10, 0, { destAvailable: 500 })])
-    expect(startGate(WO_ID, { partialMode: 'none', ...OFF }).allowed).toBe(false)
+    expect(startGate(WO_ID, { partialMode: 'none', ...ON }).allowed).toBe(false)
     expect(startGate(WO_ID, { partialMode: 'consume', ...ON }).allowed).toBe(false)
   })
 
   it('counts consumed qty as covered — a partly issued line is not under-reserved', () => {
     // 10 needed, 4 still reserved, 6 already issued to the floor = fully covered.
     seedRequest([line('p1', 10, 4, { consumed: 6 })])
-    expect(startGate(WO_ID, { partialMode: 'none', ...OFF }).allowed).toBe(true)
+    expect(startGate(WO_ID, { partialMode: 'none', ...ON }).allowed).toBe(true)
   })
 
   it('lets a work order with no request through — nothing was ever allocated', () => {
     const i = stockRequests.findIndex(r => r.workOrderId === WO_ID)
     if (i >= 0) stockRequests.splice(i, 1)
-    expect(startGate(WO_ID, { partialMode: 'none', ...OFF }).allowed).toBe(true)
+    expect(startGate(WO_ID, { partialMode: 'none', ...ON }).allowed).toBe(true)
   })
 })

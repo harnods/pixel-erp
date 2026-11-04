@@ -18,6 +18,8 @@ import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import WorkOrderFiltersDrawer, { type WorkOrderFiltersValue } from '~/components/patterns/WorkOrderFiltersDrawer.vue'
 import { formatDate } from '~/utils/date'
 import { workOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { workOrderApprovalStatus, displayStatus, isFrozen } from '~/data/woApproval'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -47,6 +49,8 @@ const typeFilter = ref('')
 const typeLabel = computed(() => TYPE_OPTIONS.find(o => o.value === typeFilter.value)?.label ?? '')
 
 // Status — the six work-order statuses. Clearing (x) resets to show-all.
+// Work order approval doesn't add a status (grooming 2026-10-09) — a pending request
+// shows through the Approval status filter instead.
 const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
   { label: t('Not started'),          value: 'not started'          },
   { label: t('In progress'),          value: 'in progress'          },
@@ -55,6 +59,16 @@ const STATUS_OPTIONS: { label: string; value: WorkOrderStatus }[] = [
   { label: t('Completed'),            value: 'completed'            },
   { label: t('Canceled'),             value: 'canceled'             },
 ]
+
+// Approval status — work orders with a request waiting for approval, or whose latest
+// request was rejected. Derived from woApproval.ts, never stored.
+const APPROVAL_STATUS_OPTIONS = [
+  { label: t('Waiting for approval'), value: 'waiting' },
+  { label: t('Rejected'),             value: 'rejected' },
+]
+const approvalStatusFilter = ref('')
+
+
 const statusFilter = ref('')
 const statusLabel = computed(() => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '')
 
@@ -105,25 +119,27 @@ const {
       || row.bomName.toLowerCase().includes(s)
       || (row.parentNumber?.toLowerCase().includes(s) ?? false)
     const matchesType = !typeFilter.value || row.type === typeFilter.value
-    const matchesStatus = !statusFilter.value || row.status === statusFilter.value
+    const matchesStatus = !statusFilter.value || displayStatus(row) === statusFilter.value
+    const matchesApproval = !approvalStatusFilter.value || workOrderApprovalStatus(row) === approvalStatusFilter.value
     const startFilterDate = parseDMY(startDateFilter.value)
     const matchesStart = !startFilterDate
       || (!!row.startDate && dayStart(new Date(row.startDate)).getTime() === dayStart(startFilterDate).getTime())
     const endFilterDate = parseDMY(endDateFilter.value)
     const matchesEnd = !endFilterDate
       || (!!row.endDate && dayStart(new Date(row.endDate)).getTime() === dayStart(endFilterDate).getTime())
-    return matchesSearch && matchesType && matchesStatus && matchesStart && matchesEnd
+    return matchesSearch && matchesType && matchesStatus && matchesApproval && matchesStart && matchesEnd
   },
 })
 
 // Reset to page 1 when the extra (non-built-in) filters change
-watch([typeFilter, statusFilter, startDateFilter, endDateFilter], () => setPage(1))
+watch([typeFilter, statusFilter, approvalStatusFilter, startDateFilter, endDateFilter], () => setPage(1))
 
 const hasActiveFilter = computed(() =>
-  !!search.value || !!typeFilter.value || !!statusFilter.value || !!startDateFilter.value || !!endDateFilter.value,
+  !!search.value || !!typeFilter.value || !!statusFilter.value || !!approvalStatusFilter.value || !!startDateFilter.value || !!endDateFilter.value,
 )
 function clearFilters() {
   search.value = ''
+  approvalStatusFilter.value = ''
   typeFilter.value = ''
   statusFilter.value = ''
   startDateFilter.value = ''
@@ -231,6 +247,15 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           </MpPopoverContent>
         </MpPopover>
 
+        <ErpFilterSelect
+          id="wo-approval-status-select"
+          v-model="approvalStatusFilter"
+          data-devchange="wo-approval-list-indicator"
+          :placeholder="t('Approval status')"
+          :options="APPROVAL_STATUS_OPTIONS"
+          width="196px"
+        />
+
         <MpButton class="filter-all-btn" type="button" variant="ghost" @click="isFiltersDrawerOpen = true">
           <MpIcon name="filter" size="sm" />
           {{ t('All filters') }}
@@ -271,11 +296,17 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #cell-trackRouting="{ value }">{{ value ? t('Yes') : t('No') }}</template>
 
     <!-- ── Status badge ── -->
-    <template #cell-status="{ value }">
-      <ErpStatusBadge
-        :status="(value as string)"
-        :label="value === 'in progress' ? t('In progress') : undefined"
-      />
+    <template #cell-status="{ row }">
+      <!-- Work order status as-is — a pending request doesn't change it; a 12px caption
+           under the badge says it's awaiting approval (rule/type-14-default: 12px = caption) -->
+      <span class="wo-status-cell">
+        <ErpStatusBadge
+          :status="displayStatus(row as unknown as WorkOrder)"
+          :label="displayStatus(row as unknown as WorkOrder) === 'in progress' ? t('In progress') : undefined"
+          data-devchange="wo-approval-status"
+        />
+        <span v-if="isFrozen((row as unknown as WorkOrder).id)" class="wo-approval-caption" data-devchange="wo-approval-list-indicator">{{ t('Awaiting approval') }}</span>
+      </span>
     </template>
 
     <!-- ── Parent work order — em dash when top-level ── -->
@@ -319,9 +350,11 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails(row as unknown as WorkOrder)">{{ t('View details') }}</MpPopoverListItem>
             <MpPopoverListItem>{{ t('Duplicate') }}</MpPopoverListItem>
-            <!-- Cancel — only a not-started WO can be canceled (nothing produced yet) -->
+            <!-- Cancel — only a not-started WO can be canceled (nothing produced yet), and
+                 not while a request is waiting for approval (the work order is frozen) -->
             <MpPopoverListItem
-              v-if="(row as unknown as WorkOrder).status === 'not started'"
+              v-if="(row as unknown as WorkOrder).status === 'not started' && !isFrozen((row as unknown as WorkOrder).id)"
+              data-devchange="wo-approval-freeze"
               :class="css({ color: 'var(--mp-text-critical)' })"
             >{{ t('Cancel') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -413,6 +446,8 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* Kebab — 20px tall so the actions cell stays within the 40px text-only row */
+.wo-status-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
+.wo-approval-caption { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); white-space: nowrap; }
 .row-kebab {
   display: flex; align-items: center; justify-content: center;
   width: var(--mp-sizes-7, 28px); height: var(--mp-sizes-5, 20px);

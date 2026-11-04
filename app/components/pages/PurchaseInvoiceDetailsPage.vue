@@ -265,7 +265,7 @@ function goBack() { router.push('/purchase-invoices') }
 
       <!-- Info banner (conditional) — temporarily hidden in the prototype -->
       <div v-if="showBanner && invoice.banner" class="detail-banner">
-        <MpIcon name="information" size="md" class="detail-banner-icon" />
+        <MpIcon name="info" size="md" class="detail-banner-icon" />
         <span class="detail-banner-text">{{ invoice.banner.message }}</span>
         <a class="detail-banner-link" @click.prevent>{{ invoice.banner.linkLabel }}</a>
       </div>

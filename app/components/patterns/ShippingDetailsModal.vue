@@ -114,7 +114,7 @@ function save() {
                   @focus="openPicker(r.key)"
                   @input="forms[r.key] && (forms[r.key].active = true, forms[r.key].search = ($event.target as HTMLInputElement).value)"
                 />
-                <MpIcon name="chevron-down" size="sm" />
+                <MpIcon name="chevrons-down" size="sm" />
               </div>
             </MpPopoverTrigger>
             <MpPopoverContent :class="css({ width: '320px', maxHeight: '300px', overflowY: 'auto', padding: '0' })">

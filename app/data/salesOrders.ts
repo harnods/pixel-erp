@@ -1,5 +1,5 @@
 import type { SalesOrder, SalesOrderItem, SalesOrderStatus } from './types'
-import { CATALOG } from './catalog'
+import { TRADING_CATALOG } from './catalog'
 import { customers, EXPORT_CUSTOMER_ID } from './customers'
 
 /**
@@ -35,7 +35,7 @@ const TAG_SETS: string[][] = [
 ]
 
 /** Product catalogue — same master catalog as the WMS, mapped to sales order items. */
-const PRODUCTS: Omit<SalesOrderItem, 'qty' | 'discountPct' | 'amount'>[] = CATALOG.map(item => ({
+const PRODUCTS: Omit<SalesOrderItem, 'qty' | 'discountPct' | 'amount'>[] = TRADING_CATALOG.map(item => ({
   product: item.name,
   sku: item.sku,
   description: item.desc,

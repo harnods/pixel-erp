@@ -1,4 +1,4 @@
-import { CATALOG } from './catalog'
+import { CATALOG, TRADING_CATALOG } from './catalog'
 import { salesInvoices } from './salesInvoices'
 import { getProductTaxInfo } from './productsIndex'
 import type { SalesInvoiceLineItem, SalesInvoice, SILineItem } from './types'
@@ -19,7 +19,7 @@ import type { SalesInvoiceLineItem, SalesInvoice, SILineItem } from './types'
 const TAX_RATE = 0.11
 
 /** Smallest catalogue unit price — bounds how far a closing/balancing line can overshoot. */
-export const MIN_CATALOG_PRICE = CATALOG.reduce((lo, p) => Math.min(lo, p.price), Infinity)
+export const MIN_CATALOG_PRICE = TRADING_CATALOG.reduce((lo, p) => Math.min(lo, p.price), Infinity)
 
 /**
  * The tax-exclusive base that reproduces `total` exactly under
@@ -41,7 +41,7 @@ function baseForTotal(total: number): number {
 function closingLine(shortfall: number): { productId: string; qty: number } {
   let best: { productId: string; qty: number } | null = null
   let bestOvershoot = Infinity
-  for (const p of CATALOG) {
+  for (const p of TRADING_CATALOG) {
     const qty = Math.max(1, Math.ceil(shortfall / p.price))
     const overshoot = qty * p.price - shortfall
     if (overshoot >= 0 && overshoot < bestOvershoot) {
@@ -64,7 +64,7 @@ function buildRows(inv: SalesInvoice, idx: number, targetBase: number): SalesInv
   let acc = 0
 
   for (let j = 0; j < count - 1; j++) {
-    const p = CATALOG[(idx * 5 + j * 7) % CATALOG.length]!
+    const p = TRADING_CATALOG[(idx * 5 + j * 7) % TRADING_CATALOG.length]!
     const big = p.price >= 2_000_000
     const qty = big ? 1 + ((idx + j) % 2) : 1 + ((idx + j * 3) % 12)
     const discountPct = (j % 5 === 3) ? 10 : (j % 7 === 5 ? 5 : 0)

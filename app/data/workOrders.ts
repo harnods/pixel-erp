@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { TODAY } from './master'
-import { billOfMaterials } from './billOfMaterials'
+import { billOfMaterials, type BomProductionCost, type BomRoutingStep } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
@@ -51,6 +51,111 @@ export interface WorkOrder {
    * reserved but unconsumed.
    */
   materialReservations?: Record<string, WorkOrderMaterialReservation>
+  /**
+   * The raw materials this work order was CREATED with — the rows on New work order
+   * › Raw materials, as the user left them. The BOM only seeds that form: when it
+   * allows adjustment the user can add, remove or re-quantify components and pick a
+   * warehouse per row, so the BOM is not this work order's material list.
+   *
+   * Absent on work orders created before this was stored (and on the seed), which
+   * fall back to their BOM — see {@link workOrderRawMaterials}. Read it through that
+   * helper, never directly.
+   */
+  rawMaterials?: WorkOrderRawMaterial[]
+  /**
+   * Production cost lines as created — same story as {@link WorkOrder.rawMaterials}:
+   * the BOM seeds the form, the user may change it. Read through
+   * {@link workOrderProductionCost}.
+   */
+  productionCost?: WorkOrderCostLine[]
+  /** Routing steps as created. Read through {@link workOrderRouting}. */
+  routing?: WorkOrderRoutingStep[]
+  /**
+   * Work order approval (MVP) — material is RESERVED only when the work order starts (or
+   * its Start request is approved). Until then the picks made on the create form are held
+   * here, unreserved; startWorkOrder() moves them into materialReservations.
+   */
+  reservationPlan?: Record<string, WorkOrderMaterialReservation>
+  /**
+   * Work order approval (grooming 2026-10-09) — the reason given on the latest Adjust or
+   * Cancel/close, shown in a notice on the detail page. `requestId` is set when it went
+   * through approval; it's cleared if that request is rejected or canceled.
+   */
+  actionReason?: WorkOrderActionReason
+}
+
+
+export interface WorkOrderActionReason {
+  type: 'adjustment' | 'cancel'
+  reason: string
+  by: string
+  /** ISO timestamp */
+  at: string
+  requestId?: string
+}
+
+
+/**
+ * One production cost line of a work order. `group` places it under Labor /
+ * Overhead / Other on the work order page; the form itself is a flat list.
+ */
+export interface WorkOrderCostLine {
+  group: BomProductionCost['group']
+  account: string
+  costDriver: string
+  unitCost: number
+  multiplier: number
+}
+
+/** One routing step of a work order — same fields as the BOM's. */
+export type WorkOrderRoutingStep = BomRoutingStep
+
+/** One raw-material row of a work order, as created. */
+export interface WorkOrderRawMaterial {
+  productId: string
+  /** qty needed at creation; a later Edit / Adjust lives on the stock request */
+  needed: number
+  unit: string
+  purchaseCost: number
+  /** warehouse the material is drawn from — also the stock request line's destination */
+  warehouseId?: string
+  /** ISO date the material is required on the floor */
+  requiredDate?: string
+}
+
+/**
+ * A work order's raw materials: what it was created with, or — for work orders
+ * that predate storing that — its BOM's. Every surface that lists a work order's
+ * materials goes through here, so the work order page, the material consume /
+ * return form and the stock request can't disagree about what the job uses.
+ */
+export function workOrderRawMaterials(wo: WorkOrder): WorkOrderRawMaterial[] {
+  if (wo.rawMaterials) return wo.rawMaterials
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
+  return (bom?.rawMaterials ?? []).map(r => ({
+    productId: r.productId,
+    needed: r.needed,
+    unit: r.unit,
+    purchaseCost: r.purchaseCost,
+  }))
+}
+
+/**
+ * A work order's production cost lines: as created, or its BOM's for work orders
+ * that predate storing them. A BOM line is one unit at multiplier 1.
+ */
+export function workOrderProductionCost(wo: WorkOrder): WorkOrderCostLine[] {
+  if (wo.productionCost) return wo.productionCost
+  const bom = billOfMaterials.find(b => b.id === wo.bomId)
+  return (bom?.productionCost ?? []).map(c => ({
+    group: c.group, account: c.account, costDriver: c.costDriver, unitCost: c.amount, multiplier: 1,
+  }))
+}
+
+/** A work order's routing steps: as created, or its BOM's for older work orders. */
+export function workOrderRouting(wo: WorkOrder): WorkOrderRoutingStep[] {
+  if (wo.routing) return wo.routing
+  return billOfMaterials.find(b => b.id === wo.bomId)?.routing.map(r => ({ ...r })) ?? []
 }
 
 export interface WorkOrderMaterialReservation {
@@ -145,6 +250,11 @@ const SEED: Array<Omit<WorkOrder, 'id' | 'number' | 'bomId' | 'bomName'> & { bom
   { bomIndex: 7, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 50,  planStartDate: isoOffset(-12), planEndDate: isoOffset(-6), endDate: isoOffset(-8) },
   { bomIndex: 3, category: 'Standard', type: 'Disassembly', trackRouting: true,  status: 'canceled', producedQty: 0, plannedQty: 180, planStartDate: isoOffset(-13), planEndDate: isoOffset(-7), endDate: isoOffset(-9) },
   { bomIndex: 5, category: 'Order',    type: 'Assembly',    trackRouting: false, status: 'canceled', producedQty: 0, plannedQty: 95,  planStartDate: isoOffset(-15), planEndDate: isoOffset(-8), endDate: isoOffset(-10) },
+
+  // ── work order approval (see woApproval.ts) ─────────────────────────────
+  // wo-38: Start waiting for approval level 2 · wo-39: Start rejected at level 1.
+  { bomIndex: 2, category: 'Standard', type: 'Assembly',    trackRouting: false, status: 'not started', producedQty: 0, plannedQty: 250, planStartDate: isoOffset(4),  planEndDate: isoOffset(8) },
+  { bomIndex: 5, category: 'Standard', type: 'Assembly',    trackRouting: false, status: 'not started', producedQty: 0, plannedQty: 80,  planStartDate: isoOffset(3),  planEndDate: isoOffset(6) },
 ]
 
 function buildSeed(): WorkOrder[] {
@@ -177,6 +287,22 @@ function nextWorkOrderNumber(): string {
     if (m) max = Math.max(max, parseInt(m[1]!, 10))
   }
   return `WO-2026-${String(max + 1).padStart(4, '0')}`
+}
+
+// Snapshots saved before work order approval shipped don't carry the approval seed
+// rows (wo-38 / wo-39) the approval requests point at — append any that are missing,
+// renumbered if a user-created work order already took that number.
+if (workOrderSnapshot) {
+  for (const seed of buildSeed().filter(s => s.id === 'wo-38' || s.id === 'wo-39')) {
+    if (workOrders.some(w => w.id === seed.id)) continue
+    if (workOrders.some(w => w.number === seed.number)) seed.number = nextWorkOrderNumber()
+    workOrders.push(seed)
+  }
+  // Draft / Rejected were creation-approval statuses — creation is no longer gated.
+  for (const w of workOrders) {
+    const legacy = w.status as string
+    if (legacy === 'draft' || legacy === 'rejected') w.status = 'not started'
+  }
 }
 
 /** Create a new work order from the New work order form — must reference an existing BOM. */
