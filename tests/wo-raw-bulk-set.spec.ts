@@ -51,15 +51,36 @@ describe('New work order — bulk set warehouse / required date (C-2)', () => {
     wrapper.unmount()
   })
 
-  it('ticking a row swaps the header for the bulk bar with its count and both actions', async () => {
+  // The bulk affordance is an "Apply to N" ROW at the top of the body, in the
+  // columns it sets — the product-variant pattern — not a bar that replaces the
+  // header. The header has to keep its labels: they are what say which column
+  // the warehouse picker in the row below is setting.
+  it('ticking a row adds an apply row and leaves the header labelled', async () => {
     const { wrapper, vm } = await mountWithBom()
     vm.toggleRaw(vm.rawRows[0]!.id)
     await flushPromises()
-    const bar = wrapper.find('.wo-bulk-bar')
-    expect(bar.exists()).toBe(true)
-    expect(bar.text()).toContain('1 component selected')
-    expect(bar.text()).toContain('Set warehouse')
-    expect(bar.text()).toContain('Set required date')
+
+    const applyRow = wrapper.find('.wo-tr--apply')
+    expect(applyRow.exists()).toBe(true)
+    expect(applyRow.text()).toContain('Apply to 1 component')
+
+    // The header survives, select-all included.
+    const header = wrapper.find('thead')
+    expect(header.text()).toContain('Warehouse')
+    expect(header.text()).toContain('Required date')
+    expect(wrapper.find('#raw-select-all').exists()).toBe(true)
+    expect(wrapper.find('.wo-bulk-bar').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('drops the apply row again once nothing is ticked', async () => {
+    const { wrapper, vm } = await mountWithBom()
+    vm.toggleRaw(vm.rawRows[0]!.id)
+    await flushPromises()
+    expect(wrapper.find('.wo-tr--apply').exists()).toBe(true)
+    vm.toggleRaw(vm.rawRows[0]!.id)
+    await flushPromises()
+    expect(wrapper.find('.wo-tr--apply').exists()).toBe(false)
     wrapper.unmount()
   })
 
