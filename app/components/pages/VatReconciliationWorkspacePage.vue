@@ -467,10 +467,22 @@ const erpDocLabel = computed(() => (side.value === 'input' ? 'Purchase invoice' 
  * it re-pulls both sides and recomputes every status against what has synced
  * since. It is the only thing that moves a status on its own (US-002).
  */
+/** A refused Re-run explains itself in the sign-off banner, never a toast (rule/form-errors-inline). */
+const rerunBlocked = ref(false)
+watch([finalized, periodId], () => { rerunBlocked.value = false })
+
+/** Needs attention with nothing left and no narrowing → all clear, not "no match". */
+const isAllClear = computed(() =>
+  isAttentionScope.value && !statusFilter.value && !query.value.trim()
+  && pairs.value.length > 0 && pairs.value.every(p => p.match === 'matched'))
+function showAllFaktur() {
+  router.push({ query: { ...route.query, tab: 'All faktur' } })
+}
+
 function reRun() {
   // US-002: a finalized period is a record. Rewriting it silently would defeat
   // the point, so the way back in is explicit.
-  if (finalized.value) { infoToast(t('Unfinalize first to re-run this period')); return }
+  if (finalized.value) { rerunBlocked.value = true; return }
   runPeriod(periodId.value)
   infoToast(`${t('Match re-run')} — ${matchCounts(pairs.value).matched} ${t('matched')}`)
 }
@@ -493,11 +505,11 @@ function reviewWithAirene() {
         <strong>{{ t('Finalized') }}</strong>
         {{ t('by') }} {{ finalization.finalizedBy }} · {{ formatDate(finalization.finalizedAt) }}.
         {{ t('Sales invoices stay editable in Jurnal; changes will be flagged here.') }}
+        <!-- Unfinalize lives once, in the title bar. -->
+        <span v-if="rerunBlocked" class="vr-finalized-error" role="alert" data-devchange="vat-recon-ui-review-2">
+          {{ t('Re-run is not available while the period is finalized. Unfinalize it first.') }}
+        </span>
       </span>
-      <div class="vr-toolbar-spacer" />
-      <MpButton variant="secondary" is-rounded @click="unfinalizeOpen = true">
-        {{ t('Unfinalize') }}
-      </MpButton>
     </div>
 
     <!-- KPI strip -->
@@ -637,7 +649,13 @@ function reviewWithAirene() {
       </div>
 
       <div class="vr-rows" data-devchange="vat-recon-bank-style">
-        <div v-if="filtered.length === 0" class="vr-empty">
+        <div v-if="filtered.length === 0 && isAllClear" class="vr-empty" data-devchange="vat-recon-ui-review-2">
+          <img src="/illustrations/empty-folder.png" alt="" class="vr-empty-illustration" width="288" height="240" >
+          <div class="vr-empty-title">{{ t('Nothing needs attention') }}</div>
+          <div class="vr-empty-body">{{ t('Every pair in this period is reconciled.') }}</div>
+          <MpButton variant="secondary" is-rounded class="vr-empty-cta" @click="showAllFaktur">{{ t('View all faktur') }}</MpButton>
+        </div>
+        <div v-else-if="filtered.length === 0" class="vr-empty">
           <div class="vr-empty-title">{{ t('No faktur match your filters') }}</div>
           <div class="vr-empty-body">{{ t('Recheck the filters you have applied and try filtering again.') }}</div>
         </div>
@@ -804,6 +822,15 @@ function reviewWithAirene() {
                     </template>
                   </dl>
                   <p v-else class="vr-detail-empty">{{ t('No match in ERP') }}</p>
+                  <template v-if="pair.erp?.returnRef">
+                    <div class="vr-detail-title vr-detail-title--sub" data-devchange="vat-recon-ui-review-2">{{ t('Sales return') }}</div>
+                    <dl class="vr-kv">
+                      <dt>{{ t('Number') }}</dt><dd>{{ pair.erp.returnRef }}</dd>
+                      <dt>{{ t('Date') }}</dt><dd>{{ pair.erp.returnDate ?? '—' }}</dd>
+                      <dt>{{ t('Total') }}</dt><dd>{{ pair.erp.returnTotal != null ? formatIDR(pair.erp.returnTotal) : '—' }}</dd>
+                      <dt>{{ t('Invoice − return') }}</dt><dd>{{ formatIDR(nettedAnchor(pair)) }}</dd>
+                    </dl>
+                  </template>
                 </div>
 
                 <div class="vr-detail-col">
@@ -992,6 +1019,7 @@ function reviewWithAirene() {
   color: var(--mp-colors-emerald-800);
 }
 .vr-finalized-text { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
+.vr-finalized-error { display: block; margin-top: var(--mp-spacing-1); color: var(--mp-colors-red-800); font-weight: var(--mp-font-weights-semi-bold); }
 
 
 .vr-page {
@@ -1015,6 +1043,12 @@ function reviewWithAirene() {
 
 /* ── KPI strip ── */
 .vr-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--mp-spacing-3); }
+/* Narrower than desktop: the four side cards stay on one row and Tax difference —
+   the headline — takes its own full-width row, rather than truncating amounts. */
+@media (max-width: 1279px) {
+  .vr-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .vr-kpis > .vr-kpi:last-child { grid-column: 1 / -1; }
+}
 .vr-kpi {
   background: var(--mp-background-surface);
   border: 1px solid var(--mp-border-default);
@@ -1034,7 +1068,7 @@ function reviewWithAirene() {
 .vr-kpi-value {
   font-size: var(--mp-font-sizes-xl); font-weight: var(--mp-font-weights-bold);
   color: var(--mp-text-default); letter-spacing: -0.01em;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .vr-kpi.is-clear .vr-kpi-value { color: var(--mp-colors-emerald-800); }
@@ -1303,6 +1337,9 @@ function reviewWithAirene() {
   color: var(--mp-text-default); margin-bottom: var(--mp-spacing-2);
 }
 .vr-empty-body { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.vr-empty-illustration { --vr-illus-w: 288px; --vr-illus-h: 240px; width: var(--vr-illus-w); height: var(--vr-illus-h); object-fit: contain; display: block; margin: 0 auto var(--mp-spacing-2); }
+.vr-empty-cta { margin-top: var(--mp-spacing-4); }
+.vr-detail-title--sub { margin-top: var(--mp-spacing-4); }
 .vr-foot {
   /* Sticks to the bottom of the page scroll, so counts and paging stay in reach.
      The page scroller (.stage in [...slug].vue) has an 80px bottom padding

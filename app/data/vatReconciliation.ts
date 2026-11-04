@@ -451,7 +451,7 @@ export const outputPairs: ReconPair[] = [
     id: 'o-04', match: 'invoice-edited', confidence: 0,
     erp: { ref: '40145', date: '08 Feb 2027', customer: 'PT Indofood Sukses Makmur Tbk', npwp: '0011060432092000', dpp: 24800000, ppn: 2976000, total: 27776000 },
     djp: { ref: '27000000039847488', date: '08 Feb 2027', customer: 'PT Indofood Sukses Makmur Tbk', npwp: '0011060432092000', dpp: 25300000, ppn: 3036000, total: 28336000, approved: true },
-    reason: 'Sales invoice edited on 14 Jan, after the faktur was approved on 09 Jan. DPP is Rp500.000 lower than the faktur.',
+    reason: 'Sales invoice edited on 14 Feb, after the faktur was approved on 09 Feb. DPP is Rp500.000 lower than the faktur.',
     fields: ['dpp', 'ppn', 'total'],
   },
   {
@@ -490,7 +490,7 @@ export const outputPairs: ReconPair[] = [
     id: 'o-10', match: 'invoice-voided', confidence: 0,
     erp: { ref: '40150', date: '22 Feb 2027', customer: 'PT Bumi Berkah Boga', npwp: '0034289175031000', dpp: 6125000, ppn: 735000, total: 6860000, voided: true },
     djp: { ref: '27000000039847853', date: '22 Feb 2027', customer: 'PT Bumi Berkah Boga', npwp: '0034289175031000', dpp: 6125000, ppn: 735000, total: 6860000, approved: true },
-    reason: 'Sales invoice was voided on 25 Jan. The faktur is still Approved in Coretax and must be cancelled.',
+    reason: 'Sales invoice was voided on 25 Feb. The faktur is still Approved in Coretax and must be cancelled.',
   },
   {
     id: 'o-11', match: 'matched', matchedBy: 'auto', confidence: 1,
@@ -503,7 +503,7 @@ export const outputPairs: ReconPair[] = [
     id: 'o-12', match: 'return-not-reflected', confidence: 0,
     erp: { ref: '40152', date: '26 Feb 2027', customer: 'PT Maju Sejahtera Abadi', npwp: '0017763285013000', dpp: 8400000, ppn: 1008000, total: 9408000, returnRef: 'SR-2027-014', returnDate: '28 Feb 2027', returnTotal: 2352000 },
     djp: { ref: '27000000039847999', date: '27 Feb 2027', customer: 'PT Maju Sejahtera Abadi', npwp: '0017763285013000', dpp: 8400000, ppn: 1008000, total: 9408000, approved: true },
-    reason: 'Sales return SR-2027-014 (Rp2.352.000) booked on 30 Jan, after the faktur. No nota retur from the buyer and no pengganti.',
+    reason: 'Sales return SR-2027-014 (Rp2.352.000) booked on 28 Feb, after the faktur. No nota retur from the buyer and no pengganti.',
   },
   {
     // 9 — every field agrees, but the faktur predates its invoice, which is
@@ -511,7 +511,7 @@ export const outputPairs: ReconPair[] = [
     id: 'o-13', match: 'faktur-predates', confidence: 0,
     erp: { ref: '40153', date: '28 Feb 2027', customer: 'PT Sumber Alfaria Trijaya Tbk', npwp: '0010914763092000', dpp: 15600000, ppn: 1872000, total: 17472000 },
     djp: { ref: '27000000039848072', date: '26 Feb 2027', customer: 'PT Sumber Alfaria Trijaya Tbk', npwp: '0010914763092000', dpp: 15600000, ppn: 1872000, total: 17472000, approved: true },
-    reason: 'Faktur is dated 26 Jan, three days before its invoice. Correct the date on one side.',
+    reason: 'Faktur is dated 26 Feb, two days before its invoice. Correct the date on one side.',
     fields: ['date'],
   },
   {
@@ -920,7 +920,9 @@ export function saveVatSetup(input: {
     outputAccountCodes: [...input.outputAccountCodes],
     inputAccountCodes: [...(input.inputAccountCodes ?? [])],
     scope: input.scope ?? 'out',
-    savedAt: new Date().toISOString(),
+    // The prototype's clock (TODAY_ISO), like every other stamp in the module —
+    // a wall-clock 2026 date read as saved before the 2027 masa it governs.
+    savedAt: reconNowIso(),
   }
   setupCache = setup
   setupLoaded = true

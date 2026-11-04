@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-ui-review-2',
+    title: 'VAT reconciliation: UI review pass 2',
+    description:
+      'A fully reconciled masa opens to an all-clear state ("Nothing needs attention" + View all faktur) instead of "No faktur match your filters". Re-run on a finalized masa explains itself inline in the sign-off banner (no toast), and Unfinalize lives only in the title bar. Return rows show the linked sales return and invoice − return. KPI cards wrap instead of truncating amounts. Fixture reasons now match their 02/2027 dates. Setup\'s dark "Setup history" card is now a bordered "Last saved" card with a DD Mon YYYY, HH:MM stamp on the prototype clock. With VAT In in scope the index header is "Invoice (Rp)" and the tax period takes the date width, so nothing clips at 1440px.',
+    date: '2026-11-04',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatMatchingRulesPage.vue', 'VatReconciliationPeriodsPage.vue', 'vatReconciliation.ts'],
+  },
+  {
     id: 'vat-recon-ui-review',
     title: 'VAT reconciliation: UI review fixes on shared ERP patterns',
     description:

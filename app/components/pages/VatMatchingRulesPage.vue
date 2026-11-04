@@ -25,6 +25,7 @@ import {
 } from '~/data/vatReconciliation'
 import { coaAccounts } from '~/data/wmsCutover'
 import { successToast } from '~/utils/toasts'
+import { formatDateTimeLong } from '~/utils/date'
 
 const { t } = useLocale()
 
@@ -294,13 +295,15 @@ const fixedRules = [
         </div>
       </div>
 
-      <div v-if="saved" class="vm-history">
+      <!-- Same bordered surface as the card above (rule/surface-border-no-shadow);
+           it shows the latest save only, so it is "Last saved", not a history. -->
+      <div v-if="saved" class="vm-history" data-devchange="vat-recon-ui-review-2">
         <div class="vm-history-head">
           <MpIcon name="log" size="sm" />
-          <span>{{ t('Setup history') }}</span>
+          <span>{{ t('Last saved') }}</span>
         </div>
         <div class="vm-history-row is-last">
-          <span class="vm-history-meta">{{ new Date(saved.savedAt).toLocaleString('en-GB') }}</span>
+          <span class="vm-history-meta">{{ formatDateTimeLong(saved.savedAt) }}</span>
           <span class="vm-history-what">
             {{ saved.outputAccountCodes.length ? accountLabels(saved.outputAccountCodes) : t('No accounts selected') }}<template v-if="saved.scope === 'both' && saved.inputAccountCodes.length">; {{ accountLabels(saved.inputAccountCodes) }}</template>
           </span>
@@ -458,7 +461,8 @@ const fixedRules = [
 
 /* ── Rule history ── */
 .vm-history {
-  background: var(--mp-background-surface-bold); color: var(--mp-text-inverse);
+  background: var(--mp-background-surface); color: var(--mp-text-default);
+  border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-md);
   padding: var(--mp-spacing-4);
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
@@ -470,9 +474,9 @@ const fixedRules = [
 .vm-history-row {
   display: flex; flex-direction: column;
   padding-bottom: var(--mp-spacing-2);
-  border-bottom: 1px solid var(--mp-colors-white-alpha-100);
+  border-bottom: 1px solid var(--mp-border-default);
 }
 .vm-history-row.is-last { border-bottom: 0; padding-bottom: 0; }
-.vm-history-meta { font-size: var(--mp-font-sizes-xs); color: var(--mp-colors-white-alpha-700); }
+.vm-history-meta { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); }
 .vm-history-what { font-size: var(--mp-font-sizes-sm); }
 </style>

@@ -15,6 +15,7 @@ import { resolve } from 'node:path'
 import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, provide } from 'vue'
 import {
   outputPairs, candidatesFor, confirmManualMatch, undoManualMatch, pairsForPeriod, activePeriodId,
+  finalizePeriod, unfinalizePeriod,
 } from '~/data/vatReconciliation'
 
 const route = { query: { masa: '2027-02', tab: 'Needs attention' } as Record<string, string> }
@@ -51,8 +52,8 @@ describe('duplicate reference (US-003)', () => {
 })
 
 describe('workspace', () => {
-  async function mountWorkspace(finalizeSignal = ref(0)) {
-    route.query = { masa: '2027-02', tab: 'All faktur' }
+  async function mountWorkspace(finalizeSignal = ref(0), query: Record<string, string> = { masa: '2027-02', tab: 'All faktur' }) {
+    route.query = query
     const { default: Page } = await import('~/components/pages/VatReconciliationWorkspacePage.vue')
     const Host = { setup() { provide('vatFinalize', finalizeSignal); return {} }, components: { Page }, template: '<Page />' }
     const w = mount(Host, { attachTo: document.body, global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
@@ -77,6 +78,51 @@ describe('workspace', () => {
     await flushPromises()
     expect(document.body.textContent).toContain('is not ready to finalize')
     w.unmount()
+  })
+
+  // ── Pass 2 ──
+  it('a fully reconciled masa opens to an all-clear state, not "no match"', async () => {
+    const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'Needs attention' })
+    expect(w.text()).toContain('Nothing needs attention')
+    expect(w.text()).not.toContain('No faktur match your filters')
+    expect(w.findAll('button').some(b => b.text() === 'View all faktur')).toBe(true)
+    w.unmount()
+  })
+
+  it('Re-run on a finalized masa refuses inline in the banner; no second Unfinalize', async () => {
+    finalizePeriod('2027-01')
+    try {
+      const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'All faktur' })
+      expect(w.findAll('button').filter(b => b.text() === 'Unfinalize')).toHaveLength(0)
+      await w.findAll('button').find(b => b.text() === 'Re-run')!.trigger('click')
+      expect(w.find('.vr-finalized-error').text()).toContain('Unfinalize it first')
+      w.unmount()
+    } finally {
+      unfinalizePeriod('2027-01')
+    }
+  })
+
+  it('a return row shows the linked sales return', async () => {
+    const ret = outputPairs.find(p => p.match === 'return-not-reflected')!
+    const w = await mountWorkspace()
+    const item = w.findAll('.vr-item').find(i => i.find('.vr-erp').text().includes(ret.erp!.ref))!
+    await item.find('.vr-chevron').trigger('click')
+    expect(item.text()).toContain('Sales return')
+    expect(item.text()).toContain(ret.erp!.returnRef!)
+    w.unmount()
+  })
+})
+
+describe('pass 2 — data and copy', () => {
+  it('02/2027 fixture reasons only name dates in the masa (no stale January)', () => {
+    for (const p of outputPairs) expect(p.reason ?? '', p.id).not.toMatch(/\b\d{2} Jan\b/)
+  })
+
+  it('setup card is a bordered "Last saved" card with the shared date format', () => {
+    const s = src('app/components/pages/VatMatchingRulesPage.vue')
+    expect(s).not.toContain('toLocaleString')
+    expect(s).not.toContain('--mp-background-surface-bold')
+    expect(s).toContain('formatDateTimeLong(saved.savedAt)')
   })
 })
 

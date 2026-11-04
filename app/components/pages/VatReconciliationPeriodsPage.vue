@@ -70,7 +70,8 @@ onMounted(() => { isSetUp.value = !!loadVatSetup() })
 // The Invoice type column earns its place only when there is more than one
 // kind — under VAT Out only it would repeat the same value down every row.
 const columns = computed<TableColumn[]>(() => [
-  { key: 'masa',        label: t('Tax period'),    kind: 'number', sortable: true,                 sortType: 'text'   },
+  // A masa is a period (MM/YYYY), so it takes the date width, not a 240px number.
+  { key: 'masa',        label: t('Tax period'),    kind: 'date',   sortable: true,                 sortType: 'text'   },
   { key: 'reconciledAt',label: t('Reconciled on'), kind: 'date',   sortable: true,                 sortType: 'date'   },
   ...(showJenisFilter.value
     ? [{ key: 'jenis', label: t('Invoice type'), sortType: 'text' } as TableColumn]
@@ -78,7 +79,9 @@ const columns = computed<TableColumn[]>(() => [
   // "Sales/purchase" only earns the slash when both sides are in scope; under
   // VAT Out the second half names a document that isn't in the table (US-018).
   { key: 'erpAmount',
-    label: showJenisFilter.value ? t('Sales/purchase invoice (Rp)') : t('Sales invoice (Rp)'),
+    // With both sides the Invoice type column already says which; a long
+    // "Sales/purchase invoice (Rp)" header clipped at 1440px.
+    label: showJenisFilter.value ? t('Invoice (Rp)') : t('Sales invoice (Rp)'),
     kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'djpAmount',   label: t('Tax invoice (Rp)'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'selisih',     label: t('Difference (Rp)'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },

@@ -2993,6 +2993,16 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Customer / vendor': 'Pelanggan / vendor',
   'issues': 'masalah',
   'All clear in this period': 'Semua beres di masa ini',
+  // VAT reconciliation — UI review pass 2 (2026-11-04)
+  'Nothing needs attention': 'Tidak ada yang perlu ditinjau',
+  'Every pair in this period is reconciled.': 'Semua pasangan di masa ini sudah direkonsiliasi.',
+  'View all faktur': 'Lihat semua faktur',
+  'Re-run is not available while the period is finalized. Unfinalize it first.':
+    'Jalankan ulang tidak tersedia saat masa sudah difinalisasi. Batalkan finalisasi dulu.',
+  'Invoice − return': 'Faktur penjualan − retur',
+  'Last saved': 'Terakhir disimpan',
+  'Invoice (Rp)': 'Faktur (Rp)',
+  'Sales return': 'Retur penjualan',
   'Manual': 'Manual',
   'Reconciled (manual)': 'Direkonsiliasi manual',
   'Match re-run': 'Pencocokan dijalankan ulang',
