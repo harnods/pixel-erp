@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-drawer-footer',
+    title: 'Reconciliation drawer: Cancel left, actions right',
+    description:
+      'Drawer footer follows the shared drawer shell: ghost Cancel on the left closes the drawer; on the right, Open in Coretax (secondary) sits before the state\'s primary action (e.g. Create sales invoice). Open in Coretax only shows when the pair has a faktur to open.',
+    date: '2026-11-05',
+    files: ['ReconciliationDetailDrawer.vue'],
+  },
+  {
     id: 'vat-recon-drawer-compare-divider',
     title: 'Reconciliation drawer: divider between From ERP and From Coretax',
     description:

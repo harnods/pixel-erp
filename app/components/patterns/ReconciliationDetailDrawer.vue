@@ -258,10 +258,15 @@ const candidatesTitle = computed(() =>
     <!-- State-driven footer -->
     <template #footer>
       <template v-if="pair">
-        <MpButton variant="ghost" is-rounded @click="act(t('Opening Coretax…'))">
-          {{ t('Open in Coretax') }}
+        <!-- Drawer footer: ghost Cancel left; secondary + primary right
+             (BillsFiltersDrawer shell, rule/form-actions-always-present). -->
+        <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" data-devchange="vat-recon-drawer-footer" @click="close">
+          {{ t('Cancel') }}
         </MpButton>
-        <div class="rdd-footer-actions">
+        <div class="rdd-footer-actions" data-devchange="vat-recon-drawer-footer">
+          <MpButton v-if="pair.djp" class="btn-enterprise btn-enterprise--secondary" variant="secondary" is-rounded type="button" @click="act(t('Opening Coretax…'))">
+            {{ t('Open in Coretax') }}
+          </MpButton>
           <VatReconciliationPairActions
             :pair="pair"
             :side="side"
