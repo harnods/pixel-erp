@@ -116,7 +116,7 @@ function canUnreserveGroup(g: { lines: StockRequestLine[] }): boolean {
   return canUnreserve.value && g.lines.some(l => l.reserved > 0)
 }
 function groupHasActions(g: { lines: StockRequestLine[]; toTransfer: number }): boolean {
-  return g.toTransfer > 0 || canUnreserveGroup(g)
+  return canReserveGroup(g) || g.toTransfer > 0 || canUnreserveGroup(g)
 }
 function openGroupUnreserve(g: { lines: StockRequestLine[] }) {
   unreserveGroupLines.value = g.lines
@@ -366,11 +366,6 @@ function saveSerials(serials: string[]) {
                  Reservation is taken per warehouse — stock is committed at one —
                  so the action belongs beside the group it acts on, not on the
                  page header. -->
-            <button
-              v-if="canReserveGroup(g)"
-              class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-              @click="openGroupReserve(g)"
-            >{{ t('Reserve stock') }}</button>
             <!-- What to do about a shortfall at THIS warehouse. Both documents open
                  prefilled with this group's short lines (see shortfallLinesForRequest). -->
             <MpPopover
@@ -385,6 +380,7 @@ function saveSerials(serials: string[]) {
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
                 <MpPopoverList>
+                  <MpPopoverListItem v-if="canReserveGroup(g)" @click="openGroupReserve(g)">{{ t('Reserve stock') }}</MpPopoverListItem>
                   <MpPopoverListItem v-if="g.toTransfer > 0" @click="createPurchaseRequest(g.warehouseId)">{{ t('Create purchase request') }}</MpPopoverListItem>
                   <MpPopoverListItem v-if="g.toTransfer > 0" @click="createWarehouseTransfer(g.warehouseId)">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
                   <MpPopoverListItem v-if="canUnreserveGroup(g)" @click="openGroupUnreserve(g)">{{ t('Unreserve') }}</MpPopoverListItem>

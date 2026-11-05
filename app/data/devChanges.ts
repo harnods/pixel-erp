@@ -31,7 +31,7 @@ export const DEV_CHANGES: DevChange[] = [
     id: 'sr-group-actions',
     title: 'Stock request: Actions per warehouse, prefilled documents',
     description:
-      'The Actions button left the page title and now sits on each warehouse group, listing Create purchase request and Create warehouse transfer (plus Unreserve while the work order has not started). Both open prefilled with THAT warehouse\u2019s short lines: product, the missing qty, the destination warehouse and a memo naming the stock request. Purchase request used to ignore the warehouse and take every short line; it is scoped now. The group only shows Actions when there is something to do there.',
+      'The Actions button left the page title and now sits on each warehouse group, listing Reserve stock, Create purchase request, Create warehouse transfer and Unreserve (while the work order has not started) — each only when it applies to that warehouse. Both open prefilled with THAT warehouse\u2019s short lines: product, the missing qty, the destination warehouse and a memo naming the stock request. Purchase request used to ignore the warehouse and take every short line; it is scoped now. The group only shows Actions when there is something to do there.',
     date: '2026-11-05',
     files: ['StockRequestDetailsPage.vue', 'NewPurchaseRequestPage.vue', 'WarehouseTransferFormPage.vue'],
   },
