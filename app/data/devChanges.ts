@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-unit-column',
+    title: 'Stock request: Unit is its own column',
+    description:
+      'The warehouse tables on the stock request details page and the Reserve materials drawer no longer repeat the unit after every number. The numbers stand alone and a single Unit column follows the last quantity column.',
+    date: '2026-11-05',
+    files: ['StockRequestDetailsPage.vue', 'ReserveMaterialsModal.vue'],
+  },
+  {
+    id: 'sr-available-follows-stock',
+    title: 'Stock request: Available qty follows warehouse stock',
+    description:
+      'A stock request line used to keep a stored Available qty that only Reserve and Unreserve moved. Stock adjustments, stock counts, warehouse transfers (both the destination and the origin), receipts and deliveries now change it too, so an out-of-stock line becomes reservable once stock is adjusted in or transferred, and loses availability when stock leaves the warehouse.',
+    date: '2026-11-05',
+    files: ['warehouseDetails.ts', 'stockRequests.ts'],
+  },
+  {
     id: 'icon-names-fixed-merge',
     title: 'More missing icons now show',
     description:

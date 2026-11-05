@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import { STAFF, shiftDays, TODAY_ISO } from './master'
 import { workOrders, workOrderRawMaterials, type WorkOrder, type WorkOrderStatus, type WorkOrderRawMaterial } from './workOrders'
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
-import { getWarehouseDetail, isBatchTracked, isSerialized } from './warehouseDetails'
+import { getWarehouseDetail, isBatchTracked, isSerialized, onStockChange } from './warehouseDetails'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { logActivityFor } from './reservationActivityLog'
 import type { PartialMode } from './productionSettings'
@@ -509,6 +509,28 @@ function nextRequestNumber(): string {
 export function persistStockRequests(): void {
   saveSnapshot(SNAPSHOT_KEY, stockRequests)
 }
+
+/**
+ * Keep every line's "available at the destination" in step with the warehouse it reads
+ * from. A stock adjustment, warehouse transfer, receipt or delivery moves on-hand, and
+ * the stock request must show it: an out-of-stock line becomes reservable once stock is
+ * adjusted in, and a transfer out of the destination takes availability with it.
+ *
+ * Delta-based on purpose — the figure is already net of what open requests hold
+ * reserved, and reserving / unreserving moves it themselves, so only the stock change
+ * is applied here. Consume / Return never touch warehouse stock, so they can't double up.
+ */
+onStockChange((warehouseId, sku, delta) => {
+  let touched = false
+  for (const req of stockRequests) {
+    for (const l of req.lines) {
+      if (l.destinationWarehouseId !== warehouseId || l.sku !== sku) continue
+      l.destAvailable = Math.max(0, l.destAvailable + delta)
+      touched = true
+    }
+  }
+  if (touched) persistStockRequests()
+})
 
 /**
  * Which work-order statuses reach the dashboard (PRD INV — Stock Request

@@ -384,7 +384,7 @@ function saveSerials(serials: string[]) {
                column template each one sized to its own content and the headers
                stepped sideways down the page. The colgroup + `table-layout: fixed`
                give them all one grid. -->
-          <table class="wod-table">
+          <table class="wod-table" data-devchange="sr-unit-column">
             <colgroup>
               <col class="wod-col-product">
               <col class="wod-col-qty">
@@ -392,6 +392,7 @@ function saveSerials(serials: string[]) {
               <col class="wod-col-qty">
               <col class="wod-col-qty">
               <col class="wod-col-qty">
+              <col class="wod-col-unit">
               <col class="wod-col-date">
               <col class="wod-col-status">
               <col class="wod-col-tracking">
@@ -405,6 +406,7 @@ function saveSerials(serials: string[]) {
                 <th class="wod-th wod-th--num">{{ t('Reserved qty') }}</th>
                 <th class="wod-th wod-th--num">{{ t('Consumed qty') }}</th>
                 <th class="wod-th wod-th--num">{{ t('Qty to transfer') }}</th>
+                <th class="wod-th">{{ t('Unit') }}</th>
                 <th class="wod-th">{{ t('Required date') }}</th>
                 <th class="wod-th">{{ t('Status') }}</th>
                 <th class="wod-th">{{ t('Batch / SN') }}</th>
@@ -432,13 +434,14 @@ function saveSerials(serials: string[]) {
                     >{{ t('View log') }}</span>
                   </div>
                 </td>
-                <td class="wod-td wod-td--num">{{ l.qty }} {{ l.unit }}</td>
-                <td class="wod-td wod-td--num" :class="{ 'srd-warn': l.destAvailable < l.qty - lineCovered(l) }">{{ l.destAvailable }} {{ l.unit }}</td>
-                <td class="wod-td wod-td--num">{{ l.reserved }} {{ l.unit }}</td>
-                <td class="wod-td wod-td--num srd-muted">{{ l.consumed }} {{ l.unit }}</td>
+                <td class="wod-td wod-td--num">{{ l.qty }}</td>
+                <td class="wod-td wod-td--num" :class="{ 'srd-warn': l.destAvailable < l.qty - lineCovered(l) }">{{ l.destAvailable }}</td>
+                <td class="wod-td wod-td--num">{{ l.reserved }}</td>
+                <td class="wod-td wod-td--num srd-muted">{{ l.consumed }}</td>
                 <td class="wod-td wod-td--num" :class="lineToTransfer(l) > 0 ? 'srd-short' : 'srd-muted'">
-                  {{ lineToTransfer(l) > 0 ? `${lineToTransfer(l)} ${l.unit}` : '—' }}
+                  {{ lineToTransfer(l) > 0 ? lineToTransfer(l) : '—' }}
                 </td>
+                <td class="wod-td">{{ l.unit }}</td>
                 <td class="wod-td">{{ formatDate(l.requiredDate) }}</td>
                 <td class="wod-td">
                   <ErpStatusBadge :status="lineStatus(l)" :label="t(READINESS_LABEL[lineStatus(l)] ?? '')" />
@@ -580,6 +583,7 @@ function saveSerials(serials: string[]) {
 .wod-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 1380px; }
 .wod-col-product   { width: 240px; }
 .wod-col-qty       { width: 128px; }
+.wod-col-unit      { width: 128px; }
 .wod-col-date      { width: 128px; }
 .wod-col-status    { width: 140px; }
 .wod-col-tracking  { width: 128px; }

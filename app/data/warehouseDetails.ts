@@ -278,20 +278,46 @@ export function consumeReservation(orderId: string, warehouseId: string, sku: st
   return qty - remaining
 }
 
+/**
+ * Who wants to know when a warehouse's on-hand moves. Stock requests hold a per-line
+ * "available at the destination" figure; a stock adjustment, transfer, receipt or
+ * delivery changes the stock that figure is read from, so they subscribe here rather
+ * than this module importing them (stockRequests already imports this one).
+ */
+type StockChangeListener = (warehouseId: string, sku: string, deltaOnHand: number) => void
+const stockChangeListeners: StockChangeListener[] = []
+export function onStockChange(cb: StockChangeListener): void { stockChangeListeners.push(cb) }
+function emitStockChange(warehouseId: string, sku: string, delta: number) {
+  if (delta === 0) return
+  for (const cb of stockChangeListeners) cb(warehouseId, sku, delta)
+}
+
 export function applyStockCount(warehouseId: string, lines: { sku: string; qty: number }[]) {
   if (!stockOverlay[warehouseId]) stockOverlay[warehouseId] = {}
-  for (const l of lines) stockOverlay[warehouseId]![l.sku] = Math.max(0, l.qty)
+  const wh = getWarehouseDetail(warehouseId)
+  const changes: { sku: string; delta: number }[] = []
+  for (const l of lines) {
+    const current = wh?.stock.find(s => s.sku === l.sku)?.onHand ?? 0
+    const next = Math.max(0, l.qty)
+    stockOverlay[warehouseId]![l.sku] = next
+    changes.push({ sku: l.sku, delta: next - current })
+  }
   persistOverlay()
+  for (const c of changes) emitStockChange(warehouseId, c.sku, c.delta)
 }
 
 export function applyStockInOut(warehouseId: string, lines: { sku: string; qty: number }[]) {
   if (!stockOverlay[warehouseId]) stockOverlay[warehouseId] = {}
   const wh = getWarehouseDetail(warehouseId)
+  const changes: { sku: string; delta: number }[] = []
   for (const l of lines) {
     const current = stockOverlay[warehouseId]![l.sku] ?? wh?.stock.find(s => s.sku === l.sku)?.onHand ?? 0
-    stockOverlay[warehouseId]![l.sku] = Math.max(0, current + l.qty)
+    const next = Math.max(0, current + l.qty)
+    stockOverlay[warehouseId]![l.sku] = next
+    changes.push({ sku: l.sku, delta: next - current })
   }
   persistOverlay()
+  for (const c of changes) emitStockChange(warehouseId, c.sku, c.delta)
 }
 
 /** Allocatable units for a SKU (onHand − reserved) — 0 if the SKU isn't stocked. */

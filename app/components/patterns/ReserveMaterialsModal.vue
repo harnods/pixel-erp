@@ -119,7 +119,7 @@ function submit() {
       </p>
 
       <div class="rm-table-wrap">
-        <table class="rm-table">
+        <table class="rm-table" data-devchange="sr-unit-column">
           <thead>
             <tr>
               <th class="rm-th rm-th--check">
@@ -129,6 +129,7 @@ function submit() {
               <th class="rm-th rm-th--num">{{ t('Needed') }}</th>
               <th class="rm-th rm-th--num">{{ t('Available') }}</th>
               <th class="rm-th rm-th--num">{{ t('To reserve') }}</th>
+              <th class="rm-th">{{ t('Unit') }}</th>
               <th class="rm-th">{{ t('Readiness') }}</th>
             </tr>
           </thead>
@@ -146,15 +147,16 @@ function submit() {
                 <span class="rm-product">{{ r.product }}</span>
                 <span class="rm-sku">{{ r.sku }}</span>
               </td>
-              <td class="rm-td rm-td--num">{{ r.needed }} {{ r.unit }}</td>
-              <td class="rm-td rm-td--num">{{ r.available }} {{ r.unit }}</td>
+              <td class="rm-td rm-td--num">{{ r.needed }}</td>
+              <td class="rm-td rm-td--num">{{ r.available }}</td>
               <td class="rm-td rm-td--num">
                 <template v-if="r.toReserve > 0">
-                  {{ r.toReserve }} {{ r.unit }}
+                  {{ r.toReserve }}
                   <span v-if="r.toReserve < r.outstanding" class="rm-short">{{ t('of') }} {{ r.outstanding }}</span>
                 </template>
                 <template v-else>—</template>
               </td>
+              <td class="rm-td">{{ r.unit }}</td>
               <td class="rm-td">
                 <MpBadge for="tableStatus" :type="READINESS[r.readiness].type" size="sm">
                   {{ t(READINESS[r.readiness].label) }}
