@@ -163,7 +163,46 @@ ticked) reads as if there's no checkbox at all. Fixed globally in `erp.css` ›
 `.mp-checkbox__root[aria-disabled="true"] .mp-checkbox__control` to use
 `border.default` (`#e3e7e9`) — visible but still clearly muted/inactive.
 
+## 10. MpFormLabel — the documented `#icon` slot doesn't exist in this build
+
+Pixel's Form control docs put a field's help affordance in an **`#icon` slot** on
+`MpFormLabel`:
+
+```vue
+<MpFormLabel>
+  Username
+  <template #icon><MpIcon name="info" size="sm" v-tooltip="'…'" /></template>
+</MpFormLabel>
+```
+
+In this Pixel3 build that slot is **not rendered** — `form-control-slot-recipe`
+only declares `root · label · required · helpText · errorMessage`, so the icon
+silently disappears and the field loses its explanation. Keep the library's
+markup — `MpIcon name="info"` (not `information`) + the `v-tooltip` directive —
+but put it **inline in the label's default slot** with a small left margin
+(`.pm-label-icon` in `project-mto.css`). Revisit when Pixel ships the slot.
+
+A field-label tooltip is the home for the "why/what goes here" text that used to
+sit under the field as `MpFormHelpText`: one short line, `placement="top"`.
+
 ---
+
+---
+
+## 10. Row kebab (`.row-kebab`) — icon collapses to 0px
+
+Pixel's `MpButton` applies **16px left + 16px right** padding (`box-sizing:
+border-box`). About 45 tables render the row `[…]` trigger as
+`<MpButton class="row-kebab">` with a raw inline `<svg width="20">` child (left over
+from the Pixel 3 migration of the old hand-rolled `<button class="row-kebab">`). The
+page's `.row-kebab { width: 32px }` then leaves a **0px content box**, and the svg —
+a shrinkable flex item — renders **0px wide**: the button exists and its menu opens,
+but users see nothing. Fixed globally in `erp.css` › `.row-kebab` (no horizontal
+padding) + `.row-kebab > svg` (`flex-shrink: 0`). erp.css is unlayered, so no
+`!important` is needed; a page whose scoped `.row-kebab` sets its own small padding
+keeps it. Kebabs built with `<MpButton left-icon="menu-kebab">` are unaffected and
+are the preferred form for new code. See `rule/table-row-kebab-icon`; guarded by
+`tests/pixel-police.spec.ts`.
 
 ## Rule of thumb
 

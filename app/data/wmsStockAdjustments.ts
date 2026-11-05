@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { commitDrawerBatches } from './productDetails'
 import { warehouses } from './warehouses'
 import { operatorForWarehouse } from './warehouseTeam'
 import { warehouseProducts, PRODUCTS } from './inventory'
@@ -320,6 +321,8 @@ export function addWmsAdjustment(input: AdjustmentInput & { skipStockMutation?: 
     applyStockInOut(input.warehouseId, input.lines)
   }
   wmsStockAdjustments.unshift(adj)
+  // Saved batches reach the batch master (ATINV-9082).
+  for (const l of input.lines) if (l.batches?.length) commitDrawerBatches(l.sku, l.batches)
   persist()
   return adj
 }

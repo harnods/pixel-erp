@@ -84,7 +84,8 @@ export type ProjectAction = 'project-creation' | 'variation-order' | 'milestone-
 
 export const PROJECT_ACTION_OPTIONS: { value: ProjectAction; label: string }[] = [
   { value: 'project-creation',       label: 'Project creation' },
-  { value: 'variation-order',        label: 'Variation order' },
+  // Wire id stays 'variation-order'; the product word is Addendum.
+  { value: 'variation-order',        label: 'Addendum' },
   { value: 'milestone-verification', label: 'Milestone verification' },
 ]
 
@@ -114,7 +115,7 @@ export function amountFieldVisible(appliesTo: ApprovalAppliesTo, projectAction: 
 export function amountFieldLabel(appliesTo: ApprovalAppliesTo, projectAction: ProjectAction | ''): string {
   if (appliesTo === 'transaction') return 'Amount higher than'
   if (projectAction === 'project-creation') return 'Contract value higher than'
-  if (projectAction === 'variation-order') return 'Variation delta higher than'
+  if (projectAction === 'variation-order') return 'Addendum value change higher than'
   return ''
 }
 
@@ -126,20 +127,35 @@ export function projectScopeFieldVisible(appliesTo: ApprovalAppliesTo, projectAc
   return projectAction === 'variation-order' || projectAction === 'milestone-verification'
 }
 
-/** Lightweight project directory backing the "Some projects" picker — this prototype has no
- *  Projects module yet, so this is standalone mock data (not shared with any other feature). */
+/** Project directory backing the "Some projects" picker. Ids and names are the Project
+ *  accounting engagements (projectAccounting.ts), so a rule scope resolves to a real project.
+ *  Seeded with the seed engagements; projectAccounting.ts calls syncApprovalProjects() at load
+ *  and on create so projects added later are pickable too (one-way import, no cycle). */
 export interface Project {
   id: string
   name: string
 }
 
-export const projects: Project[] = [
-  { id: 'proj-1', name: 'Menara Sudirman Renovation' },
-  { id: 'proj-2', name: 'Gudang Bekasi Expansion' },
-  { id: 'proj-3', name: 'ERP Rollout Phase 2' },
-  { id: 'proj-4', name: 'Cikarang Plant Retrofit' },
-  { id: 'proj-5', name: 'Jakarta HQ Fit-out' },
-]
+export const projects: Project[] = reactive<Project[]>([
+  { id: 'e1', name: 'Financial Statement Audit 2025' },
+  { id: 'e2', name: 'Annual Tax Consulting' },
+  { id: 'e3', name: 'Monthly Retainer' },
+  { id: 'e5', name: 'Home Terrace Renovation' },
+  { id: 'e6', name: 'Wedding Organizer — Amanda & Reza' },
+  { id: 'e7', name: 'Cikarang Warehouse Construction' },
+])
+
+/** Keep the picker in step with the engagement list (adds new, renames, drops removed). */
+export function syncApprovalProjects(list: { id: string; name: string }[]): void {
+  list.forEach((e) => {
+    const p = projects.find((x) => x.id === e.id)
+    if (p) p.name = e.name
+    else projects.push({ id: e.id, name: e.name })
+  })
+  for (let i = projects.length - 1; i >= 0; i--) {
+    if (!list.some((e) => e.id === projects[i]!.id)) projects.splice(i, 1)
+  }
+}
 
 export function getProjectById(id: string): Project | undefined {
   return projects.find((p) => p.id === id)
@@ -224,7 +240,7 @@ function woSeedRule(id: string, name: string, description: string, type: WoTrans
 }
 const SUPERVISOR_THEN_MANAGER = [['Budi Santoso'], ['Sari Indah', 'Dewi Rahayu']]
 const WO_SEED_RULES: ApprovalWorkflowRule[] = [
-  woSeedRule('awf-007', 'Start work order approval', 'Supervisor then production manager approve starting a work order', 'start', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:00:00'),
+  woSeedRule('awf-012', 'Start work order approval', 'Supervisor then production manager approve starting a work order', 'start', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:00:00'),
   woSeedRule('awf-009', 'Work order adjustment approval', 'Corrections to a run are reviewed before they change the work order', 'adjustment', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:10:00'),
   woSeedRule('awf-010', 'Work order completion approval', 'Output is reviewed before the work order closes', 'completion', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:20:00'),
   woSeedRule('awf-011', 'Work order cancel/close approval', 'Remaining WIP is never written off unreviewed', 'cancel', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:30:00'),
@@ -294,12 +310,12 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   {
     id: 'awf-004',
     name: 'Milestone Verification Rule 001',
-    description: 'Requires PM sign-off before a milestone is marked verified',
+    description: 'Owner approves milestone verification before revenue is recognized',
     appliesTo: 'project',
     transactionType: '',
     projectAction: 'milestone-verification',
     projectScope: 'some',
-    projectIds: [projIdOf('Menara Sudirman Renovation'), projIdOf('Gudang Bekasi Expansion')].filter(Boolean),
+    projectIds: [projIdOf('Cikarang Warehouse Construction')].filter(Boolean),
     minAmount: null,
     createdByScope: 'all',
     createdByUserIds: [],
@@ -314,7 +330,7 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   {
     id: 'awf-005',
     name: 'Project Creation Rule 001',
-    description: 'Large contracts require director approval before a project is created',
+    description: 'Projects with a contract value above Rp500.000.000 need approval before they start',
     appliesTo: 'project',
     transactionType: '',
     projectAction: 'project-creation',
@@ -324,7 +340,7 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
     createdByScope: 'all',
     createdByUserIds: [],
     levels: [
-      { id: 'lvl-1', matchType: 'all', approverIds: [idOf('Rizal Candra'), idOf('Budi Santoso')].filter(Boolean) },
+      { id: 'lvl-1', matchType: 'any', approverIds: [idOf('Rizal Candra'), idOf('Budi Santoso')].filter(Boolean) },
     ],
     applyToDraft: true,
     isActive: true,
@@ -333,8 +349,8 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   },
   {
     id: 'awf-006',
-    name: 'Variation Order Rule 001',
-    description: 'Variation orders that grow scope beyond the original contract need sign-off',
+    name: 'Addendum Rule 001',
+    description: 'Addenda that change the contract value by more than Rp25.000.000 need approval',
     appliesTo: 'project',
     transactionType: '',
     projectAction: 'variation-order',
@@ -354,7 +370,7 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   ...WO_SEED_RULES,
 ]
 
-const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v3'
+const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v6'
 const snapshot = loadSnapshot<ApprovalWorkflowRule>(APPROVAL_WORKFLOWS_KEY)
 export const approvalWorkflows = reactive<ApprovalWorkflowRule[]>(snapshot ?? [...SEED_APPROVAL_WORKFLOWS])
 
@@ -495,17 +511,13 @@ export function deleteApprovalWorkflow(id: string): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// check_approval_required — the interface contract Project Creation, Variation
-// Order, and Milestone Verification flows call before executing their gated
-// action (spec §5). Names/shape follow the spec verbatim rather than this
-// file's usual camelCase so callers can match the contract directly.
-//
-// NOTE: this prototype has no Project Creation / Variation Order / Milestone
-// Verification modules yet (no Projects feature exists in this app), so
-// nothing calls this today — it exists to be correct and ready for those
-// modules once built. `status` here reflects only "would a rule gate this
-// action" (no_rule | pending); a real implementation would also need to look
-// up an in-flight submission's actual status to report "approved".
+// check_approval_required — the interface contract the Project accounting
+// flows (project creation, addendum, milestone verification) call before
+// executing their gated action (spec §5). Names/shape follow the spec verbatim
+// rather than this file's usual camelCase so callers can match the contract.
+// projectAccounting.ts is the caller: a match stores a PendingApproval on the
+// project and the action waits for an approver. `status` reflects only "would
+// a rule gate this action" (no_rule | pending).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ApprovalLevelResult {

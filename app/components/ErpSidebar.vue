@@ -155,6 +155,7 @@ import { receiptCountsByStage } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { awaitingApprovalGroupCounts, awaitingApprovalTasks } from '~/data/tasks'
+import { pendingApprovals } from '~/data/projectApprovals'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -400,6 +401,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
   [
     // Data migration sits on its own with a divider above it.
     { label: 'Data migration' },
+    { label: 'WMS data migration' },
   ],
 ]
 
@@ -473,8 +475,37 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Fixed assets', children: [
             { label: 'Assets' },
             { label: 'Depreciation schedule' },
+            { label: 'Tax book' },
+            { label: 'Tax differences' },
+            { label: 'Lampiran 9' },
+            { label: 'Asset roll-forward' },
+            { label: 'Impairment tests' },
+            { label: 'Period self-check' },
+            { label: 'Custody & counts' },
+            { label: 'Asset approvals' },
+            { label: 'Leases' },
+            { label: 'Asset migration' },
+            { label: 'Asset settings' },
+          ] },
+          { label: 'Fixed assets (current)', children: [
+            { label: 'Asset list', to: 'Current assets' },
+            { label: 'Depreciation', to: 'Current asset depreciation' },
+          ] },
+          { label: 'Budgets', children: [
+            { label: 'Budget lines' },
+            { label: 'Budget changes' },
+            { label: 'Saving bucket' },
+            { label: 'Commitments' },
+            { label: 'Budget report' },
+            { label: 'Budget settings' },
+          ] },
+          { label: 'Payroll', children: [
+            { label: 'Payroll inbox' },
+            { label: 'Payroll payables' },
+            { label: 'Payroll settings' },
           ] },
           { label: 'Bank rules' },
+          { label: 'Project accounting' },
         ],
         [{ label: 'Accounting settings', iconType: 'settings' }],
       ],
@@ -490,6 +521,9 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Sales deliveries' },
           { label: 'Sales orders' },
           { label: 'Sales quotes' },
+          { label: 'Join invoice' },
+          { label: 'Progress invoice' },
+          { label: 'Proforma invoice' },
         ],
         [
           { label: 'Customers', iconType: 'shortcut' },
@@ -508,6 +542,7 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Purchase orders' },
           { label: 'Purchase quotes' },
           { label: 'Purchase requests' },
+          { label: 'Join purchase invoices' },
         ],
         [
           { label: 'Vendors', iconType: 'shortcut' },
@@ -529,6 +564,8 @@ const erpNavGroups: NavItem[][] = [
           { label: 'Categories' },
           { label: 'Variant options' },
           { label: 'Units' },
+          // Batch Attribute: the company's Grade List (PM-confirmed placement).
+          { label: 'Grades' },
           { label: 'Price rules' },
         ],
         [
@@ -565,6 +602,29 @@ const erpNavGroups: NavItem[][] = [
         [{ label: 'Production reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Production' } }, { label: 'Production settings', iconType: 'settings' }],
       ],
     },
+    {
+      // Project MTO — job costing for custom make-to-order + service engagements.
+      // Rail per PRD: Projects · Approvals (badged) · Documents · Stock
+      // availability · Site change capture, plus Audit log (P3) and Project settings.
+      // The budget baseline is owned by a separate Budget module, not by this rail.
+      // The Approvals count is a getter so the (static) nav
+      // array still re-renders when the pending count changes.
+      name: 'Projects', icon: 'briefcase',
+      submenu: [
+        [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'Documents', to: 'Project documents' }],
+        [{ label: 'Stock availability' }, { label: 'Site change capture' }],
+        [{ label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
+      ],
+      expandOnClick: [
+        [
+          { label: 'Projects' },
+          { label: 'Approvals', to: 'Project approvals', get count() { return pendingApprovals().length || undefined } },
+          { label: 'Documents', to: 'Project documents' },
+        ],
+        [{ label: 'Stock availability' }, { label: 'Site change capture' }],
+        [{ label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
+      ],
+    },
   ],
   [
     {
@@ -575,28 +635,28 @@ const erpNavGroups: NavItem[][] = [
             label: 'Customers',
             panelSubmenu: [[
               { label: 'Customers' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=customers' },
             ]],
           },
           {
             label: 'Vendors',
             panelSubmenu: [[
               { label: 'Vendors' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=vendors' },
             ]],
           },
           {
             label: 'Employees',
             panelSubmenu: [[
               { label: 'Employees' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=employees' },
             ]],
           },
           {
             label: 'Other contacts',
             panelSubmenu: [[
               { label: 'Other contacts' },
-              { label: 'Contact groups' },
+              { label: 'Contact groups', path: '/contact-groups?type=others' },
             ]],
           },
         ],
@@ -855,6 +915,21 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
           }
           if (sub) break
         }
+        // Same collision on an expandOnClick item, whose children live in the
+        // promoted panel instead of panelSubmenu (e.g. Projects › Projects, both
+        // /projects — and every /projects/:id detail route resolves to that key).
+        // Without this the sub stays null and the panel highlights whatever was
+        // last visited in the section instead of the page actually open.
+        if (!sub && item.expandOnClick) {
+          const groups = expandGroupsFor(item)
+          for (const g of groups) {
+            for (const p of g) {
+              if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) { sub = p.label; break }
+            }
+            if (sub) break
+          }
+          if (sub) return { nav: item.name, sub, panel: { title: item.name, groups, parentNavName: item.name } }
+        }
         return { nav: item.name, sub, panel }
       }
       // expandOnClick items: check their promoted-panel content BEFORE the plain
@@ -897,7 +972,10 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
           for (const pGroup of sub.panelSubmenu ?? []) {
             for (const p of pGroup) {
               if (!allowShortcuts && isPointer(p.iconType)) continue
-              if (labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
+              // A query-scoped path (Contacts › <type> › Contact groups) belongs to
+              // the panel whose path matches the full URL, not the first same-label item.
+              const queryScoped = !!p.path && p.path.includes('?')
+              if (queryScoped ? p.path === route.fullPath : labelToPath(p.to ?? p.label) === labelToPath(pageKey)) {
                 return {
                   nav: item.name,
                   sub: p.label,
@@ -952,6 +1030,8 @@ const SECTION_PARENT: Record<string, string> = {
   Delivery: 'Outbound delivery',
   Receiving: 'Inbound delivery',
   'Put away': 'Inbound delivery',
+  // /payroll-runs/:id is a payroll run record; anchor it under Accounting › Payroll inbox.
+  'Payroll runs': 'Payroll inbox',
   // The whole VAT reconciliation module hangs off Reports › Tax — the index is
   // a card on that page, and everything else is reached from inside the index
   // (a masa row → its workspace; the title bar → the rules). None of them has a

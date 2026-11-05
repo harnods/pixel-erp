@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/contacts/views/ContactDetailView.vue -->
 <script setup lang="ts">
 /**
  * Contact details — the master-data detail page for one contact.
@@ -13,7 +14,7 @@
 import { ref, computed, reactive, watch, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton, MpButtonGroup, MpTooltip,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpBadge, MpIcon, MpButton, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   toast, css,
 } from '@mekari/pixel3'
@@ -24,10 +25,12 @@ import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePa
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
 import { getCustomerTransactions, getCustomerTxnSummary, customerIdForContact, type CustomerTransaction } from '~/data/customerTransactions'
 import { vendors } from '~/data/vendors'
 import { formatIDR } from '~/utils/currency'
+import { infoToast } from '~/utils/toasts'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 
@@ -70,7 +73,7 @@ function goEdit() { router.push(`/${listSlug.value}/${props.orderId}/edit`) }
 const fullNameDisplay = computed(() => {
   const c = contact.value
   if (!c?.fullName) return ''
-  return c.title ? `${c.fullName} (${c.title})` : c.fullName
+  return c.title ? `${c.title} ${c.fullName}` : c.fullName
 })
 const creditLimitDisplay = computed(() =>
   contact.value?.creditLimit == null ? '' : formatIDR(contact.value.creditLimit))
@@ -189,6 +192,21 @@ function confirmDelete() {
 }
 // A contact with transactions on record can't be deleted (Delete is disabled).
 const canDeleteContact = computed(() => txnRows.value.length === 0)
+const deleteTitle = computed(() => {
+  const tp = contact.value?.types[0]
+  return tp === 'vendor' ? 'Delete vendor?' : tp === 'other' ? 'Delete other contact?' : 'Delete customer?'
+})
+const deleteMessage = computed(() => {
+  const tp = contact.value?.types[0]
+  return tp === 'vendor' ? 'Deleted vendor cannot be restored.' : tp === 'other' ? 'Deleted other contact cannot be restored.' : 'Deleted customer cannot be restored.'
+})
+
+/** Files-tab column width — from the shared standard, never hardcoded.
+ *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
+function colStyle(kind: ColumnKind) {
+  const { minWidth, maxWidth } = columnWidth(kind)
+  return { width: maxWidth, minWidth, maxWidth }
+}
 
 // Prototype placeholders for the actions menu (no data model yet).
 function soon() {}
@@ -211,7 +229,10 @@ function archiveContact() {
           </div>
 
           <div class="cd-bar-right">
-            <MpPopover id="cd-create-tx" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpTooltip v-if="contact.archived" id="cd-create-tx-tt" :label="t('Transactions cannot be created for an archived contact')" use-portal>
+              <MpButton variant="primary" is-rounded right-icon="chevrons-down" @click="infoToast(t('Transactions cannot be created for an archived contact'))">{{ t('Create transaction') }}</MpButton>
+            </MpTooltip>
+            <MpPopover v-else id="cd-create-tx" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
                 <MpButton variant="primary" is-rounded right-icon="chevrons-down">{{ t('Create transaction') }}</MpButton>
               </MpPopoverTrigger>
@@ -227,10 +248,8 @@ function archiveContact() {
 
             <MpPopover id="cd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
               <MpPopoverTrigger>
-                <MpButton class="cd-kebab" :aria-label="t('More actions')">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
-                  </svg>
+                <MpButton class="btn-enterprise cd-kebab" :aria-label="t('More actions')">
+                  <MpIcon name="menu-kebab" size="md" />
                 </MpButton>
               </MpPopoverTrigger>
               <MpPopoverContent :class="css({ minWidth: '200px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -239,6 +258,7 @@ function archiveContact() {
                 </MpPopoverList>
                 <div :class="css({ height: 'var(--mp-sizes-px, 1px)', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
                 <MpPopoverList>
+                  <MpPopoverListItem @click="router.push('/sales-report/sales-by-customer')">{{ t('Statement report') }}</MpPopoverListItem>
                   <MpPopoverListItem @click="goEdit">{{ t('Edit') }}</MpPopoverListItem>
                   <MpPopoverListItem @click="soon">{{ t('Merge contact') }}</MpPopoverListItem>
                   <MpPopoverListItem @click="soon">{{ t('Add to contact group') }}</MpPopoverListItem>
@@ -283,10 +303,10 @@ function archiveContact() {
                   </ContentList>
                   <ContentList :label="t('Mobile')" :value="contact.mobile || undefined" />
 
-                  <ContentList :label="contact.identityType" :value="contact.identityNumber || undefined" />
+                  <ContentList :label="t('Identity')" :value="contact.identityNumber ? `${contact.identityType} ${contact.identityNumber}` : undefined" />
                   <ContentList :label="t('Contact group')">
                     <template v-if="contact.groups.length">
-                      <a v-for="g in contact.groups" :key="g" class="cd-link content-list__line">{{ g }}</a>
+                      <a v-for="g in contact.groups" :key="g" class="cd-link content-list__line" @click="router.push(`/contact-groups?type=${listSlug === 'other-contacts' ? 'others' : listSlug}`)">{{ g }}</a>
                     </template>
                     <template v-else>—</template>
                   </ContentList>
@@ -310,6 +330,7 @@ function archiveContact() {
                 <div class="cd-section-head">
                   <h2 class="cd-section-title cd-section-title--inline">{{ t('Tax info') }}</h2>
                   <MpBadge
+                    v-if="contact.domicile === 'domestic' && contact.npwp"
                     for="additionalInformation" size="sm"
                     :type="contact.taxStatus === 'validated' ? 'completed' : 'announcement'"
                   >
@@ -334,9 +355,9 @@ function archiveContact() {
               </section>
 
               <!-- Bank info — one column per account -->
-              <section class="cd-section">
+              <section v-if="contact.banks.length" class="cd-section">
                 <h2 class="cd-section-title">{{ t('Bank info') }}</h2>
-                <div v-if="contact.banks.length" class="cd-grid">
+                <div class="cd-grid">
                   <div v-for="(bank, i) in contact.banks" :key="bank.id" class="cd-bank">
                     <div class="cd-bank-head">
                       <span class="cd-bank-title">
@@ -352,7 +373,6 @@ function archiveContact() {
                     <ContentList :label="t('Account name')" :value="bank.accountName || undefined" />
                   </div>
                 </div>
-                <p v-else class="cd-empty">{{ t('No bank account added.') }}</p>
               </section>
 
               <!-- Default settings -->
@@ -369,9 +389,7 @@ function archiveContact() {
               <!-- Memo -->
               <section class="cd-section cd-section--last">
                 <h2 class="cd-section-title">{{ t('Memo') }}</h2>
-                <div class="cd-grid">
-                  <ContentList :label="t('Memo')" :value="contact.memo || undefined" />
-                </div>
+                <p class="cd-memo">{{ contact.memo || '—' }}</p>
                 <a class="cd-updated">{{ lastUpdatedDisplay }}</a>
               </section>
 
@@ -502,13 +520,28 @@ function archiveContact() {
 
           <!-- ─────────── Files ─────────── -->
           <MpTabPanel value="files">
-            <section class="cd-section cd-section--last">
-              <h2 class="cd-section-title">{{ t('Files') }}</h2>
-              <p class="cd-empty">
-                <MpIcon name="attachment" size="md" />
-                {{ t('No files attached to this contact.') }}
-              </p>
-            </section>
+            <div class="cd-tx-toolbar">
+              <MpButton variant="secondary" is-rounded left-icon="upload" @click="infoToast(t('Not in this prototype'))">{{ t('Upload file') }}</MpButton>
+            </div>
+            <table class="cd-table">
+              <colgroup>
+                <col :style="colStyle('date')" />
+                <col :style="colStyle('name')" />
+                <col :style="colStyle('number')" />
+                <col />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>{{ t('Date') }}</th>
+                  <th>{{ t('File') }}</th>
+                  <th>{{ t('Related transaction') }}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="4" class="cd-td--empty">{{ t('No files yet.') }}</td></tr>
+              </tbody>
+            </table>
           </MpTabPanel>
 
         </MpTabPanels>
@@ -517,8 +550,8 @@ function archiveContact() {
 
     <ConfirmModal
       v-model:is-open="isDeleteModalOpen"
-      :title="t('Delete contact?')"
-      :description="`${contact.displayName} ${t('will be removed from your contact list.')}`"
+      :title="t(deleteTitle)"
+      :description="t(deleteMessage)"
       :confirm-label="t('Delete')"
       @confirm="confirmDelete"
     />
@@ -674,6 +707,40 @@ function archiveContact() {
 .cd-txn-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-9) var(--mp-spacing-4); color: var(--mp-text-secondary); }
 .cd-txn-empty-title { margin: 0; font-size: var(--mp-font-sizes-lg, 1rem); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .cd-txn-empty-desc { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+.cd-memo { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: pre-line; }
+.cd-tx-toolbar { display: flex; align-items: center; margin: var(--mp-spacing-6) 0 var(--mp-spacing-4); }
+.cd-tx-toolbar:first-child { margin-top: 0; }
+/* ── Related-records table (Files tab) ── */
+.cd-table-wrap { overflow-x: auto; }
+.cd-table { width: 100%; border-collapse: collapse; }
+.cd-table th {
+  height: var(--mp-sizes-7, 28px);
+  padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
+  background: var(--mp-background-surface, #f1f5f9);
+  text-align: left; text-transform: uppercase;
+  font-size: 12px; font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary);
+  white-space: nowrap;
+}
+.cd-table td {
+  min-height: var(--mp-sizes-10, 40px);
+  padding: var(--mp-spacing-2\.5, 10px) var(--mp-spacing-4) var(--mp-spacing-2\.5, 10px) var(--mp-spacing-2);
+  border-bottom: 1px solid var(--mp-border-default);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); vertical-align: middle;
+}
+.cd-table th.cd-td--right,
+.cd-table td.cd-td--right { text-align: right; }
+.cd-table td.cd-td--empty { text-align: center; color: var(--mp-text-secondary); padding: var(--mp-spacing-6) 0; }
+
+/* Summary strip — same stat-card classes as BillsIndexPage */
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; }
+.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-amount--sm { font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); }
+.stat-amount--danger { color: var(--mp-text-danger); }
 
 .cd-missing {
   display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-4);

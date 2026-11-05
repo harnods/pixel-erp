@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/multidimensional/views/MultidimensionalIndex.vue -->
 <!--
   Settings > Dimensions — management table (shown once the tenant has clicked
   "Start using Dimensions" on DimensionsPaywallPage.vue). Lists every
@@ -10,8 +11,7 @@
   "+ New dimension" (page title bar, [...slug].vue, signalled via
   useDimensionsFormDrawer) and each row's kebab "Edit" action both open
   DimensionFormDrawer.vue (create/edit form — name, transaction type, values,
-  mandatory toggle). "View details" still shows a "coming soon" toast — no
-  detail page exists yet.
+  mandatory toggle). "Open preview" opens DimensionDetailDrawer.
 -->
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -29,7 +29,6 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import DimensionFormDrawer from '~/components/patterns/DimensionFormDrawer.vue'
 import DimensionDetailDrawer from '~/components/patterns/DimensionDetailDrawer.vue'
-import { infoToast } from '~/utils/toasts'
 import {
   dimensions, DIMENSIONS_QUOTA, setDimensionStatus, deleteDimension, addDimension, updateDimension,
   transactionTypeLabel, DIMENSION_TRANSACTION_TYPE_OPTIONS, type Dimension, type DimensionInput,
@@ -46,7 +45,6 @@ function isAllTransactionTypes(dim: Dimension): boolean {
 
 const { t } = useLocale()
 
-function soon(what: string) { infoToast(`${what} — coming soon`) }
 
 // First-load skeleton (ERP guideline: 3 solid rows, ~1.2s) — also drives the
 // quota bar's Skeleton state (Figma "_Part / Quota", State=Skeleton).
@@ -110,6 +108,7 @@ const {
 
 // ── Status filter ──
 const statusOptions = [
+  { label: t('All status'), value: ''       },
   { label: t('Active'),   value: 'active'   },
   { label: t('Archived'), value: 'archived' },
 ]
@@ -139,7 +138,7 @@ const dimensionToArchive = ref<Dimension | null>(null)
 function handleToggleStatus(row: Dimension) {
   if (row.status === 'active') { dimensionToArchive.value = row; archiveModalOpen.value = true; return }
   setDimensionStatus(row.id, 'active')
-  toast.notify({ variant: 'success', title: t('Dimension activated'), maxWidth: 'max-content' })
+  toast.notify({ variant: 'success', title: t('Dimension unarchived'), maxWidth: 'max-content' })
 }
 function closeArchiveModal() { archiveModalOpen.value = false; dimensionToArchive.value = null }
 function confirmArchive() {
@@ -173,7 +172,7 @@ const formTarget = ref<Dimension | null>(null)
 
 function openCreateForm() {
   if (dimensions.length >= DIMENSIONS_QUOTA) {
-    toast.notify({ variant: 'error', title: t('Quota reached. Archive a dimension to create a new one.'), maxWidth: 'max-content' })
+    toast.notify({ variant: 'error', title: t('Quota reached. Archive a dimension to create a new one'), maxWidth: 'max-content' })
     return
   }
   formMode.value = 'create'
@@ -234,7 +233,12 @@ const emptyIllustration = '/illustrations/empty-folder.png'
       <div v-if="showQuota" class="dim-quota-row">
         <div class="dim-quota">
           <div class="dim-quota-label-row">
-            <span class="dim-quota-label">{{ t('Dimensions quota') }}</span>
+            <span class="dim-quota-label">
+              {{ t('Dimensions quota') }}
+              <MpTooltip :label="t('A dimension is a category you tag transaction lines with — SBU, Branch, Department, Project — so reports can break results down without new accounts. Only active dimensions count against your quota. Archive one to free a slot.')" placement="bottom-start">
+                <MpIcon name="info" size="sm" :aria-label="t('What is a dimension?')" class="dim-quota-info" />
+              </MpTooltip>
+            </span>
             <span v-if="!effectiveLoading" class="dim-quota-value">
               <span class="dim-quota-value-used">{{ quotaUsed }}</span>
               <span class="dim-quota-value-of">{{ t('of') }}</span>
@@ -248,7 +252,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
           {{ t('Gain deeper insights with more dimensions.') }}
           <a class="dim-quota-hint-link" @click="addQuotaModalOpen = true">{{ t('Add quota') }}</a>
         </p>
-        <p v-else-if="!effectiveLoading && quotaReached" class="dim-quota-hint">{{ t('Quota reached. Archive a dimension to create a new one.') }}</p>
+        <p v-else-if="!effectiveLoading && quotaReached" class="dim-quota-hint">{{ t('Quota reached. Archive a dimension to create a new one') }}</p>
       </div>
     </template>
 
@@ -263,9 +267,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <!-- Icon tools = ghost icon MpButtons in one MpButtonGroup + tooltips (rule/filter-bar-icon-group) -->
         <MpButtonGroup class="filter-btn-group">
           <ColumnSettingsMenu id="dim-columns" :items="columnItems" :visibility="columnVisibility" />
-          <MpTooltip :label="t('Export')" placement="bottom">
-            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="soon(t('Export'))" />
-          </MpTooltip>
         </MpButtonGroup>
         <div class="filter-search">
           <MpIcon name="search" size="sm" />
@@ -320,7 +321,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         </MpPopoverTrigger>
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
-            <MpPopoverListItem @click="openDetail(row as unknown as Dimension)">{{ t('View details') }}</MpPopoverListItem>
+            <MpPopoverListItem @click="openDetail(row as unknown as Dimension)">{{ t('Open preview') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openEditForm(row as unknown as Dimension)">{{ t('Edit') }}</MpPopoverListItem>
             <MpPopoverListItem @click="handleToggleStatus(row as unknown as Dimension)">
               {{ (row as unknown as Dimension).status === 'active' ? t('Archive') : t('Activate') }}
@@ -398,7 +399,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
-        {{ t('This dimension will no longer be available to tag on new transaction lines. You can activate it again anytime.') }}
+        {{ t('Archiving hides this dimension from the list and new transactions. Historical data stays intact.') }}
       </MpModalBody>
       <MpModalFooter>
         <MpButtonGroup class="erp-action-footer">
@@ -465,6 +466,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 </template>
 
 <style scoped>
+.dim-quota-info { display: inline-flex; vertical-align: middle; margin-left: 4px; color: var(--mp-colors-icon-default); cursor: help; }
 /* ── Quota bar (#stats slot, Figma "_Part / Quota") ──
    Outer row spans the full table width with a bottom divider; the label+bar
    column itself stays a fixed 280px (NOT full width) with the hint text below

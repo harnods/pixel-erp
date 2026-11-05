@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-frontend-app/src/pages/settings/pages/user-management/components/custom-roles/custom_roles_index.vue -->
 <script setup lang="ts">
 /**
  * Settings › Users & roles → "Custom role" tab.
@@ -16,6 +17,7 @@ import {
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import CustomRoleDrawer from '~/components/patterns/CustomRoleDrawer.vue'
+import CrmSeatsScenarioFab from '~/components/patterns/CrmSeatsScenarioFab.vue'
 import { successToast } from '~/utils/toasts'
 import {
   customRoles, deleteCustomRole, addCustomRole, grantedFeatureCount,
@@ -72,10 +74,16 @@ function duplicate(role: CustomRole) {
 }
 
 const deleteTarget = ref<CustomRole | null>(null)
+// Prod blocks deleting a custom role that is still assigned to users.
+const usedRoleTarget = ref<CustomRole | null>(null)
+function requestDelete(role: CustomRole) {
+  if (role.assignedUsers > 0) usedRoleTarget.value = role
+  else deleteTarget.value = role
+}
 function confirmDelete() {
   if (!deleteTarget.value) return
   deleteCustomRole(deleteTarget.value.id)
-  successToast(t('Custom role deleted'))
+  successToast(t('Role deleted'))
   deleteTarget.value = null
 }
 
@@ -116,7 +124,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
         <div class="filter-search">
           <MpIcon name="search" size="md" />
-          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search...')">
+          <input v-model="search" class="filter-search-input" type="text" :placeholder="t('Search role')">
           <MpButton
             v-if="search" variant="ghost" class="filter-search-clear"
             left-icon="close" :aria-label="t('Clear search')" @click="search = ''"
@@ -162,7 +170,7 @@ const emptyIllustration = '/illustrations/empty-folder.png'
             <MpPopoverListItem @click="duplicate(row as unknown as CustomRole)">{{ t('Duplicate') }}</MpPopoverListItem>
             <MpPopoverListItem
               :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })"
-              @click="deleteTarget = (row as unknown as CustomRole)"
+              @click="requestDelete(row as unknown as CustomRole)"
             >{{ t('Delete') }}</MpPopoverListItem>
           </MpPopoverList>
         </MpPopoverContent>
@@ -172,10 +180,10 @@ const emptyIllustration = '/illustrations/empty-folder.png'
     <template #empty>
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240">
-        <p class="empty-full-title">{{ t('No custom roles') }}</p>
-        <p class="empty-full-desc">{{ t('Custom roles will appear here.') }}</p>
+        <p class="empty-full-title">{{ t('Role list will appear here') }}</p>
+        <p class="empty-full-desc">{{ t('Add new custom roles from Add custom role button.') }}</p>
         <MpButton variant="secondary" is-rounded left-icon="add" @click="openCreate">
-          {{ t('New custom role') }}
+          {{ t('Add custom role') }}
         </MpButton>
       </div>
     </template>
@@ -183,6 +191,9 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 
   <!-- ── Add / edit custom role drawer ── -->
   <CustomRoleDrawer id="custom-role-drawer" :is-open="isOpen" :role-id="editingId" @close="close" />
+
+  <!-- Demo: CRM add-on presets + the Invite / Edit states (state 12 opens the drawer above). -->
+  <CrmSeatsScenarioFab />
 
   <!-- ── Delete confirmation ── -->
   <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
@@ -198,15 +209,34 @@ const emptyIllustration = '/illustrations/empty-folder.png'
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
-        <p>{{ t('Deleted custom role cannot be restored.') }}</p>
-        <p v-if="deleteTarget?.assignedUsers" class="cr-delete-warning">
-          {{ deleteTarget.assignedUsers }}
-          {{ deleteTarget.assignedUsers === 1 ? t('user loses this authority.') : t('users lose this authority.') }}
-        </p>
+        <p>{{ deleteTarget?.name }} {{ t('will be deleted from this company account. The deleted custom role cannot be restored.') }}</p>
       </MpModalBody>
       <MpModalFooter>
         <MpButton variant="ghost" is-rounded @click="deleteTarget = null">{{ t('Cancel') }}</MpButton>
         <MpButton variant="danger" is-rounded @click="confirmDelete">{{ t('Delete custom role') }}</MpButton>
+      </MpModalFooter>
+    </MpModalContent>
+    <MpModalOverlay />
+  </MpModal>
+
+  <!-- ── Role still assigned → cannot delete (prod modal-delete-used-custom-role) ── -->
+  <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+    id="cr-delete-used-modal"
+    :is-open="!!usedRoleTarget"
+    size="md"
+    :is-keep-alive="false"
+    @close="usedRoleTarget = null"
+  >
+    <MpModalContent>
+      <MpModalHeader>
+        {{ t('Failed to delete custom role') }}
+        <MpModalCloseButton />
+      </MpModalHeader>
+      <MpModalBody>
+        <p>{{ t('Custom role that is already assigned to users cannot be deleted. To delete this role, please assign related users to other roles.') }}</p>
+      </MpModalBody>
+      <MpModalFooter>
+        <MpButton variant="primary" is-rounded @click="usedRoleTarget = null">{{ t('Ok, got it') }}</MpButton>
       </MpModalFooter>
     </MpModalContent>
     <MpModalOverlay />
@@ -243,7 +273,6 @@ const emptyIllustration = '/illustrations/empty-folder.png'
 .cr-wrap { white-space: normal; }
 .cr-updated { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .cr-updated-by { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
-.cr-delete-warning { margin-top: var(--mp-spacing-2); color: var(--mp-text-secondary); }
 
 .cell-link {
   color: var(--mp-text-link); cursor: pointer;

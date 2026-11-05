@@ -61,6 +61,8 @@ export interface WoRequestPayload {
   adjustmentDate?: string
   /** completion — final produced qty */
   producedQty?: number
+  /** start — actual start date (ISO) the requester gave; applied when the start is approved */
+  startDate?: string
   /** adjustment — planned qty before the request, restored if it's rejected or canceled */
   previousPlannedQty?: number
 }
@@ -152,7 +154,7 @@ function buildSeed(): WoApprovalRequest[] {
   return [
     {
       id: 'wor-001', workOrderId: 'wo-25', type: 'start', ref: null,
-      requester: PPIC, ruleId: 'awf-007', transactionDate: dateOnly(-1),
+      requester: PPIC, ruleId: 'awf-012', transactionDate: dateOnly(-1),
       payload: {}, status: 'pending', currentLevel: 2, levels: PRODUCTION_LEVELS(),
       log: [
         { event: 'submitted', user: PPIC, at: at(-1, '08:10') },
@@ -161,13 +163,13 @@ function buildSeed(): WoApprovalRequest[] {
     },
     {
       id: 'wor-002', workOrderId: 'wo-2', type: 'start', ref: null,
-      requester: LINE_LEADER, ruleId: 'awf-007', transactionDate: dateOnly(-1),
+      requester: LINE_LEADER, ruleId: 'awf-012', transactionDate: dateOnly(-1),
       payload: {}, status: 'pending', currentLevel: 1, levels: PRODUCTION_LEVELS(),
       log: [{ event: 'submitted', user: LINE_LEADER, at: at(-1, '14:00') }],
     },
     {
       id: 'wor-004', workOrderId: 'wo-26', type: 'start', ref: null,
-      requester: PPIC, ruleId: 'awf-007', transactionDate: dateOnly(-2),
+      requester: PPIC, ruleId: 'awf-012', transactionDate: dateOnly(-2),
       payload: {}, status: 'rejected', currentLevel: null, levels: PRODUCTION_LEVELS(),
       log: [
         { event: 'submitted', user: PPIC, at: at(-2, '09:05') },
@@ -664,9 +666,9 @@ function revert(req: WoApprovalRequest): void {
  * the create form is reserved now (never earlier). Called directly when Start isn't gated,
  * or on final approval of a Start request.
  */
-export function startWorkOrder(wo: WorkOrder): void {
+export function startWorkOrder(wo: WorkOrder, startDate: string = localDate()): void {
   wo.status = 'in progress'
-  wo.startDate = localDate()
+  wo.startDate = startDate
   if (wo.reservationPlan) {
     wo.materialReservations = wo.reservationPlan
     wo.reservationPlan = undefined
@@ -681,7 +683,7 @@ function execute(req: WoApprovalRequest) {
   const today = localDate()
   switch (req.type) {
     case 'start':
-      startWorkOrder(wo)
+      startWorkOrder(wo, req.payload.startDate)
       return
     case 'adjustment':
       // Already shown on the work order since submission — the BOM is never touched.

@@ -8,10 +8,18 @@
  * (warehouses, production, stock adjustments), and the authority matrix features
  * mirror the ERP sidebar rather than Jurnal's.
  *
- * Data only — mutations are in-memory (this is a prototype), same convention as
- * approvalWorkflows.ts.
+ * Users and custom roles are persisted as snapshots under the `erp-db:` prefix
+ * (app/data/persist.ts), so invites / role edits survive a refresh and "Reset
+ * demo data" restores the seed.
+ *
+ * CRM access is NOT a system role and NOT part of the custom-role matrix: it is
+ * the standalone `crmRole` on each user (CRM Administrator / CRM Basic), gated by
+ * the company's CRM add-on and counted against its own seat pool — see
+ * crmSubscription.ts.
  */
 import { reactive } from 'vue'
+import { loadSnapshot, saveSnapshot } from './persist'
+import type { CrmRole } from './crmSubscription'
 
 // ─── Existing (system) roles ─────────────────────────────────────────────────
 
@@ -34,18 +42,6 @@ export interface SystemRole {
    * they created themselves. Only meaningful once the role is ticked.
    */
   accessLimitation?: string
-  /**
-   * Optional "Full access" checkbox — the inverse shape of accessLimitation:
-   * unchecked (default) scopes the role to its own records; checking it elevates
-   * the user to see/manage everyone's data within the module (a module-level
-   * administrator). Only meaningful once the role is ticked.
-   */
-  fullAccessOption?: string
-  /**
-   * The permission bullets shown when fullAccessOption is CHECKED — replaces
-   * `permissions` (the default/restricted set) for as long as it's ticked.
-   */
-  fullAccessPermissions?: string[]
   /** Owner/Ultimate can't be time-limited (see ACCESS_TIME_LIMIT_NOTE). */
   supportsTimeLimit: boolean
   /**
@@ -176,13 +172,13 @@ export const SYSTEM_ROLES: SystemRole[] = [
   },
   {
     id: 'project-manager',
-    name: 'Project Manager',
+    name: 'Project manager',
     requiresProjectAccounting: true,
     permissions: [
       'Create and set up projects, including budget and milestones.',
       'View and record project costs.',
       'View and submit revenue recognition and project billing.',
-      'Create and submit variation orders and other change requests.',
+      'Create and submit addenda to the project contract.',
       'View all project health and profitability reports.',
       'Edit and delete project data if ticking List manager.',
     ],
@@ -201,28 +197,6 @@ export const SYSTEM_ROLES: SystemRole[] = [
     accessLimitation: 'Restrict this user to warehouses they are assigned to',
     supportsTimeLimit: true,
   },
-  {
-    id: 'crm',
-    name: 'CRM',
-    permissions: [
-      'View and create deals, contacts, and companies assigned to you.',
-      'View and manage the pipeline for your own deals, including changing stage.',
-      'View pages of customer contacts, products, and other lists.',
-      'Edit and delete your own deals, contacts, and companies if ticking List manager.',
-    ],
-    fullAccessOption: 'Full access to all CRM data and settings (CRM Administrator)',
-    fullAccessPermissions: [
-      'View and create all CRM deals, contacts, and companies.',
-      'View and manage the entire deal pipeline, including changing stage and owner.',
-      'View CRM reports.',
-      'Manage CRM settings: create custom modules, set user permissions, and create teams.',
-      'Edit and delete any deals, contacts, and companies if ticking List manager.',
-    ],
-    // CRM record scope is no longer limited here — it's controlled per user in
-    // CRM's own user management (Settings › Users › Manage CRM access). New
-    // activated users default to Own Records. See `crmAccessNote` in the UI.
-    supportsTimeLimit: true,
-  },
 ]
 
 export function getSystemRole(id: string): SystemRole | undefined {
@@ -232,7 +206,7 @@ export function getSystemRole(id: string): SystemRole | undefined {
 /**
  * The existing roles this tenant can actually assign. Pass whether the Project
  * Accounting billing component is installed (useApprovalWorkflowScenario) —
- * without it, Project Manager is dropped from the picker.
+ * without it, Project manager is dropped from the picker.
  */
 export function systemRolesFor(hasProjectAccounting: boolean): SystemRole[] {
   return SYSTEM_ROLES.filter((r) => !r.requiresProjectAccounting || hasProjectAccounting)
@@ -287,11 +261,12 @@ export const AUTHORITY_ACTIONS: { value: AuthorityAction; label: string }[] = [
   { value: 'delete', label: 'Delete' },
 ]
 
-/** The "Feature" quick-filter categories — Figma "Drawer / Custom Role / Add",
- *  plus CRM appended after Settings (not part of the original Figma scope). */
+/** The "Feature" quick-filter categories — Figma "Drawer / Custom Role / Add".
+ *  No CRM category: CRM access is given only through the standalone CRM role on
+ *  the user (PRD US-011 AC-04), never inside a custom role. */
 export type AuthorityCategory =
   | 'accounting' | 'sales' | 'purchases' | 'expenses' | 'contacts'
-  | 'inventory' | 'warehouses' | 'reports' | 'settings' | 'crm'
+  | 'inventory' | 'warehouses' | 'reports' | 'settings'
 
 export const AUTHORITY_CATEGORIES: { value: AuthorityCategory; label: string }[] = [
   { value: 'accounting', label: 'Accounting' },
@@ -303,7 +278,6 @@ export const AUTHORITY_CATEGORIES: { value: AuthorityCategory; label: string }[]
   { value: 'warehouses', label: 'Warehouses' },
   { value: 'reports', label: 'Reports' },
   { value: 'settings', label: 'Settings' },
-  { value: 'crm', label: 'CRM' },
 ]
 
 /** Level 3 — a leaf under a level-2 row (e.g. Settings ▸ Sales ▸ General settings ▸ Sales quote). */
@@ -326,10 +300,17 @@ export interface AuthorityFeature {
   viewOnly?: boolean
   /**
    * Override the default action set (view/create/edit/delete) with an explicit
-   * list — e.g. the CRM module-access row only uses view ("has access") and
-   * edit ("is Administrator"); create/delete don't apply and are hidden.
+   * list for a row where some actions have no meaning (they're hidden).
    */
   actions?: AuthorityAction[]
+  /**
+   * Feature only exists for tenants that bought the Project Accounting billing
+   * component — the same gate the Approval workflows "Applies to: Project
+   * Accounting" option uses. A tenant without the component can't grant
+   * authority over a module they don't have, so the row is dropped from the
+   * matrix entirely rather than shown disabled. See authorityFeaturesFor().
+   */
+  requiresProjectAccounting?: boolean
 }
 
 /** The full permission matrix — verbatim from Figma "Drawer / Custom Role / Add"
@@ -358,6 +339,17 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
   { id: 'acc-chart-of-accounts', label: 'Chart of accounts', category: 'accounting', subfeatures: [] },
   { id: 'acc-close-books', label: 'Close books', category: 'accounting', subfeatures: [] },
   { id: 'acc-fixed-assets', label: 'Fixed assets', category: 'accounting', subfeatures: [] },
+  {
+    id: 'project-accounting', label: 'Project accounting', category: 'accounting',
+    requiresProjectAccounting: true,
+    subfeatures: [
+      { id: 'project-setup', label: 'Project setup' },
+      { id: 'cost-tracking', label: 'Cost tracking' },
+      { id: 'recognition-and-billing', label: 'Recognition and billing' },
+      { id: 'change-management', label: 'Addenda' },
+      { id: 'project-health', label: 'Project health' },
+    ],
+  },
 
   // ── Sales ──
   { id: 'sales-quotes', label: 'Sales quotes', category: 'sales', subfeatures: [] },
@@ -495,17 +487,6 @@ export const AUTHORITY_FEATURES: AuthorityFeature[] = [
   { id: 'set-payment-terms', label: 'Payment terms', category: 'settings', subfeatures: [] },
   { id: 'set-payment-methods', label: 'Payment methods', category: 'settings', subfeatures: [] },
   { id: 'set-tags', label: 'Tags', category: 'settings', subfeatures: [] },
-
-  // ── CRM ──
-  /**
-   * Admin vs. member access is a mutually-exclusive choice, not an independent
-   * action — so it only uses 'view' (has access, scoped to own records) and
-   * 'edit' (full access as Administrator; implies view via the existing
-   * create/edit/delete-implies-view rule in setGrant). No create/delete.
-   * Rendered with its own two-checkbox UI (CustomRoleDrawer.vue), not the
-   * generic per-column action cells — see the 'crm-access' special case there.
-   */
-  { id: 'crm-access', label: 'Access to CRM module', category: 'crm', subfeatures: [], actions: ['view', 'edit'] },
 ]
 
 /**
@@ -533,6 +514,16 @@ export function authorityActionsFor(feature: AuthorityFeature): AuthorityAction[
   return feature.viewOnly ? ['view'] : ['view', 'create', 'edit', 'delete']
 }
 
+/**
+ * The features this tenant can actually grant. Pass whether the Project
+ * Accounting billing component is installed (useApprovalWorkflowScenario) —
+ * without it, that feature is dropped from the matrix rather than shown
+ * disabled: you cannot grant authority over a module you do not have.
+ */
+export function authorityFeaturesFor(hasProjectAccounting: boolean): AuthorityFeature[] {
+  return AUTHORITY_FEATURES.filter((f) => !f.requiresProjectAccounting || hasProjectAccounting)
+}
+
 /** How many features have at least one granted action — the "Feature (n)" count. */
 export function grantedFeatureCount(grants: AuthorityGrants): number {
   return AUTHORITY_FEATURES.filter((f) =>
@@ -556,7 +547,19 @@ export interface CustomRole {
 export const DESCRIPTION_MAX = 400
 export const ROLE_NAME_MAX = 60
 
-export const customRoles = reactive<CustomRole[]>([
+// v2: the seed was resized to fit the default package (ERP 10 users, CRM Essential
+// 5 seats) — a bumped key keeps an older saved demo from masking the new default.
+// v3: "Product only" joined the seed (Invite / Edit state 4: custom role + CRM).
+const CUSTOM_ROLES_KEY = 'users-roles-custom-roles-v3'
+// v3: a Partner user joined the seed.
+const ACCOUNT_USERS_KEY = 'users-roles-account-users-v3'
+
+/** Highest numeric suffix of `<prefix>-<n>` ids — the next id never collides after a reload. */
+function maxSeq(ids: string[]): number {
+  return ids.reduce((m, id) => Math.max(m, Number(id.split('-').pop()) || 0), 0)
+}
+
+const CUSTOM_ROLE_SEED: CustomRole[] = [
   {
     id: 'cr-1',
     name: 'Warehouse supervisor',
@@ -603,7 +606,25 @@ export const customRoles = reactive<CustomRole[]>([
     updatedAt: '2026-07-30T11:05:00+07:00',
     updatedBy: 'Rizal Candra',
   },
-])
+  {
+    id: 'cr-4',
+    name: 'Product only',
+    description: 'Maintains the product list and product settings. No transactions or reports.',
+    grants: {
+      'inv-products': ['view', 'create', 'edit'],
+      'set-inventory.product-settings': ['view', 'edit'],
+    },
+    assignedUsers: 0,
+    updatedAt: '2026-10-28T10:00:00+07:00',
+    updatedBy: 'Rizal Candra',
+  },
+]
+
+export const customRoles = reactive<CustomRole[]>(
+  loadSnapshot<CustomRole>(CUSTOM_ROLES_KEY) ?? structuredClone(CUSTOM_ROLE_SEED),
+)
+
+function persistCustomRoles(): void { saveSnapshot(CUSTOM_ROLES_KEY, customRoles) }
 
 export interface CustomRoleInput {
   name: string
@@ -611,7 +632,7 @@ export interface CustomRoleInput {
   grants: AuthorityGrants
 }
 
-let customRoleSeq = customRoles.length
+let customRoleSeq = maxSeq(customRoles.map((r) => r.id))
 
 export function getCustomRole(id: string): CustomRole | undefined {
   return customRoles.find((r) => r.id === id)
@@ -628,6 +649,7 @@ export function addCustomRole(input: CustomRoleInput): CustomRole {
     updatedBy: 'Rizal Candra',
   }
   customRoles.push(role)
+  persistCustomRoles()
   return role
 }
 
@@ -639,14 +661,28 @@ export function updateCustomRole(id: string, input: CustomRoleInput): void {
   role.grants = input.grants
   role.updatedAt = new Date().toISOString()
   role.updatedBy = 'Rizal Candra'
+  persistCustomRoles()
 }
 
 export function deleteCustomRole(id: string): void {
   const i = customRoles.findIndex((r) => r.id === id)
   if (i >= 0) customRoles.splice(i, 1)
+  persistCustomRoles()
 }
 
 // ─── Users ───────────────────────────────────────────────────────────────────
+
+export type AccountType = 'member' | 'partner'
+
+/** Production's type options (jurnal-frontend-app user_management.json › button_filter_type). */
+export const ACCOUNT_TYPE_OPTIONS: { value: AccountType; label: string }[] = [
+  { value: 'member', label: 'Member' },
+  { value: 'partner', label: 'Partner' },
+]
+
+export function accountTypeOf(user: Pick<AccountUser, 'accountType'>): AccountType {
+  return user.accountType ?? 'member'
+}
 
 /** Owner is the account holder — exactly one, and it can't be edited or removed. */
 export type AccountUserStatus = 'active' | 'invited' | 'inactive'
@@ -661,6 +697,20 @@ export interface AccountUser {
   systemRoleIds: string[]
   /** customRoles ids. */
   customRoleIds: string[]
+  /**
+   * The standalone CRM role — 'admin' (Settings ticked) / 'basic' (unticked) /
+   * null (no CRM). Combinable with Ultimate and any custom role. Ignored for the
+   * Owner, who always holds CRM Administrator while CRM is active (derived in
+   * crmSubscription.effectiveCrmRole, never stored or removable).
+   */
+  crmRole: CrmRole | null
+  /**
+   * Production's account type (User list "Type" column + "All types" filter):
+   * 'member' = the company's own user; 'partner' = an outside partner/accountant
+   * user, excluded from the ERP user count (PRD US-010 rule; CRM seat use is OQ #10).
+   * Missing = member.
+   */
+  accountType?: AccountType
   isListManager: boolean
   timeLimit: AccessTimeLimit | null
   status: AccountUserStatus
@@ -668,9 +718,23 @@ export interface AccountUser {
   lastActiveAt: string | null
   /** ISO date the user was invited/created. */
   joinedAt: string
+  /** Prod "Type" column: a company Member, or an outside Partner (e.g. the
+   *  accounting firm). Absent = 'member'. */
+  partnerType?: AccountUserPartnerType
 }
 
-export const accountUsers = reactive<AccountUser[]>([
+export type AccountUserPartnerType = 'member' | 'partner'
+export function userPartnerType(user: AccountUser): AccountUserPartnerType {
+  return user.partnerType ?? 'member'
+}
+
+/**
+ * Sized for the default demo package — ERP limit 10, CRM Essential 5 seats:
+ * 8 users hold an ERP seat; 4 hold a CRM seat (Owner + Ultimate+CRM invite +
+ * custom-role+CRM invite + CRM-only). One deactivated user, one Project Manager,
+ * and one Partner (outside accountant) who doesn't count against the ERP limit.
+ */
+const ACCOUNT_USER_SEED: AccountUser[] = [
   {
     id: 'au-1',
     name: 'Rizal Candra',
@@ -678,6 +742,7 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: true,
     systemRoleIds: [],
     customRoleIds: [],
+    crmRole: null,
     isListManager: true,
     timeLimit: null,
     status: 'active',
@@ -691,6 +756,7 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: false,
     systemRoleIds: ['accountant', 'banker'],
     customRoleIds: [],
+    crmRole: null,
     isListManager: true,
     timeLimit: null,
     status: 'active',
@@ -704,24 +770,12 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: false,
     systemRoleIds: ['sales', 'purchasing'],
     customRoleIds: [],
+    crmRole: null,
     isListManager: false,
     timeLimit: { days: 'mon-fri', startHour: '08:00', endHour: '17:00' },
     status: 'active',
     lastActiveAt: '2026-09-08T07:55:00+07:00',
     joinedAt: '2025-04-18',
-  },
-  {
-    id: 'au-4',
-    name: 'Jessie Tan',
-    email: 'jessie.tan@mekari.com',
-    isOwner: false,
-    systemRoleIds: ['stockist'],
-    customRoleIds: ['cr-1'],
-    isListManager: false,
-    timeLimit: { days: 'mon-sat', startHour: '07:00', endHour: '16:00' },
-    status: 'active',
-    lastActiveAt: '2026-09-06T14:03:00+07:00',
-    joinedAt: '2025-05-27',
   },
   {
     id: 'au-5',
@@ -730,24 +784,12 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: false,
     systemRoleIds: [],
     customRoleIds: ['cr-2'],
+    crmRole: 'basic',
     isListManager: false,
     timeLimit: null,
     status: 'invited',
     lastActiveAt: null,
     joinedAt: '2026-09-10',
-  },
-  {
-    id: 'au-6',
-    name: 'Galih Prakoso',
-    email: 'galih.prakoso@mekari.com',
-    isOwner: false,
-    systemRoleIds: ['report-reader'],
-    customRoleIds: ['cr-3'],
-    isListManager: false,
-    timeLimit: null,
-    status: 'active',
-    lastActiveAt: '2026-09-05T09:31:00+07:00',
-    joinedAt: '2025-07-14',
   },
   {
     id: 'au-7',
@@ -756,24 +798,12 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: false,
     systemRoleIds: ['expenses'],
     customRoleIds: [],
+    crmRole: null,
     isListManager: false,
     timeLimit: null,
     status: 'inactive',
     lastActiveAt: '2026-05-19T10:12:00+07:00',
     joinedAt: '2025-02-20',
-  },
-  {
-    id: 'au-8',
-    name: 'Andi Pratama',
-    email: 'andi.pratama@mekari.com',
-    isOwner: false,
-    systemRoleIds: ['warehouse'],
-    customRoleIds: ['cr-1'],
-    isListManager: false,
-    timeLimit: { days: 'everyday', startHour: '06:00', endHour: '22:00' },
-    status: 'active',
-    lastActiveAt: '2026-09-08T06:14:00+07:00',
-    joinedAt: '2025-06-05',
   },
   {
     id: 'au-9',
@@ -782,6 +812,7 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: false,
     systemRoleIds: ['administrator'],
     customRoleIds: [],
+    crmRole: null,
     isListManager: true,
     timeLimit: null,
     status: 'active',
@@ -795,11 +826,13 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: false,
     systemRoleIds: ['ultimate'],
     customRoleIds: [],
+    crmRole: 'admin',
     isListManager: false,
     timeLimit: null,
     status: 'invited',
     lastActiveAt: null,
     joinedAt: '2026-09-09',
+    partnerType: 'partner',
   },
   {
     id: 'au-11',
@@ -808,24 +841,65 @@ export const accountUsers = reactive<AccountUser[]>([
     isOwner: false,
     systemRoleIds: ['project-manager'],
     customRoleIds: [],
+    crmRole: null,
     isListManager: true,
     timeLimit: null,
     status: 'active',
     lastActiveAt: '2026-09-08T09:05:00+07:00',
     joinedAt: '2025-09-30',
   },
-])
+  // CRM-only staff — a CRM role and no ERP role, so they use a CRM seat but no
+  // ERP seat (PRD US-010).
+  {
+    id: 'au-12',
+    name: 'Dewi Lestari',
+    email: 'dewi.lestari@mekari.com',
+    isOwner: false,
+    systemRoleIds: [],
+    customRoleIds: [],
+    crmRole: 'basic',
+    isListManager: false,
+    timeLimit: null,
+    status: 'active',
+    lastActiveAt: '2026-10-24T10:18:00+07:00',
+    joinedAt: '2026-10-01',
+  },
+  // Partner — the company's outside accountant (production "Partner" type). Not
+  // counted against the ERP user limit; no CRM role.
+  {
+    id: 'au-13',
+    name: 'Hendra Wijaya',
+    email: 'hendra@kapwijaya.co.id',
+    isOwner: false,
+    systemRoleIds: ['accountant'],
+    customRoleIds: [],
+    crmRole: null,
+    accountType: 'partner',
+    isListManager: false,
+    timeLimit: null,
+    status: 'active',
+    lastActiveAt: '2026-10-22T15:40:00+07:00',
+    joinedAt: '2026-03-12',
+  },
+]
+
+export const accountUsers = reactive<AccountUser[]>(
+  loadSnapshot<AccountUser>(ACCOUNT_USERS_KEY) ?? structuredClone(ACCOUNT_USER_SEED),
+)
+
+function persistAccountUsers(): void { saveSnapshot(ACCOUNT_USERS_KEY, accountUsers) }
 
 export interface AccountUserInput {
   name: string
   email: string
   systemRoleIds: string[]
   customRoleIds: string[]
+  crmRole: CrmRole | null
   isListManager: boolean
   timeLimit: AccessTimeLimit | null
 }
 
-let accountUserSeq = accountUsers.length
+let accountUserSeq = maxSeq(accountUsers.map((u) => u.id))
 
 export function getAccountUser(id: string): AccountUser | undefined {
   return accountUsers.find((u) => u.id === id)
@@ -842,6 +916,7 @@ export function addAccountUser(input: AccountUserInput): AccountUser {
   }
   accountUsers.push(user)
   bumpAssignedUserCounts()
+  persistAccountUsers()
   return user
 }
 
@@ -850,17 +925,49 @@ export function updateAccountUser(id: string, input: AccountUserInput): void {
   if (!user) return
   Object.assign(user, input)
   bumpAssignedUserCounts()
+  persistAccountUsers()
+}
+
+/** Set several users' CRM role at once (demo presets). Unknown ids are skipped. */
+export function setAccountUserCrmRoles(roles: Record<string, CrmRole | null>): void {
+  for (const [id, role] of Object.entries(roles)) {
+    const user = getAccountUser(id)
+    if (user && !user.isOwner) user.crmRole = role
+  }
+  persistAccountUsers()
+}
+
+/**
+ * Demo presets only — add fully-formed users with fixed ids (skipping ids that
+ * already exist), and remove them again. Kept apart from addAccountUser so a
+ * preset never advances the invite id sequence.
+ */
+export function addPresetAccountUsers(users: AccountUser[]): void {
+  for (const u of users) if (!getAccountUser(u.id)) accountUsers.push(structuredClone(u))
+  bumpAssignedUserCounts()
+  persistAccountUsers()
+}
+
+export function removeAccountUsers(ids: string[]): void {
+  for (const id of ids) {
+    const i = accountUsers.findIndex((u) => u.id === id)
+    if (i >= 0) accountUsers.splice(i, 1)
+  }
+  bumpAssignedUserCounts()
+  persistAccountUsers()
 }
 
 export function setAccountUserStatus(id: string, status: AccountUserStatus): void {
   const user = getAccountUser(id)
   if (user) user.status = status
+  persistAccountUsers()
 }
 
 export function deleteAccountUser(id: string): void {
   const i = accountUsers.findIndex((u) => u.id === id)
   if (i >= 0) accountUsers.splice(i, 1)
   bumpAssignedUserCounts()
+  persistAccountUsers()
 }
 
 /** Keep each custom role's "Users assigned" derived from the user list. */
@@ -879,14 +986,16 @@ export function userRoleNames(user: AccountUser): string[] {
   return [...system, ...custom]
 }
 
-/** "Existing" / "Custom" / "Owner" — the User list "Type" filter. */
-export type UserRoleType = 'owner' | 'existing' | 'custom'
+/** "Existing" / "Custom" / "Owner" / "CRM only" — the User list "Type" filter. */
+export type UserRoleType = 'owner' | 'existing' | 'custom' | 'crm-only'
 
 export function userRoleTypes(user: AccountUser): UserRoleType[] {
   if (user.isOwner) return ['owner']
   const types: UserRoleType[] = []
   if (user.systemRoleIds.length) types.push('existing')
   if (user.customRoleIds.length) types.push('custom')
+  // No ERP role but a CRM role → CRM-only staff (uses a CRM seat, no ERP seat).
+  if (!types.length && user.crmRole) types.push('crm-only')
   return types
 }
 
@@ -894,6 +1003,7 @@ const USER_ROLE_TYPE_LABELS: Record<UserRoleType, string> = {
   owner: 'Owner',
   existing: 'Existing role',
   custom: 'Custom role',
+  'crm-only': 'CRM only',
 }
 
 /** Display labels for the Type column — "Owner", or "Existing role" / "Custom role". */

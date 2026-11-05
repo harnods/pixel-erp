@@ -51,6 +51,12 @@ export interface TableColumn {
   /** Explicit fixed width. Use ONLY for layout-only columns (e.g. a 40px icon)
    *  or as an escape hatch; semantic columns should use `kind` instead. */
   width?: string
+  /** This column absorbs whatever width is left over, instead of the flexible
+   *  spacer. For a free-text column with nothing to its right (a Detail /
+   *  Description column on a table with no actions), the slack reads better in
+   *  the cell than in an empty spacer. It still never goes below its `kind`'s
+   *  min. At most one column per table. */
+  flexible?: boolean
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
   /** Enables the ERP column-header sort menu (hover icon → popover). The options shown
@@ -101,12 +107,6 @@ const props = withDefaults(defineProps<{
   /** Singular noun for the filter-only empty state, e.g. "expense" → "No expense match
    *  your filters". Defaults to the generic "No results match your filters". */
   filterEmptyLabel?: string
-  /** Let the LAST column grow to absorb any leftover table width instead of staying
-   *  pinned to its declared `width` (table-layout:fixed otherwise distributes that
-   *  leftover proportionally across every column, including fixed-width ones like
-   *  the sticky actions column — see BillsReviewFilesPage.vue). Off by default so
-   *  every other page's column widths stay exactly as declared. */
-  lastColumnFlexible?: boolean
   /** Pin the actions column to the right edge while the table scrolls horizontally.
    *  On by default (the ERP standard); set false for a table whose actions column
    *  is narrow enough to never need pinning (e.g. Cycle counts' Approve-only column). */
@@ -121,6 +121,11 @@ const props = withDefaults(defineProps<{
    *  row [...] actions and no clickable row — nothing to hover-target, so the grey
    *  highlight is noise (e.g. the Activity logs page). See rule/table-no-hover-no-actions. */
   noRowHover?: boolean
+  /** Make the whole row open the record (emits `rowClick`). Opt-in: pages that don't
+   *  set it keep the default non-clickable row. Clicks that land on a control inside
+   *  the row — link, button, checkbox, the actions kebab — are ignored, so the
+   *  existing per-cell affordances still win. */
+  isRowClickable?: boolean
 }>(), {
   perPage: 25,
   sortKey: '',
@@ -137,9 +142,9 @@ const props = withDefaults(defineProps<{
   bulkLabelPlural: undefined,
   actionsWidth: undefined,
   filterEmptyLabel: undefined,
-  lastColumnFlexible: false,
   stickyActions: true,
   actionsAlignTop: false,
+  isRowClickable: false,
 })
 
 const emit = defineEmits<{
@@ -152,6 +157,7 @@ const emit = defineEmits<{
   clearSearch: []
   clearAll: []
   selectionChange: [count: number]
+  rowClick: [row: Record<string, unknown>, index: number]
 }>()
 
 // Column width resolution (source of truth = columnWidths.ts):
@@ -170,11 +176,41 @@ function colStyle(col: TableColumn) {
   return columnWidth(col.kind)
 }
 
+/**
+ * Row click → open the record. Ignored when the click landed on something that
+ * already has its own behaviour (the name link, a kebab, a checkbox, the Airene
+ * icon), so row-click never steals a more specific action.
+ */
+function onRowClick(row: Record<string, unknown>, index: number, ev: MouseEvent) {
+  if (!props.isRowClickable) return
+  const el = ev.target as HTMLElement | null
+  if (el?.closest('a, button, input, select, textarea, label, [role="button"], .erp-td--ai, .erp-td--actions')) return
+  if (window.getSelection()?.toString()) return   // don't navigate mid text-selection
+  emit('rowClick', row, index)
+}
+
 // ERP column sort: picking the already-active direction clears the sort (back to
 // default order); otherwise apply the chosen direction. Empty key = unsorted.
 function onSortOpt(key: string, dir: 'asc' | 'desc') {
   if (props.sortKey === key && props.sortDir === dir) emit('sortChange', '', 'asc')
   else emit('sortChange', key, dir)
+}
+
+/**
+ * Clicking the header sorts it — the behaviour every table reader expects and
+ * reaches for before finding the hover icon. The icon menu stays as the way to
+ * pick a direction by name (and to hide the column); this is the shortcut.
+ *
+ * Cycle: unsorted → ascending → descending → unsorted, matching what the menu
+ * does when you pick the direction that is already active.
+ */
+function onHeaderClick(col: TableColumn) {
+  if (!col.sortable && !col.sortType) return
+  // A plain sortable column owns its own toggle in the parent page.
+  if (!col.sortType) { emit('sort', col.key); return }
+  if (props.sortKey !== col.key) emit('sortChange', col.key, 'asc')
+  else if (props.sortDir === 'asc') emit('sortChange', col.key, 'desc')
+  else emit('sortChange', '', 'asc')
 }
 
 // ─── Pagination skeleton ────────────────────────────────────────────────────
@@ -404,6 +440,12 @@ function computeWidths() {
     avail -= used
     if (used < 0.5) break
   }
+  // Anything still left goes to the flexible column, uncapped — that is the
+  // point of the flag. Without one it stays with the spacer.
+  if (avail > 0.5) {
+    const fi = cols.findIndex(c => c.flexible)
+    if (fi >= 0) widths[fi] += avail
+  }
   const map: Record<string, number> = {}
   cols.forEach((c, i) => { map[c.key] = Math.round(widths[i]) })
   // Skip the write when nothing changed — avoids a ResizeObserver feedback loop.
@@ -452,11 +494,18 @@ const spacerBeforeIndex = computed(() => {
 // trailing-action column (e.g. a "View details" button). Either way we insert the
 // single flexible spacer so the action column is always pushed to the far right.
 const hasTrailingAction = computed(() => props.columns.some(c => c.isTrailingAction))
-const showSpacer = computed(() => !!slots.actions || hasTrailingAction.value)
+// Always present. The spacer is what makes the width standard hold: under
+// table-layout:fixed a surplus is shared out across the columns, pushing every
+// one past its declared max, so SOMETHING has to absorb it. A read-only table
+// (no actions slot, no trailing action) needs that just as much as one with a
+// [...] column — it just has nothing to push right. Collapses to 0 when the
+// columns already fill the table.
+const showSpacer = computed(() => !props.columns.some(c => c.flexible))
 
 const totalCols = computed(() =>
   props.columns.length +
-  (slots.actions ? 2 : (hasTrailingAction.value ? 1 : 0)) +   // actions col (+ its spacer), or just the spacer for a trailing-action button
+  1 +                               // the flexible spacer, always present
+  (slots.actions ? 1 : 0) +         // the sticky [...] column
   (props.hasAiChat ? 1 : 0)
 )
 
@@ -507,7 +556,7 @@ const bulkCountLabel = computed(() => {
             <col v-if="showSpacer && ci === spacerBeforeIndex" class="erp-col-spacer" />
             <col :style="colStyle(col)" />
           </template>
-          <col v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
+          <col v-if="showSpacer && spacerBeforeIndex === columns.length" class="erp-col-spacer" />
           <col v-if="$slots.actions" :style="{ width: actionsColWidth, minWidth: actionsColWidth, maxWidth: actionsColWidth }" />
           <col v-if="hasAiChat" style="width: 28px; min-width: 28px" />
         </colgroup>
@@ -561,7 +610,7 @@ const bulkCountLabel = computed(() => {
               }"
               :data-col="col.key"
               :style="colStyle(col)"
-              @click="(col.sortable && !col.sortType) ? emit('sort', col.key) : undefined"
+              @click="onHeaderClick(col)"
             >
               <span class="th-inner">
                 <MpCheckbox
@@ -588,9 +637,14 @@ const bulkCountLabel = computed(() => {
                       :class="{ 'erp-sort-btn--active': sortKey === col.key }"
                       aria-label="Sort column" variant="ghost" @click.stop
                     >
+                      <!-- The glyph reports the current direction, so the active
+                           sort is readable without opening the menu. -->
                       <!-- Literal px, not "sm" — MpIcon's "sm" resolves to ~20px (token
                            spacing.5), which doesn't fit the 28px-fixed header row. -->
-                      <MpIcon name="sort-default" size="16px" />
+                      <MpIcon
+                        :name="sortKey === col.key ? (sortDir === 'asc' ? 'arrows-up' : 'arrows-down') : 'sort-default'"
+                        size="16px"
+                      />
                     </MpButton>
                   </MpPopoverTrigger>
                   <MpPopoverContent :class="css({ minWidth: '184px', width: 'max-content', whiteSpace: 'nowrap' })">
@@ -617,7 +671,7 @@ const bulkCountLabel = computed(() => {
             </template>
 
             <!-- Flexible spacer th (no trailing-action column → sits before the actions slot) -->
-            <th v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-th erp-th--spacer" />
+            <th v-if="showSpacer && !loading && spacerBeforeIndex === columns.length" class="erp-th erp-th--spacer" />
 
             <!-- Actions th — sticky right, no label (hidden only on first-load skeleton) -->
             <th
@@ -644,9 +698,10 @@ const bulkCountLabel = computed(() => {
               v-for="(row, ri) in displayRows"
               :key="ri"
               class="erp-tr"
-              :class="{ 'erp-tr--align-top': tallRows?.has(ri) }"
+              :class="{ 'erp-tr--align-top': tallRows?.has(ri), 'erp-tr--clickable': isRowClickable }"
               @mouseenter="hasAiChat ? onRowEnter(ri) : undefined"
               @mouseleave="hasAiChat ? onRowLeave(ri) : undefined"
+              @click="onRowClick(row, ri, $event)"
             >
               <!-- Data cells — checkbox merges into the first column's cell -->
               <template v-for="(col, ci) in columns" :key="col.key">
@@ -680,7 +735,7 @@ const bulkCountLabel = computed(() => {
               </template>
 
               <!-- Flexible spacer td (no trailing-action column → sits before the actions slot) -->
-              <td v-if="$slots.actions && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
 
               <!-- Actions td — sticky right -->
               <td
@@ -740,7 +795,7 @@ const bulkCountLabel = computed(() => {
                 />
               </td>
               </template>
-              <td v-if="$slots.actions && !loading && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
+              <td v-if="showSpacer && !loading && spacerBeforeIndex === columns.length" class="erp-td erp-td--spacer" />
               <!-- match data-row columns during pagination; hidden on first load -->
               <td
                 v-if="$slots.actions && !loading"
@@ -779,6 +834,9 @@ const bulkCountLabel = computed(() => {
         </tbody>
       </table>
     </div>
+
+    <!-- Totals and other summaries that belong under the rows, above pagination. -->
+    <slot name="after-table" />
 
     <!-- ── Pagination ── (hidden during first-load skeleton) -->
     <ErpPagination
@@ -1007,11 +1065,14 @@ const bulkCountLabel = computed(() => {
   animation: none !important;
 }
 
-/* Sortable header */
-.erp-th--sortable {
+/* Sortable header — both plain-sortable columns and sort-menu columns are
+   clickable, so both carry the affordance. */
+.erp-th--sortable,
+.erp-th--menu {
   cursor: pointer;
 }
-.erp-th--sortable:hover {
+.erp-th--sortable:hover,
+.erp-th--menu:hover {
   background: var(--mp-background-neutral-subtle, #f8f9f9);
 }
 
@@ -1076,7 +1137,20 @@ const bulkCountLabel = computed(() => {
 /* ── Column sort menu (ERP behaviour) ── */
 /* header content wraps label + sort icon; right-aligned columns push it to the end */
 .th-inner { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
-.erp-th--right .th-inner { flex-direction: row-reverse; }
+/* A right-aligned column's header label must share the right edge of the
+   numbers below it, AND the sort icon must sit on the same side of the label
+   as it does in a left-aligned column — the two requirements conflict while
+   the icon takes part in layout, because its width pushes the label inward.
+   Taking it out of flow satisfies both: the label keeps the numeric right
+   edge, and the icon hangs just outside it in the column gutter. The amount
+   columns run at their 160px minimum, so reserving width for the icon instead
+   would overflow the figures. */
+.erp-th--right .th-inner { position: relative; }
+.erp-th--right .erp-sort-btn {
+  position: absolute;
+  left: 100%;
+  margin-left: var(--mp-spacing-1);
+}
 /* icon button revealed on header hover; stays visible while its column is the sort */
 .erp-sort-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -1133,6 +1207,8 @@ const bulkCountLabel = computed(() => {
   background: var(--mp-background-neutral, #ffffff) !important;
 }
 .erp-table-page--no-row-hover .erp-tr { cursor: default; }
+/* Opt-in row navigation (isRowClickable) — the whole row reads as the target. */
+.erp-tr--clickable { cursor: pointer; }
 
 /* ─── Body cells ──────────────────────────────────────────────────────────── */
 

@@ -12,7 +12,7 @@ Use this file when selecting color, spacing, or typography values.
 
 | Need | Preferred Token |
 | --- | --- |
-| Primary text | `text.primary` |
+| Primary text | `text.default` |
 | Secondary text | `text.secondary` |
 | Warning text | `text.warning` |
 | Danger text | `text.danger` |
@@ -47,7 +47,7 @@ Use this file when selecting color, spacing, or typography values.
 ## Safe Examples
 
 ```vue
-<MpText color="text.primary">Primary content</MpText>
+<MpText color="text.default">Primary content</MpText>
 <MpText color="text.secondary">Secondary content</MpText>
 
 <MpFlex direction="column" gap="sm" padding="md" backgroundColor="background.surface">

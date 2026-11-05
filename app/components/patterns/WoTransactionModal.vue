@@ -49,8 +49,8 @@ const emit = defineEmits<{
   completeNow: []
   /** Not gated cancel/close — applied immediately. */
   cancelNow: []
-  /** Not gated start — the page starts the work order now. */
-  startNow: []
+  /** Not gated start — the page starts the work order now, on the actual start date. */
+  startNow: [startDate: string]
 }>()
 
 const { t } = useLocale()
@@ -78,6 +78,8 @@ const formError = ref('')
 
 const toDMY = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}` }
 const fromDMY = (v: string) => { const [d, m, y] = v.split('/'); return `${y}-${m}-${d}` }
+const localIso = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+function isFutureDate(date: Date): boolean { return localIso(date) > localIso() }
 
 // ── VAL — which approval rule applies ────────────────────────────────────────
 const val = useValApprovalRule()
@@ -92,7 +94,7 @@ watch(() => props.isOpen, (open) => {
   noteError.value = ''
   dateError.value = ''
   formError.value = ''
-  adjustmentDate.value = toDMY(new Date().toISOString())
+  adjustmentDate.value = toDMY(localIso())
   note.value = ''
   if (props.mode === 'adjustment') qty.value = String(props.workOrder.plannedQty)
   if (props.mode === 'cancel') qty.value = ''
@@ -144,6 +146,12 @@ function submit() {
     if (!qty.value || !Number.isFinite(n) || n <= 0) { qtyError.value = t('You must fill in qty'); invalid = true }
   }
   if (props.mode === 'adjustment' && !adjustmentDate.value) { dateError.value = t('You must select a date'); invalid = true }
+  // Start asks for the actual start date, up to today (main's start-date modal, folded in
+  // here so a gated start carries it into the request).
+  if (props.mode === 'start') {
+    if (!adjustmentDate.value) { dateError.value = t('Select a date.'); invalid = true }
+    else if (fromDMY(adjustmentDate.value) > localIso()) { dateError.value = t('You can only select dates until today.'); invalid = true }
+  }
   if (props.mode === 'adjustment' && !note.value.trim()) { noteError.value = t('You must fill in reason for adjustment'); invalid = true }
   if (props.mode === 'cancel' && !note.value.trim()) { noteError.value = t('You must fill in reason for cancel/close'); invalid = true }
   if (invalid) return
@@ -153,7 +161,8 @@ function submit() {
       ? { plannedQty: n, note: note.value.trim(), adjustmentDate: fromDMY(adjustmentDate.value), changes: [{ field: 'Planned qty', from: String(props.workOrder.plannedQty), to: String(n) }] }
       : props.mode === 'completion' ? { producedQty: n }
         : props.mode === 'cancel' ? { note: note.value.trim() }
-          : {}
+          : props.mode === 'start' ? { startDate: fromDMY(adjustmentDate.value) }
+            : {}
     const req = submitRequest({
       workOrderId: props.workOrder.id, type: props.mode, requester: props.requester, payload,
       transactionDate: props.mode === 'adjustment' ? fromDMY(adjustmentDate.value) : undefined,
@@ -162,7 +171,7 @@ function submit() {
   }
 
   // Normal flow — no rule gates it, so it executes now exactly as today.
-  if (props.mode === 'start') { close(); emit('startNow'); return }
+  if (props.mode === 'start') { close(); emit('startNow', fromDMY(adjustmentDate.value)); return }
   if (props.mode === 'completion') { close(); emit('completeNow'); return }
   if (props.mode === 'cancel') {
     recordActionReason(props.workOrder, { type: 'cancel', reason: note.value.trim(), by: props.requester })
@@ -216,6 +225,13 @@ function submit() {
             <MpFormLabel>{{ t('Adjustment date') }}</MpFormLabel>
             <MpDatePicker id="wtm-date-input" v-model="adjustmentDate" format="DD/MM/YYYY" value-type="format" use-portal is-clearable @update:model-value="dateError = ''" />
             <MpFormErrorMessage>{{ dateError }}</MpFormErrorMessage>
+          </MpFormControl>
+
+          <MpFormControl v-if="mode === 'start'" id="wtm-start-date" is-required :is-invalid="!!dateError" data-devchange="wo-start-date-modal">
+            <MpFormLabel>{{ t('Actual start date') }}</MpFormLabel>
+            <MpDatePicker id="wtm-start-date-input" v-model="adjustmentDate" format="DD/MM/YYYY" value-type="format" use-portal :disabled-date="isFutureDate" @update:model-value="dateError = ''" />
+            <MpFormErrorMessage v-if="dateError">{{ dateError }}</MpFormErrorMessage>
+            <MpFormHelpText v-else>{{ t('You can only select dates until today.') }}</MpFormHelpText>
           </MpFormControl>
 
           <MpFormControl v-if="mode === 'adjustment' || mode === 'completion'" id="wtm-qty" is-required :is-invalid="!!qtyError">

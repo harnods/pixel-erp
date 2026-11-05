@@ -1,7 +1,9 @@
 import { reactive } from 'vue'
+import type { BatchAttributeValues } from './batchAttributes'
 import { TODAY } from './master'
 import { billOfMaterials } from './billOfMaterials'
 import { loadSnapshot, saveSnapshot } from './persist'
+import type { WorkOrderAdjustment } from './workOrderAdjustment'
 
 /**
  * A manufacturing work order (Production → Work orders). Produces (Assembly) or
@@ -63,6 +65,13 @@ export interface WorkOrder {
    * through approval; it's cleared if that request is rejected or canceled.
    */
   actionReason?: WorkOrderActionReason
+  /**
+   * Actual dates per routing step, keyed by the step's index in the BOM's routing
+   * (Track routing page). Status is derived from these — see workOrderRouting.ts.
+   */
+  routingProgress?: Record<string, WorkOrderRoutingProgress>
+  /** Field differences from Adjust work order; overrides the BOM's lines for this work order. */
+  adjustment?: WorkOrderAdjustment
 }
 
 export interface WorkOrderActionReason {
@@ -74,10 +83,15 @@ export interface WorkOrderActionReason {
   requestId?: string
 }
 
+export interface WorkOrderRoutingProgress {
+  startDate?: string
+  endDate?: string
+}
+
 export interface WorkOrderMaterialReservation {
   /** Warehouse the reservation was picked from — needed to look the units back up later. */
   warehouseId?: string
-  batchSelection?: { batchNo: string; qty: number }[]
+  batchSelection?: { batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
   serialSelection?: string[]
 }
 

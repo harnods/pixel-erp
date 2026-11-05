@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-deliveries/views/PurchaseDeliveryShowView.vue -->
 <script setup lang="ts">
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent,
@@ -9,12 +10,15 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ViewBatchDrawer, { type PickedBatchRow } from '~/components/patterns/ViewBatchDrawer.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getContactIdByName } from '~/data/contacts'
-import { getPurchaseDeliveryDetail } from '~/data/purchaseDeliveryDetails'
+import { getPurchaseDeliveryDetail, type PDLineItem } from '~/data/purchaseDeliveryDetails'
+import { getProductBatches } from '~/data/productDetails'
 import { purchaseDeliveries } from '~/data'
+import { infoToast } from '~/utils/toasts'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -31,6 +35,30 @@ const router = useRouter()
 const delivery = computed(() => getPurchaseDeliveryDetail(props.orderId))
 
 const activityOpen = ref(false)
+
+// ── View batch drawer (Batch Attribute story 10) ──────────────────────────────
+// The batches that received a line are read-only here, so this is the shared
+// ViewBatchDrawer in its per-line "packing" mode — the same drawer the WMS
+// detail pages open from their own View batch link (rule/drawer-open-via-manage
+// covers the editable twin on the form).
+const viewBatchItem = ref<PDLineItem | null>(null)
+const viewBatchRows = computed<PickedBatchRow[]>(() => {
+  const item = viewBatchItem.value
+  if (!item) return []
+  const records = getProductBatches(item.sku)
+  return (item.batches ?? []).map((b) => {
+    const record = records.find((r) => r.batchNo === b.batchNo)
+    return {
+      batchNo: b.batchNo,
+      expiryDate: record?.expiryDate ?? '',
+      desc: record?.description ?? '',
+      qty: b.qty,
+      unit: item.unit,
+      attributes: b.attributes,
+    }
+  })
+})
+
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
 const deleteOpen = ref(false)
 function confirmDelete() {
@@ -39,15 +67,18 @@ function confirmDelete() {
 }
 const pdActionGroups = computed<ActionItem[][]>(() => [
   [
-    { label: 'Preview' },
-    { label: 'Create purchase invoice' },
+    { label: 'Preview', onClick: notInPrototype },
+    // Bills from here while the delivery is still unbilled.
+    { label: 'Create purchase invoice', show: isOpenForBilling.value, onClick: createInvoice },
   ],
   [
-    { label: 'Edit' },
-    { label: 'Set as recurring' },
-    { label: 'Duplicate' },
-    { label: 'Void' },
-    { label: 'Delete', onClick: () => { deleteOpen.value = true } },
+    // A delivery already in fulfillment can only be viewed there.
+    { label: 'Edit', show: !inFulfillment.value, onClick: () => { router.push(`/purchase-deliveries/${delivery.value.id}/edit`) } },
+    { label: 'View in fulfillment', show: inFulfillment.value, onClick: notInPrototype },
+    { label: 'Set as recurring', onClick: notInPrototype },
+    { label: 'Duplicate', onClick: notInPrototype },
+    { label: 'Void', onClick: notInPrototype },
+    { label: 'Delete', show: !inFulfillment.value, onClick: () => { deleteOpen.value = true } },
   ],
 ])
 const activityEntries = computed(() => [{
@@ -120,10 +151,6 @@ const jumpResults = computed(() => {
 function jumpTo(id: string) { router.push('/purchase-deliveries/' + id) }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-/** Parenthesised deduction, e.g. (Rp100.000,00); plain Rp0,00 for zero. */
-function formatDeduction(amount: number) {
-  return amount > 0 ? `(${formatIDR(amount)})` : formatIDR(0)
-}
 function formatDateLong(iso: string) {
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso))
 }
@@ -137,7 +164,6 @@ function formatUpdatedAt(iso: string) {
   return `${date}, ${time}`
 }
 
-function discountText(pct: number) { return pct > 0 ? `${pct}%` : '' }
 
 /** File-type → Pixel document icon for an attachment. */
 function attachmentIcon(name: string): string {
@@ -150,6 +176,14 @@ function attachmentIcon(name: string): string {
 }
 
 function goBack() { router.push('/purchase-deliveries') }
+function notInPrototype() { infoToast(t('Not in this prototype')) }
+// Prod: "Create purchase invoice" is the primary action while the delivery is
+// still open for billing (billing status Open = local 'unbilled').
+const isOpenForBilling = computed(() => delivery.value.billingStatus === 'unbilled')
+function createInvoice() { router.push(`/purchase-invoices/new?createdFrom=${delivery.value.id}`) }
+const BILLING_LABEL: Record<string, string> = { unbilled: t('Open'), invoiced: t('Closed') }
+// In-transit deliveries are still being processed in fulfillment (prod banner).
+const inFulfillment = computed(() => delivery.value.fulfillmentStatus === 'in transit')
 </script>
 
 <template>
@@ -162,7 +196,7 @@ function goBack() { router.push('/purchase-deliveries') }
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Purchase Delivery') }} #{{ delivery.number }}</h1>
           <ErpStatusBadge :status="delivery.fulfillmentStatus" badge-for="additionalInformation" size="md" />
-          <ErpStatusBadge :status="delivery.billingStatus" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="delivery.billingStatus" :label="BILLING_LABEL[delivery.billingStatus]" badge-for="additionalInformation" size="md" />
 
           <!-- Chevron → jump-to-transaction switcher (search + 5 recent) -->
           <MpPopover id="detail-jump" use-portal :is-keep-alive="false" placement="bottom-start">
@@ -221,6 +255,13 @@ function goBack() { router.push('/purchase-deliveries') }
     <!-- ── Scrollable stage ── -->
     <div class="detail-stage">
 
+      <!-- Prod banner: delivery still being processed in fulfillment -->
+      <div v-if="inFulfillment" class="detail-banner">
+        <MpIcon class="detail-banner-icon" name="info" size="md" />
+        <span class="detail-banner-text">{{ t('This delivery is being processed in fulfillment. You cannot edit or delete it.') }}</span>
+        <a class="detail-banner-link" @click.prevent="notInPrototype">{{ t('View in fulfillment') }}</a>
+      </div>
+
       <!-- Info banner (conditional) — temporarily hidden in the prototype -->
       <div v-if="showBanner && delivery.banner" class="detail-banner">
         <MpIcon class="detail-banner-icon" name="info" size="md" />
@@ -241,8 +282,7 @@ function goBack() { router.push('/purchase-deliveries') }
             </ContentList>
           </div>
           <div class="detail-primary-total">
-            <span class="detail-total-label">{{ t('Total') }}</span>
-            <span class="detail-total-amount">{{ formatIDR(delivery.totals.total) }}</span>
+            <MpTextlink id="detail-view-journal" as="a" class="detail-journal-link" @click.prevent="notInPrototype">{{ t('View journal entry') }}</MpTextlink>
           </div>
         </div>
 
@@ -250,26 +290,24 @@ function goBack() { router.push('/purchase-deliveries') }
 
         <!-- Detail grid: col 1 = 318px, col 2+ fill equally (max 5 cols) -->
         <div class="content-list-grid">
-          <!-- col 1: addresses -->
+          <!-- col 1: ship to (prod shows no billing address on a delivery) -->
           <div class="content-list-col">
-            <ContentList :label="t('Billing address')" :value="delivery.billingAddress" />
-            <ContentList :label="t('Ship to')" :value="delivery.shipTo" />
+            <ContentList :label="t('Ship to')" :value="delivery.shipTo || '—'" />
           </div>
-          <!-- col 2: delivery date -->
+          <!-- col 2: dates + shipping + warehouse (prod PurchaseDeliveryDetailFields) -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction date')" :value="formatDateLong(delivery.date)" />
+            <ContentList :label="t('Received date')" :value="formatDateLong(delivery.receivedDate)" />
+            <ContentList :label="t('Ship via')" :value="delivery.shipVia || '—'" />
           </div>
-          <!-- col 3: shipping -->
           <div class="content-list-col">
-            <ContentList :label="t('Ship via')" :value="delivery.shipVia" />
-            <ContentList :label="t('Tracking no.')" :value="delivery.trackingNo" />
-            <ContentList :label="t('Driver')" :value="delivery.driver" />
+            <ContentList :label="t('Tracking no.')" :value="delivery.trackingNo || '—'" />
+            <ContentList :label="t('Warehouse')" :value="delivery.warehouse || '—'" />
           </div>
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Delivery')} #${delivery.number}`" />
-            <ContentList :label="t('Reference no.')" :value="delivery.referenceNo" />
-            <ContentList :label="t('Warehouse')" :value="delivery.warehouse" />
+            <ContentList :label="t('Reference no.')" :value="delivery.referenceNo || '—'" />
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">
@@ -289,12 +327,8 @@ function goBack() { router.push('/purchase-deliveries') }
             <tr>
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Qty') }}</th>
+              <th class="detail-th detail-th--num">{{ t('Received qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Unit price') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Discount') }}</th>
-              <th class="detail-th">{{ t('Tax') }}</th>
-              <th class="detail-th detail-th--num">{{ t('Amount') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -308,12 +342,17 @@ function goBack() { router.push('/purchase-deliveries') }
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.qty }}</td>
+              <!-- Batch-tracked lines open the batches in the shared read-only drawer,
+                   from a link under the qty it splits (Batch Attribute story 10) —
+                   the same shape the WMS detail pages use. -->
+              <td v-if="(it.batches ?? []).length" class="detail-td detail-td--qty-batch">
+                <div class="detail-qty-value">{{ it.qty }}</div>
+                <div class="detail-qty-action">
+                  <MpTextlink :id="`pdd-view-batch-${i}`" as="a" class="detail-view-link" @click.prevent="viewBatchItem = it">{{ t('View batch') }}</MpTextlink>
+                </div>
+              </td>
+              <td v-else class="detail-td detail-td--num">{{ it.qty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
-              <td class="detail-td detail-td--num">{{ formatIDR(it.unitPrice) }}</td>
-              <td class="detail-td detail-td--num">{{ discountText(it.discountPct) }}</td>
-              <td class="detail-td">{{ it.taxLabel }}</td>
-              <td class="detail-td detail-td--num">{{ formatIDR(it.amount) }}</td>
             </tr>
           </tbody>
         </table>
@@ -351,32 +390,11 @@ function goBack() { router.push('/purchase-deliveries') }
           </ContentList>
         </div>
 
-        <!-- Right: totals summary -->
+        <!-- Right: prod shows only the shipping fee on a delivery (no pricing) -->
         <div class="detail-totals">
-          <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--strong">{{ t('Subtotal') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--strong">{{ formatIDR(delivery.totals.subtotal) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Discount per line') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(delivery.totals.discountPerLine) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ t('Global discount') }}</span>
-            <span class="detail-total-row-amt">{{ formatDeduction(delivery.totals.globalDiscount) }}</span>
-          </div>
-          <div class="detail-total-row">
-            <span class="detail-total-row-label">{{ delivery.totals.taxLabel }}</span>
-            <span class="detail-total-row-amt">{{ formatIDR(delivery.totals.taxAmount) }}</span>
-          </div>
           <div class="detail-total-row">
             <span class="detail-total-row-label">{{ t('Shipping fee') }}</span>
             <span class="detail-total-row-amt">{{ formatIDR(delivery.totals.shippingFee) }}</span>
-          </div>
-          <div class="detail-total-rule" />
-          <div class="detail-total-row">
-            <span class="detail-total-row-label detail-total-row-label--total">{{ t('Total') }}</span>
-            <span class="detail-total-row-amt detail-total-row-amt--total">{{ formatIDR(delivery.totals.total) }}</span>
           </div>
         </div>
       </section>
@@ -449,6 +467,20 @@ function goBack() { router.push('/purchase-deliveries') }
       :confirm-label="`${t('Delete')} ${t('purchase delivery')}`"
       @confirm="confirmDelete"
     />
+
+    <ViewBatchDrawer
+      v-if="viewBatchItem"
+      :open="true"
+      :sku="viewBatchItem.sku"
+      :warehouse-id="''"
+      kind="packing"
+      :picked-batches="viewBatchRows"
+      :qty-label="t('Received qty')"
+      hide-location
+      :product-name="viewBatchItem.product"
+      :product-img="''"
+      @update:open="viewBatchItem = null"
+    />
   </div>
 </template>
 
@@ -466,7 +498,7 @@ function goBack() { router.push('/purchase-deliveries') }
   flex-shrink: 0;
   height: var(--mp-sizes-18, 72px);   /* page title bar is always 72px */
   box-sizing: border-box;
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   padding: 0 var(--mp-spacing-6);
   display: flex;
   flex-direction: row;
@@ -520,7 +552,7 @@ function goBack() { router.push('/purchase-deliveries') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered); }
+.detail-jump-chevron:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* jump-to popover (304px): search on top (280px input, 12px padding), 5 recent below */
 .detail-jump { display: flex; flex-direction: column; }
@@ -529,7 +561,7 @@ function goBack() { router.push('/purchase-deliveries') }
   width: 100%;        /* = 280px inside the 304px popover minus 12px padding each side */
   box-sizing: border-box;
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
@@ -545,7 +577,7 @@ function goBack() { router.push('/purchase-deliveries') }
   color: var(--mp-icon-default, var(--mp-text-secondary));
   border-radius: var(--mp-radii-full, 999px);
 }
-.search-clear-btn:hover { background: var(--mp-background-neutral-hovered); }
+.search-clear-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .search-clear-btn--overlay { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
 .detail-jump-list { display: flex; flex-direction: column; }
 .detail-jump-item {
@@ -560,7 +592,7 @@ function goBack() { router.push('/purchase-deliveries') }
   padding: var(--mp-spacing-2) var(--mp-spacing-3);
   border-radius: var(--mp-radii-md);
 }
-.detail-jump-item:hover { background: var(--mp-background-neutral-subtle); }
+.detail-jump-item:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
 .detail-jump-item-number { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .detail-jump-item-customer { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-jump-empty {
@@ -586,7 +618,7 @@ function goBack() { router.push('/purchase-deliveries') }
   cursor: pointer;
   color: var(--mp-icon-default, var(--mp-text-secondary));
 }
-.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Stage ── */
 .detail-stage {
@@ -594,7 +626,7 @@ function goBack() { router.push('/purchase-deliveries') }
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--mp-background-stage);
+  background: var(--mp-background-stage, #ffffff);
   border-radius: var(--mp-radii-xl) var(--mp-radii-xl) 0 0;
   /* fixed 24px top border keeps content off the stage's top edge while scrolling */
   padding: 0 var(--mp-spacing-6) var(--mp-spacing-6);
@@ -674,7 +706,7 @@ function goBack() { router.push('/purchase-deliveries') }
 .detail-items-section { display: flex; flex-direction: column; flex-shrink: 0; }
 /* progressive case → contained panel with a 1px bold outer border */
 .detail-items-section--bordered {
-  border: 1px solid var(--mp-border-bold);
+  border: 1px solid var(--mp-border-bold, #8c9596);
   border-radius: var(--mp-radii-md);
   overflow: hidden;
 }
@@ -697,12 +729,12 @@ function goBack() { router.push('/purchase-deliveries') }
   height: var(--mp-sizes-7, 28px);
   text-align: left;
   padding: var(--mp-spacing-1) var(--mp-spacing-4) var(--mp-spacing-1) var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle);
+  background: var(--mp-background-neutral-subtle, #f8f9f9);
   font-size: var(--mp-font-sizes-sm);
   font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-secondary);
   text-transform: uppercase;
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   white-space: nowrap;
 }
 .detail-th--num {
@@ -718,7 +750,7 @@ function goBack() { router.push('/purchase-deliveries') }
   font-weight: var(--mp-font-weights-regular);
   line-height: var(--mp-line-heights-lg, 20px);
   color: var(--mp-text-default);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
   vertical-align: middle;
 }
 .detail-td--num {
@@ -728,6 +760,17 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 /* line-items rows carry a 2-line product cell → that whole row top-aligns */
 .detail-items tbody .detail-td { vertical-align: top; }
+/* Batch-tracked line: qty keeps the numeric column's alignment and the View batch
+   link sits under it, the same stack the WMS detail tables use. */
+.detail-td--qty-batch {
+  white-space: nowrap;
+  padding: var(--mp-spacing-1\.5) var(--mp-spacing-2) var(--mp-spacing-1\.5) var(--mp-spacing-4);
+}
+.detail-qty-value { text-align: right; }
+.detail-qty-action { margin-top: var(--mp-spacing-1); text-align: right; }
+/* Size and colour come from MpTextlink itself — matching the Stock adjustment
+   detail table, the other place a View batch link sits under its qty. */
+.detail-view-link { white-space: nowrap; }
 .detail-td--muted { color: var(--mp-text-secondary); }
 .detail-item-primary { display: block; }
 .detail-item-name { display: block; color: var(--mp-text-default); }
@@ -756,7 +799,7 @@ function goBack() { router.push('/purchase-deliveries') }
   padding: var(--mp-spacing-3) var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-secondary);
-  border-bottom: 1px solid var(--mp-border-default);
+  border-bottom: 1px solid var(--mp-border-default, #e3e7e9);
 }
 .detail-loading {
   display: inline-flex;
@@ -870,4 +913,15 @@ function goBack() { router.push('/purchase-deliveries') }
 }
 /* Footer buttons use the shared btn-enterprise--{secondary,primary} classes
    (erp.css) — no page-local button styling / hardcoded brand colors. */
+/* "View journal entry" link at the right of the primary row (prod header) */
+.detail-journal-link { font-size: var(--mp-font-sizes-md); cursor: pointer; }
+/* Split button — same as SalesInvoiceDetailsPage */
+.detail-split-btn { display: inline-flex; align-items: stretch; }
+.detail-split-btn__main { border-radius: var(--mp-radii-full, 999px) 0 0 var(--mp-radii-full, 999px); }
+.detail-split-btn__chevron {
+  padding-left: var(--mp-spacing-3);
+  padding-right: var(--mp-spacing-3);
+  border-radius: 0 var(--mp-radii-full, 999px) var(--mp-radii-full, 999px) 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
 </style>

@@ -132,8 +132,7 @@ export function scanReviewFile(id: string, surface: ReviewSurface = 'expenses'):
   if (!row || row.scanned) return
   row.processing = true
   setTimeout(() => {
-    resolveProcessingReviewFile(row.id, queue)
-    row.date = new Date().toISOString().slice(0, 10)
+    resolveProcessingReviewFile(row.id, queue)   // fills fields incl. the date
     row.scanned = true
     persistReviewFiles()
   }, 1200 + Math.random() * 1000)
@@ -144,15 +143,36 @@ export function scanReviewFile(id: string, surface: ReviewSurface = 'expenses'):
  *  still shows up there as "Expenses" until someone moves it out. */
 const CLASSIFICATIONS: FileClassification[] = ['bill', 'invoice', 'receipt', 'unclassified']
 
+/** The prototype's stand-in for one real OCR pass — a plausible vendor, document
+ *  number, confidence, classification, date and amount for a single file.
+ *
+ *  Two callers: the simulated in-table scan below, and — importantly for local
+ *  work — `ocrQueue.ts` when /api/expenses/ocr has no Gemini key to call. That
+ *  keeps an upload landing as a FILLED row offline instead of an empty one. */
+export function mockOcrExtraction(): Pick<
+  ReviewFile, 'number' | 'beneficiary' | 'confidence' | 'classification' | 'date' | 'amount'
+> {
+  const vendor = VENDORS[Math.floor(Math.random() * VENDORS.length)]!
+  const classification = CLASSIFICATIONS[Math.floor(Math.random() * CLASSIFICATIONS.length)]!
+  // Document date somewhere in the last ~45 days. Built from local parts, not
+  // toISOString() — that would shift a day in +07:00.
+  const d = new Date()
+  d.setDate(d.getDate() - Math.floor(Math.random() * 45))
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return {
+    number: randomDocNumber(classification),
+    beneficiary: { id: vendor, name: vendor },
+    confidence: Math.floor(40 + Math.random() * 60),
+    classification,
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    amount: Math.round((500_000 + Math.random() * 40_000_000) / 1000) * 1000,
+  }
+}
+
 function resolveProcessingReviewFile(id: string, queue: ReviewFile[]): void {
   const row = queue.find((rf) => rf.id === id)
   if (!row) return
-  const vendor = VENDORS[Math.floor(Math.random() * VENDORS.length)]!
-  row.beneficiary = { id: vendor, name: vendor }
-  row.confidence = Math.floor(40 + Math.random() * 60)
-  row.classification = CLASSIFICATIONS[Math.floor(Math.random() * CLASSIFICATIONS.length)]!
-  row.number = randomDocNumber(row.classification)
-  row.amount = Math.round((500_000 + Math.random() * 40_000_000) / 1000) * 1000
+  Object.assign(row, mockOcrExtraction())
   row.processing = false
   persistReviewFiles()
 }

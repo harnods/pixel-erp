@@ -152,7 +152,11 @@ const totalAmount = computed(() => subtotal.value - whtAmountNum.value)
 // ── Memo / Attachment ───────────────────────────────────────────────────────
 const memo = ref(editingPayment.value?.memo ?? '')
 const attachedFiles = ref<File[]>([])
-function onAttachmentChange(files: FileList | null) {
+function onAttachmentChange(payload: Event | FileList | null) {
+  // MpUpload's @change emits the native Event (ev.target.files), not a
+  // FileList. Accept both so the field actually stages what was picked.
+  const files: FileList | null | undefined =
+    payload && 'target' in payload ? (payload.target as HTMLInputElement).files : (payload as FileList | null)
   if (!files) return
   for (const f of Array.from(files)) {
     if (!attachedFiles.value.some(x => x.name === f.name)) attachedFiles.value.push(f)

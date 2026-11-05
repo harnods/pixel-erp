@@ -75,6 +75,7 @@ export const BUILT_KEYS = new Set<string>([
   'Warehouses',
   'Storage locations',
   'Couriers',
+  'Grades',
   'Warehouse transfers',
   'Stock adjustments',
   'Cycle counts',
@@ -101,6 +102,15 @@ export const BUILT_KEYS = new Set<string>([
   // PutAwayIndexPage exists and serves the Inbound delivery › Put-away tab and
   // the /put-away/:id detail route; the "Put-away" leaf resolves to "Put away".
   'Put away',
+
+  // ── Projects module (detailMatch → ProjectsRouter) ──
+  'Projects',
+  'Project approvals',
+  'Project documents',
+  'Stock availability',
+  'Site change capture',
+  'Project audit log',
+  'Project settings',
 
   // ── tabComponents index pages ──
   'Overview',
@@ -227,6 +237,11 @@ const ACTIONS: Record<string, EntityAction[]> = {
   ],
   'Couriers': [
     a('Add', 'built'), a('Edit', 'built'), a('Delete', 'built'),
+  ],
+  'Grades': [
+    a('New', 'built'), a('Edit', 'built'), a('Activate', 'built'), a('Deactivate', 'built'),
+    a('Delete', 'built', 'blocked while a batch uses the grade → offers Deactivate'),
+    a('Activity log', 'built', 'per grade, from the Last updated cell'), a('Export', 'partial', 'modal only; no file'),
   ],
   'Warehouse transfers': [
     a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Duplicate', 'built'),
@@ -359,6 +374,7 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Categories'),
       leaf('Variant options'),
       leaf('Units'),
+      leaf('Grades'),
       leaf('Price rules'),
     ],
   },
@@ -403,6 +419,18 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Production request'),
       leaf('Work orders'),
       leaf('Bill of materials'),
+    ],
+  },
+  {
+    module: 'Projects',
+    items: [
+      leaf('Projects'),
+      leaf('Approvals', { to: 'Project approvals' }),
+      leaf('Documents', { to: 'Project documents' }),
+      leaf('Stock availability'),
+      leaf('Site change capture'),
+      leaf('Audit log', { to: 'Project audit log' }),
+      leaf('Project settings'),
     ],
   },
   {

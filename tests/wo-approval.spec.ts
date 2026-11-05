@@ -4,7 +4,7 @@
  * cancel/close are gated; creation, material consume / return and partial completion are not.
  *
  * Seeded Work order workflows — exactly one work order transaction type each, all ACTIVE:
- *   awf-007 start · awf-009 adjustment · awf-010 completion · awf-011 cancel/close
+ *   awf-012 start · awf-009 adjustment · awf-010 completion · awf-011 cancel/close
  *   — level 1 Budi Santoso, level 2 Sari Indah or Dewi Rahayu (any).
  * Only ACTIVE workflows gate a transaction or block a type.
  *
@@ -79,7 +79,7 @@ describe('Awaiting approval list', () => {
 
 describe('rule matching — MVP scope', () => {
   it('gates each type through its own active workflow', () => {
-    expect(findGatingRule('start', PPIC)?.id).toBe('awf-007')
+    expect(findGatingRule('start', PPIC)?.id).toBe('awf-012')
     expect(findGatingRule('partial' as never, PPIC)).toBeUndefined()
     // every MVP type is seeded with an active workflow of its own
     expect(findGatingRule('adjustment', PPIC)?.id).toBe('awf-009')
@@ -89,12 +89,12 @@ describe('rule matching — MVP scope', () => {
   })
 
   it('a type outside every active workflow executes immediately (normal flow)', () => {
-    rule('awf-007').isActive = false
+    rule('awf-012').isActive = false
     expect(submitRequest({ workOrderId: 'wo-5', type: 'start', requester: LINE_LEADER, payload: {} })).toBeNull()
   })
 
   it('a requester outside "Some users" isn’t held', () => {
-    const r = rule('awf-007')
+    const r = rule('awf-012')
     r.createdByScope = 'some'
     r.createdByUserIds = []
     expect(preSubmitApprovers('start', PPIC)).toBeNull()
@@ -112,8 +112,8 @@ describe('one workflow per Work order type', () => {
   })
 
   it('turning on a workflow whose type already has an active one reports the conflict', () => {
-    approvalWorkflows.push({ ...rule('awf-007'), id: 'awf-x', name: 'Second start rule', isActive: false })
-    expect(activeWoConflicts('awf-x').map(r => r.id)).toEqual(['awf-007'])
+    approvalWorkflows.push({ ...rule('awf-012'), id: 'awf-x', name: 'Second start rule', isActive: false })
+    expect(activeWoConflicts('awf-x').map(r => r.id)).toEqual(['awf-012'])
     // awf-009 is the only active workflow for adjustment — it conflicts with nothing.
     expect(activeWoConflicts('awf-009')).toEqual([])
   })
@@ -139,6 +139,14 @@ describe('Start work order — reservation on approval', () => {
     wo('wo-1').reservationPlan = plan
     startWorkOrder(wo('wo-1'))
     expect(wo('wo-1').materialReservations).toEqual(plan)
+  })
+
+  it('a start keeps the actual start date — given now, or carried by the request until approved', () => {
+    startWorkOrder(wo('wo-1'), '2026-10-01')
+    expect(wo('wo-1').startDate).toBe('2026-10-01')
+    req('wor-001').payload.startDate = '2026-10-02'
+    approveRequest('wor-001', SARI)
+    expect(wo('wo-25').startDate).toBe('2026-10-02')
   })
 
   it('a pending start blocks starting again; a rejected start reserves nothing', () => {
@@ -298,7 +306,7 @@ describe('grooming 2026-10-09', () => {
 
   it('VAL previews the rule; every level skipped → approved automatically', async () => {
     expect(ruleLevelsPreview('start', PPIC)!.levels.map(l => l.skipped)).toEqual([false, false])
-    const r = rule('awf-007')
+    const r = rule('awf-012')
     r.levels = [r.levels[0]!] // level 1 only — Budi
     const val = useValApprovalRule()
     const res = await val.load({ module: 'work-order', transactionType: 'start', requester: LEVEL_1 })
@@ -334,7 +342,7 @@ describe('pending requests follow the approval rule live', () => {
 
   it('a changed approver applies to requests already waiting', () => {
     // wor-002 (start, wo-2) waits at level 1 — Budi. Swap level 1 to Dewi.
-    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [
+    updateApprovalWorkflow('awf-012', input(rule('awf-012'), [
       { matchType: 'any', approverIds: [id(LEVEL_2[1]!)] },
       { matchType: 'any', approverIds: [id(SARI)] },
     ]))
@@ -345,14 +353,14 @@ describe('pending requests follow the approval rule live', () => {
 
   it('removing the level a request waits at lets it execute', () => {
     // wor-001 (start, wo-25) already passed level 1 and waits at level 2.
-    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [{ matchType: 'any', approverIds: [id(LEVEL_1)] }]))
+    updateApprovalWorkflow('awf-012', input(rule('awf-012'), [{ matchType: 'any', approverIds: [id(LEVEL_1)] }]))
     expect(req('wor-001').status).toBe('executed')
     expect(wo('wo-25').status).toBe('in progress')
     expect(req('wor-002').status).toBe('pending') // still needs level 1
   })
 
   it('says in the log WHY a request applied without that level being approved', () => {
-    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [{ matchType: 'any', approverIds: [id(LEVEL_1)] }]))
+    updateApprovalWorkflow('awf-012', input(rule('awf-012'), [{ matchType: 'any', approverIds: [id(LEVEL_1)] }]))
     const event = req('wor-001').log.find(e => e.event === 'rule-changed')!
     expect(event).toBeDefined()
     expect(event.level).toBe(2)
@@ -369,7 +377,7 @@ describe('pending requests follow the approval rule live', () => {
 
   it('decided requests keep the levels they were decided under', () => {
     const before = JSON.stringify(req('wor-004').levels)
-    updateApprovalWorkflow('awf-007', input(rule('awf-007'), [{ matchType: 'any', approverIds: [id(SARI)] }]))
+    updateApprovalWorkflow('awf-012', input(rule('awf-012'), [{ matchType: 'any', approverIds: [id(SARI)] }]))
     expect(JSON.stringify(req('wor-004').levels)).toBe(before)
   })
 })

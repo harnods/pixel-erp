@@ -1,3 +1,4 @@
+import type { BatchAttributeValues } from './batchAttributes'
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 export type InvoiceStatus    = 'paid' | 'open' | 'overdue' | 'partially-paid'
@@ -15,7 +16,7 @@ export type ProductStatus    = 'active' | 'inactive'
 export type ContactType      = 'company' | 'individual'
 
 // Sales delivery — fulfillment + billing lifecycle
-export type FulfillmentStatus = 'in transit' | 'direct' | 'delivered'
+export type FulfillmentStatus = 'in transit' | 'direct' | 'delivered' | 'partially delivered'
 export type BillingStatus     = 'unbilled' | 'invoiced'
 
 // WMS
@@ -71,6 +72,15 @@ export interface SalesInvoice {
   /** false for a small subset of invoices — those carry no PPN component at
    *  all, so "Create tax document" has nothing to document and is hidden. */
   hasPpn: boolean
+  /**
+   * Set when the invoice is raised from a sales delivery: the lines as invoiced
+   * (quantities to six decimals, as delivered) and the delivery they bill. The
+   * detail page renders these instead of synthesised lines — the downstream view
+   * TS-004 of the percentage-based delivery plan needs.
+   */
+  items?: SalesOrderItem[]
+  deliveryId?: string
+  recurringId?: string
 }
 
 export interface PurchaseInvoice {
@@ -86,6 +96,7 @@ export interface PurchaseInvoice {
   itemCount: number
   hasAttachment?: boolean
   tags?: string[]
+  recurringId?: string
 }
 
 export interface BillAttachment {
@@ -144,6 +155,7 @@ export interface Bill {
   payment?: BillPayment
   /** true once the payment has been matched against a bank transaction */
   reconciled?: boolean
+  recurringId?: string
 }
 
 export interface ReviewFile {
@@ -212,6 +224,7 @@ export interface SalesOrder {
   items: SalesOrderItem[]
   globalDiscount: number                  // IDR, order-level discount
   shippingFee: number                     // IDR
+  recurringId?: string
 }
 
 /** A requested line on a purchase request — the source rows a purchase order
@@ -274,15 +287,41 @@ export interface Warehouse {
   updatedBy: string       // person name
 }
 
+/**
+ * One delivered line, tied back to the sales order line it draws down.
+ *
+ * `qty` is the ONLY posting basis (PRD R-03) — six decimals, because a percentage
+ * of an odd order quantity rarely lands on a whole number. `inputMode` and
+ * `inputValue` record how the user arrived at it: they are the audit trail
+ * (TS-001) and what lets the document show "33% produced 5,280000 unit" later.
+ * Nothing posts from `inputValue`.
+ *
+ * See docs/plans/percentage-based-sales-delivery.md.
+ */
+export interface SDDeliveryLine {
+  orderLineIndex: number                  // index into SalesOrder.items
+  product: string
+  sku: string
+  description: string
+  unit: string
+  qty: number                             // posting basis, to 6 dp
+  inputMode: 'qty' | 'percent'
+  inputValue: number                      // what the user typed — qty, or percent of ordered
+}
+
 export interface SalesDelivery {
   id: string
   number: number                          // rendered as "Sales Delivery #20001"
   customer: Pick<Customer, 'id' | 'name'>
   date: string                            // delivery date, ISO
-  fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered
+  fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered | partially delivered
   billingStatus: BillingStatus            // unbilled | invoiced
   total: number                           // delivery total IDR
   tags?: string[]
+  /** Set on contract deliveries raised against a sales order; the ~100 generated
+   *  records carry neither, so both stay optional. */
+  orderId?: string
+  items?: SDDeliveryLine[]
 }
 
 // Purchase Quote — the buy-side mirror of SalesQuote (vendor-keyed). Lightweight
@@ -310,6 +349,22 @@ export interface PurchaseDelivery {
   billingStatus: BillingStatus            // unbilled | invoiced
   total: number                           // delivery total IDR
   tags?: string[]
+  /** Lines as entered on the New purchase delivery form. Seeded deliveries have none —
+   *  the details page synthesises their lines. */
+  lines?: PurchaseDeliveryLine[]
+}
+
+export interface PurchaseDeliveryLine {
+  product: string
+  sku: string
+  description: string
+  qty: number
+  unit: string
+  unitPrice: number
+  discountPct: number
+  taxLabel: string
+  /** Batch-tracked lines: which batches received the qty (Batch Attribute story 10). */
+  batches?: { batchId: string; batchNo: string; qty: number; attributes?: BatchAttributeValues }[]
 }
 
 export type PurchaseOrderStatus = 'open' | 'partially-processed' | 'awaiting invoice' | 'closed' | 'voided' | 'draft' | 'rejected' | 'approved'
@@ -332,4 +387,5 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  recurringId?: string
 }

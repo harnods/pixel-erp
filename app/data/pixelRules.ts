@@ -181,7 +181,7 @@ export const RULE_MEANINGS: Record<string, string> = {
   // Index pages & shared modal/drawer patterns
   'rule/index-scenario-fab': 'Every index page uses the shared ScenarioFab (black settings FAB, bottom-right) → MpPopover scenarios (Default, Empty state); never hand-roll the preview FAB.',
   'rule/index-first-load-skeleton': 'Every index page shows a skeleton on first load (ErpTablePage loading flag) — never an empty flash or spinner-only.',
-  'rule/bulk-actions-no-delete': 'The bulk-actions "Actions" dropdown holds non-destructive ops only — never Delete (deletion stays a per-record confirm).',
+  'rule/bulk-actions-delete-confirmed': 'Bulk Delete is allowed, always behind a ConfirmModal naming how many records go — last in the "Actions" dropdown, danger-styled. Never delete straight from the bar.',
   'rule/pdf-preview-modal': 'Print/preview via shared PdfPreviewModal: single-column PDF, no thumbnail rail; footer = Open template settings (left) + Print PDF (right, prints not downloads).',
   'rule/share-via-email-modal': 'Share via email = shared ShareViaEmailModal: left email form + right single-column PDF preview (no thumbnail).',
   'rule/copy-link-drawer': 'Copy link = shared CopyLinkDrawer (custom Teleport drawer shell), never a modal or silent toast.',
