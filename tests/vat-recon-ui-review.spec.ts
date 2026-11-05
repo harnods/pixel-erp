@@ -53,7 +53,7 @@ describe('duplicate reference (US-003)', () => {
 })
 
 describe('workspace', () => {
-  async function mountWorkspace(finalizeSignal = ref(0), query: Record<string, string> = { masa: '2027-02', tab: 'All faktur' }) {
+  async function mountWorkspace(finalizeSignal = ref(0), query: Record<string, string> = { masa: '2027-02', tab: 'To match' }) {
     route.query = query
     const { default: Page } = await import('~/components/pages/VatReconciliationWorkspacePage.vue')
     const Host = { setup() { provide('vatFinalize', finalizeSignal); return {} }, components: { Page }, template: '<Page />' }
@@ -62,13 +62,13 @@ describe('workspace', () => {
     return w
   }
 
-  it('shows no Difference verdict until a candidate is picked', async () => {
+  it('a duplicate reference shows its faktur and offers Find another faktur — no premature Difference', async () => {
     const w = await mountWorkspace()
-    const item = w.findAll('.vr-item').find(i => i.find('.vr-djp').text().includes(dup.djp!.ref))!
-    await item.find('.vr-chevron').trigger('click')
-    expect(item.find('.vr-cand-sum').exists()).toBe(false)
-    expect(item.text()).toContain('Select a match to see the difference.')
-    expect(item.text()).toContain('Select the correct faktur')
+    const item = w.find(`.vr-item[data-pair-id="${dup.id}"]`)
+    await item.find('.vr-line').trigger('click')
+    expect(item.text()).toContain(dup.djp!.ref)
+    expect(item.text()).not.toContain('Difference')
+    expect(item.findAll('button').some(b => b.text() === 'Find another faktur')).toBe(true)
     w.unmount()
   })
 
@@ -83,17 +83,17 @@ describe('workspace', () => {
 
   // ── Pass 2 ──
   it('a fully reconciled masa opens to an all-clear state, not "no match"', async () => {
-    const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'Needs attention' })
-    expect(w.text()).toContain('Nothing needs attention')
+    const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'To match' })
+    expect(w.text()).toContain('Nothing to match')
     expect(w.text()).not.toContain('No faktur match your filters')
-    expect(w.findAll('button').some(b => b.text() === 'View all faktur')).toBe(true)
+    expect(w.findAll('button').some(b => b.text() === 'View matched')).toBe(true)
     w.unmount()
   })
 
   it('Re-run on a finalized masa refuses inline in the banner; no second Unfinalize', async () => {
     finalizePeriod('2027-01')
     try {
-      const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'All faktur' })
+      const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'To match' })
       expect(w.findAll('button').filter(b => b.text() === 'Unfinalize')).toHaveLength(0)
       await w.findAll('button').find(b => b.text() === 'Re-run')!.trigger('click')
       expect(w.find('.vr-finalized-error').text()).toContain('Unfinalize it first')
@@ -103,13 +103,14 @@ describe('workspace', () => {
     }
   })
 
-  it('a return row shows the linked sales return', async () => {
+  it('a return row (Not reconciled) shows the linked sales return in its detail', async () => {
     const ret = outputPairs.find(p => p.match === 'return-not-reflected')!
-    const w = await mountWorkspace()
-    const item = w.findAll('.vr-item').find(i => i.find('.vr-erp').text().includes(ret.erp!.ref))!
-    await item.find('.vr-chevron').trigger('click')
-    expect(item.text()).toContain('Sales return')
-    expect(item.text()).toContain(ret.erp!.returnRef!)
+    const w = await mountWorkspace(ref(0), { masa: '2027-02', tab: 'Not reconciled' })
+    const row = w.findAll('tbody tr').find(r => r.text().includes(ret.erp!.ref))!
+    await row.find('.cell-link').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Sales return')
+    expect(document.body.textContent).toContain(ret.erp!.returnRef!)
     w.unmount()
   })
 })
@@ -199,5 +200,21 @@ describe('shared patterns (static)', () => {
     const ws = block.slice(0, block.indexOf("currentPageKey === 'Matching rules'"))
     expect(ws).not.toContain("t('Export')")
     expect(ws).not.toContain(':disabled')
+  })
+})
+
+describe('expanded row + drawer title (2026-11-05)', () => {
+  it('the reason banner sits above the two detail columns', () => {
+    const s = src('app/components/pages/VatReconciliationWorkspacePage.vue')
+    const detail = s.slice(s.indexOf('class="vr-detail"'))
+    expect(detail.indexOf('class="vr-reason"')).toBeGreaterThan(-1)
+    expect(detail.indexOf('class="vr-reason"')).toBeLessThan(detail.indexOf('class="vr-detail-col"'))
+  })
+
+  it('the detail drawer title is the reference only — no icon, no sub-line', () => {
+    const s = src('app/components/patterns/ReconciliationDetailDrawer.vue')
+    expect(s).not.toContain('<template #title>')
+    expect(s).not.toContain('rdd-state-icon')
+    expect(s).not.toContain("t('Reconciliation detail')")
   })
 })

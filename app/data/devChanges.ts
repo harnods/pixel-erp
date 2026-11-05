@@ -28,6 +28,38 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'app-shell-light-canvas',
+    title: 'App shell: no dark-green band under the page',
+    description:
+      'The dark-green backing moved from html/body onto .app-shell, so the header, side borders and rounded top corners look the same, but any canvas past the shell (e.g. the desktop preview reserving room for its annotation toolbar) now shows the light page colour instead of a green footer band.',
+    date: '2026-11-05',
+    files: ['layouts/default.vue'],
+  },
+  {
+    id: 'vat-recon-workspace-banner-top',
+    title: 'VAT workspace: reason banner at the top of the expanded row',
+    description:
+      'The engine reason banner (No match in ERP, Return netted, …) now sits at the top of the expanded row, above the Sales invoice / Faktur pajak columns, so the why is read before the detail. The Reconciliation detail drawer title is now just the reference number: no state icon, no "Reconciliation detail · <state>" sub-line (the banner below already says the state).',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue'],
+  },
+  {
+    id: 'vat-recon-workspace-tabs-inline',
+    title: 'VAT workspace: tabs under the summary',
+    description:
+      'To match · Not reconciled · Matched moved from the title-bar page tabs to in-page MpTabs directly under the summary, as on the bank Reconciliations page (docs/patterns/tabs.md §2). Counts keep the same warning badge; the tab is still in ?tab= so links and refresh land on it.',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'vat-recon-workspace-reconciliations',
+    title: 'VAT workspace follows Jurnal bank Reconciliations',
+    description:
+      'Tabs are now To match · Not reconciled · Matched, each with its count. To match keeps the bank-style rows restyled to the reference: status as coloured text ("Match found" / "No match found"), a solid ✓ ring when there is a match to confirm and a dashed one when there is none, and an expand with two titled columns (each with a ⋮ menu) using ContentList; "Find another faktur" opens the detail drawer. Candidates are now only records that exist in the masa — no invented faktur — and a confirmed match consumes its counterpart. Not reconciled and Matched are ErpTablePage tables; Matched shows Method (Auto / Manual) and its Unmatch really splits an engine match back into two open rows. The KPI cards became the reference\'s divider summary strip.',
+    date: '2026-11-04',
+    files: ['VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationPairActions.vue', 'vatReconciliation.ts', '[...slug].vue'],
+  },
+  {
     id: 'vat-recon-index-no-tabs',
     title: 'VAT reconciliation index: one list, no tabs',
     description:

@@ -541,6 +541,22 @@ export const outputPairs: ReconPair[] = [
     djp: { ref: '27000000039848364', date: '28 Feb 2027', customer: 'PT Midi Utama Indonesia Tbk', npwp: '0019274056083000', dpp: 7350000, ppn: 882000, total: 8232000, approved: false },
     reason: 'Faktur is still Draft in Coretax, so it is excluded from matching until it is approved.',
   },
+  {
+    // 4 (US-009) — the faktur for invoice 40122 (o-07, linked to SI122), but its
+    // Referensi was typed as "INV-40122", so the exact key match missed it. The
+    // candidate list finds it on NPWP + amount: the "Match found" case in To match.
+    id: 'o-17', match: 'no-match-in-erp', confidence: 0,
+    erp: null,
+    djp: { ref: '27000000039848437', date: '16 Feb 2027', customer: 'Cafe Halaman Jogja', npwp: '0071058362092000', dpp: 11981982, ppn: 1318018, total: 13300000, approved: true },
+    reason: 'Referensi on this faktur reads "INV-40122". No sales invoice in Jurnal carries that number.',
+  },
+  {
+    // 4 (US-009) — same buyer, Rp500.000 more: a near miss. Matching it needs a reason.
+    id: 'o-18', match: 'no-match-in-erp', confidence: 0,
+    erp: null,
+    djp: { ref: '27000000039848510', date: '17 Feb 2027', customer: 'Cafe Halaman Jogja', npwp: '0071058362092000', dpp: 12428429, ppn: 1371571, total: 13800000, approved: true },
+    reason: 'Referensi on this faktur is blank. No sales invoice in Jurnal carries it.',
+  },
 ]
 
 /**
@@ -614,6 +630,9 @@ export interface MatchCandidate {
   total: number
   confidence: number
   why: string
+  /** The open pair this record comes from (its counterpart row), when there is one.
+   *  Confirming the match consumes that row, so it never shows twice. */
+  pairId?: string
 }
 
 /** States where the pair is still open for a person to pick its counterpart. */
@@ -624,11 +643,22 @@ export function hasCandidates(pair: ReconPair): boolean {
 }
 
 /**
- * Plausible counterparts for an open pair, derived FROM the pair so the
- * Selected total / Difference the user sees are about this row and not about a
- * fixed sample. The first is the near-certain one (same amount and NPWP — the
- * Referensi was typed differently), the others are the near misses the engine
- * refused to auto-match. Deterministic per pair id, so a refresh shows the same.
+ * Which masa + side a pair lives in. Fixture ids are `o-`/`i-` (the live masa);
+ * generated ids start with the masa id (`2027-03-output-…`); an unmatched auto
+ * match splits into `<id>~erp` / `<id>~djp`, which keep their parent's prefix.
+ */
+export function pairLocation(pair: ReconPair): { periodId: string; side: ReconSide } {
+  const m = /^(\d{4}-\d{2})-(output|input)-/.exec(pair.id)
+  if (m) return { periodId: m[1]!, side: m[2] as ReconSide }
+  return { periodId: activePeriodId, side: pair.id.startsWith('i-') ? 'input' : 'output' }
+}
+
+/**
+ * Counterparts for an open pair — **only records that exist**: the opposite
+ * side's own open rows in the same masa (a Coretax-only faktur for an ERP-only
+ * invoice, and the reverse). A masa whose faktur have not synced therefore
+ * offers nothing, which is the truth. Ranked: same NPWP and amount (the Referensi
+ * was typed differently), then same NPWP, then same amount. No invented rows.
  */
 export function candidatesFor(pair: ReconPair): MatchCandidate[] {
   if (!hasCandidates(pair)) return []
@@ -644,23 +674,76 @@ export function candidatesFor(pair: ReconPair): MatchCandidate[] {
   }
   const base = pair.erp ?? pair.djp
   if (!base) return []
-  // The counterpart lives on the other side: a faktur for an ERP-only row, an
-  // invoice for a Coretax-only one. Refs are shaped like that side's numbers.
   const lookingForFaktur = !!pair.erp && !pair.djp
-  const seed = [...pair.id].reduce((n, c) => n + c.charCodeAt(0), 0)
-  const refAt = (k: number) => lookingForFaktur
-    ? `27${String(seed * 7919 + k * 104729).padStart(15, '0').slice(-15)}`
-    : String(42000 + ((seed * 13 + k * 7) % 900))
-  const party = partyOf(base)
-  const lines = (gross: number) => grossToLines(gross)
-  return [
-    { ref: refAt(1), date: base.date, party, ...lines(base.total), confidence: 0.82,
-      why: 'NPWP and amounts match. Referensi differs.' },
-    { ref: refAt(2), date: base.date, party, ...lines(base.total + 500_000), confidence: 0.61,
-      why: 'NPWP matches. Total is Rp500.000 higher.' },
-    { ref: refAt(3), date: base.date, party: `${party} (group)`, ...lines(base.total), confidence: 0.4,
-      why: 'Amounts match. NPWP differs (group company).' },
-  ]
+  const { periodId, side } = pairLocation(pair)
+  const pool = pairsForPeriod(periodId, side).filter(p => p.id !== pair.id && (lookingForFaktur
+    // Only an Approved faktur can be matched (§5.1 row 13).
+    ? p.match === 'no-match-in-erp' && !!p.djp?.approved
+    : p.match === 'not-in-coretax' && !!p.erp))
+  const out: MatchCandidate[] = []
+  for (const p of pool) {
+    const r = (lookingForFaktur ? p.djp : p.erp)!
+    const sameNpwp = r.npwp === base.npwp
+    const sameTotal = r.total === base.total
+    if (!sameNpwp && !sameTotal) continue
+    const gap = Math.abs(r.total - base.total)
+    out.push({
+      ref: r.ref, date: r.date, party: partyOf(r), dpp: r.dpp, ppn: r.ppn, total: r.total,
+      pairId: p.id,
+      confidence: sameNpwp && sameTotal ? 1 : sameNpwp ? 0.6 : 0.4,
+      why: sameNpwp && sameTotal ? 'NPWP and amounts match. Referensi differs.'
+        : sameNpwp ? `NPWP matches. Total differs by ${formatIDR(gap)}.`
+        : 'Amounts match. NPWP differs.',
+    })
+  }
+  return out.sort((x, y) => y.confidence - x.confidence)
+}
+
+// ── Workspace tabs (bank-reconciliation layout) ───────────────────────────────
+/**
+ * The workspace splits the masa by the job, like Jurnal's bank Reconciliations:
+ *   To match       — a person pairs or confirms (missing counterpart, duplicate
+ *                    reference, return netted) — the bank-style matching rows
+ *   Not reconciled — a root cause to fix on a document (edited, voided, returns,
+ *                    dates, finalized period) — a table
+ *   Matched        — reconciled, auto or manual — a table
+ */
+export type WorkspaceTab = 'To match' | 'Not reconciled' | 'Matched'
+export const WORKSPACE_TABS: WorkspaceTab[] = ['To match', 'Not reconciled', 'Matched']
+export const TO_MATCH_STATES: MatchState[] = ['not-in-coretax', 'no-match-in-erp', 'duplicate-reference', 'return-netted']
+
+export function workspaceTabOf(pair: ReconPair): WorkspaceTab {
+  if (pair.match === 'matched') return 'Matched'
+  return TO_MATCH_STATES.includes(pair.match) ? 'To match' : 'Not reconciled'
+}
+
+/**
+ * Coretax-only rows that are already some invoice's best suggestion. To match
+ * shows that pairing once — on the invoice's row, like a bank statement line and
+ * its matched transaction — so these rows fold into it instead of repeating it.
+ */
+export function absorbedPairIds(pairs: ReconPair[]): Set<string> {
+  const out = new Set<string>()
+  for (const p of pairs) {
+    if (p.match !== 'not-in-coretax') continue
+    const top = candidatesFor(p)[0]
+    if (top?.pairId) out.add(top.pairId)
+  }
+  return out
+}
+
+/** The rows a tab lists (To match without the absorbed Coretax-only rows). */
+export function workspaceTabRows(pairs: ReconPair[], tab: WorkspaceTab): ReconPair[] {
+  const absorbed = tab === 'To match' ? absorbedPairIds(pairs) : new Set<string>()
+  return pairs.filter(p => workspaceTabOf(p) === tab && !absorbed.has(p.id))
+}
+
+export function workspaceTabCounts(pairs: ReconPair[]): Record<WorkspaceTab, number> {
+  return {
+    'To match': workspaceTabRows(pairs, 'To match').length,
+    'Not reconciled': workspaceTabRows(pairs, 'Not reconciled').length,
+    'Matched': workspaceTabRows(pairs, 'Matched').length,
+  }
 }
 
 /** Fields compared side by side, in reading order. */
@@ -1511,13 +1594,60 @@ const generatedPairs = new Map<string, ReconPair[]>()
  * moves all of them together. With no overlay the base array is returned as-is.
  */
 export function pairsForPeriod(periodId: string, side: ReconSide): ReconPair[] {
-  const base = basePairsForPeriod(periodId, side)
+  void reconVersion.value
+  const split = unmatchedAuto.filter(u => u.periodId === periodId && u.side === side)
+  const base = split.length
+    ? basePairsForPeriod(periodId, side).flatMap(p => (split.some(u => u.pairId === p.id) ? splitPair(p) : [p]))
+    : basePairsForPeriod(periodId, side)
   const overlays = manualMatches.filter(m => m.periodId === periodId && m.side === side)
   if (!overlays.length) return base
-  return base.map(p => {
+  // A confirmed match takes its counterpart row with it — it is now one pair.
+  const consumed = new Set(overlays.map(o => o.candidate.pairId).filter(Boolean))
+  return base.filter(p => !consumed.has(p.id)).map(p => {
     const m = overlays.find(o => o.pairId === p.id)
     return m ? applyManualMatch(p, m) : p
   })
+}
+
+// ── Unmatching an auto match (US-002 AC-03) ───────────────────────────────────
+/**
+ * Unmatch on one of the ENGINE's matches puts both sides back to their own open
+ * status: the pair splits into an ERP-only row (Not found in Coretax) and a
+ * Coretax-only row (No match in ERP), each of which lists the other as its
+ * candidate. Persisted with who did it and when, like a manual match.
+ */
+const UNMATCHED_AUTO_KEY = 'vat-recon-unmatched-auto'
+interface UnmatchedAuto { pairId: string; periodId: string; side: ReconSide; by: string; at: string }
+let unmatchedAuto: UnmatchedAuto[] = loadSnapshot<UnmatchedAuto>(UNMATCHED_AUTO_KEY) ?? []
+
+function splitPair(p: ReconPair): ReconPair[] {
+  const out: ReconPair[] = []
+  if (p.erp) out.push({ id: `${p.id}~erp`, match: 'not-in-coretax', confidence: 0, erp: p.erp, djp: null,
+    reason: `Unmatched by hand from faktur ${p.djp?.ref ?? ''}.`.trim() })
+  if (p.djp) out.push({ id: `${p.id}~djp`, match: 'no-match-in-erp', confidence: 0, erp: null, djp: p.djp,
+    reason: `Unmatched by hand from sales invoice ${p.erp?.ref ?? ''}.`.trim() })
+  return out
+}
+
+export function unmatchAutoPair(pair: ReconPair): boolean {
+  if (pair.match !== 'matched' || pair.matchedBy === 'manual' || pair.id.includes('~')) return false
+  const { periodId, side } = pairLocation(pair)
+  if (unmatchedAuto.some(u => u.pairId === pair.id)) return false
+  unmatchedAuto = [...unmatchedAuto, { pairId: pair.id, periodId, side, by: CURRENT_USER, at: reconNowIso() }]
+  saveSnapshot(UNMATCHED_AUTO_KEY, unmatchedAuto)
+  reconVersion.value++
+  return true
+}
+
+/** Put an engine match back (drops the split). Also undoes any re-match of its halves. */
+export function restoreAutoMatch(pairId: string): boolean {
+  if (!unmatchedAuto.some(u => u.pairId === pairId)) return false
+  unmatchedAuto = unmatchedAuto.filter(u => u.pairId !== pairId)
+  manualMatches = manualMatches.filter(m => m.pairId !== `${pairId}~erp` && m.pairId !== `${pairId}~djp`)
+  saveSnapshot(UNMATCHED_AUTO_KEY, unmatchedAuto)
+  saveSnapshot(MANUAL_MATCH_KEY, manualMatches)
+  reconVersion.value++
+  return true
 }
 
 /**

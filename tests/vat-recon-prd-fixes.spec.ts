@@ -3,41 +3,45 @@
  * VAT reconciliation — four gaps against PRD OD-001 v1.0, fixed:
  *
  *  1. US-020 AC-02  Tax difference = |PPN Sales − PPN Faktur| (was DPP + PPN).
- *  2. US-020 AC-04  Footer counts follow the filter; the cards stay period-level.
+ *  2. US-020 AC-04  The list follows the filter; the summary stays period-level.
  *  3. US-002 AC-05  A Finalized masa refuses Match / Unmatch, not only Re-run.
  *  4. US-012 AC-02  Waiting on buyer is a per-row toggle; only toggled rows
  *                   leave "need review", and the status never changes.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject } from 'vue'
+import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, watchEffect, useSlots } from 'vue'
+import { useTableState } from '~/composables/useTableState'
 import {
   pairsForPeriod, reconTotals, footerCounts, isWaitingOnBuyer, setWaitingOnBuyer,
-  canWaitOnBuyer, outputPairs, waitingOnBuyerMark, CURRENT_USER,
+  canWaitOnBuyer, outputPairs, waitingOnBuyerMark, CURRENT_USER, restoreAutoMatch,
 } from '~/data/vatReconciliation'
 import { formatIDR } from '~/utils/currency'
 
-const route = { query: { masa: '2027-02', tab: 'All faktur' } as Record<string, string> }
+const route = { query: { masa: '2027-02', tab: 'To match' } as Record<string, string> }
 vi.stubGlobal('useRoute', () => route)
 vi.stubGlobal('useRouter', () => ({ push: vi.fn(), replace: vi.fn() }))
 vi.stubGlobal('useLocale', () => ({ t: (s: string) => s }))
 vi.stubGlobal('useNavigation', () => ({ currentPageKey: ref('Faktur keluaran') }))
 vi.stubGlobal('useTaxSubmissionPermission', () => ({ canSubmitTaxDocument: ref(true), setCanSubmitTaxDocument: vi.fn() }))
-for (const [k, v] of Object.entries({ ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject })) vi.stubGlobal(k, v)
+for (const [k, v] of Object.entries({ ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, watchEffect, useSlots, useTableState })) vi.stubGlobal(k, v)
 class FakeObserver { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver', FakeObserver)
 vi.stubGlobal('IntersectionObserver', FakeObserver)
 
-async function mountWorkspace(masa: string) {
-  route.query = { masa, tab: 'All faktur' }
+async function mountWorkspace(masa: string, tab = 'To match') {
+  route.query = { masa, tab }
   const { default: Page } = await import('~/components/pages/VatReconciliationWorkspacePage.vue')
-  const w = mount(Page, { global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
+  const w = mount(Page, { attachTo: document.body, global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
   await flushPromises()
   return w
 }
 
 const returnRow = () => outputPairs.find(p => p.match === 'return-not-reflected')!
-afterEach(() => setWaitingOnBuyer(returnRow(), false))
+afterEach(() => {
+  setWaitingOnBuyer(returnRow(), false)
+  restoreAutoMatch(outputPairs.find(p => p.match === 'matched')!.id)
+})
 
 describe('1 — Tax difference is PPN only (US-020 AC-02)', () => {
   it('the card shows |PPN Faktur − PPN Sales|, not the DPP + PPN gap', async () => {
@@ -49,22 +53,24 @@ describe('1 — Tax difference is PPN only (US-020 AC-02)', () => {
     expect(ppnGap).not.toBe(dppPlusPpnGap) // the fixture actually tells them apart
 
     const w = await mountWorkspace('2027-02')
-    const card = w.findAll('.vr-kpi').at(-1)!
-    expect(card.find('.vr-kpi-value').text()).toBe(formatIDR(ppnGap))
+    // The summary strip's last column is Tax difference.
+    const cell = w.findAll('.vr-sum').at(-1)!
+    expect(cell.find('.vr-sum-value').text()).toBe(formatIDR(ppnGap))
+    w.unmount()
   })
 })
 
-describe('2 — Footer follows the filter (US-020 AC-04)', () => {
-  it('searching narrows the footer counts but not the cards', async () => {
-    const w = await mountWorkspace('2027-02')
-    const cardsBefore = w.findAll('.vr-kpi-value').map(c => c.text())
+describe('2 — The list follows the filter, the summary does not (US-020 AC-04)', () => {
+  it('searching narrows the Matched table to one row; the summary is unchanged', async () => {
+    const w = await mountWorkspace('2027-02', 'Matched')
+    const summaryBefore = w.findAll('.vr-sum-value').map(c => c.text())
     const one = pairsForPeriod('2027-02', 'output').find(p => p.match === 'matched' && p.erp)!
     await w.find('.filter-search-input').setValue(one.erp!.ref)
-    const foot = w.find('.vr-foot').text()
-    expect(foot).toContain('1 matched')
-    expect(foot).toContain('0 need review')
-    expect(foot).toContain('0 unmatched')
-    expect(w.findAll('.vr-kpi-value').map(c => c.text())).toEqual(cardsBefore)
+    await flushPromises()
+    expect(w.findAll('tbody tr').filter(r => r.text().includes(one.erp!.ref))).toHaveLength(1)
+    expect(w.findAll('tbody tr').filter(r => r.find('.cell-link').exists())).toHaveLength(1)
+    expect(w.findAll('.vr-sum-value').map(c => c.text())).toEqual(summaryBefore)
+    w.unmount()
   })
 })
 
@@ -126,9 +132,11 @@ describe('4 — Waiting on buyer is a per-row toggle (US-012 AC-02)', () => {
     await btn().trigger('click')
     expect(btn().text()).toBe('Stop waiting on buyer')
 
-    const w = await mountWorkspace('2027-02')
-    const item = w.findAll('.vr-item').find(i => i.find('.vr-erp').text().includes(returnRow().erp!.ref))!
-    expect(item.find('.vr-waiting-tag').exists()).toBe(true)
+    // The return row lives on Not reconciled; parked, it carries the tag beside its status.
+    const w = await mountWorkspace('2027-02', 'Not reconciled')
+    const row = w.findAll('tbody tr').find(r => r.text().includes(returnRow().erp!.ref))!
+    expect(row.find('.vr-status').html()).toContain('Waiting on buyer')
+    w.unmount()
 
     await btn().trigger('click')
     expect(btn().text()).toBe('Waiting on buyer')

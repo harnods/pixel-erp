@@ -44,7 +44,7 @@ import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import {
-  matchCounts, pairsForPeriod, activePeriodId, periodLabelById,
+  activePeriodId, periodLabelById,
   reconVersion, isPeriodFinalized, canFinalizePeriod, loadVatSetup,
 } from '~/data/vatReconciliation'
 
@@ -367,8 +367,6 @@ const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/Purchas
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
 // VAT reconciliation issue queue — rendered per tab via tabComponents below.
 const VatReconciliationUnmatchedPage = asyncPage(() => import('~/components/pages/VatReconciliationUnmatchedPage.vue'))
-// Both faktur sides scope themselves from ?tab= (Needs attention / All faktur).
-const VatReconciliationWorkspacePage = asyncPage(() => import('~/components/pages/VatReconciliationWorkspacePage.vue'))
 const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
 // The "New custom role" title-bar button lives here, but the drawer it opens is
 // rendered inside CustomRolesPage — the two talk through this shared intent.
@@ -1202,11 +1200,9 @@ const pageTabs: Record<string, string[]> = {
   'Product list':      ['All products', 'Awaiting approval'],
   // VAT reconciliation has no tabs: periods that need attention are sorted to
   // the top of the one list (VatReconciliationPeriodsPage).
-  // Faktur workspaces: the tab is the *scope* (what's in play), the in-page
-  // Status select narrows by match state. Splitting them this way keeps both
-  // controls on-system — Pixel has no filter-chip component.
-  'Faktur keluaran': ['Needs attention', 'All faktur'],
-  'Faktur masukan':  ['Needs attention', 'All faktur'],
+  // Faktur workspaces: To match / Not reconciled / Matched are IN-PAGE tabs under
+  // the summary (VatReconciliationWorkspacePage, MpTabs) — Jurnal's bank
+  // Reconciliations layout — so they are not registered as page tabs here.
   // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
   'Users and roles':   ['User list', 'Custom role'],
   // XPM (Mekari Expense) — section tabs read by the page via ?tab=.
@@ -1313,13 +1309,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Product list') {
     const awaiting = pendingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
-  }
-  if (currentPageKey.value === 'Faktur keluaran' || currentPageKey.value === 'Faktur masukan') {
-    const side = currentPageKey.value === 'Faktur masukan' ? 'input' : 'output'
-    void reconVersion.value
-    const c = matchCounts(pairsForPeriod(String(route.query.masa ?? activePeriodId), side))
-    const attention = (c.all ?? 0) - (c.matched ?? 0)
-    return attention ? { 'Needs attention': attention } : {}
   }
   return {}
 })
@@ -1483,14 +1472,6 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Warehouse transfers': {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
-  },
-  'Faktur keluaran': {
-    'Needs attention': VatReconciliationWorkspacePage,
-    'All faktur': VatReconciliationWorkspacePage,
-  },
-  'Faktur masukan': {
-    'Needs attention': VatReconciliationWorkspacePage,
-    'All faktur': VatReconciliationWorkspacePage,
   },
   'Expenses': {
     'Bills': BillsIndexPage,

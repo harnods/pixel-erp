@@ -4,46 +4,74 @@
  *
  *  P0  A match whose two sides differ needs a reason; it is never one click.
  *  P1  Manual matches are saved and drive every count; Unmatch reverts them.
- *  P1  The expand shows Activity built from real records.
- *  P1  The list pages (50 by default) instead of rendering every pair.
+ *  P1  The detail drawer opens the shared Activity log, built from real records.
+ *  P1  To match pages (50 by default) instead of rendering every pair.
+ *  —   Candidates are records that exist in the masa; a match consumes its counterpart.
  *  P1  Drafts can be selected and submitted to DJP in bulk.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject } from 'vue'
+import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, watchEffect, useSlots } from 'vue'
+import { useTableState } from '~/composables/useTableState'
 import {
   pairsForPeriod, candidatesFor, confirmManualMatch, undoManualMatch, manualMatchOf,
-  pairActivity, footerCounts, reconTotals, OUTPUT_NOT_IN_CORETAX_LINKS, erpFakturOf,
+  pairActivity, footerCounts, reconTotals, erpFakturOf,
 } from '~/data/vatReconciliation'
 import { addTaxDocument, removeTaxDocument, getTaxDocument } from '~/data/taxDocuments'
 
-const route = { query: { masa: '2027-03', tab: 'All faktur' } as Record<string, string> }
+const route = { query: { masa: '2027-02', tab: 'To match' } as Record<string, string> }
 vi.stubGlobal('useRoute', () => route)
 vi.stubGlobal('useRouter', () => ({ push: vi.fn(), replace: vi.fn() }))
 vi.stubGlobal('useLocale', () => ({ t: (s: string) => s }))
 vi.stubGlobal('useNavigation', () => ({ currentPageKey: ref('Faktur keluaran') }))
 vi.stubGlobal('useTaxSubmissionPermission', () => ({ canSubmitTaxDocument: ref(true), setCanSubmitTaxDocument: vi.fn() }))
-for (const [k, v] of Object.entries({ ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject })) vi.stubGlobal(k, v)
+for (const [k, v] of Object.entries({ ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, watchEffect, useSlots, useTableState })) vi.stubGlobal(k, v)
 class FakeObserver { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver', FakeObserver)
 vi.stubGlobal('IntersectionObserver', FakeObserver)
 
-const PERIOD = '2027-03'
-const rowFor = (invoiceId: string) =>
-  pairsForPeriod(PERIOD, 'output').find(p => p.erp?.salesInvoiceId === invoiceId)!
-const ROW = OUTPUT_NOT_IN_CORETAX_LINKS[PERIOD]![0]! // SI103 — no tax document
+// 02/2027 carries real candidates: invoice 40122 (SI122, Not found in Coretax) has
+// an exact Coretax-only faktur (o-17) and a near miss Rp500.000 higher (o-18).
+const PERIOD = '2027-02'
+const ROW = 'SI122'
+const rowFor = (invoiceId: string, period = PERIOD) =>
+  pairsForPeriod(period, 'output').find(p => p.erp?.salesInvoiceId === invoiceId)!
 
-afterEach(() => { for (const p of pairsForPeriod(PERIOD, 'output')) undoManualMatch(p.id) })
+afterEach(() => { for (const per of ['2027-02', '2027-03']) for (const p of pairsForPeriod(per, 'output')) undoManualMatch(p.id) })
 
-async function mountWorkspace() {
-  route.query = { masa: PERIOD, tab: 'All faktur' }
+async function mountWorkspace(masa = PERIOD, tab = 'To match') {
+  route.query = { masa, tab }
   const { default: Page } = await import('~/components/pages/VatReconciliationWorkspacePage.vue')
   const w = mount(Page, { attachTo: document.body, global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
   await flushPromises()
   return w
 }
-const itemFor = (w: Awaited<ReturnType<typeof mountWorkspace>>, ref: string) =>
-  w.findAll('.vr-item').find(i => i.find('.vr-erp').text().includes(ref))!
+type W = Awaited<ReturnType<typeof mountWorkspace>>
+/** A To match row by its pair id (o-07 = invoice 40122's own row). */
+const itemFor = (w: W, pairId: string) => w.find(`.vr-item[data-pair-id="${pairId}"]`)
+const bodyButtons = (label: string) =>
+  [...document.body.querySelectorAll('button')].filter(b => b.textContent?.trim() === label)
+/** Expand the row, then "Find another faktur" opens the shared detail drawer. */
+async function openDrawer(w: W, pairId: string) {
+  await itemFor(w, pairId).find('.vr-line').trigger('click')
+  await itemFor(w, pairId).findAll('button').find(b => b.text() === 'Find another faktur')!.trigger('click')
+  await flushPromises()
+}
+
+describe('candidates are real records only', () => {
+  it('offers the exact faktur first, then the near miss — both exist in the masa', () => {
+    const c = candidatesFor(rowFor(ROW))
+    expect(c.map(x => x.pairId)).toEqual(['o-17', 'o-18'])
+    expect(c[0]!.total).toBe(rowFor(ROW).erp!.total)
+    expect(c[1]!.total - rowFor(ROW).erp!.total).toBe(500_000)
+  })
+
+  it('a masa whose faktur have not synced offers nothing', () => {
+    for (const p of pairsForPeriod('2027-03', 'output').filter(x => x.match === 'not-in-coretax')) {
+      expect(candidatesFor(p)).toEqual([])
+    }
+  })
+})
 
 describe('P0 — a match with a difference needs a reason', () => {
   it('difference 0 saves without a reason', () => {
@@ -63,19 +91,13 @@ describe('P0 — a match with a difference needs a reason', () => {
     expect(manualMatchOf(pair.id)).toMatchObject({ difference: -500_000, reason: 'Freight billed on the faktur' })
   })
 
-  it('in the UI, ✓ with a differing pick opens the modal; an empty reason errors inline', async () => {
+  it('in the UI, Match this on a differing candidate opens the modal; an empty reason errors inline', async () => {
     const w = await mountWorkspace()
-    const ref = rowFor(ROW).erp!.ref
-    const item = itemFor(w, ref)
-    await item.find('.vr-erp').trigger('click')
-    const radios = item.findAll('.vr-cand input')
-    await radios[1]!.setValue(true)
-    await radios[1]!.trigger('change')
-    await item.find('.vr-confirm').trigger('click')
+    await openDrawer(w, rowFor(ROW).id)
+    bodyButtons('Match this')[1]!.click() // +Rp500.000
     await flushPromises()
     expect(document.body.textContent).toContain('Confirm match with a difference?')
     expect(manualMatchOf(rowFor(ROW).id)).toBeUndefined()
-    // The modal's primary is the last "Confirm match" button in the document.
     const confirm = [...document.body.querySelectorAll('button')].filter(b => b.textContent?.trim() === 'Confirm match').at(-1)!
     confirm.click()
     await flushPromises()
@@ -86,22 +108,25 @@ describe('P0 — a match with a difference needs a reason', () => {
 })
 
 describe('P1 — saved manual matches drive every count', () => {
-  it('the pair becomes Reconciled (manual), totals move, Unmatch reverts', () => {
+  it('the pair becomes Reconciled (manual), its counterpart row is consumed, Unmatch reverts', () => {
     const before = pairsForPeriod(PERIOD, 'output')
-    const djpBefore = reconTotals(before, 'djp').total
     const pair = rowFor(ROW)
     const exact = candidatesFor(pair)[0]!
     confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: exact })
 
-    const after = rowFor(ROW)
-    expect(after.match).toBe('matched')
-    expect(after.matchedBy).toBe('manual')
-    expect(after.djp?.ref).toBe(exact.ref)
-    expect(reconTotals(pairsForPeriod(PERIOD, 'output'), 'djp').total).toBe(djpBefore + exact.total)
-    expect(footerCounts(pairsForPeriod(PERIOD, 'output')).matched).toBe(footerCounts(before).matched + 1)
+    const after = pairsForPeriod(PERIOD, 'output')
+    expect(rowFor(ROW).match).toBe('matched')
+    expect(rowFor(ROW).matchedBy).toBe('manual')
+    expect(rowFor(ROW).djp?.ref).toBe(exact.ref)
+    // One pair now, not two: the Coretax-only row is gone and nothing is counted twice.
+    expect(after.some(p => p.id === exact.pairId)).toBe(false)
+    expect(after.length).toBe(before.length - 1)
+    expect(reconTotals(after, 'djp').total).toBe(reconTotals(before, 'djp').total)
+    expect(footerCounts(after).matched).toBe(footerCounts(before).matched + 1)
 
     expect(undoManualMatch(pair.id)).toBe(true)
     expect(rowFor(ROW).match).toBe('not-in-coretax')
+    expect(pairsForPeriod(PERIOD, 'output').some(p => p.id === exact.pairId)).toBe(true)
   })
 
   it('Activity records the match with its difference and reason', () => {
@@ -116,44 +141,41 @@ describe('P1 — saved manual matches drive every count', () => {
   })
 
   it('a row with a tax document shows it in Activity', () => {
-    const draftRow = rowFor('SI061')
+    const draftRow = rowFor('SI061', '2027-03')
     if (erpFakturOf(draftRow)?.doc) {
-      expect(pairActivity(draftRow, PERIOD).some(e => e.label === 'Tax document')).toBe(true)
+      expect(pairActivity(draftRow, '2027-03').some(e => e.label === 'Tax document')).toBe(true)
     }
   })
 })
 
-describe('P1 — the expand renders Activity', () => {
-  it('shows up to 3 entries', async () => {
+describe('P1 — the detail opens the shared Activity log', () => {
+  it('a "Last updated by" link opens ActivityLogModal with the pair\'s entries', async () => {
     const w = await mountWorkspace()
-    const item = itemFor(w, rowFor(ROW).erp!.ref)
-    await item.find('.vr-erp').trigger('click')
-    expect(item.find('.vr-activity').exists()).toBe(true)
-    expect(item.findAll('.vr-activity-row').length).toBeGreaterThan(0)
-    expect(item.findAll('.vr-activity-row').length).toBeLessThanOrEqual(3)
+    await openDrawer(w, rowFor(ROW).id)
+    const link = document.body.querySelector('a.detail-updated') as HTMLElement
+    expect(link.textContent).toContain('Last updated by')
+    link.click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('Activity log')
+    expect(document.body.textContent).toContain('Flagged for review by matching engine')
     w.unmount()
   })
 })
 
-describe('P1 — pagination', () => {
+describe('P1 — pagination (To match)', () => {
   it('renders one page of rows and resets to page 1 on search', async () => {
-    route.query = { masa: '2027-02', tab: 'All faktur' }
-    const { default: Page } = await import('~/components/pages/VatReconciliationWorkspacePage.vue')
     const { default: ErpPagination } = await import('~/components/patterns/ErpPagination.vue')
-    const w = mount(Page, { global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
-    await flushPromises()
-    const total = pairsForPeriod('2027-02', 'output').length
-    expect(total).toBeGreaterThan(10)
-    expect(w.findAll('.vr-item').length).toBe(total) // fits the default 50
+    const w = await mountWorkspace('2027-03')
+    const total = w.findAll('.vr-item').length
+    expect(total).toBeGreaterThan(5)
 
-    const pg = w.findComponent(ErpPagination)
-    pg.vm.$emit('perPageChange', 10)
+    w.findComponent(ErpPagination).vm.$emit('perPageChange', 5)
     await flushPromises()
-    expect(w.findAll('.vr-item').length).toBe(10)
+    expect(w.findAll('.vr-item').length).toBe(5)
 
-    pg.vm.$emit('pageChange', 2)
+    w.findComponent(ErpPagination).vm.$emit('pageChange', 2)
     await flushPromises()
-    expect(w.findAll('.vr-item').length).toBe(total - 10)
+    expect(w.findAll('.vr-item').length).toBe(total - 5)
 
     await w.find('.filter-search-input').setValue('4')
     await flushPromises()
@@ -171,16 +193,13 @@ describe('P1 — bulk submit drafts', () => {
     const seeded = getTaxDocument('taxdoc-seed-si061-draft')
     const seededWasDraft = seeded?.status === 'draft'
     try {
-      const w = await mountWorkspace()
-      expect(w.find('.vr-bulk').exists()).toBe(true)
-      // ErpTablePage bulk-bar anatomy (UI review 2026-11-04): select-all checkbox,
-      // then "Submit to DJP" from the secondary-sm Actions dropdown.
+      const w = await mountWorkspace('2027-03')
+      // ErpTablePage bulk-bar anatomy: select-all, then Submit to DJP from Actions.
       await w.find('.vr-bulk input[type="checkbox"]').setValue(true)
-      expect(w.find('.vr-bulk-count').text()).toMatch(/^\d+ drafts selected$/)
-      await w.findAll('.vr-bulk button').find(b => b.text() === 'Actions')!.trigger('click')
       await flushPromises()
-      // The menu portals to <body>; skip the per-row "Submit to DJP" buttons and
-      // click the list item itself (same lookup as the receipts bulk-menu spec).
+      expect(w.find('.vr-bulk').text()).toMatch(/\d+ drafts? selected/)
+      await w.find('.vr-bulk').findAll('button').find(b => b.text() === 'Actions')!.trigger('click')
+      await flushPromises()
       const leaf = [...document.body.querySelectorAll('*')].find(el =>
         el.children.length === 0 && el.textContent?.trim() === 'Submit to DJP' && !el.closest('.vr-item, .vr-bulk'))!
       const item = (leaf.closest('li, [role="menuitem"], [role="option"]') ?? leaf) as HTMLElement

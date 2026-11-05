@@ -1,18 +1,22 @@
 // @vitest-environment happy-dom
 /**
- * VAT reconciliation workspace — bank-reconciliation style rows.
+ * VAT reconciliation workspace — Jurnal bank Reconciliations layout.
  *
- * Rows are grouped by date (newest first), each pair is one compact line with
- * the tax-document actions on it, detail opens inline, and the round ✓ means
- * "reconciled" (filled) or "confirm match" (outline) — pressed without a pick
- * it asks inline instead of being disabled.
+ * To match = bank-style rows (one per open pair; a Coretax-only row that is an
+ * invoice's suggestion folds into it), solid / dashed ✓ ring, ⋮ menus per side
+ * carrying the tax-document actions, only drafts selectable. Not reconciled and
+ * Matched are ErpTablePage tables; Matched shows Method (Auto / Manual).
+ * groupPairsByDate / candidatesFor stay covered as data helpers.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject } from 'vue'
-import { groupPairsByDate, pairsForPeriod, reconDateValue, candidatesFor, outputPairs } from '~/data/vatReconciliation'
+import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, watchEffect, useSlots } from 'vue'
+import { useTableState } from '~/composables/useTableState'
+import {
+  groupPairsByDate, pairsForPeriod, reconDateValue, candidatesFor, outputPairs, workspaceTabRows,
+} from '~/data/vatReconciliation'
 
-const route = { query: { masa: '2027-03', tab: 'All faktur' } as Record<string, string> }
+const route = { query: { masa: '2027-03', tab: 'To match' } as Record<string, string> }
 vi.stubGlobal('useRoute', () => route)
 vi.stubGlobal('useRouter', () => ({ push: vi.fn(), replace: vi.fn() }))
 vi.stubGlobal('useLocale', () => ({ t: (s: string) => s }))
@@ -26,20 +30,24 @@ vi.stubGlobal('onMounted', onMounted)
 vi.stubGlobal('onUnmounted', onUnmounted)
 vi.stubGlobal('nextTick', nextTick)
 vi.stubGlobal('inject', inject)
+vi.stubGlobal('watchEffect', watchEffect)
+vi.stubGlobal('useSlots', useSlots)
+vi.stubGlobal('useTableState', useTableState)
 class FakeObserver { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver', FakeObserver)
 vi.stubGlobal('IntersectionObserver', FakeObserver)
 
-async function mountWorkspace(masa: string) {
-  route.query = { masa, tab: 'All faktur' }
+async function mountWorkspace(masa: string, tab = 'To match') {
+  route.query = { masa, tab }
   const { default: Page } = await import('~/components/pages/VatReconciliationWorkspacePage.vue')
-  const wrapper = mount(Page, { global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
+  const wrapper = mount(Page, { attachTo: document.body, global: { stubs: { NuxtLink: { template: '<a><slot /></a>' } } } })
   await flushPromises()
   return wrapper
 }
 
-const lineFor = (wrapper: Awaited<ReturnType<typeof mountWorkspace>>, ref: string) =>
-  wrapper.findAll('.vr-item').find(i => i.find('.vr-erp').text().includes(ref))!
+type W = Awaited<ReturnType<typeof mountWorkspace>>
+/** A To match row by the invoice number on its ERP side. */
+const itemFor = (w: W, ref: string) => w.findAll('.vr-item').find(i => i.find('.vr-erp').text().includes(ref))!
 
 describe('groupPairsByDate', () => {
   it('groups by row date, newest first, every pair exactly once', () => {
@@ -60,45 +68,69 @@ describe('groupPairsByDate', () => {
   })
 })
 
-describe('VatReconciliationWorkspacePage — rows', () => {
-  it('renders date groups and collapses one', async () => {
+describe('VatReconciliationWorkspacePage — To match', () => {
+  it('lists one row per open pair; a Coretax-only suggestion folds into its invoice', async () => {
     const w = await mountWorkspace('2027-03')
-    const heads = w.findAll('.vr-group-head')
-    expect(heads.length).toBeGreaterThan(1)
-    const before = w.findAll('.vr-item').length
-    await heads[0]!.trigger('click')
-    expect(w.findAll('.vr-item').length).toBeLessThan(before)
+    expect(w.findAll('.vr-item').length).toBe(workspaceTabRows(pairsForPeriod('2027-03', 'output'), 'To match').length)
+    w.unmount()
+    const feb = await mountWorkspace('2027-02')
+    const ids = feb.findAll('.vr-item').map(i => i.attributes('data-pair-id'))
+    expect(ids).toContain('o-07')       // invoice 40122, suggesting faktur o-17
+    expect(ids).not.toContain('o-17')   // …so o-17 is not listed again
+    feb.unmount()
   })
 
-  it('a draft row carries Edit + Submit to DJP on the line, without expanding', async () => {
-    const w = await mountWorkspace('2027-03')
-    const row = lineFor(w, '40061')
-    expect(row.find('.vr-detail').exists()).toBe(false)
-    const labels = row.find('.vr-line').findAll('button').map(b => b.text())
-    expect(labels).toContain('Edit tax document')
-    expect(labels).toContain('Submit to DJP')
-  })
-
-  it('✓ on an open row with nothing picked opens the detail with an inline error', async () => {
-    const w = await mountWorkspace('2027-03')
-    const row = lineFor(w, '40103')
-    await row.find('.vr-confirm').trigger('click')
-    expect(row.find('.vr-detail').exists()).toBe(true)
-    expect(row.find('.vr-pick-error').text()).toBe('Select a match first, then confirm.')
-  })
-
-  it('picking a candidate fills Selected total and zeroes the Difference', async () => {
-    const w = await mountWorkspace('2027-03')
-    const row = lineFor(w, '40103')
-    await row.find('.vr-erp').trigger('click')
-    await row.findAll('.vr-cand input')[0]!.setValue(true)
-    await row.findAll('.vr-cand input')[0]!.trigger('change')
-    expect(row.find('.vr-cand-sum .is-ok').exists()).toBe(true)
-  })
-
-  it('a matched row shows the filled reconciled ✓', async () => {
+  it('✓ ring is solid when there is a match to confirm, dashed when there is none', async () => {
     const w = await mountWorkspace('2027-02')
-    const matched = w.findAll('.vr-item').find(i => i.find('.vr-confirm.is-done').exists())
-    expect(matched).toBeTruthy()
+    const ring = (id: string) => w.find(`.vr-item[data-pair-id="${id}"] .vr-confirm`)
+    expect(ring('o-07').classes()).not.toContain('is-dashed') // Match found
+    expect(ring('o-09').classes()).toContain('is-dashed')     // No match found
+    w.unmount()
+  })
+
+  it('only a draft tax document row is selectable', async () => {
+    const w = await mountWorkspace('2027-03')
+    expect(itemFor(w, '40061').find('.vr-draft-check').exists()).toBe(true)
+    expect(itemFor(w, '40103').find('.vr-draft-check').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('the invoice side ⋮ menu offers Edit + Submit to DJP for a draft', async () => {
+    const w = await mountWorkspace('2027-03')
+    await itemFor(w, '40061').find('.vr-line').trigger('click')
+    await itemFor(w, '40061').find('.vr-detail button[aria-label="More actions"]').trigger('click')
+    await flushPromises()
+    const items = [...document.body.querySelectorAll('*')].filter(el => el.children.length === 0).map(el => el.textContent?.trim())
+    expect(items).toContain('Edit tax document')
+    expect(items).toContain('Submit to DJP')
+    w.unmount()
+  })
+
+  it('Find another faktur opens the shared detail drawer with the real candidates', async () => {
+    const w = await mountWorkspace('2027-02')
+    const row = () => w.find('.vr-item[data-pair-id="o-07"]')
+    await row().find('.vr-line').trigger('click')
+    await row().findAll('button').find(b => b.text() === 'Find another faktur')!.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Other match candidates')
+    expect(document.body.textContent).toContain('Match this')
+    w.unmount()
+  })
+})
+
+describe('VatReconciliationWorkspacePage — tables', () => {
+  it('Not reconciled lists the root-cause pairs as table rows', async () => {
+    const w = await mountWorkspace('2027-02', 'Not reconciled')
+    const n = workspaceTabRows(pairsForPeriod('2027-02', 'output'), 'Not reconciled').length
+    expect(w.findAll('tbody tr').filter(r => r.find('.cell-link').exists())).toHaveLength(n)
+    w.unmount()
+  })
+
+  it('Matched shows Method — Auto for the engine, Manual for a person', async () => {
+    const w = await mountWorkspace('2027-02', 'Matched')
+    const text = w.text()
+    expect(text).toContain('Auto')
+    expect(text).toContain('Manual')
+    w.unmount()
   })
 })

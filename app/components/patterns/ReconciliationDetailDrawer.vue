@@ -12,14 +12,19 @@
  * MpDrawer has no structural CSS in this Pixel3 build). Like every ERP drawer it
  * closes only via its × (rule/modal-drawer-close-explicit-only).
  */
-import { MpButton, MpText, MpIcon } from '@mekari/pixel3'
+import {
+  MpButton, MpText, MpIcon, MpBanner, MpBannerIcon, MpBannerDescription,
+} from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
+import { formatDateTimeLong } from '~/utils/date'
 import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
+import ContentList from '~/components/patterns/ContentList.vue'
+import ActivityLogModal, { type ActivityEntry as LogEntry } from '~/components/patterns/ActivityLogModal.vue'
 import VatReconciliationPairActions from '~/components/patterns/VatReconciliationPairActions.vue'
 import VatReconciliationMatchConfirmModal from '~/components/patterns/VatReconciliationMatchConfirmModal.vue'
 import { successToast } from '~/utils/toasts'
 import {
-  MATCH_META, candidatesFor, formatAmountPlain, pairActivity, activePeriodId, confirmManualMatch,
+  MATCH_META, candidatesFor, formatAmountPlain, pairActivity, activePeriodId, confirmManualMatch, nettedAnchor,
   type ReconPair, type ReconSide, type MatchCandidate,
 } from '~/data/vatReconciliation'
 
@@ -121,9 +126,29 @@ function saveMatch(c: MatchCandidate, reason?: string) {
   close()
 }
 
-/** Built from the records the module keeps (pairActivity) — never invented. */
+/**
+ * Audit trail = the shared ActivityLogModal (rule/activity-log-modal), opened from
+ * the "Last updated by …" link (rule/activity-log-trigger). Entries come from the
+ * records this module keeps (pairActivity) — never invented (rule/activity-log-entries).
+ */
 const activity = computed(() =>
   props.pair ? pairActivity(props.pair, props.periodId ?? activePeriodId) : [])
+const activityOpen = ref(false)
+const lastActivity = computed(() => activity.value[0] ?? null)
+const logEntries = computed<LogEntry[]>(() => activity.value.map(a => ({
+  date: a.at,
+  user: t(a.who),
+  activity: a.status ? `${t(a.label)}: ${t(a.status)}` : t(a.label),
+  details: a.detail ? [{ label: t('Details'), value: a.detail }] : [],
+})))
+
+/** The engine's reason, as a Pixel banner in the state's colour. */
+const BANNER_VARIANT = { completed: 'success', information: 'info', announcement: 'info', warning: 'warning', critical: 'danger' } as const
+const reasonVariant = computed(() => (meta.value ? BANNER_VARIANT[meta.value.badgeType] : 'info'))
+
+/** Duplicate reference picks between faktur; the other open states pick a counterpart. */
+const candidatesTitle = computed(() =>
+  props.pair?.match === 'duplicate-reference' ? t('Select the correct faktur') : t('Other match candidates'))
 </script>
 
 <template>
@@ -134,71 +159,49 @@ const activity = computed(() =>
     data-devchange="vat-recon-ui-review"
     @close="close"
   >
-    <template #title>
-      <div v-if="pair && meta" class="rdd-header-main">
-        <div
-          class="rdd-state-icon"
-          :style="{ background: meta.bg, borderColor: meta.border }"
-        >
-          <!-- MpIcon ignores CSS `color`; the state colour must come from
-               the prop. Light tint behind it → outline colour. -->
-          <MpIcon :name="meta.icon" size="md" :color="meta.iconColorOutline" />
-        </div>
-        <div class="rdd-header-text">
-          <MpText size="h3" weight="semiBold">{{ headerRef }}</MpText>
-          <span class="rdd-header-sub">
-            {{ t('Reconciliation detail') }} · {{ t(meta.longLabel) }}
-          </span>
-        </div>
-      </div>
-    </template>
-
     <template #body>
       <div v-if="pair && meta" class="rdd-body">
-            <!-- Side-by-side comparison -->
+            <!-- Engine reasoning — MpBanner in the state's colour -->
+            <MpBanner v-if="pair.reason" :variant="reasonVariant" is-inline data-devchange="vat-recon-workspace-reconciliations">
+              <MpBannerIcon />
+              <!-- Title stacked inside the description: MpBannerTitle sits inline
+                   in this build, so the two ran together. -->
+              <MpBannerDescription>
+                <strong class="rdd-reason-title">{{ reasonTitle }}</strong>
+                <span class="rdd-reason-body">{{ pair.reason }}</span>
+              </MpBannerDescription>
+            </MpBanner>
+
+            <!-- Side by side: two ContentList columns (rule/detail-contentlist);
+                 a field the two sides disagree on is highlighted on both. -->
             <div class="rdd-compare">
-              <div class="rdd-compare-head">
-                <span>{{ t('From ERP') }}</span>
-                <span>{{ t('From Coretax') }}</span>
+              <div class="rdd-compare-col">
+                <MpText size="h4" weight="semiBold">{{ t('From ERP') }}</MpText>
+                <ContentList v-for="f in compareFields" :key="`erp-${f.key}`" :label="t(f.label)">
+                  <span :class="{ 'rdd-diff': isDiff(f) }">{{ cellValue(pair.erp, f) }}</span>
+                </ContentList>
               </div>
-              <div
-                v-for="f in compareFields"
-                :key="f.key"
-                class="rdd-compare-row"
-                :class="{ 'is-diff': isDiff(f) }"
-              >
-                <div class="rdd-compare-cell">
-                  <span class="rdd-cell-label">{{ t(f.label) }}</span>
-                  <span class="rdd-cell-value" :class="{ 'is-diff': isDiff(f) }">
-                    {{ cellValue(pair.erp, f) }}
-                  </span>
-                </div>
-                <div class="rdd-compare-cell rdd-compare-cell--last">
-                  <span class="rdd-cell-label">{{ t(f.label) }}</span>
-                  <span class="rdd-cell-value" :class="{ 'is-diff': isDiff(f) }">
-                    {{ cellValue(pair.djp, f) }}
-                  </span>
-                </div>
+              <div class="rdd-compare-col">
+                <MpText size="h4" weight="semiBold">{{ t('From Coretax') }}</MpText>
+                <ContentList v-for="f in compareFields" :key="`djp-${f.key}`" :label="t(f.label)">
+                  <span :class="{ 'rdd-diff': isDiff(f) }">{{ cellValue(pair.djp, f) }}</span>
+                </ContentList>
               </div>
             </div>
 
-            <!-- Engine reasoning -->
-            <div
-              v-if="pair.reason"
-              class="rdd-reason"
-              :style="{ background: meta.bg, borderColor: meta.border }"
-            >
-              <MpIcon :name="meta.icon" size="sm" :color="meta.iconColorOutline" />
-              <div>
-                <div class="rdd-reason-title" :style="{ color: meta.fg }">{{ reasonTitle }}</div>
-                <div class="rdd-reason-body">{{ pair.reason }}</div>
-              </div>
+            <!-- The linked sales return (US-012 / US-017) -->
+            <div v-if="pair.erp?.returnRef" class="rdd-section">
+              <MpText size="h4" weight="semiBold">{{ t('Sales return') }}</MpText>
+              <ContentList horizontal :label="t('Number')" :value="pair.erp.returnRef" />
+              <ContentList horizontal :label="t('Date')" :value="pair.erp.returnDate ?? '—'" />
+              <ContentList horizontal :label="t('Total')" :value="pair.erp.returnTotal != null ? formatIDR(pair.erp.returnTotal) : '—'" />
+              <ContentList horizontal :label="t('Invoice − return')" :value="formatIDR(nettedAnchor(pair))" />
             </div>
 
             <!-- Alternative candidates -->
             <div v-if="showCandidates" class="rdd-section">
               <div class="rdd-section-head">
-                <MpText size="h4" weight="semiBold">{{ t('Other match candidates') }}</MpText>
+                <MpText size="h4" weight="semiBold">{{ candidatesTitle }}</MpText>
                 <span class="rdd-count">{{ matchCandidates.length }}</span>
               </div>
               <div class="rdd-candidates">
@@ -245,24 +248,10 @@ const activity = computed(() =>
               </p>
             </div>
 
-            <!-- Activity -->
-            <div class="rdd-section">
-              <MpText size="h4" weight="semiBold">{{ t('Activity') }}</MpText>
-              <div class="rdd-activity">
-                <div v-for="(a, i) in activity" :key="i" class="rdd-activity-row">
-                  <div class="rdd-activity-icon">
-                    <MpIcon :name="a.icon" size="sm" />
-                  </div>
-                  <div>
-                    <div class="rdd-activity-text">
-                      {{ t(a.label) }}<template v-if="a.status">: {{ t(a.status) }}</template>
-                      <span v-if="a.detail" class="rdd-activity-detail">{{ a.detail }}</span>
-                    </div>
-                    <div class="rdd-activity-meta">{{ t(a.who) }} · {{ a.time }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <!-- Provenance line opens the activity log (rule/activity-log-trigger) -->
+            <a v-if="lastActivity" class="detail-updated" @click.prevent="activityOpen = true">
+              {{ t('Last updated by') }} {{ t(lastActivity.who) }} {{ t('on') }} {{ formatDateTimeLong(lastActivity.at) }}
+            </a>
       </div>
     </template>
 
@@ -285,6 +274,13 @@ const activity = computed(() =>
     </template>
   </ErpDrawer>
 
+  <ActivityLogModal
+    :is-open="activityOpen"
+    :subject="headerRef"
+    :entries="logEntries"
+    @close="activityOpen = false"
+  />
+
   <VatReconciliationMatchConfirmModal
     :is-open="!!pendingCandidate"
     :row-ref="headerRef"
@@ -297,63 +293,22 @@ const activity = computed(() =>
 </template>
 
 <style scoped>
-.rdd-header-main, .rdd-body {
-  --rdd-icon-sz: 40px;
+.rdd-body {
   --rdd-badge-p: 1px var(--mp-spacing-2);
   --rdd-confidence-p: 2px var(--mp-spacing-2);
   --rdd-activity-sz: 24px;
 }
 /* ErpDrawer owns the panel, header bar, scrolling body and footer. */
-.rdd-header-main { display: flex; align-items: center; gap: var(--mp-spacing-3); min-width: 0; }
-.rdd-state-icon {
-  width: var(--rdd-icon-sz); height: var(--rdd-icon-sz); border-radius: var(--mp-radii-md);
-  border: 1px solid transparent;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.rdd-header-text { display: flex; flex-direction: column; min-width: 0; }
-.rdd-header-sub { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 
 .rdd-body { display: flex; flex-direction: column; gap: var(--mp-spacing-4); }
 .rdd-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
 
-/* ── Comparison table ── */
-.rdd-compare { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); overflow: hidden; }
-.rdd-compare-head {
-  display: grid; grid-template-columns: 1fr 1fr;
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  font-size: 11px; font-weight: var(--mp-font-weights-bold);
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-text-subtle);
-}
-.rdd-compare-row {
-  display: grid; grid-template-columns: 1fr 1fr;
-  border-top: 1px solid var(--mp-border-default);
-}
-.rdd-compare-row.is-diff { background: var(--mp-colors-orange-100); }
-.rdd-compare-cell {
-  padding: var(--mp-spacing-2) var(--mp-spacing-4);
-  border-right: 1px solid var(--mp-border-default);
-  display: flex; flex-direction: column; gap: 2px; min-width: 0;
-}
-.rdd-compare-cell--last { border-right: 0; }
-.rdd-cell-label {
-  font-size: 11px; font-weight: var(--mp-font-weights-bold);
-  letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-text-subtle);
-}
-.rdd-cell-value { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); word-break: break-word; }
-.rdd-cell-value.is-diff { color: var(--mp-colors-orange-800); font-weight: var(--mp-font-weights-bold); }
-
-/* ── Engine reasoning ── */
-.rdd-reason {
-  display: flex; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3);
-  border: 1px solid transparent; border-radius: var(--mp-radii-md);
-}
-.rdd-reason-title {
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-bold);
-  margin-bottom: var(--mp-spacing-1);
-}
-.rdd-reason-body { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+/* ── Comparison: two ContentList columns ── */
+.rdd-compare { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-6); }
+.rdd-compare-col { display: flex; flex-direction: column; min-width: 0; }
+.rdd-reason-title { display: block; font-weight: var(--mp-font-weights-semi-bold); }
+.rdd-reason-body { display: block; }
+.rdd-diff { color: var(--mp-colors-red-800); font-weight: var(--mp-font-weights-semi-bold); }
 
 /* ── Sections ── */
 .rdd-section { display: flex; flex-direction: column; gap: var(--mp-spacing-2); }
@@ -398,22 +353,12 @@ const activity = computed(() =>
 }
 .rdd-candidate-why { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 
-/* ── Activity ── */
-.rdd-activity-detail { display: block; color: var(--mp-text-secondary); overflow-wrap: anywhere; }
-.rdd-activity { border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md); }
-.rdd-activity-row {
-  display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
-  padding: var(--mp-spacing-3);
+/* ── Provenance link → activity log (same as detail pages' .detail-updated) ── */
+.detail-updated {
+  margin: 0; align-self: flex-start;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-link); cursor: pointer;
 }
-.rdd-activity-row + .rdd-activity-row { border-top: 1px solid var(--mp-border-default); }
-.rdd-activity-icon {
-  width: var(--rdd-activity-sz); height: var(--rdd-activity-sz); border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral-subtle); border: 1px solid var(--mp-border-default);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  color: var(--mp-text-subtle);
-}
-.rdd-activity-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
-.rdd-activity-meta { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
+.detail-updated:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ── Footer ── */
 .rdd-footer-actions { display: flex; gap: var(--mp-spacing-2); }

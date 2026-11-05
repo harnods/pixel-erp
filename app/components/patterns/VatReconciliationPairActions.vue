@@ -16,7 +16,7 @@ import { MpButton } from '@mekari/pixel3'
 import { computed } from 'vue'
 import VatReconciliationTaxDocActions from '~/components/patterns/VatReconciliationTaxDocActions.vue'
 import {
-  isWaitingOnBuyer, setWaitingOnBuyer, manualMatchOf, undoManualMatch, confirmManualMatch,
+  isWaitingOnBuyer, setWaitingOnBuyer, manualMatchOf, undoManualMatch, confirmManualMatch, unmatchAutoPair,
   ownFakturCandidate, nettedAnchor, type ReconPair, type ReconSide,
 } from '~/data/vatReconciliation'
 
@@ -48,22 +48,14 @@ function act(message: string, alsoClose = false) { emit('action', message, alsoC
 const mainVariant = computed(() => (props.inline ? 'secondary' : 'primary'))
 
 /**
- * Anything that makes or breaks a match. A Finalized masa is the record of what
- * was reconciled, so it refuses these until it is unfinalized — same as Re-run.
- */
-function matchAct(message: string, alsoClose = false) {
-  if (props.finalized) { act(t('Unfinalize first to change matches in this period')); return }
-  act(message, alsoClose)
-}
-
-/**
  * Unmatch. A match a person made is an overlay, so undoing it is exact and the
- * engine's own status comes back. Undoing one of the engine's matches would
- * need the pair split back into two rows, which the prototype doesn't model.
+ * engine's own status comes back. Undoing one of the ENGINE's matches splits the
+ * pair back into its two open rows (US-002 AC-03) — never a toast that changes nothing.
  */
 function unmatch() {
   if (props.finalized) { act(t('Unfinalize first to change matches in this period')); return }
   if (manualMatchOf(props.pair.id)) undoManualMatch(props.pair.id)
+  else unmatchAutoPair(props.pair)
   act(t('Match canceled'), true)
 }
 
@@ -103,17 +95,12 @@ function toggleWaiting() {
         {{ t('Confirm match') }}
       </MpButton>
     </template>
-    <template v-else-if="pair.match === 'duplicate-reference' && !inline">
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="matchAct(t('Opening faktur list…'))">
-        {{ t('Select faktur') }}
-      </MpButton>
-    </template>
+    <!-- Duplicate reference (row 11): the drawer lists the faktur to pick from
+         ("Select the correct faktur" + Match this) — no second control here. -->
     <!-- Row 3 (US-008) / row 4 (US-009): a document is missing. -->
     <template v-else-if="pair.match === 'not-in-coretax'">
-      <MpButton v-if="!inline" variant="secondary" :size="size" is-rounded @click="matchAct(t('Opening match picker…'))">
-        {{ t('Find & match') }}
-      </MpButton>
-      <!-- Output rows are real invoices: the fix is on the invoice, and
+      <!-- Find & match = the drawer's candidate list, not a second control.
+           Output rows are real invoices: the fix is on the invoice, and
            what it is depends on how far its tax document got. -->
       <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId && !inline" :pair="pair" :show-hint="false" :size="size" />
       <template v-else-if="pair.erp?.salesInvoiceId" />
@@ -122,9 +109,6 @@ function toggleWaiting() {
       </MpButton>
     </template>
     <template v-else-if="pair.match === 'no-match-in-erp'">
-      <MpButton v-if="!inline" variant="secondary" :size="size" is-rounded @click="matchAct(t('Opening match picker…'))">
-        {{ t('Find & match') }}
-      </MpButton>
       <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening sales invoice…'), true)">
         {{ side === 'input' ? t('Create purchase invoice') : t('Create sales invoice') }}
       </MpButton>
