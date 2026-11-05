@@ -140,7 +140,7 @@ function lineFrom(amount: number, pct: number | null) {
               <!-- Progress invoice flag (prod PopoverTag, hover) → links the master transaction -->
               <MpPopover id="pgd-flag" trigger="hover" use-portal :is-keep-alive="false" placement="bottom-end">
                 <MpPopoverTrigger>
-                  <span class="pgd-flag"><MpIcon name="information" size="sm" />{{ t('Progress invoice') }}</span>
+                  <span class="pgd-flag"><MpIcon name="info" size="sm" />{{ t('Progress invoice') }}</span>
                 </MpPopoverTrigger>
                 <MpPopoverContent :class="css({ width: '280px', padding: 'var(--mp-spacing-3)' })">
                   <div class="pgd-flag-body">

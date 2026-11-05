@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'icon-names-fixed-merge',
+    title: 'More missing icons now show',
+    description:
+      'The same icon-name check that fixed the work order page caught nine more names that Pixel does not have, all arriving with other branches: information \u2192 info (asset detail, progress invoice detail, the Value change drawer), warning \u2192 warning-triangle (the Close books wizard checks) and construction \u2192 timer (the \u201Cnot available yet\u201D placeholder on Data migration). Each one used to render as a blank gap with a 404 in the console.',
+    date: '2026-11-05',
+    files: ['AssetDetailPage.vue', 'ProgressInvoiceDetailPage.vue', 'ValueChangeDrawer.vue', 'CloseBooksWizardPage.vue', 'DataMigrationPage.vue'],
+  },
+  {
     id: 'wo-raw-on-hand',
     title: 'Raw materials table shows On hand qty',
     description:

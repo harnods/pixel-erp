@@ -370,7 +370,7 @@ const approvalNote = computed(() => {
               <div class="vcd-preview-title">{{ t('Preview') }}</div>
 
               <div v-if="preview.refusal" class="vcd-refusal">
-                <MpIcon name="information" size="sm" />
+                <MpIcon name="info" size="sm" />
                 <span>{{ t(preview.refusal) }}</span>
               </div>
               <p v-else-if="preview.error && !tried" class="vcd-hint">{{ t('Fill in the fields to see the schedule before and after the change') }}</p>
@@ -378,7 +378,7 @@ const approvalNote = computed(() => {
 
               <template v-else>
                 <div v-for="w in preview.warnings" :key="w" class="vcd-warning">
-                  <MpIcon name="information" size="sm" />
+                  <MpIcon name="info" size="sm" />
                   <span>{{ t(w) }}</span>
                 </div>
 

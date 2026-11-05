@@ -358,7 +358,7 @@ watch(() => [route.query.breakdown, route.query.versions, asset.value?.id], (_no
     <div class="ad__body">
       <!-- The one thing that blocks every tax output, fixable from here. -->
       <div v-if="!effectiveTaxGroup && canSeeFinancials && !isGone" class="ad__blocked" data-tour="det-fiscal">
-        <MpIcon name="information" size="sm" />
+        <MpIcon name="info" size="sm" />
         <div class="ad__blockedbody">
           <div class="ad__blockedtitle">{{ t('No tax group') }}</div>
           <div class="ad__blockedtext">
@@ -376,7 +376,7 @@ watch(() => [route.query.breakdown, route.query.versions, asset.value?.id], (_no
 
       <!-- LR-6: the scoped role reads the physical pane only. -->
       <div v-if="!canSeeFinancials" class="ad__scoped">
-        <MpIcon name="information" size="sm" />
+        <MpIcon name="info" size="sm" />
         <span>{{ t(`Viewing as ${viewAs}. Cost, book values and schedules are hidden for this role.`) }}</span>
       </div>
 

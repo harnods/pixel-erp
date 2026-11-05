@@ -670,7 +670,7 @@ const stepDone = computed<Record<string, boolean>>(() => ({
       <!-- Placeholder for other steps -->
       <template v-else>
         <div class="dm-placeholder">
-          <MpIcon name="construction" size="48px" color="icon.subtle" />
+          <MpIcon name="timer" size="48px" color="icon.subtle" />
           <p class="dm-placeholder-text">{{ t(activeStep.label) }}</p>
           <p class="dm-placeholder-desc">{{ t('This step is not available yet.') }}</p>
         </div>

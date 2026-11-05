@@ -275,7 +275,7 @@ watch([book, view], () => {
               <span class="cbw-check-title">{{ t('Bank Reconciliation') }} {{ formatDate(book.endDate) }}</span>
             </MpButton>
             <MpTooltip :label="t('More recent reconciliation is recommended before closing the book.')" placement="top" use-portal>
-              <span class="cbw-check-flag"><MpIcon name="warning" size="sm" color="icon.warning" /></span>
+              <span class="cbw-check-flag"><MpIcon name="warning-triangle" size="sm" color="icon.warning" /></span>
             </MpTooltip>
           </div>
           <div v-if="openSections.bank" class="cbw-check-body">
@@ -291,7 +291,7 @@ watch([book, view], () => {
               <span class="cbw-check-title">{{ t('Stock Adjustments') }} {{ formatDate(book.endDate) }}</span>
             </MpButton>
             <MpTooltip :label="t('More recent stock adjusment is recommended before closing the book.')" placement="top" use-portal>
-              <span class="cbw-check-flag"><MpIcon name="warning" size="sm" color="icon.warning" /></span>
+              <span class="cbw-check-flag"><MpIcon name="warning-triangle" size="sm" color="icon.warning" /></span>
             </MpTooltip>
           </div>
           <div v-if="openSections.stock" class="cbw-check-body">
@@ -309,7 +309,7 @@ watch([book, view], () => {
               <span class="cbw-check-title">{{ t('Draft Transactions') }}</span>
             </MpButton>
             <MpTooltip :label="t('Pending draft transactions are recommended to be approved before closing the book')" placement="top" use-portal>
-              <span class="cbw-check-flag"><MpIcon name="warning" size="sm" color="icon.warning" /></span>
+              <span class="cbw-check-flag"><MpIcon name="warning-triangle" size="sm" color="icon.warning" /></span>
             </MpTooltip>
           </div>
           <div v-if="openSections.drafts" class="cbw-check-body">
