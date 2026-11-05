@@ -149,7 +149,7 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
 /**
  * Prefill from a stock request shortfall — "Create purchase request" on the Stock
  * requests index or detail. Two scopes, matching the two groupings:
- *   ?fromStockRequest=<id>   one request's short lines
+ *   ?fromStockRequest=<id>[&warehouse=<whId>]  one request's short lines, optionally one group
  *   ?fromComponent=<ids>     one or more components, summed across open requests
  * Quantity is what is still missing at the destination warehouse, so the buyer
  * sees exactly the gap rather than the whole requested amount.
@@ -157,7 +157,7 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
 function prefillFromStockRequest() {
   const q = route.query
   const lines = typeof q.fromStockRequest === 'string'
-    ? shortfallLinesForRequest(q.fromStockRequest)
+    ? shortfallLinesForRequest(q.fromStockRequest, typeof q.warehouse === 'string' ? q.warehouse : undefined)
     : typeof q.fromComponent === 'string'
       ? q.fromComponent.split(',').filter(Boolean).flatMap(id => shortfallLinesForProduct(id))
       : []
@@ -181,6 +181,9 @@ function prefillFromStockRequest() {
   // Every short line of one request shares a destination; take the first.
   const destination = lines[0]!.destinationWarehouse
   if (destination && WAREHOUSES.includes(destination)) warehouse.value = destination
+  // Say where the lines came from, so the buyer (and an approver) can trace them back.
+  const requests = [...new Set(lines.map(l => l.requestNumber))].join(', ')
+  memo.value = `${t('Covers the shortfall on stock request')} ${requests} — ${lines.map(l => `${l.qty} ${l.unit} ${l.product}`).join(', ')}.`
 }
 onMounted(prefillFromStockRequest)
 

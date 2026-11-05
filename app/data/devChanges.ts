@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-group-actions',
+    title: 'Stock request: Actions per warehouse, prefilled documents',
+    description:
+      'The Actions button left the page title and now sits on each warehouse group, listing Create purchase request and Create warehouse transfer (plus Unreserve while the work order has not started). Both open prefilled with THAT warehouse\u2019s short lines: product, the missing qty, the destination warehouse and a memo naming the stock request. Purchase request used to ignore the warehouse and take every short line; it is scoped now. The group only shows Actions when there is something to do there.',
+    date: '2026-11-05',
+    files: ['StockRequestDetailsPage.vue', 'NewPurchaseRequestPage.vue', 'WarehouseTransferFormPage.vue'],
+  },
+  {
+    id: 'sr-wo-link',
+    title: 'Stock request: work order number links to the work order',
+    description:
+      'The Transaction value in Request info is now a link to the work order detail page, replacing the Open work order item that lived in the removed title-bar Actions menu.',
+    date: '2026-11-05',
+    files: ['StockRequestDetailsPage.vue'],
+  },
+  {
     id: 'sr-unit-column',
     title: 'Stock request: Unit is its own column',
     description:

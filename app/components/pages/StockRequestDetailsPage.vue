@@ -98,6 +98,7 @@ const unreserveOpen = ref(false)
 /** The warehouse group Reserve was opened from — stock is committed at ONE
  *  warehouse, so the drawer is scoped to the group whose button opened it. */
 const reserveGroupLines = ref<StockRequestLine[]>([])
+const unreserveGroupLines = ref<StockRequestLine[]>([])
 /** The component whose log is open — the log is asked for per component here. */
 const logLine = ref<StockRequestLine | null>(null)
 function openLineLog(line: StockRequestLine) {
@@ -108,6 +109,18 @@ function canReserveGroup(g: { lines: StockRequestLine[] }): boolean {
   // A completed, cancelled or deleted job's request is read-only (isActionable).
   if (!req.value || !isActionable(req.value)) return false
   return g.lines.some(l => lineCovered(l) < l.qty)
+}
+/** Unreserve is request-wide in the data layer but offered per warehouse, scoped to the
+ *  components held there — the same rule as before: only while the job has not started. */
+function canUnreserveGroup(g: { lines: StockRequestLine[] }): boolean {
+  return canUnreserve.value && g.lines.some(l => l.reserved > 0)
+}
+function groupHasActions(g: { lines: StockRequestLine[]; toTransfer: number }): boolean {
+  return g.toTransfer > 0 || canUnreserveGroup(g)
+}
+function openGroupUnreserve(g: { lines: StockRequestLine[] }) {
+  unreserveGroupLines.value = g.lines
+  unreserveOpen.value = true
 }
 function openGroupReserve(g: { lines: StockRequestLine[] }) {
   reserveGroupLines.value = g.lines
@@ -146,8 +159,8 @@ function onUnreserve(payload: { productIds: string[]; reason: string }) {
   toast.notify({ variant: 'success', title: `${released} ${t('unit unreserved')} — ${where}`, maxWidth: 'max-content' })
 }
 
-/** A transfer is raised per destination warehouse; called with no warehouse from
- *  Actions, the form opens on the whole request and the user picks the scope. */
+/** Raised per destination warehouse — the form opens with that group's short lines,
+ *  their shortfall qty, the destination and a memo naming this request. */
 function createWarehouseTransfer(warehouseId?: string) {
   if (!req.value) return
   router.push({
@@ -155,9 +168,12 @@ function createWarehouseTransfer(warehouseId?: string) {
     query: { fromStockRequest: req.value.id, ...(warehouseId ? { warehouse: warehouseId } : {}) },
   })
 }
-function createPurchaseRequest() {
+function createPurchaseRequest(warehouseId?: string) {
   if (!req.value) return
-  router.push({ path: '/purchase-requests/new', query: { fromStockRequest: req.value.id } })
+  router.push({
+    path: '/purchase-requests/new',
+    query: { fromStockRequest: req.value.id, ...(warehouseId ? { warehouse: warehouseId } : {}) },
+  })
 }
 
 /**
@@ -294,29 +310,6 @@ function saveSerials(serials: string[]) {
           />
         </div>
       </div>
-
-      <div class="detail-bar-actions">
-        <!-- Everything the crew can do to the request lives in one Actions list;
-             only Reserve stock is promoted, because it is the common case. -->
-        <MpPopover id="srd-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
-          <MpPopoverTrigger>
-            <button class="btn-enterprise btn-enterprise--secondary">
-              {{ t('Actions') }}
-              <MpIcon name="chevrons-down" size="sm" />
-            </button>
-          </MpPopoverTrigger>
-          <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
-            <MpPopoverList>
-              <MpPopoverListItem @click="createPurchaseRequest">{{ t('Create purchase request') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="createWarehouseTransfer()">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
-              <MpPopoverListItem @click="goWorkOrder">{{ t('Open work order') }}</MpPopoverListItem>
-              <MpPopoverListItem v-if="canUnreserve" @click="unreserveOpen = true">{{ t('Unreserve') }}</MpPopoverListItem>
-            </MpPopoverList>
-          </MpPopoverContent>
-        </MpPopover>
-
-
-      </div>
     </header>
 
     <!-- ── Stage ── -->
@@ -334,7 +327,9 @@ function saveSerials(serials: string[]) {
             </div>
             <div>
               <!-- The transaction is a reference on the request, not its identity -->
-              <ContentList :label="t('Transaction')" :value="`${t('Work order')} ${req.workOrderNumber}`" />
+              <ContentList :label="t('Transaction')" data-devchange="sr-wo-link">
+                <span class="cell-link" role="link" tabindex="0" @click="goWorkOrder" @keydown.enter="goWorkOrder">{{ t('Work order') }} {{ req.workOrderNumber }}</span>
+              </ContentList>
               <ContentList :label="t('Request date')" :value="formatDate(req.requestDate)" />
             </div>
             <div>
@@ -365,7 +360,7 @@ function saveSerials(serials: string[]) {
             <MpIcon name="warehouse" size="md" />
             {{ g.warehouse }}
           </h2>
-          <div class="srd-group-right">
+          <div class="srd-group-right" data-devchange="sr-group-actions">
             <!-- No component count or shortfall total here: the rows below are the
                  count, and the shortfall is in their Qty to transfer column.
                  Reservation is taken per warehouse — stock is committed at one —
@@ -376,6 +371,26 @@ function saveSerials(serials: string[]) {
               class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
               @click="openGroupReserve(g)"
             >{{ t('Reserve stock') }}</button>
+            <!-- What to do about a shortfall at THIS warehouse. Both documents open
+                 prefilled with this group's short lines (see shortfallLinesForRequest). -->
+            <MpPopover
+              v-if="groupHasActions(g)"
+              :id="`srd-actions-${gi}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end"
+            >
+              <MpPopoverTrigger>
+                <button class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" data-devchange="sr-group-actions">
+                  {{ t('Actions') }}
+                  <MpIcon name="chevrons-down" size="sm" />
+                </button>
+              </MpPopoverTrigger>
+              <MpPopoverContent :class="css({ minWidth: '220px', width: 'max-content', whiteSpace: 'nowrap' })">
+                <MpPopoverList>
+                  <MpPopoverListItem v-if="g.toTransfer > 0" @click="createPurchaseRequest(g.warehouseId)">{{ t('Create purchase request') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="g.toTransfer > 0" @click="createWarehouseTransfer(g.warehouseId)">{{ t('Create warehouse transfer') }}</MpPopoverListItem>
+                  <MpPopoverListItem v-if="canUnreserveGroup(g)" @click="openGroupUnreserve(g)">{{ t('Unreserve') }}</MpPopoverListItem>
+                </MpPopoverList>
+              </MpPopoverContent>
+            </MpPopover>
           </div>
         </div>
 
@@ -507,7 +522,7 @@ function saveSerials(serials: string[]) {
     />
     <UnreserveMaterialsModal
       id="srd-unreserve" :is-open="unreserveOpen"
-      :work-order-number="req.number" :lines="lines"
+      :work-order-number="req.number" :lines="unreserveGroupLines"
       @close="unreserveOpen = false" @unreserve="onUnreserve"
     />
   </div>
@@ -581,6 +596,7 @@ function saveSerials(serials: string[]) {
    each table's own content, which is what makes the groups align. The min-width is
    the sum of the columns, so a narrow stage scrolls rather than squashing them. */
 .wod-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 1380px; }
+.srd-group-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .wod-col-product   { width: 240px; }
 .wod-col-qty       { width: 128px; }
 .wod-col-unit      { width: 128px; }
