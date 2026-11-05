@@ -174,7 +174,7 @@ const candidatesTitle = computed(() =>
 
             <!-- Side by side: two ContentList columns (rule/detail-contentlist);
                  a field the two sides disagree on is highlighted on both. -->
-            <div class="rdd-compare">
+            <div class="rdd-compare" data-devchange="vat-recon-drawer-compare-divider">
               <div class="rdd-compare-col">
                 <MpText size="h4" weight="semiBold">{{ t('From ERP') }}</MpText>
                 <ContentList v-for="f in compareFields" :key="`erp-${f.key}`" :label="t(f.label)">
@@ -304,8 +304,11 @@ const candidatesTitle = computed(() =>
 .rdd-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
 
 /* ── Comparison: two ContentList columns ── */
-.rdd-compare { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mp-spacing-6); }
+.rdd-compare { display: grid; grid-template-columns: 1fr 1fr; }
 .rdd-compare-col { display: flex; flex-direction: column; min-width: 0; }
+/* Vertical divider between From ERP and From Coretax, as in the workspace expand. */
+.rdd-compare-col:first-child { padding-right: var(--mp-spacing-6); }
+.rdd-compare-col + .rdd-compare-col { padding-left: var(--mp-spacing-6); border-left: 1px solid var(--mp-border-default); }
 .rdd-reason-title { display: block; font-weight: var(--mp-font-weights-semi-bold); }
 .rdd-reason-body { display: block; }
 .rdd-diff { color: var(--mp-colors-red-800); font-weight: var(--mp-font-weights-semi-bold); }

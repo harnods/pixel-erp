@@ -217,4 +217,8 @@ describe('expanded row + drawer title (2026-11-05)', () => {
     expect(s).not.toContain('rdd-state-icon')
     expect(s).not.toContain("t('Reconciliation detail')")
   })
+  it('the drawer comparison columns are split by a divider', () => {
+    const s = src('app/components/patterns/ReconciliationDetailDrawer.vue')
+    expect(s).toMatch(/\.rdd-compare-col \+ \.rdd-compare-col \{[^}]*border-left: 1px solid var\(--mp-border-default\)/)
+  })
 })

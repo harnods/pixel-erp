@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-drawer-compare-divider',
+    title: 'Reconciliation drawer: divider between From ERP and From Coretax',
+    description:
+      'A 1px vertical divider (border-default) now splits the two comparison columns in the Reconciliation detail drawer, matching the two-column expand on the workspace rows.',
+    date: '2026-11-05',
+    files: ['ReconciliationDetailDrawer.vue'],
+  },
+  {
     id: 'app-shell-light-canvas',
     title: 'App shell: no dark-green band under the page',
     description:
