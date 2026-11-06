@@ -5,7 +5,7 @@ import { workOrders, type WorkOrderStatus, type WorkOrderMaterialReservation } f
 import { billOfMaterials, catalogProduct } from './billOfMaterials'
 import { warehouses } from './warehouses'
 import { isBatchTracked, isSerialized, autoSelectBatches, autoSelectSerials } from './warehouseDetails'
-import { applyConsumption, clearConsumption } from './stockRequests'
+import { applyConsumption, applyReturn, clearConsumption } from './stockRequests'
 
 /**
  * A single material consume/return entry (Work order detail → Material consume &
@@ -194,11 +194,12 @@ export function addMaterialConsumeReturnRecord(data: Omit<MaterialConsumeReturnR
   // must stop counting as held (UC-05). Hooked here rather than at each call site
   // so every consumption path stays in step with the stock request.
   //
-  // A Return does NOT touch the request (v0.6 UC-08, OPEN-33): it is a physical
-  // WIP → Available movement, the qty goes to AVAILABLE stock rather than back to
-  // this work order's reservation, and the request's consumed qty keeps showing
-  // what was issued against it. More material later means readjusting the WO.
+  // A Return is a physical WIP → Available movement (v0.6 UC-08): the qty goes to
+  // AVAILABLE stock rather than back to this work order's reservation. The request
+  // follows the work order's net consumed, so Consumed drops and the stock shows as
+  // available again — OPEN-33 first kept it frozen, which left the two disagreeing.
   if (rec.qty > 0) applyConsumption(rec.workOrderId, rec.productId, rec.qty)
+  else if (rec.qty < 0) applyReturn(rec.workOrderId, rec.productId, -rec.qty)
   return rec
 }
 

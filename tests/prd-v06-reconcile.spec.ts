@@ -7,8 +7,9 @@
  *     stays, as Canceled. A cancelled work order can be deleted, and that moves
  *     no stock.
  *   • R-6 — the figures the confirmation names are what actually moves.
- *   • UC-08 — a Return does not change the stock request: the qty goes to
- *     available stock, not back to this work order's reservation.
+ *   • UC-08 — a Return does not go back to this work order's reservation: the qty
+ *     goes to available stock. The request's Consumed follows the work order's
+ *     net (PRD OPEN-33 first froze it, which left the two pages disagreeing).
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { workOrders, type WorkOrder } from '~/data/workOrders'
@@ -67,13 +68,14 @@ describe('UC-05 — consuming draws the reservation down', () => {
   })
 })
 
-describe('UC-08 — a Return does not change the stock request', () => {
-  it('leaves the line\'s reserved and consumed qty as they were', () => {
+describe('UC-08 — a Return lowers Consumed and goes to Available, not back to the reservation', () => {
+  it('leaves reserved as it was, lowers consumed to the net, and adds the qty to available', () => {
+    const availableBefore = line('mdf').destAvailable
     addMaterialConsumeReturnRecord({
       workOrderId: WO_ID, type: 'Return', productId: 'mdf', date: '2026-11-03', qty: -2,
       unit: 'Unit', warehouseId: 'wh-001', memo: '', recordedBy: 'Test',
     })
-    expect(line('mdf')).toMatchObject({ reserved: 7, consumed: 5 })
+    expect(line('mdf')).toMatchObject({ reserved: 7, consumed: 3, destAvailable: availableBefore + 2 })
   })
 })
 

@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'sr-feedback-round',
+    title: 'Stock request: completed work orders, Returns, documents in the log',
+    description:
+      'A completed work order now closes its stock request (status Completed, lines Fulfilled) instead of leaving it open because less than the plan was consumed. A Return on the work order lowers the request\u2019s Consumed qty and puts the qty back into Available, so both pages show the same net consumed; consuming beyond what was reserved counts on the request too. Create purchase request / warehouse transfer only carry short lines of requests that are still open. A transfer or purchase request raised from a stock request writes its number to that request\u2019s activity log.',
+    date: '2026-11-06',
+    files: ['stockRequests.ts', 'materialConsumeReturn.ts', 'StockRequestDetailsPage.vue', 'StockRequestsPage.vue'],
+  },
+  {
+    id: 'sr-wt-qty-visible',
+    title: 'Warehouse transfer: qty always visible, Available follows the origin',
+    description:
+      'A transfer raised from a stock request shows its qty on batch- and storage-location rows too, muted until the batches or bins are picked, instead of a dash. Available qty reads \u201C\u2014\u201D until an Origin warehouse is chosen and then follows it; changing the origin clears picks that belonged to the old one.',
+    date: '2026-11-06',
+    files: ['WarehouseTransferFormPage.vue'],
+  },
+  {
     id: 'sr-group-actions',
     title: 'Stock request: Actions per warehouse, prefilled documents',
     description:

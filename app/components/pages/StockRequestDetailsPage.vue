@@ -32,7 +32,7 @@ import { formatDate } from '~/utils/date'
 import {
   stockRequests, stockRequestStatus, lineCovered, lineToTransfer, lineReadiness,
   isOverdue, reserveRequestProducts, unreserveRequestProducts,
-  stockRequestLineStatus,
+  requestLineStatus,
   reservedTracking, trackingChanged, lineTracking, setReservedBatches, setReservedSerials,
   workOrderFor, isActionable,
   type StockRequest, type StockRequestLine,
@@ -90,7 +90,7 @@ const READINESS_LABEL: Record<string, string> = {
   canceled: 'Canceled',
 }
 /** W-3 — derived centrally in the data layer so this page cannot drift from the dashboard. */
-const lineStatus = stockRequestLineStatus
+const lineStatus = (l: StockRequestLine) => (req.value ? requestLineStatus(req.value, l) : 'requested')
 
 // ─── Actions ───────────────────────────────────────────────────────────────────
 const reserveOpen = ref(false)
@@ -295,7 +295,7 @@ function saveSerials(serials: string[]) {
     <header class="detail-bar">
       <div class="detail-bar-left">
         <a class="detail-breadcrumb" @click="goList">{{ t('Stock requests') }}</a>
-        <div class="detail-titlerow-left">
+        <div class="detail-titlerow-left" data-devchange="sr-feedback-round">
           <h1 class="detail-title">{{ t('Stock request') }} {{ req.number }}</h1>
           <ErpStatusBadge :status="status" badge-for="additionalInformation" />
           <!-- W-7 — a tag belongs to a LINE, so the lines below carry their own and

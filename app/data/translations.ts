@@ -6633,4 +6633,11 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "The file uses the Update batches template, so you can edit it and import it back.": "File ini memakai template Perbarui batch, sehingga Anda dapat mengubahnya lalu mengimpornya kembali.",
   "All products": "Semua produk",
   "The template lists your current batches, ready to edit. Filter it to the batches you want to update.": "Template berisi batch Anda saat ini, siap untuk diubah. Gunakan filter untuk memilih batch yang ingin diperbarui.",
+
+  // ── Stock request — documents raised from it, Returns, requested qty hints ──
+  "Purchase request created": "Permintaan pembelian dibuat",
+  "Returned material": "Material dikembalikan",
+  "Qty returned": "Jumlah dikembalikan",
+  "Requested qty — choose batches to confirm": "Jumlah diminta — pilih batch untuk mengonfirmasi",
+  "Requested qty — choose storage locations to confirm": "Jumlah diminta — pilih lokasi penyimpanan untuk mengonfirmasi",
 }

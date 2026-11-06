@@ -35,7 +35,7 @@ import { lastUpdatedFor } from '~/utils/lastUpdated'
 import { TODAY_ISO } from '~/data/master'
 import {
   stockRequests, stockRequestStatus, stockRequestStatusOptions, skuDemandGroups,
-  lineCovered, stockRequestLineStatus, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
+  lineCovered, requestLineStatus, isAwaitingTab, isTerminalRequest, isOnDashboard, isActionable, workOrderFor, isOverdue,
   reserveStock, reserveRequestProducts, unreserveRequestProducts,
   isLineOverdue,
   type StockRequest, type StockRequestLine, type UnreserveDisposition,
@@ -840,7 +840,7 @@ function onPerPageChange(n: number) {
             <!-- The LINE's status — how far this component has got, which is a
                  different question from whether the request is still open. -->
             <span v-else-if="col.key === 'status'">
-              <ErpStatusBadge :status="stockRequestLineStatus(line)" />
+              <ErpStatusBadge :status="requestLineStatus(wo(row), line)" />
             </span>
             <span v-else-if="col.key === 'requiredDate'" class="cell-text">
               {{ formatDate(line.requiredDate) }}

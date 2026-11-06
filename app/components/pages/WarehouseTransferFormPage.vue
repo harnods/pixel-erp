@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpFormControl, MpFormLabel, MpFormErrorMessage,
   MpAutocomplete, MpInput, MpTextarea, MpButton, MpIcon,
@@ -16,7 +16,7 @@ import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import { warehouses } from '~/data/warehouses'
 import { productBySku } from '~/data/inventory'
-import { shortfallLinesForRequest, shortfallLinesForProduct } from '~/data/stockRequests'
+import { shortfallLinesForRequest, shortfallLinesForProduct, logRequestDocument } from '~/data/stockRequests'
 import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { addTransfer, updateTransfer, getTransfer, transferLineItems, transferMemo, warehouseTransfers } from '~/data/warehouseTransfers'
@@ -115,11 +115,42 @@ function applyPicker(skus: string[]) {
 function removeRow(id: number) {
   rows.value = rows.value.filter(r => r.id !== id)
 }
+/**
+ * The qty a row is going to move. A batch / location row confirms it through its
+ * picks; until then it carries the qty it was raised with (the stock request's
+ * shortfall), so the number is visible whatever the product's tracking or the
+ * warehouse's storage setup — the picks refine it, they don't hide it.
+ */
+function effectiveQty(row: LineRow): number {
+  if (isBatchTrackedSku(row.sku) && batchHasCounts(row)) return batchTotal(row)
+  if (needsLocationMgmt(row) && locIsSet(row)) return locTotalFor(row)
+  return Number(row.qty) || 0
+}
+/** Whether the row's qty is confirmed by picks yet — drives the muted "requested" look. */
+function qtyIsPicked(row: LineRow): boolean {
+  return isBatchTrackedSku(row.sku) ? batchHasCounts(row) : locIsSet(row)
+}
+// Available is the ORIGIN's — with none chosen there is nothing to show, not 0.
+const hasOrigin = computed(() => !!originId.value)
+function availableText(sku: string): string {
+  return hasOrigin.value ? availableFor(sku).toLocaleString('id-ID') : '—'
+}
 // Origin stock left after this transfer — shown as a second line in the Available cell.
 function originAfter(row: LineRow): number {
-  const qty = isBatchTrackedSku(row.sku) ? batchTotal(row) : (Number(row.qty) || 0)
-  return availableFor(row.sku) - qty
+  return availableFor(row.sku) - effectiveQty(row)
 }
+// Batches, serials and bins belong to ONE warehouse: change the origin and the old
+// picks point at stock that is no longer the source, so they are dropped. The qty
+// the row was raised with stays, to be picked again against the new origin.
+watch(originId, (next, prev) => {
+  if (!prev || next === prev) return
+  for (const row of rows.value) {
+    row.batchLines = undefined
+    row.serialLines = undefined
+    row.originLocations = undefined
+    row.qtyError = false
+  }
+})
 
 // ── Batch drawer ───────────────────────────────────────────────────────────────────
 const batchDrawerRow = ref<LineRow | null>(null)
@@ -261,8 +292,7 @@ async function saveLocDrawer() {
 
 function afterTransfer(row: LineRow): number {
   const dest = onHandFor(row.sku) ?? 0
-  if (isBatchTrackedSku(row.sku)) return dest + batchTotal(row)
-  return dest + (Number(row.qty) || 0)
+  return dest + effectiveQty(row)
 }
 
 // Transfer qty is capped at the origin's available qty.
@@ -323,6 +353,8 @@ function prefill() {
 // `fromAdjustmentId`/`fromSerials` are kept only to resolve the note(s) off the
 // originating count once this transfer actually saves — see handleSave().
 const fromAdjustmentId = ref<string | null>(null)
+/** Stock request this transfer was raised from — its number goes on that request's log. */
+const fromStockRequestId = typeof route.query.fromStockRequest === 'string' ? route.query.fromStockRequest : null
 const fromSerials = ref<string[]>([])
 /**
  * Prefill from a stock request shortfall — "Create warehouse transfer" on the
@@ -465,7 +497,12 @@ async function handleSave() {
     toast.notify({ variant: 'success', title: t('Warehouse transfer updated') , maxWidth: 'max-content'})
     router.push(`/warehouse-transfers/${props.orderId}`)
   } else {
-    addTransfer(input)
+    const created = addTransfer(input)
+    if (fromStockRequestId) {
+      logRequestDocument(fromStockRequestId, 'warehouse-transfer', created.number, filled.map(r => ({
+        product: r.productName, qty: effectiveQty(r), unit: r.unit,
+      })), [{ label: 'Origin warehouse', value: input.originName }, { label: 'Destination warehouse', value: input.destinationName }])
+    }
     toast.notify({ variant: 'success', title: t('Warehouse transfer created') , maxWidth: 'max-content'})
     // Came from a misplaced-serial note (Cycle count review) — resolve it off
     // that record now that the transfer moving it actually exists, and land
@@ -621,14 +658,14 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <td class="wtf-td wtf-td--muted">{{ row.sku }}</td>
                   <td class="wtf-td wtf-td--num">
                     <span class="wtf-avail">
-                      <span>{{ availableFor(row.sku).toLocaleString('id-ID') }}</span>
-                      <span v-if="isBatchTrackedSku(row.sku) ? batchHasCounts(row) : Number(row.qty) > 0" class="wtf-avail-after" :title="t('Available after transfer')">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
+                      <span>{{ availableText(row.sku) }}</span>
+                      <span v-if="hasOrigin && effectiveQty(row) > 0" class="wtf-avail-after" :title="t('Available after transfer')">→ {{ originAfter(row).toLocaleString('id-ID') }}</span>
                     </span>
                   </td>
                   <!-- Transfer qty: batch — value + Manage batch stacked as 2 lines in the same cell -->
                   <td v-if="isBatchTrackedSku(row.sku)" class="wtf-td wtf-td--num">
                     <span class="wtf-qty-stack">
-                      <span v-if="batchHasCounts(row)" class="wtf-batch-val">{{ batchTotal(row).toLocaleString('id-ID') }}</span>
+                      <span v-if="effectiveQty(row) > 0" :class="qtyIsPicked(row) ? 'wtf-batch-val' : 'wtf-batch-empty'" :title="qtyIsPicked(row) ? undefined : t('Requested qty — choose batches to confirm')" data-devchange="sr-wt-qty-visible">{{ effectiveQty(row).toLocaleString('id-ID') }}</span>
                       <span v-else class="wtf-batch-empty">—</span>
                       <MpButton class="wtf-manage-btn" variant="ghost" type="button" @click="openBatchDrawer(row)">{{ t('Manage batch') }}</MpButton>
                     </span>
@@ -647,7 +684,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                   <!-- Transfer qty: regular with storage location -->
                   <td v-else-if="needsLocationMgmt(row)" class="wtf-td wtf-td--num">
                     <span class="wtf-qty-stack">
-                      <span v-if="locIsSet(row)" class="wtf-batch-val">{{ locTotalFor(row).toLocaleString('id-ID') }}</span>
+                      <span v-if="effectiveQty(row) > 0" :class="qtyIsPicked(row) ? 'wtf-batch-val' : 'wtf-batch-empty'" :title="qtyIsPicked(row) ? undefined : t('Requested qty — choose storage locations to confirm')" data-devchange="sr-wt-qty-visible">{{ effectiveQty(row).toLocaleString('id-ID') }}</span>
                       <span v-else class="wtf-batch-empty">—</span>
                       <MpButton class="wtf-manage-btn" variant="ghost" :class="{ 'wtf-manage-btn--set': locIsSet(row) }" type="button" @click="openLocDrawer(row)">{{ t('Manage storage location') }}</MpButton>
                     </span>
@@ -777,7 +814,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </div>
             <div class="wtf-loc-qty-badge">
               <span class="wtf-loc-qty-label">{{ t('Available qty') }}</span>
-              <span class="wtf-loc-qty-value">{{ locDrawerRow ? availableFor(locDrawerRow.sku).toLocaleString('id-ID') : '—' }}</span>
+              <span class="wtf-loc-qty-value">{{ locDrawerRow ? availableText(locDrawerRow.sku) : '—' }}</span>
             </div>
           </div>
 

@@ -21,7 +21,7 @@ import {
 } from '~/data'
 import type { PurchaseRequestLine, UrgencyLevel } from '~/data/types'
 import ProductCell from '~/components/patterns/ProductCell.vue'
-import { shortfallLinesForRequest, shortfallLinesForProduct } from '~/data/stockRequests'
+import { shortfallLinesForRequest, shortfallLinesForProduct, logRequestDocument } from '~/data/stockRequests'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import BudgetCheckPanel from '~/components/patterns/BudgetCheckPanel.vue'
 import {
@@ -311,6 +311,13 @@ function persist(): boolean {
     const created = addPurchaseRequest({ ...header, number: nextRequestNumber(), status: 'open' })
     recordId.value = created.id
     number = created.number
+    // Raised from a stock request's shortfall — put its number on that request's log.
+    const fromRequest = typeof route.query.fromStockRequest === 'string' ? route.query.fromStockRequest : null
+    if (fromRequest) {
+      logRequestDocument(fromRequest, 'purchase-request', `Purchase Request #${number}`,
+        items.value.filter(it => it.product).map(it => ({ product: it.product, qty: Number(it.qty) || 0, unit: it.unit })),
+        warehouse.value ? [{ label: 'Destination warehouse', value: warehouse.value }] : [])
+    }
   }
   // The linked budget request: create it, or update a draft's lines and month.
   if (existing) {

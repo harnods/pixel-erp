@@ -196,16 +196,29 @@ export function stockRequestStatus(req: StockRequest): StockRequestStatus {
   // UC-09 — a cancelled work order's request, and a DELETED one's (v0.6: "the
   // WO's stock request stays on the Stock requests page with status Canceled").
   if (req.workOrderDeleted || workOrderFor(req)?.status === 'canceled') return 'canceled'
+  // The job is done: whatever it did not use has been released (UC-11 trigger a), so
+  // nothing is left for the warehouse to do however much of the plan was consumed.
+  if (workOrderFor(req)?.status === 'completed') return 'completed'
   if (req.lines.length === 0) return 'open'
   const outstanding = req.lines.filter(l => stockRequestLineStatus(l) !== 'fulfilled')
   return outstanding.length === 0 ? 'completed' : 'open'
+}
+
+/**
+ * A line's status in the context of its request. Once the work order has completed
+ * every line is settled — what was consumed is what the job used — so the badge
+ * reads Fulfilled instead of "Requested" on a request the header calls Completed.
+ */
+export function requestLineStatus(req: StockRequest, line: StockRequestLine): StockRequestLineStatus {
+  if (!req.workOrderDeleted && workOrderFor(req)?.status === 'completed') return 'fulfilled'
+  return stockRequestLineStatus(line)
 }
 
 /** The lowest line status on a request — how far the warehouse has got overall. */
 export function lowestLineStatus(req: StockRequest): StockRequestLineStatus {
   if (req.lines.length === 0) return 'requested'
   return req.lines
-    .map(stockRequestLineStatus)
+    .map(l => requestLineStatus(req, l))
     .reduce((lowest, s) => (LINE_STATUS_RANK[s] < LINE_STATUS_RANK[lowest] ? s : lowest))
 }
 
@@ -708,7 +721,7 @@ export function skuDemandGroups(
     const byRequest = new Map<string, SkuDemandEntry>()
     for (const { line, req } of bucket) {
       const seen = byRequest.get(req.id)
-      const status = stockRequestLineStatus(line)
+      const status = requestLineStatus(req, line)
       if (!seen) {
         byRequest.set(req.id, {
           requestId: req.id,
@@ -998,7 +1011,49 @@ export function applyConsumption(workOrderId: string, productId: string, qty: nu
     left -= take
     applied += take
   }
+  // Consumed with nothing reserved against it (P-1 allows drawing on-hand stock): the
+  // work order counts it, so the request must too, taken out of what was available.
+  for (const line of linesForProduct(req, productId)) {
+    if (left <= 0) break
+    const take = Math.min(left, Math.max(0, line.qty - line.consumed - line.reserved))
+    if (take <= 0) continue
+    line.consumed += take
+    line.destAvailable = Math.max(0, line.destAvailable - take)
+    left -= take
+    applied += take
+  }
   if (applied > 0) persistStockRequests()
+  return applied
+}
+
+/**
+ * A Return on the work order: the qty comes back out of what the request shows as
+ * consumed and goes to the warehouse's AVAILABLE stock (WIP → Available, UC-08), so
+ * Consumed here matches the work order's net consumed and the stock can be reserved
+ * again. Returns the qty applied.
+ */
+export function applyReturn(workOrderId: string, productId: string, qty: number): number {
+  const req = requestForWorkOrder(workOrderId)
+  if (!req || qty <= 0) return 0
+  let left = qty
+  let applied = 0
+  // Last line first: the latest demand is the one most recently drawn against.
+  for (const line of [...linesForProduct(req, productId)].reverse()) {
+    if (left <= 0) break
+    const take = Math.min(left, line.consumed)
+    if (take <= 0) continue
+    line.consumed -= take
+    line.destAvailable += take
+    left -= take
+    applied += take
+  }
+  if (applied > 0) {
+    persistStockRequests()
+    logRequestEvent(req, 'Returned material', [
+      { label: 'Components', value: productNames(req, [productId]) },
+      { label: 'Qty returned', value: `${applied}` },
+    ], { source: 'work-order' })
+  }
   return applied
 }
 
@@ -1201,6 +1256,32 @@ function logRequestEvent(
       activity,
       details: [...details, { label: 'Source', value: SOURCE_LABEL[ctx.source ?? 'stock-request'] }],
     },
+  )
+}
+
+/**
+ * A warehouse transfer or purchase request raised FROM a stock request leaves its
+ * number on the request's log, so the trail from "short of stock" to the document
+ * that answers it reads in one place. Called by the forms when they save.
+ */
+export function logRequestDocument(
+  requestId: string,
+  kind: 'warehouse-transfer' | 'purchase-request',
+  number: string,
+  lines: { product: string; qty: number; unit: string }[],
+  extra: { label: string; value: string }[] = [],
+): void {
+  const req = stockRequests.find(r => r.id === requestId)
+  if (!req) return
+  logRequestEvent(
+    req,
+    kind === 'warehouse-transfer' ? 'Warehouse transfer created' : 'Purchase request created',
+    [
+      { label: kind === 'warehouse-transfer' ? 'Warehouse transfer' : 'Purchase request', value: number },
+      ...extra,
+      { label: 'Components', value: lines.map(l => `${l.product} (${l.qty} ${l.unit})`).join(', ') },
+    ],
+    { source: 'stock-request' },
   )
 }
 
@@ -1575,7 +1656,8 @@ function toShortfallLine(line: StockRequestLine, req: StockRequest): ShortfallLi
  */
 export function shortfallLinesForRequest(requestId: string, warehouseId?: string): ShortfallLine[] {
   const req = stockRequests.find(r => r.id === requestId)
-  if (!req) return []
+  // A completed or canceled request has no need left, whatever its lines say.
+  if (!req || isTerminalRequest(req)) return []
   return req.lines
     .filter(l => lineToTransfer(l) > 0)
     .filter(l => !warehouseId || l.destinationWarehouseId === warehouseId)
@@ -1590,6 +1672,7 @@ export function shortfallLinesForRequest(requestId: string, warehouseId?: string
 export function shortfallLinesForProduct(productId: string): ShortfallLine[] {
   const byWarehouse = new Map<string, ShortfallLine>()
   for (const req of stockRequests) {
+    if (isTerminalRequest(req)) continue
     for (const line of req.lines) {
       if (line.productId !== productId || lineToTransfer(line) <= 0) continue
       const key = line.destinationWarehouseId || line.destinationWarehouse

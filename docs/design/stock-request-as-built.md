@@ -410,7 +410,7 @@ and how the build now does it:
 | (implied) — no *Request additional stock* | Removed (PM ruling, 4 Nov): P-2 makes Adjust the route to more material | `WorkOrderDetailsPage.vue` |
 | **UC-04** — reservation off → "the start gate checks stock on hand only" | Same partial-mode table, counting on hand at each component's warehouse (`onHandAt`) — PM ruling, 4 Nov | `startGate` |
 | **P-1 … P-5** — consume limit and forms | Each line consumes / returns at its **own destination warehouse** (PM ruling) — the record-level picker is gone. Consume: On hand · Needed · Reserved · Consumed; the limit min(remaining reserved, on hand) — on hand with S-0 off — is not a column, but qty above it is refused with an inline error naming it. Return: Needed · Reserved · Consumed · Max returnable, plus "Returned qty goes to available stock". A tracked line's batch / serial pre-fill is capped at the limit | `NewMaterialRecordPage.vue` |
-| **UC-08** — a return does not change the request | `addMaterialConsumeReturnRecord` no longer touches the request on a Return; `releaseConsumption` deleted | `materialConsumeReturn.ts` |
+| **UC-08** — a return goes to available, not back to the reservation | Superseded 2026-11-06 (QA feedback): a Return now lowers the request line's Consumed to the work order's net and adds the qty to Available (`applyReturn`), so the two pages agree. Reserved is untouched — the return still does not go back to this work order's reservation | `materialConsumeReturn.ts`, `stockRequests.ts` |
 | **R-3** — reserved is 0 after completion | Already built (`releaseOnCompletion`). WO detail's Reserved qty column now shows what is **still** reserved (reserved − consumed), so it reads 0 after completion | `WorkOrderDetailsPage.vue` |
 | **UC-09** — Cancel and Delete reverse reservation **and** consumption; a cancelled WO can be deleted | `cancelWorkOrder` / `deleteWorkOrder` share `reverseWorkOrderStock`: release + delete the consume/return records (the stock adjustments) + zero the request's consumed. Cancel is offered only once started; Delete on Not started, Completed and Cancelled (moves nothing). Delete removes the record; the request is flagged `workOrderDeleted` and reads Canceled. The Cancel modal and the Delete confirm name the released and restored qty (R-6) | `woApproval.ts`, `WoTransactionModal.vue`, `WorkOrderDetailsPage.vue` |
 
@@ -454,3 +454,13 @@ branch's old `ProductionSettingsPage.vue` is deleted.
 - UC-08 says Return is available only with partial consume on; the form does not
   gate it yet.
 
+## 8. QA feedback round — 2026-11-06
+
+| Feedback | Change | Where |
+|---|---|---|
+| Transfer / PR should only carry items that still need stock | Shortfall lines skip completed and canceled requests (both the per-request and the per-product path) | `shortfallLinesForRequest`, `shortfallLinesForProduct` |
+| Qty to transfer must show regardless of batch / serial / storage location | Batch and storage-location rows show the qty they were raised with, muted until picks confirm it | `WarehouseTransferFormPage.vue` (`effectiveQty`) |
+| Available qty follows the chosen origin | Available reads "—" until an origin is chosen; changing the origin drops batch / serial / bin picks from the old one | `WarehouseTransferFormPage.vue` |
+| Transfer / PR number on the stock request audit log | Saving a transfer or PR raised from a stock request writes "Warehouse transfer created" / "Purchase request created" with its number to the request (and work order) log | `logRequestDocument` |
+| A WO Return isn't reflected on the request | See UC-08 above; consuming beyond the reservation also counts on the request now | `applyReturn`, `applyConsumption` |
+| A completed WO should update the request status | Request status Completed and every line Fulfilled once the work order completes | `stockRequestStatus`, `requestLineStatus` |
