@@ -1545,36 +1545,26 @@ function reloadCheckin() {
 
           <!-- ════════ CHECK-IN (Deals) — toggle to enable location check-in ════════ -->
           <div v-show="activeTab === 'checkin'" class="builder-panel" data-devchange="crm-module-checkin">
-            <div class="checkin-header-row">
-              <div class="checkin-header-left">
-                <span class="checkin-version">CHECK-IN 1.0</span>
-                <h2 class="checkin-heading">{{ t('Check-in settings') }}</h2>
-                <p class="checkin-heading-desc">{{ t('Allow eligible mobile users to record an arrival against') }} {{ mod?.name?.toLowerCase() ?? 'module' }} {{ t('records.') }}</p>
-              </div>
-              <MpButton v-if="viewMode" variant="secondary" is-rounded @click="enterEdit">{{ t('Edit') }}</MpButton>
+            <MpButton v-if="viewMode" class="tab-edit-btn" variant="ghost" is-rounded left-icon="edit" @click="enterEdit">{{ t('Edit') }}</MpButton>
+            <div class="checkin-header">
+              <h2 class="checkin-heading">{{ t('Check-in settings') }}</h2>
+              <p class="checkin-heading-desc">{{ t('Allow eligible mobile users to record an arrival against') }} {{ mod?.name?.toLowerCase() ?? 'module' }} {{ t('records.') }}</p>
             </div>
 
-            <div class="checkin-card">
-              <div class="checkin-toggle-row">
-                <div class="checkin-toggle-text">
-                  <p class="checkin-toggle-label">{{ t('Enable Check-in for this module') }}</p>
-                  <p class="checkin-toggle-desc">{{ t('When enabled, the mobile app can capture the user\'s current location and create a separate Check-in record for every arrival.') }}</p>
-                </div>
-                <MpToggle v-model:is-checked="checkinEnabled" :aria-label="t('Enable Check-in for this module')" :is-disabled="viewMode" />
+            <div class="checkin-row">
+              <div class="checkin-row-info">
+                <span class="checkin-row-title">{{ t('Enable Check-in for this module') }}</span>
+                <span class="checkin-row-desc">{{ t('When enabled, the mobile app can capture the user\'s current location and create a separate Check-in record for every arrival.') }}</span>
               </div>
+              <MpToggle v-model:is-checked="checkinEnabled" :aria-label="t('Enable Check-in for this module')" :is-disabled="viewMode" />
             </div>
 
-            <div v-if="checkinEnabled" class="checkin-card">
-              <div class="checkin-toggle-row">
-                <div class="checkin-toggle-text">
-                  <p class="checkin-toggle-label">{{ t('Photo evidence') }}</p>
-                  <p class="checkin-toggle-desc">{{ t('Choose whether a freshly taken photo is required. Gallery upload is never available.') }}</p>
-                </div>
-                <MpButtonGroup>
-                  <MpButton :variant="checkinPhotoPolicy === 'optional' ? 'primary' : 'ghost'" is-rounded :is-disabled="viewMode" @click="checkinPhotoPolicy = 'optional'">{{ t('Optional') }} <span v-if="checkinPhotoPolicy === 'optional'" class="checkin-default-badge">{{ t('Default') }}</span></MpButton>
-                  <MpButton :variant="checkinPhotoPolicy === 'required' ? 'primary' : 'ghost'" is-rounded :is-disabled="viewMode" @click="checkinPhotoPolicy = 'required'">{{ t('Required') }}</MpButton>
-                </MpButtonGroup>
+            <div v-if="checkinEnabled" class="checkin-row">
+              <div class="checkin-row-info">
+                <span class="checkin-row-title">{{ t('Photo evidence required') }}</span>
+                <span class="checkin-row-desc">{{ t('Require a freshly taken photo for every check-in. Gallery upload is never available.') }}</span>
               </div>
+              <MpToggle :is-checked="checkinPhotoPolicy === 'required'" :aria-label="t('Photo evidence required')" :is-disabled="viewMode" @update:is-checked="(v: boolean) => { checkinPhotoPolicy = v ? 'required' : 'optional' }" />
             </div>
           </div>
 
@@ -2318,15 +2308,11 @@ function reloadCheckin() {
 .builder-option-add :deep([data-pixel-component="MpInput"]) { flex: 1; }
 
 /* Check-in tab */
-.checkin-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-6); }
-.checkin-header-left { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.checkin-version { font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-green-600, #16a34a); text-transform: uppercase; letter-spacing: 0.5px; }
+.checkin-header { display: flex; flex-direction: column; gap: var(--mp-spacing-1); margin-bottom: var(--mp-spacing-6); }
 .checkin-heading { margin: 0; font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: 28px; color: var(--mp-text-default); }
 .checkin-heading-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #6b7678); }
-.checkin-card { padding: var(--mp-spacing-5); border: 1px solid var(--mp-colors-border-default, #dfe3e6); border-radius: var(--mp-radii-lg, 8px); margin-bottom: var(--mp-spacing-4); }
-.checkin-toggle-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); }
-.checkin-toggle-text { display: flex; flex-direction: column; gap: var(--mp-spacing-1); flex: 1; min-width: 0; }
-.checkin-toggle-label { margin: 0; font-size: var(--mp-font-sizes-md, 14px); font-weight: 600; line-height: 24px; color: var(--mp-text-default); }
-.checkin-toggle-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary, #6b7678); }
-.checkin-default-badge { margin-left: var(--mp-spacing-1); font-size: var(--mp-font-sizes-xs, 12px); font-weight: 400; opacity: 0.8; }
+.checkin-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
+.checkin-row-info { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); flex: 1; min-width: 0; }
+.checkin-row-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.checkin-row-desc { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
 </style>
