@@ -1306,13 +1306,36 @@ export interface CheckInRecord {
   hasPhoto: boolean
 }
 const CHECK_IN_RECORDS_SEED: CheckInRecord[] = [
-  { id: 'CI-001', moduleId: 'deals', recordId: 'deal-1', checkedInAt: '2026-10-20T09:42:00', user: 'Dewi Rahayu', lat: -6.22491, lng: 106.80914, note: 'Arrived for product review', hasPhoto: true },
-  { id: 'CI-002', moduleId: 'deals', recordId: 'deal-1', checkedInAt: '2026-10-16T14:18:00', user: 'Ayu Putri', lat: -6.22503, lng: 106.80927, note: 'Follow-up meeting', hasPhoto: false },
-  { id: 'CI-003', moduleId: 'deals', recordId: 'deal-2', checkedInAt: '2026-10-18T10:05:00', user: 'Fajar Nugroho', lat: -6.17520, lng: 106.82710, note: 'Initial site visit', hasPhoto: true },
-  { id: 'CI-004', moduleId: 'deals', recordId: 'deal-3', checkedInAt: '2026-10-22T11:30:00', user: 'Dewi Rahayu', lat: -6.20150, lng: 106.84520, note: 'Quarterly review', hasPhoto: false },
+  // DL-260898 — 4 check-ins (most active)
+  { id: 'CI-001', moduleId: 'deals', recordId: 'DL-260898', checkedInAt: '2026-11-08T09:42:00', user: 'Dewi Lestari', lat: -6.22491, lng: 106.80914, note: 'Arrived for product tasting session', hasPhoto: true },
+  { id: 'CI-002', moduleId: 'deals', recordId: 'DL-260898', checkedInAt: '2026-11-05T14:18:00', user: 'Fajar Nugroho', lat: -6.22503, lng: 106.80927, note: 'Follow-up meeting with cafe manager', hasPhoto: false },
+  { id: 'CI-003', moduleId: 'deals', recordId: 'DL-260898', checkedInAt: '2026-10-28T10:05:00', user: 'Dewi Lestari', lat: -6.22510, lng: 106.80900, note: 'Initial site visit for kiosk placement', hasPhoto: true },
+  { id: 'CI-004', moduleId: 'deals', recordId: 'DL-260898', checkedInAt: '2026-10-20T11:30:00', user: 'Rizal Candra', lat: -6.22480, lng: 106.80930, note: 'Signed partnership agreement', hasPhoto: true },
+
+  // DL-260908 — 3 check-ins
+  { id: 'CI-005', moduleId: 'deals', recordId: 'DL-260908', checkedInAt: '2026-11-07T10:15:00', user: 'Fajar Nugroho', lat: -6.17520, lng: 106.82710, note: 'Presented house blend samples', hasPhoto: true },
+  { id: 'CI-006', moduleId: 'deals', recordId: 'DL-260908', checkedInAt: '2026-10-30T09:00:00', user: 'Fajar Nugroho', lat: -6.17535, lng: 106.82725, note: 'Discussed rollout timeline', hasPhoto: false },
+  { id: 'CI-007', moduleId: 'deals', recordId: 'DL-260908', checkedInAt: '2026-10-22T14:45:00', user: 'Dewi Lestari', lat: -6.17510, lng: 106.82700, note: 'First meeting at Grand Indonesia outlet', hasPhoto: true },
+
+  // DL-260913 — 2 check-ins
+  { id: 'CI-008', moduleId: 'deals', recordId: 'DL-260913', checkedInAt: '2026-11-06T11:00:00', user: 'Dewi Lestari', lat: -6.26150, lng: 106.78100, note: 'Contract review with procurement', hasPhoto: false },
+  { id: 'CI-009', moduleId: 'deals', recordId: 'DL-260913', checkedInAt: '2026-10-25T09:30:00', user: 'Dewi Lestari', lat: -6.26140, lng: 106.78120, note: 'Initial proposal delivery', hasPhoto: true },
+
+  // DL-260917 — 2 check-ins
+  { id: 'CI-010', moduleId: 'deals', recordId: 'DL-260917', checkedInAt: '2026-11-04T08:30:00', user: 'Fajar Nugroho', lat: -6.20150, lng: 106.84520, note: 'Warehouse inspection for bulk storage', hasPhoto: true },
+  { id: 'CI-011', moduleId: 'deals', recordId: 'DL-260917', checkedInAt: '2026-10-18T13:00:00', user: 'Fajar Nugroho', lat: -6.20170, lng: 106.84510, note: 'Price negotiation meeting', hasPhoto: false },
+
+  // DL-260904 — 1 check-in
+  { id: 'CI-012', moduleId: 'deals', recordId: 'DL-260904', checkedInAt: '2026-11-02T10:00:00', user: 'Fajar Nugroho', lat: -8.67220, lng: 115.16280, note: 'Visited Bali cafe for restock assessment', hasPhoto: true },
+
+  // DL-260909 — 1 check-in
+  { id: 'CI-013', moduleId: 'deals', recordId: 'DL-260909', checkedInAt: '2026-11-01T15:20:00', user: 'Dewi Lestari', lat: -6.23050, lng: 106.79840, note: 'Met with lounge manager for tasting', hasPhoto: false },
+
+  // DL-260901, DL-260902, DL-260903, DL-260905, DL-260906, DL-260907 — no check-ins (empty state)
+  // DL-260910, DL-260911, DL-260912, DL-260914, DL-260915, DL-260916, DL-260918, DL-260919 — no check-ins
 ]
 const checkInRecords = reactive<CheckInRecord[]>(
-  loadSnapshot<CheckInRecord[]>('crm-checkin-records-v1')?.[0] as unknown as CheckInRecord[]
+  loadSnapshot<CheckInRecord[]>('crm-checkin-records-v2')?.[0] as unknown as CheckInRecord[]
     ?? JSON.parse(JSON.stringify(CHECK_IN_RECORDS_SEED)),
 )
 export function getCheckInRecords(moduleId: string, recordId: string): CheckInRecord[] {

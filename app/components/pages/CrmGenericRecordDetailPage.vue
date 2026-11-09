@@ -13,7 +13,7 @@ import {
   getCrmModule, getGenericRecord, genericModuleStages, moveGenericRecordStage,
   genericPipelineFieldId, moduleStores, deleteGenericRecord, isRelatedListType,
   setGenericRecordProducts, genericRecordTotals, genericRecordActivityLog, lineSubtotal,
-  isCheckInEnabled, getCheckInRecords, getCheckInConfig,
+  isCheckInEnabled, getCheckInRecords,
   type DealProperty, type DealLineItem, type DealProductsPayload, type Deal,
 } from '~/data/crm'
 import { formatMoney } from '~/utils/currency'
@@ -161,7 +161,6 @@ const activityEntries = computed(() => rec.value ? genericRecordActivityLog(modu
 // ── Check-in ──
 const checkinEnabled = computed(() => isCheckInEnabled(moduleId.value))
 const checkinRecords = computed(() => rec.value ? getCheckInRecords(moduleId.value, rec.value.id) : [])
-const checkinPhotoPolicy = computed(() => getCheckInConfig(moduleId.value).photoPolicy)
 function fmtDateTime(iso?: string) {
   if (!iso) return '—'
   return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
@@ -234,7 +233,7 @@ function fmtDateTime(iso?: string) {
         <MpTabs :key="rec.id" :id="`${moduleId}-tabs`" :default-value="0" variant-color="green" class="detail-tabs">
           <MpTabList>
             <MpTab :id="`${moduleId}-tab-details`" value="details">{{ t('Record details') }}</MpTab>
-            <MpTab v-if="checkinEnabled" :id="`${moduleId}-tab-checkin`" value="checkin"><MpIcon name="location" size="sm" :style="{ marginRight: 'var(--mp-spacing-1)' }" />{{ t('Check-in') }}</MpTab>
+            <MpTab v-if="checkinEnabled" :id="`${moduleId}-tab-checkin`" value="checkin">{{ t('Check-in') }}</MpTab>
             <MpTab :id="`${moduleId}-tab-activity`" value="activity">{{ t('Activity') }}</MpTab>
           </MpTabList>
           <MpTabPanels>
@@ -323,15 +322,15 @@ function fmtDateTime(iso?: string) {
               </section>
             </MpTabPanel>
             <MpTabPanel v-if="checkinEnabled" value="checkin">
-              <div class="checkin-history-header">
-                <div class="checkin-history-header-left">
-                  <span class="checkin-history-version">CHECK-IN HISTORY</span>
-                  <h3 class="checkin-history-title">{{ rec.name }}</h3>
-                  <p class="checkin-history-desc">{{ t('Every mobile arrival is stored as a separate, read-only record. Exact coordinates are shown to Owners and CRM Managers.') }}</p>
-                </div>
-                <span class="checkin-photo-badge">{{ t(checkinPhotoPolicy === 'required' ? 'Photo required' : 'Photo optional') }}</span>
-              </div>
-              <table v-if="checkinRecords.length" class="detail-linked checkin-table">
+              <h3 class="detail-tab-heading">{{ t('Check-in') }}</h3>
+              <table v-if="checkinRecords.length" class="detail-linked">
+                <colgroup>
+                  <col class="detail-linked-col--date" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                </colgroup>
                 <thead><tr>
                   <th class="detail-th">{{ t('Checked in at') }}</th>
                   <th class="detail-th">{{ t('User') }}</th>
@@ -341,16 +340,15 @@ function fmtDateTime(iso?: string) {
                 </tr></thead>
                 <tbody>
                   <tr v-for="ci in checkinRecords" :key="ci.id" class="detail-item-row">
-                    <td class="detail-td"><div class="checkin-time-cell"><span>{{ fmtDateTime(ci.checkedInAt) }}</span><span class="checkin-time-sub">{{ t('Device time = server time') }}</span></div></td>
+                    <td class="detail-td">{{ fmtDateTime(ci.checkedInAt) }}</td>
                     <td class="detail-td">{{ ci.user }}</td>
-                    <td class="detail-td"><span class="checkin-coords">{{ ci.lat.toFixed(5) }}, {{ ci.lng.toFixed(5) }} <MpIcon name="redirect" size="sm" /></span></td>
+                    <td class="detail-td">{{ ci.lat.toFixed(5) }}, {{ ci.lng.toFixed(5) }}</td>
                     <td class="detail-td">{{ ci.note || '—' }}</td>
-                    <td class="detail-td"><span v-if="ci.hasPhoto" class="checkin-evidence-photo"><MpIcon name="image" size="sm" /> {{ t('Photo captured') }}</span><span v-else class="checkin-evidence-none">—{{ t('No photo') }}</span></td>
+                    <td class="detail-td">{{ ci.hasPhoto ? t('Photo captured') : '—' }}</td>
                   </tr>
                 </tbody>
               </table>
-              <p v-else class="detail-tab-empty">{{ t('No check-ins recorded for this deal yet.') }}</p>
-              <div v-if="checkinRecords.length" class="checkin-footer"><span class="checkin-footer-count">{{ t('Showing') }} {{ checkinRecords.length }} {{ t('Check-ins') }}</span><span class="checkin-footer-note">{{ t('Check-ins cannot be edited. Deletion follows CRM record retention and audit policies.') }}</span></div>
+              <p v-else class="detail-tab-empty">{{ t('No check-ins recorded yet.') }}</p>
             </MpTabPanel>
             <MpTabPanel value="activity">
               <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
@@ -366,7 +364,7 @@ function fmtDateTime(iso?: string) {
       <MpTabs :key="rec.id" :id="`${moduleId}-tabs`" :default-value="0" variant-color="green" class="detail-tabs detail-tabs--flat">
         <MpTabList class="detail-tablist-outer">
           <MpTab :id="`${moduleId}-tab-details`" value="details">{{ t('Record details') }}</MpTab>
-          <MpTab v-if="checkinEnabled" :id="`${moduleId}-tab-checkin`" value="checkin"><MpIcon name="location" size="sm" :style="{ marginRight: 'var(--mp-spacing-1)' }" />{{ t('Check-in') }}</MpTab>
+          <MpTab v-if="checkinEnabled" :id="`${moduleId}-tab-checkin`" value="checkin">{{ t('Check-in') }}</MpTab>
           <MpTab :id="`${moduleId}-tab-activity`" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels class="detail-panels-outer">
@@ -454,15 +452,15 @@ function fmtDateTime(iso?: string) {
             </section>
           </MpTabPanel>
           <MpTabPanel v-if="checkinEnabled" value="checkin">
-            <div class="checkin-history-header">
-              <div class="checkin-history-header-left">
-                <span class="checkin-history-version">CHECK-IN HISTORY</span>
-                <h3 class="checkin-history-title">{{ rec.name }}</h3>
-                <p class="checkin-history-desc">{{ t('Every mobile arrival is stored as a separate, read-only record. Exact coordinates are shown to Owners and CRM Managers.') }}</p>
-              </div>
-              <span class="checkin-photo-badge">{{ t(checkinPhotoPolicy === 'required' ? 'Photo required' : 'Photo optional') }}</span>
-            </div>
-            <table v-if="checkinRecords.length" class="detail-linked checkin-table">
+            <h3 class="detail-tab-heading">{{ t('Check-in') }}</h3>
+            <table v-if="checkinRecords.length" class="detail-linked">
+              <colgroup>
+                <col class="detail-linked-col--date" />
+                <col />
+                <col />
+                <col />
+                <col />
+              </colgroup>
               <thead><tr>
                 <th class="detail-th">{{ t('Checked in at') }}</th>
                 <th class="detail-th">{{ t('User') }}</th>
@@ -472,16 +470,15 @@ function fmtDateTime(iso?: string) {
               </tr></thead>
               <tbody>
                 <tr v-for="ci in checkinRecords" :key="ci.id" class="detail-item-row">
-                  <td class="detail-td"><div class="checkin-time-cell"><span>{{ fmtDateTime(ci.checkedInAt) }}</span><span class="checkin-time-sub">{{ t('Device time = server time') }}</span></div></td>
+                  <td class="detail-td">{{ fmtDateTime(ci.checkedInAt) }}</td>
                   <td class="detail-td">{{ ci.user }}</td>
-                  <td class="detail-td"><span class="checkin-coords">{{ ci.lat.toFixed(5) }}, {{ ci.lng.toFixed(5) }} <MpIcon name="redirect" size="sm" /></span></td>
+                  <td class="detail-td">{{ ci.lat.toFixed(5) }}, {{ ci.lng.toFixed(5) }}</td>
                   <td class="detail-td">{{ ci.note || '—' }}</td>
-                  <td class="detail-td"><span v-if="ci.hasPhoto" class="checkin-evidence-photo"><MpIcon name="image" size="sm" /> {{ t('Photo captured') }}</span><span v-else class="checkin-evidence-none">—{{ t('No photo') }}</span></td>
+                  <td class="detail-td">{{ ci.hasPhoto ? t('Photo captured') : '—' }}</td>
                 </tr>
               </tbody>
             </table>
-            <p v-else class="detail-tab-empty">{{ t('No check-ins recorded for this deal yet.') }}</p>
-            <div v-if="checkinRecords.length" class="checkin-footer"><span class="checkin-footer-count">{{ t('Showing') }} {{ checkinRecords.length }} {{ t('Check-ins') }}</span><span class="checkin-footer-note">{{ t('Check-ins cannot be edited. Deletion follows CRM record retention and audit policies.') }}</span></div>
+            <p v-else class="detail-tab-empty">{{ t('No check-ins recorded yet.') }}</p>
           </MpTabPanel>
           <MpTabPanel value="activity">
             <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
@@ -691,20 +688,4 @@ function fmtDateTime(iso?: string) {
 .detail-empty-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 
 /* ── Check-in history tab ── */
-.checkin-history-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4); margin-bottom: var(--mp-spacing-5); }
-.checkin-history-header-left { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.checkin-history-version { font-size: var(--mp-font-sizes-xs, 12px); font-weight: var(--mp-font-weights-semi-bold, 600); color: var(--mp-colors-green-600, #16a34a); text-transform: uppercase; letter-spacing: 0.5px; }
-.checkin-history-title { margin: 0; font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold, 600); line-height: 24px; color: var(--mp-text-default); }
-.checkin-history-desc { margin: 0; font-size: var(--mp-font-sizes-md, 14px); color: var(--mp-text-secondary); }
-.checkin-photo-badge { flex-shrink: 0; padding: var(--mp-spacing-1) var(--mp-spacing-3); border: 1px solid var(--mp-colors-border-default, #dfe3e6); border-radius: var(--mp-radii-full, 999px); font-size: var(--mp-font-sizes-sm, 13px); color: var(--mp-colors-green-600, #16a34a); font-weight: var(--mp-font-weights-semi-bold, 600); white-space: nowrap; }
-.checkin-table { table-layout: fixed; }
-.checkin-time-cell { display: flex; flex-direction: column; gap: 0; }
-.checkin-time-sub { font-size: var(--mp-font-sizes-xs, 12px); color: var(--mp-text-secondary); }
-.checkin-coords { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); color: var(--mp-colors-text-link, #165082); cursor: pointer; }
-.checkin-coords:hover { text-decoration: underline; text-underline-offset: 2px; }
-.checkin-evidence-photo { display: inline-flex; align-items: center; gap: var(--mp-spacing-1); color: var(--mp-colors-green-600, #16a34a); }
-.checkin-evidence-none { color: var(--mp-text-secondary); }
-.checkin-footer { display: flex; align-items: center; justify-content: space-between; margin-top: var(--mp-spacing-4); padding-top: var(--mp-spacing-3); border-top: 1px solid var(--mp-colors-border-default, #dfe3e6); }
-.checkin-footer-count { font-size: var(--mp-font-sizes-sm, 13px); color: var(--mp-text-secondary); }
-.checkin-footer-note { font-size: var(--mp-font-sizes-sm, 13px); color: var(--mp-text-secondary); }
 </style>
