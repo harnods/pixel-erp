@@ -12,6 +12,10 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick, inject, watchEffect, useSlots } from 'vue'
 import { useTableState } from '~/composables/useTableState'
+
+// These rows exercise the NPWP/amount heuristic ("Match found", folding, solid ✓),
+// which is what the workspace does with Airene off; Airene has its own specs.
+vi.mock('~/data/vatReconFlags', () => ({ VAT_IN_ENABLED: false, AIRENE_SUGGEST_ENABLED: false }))
 import {
   groupPairsByDate, pairsForPeriod, reconDateValue, candidatesFor, outputPairs, workspaceTabRows,
 } from '~/data/vatReconciliation'
@@ -95,22 +99,22 @@ describe('VatReconciliationWorkspacePage — To match', () => {
     w.unmount()
   })
 
-  it('the invoice side ⋮ menu offers Edit + Submit to DJP for a draft', async () => {
+  it('the invoice side ⋮ menu offers Edit + Submit tax document for a draft', async () => {
     const w = await mountWorkspace('2027-03')
     await itemFor(w, '40061').find('.vr-line').trigger('click')
     await itemFor(w, '40061').find('.vr-detail button[aria-label="More actions"]').trigger('click')
     await flushPromises()
     const items = [...document.body.querySelectorAll('*')].filter(el => el.children.length === 0).map(el => el.textContent?.trim())
     expect(items).toContain('Edit tax document')
-    expect(items).toContain('Submit to DJP')
+    expect(items).toContain('Submit tax document')
     w.unmount()
   })
 
-  it('Find another faktur opens the shared detail drawer with the real candidates', async () => {
+  it('Find another tax document opens the shared detail drawer with the real candidates', async () => {
     const w = await mountWorkspace('2027-02')
     const row = () => w.find('.vr-item[data-pair-id="o-07"]')
     await row().find('.vr-line').trigger('click')
-    await row().findAll('button').find(b => b.text() === 'Find another faktur')!.trigger('click')
+    await row().findAll('button').find(b => b.text() === 'Find another tax document')!.trigger('click')
     await flushPromises()
     expect(document.body.textContent).toContain('Other match candidates')
     expect(document.body.textContent).toContain('Match this')

@@ -25,10 +25,18 @@ describe('VAT setup — manual PPN accounts', () => {
     expect(reconSides()).toEqual(['output'])
   })
 
-  it('keeps PPN Masukan accounts when VAT In is in scope', () => {
-    saveVatSetup({ outputAccountCodes: ['2-20500'], inputAccountCodes: ['1-10500'], scope: 'both' })
-    expect(loadVatSetup()?.inputAccountCodes).toEqual(['1-10500'])
-    expect(reconSides()).toEqual(['output', 'input'])
+  // VAT In (OD-008) is hidden while VAT_IN_ENABLED is off: a `both` scope —
+  // saved, or loaded from an older browser snapshot — is VAT Out.
+  it('saves a VAT In & Out scope as VAT Out while VAT In is hidden', () => {
+    const s = saveVatSetup({ outputAccountCodes: ['2-20500'], inputAccountCodes: ['1-10500'], scope: 'both' })
+    expect(s.scope).toBe('out')
+    expect(loadVatSetup()?.scope).toBe('out')
+    expect(reconSides()).toEqual(['output'])
+  })
+
+  it('loads a stored VAT In & Out scope as VAT Out while VAT In is hidden', () => {
+    const s = normalizeSetup({ outputAccountCodes: ['2-20500'], inputAccountCodes: ['1-10500'], scope: 'both', savedAt: '2026-11-01T00:00:00.000Z' })
+    expect(s.scope).toBe('out')
   })
 
   it('snapshot accounts exist in the default chart', () => {

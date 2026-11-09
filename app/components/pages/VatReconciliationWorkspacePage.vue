@@ -20,7 +20,7 @@
  */
 import type { Ref } from 'vue'
 import {
-  MpIcon, MpButton, MpButtonGroup, MpAireneButton, MpTooltip, MpCheckbox, MpBadge, MpTag,
+  MpIcon, MpButton, MpButtonGroup, MpTooltip, MpCheckbox, MpBadge, MpTag,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpBanner, MpBannerIcon, MpBannerDescription, MpTabs, MpTabList, MpTab,
 } from '@mekari/pixel3'
@@ -32,19 +32,29 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDetailDrawer.vue'
 import VatReconciliationMatchConfirmModal from '~/components/patterns/VatReconciliationMatchConfirmModal.vue'
+import VatReconciliationRemarkModal from '~/components/patterns/VatReconciliationRemarkModal.vue'
+import VatReconciliationRowMarkers from '~/components/patterns/VatReconciliationRowMarkers.vue'
+import VatReconciliationTaxDocActions from '~/components/patterns/VatReconciliationTaxDocActions.vue'
+import VatReconciliationAireneSuggestions from '~/components/patterns/VatReconciliationAireneSuggestions.vue'
+import { isAireneEligible, suggestionState, shownSuggestions } from '~/data/vatReconSuggest'
 import { formatIDR } from '~/utils/currency'
 import { formatDate as formatShortDate } from '~/utils/date'
 import { infoToast, successToast } from '~/utils/toasts'
-import { reloadTaxDocumentsFromStorage, TAX_DOCUMENTS_STORE_KEY, updateTaxDocumentStatus } from '~/data/taxDocuments'
+import {
+  reloadTaxDocumentsFromStorage, TAX_DOCUMENTS_STORE_KEY, updateTaxDocumentStatus, formatTaxDocumentNumber, DJP_STATUS_CONFIG,
+} from '~/data/taxDocuments'
 import {
   MATCH_META, ATTENTION_STATES, SIDE_LABELS, pairsForPeriod, activePeriodId,
   periodLabelById, runPeriod, reconVersion, reconTotals, matchCounts,
   isPeriodFinalized, canFinalizePeriod, finalizePeriod, unfinalizePeriod, periodFinalization,
-  lastSyncedAt, formatAmountPlain, partyOf, exposureOf, reconDateValue,
+  formatAmountPlain, partyOf, exposureOf, reconDateValue,
   groupPairsByDate, candidatesFor, hasCandidates, compareFields, isFieldDiff,
   erpFakturOf, salesInvoiceTaxDocUrl, isWaitingOnBuyer, canWaitOnBuyer, setWaitingOnBuyer,
   confirmManualMatch, undoManualMatch, manualMatchOf, unmatchAutoPair,
-  ownFakturCandidate, nettedAnchor,
+  ownFakturCandidate, nettedAnchor, isSideInScope,
+  periodAccountCodes, periodSetupChange, periodLastSync, accountLabels, RERUN_SIMULATED_MS,
+  footerCounts, canRemark, isNotApproved, notApprovedHint, hiddenNotApprovedFor,
+  taxDocSubState, statusLabelOf, statusBadgeOf, statusReasonOf, statusFgOf, statusBadgeTypeOf, TAX_DOC_SUBSTATES, TAX_DOC_SUBSTATE_META,
   WORKSPACE_TABS, TO_MATCH_STATES, workspaceTabOf, workspaceTabRows, workspaceTabCounts,
   type ReconPair, type ReconSide, type MatchState, type ReconRecord, type MatchCandidate,
   type WorkspaceTab,
@@ -55,9 +65,17 @@ const { currentPageKey } = useNavigation()
 const route = useRoute()
 const router = useRouter()
 
-const side = computed<ReconSide>(() => (currentPageKey.value === 'Faktur masukan' ? 'input' : 'output'))
+// VAT In (OD-008) is hidden while VAT_IN_ENABLED is off: a /faktur-masukan link
+// renders and then lands on the output workspace, same masa and tab.
+const wantsInput = computed(() => currentPageKey.value === 'Faktur masukan')
+const side = computed<ReconSide>(() => (wantsInput.value && isSideInScope('input') ? 'input' : 'output'))
+watch(wantsInput, (isInput) => {
+  if (isInput && !isSideInScope('input')) router.replace({ path: '/faktur-keluaran', query: route.query })
+}, { immediate: true })
 const L = computed(() => SIDE_LABELS[side.value])
-const erpDocLabel = computed(() => (side.value === 'input' ? 'Purchase invoice' : 'Sales invoice'))
+// The two sides are Transaction and Tax document (PM, 2026-11-05) — both live in
+// ERP, so no label names Coretax or ERP as a side.
+const erpDocLabel = computed(() => 'Transaction')
 
 // Scoped to the masa the index sent us (?masa=).
 const periodId = computed(() => String(route.query.masa ?? activePeriodId))
@@ -103,7 +121,8 @@ function doUnfinalize() { unfinalizePeriod(periodId.value); successToast(`${peri
 
 /** Finalize is never disabled (rule/btn-no-disabled-validation): pressed early it explains. */
 const notReadyOpen = ref(false)
-const openPairCount = computed(() => pairs.value.filter(p => p.match !== 'matched').length)
+// A not-approved faktur (§5.1 row 13) is excluded from matching — nothing to reconcile.
+const openPairCount = computed(() => pairs.value.filter(p => p.match !== 'matched' && !isNotApproved(p)).length)
 function showPairsToReview() {
   goToTab(pairs.value.some(p => workspaceTabOf(p) === 'To match') ? 'To match' : 'Not reconciled')
 }
@@ -114,16 +133,60 @@ watch(finalizeSignal, () => {
   else notReadyOpen.value = true
 })
 
+// ── Period header: Last sync + Accounts used (US-016 AC-08, VR-4) ────────────
+const lastSync = computed(() => { void reconVersion.value; return periodLastSync(periodId.value) })
+const accountsUsed = computed(() => { void reconVersion.value; return accountLabels(periodAccountCodes(periodId.value)) })
+
 /** A refused Re-run explains itself in the sign-off banner, never a toast (rule/form-errors-inline). */
 const rerunBlocked = ref(false)
 watch([finalized, periodId], () => { rerunBlocked.value = false })
+
+/**
+ * Re-run (US-002, VR-5). If setup changed since this period last ran, it warns
+ * first (US-016 AC-07) — Cancel does nothing, Confirm runs with the current
+ * setup, which then becomes the period's snapshot. The run is simulated so the
+ * "Reconciling…" state shows; afterwards each row whose status moved says
+ * "from X → Y" until reload (US-002 AC-01).
+ */
+const setupChange = computed(() => { void reconVersion.value; return periodSetupChange(periodId.value) })
+const setupChangeOpen = ref(false)
+const setupChangeDescription = computed(() => {
+  const c = setupChange.value
+  if (!c) return ''
+  return `${t('Account setup changed since this period was reconciled.')} ${t('Was')}: ${accountLabels(c.was)}. ${t('Now')}: ${accountLabels(c.now)}. ${t('Re-run will use the current setup.')}`
+})
+const rerunning = ref(false)
+const statusChanges = ref(new Map<string, MatchState>())
+watch([periodId, side], () => { statusChanges.value = new Map() })
 function reRun() {
   if (finalized.value) { rerunBlocked.value = true; return }
-  runPeriod(periodId.value)
-  infoToast(`${t('Match re-run')} — ${matchCounts(pairs.value).matched} ${t('matched')}`)
+  if (rerunning.value) return
+  if (setupChange.value) { setupChangeOpen.value = true; return }
+  startRerun()
 }
-/** Airene suggests candidates; it never sets a status (US-014/015, OD-001-AI-01). */
-function reviewWithAirene() { infoToast(t('Airene is looking for candidates…')) }
+function startRerun() {
+  rerunning.value = true
+  const run = { periodId: periodId.value, side: side.value }
+  const before = new Map(pairsForPeriod(run.periodId, run.side).map(p => [p.id, p.match]))
+  setTimeout(() => {
+    runPeriod(run.periodId)
+    const after = pairsForPeriod(run.periodId, run.side)
+    const moved = new Map<string, MatchState>()
+    for (const p of after) {
+      const was = before.get(p.id)
+      if (was && was !== p.match) moved.set(p.id, was)
+    }
+    statusChanges.value = moved
+    rerunning.value = false
+    const changedNote = moved.size ? ` · ${moved.size} ${moved.size === 1 ? t('row changed status') : t('rows changed status')}` : ''
+    infoToast(`${t('Match re-run')} — ${matchCounts(after).matched} ${t('matched')}${changedNote}`)
+  }, RERUN_SIMULATED_MS)
+}
+
+// ── Footer counts (US-020 AC-03/AC-04) — "Showing X of Y" follows the view;
+// the four counts are period-level, waiting-on-buyer rows outside need review.
+const periodFooter = computed(() => footerCounts(pairs.value))
+
 
 // ── Summary strip (US-020 AC-01/02) — period-level, never filtered ───────────
 const erpTotals = computed(() => reconTotals(pairs.value, 'erp'))
@@ -135,13 +198,21 @@ const taxGap = computed(() => Math.abs(djpTotals.value.ppn - erpTotals.value.ppn
 
 // ── Filters (shared toolbar for every tab) ───────────────────────────────────
 /** `matched-auto` / `matched-manual` are views of one MatchState — an audit tells them apart. */
-type StatusFilter = MatchState | 'matched-auto' | 'matched-manual' | ''
+/** `not-approved` lists Draft/Batal/Rejected faktur — the only way to see Batal/Rejected ones. */
+/** `not-in-coretax:<sub>` — one option per Tax document not found sub-state (PM, 2026-11-05). */
+type StatusFilter = MatchState | 'matched-auto' | 'matched-manual' | 'not-approved' | `not-in-coretax:${string}` | ''
 const statusFilter = ref<StatusFilter>('')
 const query = ref('')
 watch([side, activeTab, periodId], () => { statusFilter.value = ''; query.value = '' })
 
 const tabPairs = computed(() => workspaceTabRows(pairs.value, activeTab.value))
 const counts = computed(() => matchCounts(tabPairs.value))
+/**
+ * Not-approved faktur on To match (§5.1 row 13): Draft ones are already rows;
+ * Batal/Rejected ones are in no tab or count and appear only under this filter.
+ */
+const hiddenNotApproved = computed(() => { void reconVersion.value; return hiddenNotApprovedFor(periodId.value, side.value) })
+const notApprovedRows = computed(() => [...tabPairs.value.filter(isNotApproved), ...hiddenNotApproved.value])
 
 const statusOptions = computed(() => {
   if (activeTab.value === 'Matched') {
@@ -153,12 +224,25 @@ const statusOptions = computed(() => {
   const states = activeTab.value === 'To match'
     ? TO_MATCH_STATES
     : ATTENTION_STATES.filter(s => !TO_MATCH_STATES.includes(s))
-  return states
-    .filter(k => (counts.value[k] ?? 0) > 0)
-    .map(k => ({ value: k as string, label: `${t(MATCH_META[k].chipLabel)} (${counts.value[k] ?? 0})` }))
+  // Not approved is one option below, including the Batal/Rejected faktur no tab lists.
+  const options = states
+    .filter(k => k !== 'not-approved' && (counts.value[k] ?? 0) > 0)
+    .flatMap(k => k === 'not-in-coretax'
+      // Tax document not found splits by the transaction's own tax document.
+      ? TAX_DOC_SUBSTATES
+        .map(sub => ({ sub, n: tabPairs.value.filter(p => taxDocSubState(p) === sub).length }))
+        .filter(x => x.n > 0)
+        .map(x => ({ value: `not-in-coretax:${x.sub}`, label: `${t(TAX_DOC_SUBSTATE_META[x.sub].label)} (${x.n})` }))
+      : [{ value: k as string, label: `${t(MATCH_META[k].chipLabel)} (${counts.value[k] ?? 0})` }])
+  if (activeTab.value === 'To match' && notApprovedRows.value.length) {
+    options.push({ value: 'not-approved', label: `${t('Not approved')} (${notApprovedRows.value.length})` })
+  }
+  return options
 })
 
 function matchesStatus(p: ReconPair) {
+  if (statusFilter.value === 'not-approved') return isNotApproved(p)
+  if (statusFilter.value.startsWith('not-in-coretax:')) return taxDocSubState(p) === statusFilter.value.slice('not-in-coretax:'.length)
   if (statusFilter.value === 'matched-manual') return p.matchedBy === 'manual'
   if (statusFilter.value === 'matched-auto') return p.matchedBy !== 'manual'
   return !statusFilter.value || p.match === statusFilter.value
@@ -166,11 +250,15 @@ function matchesStatus(p: ReconPair) {
 function matchesQuery(p: ReconPair) {
   if (!query.value.trim()) return true
   const q = query.value.trim().toLowerCase()
-  return [p.erp?.ref, p.erp && partyOf(p.erp), p.erp?.npwp, p.djp?.ref, p.djp && partyOf(p.djp), p.djp?.npwp]
+  // No NPWP: the API never sends the buyer's NPWP/NIK (VR-4).
+  return [p.erp?.ref, p.erp && partyOf(p.erp), p.djp?.ref, p.djp && partyOf(p.djp)]
     .filter(Boolean).join(' ').toLowerCase().includes(q)
 }
 const filtered = computed(() => {
-  const rows = tabPairs.value.filter(p => matchesStatus(p) && matchesQuery(p))
+  const source = statusFilter.value === 'not-approved' && activeTab.value === 'To match'
+    ? [...tabPairs.value, ...hiddenNotApproved.value]
+    : tabPairs.value
+  const rows = source.filter(p => matchesStatus(p) && matchesQuery(p))
   // Work queues lead with the biggest money at stake; Matched reads newest first.
   return activeTab.value === 'Matched'
     ? [...rows].sort((a, b) => reconDateValue(pairDateOf(b)) - reconDateValue(pairDateOf(a)))
@@ -185,13 +273,15 @@ const exportOpen = ref(false)
 const exportColumns = computed(() => [
   { key: 'status', label: t('Status'), required: true },
   { key: 'erpRef', label: t(erpDocLabel.value), required: true },
-  { key: 'djpRef', label: t('Faktur pajak') },
+  { key: 'djpRef', label: t('Tax document') },
   { key: 'party', label: side.value === 'input' ? t('Vendor') : t('Customer') },
-  { key: 'npwp', label: 'NPWP' },
   { key: 'dpp', label: 'DPP' },
   { key: 'ppn', label: 'PPN' },
   { key: 'total', label: t('Total') },
   { key: 'reason', label: t('Remarks') },
+  // US-014: how a match was made (engine / manual / Airene suggestion, confirmed) and Airene's reason.
+  { key: 'origin', label: t('Match origin') },
+  { key: 'matchReason', label: t('Match reason') },
 ])
 
 // Tax documents edited in another tab come back through the `storage` event.
@@ -243,7 +333,19 @@ function toggleRow(pair: ReconPair, open?: boolean) {
  */
 function suggestion(pair: ReconPair): MatchCandidate | null {
   if (pair.match === 'return-netted') return ownFakturCandidate(pair)
+  // Airene (US-014) answers for these rows on expand — no heuristic "Match found".
+  if (isAireneEligible(pair)) return null
   return hasCandidates(pair) ? (candidatesFor(pair)[0] ?? null) : null
+}
+/**
+ * Airene is filling the missing side's column — loading, or with candidates.
+ * Then that column is titled by what it proposes (Tax document / Transaction);
+ * "No match" only once Airene has nothing (no_candidates, timeout, flag off).
+ */
+function aireneFills(pair: ReconPair): boolean {
+  if (!isAireneEligible(pair)) return false
+  const st = suggestionState(pair)
+  return !st || st.status === 'loading' || shownSuggestions(pair, st.response).length > 0
 }
 /** Which side is missing and is being proposed — the other one is the anchor. */
 function proposesFaktur(pair: ReconPair) { return !!pair.erp && (!pair.djp || pair.match === 'duplicate-reference') }
@@ -261,7 +363,12 @@ function onConfirm(pair: ReconPair) {
     toggleRow(pair, true)
     return
   }
+  // Duplicate reference: a person picks the faktur from the list (US-003) —
+  // the ✓ opens that list rather than choosing for them.
+  if (pair.match === 'duplicate-reference') { toggleRow(pair, true); return }
   const candidate = suggestion(pair)
+  // Airene rows: the ✓ opens the row, which asks Airene — nothing to pick yet.
+  if (!candidate && isAireneEligible(pair)) { toggleRow(pair, true); return }
   if (!candidate) {
     // Never disabled (rule/btn-no-disabled-validation): say what's missing, where.
     pickError.value = new Set(pickError.value).add(pair.id)
@@ -273,16 +380,33 @@ function onConfirm(pair: ReconPair) {
   if (anchor !== candidate.total) { pendingMatch.value = { pair, candidate, anchor }; return }
   saveMatch(pair, candidate, anchor)
 }
-function saveMatch(pair: ReconPair, candidate: MatchCandidate, anchor: number, reason?: string) {
-  const ok = confirmManualMatch({ pair, periodId: periodId.value, side: side.value, candidate, anchorTotal: anchor, reason })
+function saveMatch(pair: ReconPair, candidate: MatchCandidate, anchor: number) {
+  const ok = confirmManualMatch({ pair, periodId: periodId.value, side: side.value, candidate, anchorTotal: anchor })
   if (!ok) return
   pendingMatch.value = null
   successToast(t('Match confirmed'))
   toggleRow(pair, false)
 }
-function onMatchModalConfirm(reason: string) {
+function onMatchModalConfirm() {
   const m = pendingMatch.value
-  if (m) saveMatch(m.pair, m.candidate, m.anchor, reason)
+  if (m) saveMatch(m.pair, m.candidate, m.anchor)
+}
+
+/** The transaction's own tax document when the sub-state is draft / submitted / rejected. */
+function ownTaxDoc(pair: ReconPair) {
+  const sub = taxDocSubState(pair)
+  return sub && sub !== 'none' ? erpFakturOf(pair)?.doc ?? null : null
+}
+
+/** Duplicate reference picker (US-003 AC-01/02) — Select faktur reconciles the pair (manual). */
+function duplicateCandidates(pair: ReconPair): MatchCandidate[] {
+  return pair.match === 'duplicate-reference' ? candidatesFor(pair) : []
+}
+function selectFaktur(pair: ReconPair, candidate: MatchCandidate) {
+  if (finalized.value) { finalizedBlocked.value = new Set(finalizedBlocked.value).add(pair.id); return }
+  const anchor = anchorTotal(pair)
+  if (anchor !== candidate.total) { pendingMatch.value = { pair, candidate, anchor }; return }
+  saveMatch(pair, candidate, anchor)
 }
 
 function fieldValue(row: ReconRecord | null, key: keyof ReconRecord, money?: boolean): string {
@@ -294,12 +418,13 @@ function fieldValue(row: ReconRecord | null, key: keyof ReconRecord, money?: boo
 
 /** The engine's reason, as a Pixel banner in the state's colour (as in the drawer). */
 const BANNER_VARIANT = { completed: 'success', information: 'info', announcement: 'info', warning: 'warning', critical: 'danger' } as const
-function bannerVariant(pair: ReconPair) { return BANNER_VARIANT[MATCH_META[pair.match].badgeType] }
+function bannerVariant(pair: ReconPair) { return BANNER_VARIANT[statusBadgeTypeOf(pair)] }
 
 // ── Per-side ⋮ menus (the reference's menu under each column title) ──────────
 interface MenuItem { label: string; run: () => void }
 function erpMenu(pair: ReconPair): MenuItem[] {
   const items: MenuItem[] = [{ label: 'View details', run: () => openDetail(pair) }]
+  if (canRemark(pair)) items.push({ label: 'Remarks', run: () => openRemarks(pair) })
   if (pair.erp?.salesInvoiceId) {
     const id = pair.erp.salesInvoiceId
     items.push({ label: 'View sales invoice', run: () => window.open(`/sales-invoices/${id}`, '_blank', 'noopener') })
@@ -307,14 +432,14 @@ function erpMenu(pair: ReconPair): MenuItem[] {
     if (f?.state === 'none') items.push({ label: 'Create tax document', run: () => window.open(salesInvoiceTaxDocUrl(id, 'create'), '_blank', 'noopener') })
     else if (f?.state === 'draft' && f.doc) {
       items.push({ label: 'Edit tax document', run: () => window.open(salesInvoiceTaxDocUrl(id, 'edit', f.doc!.id), '_blank', 'noopener') })
-      items.push({ label: 'Submit to DJP', run: () => submitOne(pair) })
+      items.push({ label: 'Submit tax document', run: () => submitOne(pair) })
     } else if (f?.doc) items.push({ label: 'View tax document', run: () => window.open(salesInvoiceTaxDocUrl(id, 'view'), '_blank', 'noopener') })
   }
   return items
 }
 function djpMenu(pair: ReconPair): MenuItem[] {
   const items: MenuItem[] = [{ label: 'View details', run: () => openDetail(pair) }]
-  if (pair.djp) items.push({ label: 'Open in Coretax', run: () => infoToast(t('Opening Coretax…')) })
+  if (pair.djp) items.push({ label: 'View tax document', run: () => infoToast(t('Opening tax document…')) })
   if (!pair.erp) {
     items.push({
       label: side.value === 'input' ? 'Create purchase invoice' : 'Create sales invoice',
@@ -323,6 +448,11 @@ function djpMenu(pair: ReconPair): MenuItem[] {
   }
   return items
 }
+
+// ── Remarks (US-013) ─────────────────────────────────────────────────────────
+const remarkTarget = ref<ReconPair | null>(null)
+function openRemarks(pair: ReconPair) { remarkTarget.value = pair }
+function onRemarkSaved() { remarkTarget.value = null; successToast(t('Remarks saved')) }
 
 // ── Drafts: submit to DJP in bulk (To match) ─────────────────────────────────
 const { canSubmitTaxDocument } = useTaxSubmissionPermission()
@@ -361,7 +491,8 @@ function doBulkSubmit() {
     const id = draftDocId(p)
     if (id) updateTaxDocumentStatus(id, 'awaiting-approval')
   }
-  successToast(`${rows.length} ${t('tax documents submitted to DJP')}`)
+  // One document reads like the row's own Submit tax document.
+  successToast(rows.length === 1 ? t('Tax document submitted') : `${rows.length} ${t('tax documents submitted to DJP')}`)
   clearDrafts()
 }
 
@@ -408,17 +539,17 @@ const notReconciledColumns = computed<TableColumn[]>(() => [
   { key: 'date',     label: t('Date'),            kind: 'date' },
   { key: 'erpRef',   label: t(erpDocLabel.value), kind: 'number' },
   { key: 'party',    label: side.value === 'input' ? t('Vendor') : t('Customer'), kind: 'name' },
-  { key: 'erpTotal', label: t('Invoice amount'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'djpTotal', label: t('Faktur amount'),   kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'erpTotal', label: t('Transaction amount'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'djpTotal', label: t('Tax document amount'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'status',   label: t('Status'),          kind: 'status' },
 ])
 // Like the reference's Matched table: each document's number rides as a caption
 // under its amount (Statement amount / Book amount), so the table stays 5 columns.
 const matchedColumns = computed<TableColumn[]>(() => [
-  { key: 'erpDate',  label: t('Invoice date'),    kind: 'date' },
-  { key: 'erpTotal', label: t('Invoice amount'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'djpDate',  label: t('Faktur date'),     kind: 'date' },
-  { key: 'djpTotal', label: t('Faktur amount'),   kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'erpDate',  label: t('Transaction date'),    kind: 'date' },
+  { key: 'erpTotal', label: t('Transaction amount'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'djpDate',  label: t('Tax document date'),   kind: 'date' },
+  { key: 'djpTotal', label: t('Tax document amount'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'method',   label: t('Method'),          kind: 'status' },
 ])
 
@@ -443,38 +574,46 @@ function doUnmatch() {
       <MpBannerDescription>
         <strong>{{ t('Finalized') }}</strong>
         {{ t('by') }} {{ finalization.finalizedBy }} · {{ formatDate(finalization.finalizedAt) }}.
-        {{ t('Sales invoices stay editable in Jurnal; changes will be flagged here.') }}
+        {{ t('Transactions stay editable in Jurnal; changes will be flagged here.') }}
         <span v-if="rerunBlocked" class="vr-finalized-error" role="alert">
           {{ t('Re-run is not available while the period is finalized. Unfinalize it first.') }}
         </span>
       </MpBannerDescription>
     </MpBanner>
 
+    <!-- Period header: Last sync + the accounts this period's last run used
+         (US-016 AC-08). The snapshot can differ from today's setup; Re-run warns. -->
+    <div class="vr-meta" data-devchange="vat-recon-prd-align-header" data-test-id="vr-meta">
+      <span><span class="vr-meta-label">{{ t('Last sync') }}:</span> {{ lastSync }}</span>
+      <span class="vr-meta-sep" aria-hidden="true">·</span>
+      <span><span class="vr-meta-label">{{ t('Accounts used') }}:</span> <span data-test-id="vr-accounts-used">{{ accountsUsed }}</span></span>
+    </div>
+    <MpBanner v-if="rerunning" variant="info" is-inline data-devchange="vat-recon-prd-align-rerun" data-test-id="vr-reconciling">
+      <MpBannerIcon />
+      <MpBannerDescription>{{ t('Reconciling…') }}</MpBannerDescription>
+    </MpBanner>
+
     <!-- Summary — the bank Reconciliations header: divider columns, no cards. -->
     <div class="vr-summary" data-devchange="vat-recon-workspace-reconciliations">
-      <div class="vr-sum">
+      <div class="vr-sum" data-devchange="vat-recon-transaction-vs-tax-document">
         <span class="vr-sum-label">{{ t(L.kpiErpDpp) }}</span>
-        <span class="vr-sum-sub">{{ t('From ERP') }}</span>
         <span class="vr-sum-value">{{ formatIDR(erpTotals.dpp) }}</span>
       </div>
       <div class="vr-sum">
         <span class="vr-sum-label">{{ t(L.kpiDjpDpp) }}</span>
-        <span class="vr-sum-sub">{{ t('From Coretax') }}</span>
         <span class="vr-sum-value">{{ formatIDR(djpTotals.dpp) }}</span>
-        <span v-if="dppDelta !== 0" class="vr-sum-delta">{{ dppDelta > 0 ? '▲' : '▼' }} {{ formatIDR(Math.abs(dppDelta)) }} {{ t('vs sales') }}</span>
+        <span v-if="dppDelta !== 0" class="vr-sum-delta">{{ dppDelta > 0 ? '▲' : '▼' }} {{ formatIDR(Math.abs(dppDelta)) }} {{ t('vs transactions') }}</span>
       </div>
       <div class="vr-sum">
         <span class="vr-sum-label">{{ t(L.kpiErpPpn) }}</span>
-        <span class="vr-sum-sub">{{ t('From ERP') }}</span>
         <span class="vr-sum-value">{{ formatIDR(erpTotals.ppn) }}</span>
       </div>
       <div class="vr-sum">
         <span class="vr-sum-label">{{ t(L.kpiDjpPpn) }}</span>
-        <span class="vr-sum-sub">{{ t('Synced') }} {{ lastSyncedAt }}</span>
         <span class="vr-sum-value">{{ formatIDR(djpTotals.ppn) }}</span>
-        <span v-if="ppnDelta !== 0" class="vr-sum-delta">{{ ppnDelta > 0 ? '▲' : '▼' }} {{ formatIDR(Math.abs(ppnDelta)) }} {{ t('vs sales') }}</span>
+        <span v-if="ppnDelta !== 0" class="vr-sum-delta">{{ ppnDelta > 0 ? '▲' : '▼' }} {{ formatIDR(Math.abs(ppnDelta)) }} {{ t('vs transactions') }}</span>
       </div>
-      <div class="vr-sum">
+      <div class="vr-sum" data-devchange="vat-recon-prd-align-approved-totals">
         <span class="vr-sum-label">{{ t('Tax difference') }}</span>
         <span class="vr-sum-sub">{{ openPairCount }} {{ t('pairs to reconcile') }}</span>
         <span class="vr-sum-value" :class="taxGap === 0 ? 'is-clear' : 'is-gap'">{{ formatIDR(taxGap) }}</span>
@@ -497,12 +636,9 @@ function doUnmatch() {
     <!-- Filter bar — same anatomy on every tab -->
     <div class="vr-toolbar">
       <div class="filter-left">
-        <ErpFilterSelect id="vr-status-filter" v-model="statusFilter" :placeholder="t('Status')" :options="statusOptions" width="220px" />
+        <ErpFilterSelect id="vr-status-filter" v-model="statusFilter" data-devchange="vat-recon-prd-align-not-approved-filter" :placeholder="t('Status')" :options="statusOptions" width="220px" />
       </div>
       <div class="filter-right">
-        <MpAireneButton v-if="activeTab === 'To match' && tabPairs.length > 0" id="vr-airene-review" is-show-badge @click="reviewWithAirene">
-          {{ t('Review with Airene') }}
-        </MpAireneButton>
         <MpButtonGroup class="filter-btn-group">
           <MpTooltip id="vr-tt-export" :label="t('Export')" placement="bottom">
             <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
@@ -514,7 +650,7 @@ function doUnmatch() {
           <MpButton v-if="query" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="query = ''" />
         </div>
         <!-- Search-adjacent action = black tertiary (rule/filter-bar-action-tertiary) -->
-        <MpButton variant="tertiary" is-rounded @click="reRun">{{ t('Re-run') }}</MpButton>
+        <MpButton variant="tertiary" is-rounded :is-loading="rerunning" data-devchange="vat-recon-prd-align-rerun" data-test-id="vr-rerun" @click="reRun">{{ t('Re-run') }}</MpButton>
       </div>
     </div>
 
@@ -529,7 +665,7 @@ function doUnmatch() {
           <MpButton variant="secondary" is-rounded class="vr-empty-cta" @click="goToTab('Matched')">{{ t('View matched') }}</MpButton>
         </div>
         <div v-else-if="filtered.length === 0" class="vr-empty">
-          <div class="vr-empty-title">{{ t('No faktur match your filters') }}</div>
+          <div class="vr-empty-title">{{ t('No pairs match your filters') }}</div>
           <div class="vr-empty-body">{{ t('Recheck the filters you have applied and try filtering again.') }}</div>
           <MpButton variant="secondary" is-rounded class="vr-empty-cta" @click="clearFilters">{{ t('Clear all filters') }}</MpButton>
         </div>
@@ -602,9 +738,17 @@ function doUnmatch() {
                         <!-- A Coretax-only row with a proposed invoice reads "Match found",
                              like the reference; otherwise the state in its colour. -->
                         <span v-if="!pair.erp && suggestion(pair)" class="vr-state is-found">{{ t('Match found') }}</span>
-                        <span v-else class="vr-state" :style="{ color: MATCH_META[pair.match].fg }">{{ t(MATCH_META[pair.match].chipLabel) }}</span>
+                        <!-- Row 13: no status label — the faktur's own status + Not approved tag say it. -->
+                        <span v-else-if="!isNotApproved(pair)" class="vr-state" :style="{ color: statusFgOf(pair) }">{{ t(statusLabelOf(pair)) }}</span>
                       </span>
-                      <span class="vr-caption">{{ pair.djp.ref }} · {{ pair.djp.approved ? t('Approved') : t('Not approved') }}</span>
+                      <span v-if="pair.djp.approved !== false" class="vr-caption">{{ pair.djp.ref }} · {{ t('Approved') }}</span>
+                      <!-- Row 13: excluded from matching — the tag says so, the tooltip says why. -->
+                      <span v-else class="vr-tag-row" data-devchange="vat-recon-prd-align-not-approved-status">
+                        <span class="vr-caption">{{ pair.djp.ref }} · {{ t(pair.djp.coretaxStatus ?? 'Draft') }}</span>
+                        <MpTooltip :id="`vr-not-approved-${pair.id}`" :label="t(notApprovedHint(pair.djp))" placement="top" use-portal>
+                          <span class="vr-tag" data-test-id="vr-not-approved" data-devchange="vat-recon-prd-align-not-approved"><MpTag>{{ t('Not approved') }}</MpTag></span>
+                        </MpTooltip>
+                      </span>
                     </template>
                     <template v-else-if="suggestion(pair)">
                       <span class="vr-caption">{{ suggestion(pair)!.date }}</span>
@@ -619,13 +763,18 @@ function doUnmatch() {
                       <span class="vr-amount">{{ formatAmountPlain(pair.djp.total) }}</span>
                       <span class="vr-caption">{{ pair.djp.ref }} · {{ partyOf(pair.djp) }}</span>
                     </template>
-                    <span v-else class="vr-missing">{{ t('No match found') }}</span>
+                    <template v-else>
+                      <span class="vr-missing">{{ t('No match found') }}</span>
+                      <!-- Tax document not found: which sub-state, in its colour (PM, 2026-11-05) -->
+                      <span v-if="taxDocSubState(pair)" class="vr-state" :style="{ color: statusFgOf(pair) }" data-devchange="vat-recon-tax-doc-substates">{{ t(statusLabelOf(pair)) }}</span>
+                    </template>
+                    <VatReconciliationRowMarkers :pair="pair" :changed-from="statusChanges.get(pair.id)" />
                   </div>
                 </div>
 
                 <!-- ✓ ring: solid = a match to confirm, dashed = no match yet -->
                 <div class="vr-confirm-cell" @click.stop>
-                  <MpTooltip :id="`vr-confirm-${pair.id}`" :label="suggestion(pair) ? t('Confirm match') : t('No match to confirm yet')" placement="top" use-portal>
+                  <MpTooltip :id="`vr-confirm-${pair.id}`" :label="pair.match === 'duplicate-reference' ? t('Select faktur') : suggestion(pair) ? t('Confirm match') : t('No match to confirm yet')" placement="top" use-portal>
                     <button type="button" class="btn-enterprise vr-confirm" :class="{ 'is-dashed': !suggestion(pair) }" :aria-label="t('Confirm match')" @click="onConfirm(pair)">
                       <MpIcon name="check" size="sm" />
                     </button>
@@ -635,15 +784,15 @@ function doUnmatch() {
 
               <!-- Expand: two columns, each titled with its ⋮ menu (reference layout) -->
               <div v-if="isExpanded(pair)" class="vr-detail">
-                <MpBanner v-if="pair.reason" :variant="bannerVariant(pair)" is-inline class="vr-reason" data-devchange="vat-recon-workspace-banner-top">
+                <MpBanner v-if="statusReasonOf(pair)" :variant="bannerVariant(pair)" is-inline class="vr-reason" data-devchange="vat-recon-workspace-banner-top">
                   <MpBannerIcon />
                   <MpBannerDescription>
-                    <strong>{{ t(MATCH_META[pair.match].longLabel) }}</strong> · {{ pair.reason }}
+                    <strong>{{ taxDocSubState(pair) ? t(statusLabelOf(pair)) : t(MATCH_META[pair.match].longLabel) }}</strong> · {{ t(statusReasonOf(pair)!) }}
                   </MpBannerDescription>
                 </MpBanner>
                 <div class="vr-detail-col">
                   <div class="vr-detail-head">
-                    <span class="vr-detail-title">{{ pair.erp || suggestion(pair) && !proposesFaktur(pair) ? t(erpDocLabel) : t('No match') }}</span>
+                    <span class="vr-detail-title">{{ pair.erp || suggestion(pair) && !proposesFaktur(pair) || aireneFills(pair) ? t(erpDocLabel) : t('No match') }}</span>
                     <MpPopover :id="`vr-erp-menu-${pair.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                       <MpPopoverTrigger>
                         <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
@@ -673,14 +822,22 @@ function doUnmatch() {
                     <p class="vr-caption vr-why">{{ t(suggestion(pair)!.why) }}</p>
                   </template>
                   <template v-else>
-                    <p class="vr-detail-sub">{{ t("Don't see the correct sales invoice?") }}</p>
-                    <MpButton variant="secondary" is-rounded @click="openDetail(pair)">{{ t('Find another sales invoice') }}</MpButton>
+                    <VatReconciliationAireneSuggestions
+                      v-if="isAireneEligible(pair)"
+                      :pair="pair" :side="side" :period-id="periodId" :finalized="finalized"
+                      @matched="toggleRow(pair, false)"
+                    />
+                    <p class="vr-detail-sub">{{ t("Don't see the correct transaction?") }}</p>
+                    <div class="vr-detail-actions">
+                      <MpButton variant="secondary" size="sm" is-rounded @click="openDetail(pair)">{{ t('Find another transaction') }}</MpButton>
+                      <MpButton v-if="pair.match === 'no-match-in-erp'" variant="primary" size="sm" is-rounded @click="infoToast(t('Opening sales invoice…'))">{{ t('Create sales invoice') }}</MpButton>
+                    </div>
                   </template>
                 </div>
 
                 <div class="vr-detail-col">
                   <div class="vr-detail-head">
-                    <span class="vr-detail-title">{{ pair.djp ? t('Faktur pajak') : suggestion(pair) ? t('Matched faktur') : t('No match') }}</span>
+                    <span class="vr-detail-title">{{ pair.djp || ownTaxDoc(pair) || aireneFills(pair) ? t('Tax document') : suggestion(pair) ? t('Matched tax document') : t('No match') }}</span>
                     <MpPopover :id="`vr-djp-menu-${pair.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                       <MpPopoverTrigger>
                         <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
@@ -692,7 +849,20 @@ function doUnmatch() {
                       </MpPopoverContent>
                     </MpPopover>
                   </div>
-                  <div v-if="pair.djp" class="vr-kv">
+                  <!-- Tax document not found, own tax document past "none": show THAT
+                       document and its next step — never "Find another" (PM, 2026-11-05). -->
+                  <template v-if="ownTaxDoc(pair)">
+                    <div class="vr-kv" data-devchange="vat-recon-tax-doc-substates" data-test-id="vr-own-tax-doc">
+                      <ContentList horizontal :label="t('Number')" :value="formatTaxDocumentNumber(ownTaxDoc(pair)!)" />
+                      <ContentList horizontal :label="t('Status')" :value="t(DJP_STATUS_CONFIG[ownTaxDoc(pair)!.status].label)" />
+                      <ContentList horizontal :label="t('Date')" :value="ownTaxDoc(pair)!.date" />
+                      <ContentList horizontal label="DPP" :value="formatIDR(pair.erp?.dpp ?? 0)" />
+                      <ContentList horizontal label="PPN" :value="formatIDR(pair.erp?.ppn ?? 0)" />
+                      <ContentList v-if="ownTaxDoc(pair)!.djpRemark" horizontal :label="t('DJP remark')" :value="ownTaxDoc(pair)!.djpRemark!" />
+                    </div>
+                    <VatReconciliationTaxDocActions class="vr-detail-actions-block" :pair="pair" :show-hint="false" layout="row" size="sm" />
+                  </template>
+                  <div v-else-if="pair.djp" class="vr-kv">
                     <ContentList v-for="f in compareFields(side)" :key="f.key" horizontal :label="t(f.label)" :value="fieldValue(pair.djp, f.key, f.money)" :class="{ 'is-diff': isFieldDiff(pair, f.key) }" />
                   </div>
                   <template v-else-if="suggestion(pair)">
@@ -705,12 +875,36 @@ function doUnmatch() {
                       <ContentList horizontal :label="t('Total')" :value="formatIDR(suggestion(pair)!.total)" />
                     </div>
                   </template>
-                  <p v-if="!pair.djp || pair.match === 'duplicate-reference'" class="vr-detail-sub vr-find-lead">{{ t("Don't see the correct faktur?") }}</p>
-                  <MpButton v-if="!pair.djp || pair.match === 'duplicate-reference'" variant="secondary" is-rounded @click="openDetail(pair)">{{ t('Find another faktur') }}</MpButton>
+                  <template v-if="taxDocSubState(pair) === 'none' || pair.match === 'duplicate-reference'">
+                    <VatReconciliationAireneSuggestions
+                      v-if="isAireneEligible(pair)"
+                      :pair="pair" :side="side" :period-id="periodId" :finalized="finalized"
+                      @matched="toggleRow(pair, false)"
+                    />
+                    <p class="vr-detail-sub vr-find-lead">{{ t("Don't see the correct tax document?") }}</p>
+                    <!-- none: Find another (secondary) + Create tax document (primary) -->
+                    <VatReconciliationTaxDocActions v-if="taxDocSubState(pair) === 'none'" :pair="pair" :show-hint="false" layout="row" size="sm" show-find @find="openDetail(pair)" />
+                    <MpButton v-else variant="secondary" is-rounded @click="openDetail(pair)">{{ t('Find another tax document') }}</MpButton>
+                  </template>
                   <p v-if="finalizedBlocked.has(pair.id)" class="vr-pick-error" role="alert">{{ t('This period is finalized. Unfinalize it first to change matches.') }}</p>
-                  <p v-else-if="pickError.has(pair.id)" class="vr-pick-error" role="alert">{{ t('There is no faktur to match yet. Find another faktur, or fix it on the document.') }}</p>
+                  <p v-else-if="pickError.has(pair.id) && isNotApproved(pair)" class="vr-pick-error" role="alert">{{ t('This tax document is not approved yet, so it is excluded from matching.') }}</p>
+                  <p v-else-if="pickError.has(pair.id)" class="vr-pick-error" role="alert">{{ t('There is no tax document to match yet. Find another tax document, or fix it on the document.') }}</p>
                 </div>
 
+                <!-- Duplicate reference (US-003 AC-01/02): every Approved faktur
+                     carrying this invoice number; the latest pengganti is Suggested. -->
+                <div v-if="duplicateCandidates(pair).length" class="vr-dup" data-devchange="vat-recon-prd-align-duplicate" data-test-id="vr-dup-picker">
+                  <div class="vr-detail-title">{{ t('Select the correct faktur') }}</div>
+                  <div v-for="c in duplicateCandidates(pair)" :key="c.ref" class="vr-dup-row" :data-ref="c.ref">
+                    <div class="vr-dup-id">
+                      <span class="vr-dup-ref">{{ c.ref }}</span>
+                      <span class="vr-caption">{{ c.date }} · {{ t(c.why) }}</span>
+                    </div>
+                    <span v-if="c.suggested" class="vr-tag" data-test-id="vr-dup-suggested"><MpTag>{{ t('Suggested') }}</MpTag></span>
+                    <span class="vr-amount vr-dup-total">{{ formatAmountPlain(c.total) }}</span>
+                    <MpButton variant="secondary" size="sm" is-rounded @click="selectFaktur(pair, c)">{{ t('Select faktur') }}</MpButton>
+                  </div>
+                </div>
               </div>
             </div>
           </template>
@@ -753,7 +947,7 @@ function doUnmatch() {
       <!-- The identifier opens the detail drawer (rule/table-name-link-span) -->
       <template #cell-erpRef="{ row }">
         <span v-if="(row as unknown as TableRow).erpRef" class="cell-link cell-text" @click.stop="openDetail((row as unknown as TableRow).pair)">{{ (row as unknown as TableRow).erpRef }}</span>
-        <span v-else class="cell-link cell-text" @click.stop="openDetail((row as unknown as TableRow).pair)">{{ t('No match in ERP') }}</span>
+        <span v-else class="cell-link cell-text" @click.stop="openDetail((row as unknown as TableRow).pair)">{{ t('Transaction not found') }}</span>
       </template>
       <template #cell-djpRef="{ value }">{{ value || '—' }}</template>
       <template #cell-erpTotal="{ row, value }">
@@ -770,13 +964,23 @@ function doUnmatch() {
       </template>
       <template #cell-status="{ row }">
         <span class="vr-status">
-          <MpBadge :type="MATCH_META[(row as unknown as TableRow).pair.match].badgeType" for="tableStatus">{{ t(MATCH_META[(row as unknown as TableRow).pair.match].label) }}</MpBadge>
+          <MpTooltip :id="`vr-status-tt-${(row as unknown as TableRow).id}`" :label="t(statusLabelOf((row as unknown as TableRow).pair))" placement="top" use-portal>
+            <span class="vr-tag"><MpBadge :type="statusBadgeTypeOf((row as unknown as TableRow).pair)" for="tableStatus">{{ t(statusBadgeOf((row as unknown as TableRow).pair)) }}</MpBadge></span>
+          </MpTooltip>
           <MpTag v-if="isWaitingOnBuyer((row as unknown as TableRow).pair)">{{ t('Waiting on buyer') }}</MpTag>
+          <VatReconciliationRowMarkers :pair="(row as unknown as TableRow).pair" :changed-from="statusChanges.get((row as unknown as TableRow).id)" />
         </span>
       </template>
       <!-- Method — gray MpTag like the reference's "Manual" (rule/tag-gray-only) -->
       <template #cell-method="{ row }">
-        <MpTag>{{ (row as unknown as TableRow).pair.matchedBy === 'manual' ? t('Manual') : t('Auto') }}</MpTag>
+        <span class="vr-status">
+          <!-- Airene = a suggestion a person confirmed (US-014); the tooltip says who. -->
+          <MpTooltip v-if="(row as unknown as TableRow).pair.matchOrigin === 'ai_suggested_human_confirmed'" :id="`vr-method-tt-${(row as unknown as TableRow).id}`" :label="`${t('Suggested by Airene, confirmed by')} ${manualMatchOf((row as unknown as TableRow).id)?.by ?? ''}`" placement="top" use-portal>
+            <span class="vr-tag" data-devchange="vat-recon-airene-suggest" data-test-id="vr-method-airene"><MpTag>{{ t('Airene') }}</MpTag></span>
+          </MpTooltip>
+          <MpTag v-else>{{ (row as unknown as TableRow).pair.matchedBy === 'manual' ? t('Manual') : t('Auto') }}</MpTag>
+          <VatReconciliationRowMarkers :pair="(row as unknown as TableRow).pair" :changed-from="statusChanges.get((row as unknown as TableRow).id)" />
+        </span>
       </template>
 
       <template #actions="{ row }">
@@ -787,6 +991,7 @@ function doUnmatch() {
           <MpPopoverContent class="erp-dropdown-menu">
             <MpPopoverList>
               <MpPopoverListItem @click="openDetail((row as unknown as TableRow).pair)">{{ t('View details') }}</MpPopoverListItem>
+              <MpPopoverListItem v-if="canRemark((row as unknown as TableRow).pair)" @click="openRemarks((row as unknown as TableRow).pair)">{{ t('Remarks') }}</MpPopoverListItem>
               <MpPopoverListItem
                 v-if="canWaitOnBuyer((row as unknown as TableRow).pair)"
                 @click="setWaitingOnBuyer((row as unknown as TableRow).pair, !isWaitingOnBuyer((row as unknown as TableRow).pair))"
@@ -810,6 +1015,16 @@ function doUnmatch() {
       </template>
     </ErpTablePage>
 
+    <!-- US-020 AC-03/04: "Showing" follows the tab/filter/search; the four
+         counts are period-level, and waiting-on-buyer rows are not need review. -->
+    <p class="vr-footer" data-devchange="vat-recon-prd-align-footer" data-test-id="vr-footer">
+      {{ t('Showing') }} {{ filtered.length }} {{ t('of') }} {{ pairs.length }} {{ t('pairs') }}
+      · {{ periodFooter.matched }} {{ t('matched') }}
+      · {{ periodFooter.review }} {{ t('need review') }}
+      · {{ periodFooter.unmatched }} {{ t('unmatched') }}
+      · {{ periodFooter.waiting }} {{ t('waiting on buyer') }}
+    </p>
+
     <ReconciliationDetailDrawer
       v-model:is-open="drawerOpen"
       :pair="drawerPair"
@@ -826,6 +1041,23 @@ function doUnmatch() {
       :candidate-total="pendingMatch?.candidate.total ?? 0"
       @close="pendingMatch = null"
       @confirm="onMatchModalConfirm"
+    />
+    <VatReconciliationRemarkModal
+      :is-open="!!remarkTarget"
+      :pair="remarkTarget"
+      :row-ref="(remarkTarget?.erp ?? remarkTarget?.djp)?.ref ?? ''"
+      @close="remarkTarget = null"
+      @saved="onRemarkSaved"
+    />
+    <ConfirmModal
+      v-model:is-open="setupChangeOpen"
+      :title="t('Account setup changed')"
+      :description="setupChangeDescription"
+      :confirm-label="t('Re-run')"
+      :cancel-label="t('Cancel')"
+      :is-danger="false"
+      data-devchange="vat-recon-prd-align-rerun"
+      @confirm="startRerun"
     />
     <ConfirmModal
       :is-open="!!unmatchTarget"
@@ -849,7 +1081,7 @@ function doUnmatch() {
     <ConfirmModal
       v-model:is-open="finalizeOpen"
       :title="`${t('Finalize')} ${periodName}?`"
-      :description="t('This records what was reconciled and who signed it off. It does not lock Jurnal — sales invoices in this period stay editable, and any change will be flagged here.')"
+      :description="t('This records what was reconciled and who signed it off. It does not lock Jurnal — transactions in this period stay editable, and any change will be flagged here.')"
       :confirm-label="t('Finalize')"
       :cancel-label="t('Cancel')"
       :is-danger="false"
@@ -896,8 +1128,14 @@ function doUnmatch() {
   --vr-line-h: 72px;
   --vr-illus-w: 288px;
   --vr-illus-h: 240px;
+  --vr-dup-total-w: 120px;
   display: flex; flex-direction: column; gap: var(--mp-spacing-4);
 }
+
+/* ── Period header: Last sync · Accounts used ── */
+.vr-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.vr-meta-label { color: var(--mp-text-secondary); }
+.vr-meta-sep { color: var(--mp-text-subtle); }
 
 /* ── Sign-off banner ── */
 .vr-finalized-error { display: block; margin-top: var(--mp-spacing-1); color: var(--mp-colors-red-800); font-weight: var(--mp-font-weights-semi-bold); }
@@ -905,13 +1143,21 @@ function doUnmatch() {
 /* ── Summary: the bank Reconciliations header — divider columns, no cards ── */
 .vr-summary {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: auto;
   padding: var(--mp-spacing-4) 0;
 }
 .vr-tab-label { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .vr-sum {
-  display: flex; flex-direction: column; gap: var(--mp-spacing-1);
+  /* Subgrid rows (label · sub · value · delta) keep the values on one line even
+     though only Tax difference carries a subtitle now. */
+  display: grid; grid-row: span 4; grid-template-rows: subgrid; row-gap: var(--mp-spacing-1);
+  align-content: start;
   padding: 0 var(--mp-spacing-6); min-width: 0;
 }
+.vr-sum-label { grid-row: 1; }
+.vr-sum-sub { grid-row: 2; }
+.vr-sum-value { grid-row: 3; }
+.vr-sum-delta { grid-row: 4; }
 .vr-sum:first-child { padding-left: 0; }
 .vr-sum + .vr-sum { border-left: 1px solid var(--mp-border-default); }
 .vr-sum-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
@@ -1021,11 +1267,24 @@ function doUnmatch() {
 .vr-detail-title--sub { display: block; margin-top: var(--mp-spacing-4); }
 .vr-detail-sub { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .vr-find-lead { margin-top: var(--mp-spacing-4); }
+.vr-detail-actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
+.vr-detail-actions-block { margin-top: var(--mp-spacing-3); }
 .vr-kv { display: flex; flex-direction: column; }
 .vr-kv :deep(.is-diff) { color: var(--mp-colors-orange-800); font-weight: var(--mp-font-weights-semi-bold); }
 .vr-why { margin: var(--mp-spacing-2) 0 0; }
 .vr-pick-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
 .vr-reason { grid-column: 1 / -1; margin: var(--mp-spacing-4) var(--mp-spacing-6) 0; }
+.vr-tag { display: inline-flex; }
+.vr-tag-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
+/* Duplicate reference picker — full width under the two columns */
+.vr-dup { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); border-top: 1px solid var(--mp-border-default); }
+.vr-dup-row { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
+.vr-dup-row + .vr-dup-row { border-top: 1px solid var(--mp-border-default); }
+.vr-dup-id { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.vr-dup-ref { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }
+.vr-dup-total { min-width: var(--vr-dup-total-w); text-align: right; }
+/* ── Footer counts ── */
+.vr-footer { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); font-variant-numeric: tabular-nums; }
 
 /* ── Drafts bar (ErpTablePage bulk-bar anatomy) ── */
 .vr-bulk {

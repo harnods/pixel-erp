@@ -1,5 +1,5 @@
 /**
- * VAT reconciliation — "Not found in Coretax" rows are real sales invoices, and
+ * VAT reconciliation — "Tax document not found" rows are real sales invoices, and
  * the action offered follows how far the invoice's own tax document got.
  */
 import { describe, it, expect } from 'vitest'
@@ -18,7 +18,7 @@ const notInCoretax = () => [
   ...pairsForPeriod('2027-03', 'output').filter(p => p.match === 'not-in-coretax'),
 ]
 
-describe('Not found in Coretax — linked to real sales invoices', () => {
+describe('Tax document not found — linked to real sales invoices', () => {
   it('every output row in that state points at an existing invoice', () => {
     const rows = notInCoretax()
     expect(rows.length).toBeGreaterThan(0)
@@ -48,7 +48,8 @@ describe('Not found in Coretax — linked to real sales invoices', () => {
       expect(canGenerateTaxDocument(id), id).toBe(true)
     }
     // Every link list entry is used — a seed count change can't silently drop one.
-    expect(pairsForPeriod('2027-03', 'output').length).toBe(OUTPUT_NOT_IN_CORETAX_LINKS['2027-03']!.length)
+    // (Invoice rows only: 03/2027 also carries a Draft faktur with no SI — §5.1 row 13.)
+    expect(pairsForPeriod('2027-03', 'output').filter(p => p.erp).length).toBe(OUTPUT_NOT_IN_CORETAX_LINKS['2027-03']!.length)
   })
 
   it('fixture invoice numbers never collide with a real invoice', () => {
@@ -61,7 +62,7 @@ describe('Not found in Coretax — linked to real sales invoices', () => {
   })
 })
 
-describe('Not found in Coretax — action follows the tax document state', () => {
+describe('Tax document not found — action follows the tax document state', () => {
   const row = (id: string) => notInCoretax().find(p => p.erp!.salesInvoiceId === id)!
 
   it('seeded states: none, draft, submitted', () => {
@@ -87,7 +88,7 @@ describe('Not found in Coretax — action follows the tax document state', () =>
     expect(erpFakturOf(row('SI002'))?.state).toBe('none')
   })
 
-  it('only rows not found in Coretax carry a faktur action', () => {
+  it('only Tax document not found rows carry a faktur action', () => {
     const matched = outputPairs.find(p => p.match === 'matched')!
     expect(erpFakturOf(matched)).toBeNull()
   })

@@ -2,7 +2,8 @@
 /**
  * VAT reconciliation workspace — design-review P0 + P1 fixes.
  *
- *  P0  A match whose two sides differ needs a reason; it is never one click.
+ *  P0  A match whose two sides differ is confirmed in a modal; it is never one click.
+ *      (No free-text reason since VR-6 — reasons are Remarks, US-013.)
  *  P1  Manual matches are saved and drive every count; Unmatch reverts them.
  *  P1  The detail drawer opens the shared Activity log, built from real records.
  *  P1  To match pages (50 by default) instead of rendering every pair.
@@ -30,7 +31,7 @@ class FakeObserver { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal('ResizeObserver', FakeObserver)
 vi.stubGlobal('IntersectionObserver', FakeObserver)
 
-// 02/2027 carries real candidates: invoice 40122 (SI122, Not found in Coretax) has
+// 02/2027 carries real candidates: invoice 40122 (SI122, Tax document not found) has
 // an exact Coretax-only faktur (o-17) and a near miss Rp500.000 higher (o-18).
 const PERIOD = '2027-02'
 const ROW = 'SI122'
@@ -51,10 +52,10 @@ type W = Awaited<ReturnType<typeof mountWorkspace>>
 const itemFor = (w: W, pairId: string) => w.find(`.vr-item[data-pair-id="${pairId}"]`)
 const bodyButtons = (label: string) =>
   [...document.body.querySelectorAll('button')].filter(b => b.textContent?.trim() === label)
-/** Expand the row, then "Find another faktur" opens the shared detail drawer. */
+/** Expand the row, then "Find another tax document" opens the shared detail drawer. */
 async function openDrawer(w: W, pairId: string) {
   await itemFor(w, pairId).find('.vr-line').trigger('click')
-  await itemFor(w, pairId).findAll('button').find(b => b.text() === 'Find another faktur')!.trigger('click')
+  await itemFor(w, pairId).findAll('button').find(b => b.text() === 'Find another tax document')!.trigger('click')
   await flushPromises()
 }
 
@@ -66,43 +67,48 @@ describe('candidates are real records only', () => {
     expect(c[1]!.total - rowFor(ROW).erp!.total).toBe(500_000)
   })
 
-  it('a masa whose faktur have not synced offers nothing', () => {
-    for (const p of pairsForPeriod('2027-03', 'output').filter(x => x.match === 'not-in-coretax')) {
-      expect(candidatesFor(p)).toEqual([])
+  // 03/2027 now carries Approved tax documents with no transaction (the Airene
+  // seeds, US-014), so its candidates are those — still only records that exist.
+  it('a candidate is always an open, Approved tax document in the same masa', () => {
+    const all = pairsForPeriod('2027-03', 'output')
+    for (const p of all.filter(x => x.match === 'not-in-coretax')) {
+      for (const c of candidatesFor(p)) {
+        const other = all.find(x => x.id === c.pairId)!
+        expect(other.match).toBe('no-match-in-erp')
+        expect(other.djp?.approved).toBe(true)
+      }
     }
   })
 })
 
-describe('P0 — a match with a difference needs a reason', () => {
-  it('difference 0 saves without a reason', () => {
+describe('P0 — a match with a difference is confirmed, never one click (no free-text reason, VR-6)', () => {
+  it('difference 0 saves straight away', () => {
     const pair = rowFor(ROW)
     const exact = candidatesFor(pair)[0]!
     expect(confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: exact })).toBe(true)
     expect(manualMatchOf(pair.id)?.difference).toBe(0)
   })
 
-  it('a difference without a reason is refused — even straight from the data layer', () => {
+  it('a difference saves without a reason — the BE stores none on a manual match', () => {
     const pair = rowFor(ROW)
     const off = candidatesFor(pair)[1]! // +Rp500.000
-    expect(confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: off })).toBe(false)
-    expect(confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: off, reason: '   ' })).toBe(false)
-    expect(manualMatchOf(pair.id)).toBeUndefined()
-    expect(confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: off, reason: 'Freight billed on the faktur' })).toBe(true)
-    expect(manualMatchOf(pair.id)).toMatchObject({ difference: -500_000, reason: 'Freight billed on the faktur' })
+    expect(confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: off })).toBe(true)
+    expect(manualMatchOf(pair.id)).toMatchObject({ difference: -500_000 })
+    expect(manualMatchOf(pair.id)?.reason).toBeUndefined()
   })
 
-  it('in the UI, Match this on a differing candidate opens the modal; an empty reason errors inline', async () => {
+  it('in the UI, Match this on a differing candidate opens the modal with no reason field; Confirm saves', async () => {
     const w = await mountWorkspace()
     await openDrawer(w, rowFor(ROW).id)
     bodyButtons('Match this')[1]!.click() // +Rp500.000
     await flushPromises()
     expect(document.body.textContent).toContain('Confirm match with a difference?')
+    expect(document.body.querySelector('#vmc-reason')).toBeNull()
     expect(manualMatchOf(rowFor(ROW).id)).toBeUndefined()
     const confirm = [...document.body.querySelectorAll('button')].filter(b => b.textContent?.trim() === 'Confirm match').at(-1)!
     confirm.click()
     await flushPromises()
-    expect(document.body.textContent).toContain('Enter why this pair matches despite the difference.')
-    expect(manualMatchOf(rowFor(ROW).id)).toBeUndefined()
+    expect(manualMatchOf(rowFor(ROW).id)).toMatchObject({ difference: -500_000 })
     w.unmount()
   })
 })
@@ -129,15 +135,15 @@ describe('P1 — saved manual matches drive every count', () => {
     expect(pairsForPeriod(PERIOD, 'output').some(p => p.id === exact.pairId)).toBe(true)
   })
 
-  it('Activity records the match with its difference and reason', () => {
+  it('Activity records the match with its difference', () => {
     const pair = rowFor(ROW)
     const off = candidatesFor(pair)[1]!
-    confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: off, reason: 'Freight' })
+    confirmManualMatch({ pair, periodId: PERIOD, side: 'output', candidate: off })
     const a = pairActivity(rowFor(ROW), PERIOD)
     expect(a[0]!.label).toBe('Matched manually with a difference')
     expect(a[0]!.detail).toContain(off.ref)
-    expect(a[0]!.detail).toContain('Freight')
-    expect(a.some(e => e.label === 'Synced from Coretax')).toBe(true)
+    expect(a[0]!.detail).toContain('500.000')
+    expect(a.some(e => e.label === 'Tax documents synced')).toBe(true)
   })
 
   it('a row with a tax document shows it in Activity', () => {
@@ -175,7 +181,7 @@ describe('P1 — pagination (To match)', () => {
 
     w.findComponent(ErpPagination).vm.$emit('pageChange', 2)
     await flushPromises()
-    expect(w.findAll('.vr-item').length).toBe(total - 5)
+    expect(w.findAll('.vr-item').length).toBe(Math.min(5, total - 5))
 
     await w.find('.filter-search-input').setValue('4')
     await flushPromises()

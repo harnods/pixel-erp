@@ -3,15 +3,16 @@
  * Confirm a manual match whose two sides don't agree to the rupiah (design
  * review P0). Matching a pair with a difference files a real PPN gap as
  * "Reconciled", so it is never one click: the modal states the difference and
- * asks why, and the reason is kept on the match's Activity (goal G4).
+ * the user confirms it.
  *
- * Structured like RejectTransactionModal: closes only via × / Cancel
- * (rule/modal-drawer-close-explicit-only), the primary is never disabled — an
- * empty reason shows an inline error instead (rule/form-errors-inline).
+ * No free-text reason (VR-6): the BE stores none on a manual match. A reason
+ * for a row belongs in its Remarks (US-013), which any non-auto row offers.
+ *
+ * Closes only via × / Cancel (rule/modal-drawer-close-explicit-only).
  */
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter,
-  MpModalOverlay, MpModalCloseButton, MpTextarea, MpButton,
+  MpModalOverlay, MpModalCloseButton, MpButton,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 
@@ -26,26 +27,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  confirm: [reason: string]
+  confirm: []
 }>()
 
 const { t } = useLocale()
 
-const MAX_CHARS = 256
-const reason = ref('')
-const touched = ref(false)
-const isInvalid = computed(() => touched.value && reason.value.trim() === '')
 const difference = computed(() => props.rowTotal - props.candidateTotal)
-
-function handleConfirm() {
-  touched.value = true
-  if (reason.value.trim() === '') return
-  emit('confirm', reason.value.trim())
-}
-
-watch(() => props.isOpen, (open) => {
-  if (!open) { reason.value = ''; touched.value = false }
-})
 </script>
 
 <template>
@@ -73,27 +60,12 @@ watch(() => props.isOpen, (open) => {
           <dt class="vmc-diff-label">{{ t('Difference') }}</dt>
           <dd class="vmc-diff">{{ formatIDR(Math.abs(difference)) }}</dd>
         </dl>
-        <div class="vmc-field">
-          <div class="vmc-label-row">
-            <label class="vmc-label" for="vmc-reason">{{ t('Reason') }}<span class="vmc-required">*</span></label>
-            <span class="vmc-count">{{ reason.length }} / {{ MAX_CHARS }}</span>
-          </div>
-          <MpTextarea
-            id="vmc-reason"
-            v-model="reason"
-            :maxlength="MAX_CHARS"
-            :rows="3"
-            is-full-width
-            :is-invalid="isInvalid"
-          />
-          <p v-if="isInvalid" class="vmc-error" role="alert">{{ t('Enter why this pair matches despite the difference.') }}</p>
-          <p v-else class="vmc-helper">{{ t('Saved on the match activity, for audit.') }}</p>
-        </div>
+        <p class="vmc-helper" data-devchange="vat-recon-prd-align-match-reason">{{ t('To record why, add a remark to the row after matching.') }}</p>
       </MpModalBody>
       <MpModalFooter>
         <div class="vmc-actions">
           <MpButton class="btn-enterprise btn-enterprise--ghost" is-rounded @click="emit('close')">{{ t('Cancel') }}</MpButton>
-          <MpButton class="btn-enterprise btn-enterprise--primary" is-rounded @click="handleConfirm">{{ t('Confirm match') }}</MpButton>
+          <MpButton class="btn-enterprise btn-enterprise--primary" is-rounded @click="emit('confirm')">{{ t('Confirm match') }}</MpButton>
         </div>
       </MpModalFooter>
     </MpModalContent>
@@ -112,11 +84,6 @@ watch(() => props.isOpen, (open) => {
 .vmc-kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .vmc-diff-label { font-weight: var(--mp-font-weights-semi-bold); }
 .vmc-diff { color: var(--mp-colors-red-800); font-weight: var(--mp-font-weights-semi-bold); }
-.vmc-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.vmc-label-row { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
-.vmc-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.vmc-required { color: var(--mp-colors-red-800); margin-left: 2px; }
-.vmc-count, .vmc-helper { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); margin: 0; }
-.vmc-error { font-size: var(--mp-font-sizes-xs); color: var(--mp-colors-red-800); margin: 0; }
+.vmc-helper { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); margin: 0; }
 .vmc-actions { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

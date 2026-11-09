@@ -15,7 +15,12 @@
  *   3. **Selisih and status agree.** A zero selisih with a `partially
  *      reconciled` status (or vice versa) means the derivation drifted.
  */
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+
+// VAT In (OD-008) is hidden behind VAT_IN_ENABLED, off while it is a non-goal.
+// This file pins the two-sided model that comes back with it, so it runs with
+// the flag on; the shipping (off) behaviour is pinned in vat-recon-hide-vat-in.spec.ts.
+vi.mock('~/data/vatReconFlags', () => ({ VAT_IN_ENABLED: true }))
 import {
   reconPeriodRows, reconPeriods, periodLabelById, activePeriodId, activePeriod,
   reconTotals, matchCounts, pairsForPeriod, outputPairs, inputPairs, reconIssues,
@@ -105,7 +110,8 @@ describe('period index — the two sides never share figures', () => {
     // equals the pair count — this is what makes the counts worth showing.
     const out = row(activePeriodId, 'output')
     expect(out.erpCount).toBe(outputPairs.filter(p => p.erp).length)
-    expect(out.djpCount).toBe(outputPairs.filter(p => p.djp).length)
+    // Approved faktur only — o-16 is a Draft, excluded from the Coretax column (§5.1 row 13).
+    expect(out.djpCount).toBe(outputPairs.filter(p => p.djp && p.djp.approved !== false).length)
     expect(out.erpCount).not.toBe(out.djpCount)
 
     const inp = row(activePeriodId, 'input')
@@ -397,8 +403,10 @@ describe('VAT reconciliation — matching is automatic', () => {
       expect(r.status).toBe('not reconciled')
       // Nothing to pair with, so every invoice is exposed for its full value.
       expect(r.selisih).toBe(r.erpAmount)
+      // Every invoice is Tax document not found; a faktur that is only a Draft
+      // (§5.1 row 13) is excluded and doesn't count as synced.
       for (const p of pairsForPeriod(r.periodId, r.side)) {
-        expect(p.match).toBe('not-in-coretax')
+        expect(['not-in-coretax', 'not-approved']).toContain(p.match)
       }
     }
   })

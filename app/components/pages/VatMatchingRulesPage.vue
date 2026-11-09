@@ -4,6 +4,10 @@
  * In is in scope, PPN Masukan). Picked by hand; never auto-detected
  * (PRD OD-001 v1.0, US-016).
  *
+ * VAT In (OD-008) is a non-goal for the MVP: with VAT_IN_ENABLED off
+ * (~/data/vatReconFlags) the scope choice and the PPN Masukan card are hidden
+ * and scope is always VAT Out. The code below stays for OD-008.
+ *
  * This replaced the old "Matching rules" page. v1.0 makes the matching model
  * deterministic and fixed (§4): exact key, exact corroboration, direction check,
  * no tolerance window, no confidence thresholds, no AI in the engine. There is
@@ -20,7 +24,7 @@ import {
 } from '@mekari/pixel3'
 import {
   loadVatSetup, saveVatSetup, accountLabels, vatAccountOptionLabel,
-  SNAPSHOT_ACCOUNT_CODES, FIRST_PERIOD_ID, periodLabelById,
+  SNAPSHOT_ACCOUNT_CODES, FIRST_PERIOD_ID, periodLabelById, VAT_IN_ENABLED,
   type VatReconScope,
 } from '~/data/vatReconciliation'
 import { coaAccounts } from '~/data/wmsCutover'
@@ -44,12 +48,15 @@ const saved = ref(loadVatSetup())
  * it a choice rather than a build flag means a company that has not adopted VAT
  * In never sees half a feature, and the team can demo where OD-008 lands
  * without a second codebase. "Both" adds the PPN Masukan account picker.
+ *
+ * While VAT_IN_ENABLED is off, "Both" is not offered (and loadVatSetup already
+ * normalizes a stored `both` to `out`), so the whole choice is hidden.
  */
 const scope = ref<VatReconScope>(loadVatSetup()?.scope ?? 'out')
 const scopeOptions = [
   { id: 'vat-scope-out',  label: 'VAT Out only',   value: 'out'  },
   { id: 'vat-scope-both', label: 'VAT Out & VAT In', value: 'both' },
-]
+].filter((o) => VAT_IN_ENABLED || o.value !== 'both')
 
 onMounted(() => {
   const s = loadVatSetup()
@@ -169,9 +176,10 @@ const fixedRules = [
 
 <template>
   <div class="vm-page">
-    <div class="vm-main">
-      <!-- Scope first: it decides which sides the rest of the module shows -->
-      <section class="vm-card">
+    <div class="vm-main" :data-devchange="VAT_IN_ENABLED ? undefined : 'vat-recon-hide-vat-in'">
+      <!-- Scope first: it decides which sides the rest of the module shows.
+           Hidden while VAT In is a non-goal (VAT_IN_ENABLED): scope is VAT Out. -->
+      <section v-if="VAT_IN_ENABLED" class="vm-card">
         <header class="vm-card-head">
           <div class="vm-card-icon"><MpIcon name="doc" size="md" /></div>
           <div>
@@ -219,7 +227,7 @@ const fixedRules = [
       </section>
 
       <!-- OD-008 — VAT In shares the shell; its accounts only matter when in scope -->
-      <section v-if="scope === 'both'" class="vm-card" data-devchange="vat-setup-manual-accounts">
+      <section v-if="VAT_IN_ENABLED && scope === 'both'" class="vm-card" data-devchange="vat-setup-manual-accounts">
         <header class="vm-card-head">
           <div class="vm-card-icon"><MpIcon name="sliders" size="md" /></div>
           <div>

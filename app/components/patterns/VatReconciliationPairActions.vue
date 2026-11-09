@@ -105,7 +105,7 @@ function toggleWaiting() {
       <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId && !inline" :pair="pair" :show-hint="false" :size="size" />
       <template v-else-if="pair.erp?.salesInvoiceId" />
       <MpButton v-else :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-        {{ t('Create faktur pajak') }}
+        {{ t('Create tax document') }}
       </MpButton>
     </template>
     <template v-else-if="pair.match === 'no-match-in-erp'">
@@ -125,7 +125,7 @@ function toggleWaiting() {
     <!-- Row 6 (US-011): the invoice is gone, the faktur must follow. -->
     <template v-else-if="pair.match === 'invoice-voided'">
       <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-        {{ t('Cancel faktur') }}
+        {{ t('Cancel tax document') }}
       </MpButton>
     </template>
     <!-- Row 7 (US-012): pengganti net, or park it on the buyer. -->
@@ -140,10 +140,10 @@ function toggleWaiting() {
     <!-- Rows 9-10: a date is wrong on one side or the other. -->
     <template v-else-if="pair.match === 'faktur-predates' || pair.match === 'return-date-mismatch'">
       <MpButton variant="secondary" :size="size" is-rounded @click="act(t('Opening sales invoice…'))">
-        {{ t('Correct invoice date') }}
+        {{ t('Correct transaction date') }}
       </MpButton>
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Coretax…'))">
-        {{ t('Correct faktur date') }}
+      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening tax document…'))">
+        {{ t('Correct tax document date') }}
       </MpButton>
     </template>
     <!-- Row 12: nothing can be matched into a finalized period. -->

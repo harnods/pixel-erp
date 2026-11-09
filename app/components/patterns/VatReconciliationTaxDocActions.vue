@@ -1,55 +1,48 @@
 <script setup lang="ts">
 /**
- * What to do about a sales invoice that has no faktur in Coretax — shared by
- * the workspace row ("Not found in Coretax" panel) and the detail drawer.
+ * What to do about a transaction whose tax document isn't found — shared by the
+ * workspace row's expand and the detail drawer footer. The fix depends on how
+ * far the transaction's OWN tax document got (taxDocSubState, PM 2026-11-05):
  *
- * The fix lives on the invoice, so the actions depend on how far its tax
- * document got in ERP (erpFakturOf):
+ *   none       Find another tax document (opt-in, `show-find`) · Create tax document ↗
+ *   draft      Edit tax document ↗ · Submit tax document
+ *   submitted  Refresh status — a simulated DJP check; one seed is approved
+ *              (the row then reconciles), the rest stay processing
+ *   rejected   View tax document ↗
  *
- *   none       → Create tax document ↗   opens the invoice in a new tab with the
- *                                         Create drawer already open
- *   draft      → Submit to DJP           right here, after a confirm
- *                Edit tax document ↗     new tab, the draft open in edit mode
- *   submitted  → View tax document ↗     waiting on DJP — nothing to do here
- *   rejected   → View tax document ↗     fixed and resubmitted on the invoice
- *   approved   → View tax document ↗     approved in ERP, Coretax not synced yet
- *
- * Anything that leaves this screen opens a NEW TAB (and says so with the
- * `newtab` icon): the user is mid-reconciliation and should not lose their
- * place in the masa to go fix one invoice.
+ * Secondary first, primary last (where the eye ends, like every form footer).
+ * Anything that leaves this screen opens a NEW TAB (`newtab` icon) so the user
+ * keeps their place in the masa.
  */
 import { MpButton, MpBadge } from '@mekari/pixel3'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { successToast } from '~/utils/toasts'
-import { erpFakturOf, salesInvoiceTaxDocUrl, ERP_FAKTUR_HINTS, type ReconPair } from '~/data/vatReconciliation'
+import { infoToast, successToast } from '~/utils/toasts'
+import {
+  erpFakturOf, salesInvoiceTaxDocUrl, taxDocSubState, statusReasonOf, refreshOwnTaxDocStatus,
+  REFRESH_SIMULATED_MS, type ReconPair,
+} from '~/data/vatReconciliation'
 import { updateTaxDocumentStatus, DJP_STATUS_CONFIG } from '~/data/taxDocuments'
 import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermission'
 
 const props = withDefaults(defineProps<{
   pair: ReconPair
-  /** Render the one-line explanation above the buttons (the row panel does; the
-   *  drawer already explains the state in its own body). */
+  /** Render the one-line explanation above the buttons. */
   showHint?: boolean
-  /** `sm` in the row panel; `md` in a drawer footer, beside its other buttons. */
   size?: 'sm' | 'md'
-  /** `row` — buttons only, side by side (the workspace row shows the hint as
-   *  its own subtitle); `stack` — hint above the buttons. */
+  /** `row` — buttons only, side by side; `stack` — hint above the buttons. */
   layout?: 'row' | 'stack'
-}>(), { showHint: true, size: 'sm', layout: 'stack' })
+  /** `none` only: also offer "Find another tax document" (the row expand does). */
+  showFind?: boolean
+}>(), { showHint: true, size: 'sm', layout: 'stack', showFind: false })
+
+const emit = defineEmits<{ find: [] }>()
 
 const { t } = useLocale()
 const { canSubmitTaxDocument } = useTaxSubmissionPermission()
 
 const faktur = computed(() => erpFakturOf(props.pair))
-
-/**
- * One primary per screen (rule/btn-one-primary): on a workspace row (`row`)
- * the fix sits beside dozens of others and the title-bar Finalize, so it is
- * secondary; in a drawer footer (`stack`) it is the drawer's one primary.
- */
-const mainVariant = computed(() => (props.layout === 'row' ? 'secondary' : 'primary'))
-
-const hint = computed(() => (faktur.value ? ERP_FAKTUR_HINTS[faktur.value.state] : ''))
+const sub = computed(() => taxDocSubState(props.pair))
+const hint = computed(() => statusReasonOf(props.pair) ?? '')
 const badge = computed(() => (faktur.value?.doc ? DJP_STATUS_CONFIG[faktur.value.doc.status] : null))
 
 function openInNewTab(action: 'create' | 'edit' | 'view') {
@@ -59,12 +52,11 @@ function openInNewTab(action: 'create' | 'edit' | 'view') {
 }
 
 // ── Submit a draft without leaving reconciliation ────────────────────────────
+// Same operation as the bulk "Submit to DJP" bar (draft → awaiting approval).
 const confirmOpen = ref(false)
 /** Inline, under the buttons (rule/form-errors-inline) — never a toast. */
 const permissionError = ref(false)
 function askSubmit() {
-  // Denied outright rather than hidden — the user needs to know the action
-  // exists and who to ask for it (PRD-05 AC-009, same as the invoice page).
   permissionError.value = !canSubmitTaxDocument.value
   if (permissionError.value) return
   confirmOpen.value = true
@@ -73,33 +65,51 @@ function doSubmit() {
   const doc = faktur.value?.doc
   if (!doc) return
   updateTaxDocumentStatus(doc.id, 'awaiting-approval')
-  successToast(t('Submitted to DJP'))
+  successToast(t('Tax document submitted'))
+}
+
+// ── Refresh status (simulated DJP check) ─────────────────────────────────────
+const refreshing = ref(false)
+function refreshStatus() {
+  if (refreshing.value) return
+  refreshing.value = true
+  const pair = props.pair
+  setTimeout(() => {
+    const outcome = refreshOwnTaxDocStatus(pair)
+    refreshing.value = false
+    if (outcome === 'approved') successToast(t('Tax document approved'))
+    else infoToast(t('Tax document is still being processed'))
+  }, REFRESH_SIMULATED_MS)
 }
 </script>
 
 <template>
-  <div v-if="faktur" class="vrt" :class="`vrt--${layout}`" data-devchange="vat-recon-tax-doc-actions">
+  <div v-if="sub" class="vrt" :class="`vrt--${layout}`" :data-substate="sub" data-devchange="vat-recon-tax-doc-substates">
     <div v-if="showHint && layout === 'stack'" class="vrt-hint">
       <MpBadge v-if="badge" :type="badge.type" for="tableStatus" size="sm">{{ t(badge.label) }}</MpBadge>
       <span>{{ t(hint) }}</span>
     </div>
     <div class="vrt-actions">
-      <template v-if="faktur.state === 'none'">
-        <MpButton :variant="mainVariant" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
+      <template v-if="sub === 'none'">
+        <MpButton v-if="showFind" variant="secondary" v-bind="{ size }" is-rounded @click="emit('find')">
+          {{ t('Find another tax document') }}
+        </MpButton>
+        <MpButton v-if="faktur" variant="primary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
           {{ t('Create tax document') }}
         </MpButton>
       </template>
-      <!-- Draft: Edit (secondary) then Submit (primary) — the primary sits last,
-           where the eye ends, like every form footer. -->
-      <template v-else-if="faktur.state === 'draft'">
+      <template v-else-if="sub === 'draft'">
         <MpButton variant="secondary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('edit')">
           {{ t('Edit tax document') }}
         </MpButton>
-        <MpButton :variant="mainVariant" v-bind="{ size }" is-rounded @click="askSubmit">
-          {{ t('Submit to DJP') }}
+        <MpButton variant="primary" v-bind="{ size }" is-rounded @click="askSubmit">
+          {{ t('Submit tax document') }}
         </MpButton>
       </template>
-      <MpButton v-else variant="secondary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('view')">
+      <MpButton v-else-if="sub === 'submitted'" variant="primary" v-bind="{ size }" is-rounded :is-loading="refreshing" @click="refreshStatus">
+        {{ t('Refresh status') }}
+      </MpButton>
+      <MpButton v-else variant="primary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('view')">
         {{ t('View tax document') }}
       </MpButton>
     </div>
@@ -111,7 +121,7 @@ function doSubmit() {
       v-model:is-open="confirmOpen"
       :title="t('Submit tax document to DJP?')"
       :description="`${t('The draft tax document for sales invoice')} #${pair.erp?.ref} ${t('will be sent to DJP for approval. It can no longer be edited after this.')}`"
-      :confirm-label="t('Submit to DJP')"
+      :confirm-label="t('Submit tax document')"
       :cancel-label="t('Cancel')"
       :is-danger="false"
       @confirm="doSubmit"
@@ -121,7 +131,6 @@ function doSubmit() {
 
 <style scoped>
 .vrt { display: flex; flex-direction: column; gap: var(--mp-spacing-2); align-items: flex-start; }
-.vrt--row { align-items: flex-end; }
 .vrt-hint {
   display: flex; align-items: center; flex-wrap: wrap; gap: var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);

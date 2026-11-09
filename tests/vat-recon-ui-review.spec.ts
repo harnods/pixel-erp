@@ -62,13 +62,13 @@ describe('workspace', () => {
     return w
   }
 
-  it('a duplicate reference shows its faktur and offers Find another faktur — no premature Difference', async () => {
+  it('a duplicate reference shows its faktur and offers Find another tax document — no premature Difference', async () => {
     const w = await mountWorkspace()
     const item = w.find(`.vr-item[data-pair-id="${dup.id}"]`)
     await item.find('.vr-line').trigger('click')
     expect(item.text()).toContain(dup.djp!.ref)
     expect(item.text()).not.toContain('Difference')
-    expect(item.findAll('button').some(b => b.text() === 'Find another faktur')).toBe(true)
+    expect(item.findAll('button').some(b => b.text() === 'Find another tax document')).toBe(true)
     w.unmount()
   })
 
@@ -221,12 +221,12 @@ describe('expanded row + drawer title (2026-11-05)', () => {
     const s = src('app/components/patterns/ReconciliationDetailDrawer.vue')
     expect(s).toMatch(/\.rdd-compare-col \+ \.rdd-compare-col \{[^}]*border-left: 1px solid var\(--mp-border-default\)/)
   })
-  it('drawer footer: Cancel left, Open in Coretax (secondary) before the primary on the right', () => {
+  it('drawer footer: Cancel left, View tax document (secondary) before the primary on the right', () => {
     const s = src('app/components/patterns/ReconciliationDetailDrawer.vue')
     const footer = s.slice(s.indexOf('<template #footer>'), s.indexOf('</ErpDrawer>'))
     const cancel = footer.indexOf("t('Cancel')")
     const actions = footer.indexOf('class="rdd-footer-actions"')
-    const coretax = footer.indexOf("t('Open in Coretax')")
+    const coretax = footer.indexOf("t('View tax document')")
     const primary = footer.indexOf('<VatReconciliationPairActions')
     expect(cancel).toBeGreaterThan(-1)
     expect(cancel).toBeLessThan(actions)

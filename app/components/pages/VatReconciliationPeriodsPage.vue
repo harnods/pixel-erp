@@ -33,7 +33,7 @@ import ReconciliationFiltersDrawer, {
 // labelled money column is not a currency display.
 import {
   reconPeriodRows, reconPeriodOptions, formatAmountPlain, loadVatSetup, reconVersion,
-  reconSides, type ReconPeriodRow,
+  reconSides, VAT_IN_ENABLED, type ReconPeriodRow,
 } from '~/data/vatReconciliation'
 
 const toggleAirene = inject<() => void>('toggleAirene')
@@ -82,9 +82,9 @@ const columns = computed<TableColumn[]>(() => [
   { key: 'erpAmount',
     // With both sides the Invoice type column already says which; a long
     // "Sales/purchase invoice (Rp)" header clipped at 1440px.
-    label: showJenisFilter.value ? t('Invoice (Rp)') : t('Sales invoice (Rp)'),
+    label: t('Transaction (Rp)'),
     kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
-  { key: 'djpAmount',   label: t('Tax invoice (Rp)'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'djpAmount',   label: t('Tax document (Rp)'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'selisih',     label: t('Difference (Rp)'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'status',      label: t('Status'),           kind: 'status',                                sortType: 'text'   },
 ])
@@ -135,16 +135,18 @@ const statusOptions = computed(() => [
 /**
  * Only the sides in scope. With VAT Out only there is nothing to choose between,
  * so the filter hides itself rather than offering a control with one option.
+ * VAT In is a non-goal until OD-008 (VAT_IN_ENABLED off): reconSides() is then
+ * output-only, and the flag also gates the column, filter and header directly.
  */
 const jenisOptions = computed(() => {
   void reconVersion.value
   const all = [
-    { label: t('Output tax invoice'), value: 'output' },
+    { label: t('VAT Out'), value: 'output' },
     { label: t('Input tax invoice'),  value: 'input'  },
   ]
   return all.filter(o => reconSides().includes(o.value as 'output' | 'input'))
 })
-const showJenisFilter = computed(() => jenisOptions.value.length > 1)
+const showJenisFilter = computed(() => VAT_IN_ENABLED && jenisOptions.value.length > 1)
 
 // "All filters (N)" — one per active drawer filter row
 // (rule/filter-all-filters-active-count, same as BillsIndexPage).
@@ -194,8 +196,8 @@ const exportColumns = computed(() => [
   { key: 'masa', label: t('Tax period'), required: true },
   { key: 'pair', label: t('Pair') },
   { key: 'status', label: t('Status'), required: true },
-  { key: 'erpRef', label: t('Sales invoice') },
-  { key: 'djpRef', label: t('Tax invoice') },
+  { key: 'erpRef', label: t('Transaction') },
+  { key: 'djpRef', label: t('Tax document') },
   { key: 'dpp', label: 'DPP' },
   { key: 'ppn', label: 'PPN' },
   { key: 'remarks', label: t('Remarks') },
@@ -370,8 +372,17 @@ function hideColumn(key: string) { columnVisibility[key] = false }
       <span v-else>{{ formatAmountPlain(value as number) }}</span>
     </template>
 
-    <template #cell-status="{ value }">
-      <ErpStatusBadge :status="value as string" />
+    <!-- US-019 AC-05: rows changed since the last run — a note, never a status. -->
+    <template #cell-status="{ row, value }">
+      <span class="vp-status">
+        <ErpStatusBadge :status="value as string" />
+        <span
+          v-if="(row as unknown as ReconPeriodRow).changes > 0"
+          class="vp-changes"
+          data-devchange="vat-recon-prd-align-changed"
+          data-test-id="vp-changes"
+        >{{ (row as unknown as ReconPeriodRow).changes }} {{ (row as unknown as ReconPeriodRow).changes === 1 ? t('change since last reconciliation') : t('changes since last reconciliation') }}</span>
+      </span>
     </template>
 
     <!-- Periods come from the tax calendar, so the list is never genuinely empty
@@ -469,6 +480,8 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 }
 
 .vp-muted { color: var(--mp-text-subtle); }
+.vp-status { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
+.vp-changes { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: normal; }
 
 /* Amount + its record count: figure first, badge pinned to the column's right
    edge. The fixed badge width keeps the figures at a constant offset, so their

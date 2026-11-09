@@ -109,7 +109,9 @@ const MODULE_PARENT: Record<string, { label: string; to: string; title?: string 
   // `title` overrides the H1 where the page key isn't the display term. The keys
   // stay Indonesian because they're the route slugs (/faktur-keluaran); the EN
   // locale shows the standard VAT terms, which is what `title` carries.
-  'Faktur keluaran':             { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Output tax invoice' },
+  // "VAT Out", not "Output tax invoice": the workspace covers every output
+  // document that posts to PPN Keluaran, not only faktur (PM, 2026-11-05).
+  'Faktur keluaran':             { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'VAT Out' },
   'Faktur masukan':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Input tax invoice' },
   'Matching rules':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Setup' },
   'Unmatched and discrepancies': { label: 'VAT reconciliation', to: '/vat-reconciliation' },
@@ -2641,7 +2643,7 @@ function startResize(e: MouseEvent) {
             </button>
             <button
               class="btn-enterprise btn-enterprise--primary"
-              @click="infoToast(t('Coretax synced. 12 new faktur pulled'))"
+              @click="infoToast(t('Synced with Klikpajak. 12 new tax documents pulled'))"
             >
               {{ t('Sync with Klikpajak') }}
             </button>

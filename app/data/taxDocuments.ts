@@ -10,7 +10,7 @@
  * A superseded document is never removed — it flips to `replaced`/`cancelled`
  * and stays on file as the historical record (BR-007).
  */
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import type { DetectedTaxChange, SalesInvoiceTaxSnapshot, TaxAction } from './taxDocumentChanges'
 
@@ -270,6 +270,20 @@ function buildSeedTaxDocuments(): TaxDocument[] {
       serial: '2500002718281', status: 'awaiting-approval', kind: 'normal', revision: 0,
       docKind: 'FK', paymentStage: 'full-payment', djpCode: '01',
     },
+    // Two more for the 03/2027 "Tax document not found" sub-states (PM,
+    // 2026-11-05): a second submitted one that stays processing on Refresh
+    // status (SI043 resolves to Approved), and one DJP rejected.
+    {
+      ...common, id: 'taxdoc-seed-si097-submitted', salesInvoiceId: 'SI097', date: '30/10/2026',
+      serial: '2500001618033', status: 'awaiting-approval', kind: 'normal', revision: 0,
+      docKind: 'FK', paymentStage: 'full-payment', djpCode: '01',
+    },
+    {
+      ...common, id: 'taxdoc-seed-si050-rejected', salesInvoiceId: 'SI050', date: '27/10/2026',
+      serial: '', status: 'rejected', kind: 'normal', revision: 0,
+      docKind: 'FK', paymentStage: 'full-payment', djpCode: '01',
+      djpRemark: 'ETAX-API-10012: NITKU pembeli tidak terdaftar pada Coretax. Perbaiki data pembeli lalu kirim ulang.',
+    },
   ]
 }
 
@@ -279,7 +293,14 @@ const store = reactive<TaxDocument[]>(
   (loadSnapshot<TaxDocument>(STORE_KEY) ?? buildSeedTaxDocuments()).map(normalizeTaxDocument),
 )
 
-function persist() { saveSnapshot(STORE_KEY, [...store]) }
+/**
+ * Bumped on every write (and on a reload from another tab). A cheap signal for
+ * callers that memoise a derivation of the store — e.g. VAT reconciliation's
+ * "own tax document approved" lookup, which runs on every pairs read.
+ */
+export const taxDocumentsVersion = ref(0)
+
+function persist() { saveSnapshot(STORE_KEY, [...store]); taxDocumentsVersion.value++ }
 
 /**
  * Re-read the store from persistence. The VAT reconciliation screen opens the
@@ -291,6 +312,7 @@ export function reloadTaxDocumentsFromStorage(): void {
   const rows = loadSnapshot<TaxDocument>(STORE_KEY)
   if (!rows) return
   store.splice(0, store.length, ...rows.map(normalize))
+  taxDocumentsVersion.value++
 }
 
 /** The persistence key, for callers that listen for changes made in another tab. */

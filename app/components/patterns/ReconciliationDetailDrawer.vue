@@ -13,7 +13,7 @@
  * closes only via its × (rule/modal-drawer-close-explicit-only).
  */
 import {
-  MpButton, MpText, MpIcon, MpBanner, MpBannerIcon, MpBannerDescription,
+  MpButton, MpText, MpIcon, MpBanner, MpBannerIcon, MpBannerDescription, MpTag,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import { formatDateTimeLong } from '~/utils/date'
@@ -22,9 +22,13 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import ActivityLogModal, { type ActivityEntry as LogEntry } from '~/components/patterns/ActivityLogModal.vue'
 import VatReconciliationPairActions from '~/components/patterns/VatReconciliationPairActions.vue'
 import VatReconciliationMatchConfirmModal from '~/components/patterns/VatReconciliationMatchConfirmModal.vue'
+import VatReconciliationAireneSuggestions from '~/components/patterns/VatReconciliationAireneSuggestions.vue'
+import { isAireneEligible, suggestionState, shownSuggestions } from '~/data/vatReconSuggest'
 import { successToast } from '~/utils/toasts'
+import { formatTaxDocumentNumber, DJP_STATUS_CONFIG } from '~/data/taxDocuments'
 import {
   MATCH_META, candidatesFor, formatAmountPlain, pairActivity, activePeriodId, confirmManualMatch, nettedAnchor,
+  taxDocSubState, statusLabelOf, statusReasonOf, statusBadgeTypeOf, erpFakturOf,
   type ReconPair, type ReconSide, type MatchCandidate,
 } from '~/data/vatReconciliation'
 
@@ -59,11 +63,30 @@ const headerRef = computed(() => props.pair?.erp?.ref ?? props.pair?.djp?.ref ??
 const diffFields = computed(() => new Set(props.pair?.fields ?? []))
 
 /** Candidates are only worth showing while the pair is still open for matching. */
-const showCandidates = computed(() =>
-  props.pair ? ['not-in-coretax', 'no-match-in-erp', 'duplicate-reference'].includes(props.pair.match) : false,
-)
+const showCandidates = computed(() => {
+  if (!props.pair) return false
+  // Tax document not found: only when the transaction has no tax document of
+  // its own yet — draft / submitted / rejected are fixed on that document.
+  if (props.pair.match === 'not-in-coretax') return taxDocSubState(props.pair) === 'none'
+  return ['no-match-in-erp', 'duplicate-reference'].includes(props.pair.match)
+})
+/** The transaction's own tax document, for the draft / submitted / rejected sub-states. */
+const ownDoc = computed(() => {
+  if (!props.pair) return null
+  const sub = taxDocSubState(props.pair)
+  return sub && sub !== 'none' ? erpFakturOf(props.pair)?.doc ?? null : null
+})
+const reasonText = computed(() => (props.pair ? statusReasonOf(props.pair) : undefined))
 /** Derived from the pair, so they're about this row (candidatesFor). */
-const matchCandidates = computed(() => (props.pair ? candidatesFor(props.pair) : []))
+const matchCandidates = computed(() => {
+  if (!props.pair) return []
+  // Manual search below Airene's list: everything else, without repeating what Airene shows.
+  const airene = isAireneEligible(props.pair)
+    ? new Set(shownSuggestions(props.pair, suggestionState(props.pair)?.response ?? null).map(s => s.match.ref))
+    : new Set<string>()
+  return candidatesFor(props.pair).filter(c => !airene.has(c.ref))
+})
+const aireneOn = computed(() => (props.pair ? isAireneEligible(props.pair) : false))
 
 interface CompareField { key: string; label: string; money?: boolean }
 
@@ -73,7 +96,7 @@ const compareFields = computed<CompareField[]>(() => [
   props.side === 'input'
     ? { key: 'vendor', label: 'Vendor' }
     : { key: 'customer', label: 'Customer' },
-  { key: 'npwp', label: 'NPWP' },
+  // No NPWP — the API never sends the buyer's NPWP/NIK (VR-4).
   { key: 'dpp', label: 'DPP', money: true },
   { key: 'ppn', label: 'PPN', money: true },
   { key: 'total', label: 'Total', money: true },
@@ -98,7 +121,7 @@ const reasonTitle = computed(() => {
   if (!props.pair) return ''
   // The drawer header is the long form of the status. The point of the status
   // model is that a row says what is wrong, never just that it is "unmatched".
-  return t(MATCH_META[props.pair.match].longLabel)
+  return taxDocSubState(props.pair) ? t(statusLabelOf(props.pair)) : t(MATCH_META[props.pair.match].longLabel)
 })
 
 /**
@@ -115,10 +138,10 @@ function matchThis(c: MatchCandidate) {
   if (anchorTotal.value !== c.total) { pendingCandidate.value = c; return }
   saveMatch(c)
 }
-function saveMatch(c: MatchCandidate, reason?: string) {
+function saveMatch(c: MatchCandidate) {
   if (!props.pair) return
   const ok = confirmManualMatch({
-    pair: props.pair, periodId: props.periodId ?? activePeriodId, side: props.side, candidate: c, reason,
+    pair: props.pair, periodId: props.periodId ?? activePeriodId, side: props.side, candidate: c,
   })
   if (!ok) return
   pendingCandidate.value = null
@@ -144,7 +167,7 @@ const logEntries = computed<LogEntry[]>(() => activity.value.map(a => ({
 
 /** The engine's reason, as a Pixel banner in the state's colour. */
 const BANNER_VARIANT = { completed: 'success', information: 'info', announcement: 'info', warning: 'warning', critical: 'danger' } as const
-const reasonVariant = computed(() => (meta.value ? BANNER_VARIANT[meta.value.badgeType] : 'info'))
+const reasonVariant = computed(() => (props.pair ? BANNER_VARIANT[statusBadgeTypeOf(props.pair)] : 'info'))
 
 /** Duplicate reference picks between faktur; the other open states pick a counterpart. */
 const candidatesTitle = computed(() =>
@@ -162,13 +185,13 @@ const candidatesTitle = computed(() =>
     <template #body>
       <div v-if="pair && meta" class="rdd-body">
             <!-- Engine reasoning — MpBanner in the state's colour -->
-            <MpBanner v-if="pair.reason" :variant="reasonVariant" is-inline data-devchange="vat-recon-workspace-reconciliations">
+            <MpBanner v-if="reasonText" :variant="reasonVariant" is-inline data-devchange="vat-recon-workspace-reconciliations">
               <MpBannerIcon />
               <!-- Title stacked inside the description: MpBannerTitle sits inline
                    in this build, so the two ran together. -->
               <MpBannerDescription>
                 <strong class="rdd-reason-title">{{ reasonTitle }}</strong>
-                <span class="rdd-reason-body">{{ pair.reason }}</span>
+                <span class="rdd-reason-body">{{ t(reasonText!) }}</span>
               </MpBannerDescription>
             </MpBanner>
 
@@ -176,16 +199,27 @@ const candidatesTitle = computed(() =>
                  a field the two sides disagree on is highlighted on both. -->
             <div class="rdd-compare" data-devchange="vat-recon-drawer-compare-divider">
               <div class="rdd-compare-col">
-                <MpText size="h4" weight="semiBold">{{ t('From ERP') }}</MpText>
+                <MpText size="h4" weight="semiBold">{{ t('Transaction') }}</MpText>
                 <ContentList v-for="f in compareFields" :key="`erp-${f.key}`" :label="t(f.label)">
                   <span :class="{ 'rdd-diff': isDiff(f) }">{{ cellValue(pair.erp, f) }}</span>
                 </ContentList>
               </div>
               <div class="rdd-compare-col">
-                <MpText size="h4" weight="semiBold">{{ t('From Coretax') }}</MpText>
-                <ContentList v-for="f in compareFields" :key="`djp-${f.key}`" :label="t(f.label)">
-                  <span :class="{ 'rdd-diff': isDiff(f) }">{{ cellValue(pair.djp, f) }}</span>
-                </ContentList>
+                <MpText size="h4" weight="semiBold">{{ t('Tax document') }}</MpText>
+                <!-- The transaction's own tax document (draft / submitted / rejected) -->
+                <template v-if="ownDoc">
+                  <ContentList :label="t('Number')" :value="formatTaxDocumentNumber(ownDoc)" />
+                  <ContentList :label="t('Status')" :value="t(DJP_STATUS_CONFIG[ownDoc.status].label)" />
+                  <ContentList :label="t('Date')" :value="ownDoc.date" />
+                  <ContentList label="DPP" :value="formatIDR(pair.erp?.dpp ?? 0)" />
+                  <ContentList label="PPN" :value="formatIDR(pair.erp?.ppn ?? 0)" />
+                  <ContentList v-if="ownDoc.djpRemark" :label="t('DJP remark')" :value="ownDoc.djpRemark" />
+                </template>
+                <template v-else>
+                  <ContentList v-for="f in compareFields" :key="`djp-${f.key}`" :label="t(f.label)">
+                    <span :class="{ 'rdd-diff': isDiff(f) }">{{ cellValue(pair.djp, f) }}</span>
+                  </ContentList>
+                </template>
               </div>
             </div>
 
@@ -199,6 +233,10 @@ const candidatesTitle = computed(() =>
             </div>
 
             <!-- Alternative candidates -->
+            <!-- Airene (US-014): asked when the drawer opens on an eligible row; same cache as the row. -->
+            <div v-if="showCandidates && aireneOn" class="rdd-section">
+              <VatReconciliationAireneSuggestions :pair="pair" :side="side" :period-id="periodId ?? activePeriodId" :finalized="!!finalized" context="drawer" @matched="close" />
+            </div>
             <div v-if="showCandidates" class="rdd-section">
               <div class="rdd-section-head">
                 <MpText size="h4" weight="semiBold">{{ candidatesTitle }}</MpText>
@@ -214,7 +252,9 @@ const candidatesTitle = computed(() =>
                       </div>
                       <div class="rdd-candidate-party">{{ c.party }}</div>
                     </div>
-                    <span class="rdd-confidence" :class="{ 'is-strong': c.confidence >= 0.7 }">
+                    <!-- Duplicate reference: the latest pengganti is the Suggested pick (US-003 AC-02). -->
+                    <span v-if="c.suggested" class="rdd-tag" data-devchange="vat-recon-prd-align-duplicate"><MpTag>{{ t('Suggested') }}</MpTag></span>
+                    <span v-else-if="pair.match !== 'duplicate-reference'" class="rdd-confidence" :class="{ 'is-strong': c.confidence >= 0.7 }">
                       {{ Math.round(c.confidence * 100) }}% {{ t('match') }}
                     </span>
                   </div>
@@ -233,12 +273,12 @@ const candidatesTitle = computed(() =>
                     </div>
                   </div>
                   <div class="rdd-candidate-foot">
-                    <span class="rdd-candidate-why">{{ c.why }}</span>
+                    <span class="rdd-candidate-why">{{ t(c.why) }}</span>
                     <MpButton
                       variant="secondary" size="sm" is-rounded
                       @click="matchThis(c)"
                     >
-                      {{ t('Match this') }}
+                      {{ pair.match === 'duplicate-reference' ? t('Select faktur') : t('Match this') }}
                     </MpButton>
                   </div>
                 </div>
@@ -264,8 +304,8 @@ const candidatesTitle = computed(() =>
           {{ t('Cancel') }}
         </MpButton>
         <div class="rdd-footer-actions" data-devchange="vat-recon-drawer-footer">
-          <MpButton v-if="pair.djp" class="btn-enterprise btn-enterprise--secondary" variant="secondary" is-rounded type="button" @click="act(t('Opening Coretax…'))">
-            {{ t('Open in Coretax') }}
+          <MpButton v-if="pair.djp" class="btn-enterprise btn-enterprise--secondary" variant="secondary" is-rounded type="button" @click="act(t('Opening tax document…'))">
+            {{ t('View tax document') }}
           </MpButton>
           <VatReconciliationPairActions
             :pair="pair"
@@ -293,7 +333,7 @@ const candidatesTitle = computed(() =>
     :candidate-ref="pendingCandidate?.ref ?? ''"
     :candidate-total="pendingCandidate?.total ?? 0"
     @close="pendingCandidate = null"
-    @confirm="(reason: string) => pendingCandidate && saveMatch(pendingCandidate, reason)"
+    @confirm="() => pendingCandidate && saveMatch(pendingCandidate)"
   />
 </template>
 
@@ -311,7 +351,7 @@ const candidatesTitle = computed(() =>
 /* ── Comparison: two ContentList columns ── */
 .rdd-compare { display: grid; grid-template-columns: 1fr 1fr; }
 .rdd-compare-col { display: flex; flex-direction: column; min-width: 0; }
-/* Vertical divider between From ERP and From Coretax, as in the workspace expand. */
+/* Vertical divider between Transaction and Tax document, as in the workspace expand. */
 .rdd-compare-col:first-child { padding-right: var(--mp-spacing-6); }
 .rdd-compare-col + .rdd-compare-col { padding-left: var(--mp-spacing-6); border-left: 1px solid var(--mp-border-default); }
 .rdd-reason-title { display: block; font-weight: var(--mp-font-weights-semi-bold); }
@@ -337,6 +377,7 @@ const candidatesTitle = computed(() =>
 .rdd-candidate-head { display: flex; align-items: center; gap: var(--mp-spacing-3); }
 .rdd-muted-icon { color: var(--mp-text-subtle); flex-shrink: 0; }
 .rdd-candidate-id { flex: 1; min-width: 0; }
+.rdd-tag { display: inline-flex; flex-shrink: 0; }
 .rdd-candidate-ref { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .rdd-candidate-date { color: var(--mp-text-subtle); font-weight: var(--mp-font-weights-regular); }
 .rdd-candidate-party { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }

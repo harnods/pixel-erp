@@ -30,8 +30,9 @@ import ExportModal from '~/components/patterns/ExportModal.vue'
 import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDetailDrawer.vue'
 import {
   MATCH_META, ATTENTION_STATES, reconIssues, issueRows, formatAmountPlain, periodLabelById, reconSides,
-  activePeriodId, isPeriodFinalized, reconVersion,
+  activePeriodId, isPeriodFinalized, reconVersion, isSideInScope,
   type ReconIssue, type MatchState, type ReconSide, type ReconIssueRow,
+  statusBadgeOf, statusLabelOf, statusBadgeTypeOf,
 } from '~/data/vatReconciliation'
 
 const { t } = useLocale()
@@ -46,7 +47,9 @@ const route = useRoute()
  */
 const scopedSide = computed<ReconSide | null>(() => {
   const jenis = route.query.jenis
-  return jenis === 'input' || jenis === 'output' ? jenis : null
+  // A side that isn't in scope (VAT In while VAT_IN_ENABLED is off) is ignored,
+  // so a stale ?jenis=input link can't relabel the queue for vendors.
+  return (jenis === 'input' || jenis === 'output') && isSideInScope(jenis) ? jenis : null
 })
 // The queue belongs to a masa — it is only ever reached from a period row, so
 // both the feed and the scope line read the same ?masa=.
@@ -68,7 +71,8 @@ const rows = computed(() => {
  * select (x) is what shows everything (docs/patterns/Form.md → Select).
  */
 const STATUS_OPTIONS: { label: string; value: MatchState }[] =
-  ATTENTION_STATES.map(v => ({ label: t(MATCH_META[v].chipLabel), value: v }))
+  // Not-approved faktur are excluded from matching and never in this queue (§5.1 row 13).
+  ATTENTION_STATES.filter(v => v !== 'not-approved').map(v => ({ label: t(MATCH_META[v].chipLabel), value: v }))
 
 const {
   search, statusFilter, currentPage, perPage, paginated, total,
@@ -76,7 +80,7 @@ const {
 } = useTableState<ReconIssueRow>(rows, {
   perPage: 25,
   filterFn: (row, s, status) =>
-    (!s || `${row.ref} ${row.party} ${row.npwp}`.toLowerCase().includes(s.toLowerCase()))
+    (!s || `${row.ref} ${row.party}`.toLowerCase().includes(s.toLowerCase()))
     && (!status || row.match === status),
 })
 
@@ -100,7 +104,7 @@ const columns = computed<TableColumn[]>(() => [
   ...(showSide.value ? [{ key: 'side', label: t('Side') } as TableColumn] : []),
   // The party is a customer on the output side, a vendor on the input side.
   { key: 'party',    label: partyLabel.value, kind: 'name' },
-  { key: 'npwp',     label: 'NPWP',        kind: 'number' },
+  // No NPWP column: the API never sends the buyer's NPWP/NIK (VR-4).
   { key: 'date',     label: t('Date'),     kind: 'date' },
   { key: 'exposure', label: t('Exposure'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'ppn',      label: 'PPN',         kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
@@ -141,8 +145,8 @@ const tiles = computed(() => [
   { label: 'Needs correction', sub: 'Invoice edited or voided', value: counts.value.correction, accent: 'warning', icon: 'edit', iconColor: 'icon.warning' },
   { label: 'Date problems', sub: 'Dates out of order', value: counts.value.dates, accent: 'warning', icon: 'time', iconColor: 'icon.warning' },
   { label: 'Returns', sub: 'Return not reflected', value: counts.value.returns, accent: 'warning', icon: 'undo', iconColor: 'icon.warning' },
-  { label: 'Not found in Coretax', sub: 'No faktur issued', value: counts.value.notInCoretax, accent: 'critical', icon: 'database', iconColor: 'icon.danger' },
-  { label: 'No match in ERP', sub: 'Not recorded in Jurnal', value: counts.value.noMatchInErp, accent: 'critical', icon: 'cloud', iconColor: 'icon.danger' },
+  { label: 'Not issued', sub: 'No tax document issued', value: counts.value.notInCoretax, accent: 'critical', icon: 'database', iconColor: 'icon.danger' },
+  { label: 'Not recorded', sub: 'Not recorded in Jurnal', value: counts.value.noMatchInErp, accent: 'critical', icon: 'cloud', iconColor: 'icon.danger' },
 ])
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
@@ -244,11 +248,13 @@ function sourceLabel(side: ReconSide) {
       </span>
     </template>
     <template #cell-match="{ row }">
-      <!-- Badge = the short (≤2-word) label, same as the workspace; the full PRD
-           name stays in the Status filter and the drawer header. -->
-      <MpBadge :type="MATCH_META[(row as unknown as ReconIssueRow).match].badgeType" for="tableStatus">
-        {{ t(MATCH_META[(row as unknown as ReconIssueRow).match].label) }}
-      </MpBadge>
+      <!-- Badge = the short (≤2-word) label, same as the workspace; the full name
+           is its tooltip and stays in the Status filter and the drawer header. -->
+      <MpTooltip :id="`vu-status-tt-${(row as unknown as ReconIssueRow).id}`" :label="t(statusLabelOf((row as unknown as ReconIssueRow).issue))" placement="top" use-portal>
+        <span class="vu-badge" data-devchange="vat-recon-tax-doc-substates"><MpBadge :type="statusBadgeTypeOf((row as unknown as ReconIssueRow).issue)" for="tableStatus">
+          {{ t(statusBadgeOf((row as unknown as ReconIssueRow).issue)) }}
+        </MpBadge></span>
+      </MpTooltip>
     </template>
     <template #cell-side="{ row }">{{ sourceLabel((row as unknown as ReconIssueRow).side) }}</template>
     <template #cell-date="{ value }">{{ toTableDate(value as string) }}</template>
@@ -289,6 +295,7 @@ function sourceLabel(side: ReconSide) {
 </template>
 
 <style scoped>
+.vu-badge { display: inline-flex; }
 /* ── Summary tiles ── six across at desktop width; wraps evenly (3 + 3) below. */
 .vu-stats { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .vu-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--mp-spacing-3); }
