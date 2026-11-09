@@ -191,16 +191,24 @@ describe('no_candidates and timeout — the manual search, unchanged', () => {
   })
 
   it('f6: loading while waiting, then fails open to the manual search', async () => {
-    const w = await mountWorkspace()
-    const p = byId('2027-03-output-f6')
-    await item(w, p).find('.vr-line').trigger('click')
-    await wait(20); await flushPromises()
-    expect(item(w, p).find('[data-test-id="vas-loading"]').exists()).toBe(true)
-    await wait(suggestTimings.timeoutMs + 30); await flushPromises()
-    expect(item(w, p).find('.vas').exists()).toBe(false)
-    expect(suggestionState(p)?.response?.suggestion_status).toBe('no_candidates')
-    expect(item(w, p).findAll('button').some(b => b.text() === 'Find another transaction')).toBe(true)
-    w.unmount()
+    // A 60ms timeout raced the "still loading" check on slow CI runners — give
+    // this one room, then wait for the fail-open instead of sleeping a fixed time.
+    const prev = suggestTimings.timeoutMs
+    suggestTimings.timeoutMs = 1000
+    try {
+      const w = await mountWorkspace()
+      const p = byId('2027-03-output-f6')
+      await item(w, p).find('.vr-line').trigger('click')
+      await flushPromises()
+      expect(item(w, p).find('[data-test-id="vas-loading"]').exists()).toBe(true)
+      await vi.waitFor(() => expect(suggestionState(p)?.response?.suggestion_status).toBe('no_candidates'), { timeout: 10_000, interval: 25 })
+      await flushPromises()
+      expect(item(w, p).find('.vas').exists()).toBe(false)
+      expect(item(w, p).findAll('button').some(b => b.text() === 'Find another transaction')).toBe(true)
+      w.unmount()
+    } finally {
+      suggestTimings.timeoutMs = prev
+    }
   })
 })
 
