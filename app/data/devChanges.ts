@@ -1378,11 +1378,19 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'crm-module-checkin',
-    title: 'Check-in tab on module settings',
+    title: 'Check-in settings with Edit mode + Photo evidence',
     description:
-      'New Check-in tab on deal-like module settings. Contains a toggle "Enable check-in for this module" with a description explaining that team members can check in at customer/prospect locations to log visits and track field activity.',
-    date: '2026-11-04',
-    files: ['CrmModuleBuilderPage.vue'],
+      'Full Check-in tab: version label, Edit button for edit-mode gating, Enable toggle (only editable in edit mode), Photo evidence (Optional/Required) visible when enabled. Persisted per-module. Check-in column on Modules index (Enabled/Disabled). Check-in history tab on deal detail with table: Checked in at, User, Location, Note, Evidence.',
+    date: '2026-11-09',
+    files: ['CrmModuleBuilderPage.vue', 'CrmModulesPage.vue', 'CrmDealDetailPage.vue', 'crm.ts'],
+  },
+  {
+    id: 'crm-deal-checkin-history',
+    title: 'Check-in history tab on deal record detail',
+    description:
+      'New Check-in tab on the deal detail page (visible only when module has check-in enabled). Shows a read-only table of mobile arrivals: Checked in at, User, Location (with map link), Note, Evidence (photo captured or no photo). Footer shows count and retention notice.',
+    date: '2026-11-09',
+    files: ['CrmDealDetailPage.vue', 'crm.ts'],
   },
   {
     id: 'crm-layout-erp-target',
