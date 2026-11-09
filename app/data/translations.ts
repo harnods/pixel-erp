@@ -299,6 +299,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Tracking no.': 'No. pelacakan',
   'Payment terms': 'Termin pembayaran',
   'Transaction date': 'Tanggal transaksi',
+  'Transaction number': 'Nomor transaksi',
+  'Tax document number': 'Nomor dokumen pajak',
   'Transaction no.': 'No. transaksi',
   'Reference no.': 'No. referensi',
   'Files': 'File',
@@ -4027,7 +4029,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Cancel faktur': 'Batalkan faktur',
   'Waiting on buyer': 'Menunggu pembeli',
   'Unfinalize period': 'Batalkan finalisasi masa',
-  'Re-run': 'Jalankan ulang',
+  'Reconcile again': 'Rekonsiliasi ulang',
 
   // ── Setup (US-016) ───────────────────────────────────────────────────────────
   'Set up VAT reconciliation': 'Atur rekonsiliasi PPN',
@@ -4071,7 +4073,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'onward.': 'dan seterusnya.',
   'Heads up': 'Perhatian',
   'periods already reconciled keep the accounts they ran with': 'masa yang sudah direkonsiliasi tetap memakai akun saat dijalankan',
-  'Re-running one will use the current selection instead.': 'Menjalankan ulang akan memakai pilihan saat ini.',
+  'Reconciling one again uses the current selection instead.': 'Merekonsiliasi ulang akan memakai pilihan saat ini.',
   'Setup history': 'Riwayat pengaturan',
   'Sync with Klikpajak': 'Sinkronkan dengan Klikpajak',
 
@@ -4091,7 +4093,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // ── Finalize (US-021) ────────────────────────────────────────────────────────
   // "Finalisasi" is the term Klikpajak already uses for signing off a masa.
   'Finalized': 'Difinalisasi',
-  'Finalize': 'Finalisasi',
+  'Finalize': 'Finalkan',
+  'Finalize period': 'Finalkan masa pajak',
   'Unfinalize': 'Batalkan finalisasi',
   'finalized': 'difinalisasi',
   'unfinalized': 'dibatalkan finalisasinya',
@@ -4127,8 +4130,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Nothing needs attention': 'Tidak ada yang perlu ditinjau',
   'Every pair in this period is reconciled.': 'Semua pasangan di masa ini sudah direkonsiliasi.',
   'View all faktur': 'Lihat semua faktur',
-  'Re-run is not available while the period is finalized. Unfinalize it first.':
-    'Jalankan ulang tidak tersedia saat masa sudah difinalisasi. Batalkan finalisasi dulu.',
+  'The Reconcile again button is not available while the period is finalized. Unfinalize it first.':
+    'Tombol Rekonsiliasi ulang tidak tersedia saat masa sudah difinalisasi. Batalkan finalisasi dulu.',
   'Invoice − return': 'Faktur penjualan − retur',
   'Last saved': 'Terakhir disimpan',
   'Invoice (Rp)': 'Faktur (Rp)',
@@ -4195,6 +4198,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Not reconciled': 'Belum direkonsiliasi',
   'All faktur': 'Semua faktur',
   'Tax period': 'Masa pajak',
+  'Masa pajak': 'Masa pajak',
   'Exposure': 'Nilai berisiko',
 
   // Period index — headers and copy taken from the equivalent Klikpajak screen
@@ -4242,6 +4246,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   // Match states
   'Matched': 'Cocok',
   'Suggested': 'Disarankan',
+  'Suggestion': 'Saran',
   'Suggested match': 'Kecocokan yang disarankan',
   'Discrepancy': 'Selisih',
   'Discrepancies': 'Selisih',
@@ -6321,7 +6326,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'Account setup changed since this period was reconciled.': 'Pengaturan akun berubah sejak masa ini direkonsiliasi.',
   'Was': 'Sebelumnya',
   'Now': 'Sekarang',
-  'Re-run will use the current setup.': 'Jalankan ulang akan memakai pengaturan saat ini.',
+  'The Reconcile again button uses the current setup.': 'Tombol Rekonsiliasi ulang akan memakai pengaturan saat ini.',
   'rows changed status': 'baris berubah status',
   'row changed status': 'baris berubah status',
   // The VAT Out reconciliation workspace (was "Output tax invoice").

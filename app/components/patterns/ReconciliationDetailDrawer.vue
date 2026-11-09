@@ -304,12 +304,10 @@ const candidatesTitle = computed(() =>
           {{ t('Cancel') }}
         </MpButton>
         <div class="rdd-footer-actions" data-devchange="vat-recon-drawer-footer">
-          <MpButton v-if="pair.djp" class="btn-enterprise btn-enterprise--secondary" variant="secondary" is-rounded type="button" @click="act(t('Opening tax document…'))">
-            {{ t('View tax document') }}
-          </MpButton>
           <VatReconciliationPairActions
             :pair="pair"
             :side="side"
+            :extra-secondary="pair.djp ? [{ label: 'View tax document', run: () => act(t('Opening tax document…')) }] : []"
             :finalized="!!finalized"
             :period-id="periodId"
             @action="(message, alsoClose) => act(message, alsoClose)"

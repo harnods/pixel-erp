@@ -73,6 +73,7 @@ function diffText(d: { label: string; amount?: number }) { return d.amount != nu
     </p>
     <template v-else>
       <div v-for="s in shown" :key="s.match.ref" class="vas-item" data-test-id="vas-item" :data-ref="s.match.ref" :data-tier="s.tier">
+        <span class="vas-title" data-test-id="vas-title" data-devchange="vat-recon-suggestion-title">{{ t('Suggestion') }}</span>
         <div class="vas-head">
           <div class="vas-id">
             <span class="vas-ref">{{ s.match.ref }}</span>
@@ -119,6 +120,7 @@ function diffText(d: { label: string; amount?: number }) { return d.amount != nu
   padding: var(--mp-spacing-3); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
   background: var(--mp-background-neutral);
 }
+.vas-title { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); }
 .vas-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-3); }
 .vas-id { display: flex; flex-direction: column; min-width: 0; }
 .vas-ref { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); font-variant-numeric: tabular-nums; }

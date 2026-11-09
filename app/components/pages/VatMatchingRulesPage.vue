@@ -299,7 +299,7 @@ const fixedRules = [
           <span class="vm-preview-note-strong">{{ t('Heads up') }}:</span>
           {{ t('periods already reconciled keep the accounts they ran with') }}
           ({{ snapshotLabel }}).
-          {{ t('Re-running one will use the current selection instead.') }}
+          {{ t('Reconciling one again uses the current selection instead.') }}
         </div>
       </div>
 

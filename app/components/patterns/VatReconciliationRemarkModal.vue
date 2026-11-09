@@ -11,12 +11,14 @@
  * pressed with notes over 500 characters it shows the inline error and saves
  * nothing. The counter turns red as soon as the limit is passed.
  */
+import { computed } from 'vue'
+import ContentList from '~/components/patterns/ContentList.vue'
 import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
   MpFormControl, MpFormLabel, MpAutocomplete, MpTextarea, MpButton,
 } from '@mekari/pixel3'
 import {
-  REMARK_REASONS, REMARK_MAX_CHARS, remarkOf, saveRemark, type ReconPair,
+  REMARK_REASONS, REMARK_MAX_CHARS, remarkOf, saveRemark, partyOf, type ReconPair, type ReconSide,
 } from '~/data/vatReconciliation'
 
 const props = defineProps<{
@@ -24,6 +26,8 @@ const props = defineProps<{
   pair: ReconPair | null
   /** Invoice or faktur number, so the user sees which row they are annotating. */
   rowRef: string
+  /** Output (customer) or input (vendor) — names the party label. */
+  side?: ReconSide
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +36,10 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useLocale()
+
+/** The row being annotated: its transaction, or the tax document when there's no transaction. */
+const doc = computed(() => props.pair?.erp ?? props.pair?.djp ?? null)
+const docIsTransaction = computed(() => !!props.pair?.erp)
 
 const reason = ref('')
 const text = ref('')
@@ -70,7 +78,7 @@ function save() {
     :is-open="isOpen"
     :is-close-on-esc="false"
     :is-close-on-overlay-click="false"
-    size="sm"
+    size="md"
     :is-keep-alive="false"
     @close="emit('close')"
   >
@@ -80,7 +88,13 @@ function save() {
         <MpModalCloseButton />
       </MpModalHeader>
       <MpModalBody>
-        <p class="vrm-intro">{{ rowRef }}</p>
+        <!-- Which row this remark is for (rule/detail-contentlist). -->
+        <div v-if="doc" class="vrm-context" data-devchange="vat-recon-remarks-context" data-test-id="vrm-context">
+          <ContentList horizontal :label="docIsTransaction ? t('Transaction number') : t('Tax document number')" :value="doc.ref || rowRef" />
+          <ContentList horizontal :label="docIsTransaction ? t('Transaction date') : t('Tax document date')" :value="doc.date" />
+          <ContentList horizontal :label="side === 'input' ? t('Vendor') : t('Customer')" :value="partyOf(doc)" />
+        </div>
+        <p v-else class="vrm-intro">{{ rowRef }}</p>
         <MpFormControl :is-invalid="reasonError" class="vrm-field">
           <MpFormLabel for="vrm-reason" is-required>{{ t('Reason') }}</MpFormLabel>
           <MpAutocomplete
@@ -117,6 +131,7 @@ function save() {
 </template>
 
 <style scoped>
+.vrm-context { display: flex; flex-direction: column; margin-bottom: var(--mp-spacing-3); }
 .vrm-intro { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
 .vrm-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .vrm-field + .vrm-field { margin-top: var(--mp-spacing-4); }

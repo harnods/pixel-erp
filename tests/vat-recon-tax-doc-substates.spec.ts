@@ -84,9 +84,10 @@ describe('derivation, labels and badges', () => {
     expect(statusLabelOf(rowFor('SI050'))).toBe('Tax document rejected')
     expect(statusBadgeOf(rowFor('SI050'))).toBe('Rejected')
     expect(statusReasonOf(rowFor('SI050'))).toBe('DJP rejected this tax document.')
-    // Tone follows the fix: missing/rejected critical, draft warning, waiting on DJP info.
+    // Tone follows the fix: missing/rejected critical; draft and waiting on DJP warning
+    // (waiting on DJP moved from info to warning — design review 2026-11-09).
     expect(['SI103', 'SI061', 'SI043', 'SI050'].map(si => statusBadgeTypeOf(rowFor(si))))
-      .toEqual(['critical', 'warning', 'information', 'critical'])
+      .toEqual(['critical', 'warning', 'warning', 'critical'])
   })
 
   it('the Status filter offers each sub-state by its full label', async () => {

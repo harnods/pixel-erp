@@ -1150,6 +1150,10 @@ export function periodLabelById(id: string): string | undefined {
   const seed = PERIOD_SEEDS.find(p => p.id === id)
   return seed && periodLabel(seed.masa)
 }
+/** The masa alone ("02/2027") — for a "Masa pajak:" label that's already on screen. */
+export function periodMasaById(id: string): string | undefined {
+  return PERIOD_SEEDS.find(p => p.id === id)?.masa
+}
 
 // ── Derivations ───────────────────────────────────────────────────────────────
 
@@ -2259,8 +2263,8 @@ export const TAX_DOC_SUBSTATE_META: Record<TaxDocSubState, { label: string; badg
     reason: 'No tax document has been created for this transaction yet.', fg: 'var(--mp-colors-red-800)' },
   draft: { label: 'Tax document in draft', badge: 'Draft', badgeType: 'warning',
     reason: 'Submit the tax document to reconcile this transaction.', fg: 'var(--mp-colors-orange-800)' },
-  submitted: { label: 'Awaiting DJP approval', badge: 'Awaiting approval', badgeType: 'information',
-    reason: 'The tax document is being processed by DJP.', fg: 'var(--mp-colors-blue-800)' },
+  submitted: { label: 'Awaiting DJP approval', badge: 'Awaiting approval', badgeType: 'warning',
+    reason: 'The tax document is being processed by DJP.', fg: 'var(--mp-colors-orange-800)' },
   rejected: { label: 'Tax document rejected', badge: 'Rejected', badgeType: 'critical',
     reason: 'DJP rejected this tax document.', fg: 'var(--mp-colors-red-800)' },
 }
@@ -2288,7 +2292,7 @@ export function statusReasonOf(pair: ReconPair): string | undefined {
   const sub = taxDocSubState(pair)
   return sub ? TAX_DOC_SUBSTATE_META[sub].reason : pair.reason
 }
-/** Badge / banner tone — the sub-state's (draft is a warning, waiting on DJP is info). */
+/** Badge / banner tone — the sub-state's (draft and waiting on DJP are warnings). */
 export function statusBadgeTypeOf(pair: ReconPair): MpBadgeType {
   const sub = taxDocSubState(pair)
   return sub ? TAX_DOC_SUBSTATE_META[sub].badgeType : MATCH_META[pair.match].badgeType

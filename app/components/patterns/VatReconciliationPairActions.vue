@@ -15,10 +15,14 @@
 import { MpButton } from '@mekari/pixel3'
 import { computed } from 'vue'
 import VatReconciliationTaxDocActions from '~/components/patterns/VatReconciliationTaxDocActions.vue'
+import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import {
   isWaitingOnBuyer, setWaitingOnBuyer, manualMatchOf, undoManualMatch, confirmManualMatch, unmatchAutoPair,
   ownFakturCandidate, nettedAnchor, type ReconPair, type ReconSide,
 } from '~/data/vatReconciliation'
+
+/** One action: `label` is the untranslated copy key. */
+export interface PairAction { label: string; run: () => void; pressed?: boolean }
 
 const props = withDefaults(defineProps<{
   pair: ReconPair
@@ -29,7 +33,9 @@ const props = withDefaults(defineProps<{
   finalized?: boolean
   /** The masa the pair belongs to — needed to record a confirmed match. */
   periodId?: string
-}>(), { inline: false, size: 'md', finalized: false, periodId: undefined })
+  /** Host's own secondary actions (e.g. the drawer's View tax document), shown before the state's. */
+  extraSecondary?: PairAction[]
+}>(), { inline: false, size: 'md', finalized: false, periodId: undefined, extraSecondary: () => [] })
 
 const emit = defineEmits<{
   /** `close` — the action finishes the job, so a drawer hosting it should close. */
@@ -79,78 +85,66 @@ function toggleWaiting() {
   setWaitingOnBuyer(props.pair, next)
   act(next ? t('Marked as waiting on buyer') : t('No longer waiting on buyer'))
 }
+
+/**
+ * The state's actions as data: its secondary actions and the one main fix.
+ * `taxDoc` hands the whole row to VatReconciliationTaxDocActions instead.
+ */
+const plan = computed<{ secondary: PairAction[]; main: PairAction | null; taxDoc: boolean }>(() => {
+  const p = props.pair
+  const none = { secondary: [] as PairAction[], main: null, taxDoc: false }
+  switch (p.match) {
+    // Rows 1-2: the only thing left to do is undo it.
+    case 'matched': return { ...none, secondary: [{ label: 'Unmatch', run: unmatch }] }
+    // Rows 8 and 11: the engine will not decide; a person confirms.
+    case 'return-netted': return props.inline ? none : { ...none, main: { label: 'Confirm match', run: confirmNetted } }
+    // Row 3 (US-008): output rows are real invoices — the fix depends on how far
+    // the invoice's tax document got (VatReconciliationTaxDocActions).
+    case 'not-in-coretax':
+      if (p.erp?.salesInvoiceId) return props.inline ? none : { ...none, taxDoc: true }
+      return { ...none, main: { label: 'Create tax document', run: () => act(t('Opening Klikpajak…'), true) } }
+    case 'no-match-in-erp':
+      return { ...none, main: { label: props.side === 'input' ? 'Create purchase invoice' : 'Create sales invoice', run: () => act(t('Opening sales invoice…'), true) } }
+    // Row 5 (US-010): correct the invoice, or supersede the faktur.
+    case 'invoice-edited':
+      return { ...none, secondary: [{ label: 'Edit sales invoice', run: () => act(t('Opening sales invoice…')) }],
+        main: { label: 'Create faktur pengganti', run: () => act(t('Opening Klikpajak…'), true) } }
+    // Row 6 (US-011): the invoice is gone, the faktur must follow.
+    case 'invoice-voided': return { ...none, main: { label: 'Cancel tax document', run: () => act(t('Opening Klikpajak…'), true) } }
+    // Row 7 (US-012): pengganti net, or park it on the buyer.
+    case 'return-not-reflected':
+      return { ...none, secondary: [{ label: waiting.value ? 'Stop waiting on buyer' : 'Waiting on buyer', run: toggleWaiting, pressed: waiting.value }],
+        main: { label: 'Create faktur pengganti (net)', run: () => act(t('Opening Klikpajak…'), true) } }
+    // Rows 9-10: a date is wrong on one side or the other.
+    case 'faktur-predates':
+    case 'return-date-mismatch':
+      return { ...none, secondary: [{ label: 'Correct transaction date', run: () => act(t('Opening sales invoice…')) }],
+        main: { label: 'Correct tax document date', run: () => act(t('Opening tax document…')) } }
+    // Row 12: nothing can be matched into a finalized period.
+    case 'period-finalized': return { ...none, secondary: [{ label: 'Unfinalize period', run: () => act(t('Opening period…')) }] }
+    // Duplicate reference: the drawer lists the faktur to pick from — no second control here.
+    default: return none
+  }
+})
+const secondaries = computed(() => [...props.extraSecondary, ...plan.value.secondary])
+/** Two or more secondary actions fold into one "Actions" dropdown (one secondary + one primary). */
+const collapse = computed(() => !props.inline && secondaries.value.length >= 2)
+const menuGroups = computed(() => [secondaries.value.map(a => ({ label: a.label, onClick: a.run }))])
 </script>
 
 <template>
   <div class="vpa" data-devchange="vat-recon-ui-review">
-    <!-- Rows 1-2: the only thing left to do is undo it. -->
-    <template v-if="pair.match === 'matched'">
-      <MpButton variant="secondary" :size="size" is-rounded @click="unmatch">
-        {{ t('Unmatch') }}
-      </MpButton>
+    <template v-if="plan.taxDoc">
+      <MpButton v-for="a in extraSecondary" :key="a.label" variant="secondary" :size="size" is-rounded @click="a.run()">{{ t(a.label) }}</MpButton>
+      <VatReconciliationTaxDocActions :pair="pair" :show-hint="false" :size="size" />
     </template>
-    <!-- Rows 8 and 11: the engine will not decide; a person confirms. -->
-    <template v-else-if="pair.match === 'return-netted' && !inline">
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="confirmNetted">
-        {{ t('Confirm match') }}
-      </MpButton>
-    </template>
-    <!-- Duplicate reference (row 11): the drawer lists the faktur to pick from
-         ("Select the correct faktur" + Match this) — no second control here. -->
-    <!-- Row 3 (US-008) / row 4 (US-009): a document is missing. -->
-    <template v-else-if="pair.match === 'not-in-coretax'">
-      <!-- Find & match = the drawer's candidate list, not a second control.
-           Output rows are real invoices: the fix is on the invoice, and
-           what it is depends on how far its tax document got. -->
-      <VatReconciliationTaxDocActions v-if="pair.erp?.salesInvoiceId && !inline" :pair="pair" :show-hint="false" :size="size" />
-      <template v-else-if="pair.erp?.salesInvoiceId" />
-      <MpButton v-else :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-        {{ t('Create tax document') }}
-      </MpButton>
-    </template>
-    <template v-else-if="pair.match === 'no-match-in-erp'">
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening sales invoice…'), true)">
-        {{ side === 'input' ? t('Create purchase invoice') : t('Create sales invoice') }}
-      </MpButton>
-    </template>
-    <!-- Row 5 (US-010): correct the invoice, or supersede the faktur. -->
-    <template v-else-if="pair.match === 'invoice-edited'">
-      <MpButton variant="secondary" :size="size" is-rounded @click="act(t('Opening sales invoice…'))">
-        {{ t('Edit sales invoice') }}
-      </MpButton>
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-        {{ t('Create faktur pengganti') }}
-      </MpButton>
-    </template>
-    <!-- Row 6 (US-011): the invoice is gone, the faktur must follow. -->
-    <template v-else-if="pair.match === 'invoice-voided'">
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-        {{ t('Cancel tax document') }}
-      </MpButton>
-    </template>
-    <!-- Row 7 (US-012): pengganti net, or park it on the buyer. -->
-    <template v-else-if="pair.match === 'return-not-reflected'">
-      <MpButton variant="secondary" :size="size" is-rounded :aria-pressed="waiting" @click="toggleWaiting">
-        {{ waiting ? t('Stop waiting on buyer') : t('Waiting on buyer') }}
-      </MpButton>
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening Klikpajak…'), true)">
-        {{ t('Create faktur pengganti (net)') }}
-      </MpButton>
-    </template>
-    <!-- Rows 9-10: a date is wrong on one side or the other. -->
-    <template v-else-if="pair.match === 'faktur-predates' || pair.match === 'return-date-mismatch'">
-      <MpButton variant="secondary" :size="size" is-rounded @click="act(t('Opening sales invoice…'))">
-        {{ t('Correct transaction date') }}
-      </MpButton>
-      <MpButton :variant="mainVariant" :size="size" is-rounded @click="act(t('Opening tax document…'))">
-        {{ t('Correct tax document date') }}
-      </MpButton>
-    </template>
-    <!-- Row 12: nothing can be matched into a finalized period. -->
-    <template v-else-if="pair.match === 'period-finalized'">
-      <MpButton variant="secondary" :size="size" is-rounded @click="act(t('Opening period…'))">
-        {{ t('Unfinalize period') }}
-      </MpButton>
+    <template v-else>
+      <!-- 2+ secondary actions → one "Actions" dropdown, so the footer keeps one secondary + one primary. -->
+      <DetailActionsMenu v-if="collapse" :id="`vpa-actions-${pair.id}`" variant="secondary" :groups="menuGroups" data-devchange="vat-recon-drawer-actions-menu" />
+      <template v-else>
+        <MpButton v-for="a in secondaries" :key="a.label" variant="secondary" :size="size" is-rounded :aria-pressed="a.pressed" @click="a.run()">{{ t(a.label) }}</MpButton>
+      </template>
+      <MpButton v-if="plan.main" :variant="mainVariant" :size="size" is-rounded @click="plan.main.run()">{{ t(plan.main.label) }}</MpButton>
     </template>
   </div>
 </template>

@@ -45,7 +45,7 @@ import {
 } from '~/data/taxDocuments'
 import {
   MATCH_META, ATTENTION_STATES, SIDE_LABELS, pairsForPeriod, activePeriodId,
-  periodLabelById, runPeriod, reconVersion, reconTotals, matchCounts,
+  periodLabelById, periodMasaById, runPeriod, reconVersion, reconTotals, matchCounts,
   isPeriodFinalized, canFinalizePeriod, finalizePeriod, unfinalizePeriod, periodFinalization,
   formatAmountPlain, partyOf, exposureOf, reconDateValue,
   groupPairsByDate, candidatesFor, hasCandidates, compareFields, isFieldDiff,
@@ -80,6 +80,7 @@ const erpDocLabel = computed(() => 'Transaction')
 // Scoped to the masa the index sent us (?masa=).
 const periodId = computed(() => String(route.query.masa ?? activePeriodId))
 const periodName = computed(() => periodLabelById(periodId.value) ?? '')
+const periodMasa = computed(() => periodMasaById(periodId.value) ?? '')
 // reconVersion is read so the pairs re-derive after a run or a match.
 const pairs = computed(() => {
   void reconVersion.value
@@ -153,7 +154,7 @@ const setupChangeOpen = ref(false)
 const setupChangeDescription = computed(() => {
   const c = setupChange.value
   if (!c) return ''
-  return `${t('Account setup changed since this period was reconciled.')} ${t('Was')}: ${accountLabels(c.was)}. ${t('Now')}: ${accountLabels(c.now)}. ${t('Re-run will use the current setup.')}`
+  return `${t('Account setup changed since this period was reconciled.')} ${t('Was')}: ${accountLabels(c.was)}. ${t('Now')}: ${accountLabels(c.now)}. ${t('The Reconcile again button uses the current setup.')}`
 })
 const rerunning = ref(false)
 const statusChanges = ref(new Map<string, MatchState>())
@@ -419,6 +420,18 @@ function fieldValue(row: ReconRecord | null, key: keyof ReconRecord, money?: boo
 /** The engine's reason, as a Pixel banner in the state's colour (as in the drawer). */
 const BANNER_VARIANT = { completed: 'success', information: 'info', announcement: 'info', warning: 'warning', critical: 'danger' } as const
 function bannerVariant(pair: ReconPair) { return BANNER_VARIANT[statusBadgeTypeOf(pair)] }
+// Which expand column reads "No match" — the row's reason sits there as plain text
+// (under the "No match" title) instead of in a banner above both columns.
+function erpIsNoMatch(pair: ReconPair) { return !(pair.erp || (suggestion(pair) && !proposesFaktur(pair)) || aireneFills(pair)) }
+function djpIsNoMatch(pair: ReconPair) { return !(pair.djp || ownTaxDoc(pair) || aireneFills(pair) || suggestion(pair)) }
+/** Airene is still searching that column — no banner until it answers. */
+function aireneSearching(pair: ReconPair) {
+  if (!isAireneEligible(pair)) return false
+  const st = suggestionState(pair)
+  return !st || st.status === 'loading'
+}
+function reasonInColumn(pair: ReconPair) { return !!statusReasonOf(pair) && (erpIsNoMatch(pair) || djpIsNoMatch(pair)) }
+function reasonTitleOf(pair: ReconPair) { return taxDocSubState(pair) ? statusLabelOf(pair) : MATCH_META[pair.match].longLabel }
 
 // ── Per-side ⋮ menus (the reference's menu under each column title) ──────────
 interface MenuItem { label: string; run: () => void }
@@ -537,7 +550,7 @@ function tableDate(d: string) {
 
 const notReconciledColumns = computed<TableColumn[]>(() => [
   { key: 'date',     label: t('Date'),            kind: 'date' },
-  { key: 'erpRef',   label: t(erpDocLabel.value), kind: 'number' },
+  { key: 'erpRef',   label: t('Transaction number'), kind: 'number' },
   { key: 'party',    label: side.value === 'input' ? t('Vendor') : t('Customer'), kind: 'name' },
   { key: 'erpTotal', label: t('Transaction amount'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'djpTotal', label: t('Tax document amount'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
@@ -547,6 +560,7 @@ const notReconciledColumns = computed<TableColumn[]>(() => [
 // under its amount (Statement amount / Book amount), so the table stays 5 columns.
 const matchedColumns = computed<TableColumn[]>(() => [
   { key: 'erpDate',  label: t('Transaction date'),    kind: 'date' },
+  { key: 'erpRef',   label: t('Transaction number'),  kind: 'number' },
   { key: 'erpTotal', label: t('Transaction amount'),  kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
   { key: 'djpDate',  label: t('Tax document date'),   kind: 'date' },
   { key: 'djpTotal', label: t('Tax document amount'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
@@ -576,7 +590,7 @@ function doUnmatch() {
         {{ t('by') }} {{ finalization.finalizedBy }} · {{ formatDate(finalization.finalizedAt) }}.
         {{ t('Transactions stay editable in Jurnal; changes will be flagged here.') }}
         <span v-if="rerunBlocked" class="vr-finalized-error" role="alert">
-          {{ t('Re-run is not available while the period is finalized. Unfinalize it first.') }}
+          {{ t('The Reconcile again button is not available while the period is finalized. Unfinalize it first.') }}
         </span>
       </MpBannerDescription>
     </MpBanner>
@@ -584,6 +598,8 @@ function doUnmatch() {
     <!-- Period header: Last sync + the accounts this period's last run used
          (US-016 AC-08). The snapshot can differ from today's setup; Re-run warns. -->
     <div class="vr-meta" data-devchange="vat-recon-prd-align-header" data-test-id="vr-meta">
+      <span data-devchange="vat-recon-masa-in-meta" data-test-id="vr-masa"><span class="vr-meta-label">{{ t('Masa pajak') }}:</span> {{ periodMasa }}</span>
+      <span class="vr-meta-sep" aria-hidden="true">·</span>
       <span><span class="vr-meta-label">{{ t('Last sync') }}:</span> {{ lastSync }}</span>
       <span class="vr-meta-sep" aria-hidden="true">·</span>
       <span><span class="vr-meta-label">{{ t('Accounts used') }}:</span> <span data-test-id="vr-accounts-used">{{ accountsUsed }}</span></span>
@@ -650,13 +666,13 @@ function doUnmatch() {
           <MpButton v-if="query" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="query = ''" />
         </div>
         <!-- Search-adjacent action = black tertiary (rule/filter-bar-action-tertiary) -->
-        <MpButton variant="tertiary" is-rounded :is-loading="rerunning" data-devchange="vat-recon-prd-align-rerun" data-test-id="vr-rerun" @click="reRun">{{ t('Re-run') }}</MpButton>
+        <MpButton variant="tertiary" is-rounded :is-loading="rerunning" data-devchange="vat-recon-prd-align-rerun" data-test-id="vr-rerun" @click="reRun">{{ t('Reconcile again') }}</MpButton>
       </div>
     </div>
 
     <!-- ═════ To match ═════ -->
     <template v-if="activeTab === 'To match'">
-      <div class="vr-rows" data-devchange="vat-recon-workspace-reconciliations">
+      <div class="vr-rows" :class="{ 'has-drafts': draftRows.length }" data-devchange="vat-recon-workspace-reconciliations">
         <!-- Empty: nothing to match at all vs nothing for these filters -->
         <div v-if="filtered.length === 0 && !hasNarrowing" class="vr-empty">
           <img src="/illustrations/empty-folder.png" alt="" class="vr-empty-illustration" width="288" height="240" >
@@ -704,9 +720,16 @@ function doUnmatch() {
             <div v-for="pair in g.pairs" :key="pair.id" class="vr-item" :class="{ 'is-open': isExpanded(pair) }" :data-pair-id="pair.id">
               <!-- One line: chevron | ERP ⋯ Coretax | ✓ — the whole line toggles -->
               <div class="vr-line" @click="toggleRow(pair)">
-                <MpButton variant="ghost" is-rounded class="vr-chevron" :aria-label="isExpanded(pair) ? t('Collapse') : t('Expand')" :aria-expanded="isExpanded(pair)" @click.stop="toggleRow(pair)">
+                <div class="vr-lead">
+                  <!-- Draft rows are selectable for bulk Submit — the row-selection spot, left of the chevron. -->
+                  <label v-if="draftDocId(pair)" class="vr-draft-check" data-devchange="vat-recon-expand-fixes" @click.stop>
+                    <MpCheckbox :id="`vr-draft-${pair.id}`" :is-checked="selectedDrafts.has(pair.id)" :aria-label="`${t('Select draft for')} ${pair.erp?.ref}`" @change="(v: boolean) => toggleDraft(pair, v)" />
+                  </label>
+                  <span v-else-if="draftRows.length" class="vr-draft-check-spacer" aria-hidden="true" />
+                  <MpButton variant="ghost" is-rounded class="vr-chevron" :aria-label="isExpanded(pair) ? t('Collapse') : t('Expand')" :aria-expanded="isExpanded(pair)" @click.stop="toggleRow(pair)">
                   <MpIcon :name="isExpanded(pair) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
                 </MpButton>
+                </div>
 
                 <!-- ERP side (right-aligned against the connector) -->
                 <div class="vr-erp">
@@ -720,43 +743,30 @@ function doUnmatch() {
                     <span class="vr-amount">{{ formatAmountPlain(suggestion(pair)!.total) }}</span>
                     <span class="vr-caption">{{ suggestion(pair)!.ref }} · {{ suggestion(pair)!.party }}</span>
                   </template>
-                  <span v-else class="vr-missing">{{ t('No match found') }}</span>
+                  <template v-else>
+                    <span class="vr-missing">{{ t('No match found') }}</span>
+                    <!-- A tax-document-only row says why under "No match found", the way an
+                         invoice-only row does on its side (Not approved sits beside the number). -->
+                    <span v-if="pair.djp && !isNotApproved(pair)" class="vr-state" :style="{ color: statusFgOf(pair) }" data-devchange="vat-recon-row-why-left">{{ t(statusLabelOf(pair)) }}</span>
+                  </template>
                 </div>
 
                 <span class="vr-dash" aria-hidden="true" />
 
                 <!-- Coretax side, with the status as coloured text (no badge) -->
                 <div class="vr-djp-cell">
-                  <label v-if="draftDocId(pair)" class="vr-draft-check" @click.stop>
-                    <MpCheckbox :id="`vr-draft-${pair.id}`" :is-checked="selectedDrafts.has(pair.id)" :aria-label="`${t('Select draft for')} ${pair.erp?.ref}`" @change="(v: boolean) => toggleDraft(pair, v)" />
-                  </label>
                   <div class="vr-djp">
                     <template v-if="pair.djp">
                       <span class="vr-caption">{{ pair.djp.date }}</span>
-                      <span class="vr-amount-row">
-                        <span class="vr-amount">{{ formatAmountPlain(pair.djp.total) }}</span>
-                        <!-- A Coretax-only row with a proposed invoice reads "Match found",
-                             like the reference; otherwise the state in its colour. -->
-                        <span v-if="!pair.erp && suggestion(pair)" class="vr-state is-found">{{ t('Match found') }}</span>
-                        <!-- Row 13: no status label — the faktur's own status + Not approved tag say it. -->
-                        <span v-else-if="!isNotApproved(pair)" class="vr-state" :style="{ color: statusFgOf(pair) }">{{ t(statusLabelOf(pair)) }}</span>
-                      </span>
-                      <span v-if="pair.djp.approved !== false" class="vr-caption">{{ pair.djp.ref }} · {{ t('Approved') }}</span>
-                      <!-- Row 13: excluded from matching — the tag says so, the tooltip says why. -->
-                      <span v-else class="vr-tag-row" data-devchange="vat-recon-prd-align-not-approved-status">
-                        <span class="vr-caption">{{ pair.djp.ref }} · {{ t(pair.djp.coretaxStatus ?? 'Draft') }}</span>
-                        <MpTooltip :id="`vr-not-approved-${pair.id}`" :label="t(notApprovedHint(pair.djp))" placement="top" use-portal>
-                          <span class="vr-tag" data-test-id="vr-not-approved" data-devchange="vat-recon-prd-align-not-approved"><MpTag>{{ t('Not approved') }}</MpTag></span>
-                        </MpTooltip>
-                      </span>
+                      <span class="vr-amount">{{ formatAmountPlain(pair.djp.total) }}</span>
+                      <!-- number · status, with the row's state beside it (reference layout). -->
+                      <!-- One caption line: number · status · row state (same size and colour). -->
+                      <span class="vr-caption" data-devchange="vat-recon-row-state-beside-number">{{ pair.djp.ref }} · {{ pair.djp.approved !== false ? t('Approved') : t(pair.djp.coretaxStatus ?? 'Draft') }}<template v-if="!pair.erp && suggestion(pair)"> · <span class="vr-state-text">{{ t('Match found') }}</span></template><template v-else-if="isNotApproved(pair)"> · <MpTooltip :id="`vr-not-approved-${pair.id}`" :label="t(notApprovedHint(pair.djp))" placement="top" use-portal><span class="vr-state-text" data-test-id="vr-not-approved" data-devchange="vat-recon-prd-align-not-approved">{{ t('Not approved') }}</span></MpTooltip></template><template v-else-if="pair.erp"> · <span class="vr-state-text">{{ t(statusLabelOf(pair)) }}</span></template></span>
                     </template>
                     <template v-else-if="suggestion(pair)">
                       <span class="vr-caption">{{ suggestion(pair)!.date }}</span>
-                      <span class="vr-amount-row">
-                        <span class="vr-amount">{{ formatAmountPlain(suggestion(pair)!.total) }}</span>
-                        <span class="vr-state is-found">{{ t('Match found') }}</span>
-                      </span>
-                      <span class="vr-caption">{{ suggestion(pair)!.ref }} · {{ t(suggestion(pair)!.why) }}</span>
+                      <span class="vr-amount">{{ formatAmountPlain(suggestion(pair)!.total) }}</span>
+                      <span class="vr-caption">{{ suggestion(pair)!.ref }} · {{ t(suggestion(pair)!.why) }} · <span class="vr-state-text">{{ t('Match found') }}</span></span>
                     </template>
                     <template v-else-if="pair.djp">
                       <span class="vr-caption">{{ pair.djp.date }}</span>
@@ -784,15 +794,15 @@ function doUnmatch() {
 
               <!-- Expand: two columns, each titled with its ⋮ menu (reference layout) -->
               <div v-if="isExpanded(pair)" class="vr-detail">
-                <MpBanner v-if="statusReasonOf(pair)" :variant="bannerVariant(pair)" is-inline class="vr-reason" data-devchange="vat-recon-workspace-banner-top">
+                <MpBanner v-if="statusReasonOf(pair) && !reasonInColumn(pair) && !aireneSearching(pair)" :variant="bannerVariant(pair)" is-inline class="vr-reason" data-devchange="vat-recon-workspace-banner-top">
                   <MpBannerIcon />
                   <MpBannerDescription>
-                    <strong>{{ taxDocSubState(pair) ? t(statusLabelOf(pair)) : t(MATCH_META[pair.match].longLabel) }}</strong> · {{ t(statusReasonOf(pair)!) }}
+                    <strong>{{ t(reasonTitleOf(pair)) }}</strong> · {{ t(statusReasonOf(pair)!) }}
                   </MpBannerDescription>
                 </MpBanner>
                 <div class="vr-detail-col">
                   <div class="vr-detail-head">
-                    <span class="vr-detail-title">{{ pair.erp || suggestion(pair) && !proposesFaktur(pair) || aireneFills(pair) ? t(erpDocLabel) : t('No match') }}</span>
+                    <span class="vr-detail-title">{{ erpIsNoMatch(pair) ? t('No match') : t(erpDocLabel) }}</span>
                     <MpPopover :id="`vr-erp-menu-${pair.id}`" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-start">
                       <MpPopoverTrigger>
                         <MpButton variant="ghost" left-icon="menu-kebab" :aria-label="t('More actions')" is-rounded />
@@ -803,6 +813,11 @@ function doUnmatch() {
                         </MpPopoverList>
                       </MpPopoverContent>
                     </MpPopover>
+                  </div>
+                  <!-- Why there's no match — plain text under "No match", in the state's colour. -->
+                  <div v-if="erpIsNoMatch(pair) && statusReasonOf(pair)" class="vr-no-match-reason" data-devchange="vat-recon-reason-under-no-match">
+                    <span class="vr-no-match-reason__title" :style="isNotApproved(pair) ? undefined : { color: statusFgOf(pair) }">{{ t(reasonTitleOf(pair)) }}</span>
+                    <p class="vr-no-match-reason__text">{{ t(statusReasonOf(pair)!) }}</p>
                   </div>
                   <div v-if="pair.erp" class="vr-kv">
                     <ContentList v-for="f in compareFields(side)" :key="f.key" horizontal :label="t(f.label)" :value="fieldValue(pair.erp, f.key, f.money)" :class="{ 'is-diff': isFieldDiff(pair, f.key) }" />
@@ -830,7 +845,7 @@ function doUnmatch() {
                     <p class="vr-detail-sub">{{ t("Don't see the correct transaction?") }}</p>
                     <div class="vr-detail-actions">
                       <MpButton variant="secondary" size="sm" is-rounded @click="openDetail(pair)">{{ t('Find another transaction') }}</MpButton>
-                      <MpButton v-if="pair.match === 'no-match-in-erp'" variant="primary" size="sm" is-rounded @click="infoToast(t('Opening sales invoice…'))">{{ t('Create sales invoice') }}</MpButton>
+                      <MpButton v-if="pair.match === 'no-match-in-erp'" variant="tertiary" size="sm" is-rounded data-devchange="vat-recon-expand-tertiary" @click="infoToast(t('Opening sales invoice…'))">{{ t('Create sales invoice') }}</MpButton>
                     </div>
                   </template>
                 </div>
@@ -849,6 +864,11 @@ function doUnmatch() {
                       </MpPopoverContent>
                     </MpPopover>
                   </div>
+                  <!-- Why there's no match — plain text under "No match", in the state's colour. -->
+                  <div v-if="djpIsNoMatch(pair) && statusReasonOf(pair)" class="vr-no-match-reason" data-devchange="vat-recon-reason-under-no-match">
+                    <span class="vr-no-match-reason__title" :style="isNotApproved(pair) ? undefined : { color: statusFgOf(pair) }">{{ t(reasonTitleOf(pair)) }}</span>
+                    <p class="vr-no-match-reason__text">{{ t(statusReasonOf(pair)!) }}</p>
+                  </div>
                   <!-- Tax document not found, own tax document past "none": show THAT
                        document and its next step — never "Find another" (PM, 2026-11-05). -->
                   <template v-if="ownTaxDoc(pair)">
@@ -860,7 +880,7 @@ function doUnmatch() {
                       <ContentList horizontal label="PPN" :value="formatIDR(pair.erp?.ppn ?? 0)" />
                       <ContentList v-if="ownTaxDoc(pair)!.djpRemark" horizontal :label="t('DJP remark')" :value="ownTaxDoc(pair)!.djpRemark!" />
                     </div>
-                    <VatReconciliationTaxDocActions class="vr-detail-actions-block" :pair="pair" :show-hint="false" layout="row" size="sm" />
+                    <VatReconciliationTaxDocActions class="vr-detail-actions-block" :pair="pair" :show-hint="false" layout="row" size="sm" main-variant="tertiary" data-devchange="vat-recon-expand-tertiary" />
                   </template>
                   <div v-else-if="pair.djp" class="vr-kv">
                     <ContentList v-for="f in compareFields(side)" :key="f.key" horizontal :label="t(f.label)" :value="fieldValue(pair.djp, f.key, f.money)" :class="{ 'is-diff': isFieldDiff(pair, f.key) }" />
@@ -883,7 +903,7 @@ function doUnmatch() {
                     />
                     <p class="vr-detail-sub vr-find-lead">{{ t("Don't see the correct tax document?") }}</p>
                     <!-- none: Find another (secondary) + Create tax document (primary) -->
-                    <VatReconciliationTaxDocActions v-if="taxDocSubState(pair) === 'none'" :pair="pair" :show-hint="false" layout="row" size="sm" show-find @find="openDetail(pair)" />
+                    <VatReconciliationTaxDocActions v-if="taxDocSubState(pair) === 'none'" :pair="pair" :show-hint="false" layout="row" size="sm" main-variant="tertiary" data-devchange="vat-recon-expand-tertiary" show-find @find="openDetail(pair)" />
                     <MpButton v-else variant="secondary" is-rounded @click="openDetail(pair)">{{ t('Find another tax document') }}</MpButton>
                   </template>
                   <p v-if="finalizedBlocked.has(pair.id)" class="vr-pick-error" role="alert">{{ t('This period is finalized. Unfinalize it first to change matches.') }}</p>
@@ -953,7 +973,6 @@ function doUnmatch() {
       <template #cell-erpTotal="{ row, value }">
         <span class="vr-cell-stack">
           <span>{{ value == null ? '—' : formatAmountPlain(value as number) }}</span>
-          <span v-if="activeTab === 'Matched' && (row as unknown as TableRow).erpRef" class="cell-link vr-cell-sub" @click.stop="openDetail((row as unknown as TableRow).pair)">{{ (row as unknown as TableRow).erpRef }}</span>
         </span>
       </template>
       <template #cell-djpTotal="{ row, value }">
@@ -971,14 +990,14 @@ function doUnmatch() {
           <VatReconciliationRowMarkers :pair="(row as unknown as TableRow).pair" :changed-from="statusChanges.get((row as unknown as TableRow).id)" />
         </span>
       </template>
-      <!-- Method — gray MpTag like the reference's "Manual" (rule/tag-gray-only) -->
+      <!-- Method — plain text (Auto / Manual / Airene), no tag -->
       <template #cell-method="{ row }">
         <span class="vr-status">
           <!-- Airene = a suggestion a person confirmed (US-014); the tooltip says who. -->
           <MpTooltip v-if="(row as unknown as TableRow).pair.matchOrigin === 'ai_suggested_human_confirmed'" :id="`vr-method-tt-${(row as unknown as TableRow).id}`" :label="`${t('Suggested by Airene, confirmed by')} ${manualMatchOf((row as unknown as TableRow).id)?.by ?? ''}`" placement="top" use-portal>
-            <span class="vr-tag" data-devchange="vat-recon-airene-suggest" data-test-id="vr-method-airene"><MpTag>{{ t('Airene') }}</MpTag></span>
+            <span class="vr-method-text" data-devchange="vat-recon-airene-suggest" data-test-id="vr-method-airene">{{ t('Airene') }}</span>
           </MpTooltip>
-          <MpTag v-else>{{ (row as unknown as TableRow).pair.matchedBy === 'manual' ? t('Manual') : t('Auto') }}</MpTag>
+          <span v-else class="vr-method-text" data-devchange="vat-recon-matched-columns">{{ (row as unknown as TableRow).pair.matchedBy === 'manual' ? t('Manual') : t('Auto') }}</span>
           <VatReconciliationRowMarkers :pair="(row as unknown as TableRow).pair" :changed-from="statusChanges.get((row as unknown as TableRow).id)" />
         </span>
       </template>
@@ -1046,6 +1065,7 @@ function doUnmatch() {
       :is-open="!!remarkTarget"
       :pair="remarkTarget"
       :row-ref="(remarkTarget?.erp ?? remarkTarget?.djp)?.ref ?? ''"
+      :side="side"
       @close="remarkTarget = null"
       @saved="onRemarkSaved"
     />
@@ -1053,7 +1073,7 @@ function doUnmatch() {
       v-model:is-open="setupChangeOpen"
       :title="t('Account setup changed')"
       :description="setupChangeDescription"
-      :confirm-label="t('Re-run')"
+      :confirm-label="t('Reconcile again')"
       :cancel-label="t('Cancel')"
       :is-danger="false"
       data-devchange="vat-recon-prd-align-rerun"
@@ -1122,6 +1142,7 @@ function doUnmatch() {
   --vr-search-w: 248px;
   --vr-search-h: 36px;
   --vr-chevron-col: 48px;
+  --vr-chevron-col-drafts: 104px;
   --vr-dash-col: 48px;
   --vr-confirm-col: 64px;
   --vr-confirm-sz: 36px;
@@ -1216,12 +1237,16 @@ function doUnmatch() {
 }
 .vr-item + .vr-item { margin-top: var(--mp-spacing-4); }
 .vr-item.is-open { background: var(--mp-background-neutral); }
+.vr-rows.has-drafts { --vr-chevron-col: var(--vr-chevron-col-drafts); }
 .vr-line {
   display: grid;
   grid-template-columns: var(--vr-chevron-col) minmax(0, 1fr) var(--vr-dash-col) minmax(0, 1fr) var(--vr-confirm-col);
   align-items: center; min-height: var(--vr-line-h); cursor: pointer;
 }
 .vr-chevron { justify-self: center; }
+.vr-lead { display: flex; align-items: center; justify-content: center; gap: var(--mp-spacing-1); }
+.vr-rows.has-drafts .vr-lead { justify-content: flex-start; padding-left: var(--mp-spacing-3); }
+.vr-draft-check-spacer { width: 28px; flex-shrink: 0; }
 .vr-erp, .vr-djp { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); padding: var(--mp-spacing-3) var(--mp-spacing-2); min-width: 0; }
 .vr-erp { align-items: flex-end; text-align: right; }
 .vr-djp { align-items: flex-start; text-align: left; flex: 1; }
@@ -1234,7 +1259,6 @@ function doUnmatch() {
   font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.vr-amount-row { display: flex; align-items: center; gap: var(--mp-spacing-4); flex-wrap: wrap; }
 /* The status reads as coloured text beside the amount, like "Match found" */
 .vr-state { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); }
 .vr-state.is-found { color: var(--mp-colors-emerald-800); }
@@ -1266,6 +1290,9 @@ function doUnmatch() {
 .vr-detail-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
 .vr-detail-title--sub { display: block; margin-top: var(--mp-spacing-4); }
 .vr-detail-sub { margin: 0 0 var(--mp-spacing-2); font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.vr-no-match-reason { display: flex; flex-direction: column; gap: var(--mp-spacing-1); margin-bottom: var(--mp-spacing-4); }
+.vr-no-match-reason__title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.vr-no-match-reason__text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .vr-find-lead { margin-top: var(--mp-spacing-4); }
 .vr-detail-actions { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-2); }
 .vr-detail-actions-block { margin-top: var(--mp-spacing-3); }
@@ -1273,9 +1300,10 @@ function doUnmatch() {
 .vr-kv :deep(.is-diff) { color: var(--mp-colors-orange-800); font-weight: var(--mp-font-weights-semi-bold); }
 .vr-why { margin: var(--mp-spacing-2) 0 0; }
 .vr-pick-error { margin: var(--mp-spacing-2) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-red-800); }
-.vr-reason { grid-column: 1 / -1; margin: var(--mp-spacing-4) var(--mp-spacing-6) 0; }
+.vr-reason { grid-column: 1 / -1; margin: var(--mp-spacing-4) var(--mp-spacing-6); }
 .vr-tag { display: inline-flex; }
-.vr-tag-row { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); max-width: 100%; }
+/* Row state on the caption line: same size and colour as the document number. */
+.vr-state-text { font: inherit; color: inherit; }
 /* Duplicate reference picker — full width under the two columns */
 .vr-dup { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--mp-spacing-2); padding: var(--mp-spacing-4) var(--mp-spacing-6); border-top: 1px solid var(--mp-border-default); }
 .vr-dup-row { display: flex; align-items: center; gap: var(--mp-spacing-4); padding: var(--mp-spacing-2) 0; }
@@ -1299,6 +1327,7 @@ function doUnmatch() {
 
 /* ── Tables ── */
 /* Badge + "Waiting on buyer" tag stack in the status column (128–160px). */
+.vr-method-text { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
 .vr-status { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
 .vr-status > * { white-space: nowrap; }
 .vr-cell-stack { display: inline-flex; flex-direction: column; align-items: flex-end; }

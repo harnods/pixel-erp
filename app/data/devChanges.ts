@@ -28,6 +28,94 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-remarks-context',
+    title: 'Remarks modal: which row it is for',
+    description:
+      'The Remarks modal now shows the row\'s Transaction number, Transaction date and Customer (Vendor on VAT In) as a ContentList above the reason, instead of the bare number. A row with no transaction shows its tax document number and date. The modal uses the md size token (was sm) so the values have room.',
+    date: '2026-11-09',
+    files: ['VatReconciliationRemarkModal.vue', 'VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-matched-columns',
+    title: 'VAT workspace tables: Transaction number column; Method as text',
+    description:
+      'Not reconciled: the "Transaction" column is now "Transaction number". Matched: the transaction number moved out from under the amount into its own Transaction number column after Transaction date (kind: number), and Method reads as plain text (Auto / Manual / Airene) instead of a tag.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-drawer-actions-menu',
+    title: 'Reconciliation drawer: extra secondary actions fold into "Actions"',
+    description:
+      'When the drawer footer would show two or more secondary buttons (e.g. View tax document + Correct transaction date), they fold into one secondary "Actions" dropdown (the shared DetailActionsMenu), so the footer reads Cancel · Actions · primary. One secondary still shows as a plain button.',
+    date: '2026-11-09',
+    files: ['VatReconciliationPairActions.vue', 'ReconciliationDetailDrawer.vue'],
+  },
+  {
+    id: 'vat-recon-masa-in-meta',
+    title: 'VAT workspace: masa pajak leads the meta line',
+    description:
+      'The masa pajak moved from beside the VAT Out title into the meta line under it, first: "Masa pajak: 02/2027 · Last sync: … · Accounts used: …".',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', '[...slug].vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-suggestion-title',
+    title: 'VAT workspace: Airene cards titled "Suggestion"',
+    description:
+      'Each Airene suggestion card in an expanded row (transaction or tax document side) now opens with a "Suggestion" title (ID "Saran"), so it reads as a proposal rather than the matched record.',
+    date: '2026-11-09',
+    files: ['VatReconciliationAireneSuggestions.vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-expand-fixes',
+    title: 'VAT workspace: banner and row fixes',
+    description:
+      'No reason banner while Airene is still searching the missing side. Awaiting DJP approval reads in the warning colour (badge and text). The draft checkbox for bulk Submit sits at the row start, left of the chevron, not beside "No match found". The banner has space below it so it no longer touches the columns\' divider.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-uxw-finalize-rerun',
+    title: 'VAT workspace: Finalize period and Reconcile again (UXW audit)',
+    description:
+      'Per the UXW audit: the title-bar button reads "Finalize period" (ID "Finalkan masa pajak"); the confirm modal reads "Finalize Masa pajak 01/2027?" with a "Finalize" button (ID verb "Finalkan", not the noun "Finalisasi"), and the toolbar button "Re-run" becomes "Reconcile again" (ID "Rekonsiliasi ulang"), matching the "Reconciling…" loading state. Body copy names it as "the Reconcile again button". Pending UXW sign-off.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', '[...slug].vue', 'VatMatchingRulesPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-expand-tertiary',
+    title: 'VAT workspace: expanded-row actions are tertiary',
+    description:
+      'Inside an expanded row, the main actions (Create sales invoice, Create / Submit / Refresh status / View tax document) use the tertiary button, so Finalize stays the only primary on the page. The shared tax document actions take a main-variant prop; the detail drawer keeps primary.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationTaxDocActions.vue'],
+  },
+  {
+    id: 'vat-recon-reason-under-no-match',
+    title: 'VAT workspace: why there is no match sits under "No match"',
+    description:
+      'When one side of an expanded row reads "No match" (Transaction not found, Tax document not found, Not approved), the reason is plain text under that "No match" title (state name in its colour, then the explanation) instead of a banner above both columns. Rows with both sides keep the banner.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-row-state-beside-number',
+    title: 'VAT workspace: row state beside the tax document number',
+    description:
+      'On the tax document side, the row state now reads as part of the caption line, same size and colour as the number: "27000000039848145 · Approved · Duplicate reference" (also Return netted, Match found, Not approved — its tooltip still says why). The amount reads alone.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-row-why-left',
+    title: 'VAT workspace: why a row has no match sits under "No match found"',
+    description:
+      'On a tax-document-only row, the state (e.g. Transaction not found) now sits under "No match found" on the transaction side, mirroring invoice-only rows.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
     id: 'vat-recon-airene-suggest-followups',
     title: 'VAT reconciliation: Airene column title, disclaimer copy, seed fix',
     description:

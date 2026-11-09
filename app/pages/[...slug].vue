@@ -146,6 +146,8 @@ const resolvedPageTitle = computed(() => {
  */
 const titleMeta = computed(() => {
   if (!MODULE_PARENT[currentPageKey.value]) return ''
+  // The VAT Out / VAT In workspace shows the masa first in its own meta line.
+  if (currentPageKey.value === 'Faktur keluaran' || currentPageKey.value === 'Faktur masukan') return ''
   return periodLabelById(String(route.query.masa ?? '')) ?? ''
 })
 
@@ -2664,9 +2666,10 @@ function startResize(e: MouseEvent) {
           <button
             v-else
             class="btn-enterprise btn-enterprise--primary"
+            data-devchange="vat-recon-uxw-finalize-rerun"
             @click="vatFinalize++"
           >
-            {{ t('Finalize') }}
+            {{ t('Finalize period') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions" data-devchange="vat-recon-ui-review">

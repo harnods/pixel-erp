@@ -33,7 +33,9 @@ const props = withDefaults(defineProps<{
   layout?: 'row' | 'stack'
   /** `none` only: also offer "Find another tax document" (the row expand does). */
   showFind?: boolean
-}>(), { showHint: true, size: 'sm', layout: 'stack', showFind: false })
+  /** Variant of the main action — the workspace row expand uses tertiary (the page keeps one primary). */
+  mainVariant?: 'primary' | 'tertiary'
+}>(), { showHint: true, size: 'sm', layout: 'stack', showFind: false, mainVariant: 'primary' })
 
 const emit = defineEmits<{ find: [] }>()
 
@@ -94,7 +96,7 @@ function refreshStatus() {
         <MpButton v-if="showFind" variant="secondary" v-bind="{ size }" is-rounded @click="emit('find')">
           {{ t('Find another tax document') }}
         </MpButton>
-        <MpButton v-if="faktur" variant="primary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
+        <MpButton v-if="faktur" :variant="mainVariant" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('create')">
           {{ t('Create tax document') }}
         </MpButton>
       </template>
@@ -102,14 +104,14 @@ function refreshStatus() {
         <MpButton variant="secondary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('edit')">
           {{ t('Edit tax document') }}
         </MpButton>
-        <MpButton variant="primary" v-bind="{ size }" is-rounded @click="askSubmit">
+        <MpButton :variant="mainVariant" v-bind="{ size }" is-rounded @click="askSubmit">
           {{ t('Submit tax document') }}
         </MpButton>
       </template>
-      <MpButton v-else-if="sub === 'submitted'" variant="primary" v-bind="{ size }" is-rounded :is-loading="refreshing" @click="refreshStatus">
+      <MpButton v-else-if="sub === 'submitted'" :variant="mainVariant" v-bind="{ size }" is-rounded :is-loading="refreshing" @click="refreshStatus">
         {{ t('Refresh status') }}
       </MpButton>
-      <MpButton v-else variant="primary" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('view')">
+      <MpButton v-else :variant="mainVariant" v-bind="{ size }" is-rounded right-icon="newtab" @click="openInNewTab('view')">
         {{ t('View tax document') }}
       </MpButton>
     </div>

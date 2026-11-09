@@ -117,7 +117,7 @@ describe('US-016 — Accounts used + Re-run warning when setup changed', () => {
 
     await clickRerun(w)
     vi.useFakeTimers()
-    bodyButtons('Re-run').at(-1)!.click()
+    bodyButtons('Reconcile again').at(-1)!.click()
     await nextTick()
     expect(w.find('[data-test-id="vr-reconciling"]').text()).toContain('Reconciling…')
     await finishRerun()
