@@ -4068,21 +4068,22 @@ export const ID_TRANSLATIONS: Record<string, string> = {
 
   // ── Setup (US-016) ───────────────────────────────────────────────────────────
   'Set up VAT reconciliation': 'Atur rekonsiliasi PPN',
-  'Choose the accounts that record PPN. Reconciliation pulls every transaction posted to them — sales invoices, journal entries and bank deposits.':
-    'Pilih akun yang mencatat PPN. Rekonsiliasi akan menarik setiap transaksi yang masuk ke akun tersebut — faktur penjualan, jurnal umum, dan setoran bank.',
-  'Start setup': 'Mulai pengaturan',
+  'Select the accounts that record PPN. Reconciliation includes every transaction posted to them, such as sales invoices, journal entries, and bank deposits.':
+    'Pilih akun yang mencatat PPN. Rekonsiliasi mencakup setiap transaksi yang dicatat ke akun tersebut, seperti faktur penjualan, jurnal umum, dan setoran bank.',
+  'Set up accounts':
+    'Atur akun',
   'PPN Keluaran accounts': 'Akun PPN Keluaran',
   'PPN Masukan accounts': 'Akun PPN Masukan',
-  'Transactions posted to these accounts — sales invoices, journal entries and bank deposits — are pulled into VAT Out reconciliation.':
-    'Transaksi yang masuk ke akun ini — faktur penjualan, jurnal umum, dan setoran bank — akan ditarik ke rekonsiliasi PPN Keluaran.',
-  'Transactions posted to these accounts — purchase invoices, journal entries and bank payments — are pulled into VAT In reconciliation.':
-    'Transaksi yang masuk ke akun ini — faktur pembelian, jurnal umum, dan pembayaran bank — akan ditarik ke rekonsiliasi PPN Masukan.',
+  'Transactions posted to these accounts, such as sales invoices, journal entries, and bank deposits, are included in VAT Out reconciliation.':
+    'Transaksi yang dicatat ke akun ini, seperti faktur penjualan, jurnal umum, dan setoran bank, disertakan dalam rekonsiliasi PPN Keluaran.',
+  'Transactions posted to these accounts, such as purchase invoices, journal entries, and bank payments, are included in VAT In reconciliation.':
+    'Transaksi yang dicatat ke akun ini, seperti faktur pembelian, jurnal umum, dan pembayaran bank, disertakan dalam rekonsiliasi PPN Masukan.',
   'Include accounts': 'Akun yang disertakan',
   'Select accounts': 'Pilih akun',
-  'Choose only accounts that record PPN Keluaran (VAT Out), e.g. VAT Out or PPN Keluaran. Accounts for other taxes, like PPh, pull in the wrong transactions.':
-    'Pilih hanya akun yang mencatat PPN Keluaran, misalnya VAT Out atau PPN Keluaran. Akun pajak lain, seperti PPh, akan menarik transaksi yang salah.',
-  'Choose only accounts that record PPN Masukan (VAT In), e.g. VAT In or PPN Masukan. Accounts for other taxes, like prepaid PPh, pull in the wrong transactions.':
-    'Pilih hanya akun yang mencatat PPN Masukan, misalnya VAT In atau PPN Masukan. Akun pajak lain, seperti PPh dibayar di muka, akan menarik transaksi yang salah.',
+  'Select only accounts that record PPN Keluaran (VAT Out), e.g. VAT Out or PPN Keluaran. Accounts for other taxes, like PPh, include the wrong transactions':
+    'Pilih hanya akun yang mencatat PPN Keluaran, misalnya VAT Out atau PPN Keluaran. Akun pajak lain, seperti PPh, akan menyertakan transaksi yang salah',
+  'Select only accounts that record PPN Masukan (VAT In), e.g. VAT In or PPN Masukan. Accounts for other taxes, like prepaid PPh, include the wrong transactions':
+    'Pilih hanya akun yang mencatat PPN Masukan, misalnya VAT In atau PPN Masukan. Akun pajak lain, seperti PPh dibayar di muka, akan menyertakan transaksi yang salah',
   'Select at least one PPN Keluaran account.': 'Pilih minimal satu akun PPN Keluaran.',
   'Select at least one PPN Masukan account.': 'Pilih minimal satu akun PPN Masukan.',
   "An account can't be both PPN Keluaran and PPN Masukan. Remove it from one list.":
@@ -4098,8 +4099,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
     'Nomor faktur penjualan dicocokkan dengan Referensi pada faktur pajak. Dinormalkan lebih dulu: spasi dipangkas, huruf besar-kecil diabaikan, pemisah diabaikan.',
   'DPP, PPN and PPnBM must agree to the rupiah, and the buyer NPWP or NIK must match. PPnBM of 0 on both sides is not a mismatch.':
     'DPP, PPN, dan PPnBM harus sama persis, dan NPWP atau NIK pembeli harus cocok. PPnBM 0 di kedua sisi bukan ketidakcocokan.',
-  'A faktur must be dated on or after the invoice it belongs to. One dated earlier is flagged, never matched. There is no tolerance window — Coretax enforces the issuance deadline at upload.':
-    'Tanggal faktur harus sama dengan atau setelah tanggal invoice-nya. Faktur yang lebih awal akan ditandai, bukan dicocokkan. Tidak ada rentang toleransi — batas penerbitan sudah ditegakkan Coretax saat unggah.',
+  'A faktur must be dated on or after the invoice it belongs to. One dated earlier is flagged, never matched. There is no tolerance window because Coretax enforces the issuance deadline at upload.':
+    'Tanggal faktur harus sama dengan atau setelah tanggal invoice-nya. Faktur yang lebih awal akan ditandai, bukan dicocokkan. Tidak ada rentang toleransi karena batas penerbitan sudah ditegakkan Coretax saat unggah.',
   'Only Approved faktur are matched. Draft, Batal and Rejected are excluded and tagged.':
     'Hanya faktur Approved yang dicocokkan. Draft, Batal, dan Rejected dikecualikan dan diberi tanda.',
   'What this affects': 'Yang terpengaruh',
@@ -4108,9 +4109,9 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   'onward.': 'dan seterusnya.',
   'Heads up': 'Perhatian',
   'periods already reconciled keep the accounts they ran with': 'masa yang sudah direkonsiliasi tetap memakai akun saat dijalankan',
+  'Periods already reconciled keep the accounts they ran with': 'Masa yang sudah direkonsiliasi tetap memakai akun saat dijalankan',
   'Reconciling one again uses the current selection instead.': 'Merekonsiliasi ulang akan memakai pilihan saat ini.',
   'Setup history': 'Riwayat pengaturan',
-  'Sync with Klikpajak': 'Sinkronkan dengan Klikpajak',
 
   // ── Queue tiles ──────────────────────────────────────────────────────────────
   'Pending review': 'Perlu konfirmasi',
@@ -6416,7 +6417,6 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Transaction (Rp)": "Transaksi (Rp)",
   "Tax document (Rp)": "Dokumen pajak (Rp)",
   "No tax document issued": "Dokumen pajak belum diterbitkan",
-  "Synced with Klikpajak. 12 new tax documents pulled": "Tersinkron dengan Klikpajak. 12 dokumen pajak baru ditarik",
   "Tax documents synced": "Dokumen pajak tersinkron",
   "Approved. Sync with Klikpajak to match it.": "Disetujui. Sinkronkan dengan Klikpajak untuk mencocokkannya.",
   "The tax document already paired with this transaction.": "Dokumen pajak yang sudah dipasangkan dengan transaksi ini.",

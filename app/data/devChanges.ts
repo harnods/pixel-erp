@@ -28,6 +28,54 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-empty-tab-chrome',
+    title: 'VAT workspace: empty tabs show only the empty state',
+    description:
+      'When To match, Not reconciled or Matched has no rows at all for the period, the toolbar (Status filter, Export, Search, Reconcile again) and the "Showing … pairs" footer are hidden, so the tab shows just its empty state. A filter or search that empties the list keeps both, so it can be cleared. The To match blank slate uses the same inset as the table empty cell (spacing-6 / spacing-4), so its illustration lines up with Not reconciled and Matched.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-index-no-sync',
+    title: 'VAT reconciliation index: Sync with Klikpajak removed',
+    description:
+      'The title bar of the VAT reconciliation index no longer has the "Sync with Klikpajak" button (it only showed a demo toast). Setup stays as the single title-bar action.',
+    date: '2026-11-09',
+    files: ['[...slug].vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-setup-rule-rows',
+    title: 'VAT setup: matching rules read "Title: value"',
+    description:
+      'Each fixed rule under How matching works reads "Match key: Exact", "Corroboration: Exact", "Faktur date: Direction checked", "Faktur status: Approved only" on one line in the rule-title style (14px semibold), with its description below spanning the form width (the value no longer takes a right-hand column).',
+    date: '2026-11-09',
+    files: ['VatMatchingRulesPage.vue'],
+  },
+  {
+    id: 'vat-recon-setup-footer',
+    title: 'VAT setup: Save at the end of the form; notes as side cards',
+    description:
+      'Cancel and Save (Save changes once set up) moved from the page title bar to a right-aligned footer at the end of the form (erp-action-footer). "What this affects" and "Heads up" are bordered cards to the right of the form instead of banners above it, 40px (spacing-10) from the form. The first section has no divider above it, and the Include accounts field spans the form width.',
+    date: '2026-11-09',
+    files: ['VatMatchingRulesPage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'vat-recon-setup-copy',
+    title: 'VAT setup: copy per UXW audit',
+    description:
+      'Gate: "Select the accounts that record PPN. Reconciliation includes every transaction posted to them, such as sales invoices, journal entries, and bank deposits." and the button "Set up accounts" (ID "Atur akun"). Setup page: "Select" instead of "Choose" (reserved for file upload), no em dashes, serial comma, "included" instead of "pulled", and account help texts without a trailing period (caption rule).',
+    date: '2026-11-09',
+    files: ['VatReconciliationPeriodsPage.vue', 'VatMatchingRulesPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-setup-patterns',
+    title: 'VAT setup: documented patterns instead of one-off UI',
+    description:
+      'Setup gate on the VAT reconciliation index is the standard empty state (empty-folder illustration + title + caption + secondary button) instead of an icon circle and a primary button. The Setup page follows the settings-page layout: titled sections with a 14px description and dividers (no icon tiles or cards), the fixed matching rules as settings rows with the value as plain text (no pill), the "what this affects" and "heads up" notes as MpBanner (info / warning) instead of hand-coloured boxes, and the "Last saved" card replaced by the standard "Last updated by {name} on {date}" line. Unused slider / band / readout CSS and the 10px sizes are gone.',
+    date: '2026-11-09',
+    files: ['VatMatchingRulesPage.vue', 'VatReconciliationPeriodsPage.vue', 'vatReconciliation.ts'],
+  },
+  {
     id: 'vat-recon-remarks-context',
     title: 'Remarks modal: which row it is for',
     description:

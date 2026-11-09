@@ -90,10 +90,23 @@ describe('workspace', () => {
     w.unmount()
   })
 
+  it('an empty tab hides the toolbar and footer; a filtered-empty tab keeps them', async () => {
+    const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'To match' })
+    expect(w.text()).toContain('Nothing to match')
+    expect(w.find('.vr-toolbar').exists()).toBe(false)
+    expect(w.find('[data-test-id="vr-footer"]').exists()).toBe(false)
+    w.unmount()
+    const busy = await mountWorkspace(ref(0), { masa: '2027-02', tab: 'To match' })
+    expect(busy.find('.vr-toolbar').exists()).toBe(true)
+    expect(busy.find('[data-test-id="vr-footer"]').exists()).toBe(true)
+    busy.unmount()
+  })
+
   it('Re-run on a finalized masa refuses inline in the banner; no second Unfinalize', async () => {
     finalizePeriod('2027-01')
     try {
-      const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'To match' })
+      // Matched: 01/2027's To match is empty, and an empty tab hides the toolbar.
+      const w = await mountWorkspace(ref(0), { masa: '2027-01', tab: 'Matched' })
       expect(w.findAll('button').filter(b => b.text() === 'Unfinalize')).toHaveLength(0)
       await w.findAll('button').find(b => b.text() === 'Reconcile again')!.trigger('click')
       expect(w.find('.vr-finalized-error').text()).toContain('Unfinalize it first')
@@ -197,7 +210,8 @@ describe('shared patterns (static)', () => {
   it('title bar: no Export on the workspace, Finalize never disabled', () => {
     const s = src('app/pages/[...slug].vue')
     const block = s.slice(s.indexOf("currentPageKey === 'Faktur keluaran' || currentPageKey === 'Faktur masukan'\" class=\"page-title-actions\""))
-    const ws = block.slice(0, block.indexOf("currentPageKey === 'Matching rules'"))
+    const ws = block.slice(0, block.indexOf("currentPageKey === 'File manager'"))
+    expect(ws).not.toContain('vatSetupSave')
     expect(ws).not.toContain("t('Export')")
     expect(ws).not.toContain(':disabled')
   })
@@ -327,5 +341,21 @@ describe('expanded row + drawer title (2026-11-05)', () => {
     expect(text).toContain('Transaction date')
     expect(text).toContain('Customer')
     w.unmount()
+  })
+  it('setup gate and Setup page use documented patterns', () => {
+    const gate = src('app/components/pages/VatReconciliationPeriodsPage.vue')
+    const g = gate.slice(gate.indexOf('class="empty-full vp-setup-gate"'), gate.indexOf('</div>', gate.indexOf('class="empty-full vp-setup-gate"')))
+    expect(g).toContain('empty-illustration')
+    expect(g).toContain('variant="secondary"')
+    expect(g).not.toContain('MpIcon')
+    const setup = src('app/components/pages/VatMatchingRulesPage.vue')
+    expect(setup).toContain('data-test-id="vm-affects"')
+    expect(setup).toContain('<section v-if="changedSinceSnapshot" class="vm-side-card"')
+    expect(setup).toContain('<MpButtonGroup class="erp-action-footer vm-footer"')
+    expect(setup).not.toContain('MpBanner')
+    expect(setup).not.toContain('vm-card-icon')
+    expect(setup).not.toContain('vm-fixed-value')
+    expect(setup).not.toContain('font-size: 10px')
+    expect(setup).toContain("{{ t('Last updated by') }} {{ saved.savedBy }}")
   })
 })

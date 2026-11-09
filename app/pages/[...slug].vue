@@ -1554,11 +1554,6 @@ const currentComponent = computed<Component>(() => {
   return pageRegistry[currentPageKey.value] ?? PlaceholderPage
 })
 
-// VAT reconciliation setup — the title bar owns Save (every page's primary
-// actions live there) but the form state belongs to the page, which injects this
-// counter and saves itself whenever it changes.
-const vatSetupSave = ref(0)
-provide('vatSetupSave', vatSetupSave)
 
 // VAT reconciliation Finalize / Unfinalize — same arrangement: the title bar
 // owns the button, the page owns the state and the confirmation.
@@ -2643,12 +2638,6 @@ function startResize(e: MouseEvent) {
             >
               {{ t('Setup') }}
             </button>
-            <button
-              class="btn-enterprise btn-enterprise--primary"
-              @click="infoToast(t('Synced with Klikpajak. 12 new tax documents pulled'))"
-            >
-              {{ t('Sync with Klikpajak') }}
-            </button>
           </template>
         </div>
         <!-- VAT reconciliation — both faktur sides share the same action set.
@@ -2670,23 +2659,6 @@ function startResize(e: MouseEvent) {
             @click="vatFinalize++"
           >
             {{ t('Finalize period') }}
-          </button>
-        </div>
-        <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions" data-devchange="vat-recon-ui-review">
-          <!-- Cancel + primary, always both (rule/form-actions-always-present);
-               Cancel is ghost (rule/btn-cancel-ghost) and leaves without saving. -->
-          <button
-            class="btn-enterprise btn-enterprise--ghost"
-            @click="router.push('/vat-reconciliation')"
-          >
-            {{ t('Cancel') }}
-          </button>
-          <button
-            class="btn-enterprise btn-enterprise--primary"
-            @click="vatSetupSave++"
-          >
-            <!-- Create vs edit (rule/form-edit-save-changes): first run creates. -->
-            {{ vatSetUp ? t('Save changes') : t('Save') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'File manager'" class="page-title-actions">

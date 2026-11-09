@@ -231,14 +231,14 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
 <template>
   <!-- US-016 — no index until setup is saved -->
-  <div v-if="!isSetUp" class="vp-setup-gate">
-    <div class="vp-setup-icon"><MpIcon name="sliders" size="32px" color="icon.information" /></div>
-    <h2 class="vp-setup-title">{{ t('Set up VAT reconciliation') }}</h2>
-    <p class="vp-setup-body">
-      {{ t('Choose the accounts that record PPN. Reconciliation pulls every transaction posted to them — sales invoices, journal entries and bank deposits.') }}
-    </p>
-    <MpButton variant="primary" is-rounded @click="router.push('/matching-rules')">
-      {{ t('Start setup') }}
+  <!-- Same empty state as the table's own (rule/empty-state-structure):
+       illustration + title + caption + a secondary button. -->
+  <div v-if="!isSetUp" class="empty-full vp-setup-gate" data-devchange="vat-recon-setup-patterns">
+    <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+    <p class="empty-full-title">{{ t('Set up VAT reconciliation') }}</p>
+    <p class="empty-full-desc">{{ t('Select the accounts that record PPN. Reconciliation includes every transaction posted to them, such as sales invoices, journal entries, and bank deposits.') }}</p>
+    <MpButton variant="secondary" is-rounded class="vp-setup-cta" data-devchange="vat-recon-setup-copy" @click="router.push('/matching-rules')">
+      {{ t('Set up accounts') }}
     </MpButton>
   </div>
 
@@ -437,39 +437,11 @@ function hideColumn(key: string) { columnVisibility[key] = false }
 
 <style scoped>
 /* Custom spacing tokens (pixel-police compliant). */
-:scope { --vp-icon-sz: 64px; --vp-search-w: 248px; --vp-clear-sz: 18px; --vp-illus-w: 288px; --vp-illus-h: 240px; }
+:scope { --vp-search-w: 248px; --vp-clear-sz: 18px; --vp-illus-w: 288px; --vp-illus-h: 240px; }
 
-/* First-run gate — centred, one action, no table chrome behind it. */
-.vp-setup-gate {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--mp-spacing-4);
-  padding: var(--mp-spacing-10) var(--mp-spacing-6);
-  max-width: 520px;
-  margin: 0 auto;
-}
-.vp-setup-icon {
-  display: grid;
-  place-items: center;
-  width: var(--vp-icon-sz);
-  height: var(--vp-icon-sz);
-  border-radius: var(--mp-radii-full);
-  background: var(--mp-colors-blue-100);
-}
-.vp-setup-title {
-  margin: 0;
-  font-size: var(--mp-font-sizes-xl);
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-}
-.vp-setup-body {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  line-height: var(--mp-line-heights-md);
-  color: var(--mp-text-secondary);
-}
+/* First-run gate — the empty-full state below, centred with one action. */
+.vp-setup-gate { padding: var(--mp-spacing-10) var(--mp-spacing-6); text-align: center; }
+.vp-setup-cta { margin-top: var(--mp-spacing-4); }
 
 /* ── Cells ──────────────────────────────────────────────────────────────── */
 .cell-text {
