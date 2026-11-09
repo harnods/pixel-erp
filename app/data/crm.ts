@@ -1269,6 +1269,57 @@ const MODULES_SEED: CrmModule[] = [
 export const crmModules = reactive<CrmModule[]>(load('crm-modules-v5', MODULES_SEED))
 export function persistCrmModules() { saveSnapshot('crm-modules-v5', crmModules) }
 
+// ── Check-in settings (per-module toggle + photo-evidence policy) ──────────
+export type CheckInPhotoPolicy = 'optional' | 'required'
+export interface CheckInConfig {
+  enabled: boolean
+  photoPolicy: CheckInPhotoPolicy
+}
+const CHECK_IN_CONFIGS_SEED: Record<string, CheckInConfig> = {
+  deals: { enabled: true, photoPolicy: 'optional' },
+}
+const checkInConfigs = reactive<Record<string, CheckInConfig>>(
+  loadSnapshot<Record<string, CheckInConfig>>('crm-checkin-configs-v1')?.[0]
+    ?? JSON.parse(JSON.stringify(CHECK_IN_CONFIGS_SEED)),
+)
+export function getCheckInConfig(moduleId: string): CheckInConfig {
+  return checkInConfigs[moduleId] ?? { enabled: false, photoPolicy: 'optional' }
+}
+export function setCheckInConfig(moduleId: string, cfg: CheckInConfig): void {
+  checkInConfigs[moduleId] = { ...cfg }
+  saveSnapshot('crm-checkin-configs-v1', [checkInConfigs])
+}
+export function isCheckInEnabled(moduleId: string): boolean {
+  return !!checkInConfigs[moduleId]?.enabled
+}
+
+// ── Check-in history records (read-only arrivals recorded from mobile) ─────
+export interface CheckInRecord {
+  id: string
+  moduleId: string
+  recordId: string
+  checkedInAt: string
+  user: string
+  lat: number
+  lng: number
+  note: string
+  hasPhoto: boolean
+}
+const CHECK_IN_RECORDS_SEED: CheckInRecord[] = [
+  { id: 'CI-001', moduleId: 'deals', recordId: 'deal-1', checkedInAt: '2026-10-20T09:42:00', user: 'Dewi Rahayu', lat: -6.22491, lng: 106.80914, note: 'Arrived for product review', hasPhoto: true },
+  { id: 'CI-002', moduleId: 'deals', recordId: 'deal-1', checkedInAt: '2026-10-16T14:18:00', user: 'Ayu Putri', lat: -6.22503, lng: 106.80927, note: 'Follow-up meeting', hasPhoto: false },
+  { id: 'CI-003', moduleId: 'deals', recordId: 'deal-2', checkedInAt: '2026-10-18T10:05:00', user: 'Fajar Nugroho', lat: -6.17520, lng: 106.82710, note: 'Initial site visit', hasPhoto: true },
+  { id: 'CI-004', moduleId: 'deals', recordId: 'deal-3', checkedInAt: '2026-10-22T11:30:00', user: 'Dewi Rahayu', lat: -6.20150, lng: 106.84520, note: 'Quarterly review', hasPhoto: false },
+]
+const checkInRecords = reactive<CheckInRecord[]>(
+  loadSnapshot<CheckInRecord[]>('crm-checkin-records-v1')?.[0] as unknown as CheckInRecord[]
+    ?? JSON.parse(JSON.stringify(CHECK_IN_RECORDS_SEED)),
+)
+export function getCheckInRecords(moduleId: string, recordId: string): CheckInRecord[] {
+  return checkInRecords.filter(r => r.moduleId === moduleId && r.recordId === recordId)
+    .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt))
+}
+
 // ── Deal pipelines (Settings ▸ Deals ▸ Pipeline) ─────────────────────────────
 // A pipeline = an ordered list of OPEN stages that flow left→right, plus exactly
 // one Won and one Lost "ending" stage (the special swimlane). Won/Lost carry no
