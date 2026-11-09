@@ -1,7 +1,12 @@
 <script setup lang="ts">
 /**
- * VAT reconciliation setup — which Jurnal tax codes count as PPN Keluaran
+ * VAT reconciliation setup — which accounts hold PPN Keluaran (and, once VAT
+ * In is in scope, PPN Masukan). Picked by hand; never auto-detected
  * (PRD OD-001 v1.0, US-016).
+ *
+ * VAT In (OD-008) is a non-goal for the MVP: with VAT_IN_ENABLED off
+ * (~/data/vatReconFlags) the scope choice and the PPN Masukan card are hidden
+ * and scope is always VAT Out. The code below stays for OD-008.
  *
  * This replaced the old "Matching rules" page. v1.0 makes the matching model
  * deterministic and fixed (§4): exact key, exact corroboration, direction check,
@@ -13,57 +18,127 @@
  * VatReconciliationPeriodsPage. Save is a title-bar action in [...slug].vue.
  */
 import type { Ref } from 'vue'
-import { MpIcon, MpCheckbox, MpSegmentedControl } from '@mekari/pixel3'
 import {
-  VAT_OUT_TAX_CODES, loadVatSetup, saveVatSetup, taxCodeLabels,
-  SNAPSHOT_TAX_CODE_IDS, FIRST_PERIOD_ID, periodLabelById,
+  MpIcon, MpSegmentedControl, MpFormControl, MpFormLabel, MpFormHelpText, MpFormErrorMessage, MpInputTag,
+  type DataInterface,
+} from '@mekari/pixel3'
+import {
+  loadVatSetup, saveVatSetup, accountLabels, vatAccountOptionLabel,
+  SNAPSHOT_ACCOUNT_CODES, FIRST_PERIOD_ID, periodLabelById, VAT_IN_ENABLED,
   type VatReconScope,
 } from '~/data/vatReconciliation'
-import { infoToast } from '~/utils/toasts'
+import { coaAccounts } from '~/data/wmsCutover'
+import { successToast } from '~/utils/toasts'
+import { formatDateTimeLong } from '~/utils/date'
 
 const { t } = useLocale()
 
-const selected = ref<string[]>(loadVatSetup()?.taxCodeIds ?? [...SNAPSHOT_TAX_CODE_IDS])
+/**
+ * Accounts are picked by hand, never guessed from tax codes — every company
+ * numbers and names its PPN accounts differently (US-016). First visit starts
+ * empty on purpose: a pre-filled account the user didn't choose is exactly the
+ * silent wrong guess this replaces.
+ */
+const outputCodes = ref<string[]>([...(loadVatSetup()?.outputAccountCodes ?? [])])
+const inputCodes = ref<string[]>([...(loadVatSetup()?.inputAccountCodes ?? [])])
 const saved = ref(loadVatSetup())
 
 /**
  * VAT Out ships first (OD-001); VAT In is OD-008 and shares this shell. Making
  * it a choice rather than a build flag means a company that has not adopted VAT
  * In never sees half a feature, and the team can demo where OD-008 lands
- * without a second codebase.
+ * without a second codebase. "Both" adds the PPN Masukan account picker.
+ *
+ * While VAT_IN_ENABLED is off, "Both" is not offered (and loadVatSetup already
+ * normalizes a stored `both` to `out`), so the whole choice is hidden.
  */
 const scope = ref<VatReconScope>(loadVatSetup()?.scope ?? 'out')
 const scopeOptions = [
   { id: 'vat-scope-out',  label: 'VAT Out only',   value: 'out'  },
   { id: 'vat-scope-both', label: 'VAT Out & VAT In', value: 'both' },
-]
+].filter((o) => VAT_IN_ENABLED || o.value !== 'both')
 
 onMounted(() => {
   const s = loadVatSetup()
-  if (s) { saved.value = s; selected.value = [...s.taxCodeIds]; scope.value = s.scope ?? 'out' }
+  if (s) {
+    saved.value = s
+    outputCodes.value = [...s.outputAccountCodes]
+    inputCodes.value = [...s.inputAccountCodes]
+    scope.value = s.scope
+  }
 })
 
-function toggle(id: string, on: boolean) {
-  selected.value = on
-    ? [...new Set([...selected.value, id])]
-    : selected.value.filter(x => x !== id)
+// ── Account picker (MpInputTag speaks DataInterface[] — rule/select-multi-mpinputtag)
+function toTag(code: string): DataInterface {
+  const a = coaAccounts.find((x) => x.code === code)
+  const text = a ? vatAccountOptionLabel(a) : code
+  return { id: code, text, value: code, isInvalid: false, isReadOnly: false }
 }
+/**
+ * Every account in the live chart — the user decides which ones hold PPN.
+ * MpInputTag filters string suggestions only, so options are labels and a
+ * picked tag's text is mapped back to its account code.
+ */
+const accountSuggestions = computed<string[]>(() => coaAccounts.map(vatAccountOptionLabel))
+const outputTags = computed(() => outputCodes.value.map(toTag))
+const inputTags = computed(() => inputCodes.value.map(toTag))
+function codeOf(d: DataInterface): string {
+  const text = String(d.text ?? d.value ?? d.id)
+  return coaAccounts.find((a) => a.code === text || vatAccountOptionLabel(a) === text)?.code ?? text
+}
+const fromTags = (data: DataInterface[]) => [...new Set(data.map(codeOf))]
 
-/** At least one code, or reconciliation has nothing to pull. */
-const canSave = computed(() => selected.value.length > 0)
+// ── Validation — inline, only after a save attempt (rule/form-errors-inline)
+const submitted = ref(false)
+const overlap = computed(() =>
+  scope.value === 'both' ? outputCodes.value.filter((c) => inputCodes.value.includes(c)) : [])
+const outputError = computed(() => {
+  if (!submitted.value) return ''
+  if (!outputCodes.value.length) return t('Select at least one PPN Keluaran account.')
+  return ''
+})
+const inputError = computed(() => {
+  if (!submitted.value || scope.value !== 'both') return ''
+  if (!inputCodes.value.length) return t('Select at least one PPN Masukan account.')
+  if (overlap.value.length) return t("An account can't be both PPN Keluaran and PPN Masukan. Remove it from one list.")
+  return ''
+})
+
+function onOutputChange(data: DataInterface[]) { outputCodes.value = fromTags(data) }
+function onInputChange(data: DataInterface[]) { inputCodes.value = fromTags(data) }
+
+const sameCodes = (a: string[], b: string[]) => [...a].sort().join() === [...b].sort().join()
 
 /**
  * Changing setup after a period was reconciled doesn't rewrite that period — it
- * keeps the snapshot of the codes it ran with. Re-run is where the change takes
- * effect, and it warns first (US-016).
+ * keeps the snapshot of the accounts it ran with. Re-run is where the change
+ * takes effect, and it warns first (US-016).
  */
 const changedSinceSnapshot = computed(() =>
-  [...selected.value].sort().join() !== [...SNAPSHOT_TAX_CODE_IDS].sort().join())
+  !sameCodes(outputCodes.value, SNAPSHOT_ACCOUNT_CODES.output)
+  || (scope.value === 'both' && !sameCodes(inputCodes.value, SNAPSHOT_ACCOUNT_CODES.input)))
+const snapshotLabel = computed(() => scope.value === 'both'
+  ? `${accountLabels(SNAPSHOT_ACCOUNT_CODES.output)}; ${accountLabels(SNAPSHOT_ACCOUNT_CODES.input)}`
+  : accountLabels(SNAPSHOT_ACCOUNT_CODES.output))
+
+const router = useRouter()
 
 function save() {
-  if (!canSave.value) return
-  saved.value = saveVatSetup([...selected.value], scope.value)
-  infoToast(t('Reconciliation setup saved'))
+  submitted.value = true
+  if (outputError.value || inputError.value) return
+  // First run creates the setup; the index it unlocks is where the user goes next
+  // (US-016 AC-03). Later saves are edits and stay on the page.
+  const firstRun = !loadVatSetup()
+  saved.value = saveVatSetup({
+    outputAccountCodes: [...outputCodes.value],
+    // VAT In accounts are kept only while VAT In is in scope.
+    inputAccountCodes: scope.value === 'both' ? [...inputCodes.value] : [],
+    scope: scope.value,
+  })
+  submitted.value = false
+  // rule/btn-save-toast — a save confirms with a success toast.
+  successToast(t('Reconciliation setup saved'))
+  if (firstRun) router.push('/vat-reconciliation')
 }
 
 // "Save changes" is a title-bar action (see [...slug].vue) — it bumps this
@@ -101,9 +176,10 @@ const fixedRules = [
 
 <template>
   <div class="vm-page">
-    <div class="vm-main">
-      <!-- Scope first: it decides which sides the rest of the module shows -->
-      <section class="vm-card">
+    <div class="vm-main" :data-devchange="VAT_IN_ENABLED ? undefined : 'vat-recon-hide-vat-in'">
+      <!-- Scope first: it decides which sides the rest of the module shows.
+           Hidden while VAT In is a non-goal (VAT_IN_ENABLED): scope is VAT Out. -->
+      <section v-if="VAT_IN_ENABLED" class="vm-card">
         <header class="vm-card-head">
           <div class="vm-card-icon"><MpIcon name="doc" size="md" /></div>
           <div>
@@ -121,38 +197,61 @@ const fixedRules = [
         </div>
       </section>
 
-      <!-- US-016 — the one thing the user actually configures -->
-      <section class="vm-card">
+      <!-- US-016 — the user picks the PPN accounts by hand (no auto-detect) -->
+      <section class="vm-card" data-devchange="vat-setup-manual-accounts">
         <header class="vm-card-head">
           <div class="vm-card-icon"><MpIcon name="sliders" size="md" /></div>
           <div>
-            <div class="vm-card-title">{{ t('PPN Keluaran tax codes') }}</div>
-            <div class="vm-card-sub">{{ t('Sales invoices carrying these tax codes are pulled into reconciliation.') }}</div>
+            <div class="vm-card-title">{{ t('PPN Keluaran accounts') }}</div>
+            <div class="vm-card-sub">{{ t('Transactions posted to these accounts — sales invoices, journal entries and bank deposits — are pulled into VAT Out reconciliation.') }}</div>
           </div>
         </header>
         <div class="vm-card-body">
-          <label v-for="c in VAT_OUT_TAX_CODES" :key="c.id" class="vm-rule vm-code">
-            <MpCheckbox
-              :id="`vm-code-${c.id}`"
-              :is-checked="selected.includes(c.id)"
-              :aria-label="c.name"
-              @change="(v: boolean) => toggle(c.id, v)"
+          <MpFormControl id="vm-output-accounts-fc" class="vm-account-field" :is-invalid="!!outputError">
+            <MpFormLabel>{{ t('Include accounts') }}</MpFormLabel>
+            <MpInputTag
+              id="vm-output-accounts"
+              :data="outputTags"
+              :suggestions="accountSuggestions"
+              :is-show-suggestions="true"
+              :is-enable-create-new-tag="false"
+              :is-show-icon-chevron-down="true"
+              :is-invalid="!!outputError"
+              :placeholder="t('Select accounts')"
+              @change="onOutputChange"
             />
-            <div class="vm-rule-text">
-              <div class="vm-rule-title-row">
-                <span class="vm-rule-title">{{ c.code }}</span>
-                <span class="vm-weight">{{ c.name }}</span>
-              </div>
-              <div class="vm-rule-desc">{{ c.account }}</div>
-            </div>
-          </label>
+            <MpFormErrorMessage v-if="outputError">{{ outputError }}</MpFormErrorMessage>
+            <MpFormHelpText v-else>{{ t('Choose only accounts that record PPN Keluaran (VAT Out), e.g. VAT Out or PPN Keluaran. Accounts for other taxes, like PPh, pull in the wrong transactions.') }}</MpFormHelpText>
+          </MpFormControl>
+        </div>
+      </section>
 
-          <div class="vm-note">
-            <MpIcon name="info" size="sm" color="icon.information" class="vm-note-icon" />
-            <div>
-              {{ t('Journal entries and bank deposits that post to these accounts are pulled in too, even when the line carries no tax code.') }}
-            </div>
+      <!-- OD-008 — VAT In shares the shell; its accounts only matter when in scope -->
+      <section v-if="VAT_IN_ENABLED && scope === 'both'" class="vm-card" data-devchange="vat-setup-manual-accounts">
+        <header class="vm-card-head">
+          <div class="vm-card-icon"><MpIcon name="sliders" size="md" /></div>
+          <div>
+            <div class="vm-card-title">{{ t('PPN Masukan accounts') }}</div>
+            <div class="vm-card-sub">{{ t('Transactions posted to these accounts — purchase invoices, journal entries and bank payments — are pulled into VAT In reconciliation.') }}</div>
           </div>
+        </header>
+        <div class="vm-card-body">
+          <MpFormControl id="vm-input-accounts-fc" class="vm-account-field" :is-invalid="!!inputError">
+            <MpFormLabel>{{ t('Include accounts') }}</MpFormLabel>
+            <MpInputTag
+              id="vm-input-accounts"
+              :data="inputTags"
+              :suggestions="accountSuggestions"
+              :is-show-suggestions="true"
+              :is-enable-create-new-tag="false"
+              :is-show-icon-chevron-down="true"
+              :is-invalid="!!inputError"
+              :placeholder="t('Select accounts')"
+              @change="onInputChange"
+            />
+            <MpFormErrorMessage v-if="inputError">{{ inputError }}</MpFormErrorMessage>
+            <MpFormHelpText v-else>{{ t('Choose only accounts that record PPN Masukan (VAT In), e.g. VAT In or PPN Masukan. Accounts for other taxes, like prepaid PPh, pull in the wrong transactions.') }}</MpFormHelpText>
+          </MpFormControl>
         </div>
       </section>
 
@@ -185,30 +284,37 @@ const fixedRules = [
           <MpIcon name="info" size="sm" color="icon.information" />
           <div class="vm-card-title">{{ t('What this affects') }}</div>
         </div>
-        <div class="vm-preview-note">
-          <span class="vm-preview-note-strong">{{ t('Selected') }}:</span>
-          {{ selected.length ? taxCodeLabels(selected) : t('none yet') }}.
-          {{ selected.length ? '' : '' }}
+        <div class="vm-preview-note" data-devchange="vat-recon-first-period">
+          <span class="vm-preview-note-strong">{{ t('PPN Keluaran') }}:</span>
+          {{ outputCodes.length ? accountLabels(outputCodes) : t('none yet') }}.
+          <template v-if="scope === 'both'">
+            <span class="vm-preview-note-strong">{{ t('PPN Masukan') }}:</span>
+            {{ inputCodes.length ? accountLabels(inputCodes) : t('none yet') }}.
+          </template>
           {{ t('Periods are reconciled from') }}
           {{ periodLabelById(FIRST_PERIOD_ID) }} {{ t('onward,') }}
           {{ scope === 'both' ? t('for both VAT Out and VAT In.') : t('for VAT Out only.') }}
         </div>
         <div v-if="changedSinceSnapshot" class="vm-preview-note vm-preview-note--warn">
           <span class="vm-preview-note-strong">{{ t('Heads up') }}:</span>
-          {{ t('periods already reconciled keep the tax codes they ran with') }}
-          ({{ taxCodeLabels(SNAPSHOT_TAX_CODE_IDS) }}).
-          {{ t('Re-running one will use the current selection instead.') }}
+          {{ t('periods already reconciled keep the accounts they ran with') }}
+          ({{ snapshotLabel }}).
+          {{ t('Reconciling one again uses the current selection instead.') }}
         </div>
       </div>
 
-      <div v-if="saved" class="vm-history">
+      <!-- Same bordered surface as the card above (rule/surface-border-no-shadow);
+           it shows the latest save only, so it is "Last saved", not a history. -->
+      <div v-if="saved" class="vm-history" data-devchange="vat-recon-ui-review-2">
         <div class="vm-history-head">
           <MpIcon name="log" size="sm" />
-          <span>{{ t('Setup history') }}</span>
+          <span>{{ t('Last saved') }}</span>
         </div>
         <div class="vm-history-row is-last">
-          <span class="vm-history-meta">{{ new Date(saved.savedAt).toLocaleString('en-GB') }}</span>
-          <span class="vm-history-what">{{ taxCodeLabels(saved.taxCodeIds) }}</span>
+          <span class="vm-history-meta">{{ formatDateTimeLong(saved.savedAt) }}</span>
+          <span class="vm-history-what">
+            {{ saved.outputAccountCodes.length ? accountLabels(saved.outputAccountCodes) : t('No accounts selected') }}<template v-if="saved.scope === 'both' && saved.inputAccountCodes.length">; {{ accountLabels(saved.inputAccountCodes) }}</template>
+          </span>
         </div>
       </div>
     </aside>
@@ -309,16 +415,8 @@ const fixedRules = [
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
 
-/* ── Inline note ── */
-.vm-note {
-  display: flex; align-items: flex-start; gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3);
-  background: var(--mp-airene-badge-bg); border: 1px solid var(--mp-airene-badge-border);
-  border-radius: var(--mp-radii-sm);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
-}
-.vm-note-icon { flex-shrink: 0; margin-top: 2px; }
-.vm-note-accent { color: var(--mp-airene-bold); font-weight: var(--mp-font-weights-semi-bold); }
+/* ── Account picker — form field width (rule/form-field-stacking) ── */
+.vm-account-field { max-width: 558px; }
 
 /* ── Toggle rows ── */
 .vm-toggle-row {
@@ -363,7 +461,6 @@ const fixedRules = [
   background: var(--mp-colors-orange-100);
   color: var(--mp-colors-orange-800);
 }
-.vm-code { cursor: pointer; align-items: flex-start; gap: var(--mp-spacing-3); }
 .vm-preview-note-strong { font-weight: var(--mp-font-weights-bold); }
 .vm-stat { font-weight: var(--mp-font-weights-bold); }
 .vm-stat--ok { color: var(--mp-colors-emerald-800); }
@@ -372,7 +469,8 @@ const fixedRules = [
 
 /* ── Rule history ── */
 .vm-history {
-  background: var(--mp-background-surface-bold); color: var(--mp-text-inverse);
+  background: var(--mp-background-surface); color: var(--mp-text-default);
+  border: 1px solid var(--mp-border-default);
   border-radius: var(--mp-radii-md);
   padding: var(--mp-spacing-4);
   display: flex; flex-direction: column; gap: var(--mp-spacing-2);
@@ -384,9 +482,9 @@ const fixedRules = [
 .vm-history-row {
   display: flex; flex-direction: column;
   padding-bottom: var(--mp-spacing-2);
-  border-bottom: 1px solid var(--mp-colors-white-alpha-100);
+  border-bottom: 1px solid var(--mp-border-default);
 }
 .vm-history-row.is-last { border-bottom: 0; padding-bottom: 0; }
-.vm-history-meta { font-size: var(--mp-font-sizes-xs); color: var(--mp-colors-white-alpha-700); }
+.vm-history-meta { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); }
 .vm-history-what { font-size: var(--mp-font-sizes-sm); }
 </style>

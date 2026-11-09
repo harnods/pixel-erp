@@ -30,6 +30,7 @@ syncOutboundOrderStatuses()
 import { packingOpenCount } from '~/data/packingTasks'
 import { deliveryOpenCount } from '~/data/deliveryTasks'
 import { awaitingAdjustmentCount } from '~/data/stockAdjustments'
+import { pendingCount as woApprovalPendingCount } from '~/data/woApproval'
 import { awaitingPurchaseRequestCount } from '~/data/purchaseRequests'
 import { openWmsCountTaskCount, awaitingWmsCountApprovalCount } from '~/data/wmsStockAdjustments'
 import { recommendationCount, topRecommendedProductNames } from '~/data/cycleCountRecommendations'
@@ -48,9 +49,16 @@ import { useWarehouseContext } from '~/composables/useWarehouseContext'
 import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
 import {
-  matchCounts, pairsForPeriod, activePeriodId, reconUnfinishedCount, periodLabelById,
-  reconVersion, isPeriodFinalized, canFinalizePeriod,
+  activePeriodId, periodLabelById,
+  reconVersion, isPeriodFinalized, canFinalizePeriod, loadVatSetup,
 } from '~/data/vatReconciliation'
+
+/**
+ * VAT reconciliation is gated on setup (US-016): until it's saved the index is
+ * not reachable, so its tabs, badge and module actions stay out of the title bar
+ * — only the gate's own "Start setup" shows.
+ */
+const vatSetUp = computed(() => { void reconVersion.value; return !!loadVatSetup() })
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoicesAwaitingApproval } from '~/data'
@@ -101,7 +109,9 @@ const MODULE_PARENT: Record<string, { label: string; to: string; title?: string 
   // `title` overrides the H1 where the page key isn't the display term. The keys
   // stay Indonesian because they're the route slugs (/faktur-keluaran); the EN
   // locale shows the standard VAT terms, which is what `title` carries.
-  'Faktur keluaran':             { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Output tax invoice' },
+  // "VAT Out", not "Output tax invoice": the workspace covers every output
+  // document that posts to PPN Keluaran, not only faktur (PM, 2026-11-05).
+  'Faktur keluaran':             { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'VAT Out' },
   'Faktur masukan':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Input tax invoice' },
   'Matching rules':              { label: 'VAT reconciliation', to: '/vat-reconciliation', title: 'Setup' },
   'Unmatched and discrepancies': { label: 'VAT reconciliation', to: '/vat-reconciliation' },
@@ -136,6 +146,8 @@ const resolvedPageTitle = computed(() => {
  */
 const titleMeta = computed(() => {
   if (!MODULE_PARENT[currentPageKey.value]) return ''
+  // The VAT Out / VAT In workspace shows the masa first in its own meta line.
+  if (currentPageKey.value === 'Faktur keluaran' || currentPageKey.value === 'Faktur masukan') return ''
   return periodLabelById(String(route.query.masa ?? '')) ?? ''
 })
 
@@ -431,6 +443,7 @@ const BillsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/Bil
 const BillsReviewFilesPage = asyncPage(() => import('~/components/pages/BillsReviewFilesPage.vue'))
 const PurchaseInvoicesPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesPage.vue'))
 const PurchaseRequestsPage = asyncPage(() => import('~/components/pages/PurchaseRequestsPage.vue'))
+const WorkOrdersAwaitingApprovalPage = asyncPage(() => import('~/components/pages/WorkOrdersAwaitingApprovalPage.vue'))
 const PurchaseRequestsAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseRequestsAwaitingApprovalPage.vue'))
 const PurchaseInvoicesAwaitingApprovalPage = asyncPage(() => import('~/components/pages/PurchaseInvoicesAwaitingApprovalPage.vue'))
 const ReceiptIndexPage = asyncPage(() => import('~/components/pages/ReceiptIndexPage.vue'))
@@ -498,10 +511,7 @@ const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/Purch
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
 // VAT reconciliation issue queue — rendered per tab via tabComponents below.
-const VatReconciliationPeriodsPage = asyncPage(() => import('~/components/pages/VatReconciliationPeriodsPage.vue'))
 const VatReconciliationUnmatchedPage = asyncPage(() => import('~/components/pages/VatReconciliationUnmatchedPage.vue'))
-// Both faktur sides scope themselves from ?tab= (Needs attention / All faktur).
-const VatReconciliationWorkspacePage = asyncPage(() => import('~/components/pages/VatReconciliationWorkspacePage.vue'))
 const InviteUserPage = asyncPage(() => import('~/components/pages/InviteUserPage.vue'))
 // /get-crm — where the product switcher sends users who can't open CRM (no CRM
 // add-on → Contact Sales; no CRM role → ask your admin). Deliberately NOT under
@@ -1578,17 +1588,16 @@ const pageTabs: Record<string, string[]> = {
   'Purchase quotes': ['All purchase quotes', 'Awaiting approval'],
   'Stock adjustments': ['All stock adjustments', 'Awaiting approval'],
   'Production request': ['Awaiting', 'Completed', 'Rejected'],
+  // Work order approval (PRD "Require approval" tab — named Awaiting approval like every
+  // other module's approval queue). Badge = every pending request, for all users.
+  'Work orders':       ['All work orders', 'Awaiting approval'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
-  // VAT reconciliation — the tab is the *scope* of the list, not a different
-  // object: everything, or only what isn't finished. Masa pajak, invoice type
-  // and status are filters, not tabs (docs/patterns/index-page-format.md §A.3).
-  'Vat reconciliation': ['All reconciliations', 'Needs attention'],
-  // Faktur workspaces: the tab is the *scope* (what's in play), the in-page
-  // Status select narrows by match state. Splitting them this way keeps both
-  // controls on-system — Pixel has no filter-chip component.
-  'Faktur keluaran': ['Needs attention', 'All faktur'],
-  'Faktur masukan':  ['Needs attention', 'All faktur'],
+  // VAT reconciliation has no tabs: periods that need attention are sorted to
+  // the top of the one list (VatReconciliationPeriodsPage).
+  // Faktur workspaces: To match / Not reconciled / Matched are IN-PAGE tabs under
+  // the summary (VatReconciliationWorkspacePage, MpTabs) — Jurnal's bank
+  // Reconciliations layout — so they are not registered as page tabs here.
   // Settings → Users & roles (Jurnal benchmark: User list / Custom role).
   'Users and roles':   ['User list', 'Custom role'],
   'Tags':              ['All tags', 'Categories'],
@@ -1614,13 +1623,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
   if (currentPageKey.value === 'Overview') return {}
-  // Only the work scope is badged — "All reconciliations" is a calendar, and a
-  // count on it would just restate the row count.
-  if (currentPageKey.value === 'Vat reconciliation') {
-    void reconVersion.value
-    const unfinished = reconUnfinishedCount()
-    return unfinished ? { 'Needs attention': unfinished } : {}
-  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -1686,6 +1688,10 @@ const currentTabCounts = computed<Record<string, number>>(() => {
     const awaiting = awaitingAdjustmentCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
   }
+  if (currentPageKey.value === 'Work orders') {
+    const n = woApprovalPendingCount()
+    return n ? { 'Awaiting approval': n } : {}
+  }
   if (currentPageKey.value === 'Production request') {
     const pending = productionRequestPendingCount()
     return pending ? { 'Awaiting': pending } : {}
@@ -1705,13 +1711,6 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   if (currentPageKey.value === 'Product list') {
     const awaiting = pendingApprovalCount()
     return awaiting ? { 'Awaiting approval': awaiting } : {}
-  }
-  if (currentPageKey.value === 'Faktur keluaran' || currentPageKey.value === 'Faktur masukan') {
-    const side = currentPageKey.value === 'Faktur masukan' ? 'input' : 'output'
-    void reconVersion.value
-    const c = matchCounts(pairsForPeriod(String(route.query.masa ?? activePeriodId), side))
-    const attention = (c.all ?? 0) - (c.matched ?? 0)
-    return attention ? { 'Needs attention': attention } : {}
   }
   return {}
 })
@@ -1880,20 +1879,6 @@ const tabComponents: Record<string, Record<string, Component>> = {
     'All warehouse transfers': WarehouseTransfersPage,
     'Awaiting approval': WarehouseTransfersPage,
   },
-  // Both scopes are the same component — it re-filters itself from ?tab=
-  // (identical ref keeps it mounted across tab changes).
-  'Vat reconciliation': {
-    'All reconciliations': VatReconciliationPeriodsPage,
-    'Needs attention': VatReconciliationPeriodsPage,
-  },
-  'Faktur keluaran': {
-    'Needs attention': VatReconciliationWorkspacePage,
-    'All faktur': VatReconciliationWorkspacePage,
-  },
-  'Faktur masukan': {
-    'Needs attention': VatReconciliationWorkspacePage,
-    'All faktur': VatReconciliationWorkspacePage,
-  },
   'Expenses': {
     'Bills': BillsIndexPage,
     'Awaiting Approval': BillsAwaitingApprovalPage,
@@ -1913,6 +1898,10 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Purchase requests': {
     'All requests': PurchaseRequestsPage,
     'Awaiting approval': PurchaseRequestsAwaitingApprovalPage,
+  },
+  'Work orders': {
+    'All work orders': pageRegistry['Work orders']!,
+    'Awaiting approval': WorkOrdersAwaitingApprovalPage,
   },
   'Stock adjustments': {
     'All stock adjustments': StockAdjustmentsPage,
@@ -2630,7 +2619,7 @@ function startResize(e: MouseEvent) {
              them. Matching rules is the module's settings destination, which is
              why it's here rather than a sidebar child. Per-row CSV download
              lives in the table's own action column. -->
-        <div v-else-if="currentPageKey === 'Vat reconciliation'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Vat reconciliation' && vatSetUp" class="page-title-actions">
           <!-- The issue queue is a working list, so it keeps its own actions;
                the period index gets the module-level ones. -->
           <template v-if="activeTab === 'Unmatched & discrepancies'">
@@ -2656,22 +2645,17 @@ function startResize(e: MouseEvent) {
             </button>
             <button
               class="btn-enterprise btn-enterprise--primary"
-              @click="infoToast(t('Coretax synced. 12 new faktur pulled'))"
+              @click="infoToast(t('Synced with Klikpajak. 12 new tax documents pulled'))"
             >
               {{ t('Sync with Klikpajak') }}
             </button>
           </template>
         </div>
-        <!-- VAT reconciliation — both faktur sides share the same action set. -->
-        <div v-else-if="currentPageKey === 'Faktur keluaran' || currentPageKey === 'Faktur masukan'" class="page-title-actions">
-          <button
-            class="btn-enterprise btn-enterprise--secondary"
-            @click="infoToast(t('Export started'))"
-          >
-            {{ t('Export') }}
-          </button>
-          <!-- Finalize is only offered once the whole masa is reconciled; while
-               it isn't, the button says why rather than disappearing (US-021). -->
+        <!-- VAT reconciliation — both faktur sides share the same action set.
+             Export lives in the page's filter bar (rule/page-title-actions-group). -->
+        <div v-else-if="currentPageKey === 'Faktur keluaran' || currentPageKey === 'Faktur masukan'" class="page-title-actions" data-devchange="vat-recon-ui-review">
+          <!-- Finalize is never disabled (rule/btn-no-disabled-validation): pressed
+               before the masa is reconciled, the page explains why (US-021). -->
           <button
             v-if="vatFinalizeState.finalized"
             class="btn-enterprise btn-enterprise--secondary"
@@ -2682,19 +2666,27 @@ function startResize(e: MouseEvent) {
           <button
             v-else
             class="btn-enterprise btn-enterprise--primary"
-            :disabled="!vatFinalizeState.canFinalize"
-            :title="vatFinalizeState.canFinalize ? '' : t('Every faktur in this period must be reconciled first')"
+            data-devchange="vat-recon-uxw-finalize-rerun"
             @click="vatFinalize++"
           >
-            {{ t('Finalize') }}
+            {{ t('Finalize period') }}
           </button>
         </div>
-        <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions">
+        <div v-else-if="currentPageKey === 'Matching rules'" class="page-title-actions" data-devchange="vat-recon-ui-review">
+          <!-- Cancel + primary, always both (rule/form-actions-always-present);
+               Cancel is ghost (rule/btn-cancel-ghost) and leaves without saving. -->
+          <button
+            class="btn-enterprise btn-enterprise--ghost"
+            @click="router.push('/vat-reconciliation')"
+          >
+            {{ t('Cancel') }}
+          </button>
           <button
             class="btn-enterprise btn-enterprise--primary"
             @click="vatSetupSave++"
           >
-            {{ t('Save changes') }}
+            <!-- Create vs edit (rule/form-edit-save-changes): first run creates. -->
+            {{ vatSetUp ? t('Save changes') : t('Save') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'File manager'" class="page-title-actions">

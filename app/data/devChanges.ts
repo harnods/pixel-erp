@@ -28,6 +28,502 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'vat-recon-remarks-context',
+    title: 'Remarks modal: which row it is for',
+    description:
+      'The Remarks modal now shows the row\'s Transaction number, Transaction date and Customer (Vendor on VAT In) as a ContentList above the reason, instead of the bare number. A row with no transaction shows its tax document number and date. The modal uses the md size token (was sm) so the values have room.',
+    date: '2026-11-09',
+    files: ['VatReconciliationRemarkModal.vue', 'VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-matched-columns',
+    title: 'VAT workspace tables: Transaction number column; Method as text',
+    description:
+      'Not reconciled: the "Transaction" column is now "Transaction number". Matched: the transaction number moved out from under the amount into its own Transaction number column after Transaction date (kind: number), and Method reads as plain text (Auto / Manual / Airene) instead of a tag.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-drawer-actions-menu',
+    title: 'Reconciliation drawer: extra secondary actions fold into "Actions"',
+    description:
+      'When the drawer footer would show two or more secondary buttons (e.g. View tax document + Correct transaction date), they fold into one secondary "Actions" dropdown (the shared DetailActionsMenu), so the footer reads Cancel · Actions · primary. One secondary still shows as a plain button.',
+    date: '2026-11-09',
+    files: ['VatReconciliationPairActions.vue', 'ReconciliationDetailDrawer.vue'],
+  },
+  {
+    id: 'vat-recon-masa-in-meta',
+    title: 'VAT workspace: masa pajak leads the meta line',
+    description:
+      'The masa pajak moved from beside the VAT Out title into the meta line under it, first: "Masa pajak: 02/2027 · Last sync: … · Accounts used: …".',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', '[...slug].vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-suggestion-title',
+    title: 'VAT workspace: Airene cards titled "Suggestion"',
+    description:
+      'Each Airene suggestion card in an expanded row (transaction or tax document side) now opens with a "Suggestion" title (ID "Saran"), so it reads as a proposal rather than the matched record.',
+    date: '2026-11-09',
+    files: ['VatReconciliationAireneSuggestions.vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-expand-fixes',
+    title: 'VAT workspace: banner and row fixes',
+    description:
+      'No reason banner while Airene is still searching the missing side. Awaiting DJP approval reads in the warning colour (badge and text). The draft checkbox for bulk Submit sits at the row start, left of the chevron, not beside "No match found". The banner has space below it so it no longer touches the columns\' divider.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-uxw-finalize-rerun',
+    title: 'VAT workspace: Finalize period and Reconcile again (UXW audit)',
+    description:
+      'Per the UXW audit: the title-bar button reads "Finalize period" (ID "Finalkan masa pajak"); the confirm modal reads "Finalize Masa pajak 01/2027?" with a "Finalize" button (ID verb "Finalkan", not the noun "Finalisasi"), and the toolbar button "Re-run" becomes "Reconcile again" (ID "Rekonsiliasi ulang"), matching the "Reconciling…" loading state. Body copy names it as "the Reconcile again button". Pending UXW sign-off.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', '[...slug].vue', 'VatMatchingRulesPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-expand-tertiary',
+    title: 'VAT workspace: expanded-row actions are tertiary',
+    description:
+      'Inside an expanded row, the main actions (Create sales invoice, Create / Submit / Refresh status / View tax document) use the tertiary button, so Finalize stays the only primary on the page. The shared tax document actions take a main-variant prop; the detail drawer keeps primary.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationTaxDocActions.vue'],
+  },
+  {
+    id: 'vat-recon-reason-under-no-match',
+    title: 'VAT workspace: why there is no match sits under "No match"',
+    description:
+      'When one side of an expanded row reads "No match" (Transaction not found, Tax document not found, Not approved), the reason is plain text under that "No match" title (state name in its colour, then the explanation) instead of a banner above both columns. Rows with both sides keep the banner.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-row-state-beside-number',
+    title: 'VAT workspace: row state beside the tax document number',
+    description:
+      'On the tax document side, the row state now reads as part of the caption line, same size and colour as the number: "27000000039848145 · Approved · Duplicate reference" (also Return netted, Match found, Not approved — its tooltip still says why). The amount reads alone.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-row-why-left',
+    title: 'VAT workspace: why a row has no match sits under "No match found"',
+    description:
+      'On a tax-document-only row, the state (e.g. Transaction not found) now sits under "No match found" on the transaction side, mirroring invoice-only rows.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-airene-suggest-followups',
+    title: 'VAT reconciliation: Airene column title, disclaimer copy, seed fix',
+    description:
+      'While Airene is loading or has candidates, the missing side\'s column is titled by what it proposes: "Tax document" on Tax document not found rows, "Transaction" on Transaction not found rows. "No match" now shows only when Airene has nothing. The shared Indonesian disclaimer now reads "Respons Airene bisa jadi tidak akurat atau kurang tepat." (UXW glossary); this also changes the Airene note on New expense. SI013\'s Tier 1 seed is now a different order or prefix (REFERENCE_PREFIX_ORDER) instead of a separator-only difference, which the engine normalizes and auto-matches.',
+    date: '2026-11-09',
+    files: ['VatReconciliationWorkspacePage.vue', 'vatReconSuggest.ts', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-airene-suggest',
+    title: 'VAT reconciliation: Airene match suggestions',
+    description:
+      'Expanding a "Tax document not found" row with no tax document yet, or a "Transaction not found" row, asks Airene (POST /suggest, mocked) for up to three counterparts, once per row per session. While it waits, the row says "Airene is looking for matches…". A rank-1 Tier 1 candidate is marked "Suggested by Airene"; Tier 2 candidates list what differs. Every candidate has a one-line reason and a secondary Confirm match, followed by a caption that Airene can be wrong. With no candidates, or after a timeout, the manual search shows as before. A confirmed suggestion is Reconciled (manual) with origin ai_suggested_human_confirmed: the Matched tab Method column reads Airene, Activity logs "Matched with Airene suggestion", and export carries the origin and reason. Group matches are hidden until US-022. Collapsed rows show no Airene marker and no heuristic "Match found" for these rows. AIRENE_SUGGEST_ENABLED replaces AIRENE_REVIEW_ENABLED, and the "Review with Airene" button is gone. 03/2027 seeds one of each outcome.',
+    date: '2026-11-06',
+    files: ['vatReconSuggest.ts', 'vatReconFlags.ts', 'vatReconciliation.ts', 'VatReconciliationAireneSuggestions.vue', 'VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-tax-doc-substates',
+    title: 'VAT reconciliation: "Tax document not found" splits by the transaction\'s own tax document',
+    description:
+      'The fix differs by how far the transaction\'s own tax document got, so status #3 now has four sub-states, all in To match. None: Tax document not found (Create tax document, Find another tax document). Draft: Tax document in draft (Submit tax document, Edit tax document). Submitted: Awaiting DJP approval (Refresh status, a simulated DJP check). Rejected: Tax document rejected (View tax document). Past "none", the row and drawer show that document instead of Find another. Refresh status approves the SI043 seed, so the row reconciles; others stay processing. The Status filter lists all four. Badges and chips use ≤ 2-word labels (Not issued, Draft, Awaiting approval, Rejected, Not recorded) with the full label in a tooltip. Replaces the "Draft pending" marker.',
+    date: '2026-11-05',
+    files: ['vatReconciliation.ts', 'taxDocuments.ts', 'VatReconciliationTaxDocActions.vue', 'VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationUnmatchedPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-transaction-vs-tax-document',
+    title: 'VAT reconciliation: sides are Transaction and Tax document',
+    description:
+      'Both sides live in ERP and the product never opens Coretax, so no VAT recon screen names Coretax or ERP as a side. The left side is Transaction (sales invoice, sales return, journal entry, bank deposit) and the right side is Tax document (faktur keluaran, nota retur, dokumen lain keluaran). Not found in Coretax is now Tax document not found, and No match in ERP is now Transaction not found. The summary strip reads Transaction DPP/PPN and Tax document DPP/PPN with no subtitles, and its deltas read vs transactions. Open in Coretax is now View tax document. Row, drawer, index and issue-queue labels and the engine reasons were swept the same way, in EN and ID.',
+    date: '2026-11-05',
+    files: ['vatReconciliation.ts', 'VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationPairActions.vue', 'VatReconciliationPeriodsPage.vue', 'VatReconciliationUnmatchedPage.vue', 'TaxReportsIndexPage.vue', '[...slug].vue', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-approved-totals',
+    title: 'VAT reconciliation: faktur totals count Approved faktur only',
+    description:
+      "DPP·faktur, PPN·faktur, their ▲/▼ deltas, Tax difference, and the index's Tax invoice (Rp) amount, count and Difference now leave out Draft, Batal and Rejected faktur. 02/2027 drops its Draft faktur (Rp8.232.000) from the Coretax column; 03/2027 shows Rp0 there. The summary strip stays period-level.",
+    date: '2026-11-05',
+    files: ['vatReconciliation.ts', 'VatReconciliationWorkspacePage.vue', 'VatReconciliationPeriodsPage.vue'],
+  },
+  {
+    id: 'vat-recon-prd-align-not-approved-status',
+    title: 'VAT reconciliation: a non-approved faktur is not "No match in ERP"',
+    description:
+      'No match in ERP is for Approved faktur only. A Draft faktur with no sales invoice now has its own Not approved status: the row shows the faktur status (Draft) and the Not approved tag, with no red status label, and it is in none of the footer counts or the issue queue. Batal/Rejected rows under the Not approved filter read the same way. Excluded faktur no longer hold a period back from Reconciled or Finalize.',
+    date: '2026-11-05',
+    files: ['vatReconciliation.ts', 'VatReconciliationWorkspacePage.vue', 'VatReconciliationUnmatchedPage.vue'],
+  },
+  {
+    id: 'vat-recon-prd-align-vat-out-title',
+    title: 'VAT reconciliation: workspace renamed "VAT Out"',
+    description:
+      'The period workspace is now titled VAT Out (Indonesian: PPN Keluaran) instead of Output tax invoice, because it covers every output document that posts to PPN Keluaran, not only faktur. The title, browser tab title, index Invoice type label and the sitemap note use the new name. Tax-document "Output tax invoice" (the document type) and the "Output tax invoice list" report card are unchanged.',
+    date: '2026-11-05',
+    files: ['[...slug].vue', 'vatReconciliation.ts', 'VatReconciliationPeriodsPage.vue', 'erpSitemap.ts', 'translations.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-header',
+    title: 'VAT reconciliation: Last sync and Accounts used in the period header',
+    description:
+      "The period detail now states when it last synced and which PPN Keluaran accounts its last run used (US-016 AC-08, VR-4). The snapshot is per period, so it can differ from today's setup; 11/2026 ran with an extra account.",
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-rerun',
+    title: 'VAT reconciliation: Re-run warns on setup change, shows progress and what moved',
+    description:
+      'If the account setup changed since the period last ran, Re-run first confirms "Was / Now" (US-016 AC-07); Cancel does nothing, Re-run adopts the current setup as the snapshot. While it runs the page shows "Reconciling…", and rows whose status changed read "from X → Y" until reload (US-002 AC-01, VR-5). Seeded: 02/2027 invoice 40153 (Date order → Reconciled), 01/2027 one invoice (Reconciled → Invoice edited).',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationRowMarkers.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-footer',
+    title: 'VAT reconciliation: footer counts',
+    description:
+      'Below the rows: "Showing X of Y pairs · matched · need review · unmatched · waiting on buyer" (US-020 AC-03/04). X follows the tab, filter and search; the four counts are period-level, and rows waiting on the buyer are not counted as need review. The summary strip stays period-level.',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-prd-align-changed',
+    title: 'VAT reconciliation: changes since last reconciliation on the index',
+    description:
+      'A period whose rows changed after its last run shows "N changes since last reconciliation" under its status (US-019 AC-05). 01/2027 is seeded with 2. Re-run clears it.',
+    date: '2026-11-05',
+    files: ['VatReconciliationPeriodsPage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-row-markers',
+    title: 'VAT reconciliation: row markers (changed since reconciled, remark, status change)',
+    description:
+      'Rows carry a gray "Changed since reconciled" tag with what changed in its tooltip (US-019 AC-01/03/04 — a flag, never a status; Re-run clears it), a comment icon whose tooltip shows the remark reason and text (US-013), and after a Re-run "from X → Y".',
+    date: '2026-11-05',
+    files: ['VatReconciliationRowMarkers.vue', 'VatReconciliationWorkspacePage.vue'],
+  },
+  {
+    id: 'vat-recon-prd-align-duplicate',
+    title: 'VAT reconciliation: duplicate reference picker',
+    description:
+      'A duplicate-reference row lists every Approved faktur carrying the invoice number, each with Select faktur; the latest in the pengganti chain is tagged Suggested (US-003 AC-01/02, VR-6). Selecting one reconciles the pair as manual. The row ✓ opens the list instead of choosing. The drawer list uses the same tag and label.',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-not-approved',
+    title: 'VAT reconciliation: "Not approved" tag on Coretax faktur',
+    description:
+      'A faktur that is Draft, Batal or Rejected in Coretax is excluded from matching (no candidates, ✓ explains why) and tagged "Not approved", with its Coretax status beside the number (US-001 AC-06, §5.1 row 13).',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-not-approved-filter',
+    title: 'VAT reconciliation: where non-approved faktur show',
+    description:
+      'A Draft faktur with no sales invoice stays in To match (Coretax side only, Not approved). A Batal or Rejected faktur with no sales invoice is in no tab and no count; only the To match Status filter "Not approved" lists it (US-001 AC-07). 03/2027 is seeded with one of each.',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-remarks',
+    title: 'VAT reconciliation: Remarks',
+    description:
+      'Any row that is not Reconciled (auto) offers Remarks: a reason (Timing, Missing entry, Duplicate, Return, Rounding, Other) and notes up to 500 characters with a counter (US-013). Save is never disabled: pressed with notes over 500 characters it shows an inline error and saves nothing (rule/btn-no-disabled-validation). Saved remarks show as a row icon and in Activity.',
+    date: '2026-11-05',
+    files: ['VatReconciliationRemarkModal.vue', 'VatReconciliationWorkspacePage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-match-reason',
+    title: 'VAT reconciliation: no free-text reason on manual match',
+    description:
+      'The BE stores no reason on a manual match (VR-6), so the "Confirm match with a difference?" modal keeps the difference check but drops the Reason field. Reasons go in Remarks.',
+    date: '2026-11-05',
+    files: ['VatReconciliationMatchConfirmModal.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-align-no-npwp',
+    title: 'VAT reconciliation: NPWP removed from row detail and drawer',
+    description:
+      'The API never sends the buyer NPWP/NIK (VR-4), so it is gone from the expanded row, the detail drawer, the issue queue column, export columns and search.',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationUnmatchedPage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-hide-vat-in',
+    title: 'VAT reconciliation: VAT In hidden (non-goal until OD-008)',
+    description:
+      'VAT In is a non-goal for the VAT Out MVP, so it is hidden, not deleted. Setup no longer offers "VAT Out & VAT In" or the PPN Masukan accounts card, and a saved scope of both reads as VAT Out. The period index has no Invoice type column or filter and no input-side rows, and the issue queue and workspace show output only. One flag, VAT_IN_ENABLED in data/vatReconFlags.ts, restores it.',
+    date: '2026-11-05',
+    files: ['vatReconFlags.ts', 'vatReconciliation.ts', 'VatMatchingRulesPage.vue', 'VatReconciliationPeriodsPage.vue', 'VatReconciliationUnmatchedPage.vue', 'VatReconciliationWorkspacePage.vue', 'TaxReportsIndexPage.vue'],
+  },
+  {
+    id: 'wo-approval-main-flows',
+    title: 'Work order: approval gate + start date, Track routing and Adjust page',
+    description:
+      'Merging main into the approval work. Start work order asks for the actual start date in the Start modal (up to today); a gated start carries it into the request and the work order starts on that date once approved. Track routing is the primary action while routing is open. Complete keeps approval first, then the routing confirm → remaining materials → actual end date. Adjust goes through the approval modal when a rule gates adjustments, otherwise to the full Adjust work order page.',
+    date: '2026-11-05',
+    files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'vat-recon-drawer-footer',
+    title: 'Reconciliation drawer: Cancel left, actions right',
+    description:
+      'Drawer footer follows the shared drawer shell: ghost Cancel on the left closes the drawer; on the right, Open in Coretax (secondary) sits before the state\'s primary action (e.g. Create sales invoice). Open in Coretax only shows when the pair has a faktur to open.',
+    date: '2026-11-05',
+    files: ['ReconciliationDetailDrawer.vue'],
+  },
+  {
+    id: 'vat-recon-drawer-compare-divider',
+    title: 'Reconciliation drawer: divider between From ERP and From Coretax',
+    description:
+      'A 1px vertical divider (border-default) now splits the two comparison columns in the Reconciliation detail drawer, matching the two-column expand on the workspace rows.',
+    date: '2026-11-05',
+    files: ['ReconciliationDetailDrawer.vue'],
+  },
+  {
+    id: 'app-shell-light-canvas',
+    title: 'App shell: no dark-green band under the page',
+    description:
+      'The dark-green backing moved from html/body onto .app-shell, so the header, side borders and rounded top corners look the same, but any canvas past the shell (e.g. the desktop preview reserving room for its annotation toolbar) now shows the light page colour instead of a green footer band.',
+    date: '2026-11-05',
+    files: ['layouts/default.vue'],
+  },
+  {
+    id: 'vat-recon-workspace-banner-top',
+    title: 'VAT workspace: reason banner at the top of the expanded row',
+    description:
+      'The engine reason banner (No match in ERP, Return netted, …) now sits at the top of the expanded row, above the Sales invoice / Faktur pajak columns, so the why is read before the detail. The Reconciliation detail drawer title is now just the reference number: no state icon, no "Reconciliation detail · <state>" sub-line (the banner below already says the state).',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue'],
+  },
+  {
+    id: 'vat-recon-workspace-tabs-inline',
+    title: 'VAT workspace: tabs under the summary',
+    description:
+      'To match · Not reconciled · Matched moved from the title-bar page tabs to in-page MpTabs directly under the summary, as on the bank Reconciliations page (docs/patterns/tabs.md §2). Counts keep the same warning badge; the tab is still in ?tab= so links and refresh land on it.',
+    date: '2026-11-05',
+    files: ['VatReconciliationWorkspacePage.vue', '[...slug].vue'],
+  },
+  {
+    id: 'vat-recon-workspace-reconciliations',
+    title: 'VAT workspace follows Jurnal bank Reconciliations',
+    description:
+      'Tabs are now To match · Not reconciled · Matched, each with its count. To match keeps the bank-style rows restyled to the reference: status as coloured text ("Match found" / "No match found"), a solid ✓ ring when there is a match to confirm and a dashed one when there is none, and an expand with two titled columns (each with a ⋮ menu) using ContentList; "Find another faktur" opens the detail drawer. Candidates are now only records that exist in the masa — no invented faktur — and a confirmed match consumes its counterpart. Not reconciled and Matched are ErpTablePage tables; Matched shows Method (Auto / Manual) and its Unmatch really splits an engine match back into two open rows. The KPI cards became the reference\'s divider summary strip.',
+    date: '2026-11-04',
+    files: ['VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationPairActions.vue', 'vatReconciliation.ts', '[...slug].vue'],
+  },
+  {
+    id: 'vat-recon-index-no-tabs',
+    title: 'VAT reconciliation index: one list, no tabs',
+    description:
+      'The All reconciliations / Needs attention tabs are gone. Periods that still need work (Not reconciled, Partially reconciled) are sorted to the top of the single list, newest masa first within each group; a column sort overrides it. In All filters, the Tax period checklist sits in a bordered box that scrolls past a fixed height (same box as the Stock adjustments filters).',
+    date: '2026-11-04',
+    files: ['VatReconciliationPeriodsPage.vue', 'ReconciliationFiltersDrawer.vue', '[...slug].vue', 'erpSitemap.ts'],
+  },
+  {
+    id: 'vat-recon-ui-review-2',
+    title: 'VAT reconciliation: UI review pass 2',
+    description:
+      'A fully reconciled masa opens to an all-clear state ("Nothing needs attention" + View all faktur) instead of "No faktur match your filters". Re-run on a finalized masa explains itself inline in the sign-off banner (no toast), and Unfinalize lives only in the title bar. Return rows show the linked sales return and invoice − return. KPI cards wrap instead of truncating amounts. Fixture reasons now match their 02/2027 dates. Setup\'s dark "Setup history" card is now a bordered "Last saved" card with a DD Mon YYYY, HH:MM stamp on the prototype clock. With VAT In in scope the index header is "Invoice (Rp)" and the tax period takes the date width, so nothing clips at 1440px.',
+    date: '2026-11-04',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatMatchingRulesPage.vue', 'VatReconciliationPeriodsPage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-ui-review',
+    title: 'VAT reconciliation: UI review fixes on shared ERP patterns',
+    description:
+      'Every screen now reuses the documented patterns other modules ship. Index & Unmatched: ErpTablePage with column kinds, ErpFilterSelect, PurchaseOrdersPage filter bar (Airene / columns / Export icon group + pill search), ExportModal everywhere (no silent "Export started"), a bulk "Actions" bar for selected periods, the […] row menu and the illustrated empty state. The detail drawer moved onto the ErpDrawer shell (closes only via ×) and "Match this" now records a real match (with a reason when totals differ). Workspace: Export moved from the title bar into the filter bar, Re-run is the search-side tertiary, the draft bulk bar mirrors ErpTablePage, row fixes are secondary (one primary per screen), Finalize is never disabled and explains what is left, duplicate reference lists the two faktur, and no red Difference shows before a pick. Setup: Cancel + Save ("Save" on first run, then back to the index) with a success toast; the tabs stay hidden behind the setup gate.',
+    date: '2026-11-04',
+    files: ['VatReconciliationPeriodsPage.vue', 'VatReconciliationUnmatchedPage.vue', 'VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationPairActions.vue', 'VatReconciliationTaxDocActions.vue', 'VatMatchingRulesPage.vue', '[...slug].vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-review-fixes',
+    title: 'VAT reconciliation: design-review P0 + P1 fixes',
+    description:
+      'A match whose sides differ is no longer one click: the ✓ opens a modal that states the difference and requires a reason. Manual matches are saved (Reconciled manual; KPIs and index follow; Unmatch reverts). The expand shows Activity built from real records (match + reason, waiting on buyer, tax document, engine, sync). The page scrolls as a whole with a sticky column header and footer, pages at 50 rows, and drafts can be selected and submitted to DJP in bulk.',
+    date: '2026-11-03',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationMatchConfirmModal.vue', 'VatReconciliationPairActions.vue', 'ReconciliationDetailDrawer.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-prd-fixes',
+    title: 'VAT reconciliation: four PRD OD-001 gaps fixed',
+    description:
+      'Tax difference is now |PPN Sales − PPN Faktur| (US-020 AC-02) — it used to add the DPP gap in. Footer counts follow the status filter and search; the cards stay period-level (AC-04). A Finalized masa refuses Match / Unmatch / Confirm, not only Re-run (US-002 AC-05). Waiting on buyer is a real per-row toggle with a clock tag: only toggled rows leave "need review", status unchanged (US-012 AC-02).',
+    date: '2026-11-03',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationPairActions.vue', 'ReconciliationDetailDrawer.vue', 'VatReconciliationUnmatchedPage.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-first-period',
+    title: 'VAT reconciliation starts at masa 10/2026',
+    description:
+      'Release moves to November 2026, so the first masa pajak offered is 10/2026 (its SPT is still due end of November) instead of 01/2027. The six demo periods now run 10/2026 → 03/2027 and the prototype "today" is 18 Mar 2027.',
+    date: '2026-11-02',
+    files: ['vatReconciliation.ts', 'VatMatchingRulesPage.vue'],
+  },
+  {
+    id: 'vat-recon-bank-style',
+    title: 'VAT reconciliation rows: bank-reconciliation style',
+    description:
+      'Rows are grouped by date and read as one compact line — ERP amount ⋯ Coretax amount + status tag — like Bank reconciliation. Detail opens inside the row (no drawer): both sides field by field, or a radio list of candidates with Selected total and Difference. The round ✓ confirms a match (filled green = reconciled; pressed with nothing picked, it asks inline). Tax document actions (Edit / Submit to DJP / Create) sit on the line itself. Status filter is now ErpFilterSelect.',
+    date: '2026-11-02',
+    files: ['VatReconciliationWorkspacePage.vue', 'VatReconciliationPairActions.vue', 'VatReconciliationTaxDocActions.vue', 'ReconciliationDetailDrawer.vue', 'vatReconciliation.ts'],
+  },
+  {
+    id: 'vat-recon-tax-doc-actions',
+    title: 'Not found in Coretax: act on the invoice\'s tax document',
+    description:
+      'Rows are now real sales invoices, and the action follows how far the invoice\'s tax document got. None → "Create tax document ↗" opens the invoice in a new tab with the Create drawer already open. Draft → "Submit to DJP" (confirm, right here) or "Edit tax document ↗" (new tab, draft open in edit mode). Submitted / rejected / approved → "View tax document ↗". Saving in the other tab updates this row on return. The invoice page\'s draft "Edit" menu item now works too.',
+    date: '2026-11-02',
+    files: ['VatReconciliationTaxDocActions.vue', 'VatReconciliationWorkspacePage.vue', 'ReconciliationDetailDrawer.vue', 'SalesInvoiceDetailsPage.vue', 'CreateTaxDocumentDrawer.vue', 'vatReconciliation.ts', 'taxDocuments.ts'],
+  },
+  {
+    id: 'vat-setup-manual-accounts',
+    title: 'VAT reconciliation setup: pick PPN accounts by hand',
+    description:
+      'The fixed tax-code list (with hardcoded, non-existent COA like 2-20300) is gone. Users now pick the PPN Keluaran accounts themselves from the live chart of accounts — multi-select with chips, like Jurnal "Include accounts" — with a hint that only PPN/VAT accounts belong here. "VAT Out & VAT In" adds a second picker for PPN Masukan. Save is never disabled: an empty list or an account in both lists shows an inline error.',
+    date: '2026-11-02',
+    files: ['VatMatchingRulesPage.vue', 'vatReconciliation.ts', 'VatReconciliationPeriodsPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'wo-approval-queue-columns',
+    title: 'Awaiting approval: Request type column',
+    description:
+      'Copy audit: the column was "Transaction type", which in ERP means the document type — in Settings › Approval workflows, Work order IS the transaction type. Every row here is a work order, so the column now reads Request type (Tipe pengajuan) and says which request is waiting. The cancel type reads "Cancel/close" like the rest of the module instead of "Cancellation". Status and Requester swapped places.',
+    date: '2026-10-19',
+    files: ['WorkOrdersAwaitingApprovalPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'wo-approval-fixes',
+    title: 'Work order approval — review fixes',
+    description:
+      'Review pass: the freeze notice no longer claims "Only Print is available" (the requester can also cancel the request) and just says the work order is locked; transaction dates are the local calendar day, so a request no longer shows a date a day before its own log; a request that applies because its approval level was removed from the workflow now says so in the log instead of looking approved; Adjustment, Completion and Cancel/close workflows are seeded ACTIVE, so those actions really do ask for approval like the queue implies.',
+    date: '2026-10-19',
+    files: ['woApproval.ts', 'approvalWorkflows.ts', 'WoApprovalNotice.vue', 'WoTransactionModal.vue', 'date.ts'],
+  },
+  {
+    id: 'wo-approval-status',
+    title: 'Work order status while approval is pending',
+    description:
+      'Grooming 2026-10-09: the work order status stays as-is while a request is pending (the earlier Draft / Waiting approval display statuses are removed); once approved, Start → In progress, completion → Completed, cancel/close → Canceled. Approval notices now sit inside the content under the Overview / Material consume & return tabs. Partial completion is out of MVP scope and no longer a gated type. If the requester is the only approver at a level (self-approval off), that level is skipped and logged, so the request moves to the next level instead of getting stuck.',
+    date: '2026-10-09',
+    files: ['woApproval.ts', 'WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'ErpStatusBadge.vue'],
+  },
+  {
+    id: 'wo-approval-mvp-scope',
+    title: 'Work order approval — MVP scope',
+    description:
+      'Awaiting approval lists every pending request for all users (badge = all pending); Approve, Reject and the checkbox appear only where you are the current-level approver, with a "Waiting for" column. Start work order replaces Work order creation as a gated type — creation saves Not started, and material is reserved when the start is approved. Material consume / return and partial completion are not gated. A Work order transaction type can belong to only one workflow.',
+    date: '2026-10-05',
+    files: ['woApproval.ts', 'WorkOrdersAwaitingApprovalPage.vue', 'WorkOrderDetailsPage.vue', 'CreateApprovalWorkflowPage.vue', 'CreateWorkOrderPage.vue'],
+  },
+  {
+    id: 'wo-approval-rev3',
+    title: 'Work order approval aligned to PRD Rev 3',
+    description:
+      'Cancel/close is a gated type (work order Actions menu); new Work order workflows are pre-filled with Start, Adjustment, Completion and Cancel/close; a per-workflow "Allow requester to approve own request" toggle (off by default); adjustments need a reason and an adjustment date, shown in the approval log; the approval log shows a Completion summary (output and cost vs plan), tagged "Out of scope for MVP".',
+    date: '2026-10-05',
+    files: ['woApproval.ts', 'WoTransactionModal.vue', 'CreateApprovalWorkflowPage.vue', 'NewMaterialRecordPage.vue', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-queue',
+    title: 'Work orders: Awaiting approval tab',
+    description:
+      'Approver queue (PRD "Require approval" tab, named Awaiting approval like other modules) with Approval log, Comments, Approve and Reject (reason required), plus bulk Approve / Reject. Switch "View as" in the scenario FAB to check level 1, level 2 and requester views. Table styled like the other approval queues (Purchase requests / Bills): "Work order #n" number link, Awaiting approval status badge, plain cells, Airene / Column settings / Export tools, inline Approve + quiet icon buttons. UXW copy: columns Date · Number · Request type · Warehouse · Status · Requester · Approver; types Start / Adjustment / Completion / Cancel/close; search "Search...".',
+    date: '2026-10-14',
+    files: ['WorkOrdersAwaitingApprovalPage.vue', 'woApproval.ts', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-list-indicator',
+    title: 'Work order list: approval icon + status filter',
+    description:
+      'Approval status filter (Waiting for approval / Rejected). The status badge stays as-is; a work order with a request waiting for approval shows a 12px "Awaiting approval" caption under the badge (no icon, no approver details).',
+    date: '2026-10-14',
+    files: ['WorkOrdersIndexPage.vue'],
+  },
+  {
+    id: 'wo-approval-detail',
+    title: 'Work order detail: approval notices and guards',
+    description:
+      'For an approver at the current level, the primary action (e.g. Start work order) becomes an Approve split button with Reject in its dropdown; pending and rejected notices (the pending notice opens the Approval log), "waiting for approval" captions on consumed / produced qty, and inline refusals when a pending request blocks an action (buttons stay enabled). The notice sits at the top of the scrolling content of the open tab, so it scrolls with the page. Notices carry no text buttons (the log opens from the header icon; Cancel approval request is in the Actions menu). Only ONE notice shows at a time — the latest: an inline refusal right after a click, otherwise the newest of the pending request (with its adjust / cancel reason), the undismissed rejection and the Adjust / Cancel-close reason.',
+    date: '2026-10-10',
+    files: ['WorkOrderDetailsPage.vue', 'WoTransactionModal.vue'],
+  },
+  {
+    id: 'wo-approval-forms',
+    title: 'Gated transactions: pre-submit notice and Submit for approval',
+    description:
+      'Start work order, Adjust work order, Complete and Cancel/close show "This transaction needs approval from level 1: …" when a Work order workflow gates them, and save a request instead of executing. Adjust is a stand-in modal (no form existed before). Material consume / return post immediately but are refused while an adjustment, completion or cancel/close is pending, and consume is capped at the planned qty. A rejected request is not re-opened pre-filled — the user starts the action again from the header or Actions menu.',
+    date: '2026-10-02',
+    files: ['CreateWorkOrderPage.vue', 'NewMaterialRecordPage.vue', 'WoTransactionModal.vue'],
+  },
+  {
+    id: 'wo-approval-freeze',
+    title: 'Work order frozen while a request waits for approval',
+    description:
+      'Grooming 2026-10-09: while any approval request is pending, every work order action (Start, Complete, Adjust, Cancel/close, Edit, Delete, Replace attachment, New record) refuses with an inline notice — buttons stay enabled per the no-disabled-buttons rule. Print and the requester\'s Cancel approval request stay available. The status badge stays as-is (no Draft / Waiting approval status). In the list, row Cancel is hidden while frozen.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'WorkOrdersIndexPage.vue', 'NewMaterialRecordPage.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-val',
+    title: 'Confirmation modal reads the approval rule from VAL',
+    description:
+      'Start, Adjust, Complete and Cancel/close all confirm in one modal. On open it asks VAL (stand-in client with a 600 ms delay; demo FAB can make it fail) which approval rule applies and shows it in a blue info banner, with loading and error / Try again states. When every level would be skipped (the requester is the only approver) the banner says it\'s approved automatically. Adjust and Cancel/close need a reason.',
+    date: '2026-10-09',
+    files: ['WoTransactionModal.vue', 'valApprovalRule.ts'],
+  },
+  {
+    id: 'wo-approval-reason-banner',
+    title: 'Adjust / Cancel-close reason on the work order',
+    description:
+      'After Adjust or Cancel/close the detail page shows the reason given, who gave it and whether it\'s still waiting for approval. A pending adjustment\'s new planned qty shows on the list and detail right away and is reverted if the request is rejected or canceled.',
+    date: '2026-10-09',
+    files: ['WoActionReasonBanner.vue', 'WorkOrderDetailsPage.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-reject-banner',
+    title: 'Sticky rejection notice',
+    description:
+      'A rejected request shows a danger notice with the reject reason that stays until the user dismisses it (×, remembered). No Submit again / Create again on it — the action is started again from the header or Actions menu. While a request is pending, the Actions menu hides Adjust, Cancel/close, Edit, Replace attachment and Delete (Print and Cancel approval request remain).',
+    date: '2026-10-09',
+    files: ['WoRejectBanner.vue', 'WorkOrderDetailsPage.vue'],
+  },
+  {
+    id: 'wo-approval-cancel-request',
+    title: 'Cancel approval request',
+    description:
+      'The requester can withdraw a pending request until the first approver approves it — from the Actions menu and the pending notice on the detail page, and the row menu on Awaiting approval. Nothing is applied and the work order unlocks; the approval log records it.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'WorkOrdersAwaitingApprovalPage.vue', 'ApprovalLogModal.vue', 'woApproval.ts'],
+  },
+  {
+    id: 'wo-approval-log-tab',
+    title: 'Approval log icon in the work order header',
+    description:
+      'Like the transaction detail pages (rule/detail-approval-header), the work order header has the Approval log and Comments icon buttons left of Actions (Comments = the pending request\'s thread, else the latest request\'s). It opens the Approval log modal with every request on the work order (pending first, then the latest decided): requester, levels, approved / rejected with reason / skipped / canceled. Replaces the Approval log tab.',
+    date: '2026-10-09',
+    files: ['WorkOrderDetailsPage.vue', 'ApprovalLogModal.vue'],
+  },
+  {
+    id: 'wo-approval-rules',
+    title: 'Approval workflows: Work order transaction type',
+    description:
+      'Choosing transaction type "Work order" shows a second dropdown under it to pick the work order transaction the workflow gates (Start work order, adjustment, partial completion, completion, cancel/close). A type can have only one ACTIVE workflow — types another active workflow already has are not offered, and turning on a workflow whose type is already covered asks to turn the other one off. Approvers are limited to users with Work order access, up to 4 levels, and the list shows "Applies to: …". Requests still waiting for approval follow the rule live: saving a workflow updates their levels and approvers (a removed level lets the request move on or execute; decided requests keep their history).',
+    date: '2026-10-10',
+    files: ['CreateApprovalWorkflowPage.vue', 'ApprovalWorkflowsPage.vue', 'approvalWorkflows.ts'],
+  },
+  {
     id: 'sd-input-method-table',
     title: 'Sales delivery: one input method for the whole table',
     description:
@@ -614,6 +1110,7 @@ export const DEV_CHANGES: DevChange[] = [
       'The Credit Memo report is now derived from the credit memo mini-DB (not a separate seed), so creating/editing/deleting a credit memo, application or refund updates the report immediately. Memo numbers and mutation rows deep-link to their detail pages.',
     date: '2026-10-14',
     files: ['creditMemoReport.ts', 'CreditMemoReportPage.vue', 'creditMemos.ts'],
+
   },
   {
     id: 'crm-generic-actions-column',

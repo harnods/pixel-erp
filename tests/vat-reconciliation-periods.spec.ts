@@ -15,14 +15,19 @@
  *   3. **Selisih and status agree.** A zero selisih with a `partially
  *      reconciled` status (or vice versa) means the derivation drifted.
  */
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+
+// VAT In (OD-008) is hidden behind VAT_IN_ENABLED, off while it is a non-goal.
+// This file pins the two-sided model that comes back with it, so it runs with
+// the flag on; the shipping (off) behaviour is pinned in vat-recon-hide-vat-in.spec.ts.
+vi.mock('~/data/vatReconFlags', () => ({ VAT_IN_ENABLED: true }))
 import {
   reconPeriodRows, reconPeriods, periodLabelById, activePeriodId, activePeriod,
   reconTotals, matchCounts, pairsForPeriod, outputPairs, inputPairs, reconIssues,
   SIDE_LABELS, MATCH_META, ATTENTION_STATES, FIRST_PERIOD_ID, exposureOf,
   finalizePeriod, unfinalizePeriod, isPeriodFinalized, canFinalizePeriod,
   periodFinalization, reconUnfinishedCount, CURRENT_USER, TODAY_ISO,
-  saveVatSetup, reconSides, isSideInScope, SNAPSHOT_TAX_CODE_IDS,
+  saveVatSetup, reconSides, isSideInScope, SNAPSHOT_ACCOUNT_CODES, reconDateValue,
   type ReconSide,
 } from '~/data/vatReconciliation'
 
@@ -30,7 +35,7 @@ import {
 // The shipping default is VAT Out only, so the scope is set explicitly here
 // rather than left to whatever the default happens to be — the toggle has its
 // own tests at the bottom.
-saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
 
 const rows = reconPeriodRows()
 const SIDES: ReconSide[] = ['output', 'input']
@@ -43,12 +48,12 @@ const row = (periodId: string, side: ReconSide) => {
 describe('period index — coverage', () => {
   it('lists every masa twice, newest first, keluaran before masukan', () => {
     expect(rows.map(r => `${r.masa} ${r.side}`)).toEqual([
-      '06/2027 output', '06/2027 input',
-      '05/2027 output', '05/2027 input',
-      '04/2027 output', '04/2027 input',
       '03/2027 output', '03/2027 input',
       '02/2027 output', '02/2027 input',
       '01/2027 output', '01/2027 input',
+      '12/2026 output', '12/2026 input',
+      '11/2026 output', '11/2026 input',
+      '10/2026 output', '10/2026 input',
     ])
   })
 
@@ -105,7 +110,8 @@ describe('period index — the two sides never share figures', () => {
     // equals the pair count — this is what makes the counts worth showing.
     const out = row(activePeriodId, 'output')
     expect(out.erpCount).toBe(outputPairs.filter(p => p.erp).length)
-    expect(out.djpCount).toBe(outputPairs.filter(p => p.djp).length)
+    // Approved faktur only — o-16 is a Draft, excluded from the Coretax column (§5.1 row 13).
+    expect(out.djpCount).toBe(outputPairs.filter(p => p.djp && p.djp.approved !== false).length)
     expect(out.erpCount).not.toBe(out.djpCount)
 
     const inp = row(activePeriodId, 'input')
@@ -144,7 +150,7 @@ describe('period index — selisih and status agree', () => {
 
   it('a not-reconciled masa has nothing matched', () => {
     for (const side of SIDES) {
-      const r = row('2027-06', side)
+      const r = row('2027-03', side)
       expect(r.status).toBe('not reconciled')
       expect(r.matched).toBe(0)
       // It still carries a date: matching ran automatically and found nothing to
@@ -308,9 +314,22 @@ describe('VAT reconciliation — the status model matches the PRD', () => {
     }
   })
 
-  it('the first period offered is 01/2027 — nothing earlier', () => {
+  it('the first period offered is 10/2026 — nothing earlier', () => {
+    // Release is Nov 2026; masa 10/2026 is still open for SPT then (due end Nov).
+    expect(FIRST_PERIOD_ID).toBe('2026-10')
     const ids = [...new Set(reconPeriodRows().map(r => r.periodId))].sort()
     expect(ids[0]).toBe(FIRST_PERIOD_ID)
+  })
+
+  it('a reconciled pair never has its faktur dated before its invoice', () => {
+    for (const periodId of [...new Set(reconPeriodRows().map(r => r.periodId))]) {
+      for (const side of SIDES) {
+        for (const p of pairsForPeriod(periodId, side)) {
+          if (p.match !== 'matched' || !p.erp || !p.djp) continue
+          expect(reconDateValue(p.djp.date), `${p.id}`).toBeGreaterThanOrEqual(reconDateValue(p.erp.date))
+        }
+      }
+    }
   })
 
   it('a faktur that is not Approved is never matched', () => {
@@ -384,8 +403,10 @@ describe('VAT reconciliation — matching is automatic', () => {
       expect(r.status).toBe('not reconciled')
       // Nothing to pair with, so every invoice is exposed for its full value.
       expect(r.selisih).toBe(r.erpAmount)
+      // Every invoice is Tax document not found; a faktur that is only a Draft
+      // (§5.1 row 13) is excluded and doesn't count as synced.
       for (const p of pairsForPeriod(r.periodId, r.side)) {
-        expect(p.match).toBe('not-in-coretax')
+        expect(['not-in-coretax', 'not-approved']).toContain(p.match)
       }
     }
   })
@@ -469,45 +490,45 @@ describe('VAT reconciliation — finalize a period', () => {
  * shows an input side in one place and hides it in another.
  */
 describe('VAT reconciliation — VAT Out only vs VAT In & Out', () => {
-  afterEach(() => { saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both') })
+  afterEach(() => { saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' }) })
 
   it('defaults to VAT Out only', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS])
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output })
     expect(reconSides()).toEqual(['output'])
     expect(isSideInScope('output')).toBe(true)
     expect(isSideInScope('input')).toBe(false)
   })
 
   it('VAT Out only lists one row per masa, not two', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     const r = reconPeriodRows()
     expect(r.every(x => x.side === 'output')).toBe(true)
     expect(new Set(r.map(x => x.periodId)).size).toBe(r.length)
   })
 
   it('VAT In & Out lists both', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
     const r = reconPeriodRows()
     expect(new Set(r.map(x => x.side))).toEqual(new Set(['output', 'input']))
     expect(new Set(r.map(x => x.periodId)).size).toBe(r.length / 2)
   })
 
   it('the issue feed drops the input side with it', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     expect(reconIssues(activePeriodId).every(i => i.side === 'output')).toBe(true)
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
     expect(reconIssues(activePeriodId).some(i => i.side === 'input')).toBe(true)
   })
 
   it('the outstanding count follows the scope', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     const outOnly = reconUnfinishedCount()
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'both')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, inputAccountCodes: SNAPSHOT_ACCOUNT_CODES.input, scope: 'both' })
     expect(reconUnfinishedCount()).toBeGreaterThan(outOnly)
   })
 
   it('finalize is not blocked by an input side the company never adopted', () => {
-    saveVatSetup([...SNAPSHOT_TAX_CODE_IDS], 'out')
+    saveVatSetup({ outputAccountCodes: SNAPSHOT_ACCOUNT_CODES.output, scope: 'out' })
     const done = reconPeriodRows().find(r => r.status === 'reconciled')!
     expect(canFinalizePeriod(done.periodId)).toBe(true)
   })

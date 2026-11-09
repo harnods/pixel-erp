@@ -15,22 +15,24 @@
  *
  * Rows open the same detail drawer the workspace uses.
  *
- * Paginated at 25/page via useTableState + ErpPagination (see
- * docs/patterns/index-page-format.md). Sorted by tax exposure descending, not by
- * date: over a real masa pajak the rows that matter are the biggest money
- * differences, and date order buries them.
+ * Rendered with the shared ErpTablePage + useTableState (rule/table-use-erptablepage),
+ * filter bar anatomy as PurchaseOrdersPage: Status quick filter (ErpFilterSelect),
+ * Export icon group (ExportModal) and the pill search. Rows open the detail drawer
+ * from the identifier cell, a link-styled span (rule/table-name-link-span). Sorted
+ * by tax exposure descending, not by date: over a real masa pajak the rows that
+ * matter are the biggest money differences, and date order buries them.
  */
-import {
-  MpIcon, MpBadge, MpSelect, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, css,
-} from '@mekari/pixel3'
+import { MpIcon, MpBadge, MpButton, MpButtonGroup, MpTooltip } from '@mekari/pixel3'
 import { infoToast } from '~/utils/toasts'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
 import ReconciliationDetailDrawer from '~/components/patterns/ReconciliationDetailDrawer.vue'
-import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import {
-  MATCH_META, ATTENTION_STATES, reconIssues, issueRows, formatAmountPlain, periodLabelById, SIDE_LABELS,
-  activePeriodId,
+  MATCH_META, ATTENTION_STATES, reconIssues, issueRows, formatAmountPlain, periodLabelById, reconSides,
+  activePeriodId, isPeriodFinalized, reconVersion, isSideInScope,
   type ReconIssue, type MatchState, type ReconSide, type ReconIssueRow,
+  statusBadgeOf, statusLabelOf, statusBadgeTypeOf,
 } from '~/data/vatReconciliation'
 
 const { t } = useLocale()
@@ -45,40 +47,77 @@ const route = useRoute()
  */
 const scopedSide = computed<ReconSide | null>(() => {
   const jenis = route.query.jenis
-  return jenis === 'input' || jenis === 'output' ? jenis : null
+  // A side that isn't in scope (VAT In while VAT_IN_ENABLED is off) is ignored,
+  // so a stale ?jenis=input link can't relabel the queue for vendors.
+  return (jenis === 'input' || jenis === 'output') && isSideInScope(jenis) ? jenis : null
 })
 // The queue belongs to a masa — it is only ever reached from a period row, so
 // both the feed and the scope line read the same ?masa=.
 const scopedPeriodId = computed(() => String(route.query.masa ?? activePeriodId))
 const scopedPeriod = computed(() => periodLabelById(String(route.query.masa ?? '')))
 
-const issues = computed(() =>
-  reconIssues(scopedPeriodId.value).filter(i => !scopedSide.value || i.side === scopedSide.value),
-)
-const rows = computed(() =>
-  issueRows(scopedPeriodId.value).filter(r => !scopedSide.value || r.side === scopedSide.value),
-)
+// reconVersion is read so a match made in the drawer moves the row off the queue.
+const issues = computed(() => {
+  void reconVersion.value
+  return reconIssues(scopedPeriodId.value).filter(i => !scopedSide.value || i.side === scopedSide.value)
+})
+const rows = computed(() => {
+  void reconVersion.value
+  return issueRows(scopedPeriodId.value).filter(r => !scopedSide.value || r.side === scopedSide.value)
+})
 
 /**
  * Status select options — real values only, no "All issues" entry: clearing the
  * select (x) is what shows everything (docs/patterns/Form.md → Select).
  */
 const STATUS_OPTIONS: { label: string; value: MatchState }[] =
-  ATTENTION_STATES.map(v => ({ label: t(MATCH_META[v].chipLabel), value: v }))
+  // Not-approved faktur are excluded from matching and never in this queue (§5.1 row 13).
+  ATTENTION_STATES.filter(v => v !== 'not-approved').map(v => ({ label: t(MATCH_META[v].chipLabel), value: v }))
 
 const {
-  statusFilter, currentPage, perPage, paginated, total, setPage, setPerPage, setSort,
+  search, statusFilter, currentPage, perPage, paginated, total,
+  setPage, setPerPage, setSort, sortKey, sortDir, toggleSort,
 } = useTableState<ReconIssueRow>(rows, {
   perPage: 25,
-  filterFn: (row, _search, status) => !status || row.match === status,
+  filterFn: (row, s, status) =>
+    (!s || `${row.ref} ${row.party}`.toLowerCase().includes(s.toLowerCase()))
+    && (!status || row.match === status),
 })
 
 // Biggest exposure first — the useTableState default is unsorted (dataset order).
 setSort('exposure', 'desc')
 
-const statusLabel = computed(
-  () => STATUS_OPTIONS.find(o => o.value === statusFilter.value)?.label ?? '',
-)
+function clearFilters() { search.value = ''; statusFilter.value = '' }
+
+const partyLabel = computed(() => {
+  if (scopedSide.value) return scopedSide.value === 'input' ? t('Vendor') : t('Customer')
+  return reconSides().length > 1 ? t('Customer / vendor') : t('Customer')
+})
+
+const showSide = computed(() => !scopedSide.value && reconSides().length > 1)
+
+// Semantic kinds, never pixel widths (rule/table-column-kind).
+const columns = computed<TableColumn[]>(() => [
+  { key: 'ref',      label: t('Number'),   kind: 'number' },
+  { key: 'match',    label: t('Status'),   kind: 'status' },
+  // Side only earns a column when the queue mixes both (index hides Invoice type the same way).
+  ...(showSide.value ? [{ key: 'side', label: t('Side') } as TableColumn] : []),
+  // The party is a customer on the output side, a vendor on the input side.
+  { key: 'party',    label: partyLabel.value, kind: 'name' },
+  // No NPWP column: the API never sends the buyer's NPWP/NIK (VR-4).
+  { key: 'date',     label: t('Date'),     kind: 'date' },
+  { key: 'exposure', label: t('Exposure'), kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'ppn',      label: 'PPN',         kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+  { key: 'total',    label: t('Total'),    kind: 'amount', align: 'right', sortable: true, sortType: 'number' },
+])
+
+// ── Export (rule/export-modal) ────────────────────────────────────────────────
+const exportOpen = ref(false)
+const exportColumns = computed(() => columns.value.map((c, i) => ({ key: c.key, label: c.label, ...(i < 2 ? { required: true } : {}) })))
+
+const loading = ref(true)
+onMounted(() => { setTimeout(() => { loading.value = false }, 600) })
+const emptyIllustration = '/illustrations/empty-folder.png'
 
 const counts = computed(() => {
   const by = (m: MatchState) => issues.value.filter(i => i.match === m).length
@@ -106,8 +145,8 @@ const tiles = computed(() => [
   { label: 'Needs correction', sub: 'Invoice edited or voided', value: counts.value.correction, accent: 'warning', icon: 'edit', iconColor: 'icon.warning' },
   { label: 'Date problems', sub: 'Dates out of order', value: counts.value.dates, accent: 'warning', icon: 'time', iconColor: 'icon.warning' },
   { label: 'Returns', sub: 'Return not reflected', value: counts.value.returns, accent: 'warning', icon: 'undo', iconColor: 'icon.warning' },
-  { label: 'Not in Coretax', sub: 'No faktur issued', value: counts.value.notInCoretax, accent: 'critical', icon: 'database', iconColor: 'icon.danger' },
-  { label: 'No match in ERP', sub: 'Not recorded in Jurnal', value: counts.value.noMatchInErp, accent: 'critical', icon: 'cloud', iconColor: 'icon.danger' },
+  { label: 'Not issued', sub: 'No tax document issued', value: counts.value.notInCoretax, accent: 'critical', icon: 'database', iconColor: 'icon.danger' },
+  { label: 'Not recorded', sub: 'Not recorded in Jurnal', value: counts.value.noMatchInErp, accent: 'critical', icon: 'cloud', iconColor: 'icon.danger' },
 ])
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
@@ -138,141 +177,129 @@ function sourceLabel(side: ReconSide) {
 </script>
 
 <template>
-  <div class="vu-page">
-    <!-- Summary tiles -->
-    <div class="vu-tiles">
-      <div v-for="tile in tiles" :key="tile.label" class="vu-tile" :class="`is-${tile.accent}`">
-        <div class="vu-tile-icon"><MpIcon :name="tile.icon" size="md" :color="tile.iconColor" /></div>
-        <div class="vu-tile-body">
-          <div class="vu-tile-label">{{ t(tile.label) }}</div>
-          <div class="vu-tile-value">{{ tile.value }}</div>
-          <div class="vu-tile-sub">{{ t(tile.sub) }}</div>
+  <ErpTablePage
+    :columns="columns"
+    :rows="(paginated as unknown as Record<string, unknown>[])"
+    :total="total"
+    :current-page="currentPage"
+    :per-page="perPage"
+    :sort-key="sortKey"
+    :sort-dir="sortDir"
+    :loading="loading"
+    :search="search"
+    :has-active-filter="!!search || !!statusFilter"
+    filter-empty-label="issue"
+    data-devchange="vat-recon-ui-review"
+    @page-change="setPage"
+    @per-page-change="setPerPage"
+    @sort="toggleSort"
+    @clear-filters="clearFilters"
+  >
+    <!-- Summary tiles + scope line ride in ErpTablePage's #stats slot. -->
+    <template #stats>
+      <div class="vu-stats">
+        <div class="vu-tiles">
+          <div v-for="tile in tiles" :key="tile.label" class="vu-tile" :class="`is-${tile.accent}`">
+            <div class="vu-tile-icon"><MpIcon :name="tile.icon" size="md" :color="tile.iconColor" /></div>
+            <div class="vu-tile-body">
+              <div class="vu-tile-label">{{ t(tile.label) }}</div>
+              <div class="vu-tile-value">{{ tile.value }}</div>
+              <div class="vu-tile-sub">{{ t(tile.sub) }}</div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </template>
 
-    <!-- Scope line — says which masa and side this queue belongs to, since it's
-         opened from a period row rather than from the sidebar. -->
-    <p v-if="scopedPeriod || scopedSide" class="vu-scope">
-      <span v-if="scopedPeriod">{{ scopedPeriod }}</span>
-      <span v-if="scopedPeriod && scopedSide" class="vu-scope-sep">·</span>
-      <span v-if="scopedSide">{{ SIDE_LABELS[scopedSide].title }}</span>
-    </p>
-
-    <!-- Filter bar — one quick filter (Status). Replaces the old section tabs;
-         match state is a filter, not a scope. -->
-    <div class="vu-filters">
-      <MpPopover id="vu-status-filter" is-close-on-select>
-        <MpPopoverTrigger>
-          <MpSelect
-            id="vu-status-select"
-            :placeholder="t('Status')"
-            :model-value="statusFilter"
-            is-clearable
-            :class="css({ width: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' })"
-            @mousedown.prevent
-            @clear="statusFilter = ''"
-          >
-            <option v-if="statusFilter" :value="statusFilter">{{ statusLabel }}</option>
-          </MpSelect>
-        </MpPopoverTrigger>
-        <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', maxWidth: '320px' })">
-          <MpPopoverList>
-            <MpPopoverListItem
-              v-for="opt in STATUS_OPTIONS"
-              :key="opt.value"
-              :is-active="opt.value === statusFilter"
-              @click="statusFilter = opt.value"
-            >
-              {{ opt.label }}
-            </MpPopoverListItem>
-          </MpPopoverList>
-        </MpPopoverContent>
-      </MpPopover>
-    </div>
-
-    <!-- Table -->
-    <div class="vu-table">
-      <div class="vu-head">
-        <span>{{ t('Status') }}</span>
-        <span>{{ t('Side / source') }}</span>
-        <span>{{ t('Party · NPWP') }}</span>
-        <span>{{ t('Date') }}</span>
-        <span class="vu-num">{{ t('Exposure') }}</span>
-        <span class="vu-num">PPN</span>
-        <span class="vu-num">{{ t('Total') }}</span>
-        <span />
+    <!-- Filter bar (PurchaseOrdersPage anatomy) -->
+    <template #filters>
+      <div class="filter-left">
+        <ErpFilterSelect
+          id="vu-status-filter"
+          v-model="statusFilter"
+          :placeholder="t('Status')"
+          :options="STATUS_OPTIONS"
+          width="200px"
+        />
       </div>
-
-      <div class="vu-rows">
-        <div v-if="total === 0" class="vu-empty">
-          <MpIcon name="done" size="32px" color="icon.success" />
-          <div class="vu-empty-title">{{ t('All clear in this category') }}</div>
-          <div class="vu-empty-body">{{ t('Nothing to review here for this period.') }}</div>
+      <div class="filter-right">
+        <MpButtonGroup class="filter-btn-group">
+          <MpTooltip id="vu-tt-export" :label="t('Export')" placement="bottom">
+            <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
+          </MpTooltip>
+        </MpButtonGroup>
+        <div class="filter-search">
+          <MpIcon name="search" size="sm" />
+          <input
+            v-model="search"
+            class="filter-search-input"
+            type="text"
+            :placeholder="t('Search...')"
+          />
+          <MpButton v-if="search" class="search-clear-btn" variant="ghost" type="button" :aria-label="t('Clear search')" left-icon="close" @click="search = ''" />
         </div>
-
-        <button
-          v-for="row in paginated"
-          :key="row.id"
-          type="button"
-          class="vu-row"
-          @click="openDetail(row.issue)"
-        >
-          <span>
-            <MpBadge :type="MATCH_META[row.match].badgeType" for="tableStatus" size="sm">
-              {{ t(MATCH_META[row.match].chipLabel) }}
-            </MpBadge>
-          </span>
-          <span>
-            <span class="vu-cell-strong">{{ sourceLabel(row.side) }}</span>
-            <span class="vu-cell-sub">{{ row.ref }}</span>
-          </span>
-          <span>
-            <span class="vu-cell-strong">{{ row.party }}</span>
-            <span class="vu-cell-sub">{{ row.npwp }}</span>
-          </span>
-          <span class="vu-cell-plain">{{ toTableDate(row.date) }}</span>
-          <span class="vu-num vu-cell-exposure">{{ formatAmountPlain(row.exposure) }}</span>
-          <span class="vu-num vu-cell-plain">{{ formatAmountPlain(row.ppn) }}</span>
-          <span class="vu-num vu-cell-total">{{ formatAmountPlain(row.total) }}</span>
-          <span class="vu-chevron"><MpIcon name="chevrons-right" size="sm" /></span>
-        </button>
       </div>
+    </template>
 
-      <ErpPagination
-        :total="total"
-        :current-page="currentPage"
-        :per-page="perPage"
-        @page-change="setPage"
-        @per-page-change="setPerPage"
-      />
-    </div>
+    <!-- Identifier opens the detail drawer (rule/table-name-link-span) -->
+    <template #cell-ref="{ row }">
+      <span class="cell-link cell-text" @click.stop="openDetail((row as unknown as ReconIssueRow).issue)">
+        {{ (row as unknown as ReconIssueRow).ref }}
+      </span>
+    </template>
+    <template #cell-match="{ row }">
+      <!-- Badge = the short (≤2-word) label, same as the workspace; the full name
+           is its tooltip and stays in the Status filter and the drawer header. -->
+      <MpTooltip :id="`vu-status-tt-${(row as unknown as ReconIssueRow).id}`" :label="t(statusLabelOf((row as unknown as ReconIssueRow).issue))" placement="top" use-portal>
+        <span class="vu-badge" data-devchange="vat-recon-tax-doc-substates"><MpBadge :type="statusBadgeTypeOf((row as unknown as ReconIssueRow).issue)" for="tableStatus">
+          {{ t(statusBadgeOf((row as unknown as ReconIssueRow).issue)) }}
+        </MpBadge></span>
+      </MpTooltip>
+    </template>
+    <template #cell-side="{ row }">{{ sourceLabel((row as unknown as ReconIssueRow).side) }}</template>
+    <template #cell-date="{ value }">{{ toTableDate(value as string) }}</template>
+    <template #cell-exposure="{ value }">
+      <span class="vu-exposure">{{ formatAmountPlain(value as number) }}</span>
+    </template>
+    <template #cell-ppn="{ value }">{{ formatAmountPlain(value as number) }}</template>
+    <template #cell-total="{ value }">{{ formatAmountPlain(value as number) }}</template>
 
-    <ReconciliationDetailDrawer
-      v-model:is-open="drawerOpen"
-      :pair="activeIssue"
-      :side="activeSide"
-      @action="infoToast"
-    />
-  </div>
+    <!-- No issues at all (rule/empty-state-structure, PurchaseOrdersPage pattern) -->
+    <template #empty>
+      <div class="empty-full">
+        <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
+        <p class="empty-full-title">{{ t('All clear in this period') }}</p>
+        <p class="empty-full-desc">{{ t('Nothing to review here for this period.') }}</p>
+      </div>
+    </template>
+  </ErpTablePage>
+
+  <ExportModal
+    :open="exportOpen"
+    :title="`${t('Export')} ${scopedPeriod ?? ''}`"
+    :entity-label="t('issues')"
+    :columns="exportColumns"
+    :total="total"
+    @close="exportOpen = false"
+    @export="exportOpen = false"
+  />
+
+  <ReconciliationDetailDrawer
+    v-model:is-open="drawerOpen"
+    :pair="activeIssue"
+    :finalized="isPeriodFinalized(scopedPeriodId)"
+    :period-id="scopedPeriodId"
+    :side="activeSide"
+    @action="infoToast"
+  />
 </template>
 
 <style scoped>
-.vu-page { display: flex; flex-direction: column; gap: var(--mp-spacing-4); min-height: 0; }
-
-/* ── Scope line ── */
-.vu-scope {
-  margin: 0;
-  font-size: var(--mp-font-sizes-md);
-  color: var(--mp-text-secondary);
-}
-.vu-scope-sep { margin: 0 var(--mp-spacing-2); color: var(--mp-text-subtle); }
-
-/* ── Filter bar ── */
-.vu-filters { display: flex; align-items: center; gap: var(--mp-spacing-4); }
-
-/* ── Summary tiles ── */
-.vu-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--mp-spacing-3); }
+.vu-badge { display: inline-flex; }
+/* ── Summary tiles ── six across at desktop width; wraps evenly (3 + 3) below. */
+.vu-stats { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.vu-tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--mp-spacing-3); }
+@media (max-width: 1280px) { .vu-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .vu-tile {
   border-radius: var(--mp-radii-md); padding: var(--mp-spacing-3) var(--mp-spacing-4);
   display: flex; align-items: flex-start; gap: var(--mp-spacing-3);
@@ -290,80 +317,34 @@ function sourceLabel(side: ReconSide) {
 }
 .vu-tile-body { flex: 1; min-width: 0; }
 .vu-tile-label {
-  font-size: 10px; font-weight: var(--mp-font-weights-bold);
-  letter-spacing: 0.06em; text-transform: uppercase; color: inherit;
+  font-size: var(--mp-font-sizes-xs); font-weight: var(--mp-font-weights-semi-bold);
+  text-transform: uppercase; color: inherit;
 }
 .vu-tile-value {
-  font-size: 26px; font-weight: var(--mp-font-weights-bold);
-  color: var(--mp-text-default); letter-spacing: -0.01em; line-height: 1.2;
+  font-size: var(--mp-font-sizes-2xl); font-weight: var(--mp-font-weights-semi-bold);
+  color: var(--mp-text-default);
 }
 .vu-tile-sub { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle); }
 
-/* ── Table ── */
-.vu-table {
-  flex: 1; min-height: 0;
-  background: var(--mp-background-surface);
-  border: 1px solid var(--mp-border-default);
-  border-radius: var(--mp-radii-md);
-  display: flex; flex-direction: column; overflow: hidden;
-}
-.vu-head, .vu-row {
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1.5fr) 110px 130px 140px 140px 40px;
-  gap: var(--mp-spacing-2);
-}
-.vu-head {
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  background: var(--mp-background-neutral-subtle);
-  border-bottom: 1px solid var(--mp-border-default);
-  font-size: 10px; font-weight: var(--mp-font-weights-bold);
-  letter-spacing: 0.04em; text-transform: uppercase; color: var(--mp-text-default);
-}
-.vu-rows { flex: 1; min-height: 0; overflow: auto; }
-.vu-row {
-  all: unset;
-  box-sizing: border-box;
-  width: 100%;
-  display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1.5fr) 110px 130px 140px 140px 40px;
-  gap: var(--mp-spacing-2);
-  padding: var(--mp-spacing-3) var(--mp-spacing-4);
-  border-bottom: 1px solid var(--mp-border-default);
-  align-items: center; cursor: pointer;
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default);
-  text-align: left;
-}
-.vu-row:hover { background: var(--mp-background-neutral-subtle); }
-.vu-cell-strong {
-  display: block;
-  font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-text-default);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.vu-cell-sub {
-  display: block;
-  font-size: var(--mp-font-sizes-xs); color: var(--mp-text-subtle);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.vu-cell-plain { color: var(--mp-text-default); }
-.vu-num { text-align: right; font-variant-numeric: tabular-nums; }
-.vu-cell-total { font-weight: var(--mp-font-weights-semi-bold); }
 /* The sort key — emphasised so the row order is self-evident. */
-.vu-cell-exposure {
-  font-weight: var(--mp-font-weights-semi-bold);
-  color: var(--mp-colors-red-800);
-}
-.vu-chevron { text-align: right; color: var(--mp-text-subtle); }
+.vu-exposure { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-red-800); }
 
-/* ── Empty ── */
-.vu-empty {
-  padding: var(--mp-spacing-20) var(--mp-spacing-6);
-  display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2);
-  text-align: center;
-}
-.vu-empty-title {
+/* ── Filter bar (PurchaseOrdersPage) ── */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-btn-group { display: flex; align-items: center; }
+.filter-btn-group :deep(.mp-pixel-button-group) { gap: var(--mp-spacing-2); }
+
+/* ── Full empty state (PurchaseOrdersPage) ── */
+.empty-full { display: flex; flex-direction: column; align-items: center; }
+.empty-illustration { --vu-illus-w: 288px; --vu-illus-h: 240px; width: var(--vu-illus-w); height: var(--vu-illus-h); object-fit: contain; }
+.empty-full-title {
+  margin: 0;
   font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold);
   color: var(--mp-text-default);
 }
-.vu-empty-body { font-size: var(--mp-font-sizes-md); color: var(--mp-text-subtle); }
+.empty-full-desc {
+  margin: var(--mp-spacing-0\.5) 0 0;
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+}
 </style>
