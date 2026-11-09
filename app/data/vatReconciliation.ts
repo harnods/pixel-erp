@@ -1041,6 +1041,8 @@ export interface VatReconSetup {
   inputAccountCodes: string[]
   scope: VatReconScope
   savedAt: string
+  /** Who saved it — shown as "Last updated by {name} on {date}". */
+  savedBy: string
 }
 
 const SETUP_KEY = 'vat-recon-setup'
@@ -1061,6 +1063,7 @@ export function normalizeSetup(raw: Partial<VatReconSetup>): VatReconSetup {
     // browser state saved before VAT In was hidden can't bring it back.
     scope: VAT_IN_ENABLED && raw.scope === 'both' ? 'both' : 'out',
     savedAt: raw.savedAt ?? new Date().toISOString(),
+    savedBy: raw.savedBy ?? CURRENT_USER,
   }
 }
 
@@ -1085,6 +1088,7 @@ export function saveVatSetup(input: {
     // The prototype's clock (TODAY_ISO), like every other stamp in the module —
     // a wall-clock 2026 date read as saved before the 2027 masa it governs.
     savedAt: reconNowIso(),
+    savedBy: CURRENT_USER,
   }
   setupCache = setup
   setupLoaded = true

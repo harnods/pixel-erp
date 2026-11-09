@@ -207,6 +207,12 @@ const query = ref('')
 watch([side, activeTab, periodId], () => { statusFilter.value = ''; query.value = '' })
 
 const tabPairs = computed(() => workspaceTabRows(pairs.value, activeTab.value))
+/**
+ * The tab has rows at all (before any filter/search). An empty tab shows only its
+ * empty state: no toolbar, no footer. A filter or search that empties the list
+ * keeps both, so the filter can be cleared.
+ */
+const tabHasRows = computed(() => tabPairs.value.length > 0)
 const counts = computed(() => matchCounts(tabPairs.value))
 /**
  * Not-approved faktur on To match (§5.1 row 13): Draft ones are already rows;
@@ -650,7 +656,7 @@ function doUnmatch() {
     </MpTabs>
 
     <!-- Filter bar — same anatomy on every tab -->
-    <div class="vr-toolbar">
+    <div v-if="tabHasRows" class="vr-toolbar" data-devchange="vat-recon-empty-tab-chrome">
       <div class="filter-left">
         <ErpFilterSelect id="vr-status-filter" v-model="statusFilter" data-devchange="vat-recon-prd-align-not-approved-filter" :placeholder="t('Status')" :options="statusOptions" width="220px" />
       </div>
@@ -1036,7 +1042,7 @@ function doUnmatch() {
 
     <!-- US-020 AC-03/04: "Showing" follows the tab/filter/search; the four
          counts are period-level, and waiting-on-buyer rows are not need review. -->
-    <p class="vr-footer" data-devchange="vat-recon-prd-align-footer" data-test-id="vr-footer">
+    <p v-if="tabHasRows" class="vr-footer" data-devchange="vat-recon-prd-align-footer" data-test-id="vr-footer">
       {{ t('Showing') }} {{ filtered.length }} {{ t('of') }} {{ pairs.length }} {{ t('pairs') }}
       · {{ periodFooter.matched }} {{ t('matched') }}
       · {{ periodFooter.review }} {{ t('need review') }}
@@ -1335,7 +1341,8 @@ function doUnmatch() {
 .cell-link.vr-cell-sub { color: var(--mp-colors-text-link) !important; }
 
 /* ── Empty states (rule/empty-state-structure) ── */
-.vr-empty { padding: var(--mp-spacing-12) var(--mp-spacing-6); text-align: center; }
+/* Same inset as ErpTablePage's empty cell, so every tab's blank slate sits at one height. */
+.vr-empty { padding: var(--mp-spacing-6) var(--mp-spacing-4); text-align: center; }
 .empty-full { display: flex; flex-direction: column; align-items: center; }
 .vr-empty-illustration { width: var(--vr-illus-w); height: var(--vr-illus-h); object-fit: contain; display: block; margin: 0 auto var(--mp-spacing-2); }
 .vr-empty-title { margin: 0 0 var(--mp-spacing-1); font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
