@@ -33,6 +33,6 @@ describe('seed integrity after adding the export customer', () => {
     expect(foreign.map(c => c.displayName)).toEqual(['Nordic Roasters AB'])
     expect(foreign[0]!.npwp).toBe('')
     expect(foreign[0]!.tin).not.toBe('')
-    expect(findContactByDisplayName('Nordic Roasters AB')?.id).toBe('CT013')
+    expect(findContactByDisplayName('Nordic Roasters AB')?.id).toBe('CT044')
   })
 })

@@ -13,10 +13,13 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
-import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseQuoteDetail } from '~/data/purchaseQuoteDetails'
 import { purchaseQuotes } from '~/data'
 import { infoToast } from '~/utils/toasts'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 
@@ -236,7 +239,7 @@ function goBack() { router.push('/purchase-quotes') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(quote.vendor.name)}`, '_blank')">{{ quote.vendor.name }}</a></ContentList>
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="openContact('vendors', quote.vendor.name)" data-devchange="contact-link-open">{{ quote.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">

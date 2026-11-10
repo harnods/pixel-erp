@@ -610,6 +610,16 @@ ERP override wins.
 - **`rule/table-use-erptablepage`** — *Do:* render every table via **`ErpTablePage`
   + `useTableState`**. *Don't:* hand-roll a `<table>`. **Why:** one table engine.
   **Lint:** review.
+  *Exception — hierarchical report tables:* a **read-only report** whose rows are a
+  **grouped tree** (e.g. contact → document → entries with running balances: General
+  ledger, P&L, Balance sheet, Multidimensional, Credit Memo) may hand-roll its
+  table, because `ErpTablePage` has no grouped/tree rows. Such a table still follows
+  every other `rule/table-*` it can: widths from `columnWidths.ts` via a column
+  `kind` (`rule/table-column-kind`), header 28px uppercase (`rule/table-header-*`),
+  row-click accordions (`rule/table-accordion-row-click`), 3-row solid skeleton
+  (`rule/skeleton-3-rows`), and the ErpTablePage filtered-empty illustration/copy
+  (`rule/table-empty-state`). Flat lists never qualify. **Source:**
+  `CreditMemoReportPage.vue` (audit 2026-11-10).
 - **`rule/table-column-kind`** — *Do:* set each semantic column's **`kind`** (date/
   number/name/status/amount/tags/unit/address). *Don't:* hardcode a pixel `width` on
   a semantic column. **Why:** widths come from `columnWidths.ts` so every table

@@ -11,9 +11,12 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
-import { getContactIdByName } from '~/data/contacts'
 import { recurringBills, persistRecurringBills, type RecurringBill } from '~/data/bills'
 import { formatIDR } from '~/utils/currency'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -172,7 +175,7 @@ const actionGroups = computed(() => [
       <!-- Beneficiary + Total — separated section, inline together -->
       <section class="bd-primary" data-devchange="rbill-detail-template">
         <ContentList :label="t('Beneficiary')">
-          <a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(template.beneficiary.name)}`, '_blank')">{{ template.beneficiary.name }}</a>
+          <a class="detail-value-link" @click="openContact('vendors', template.beneficiary.name)" data-devchange="contact-link-open">{{ template.beneficiary.name }}</a>
         </ContentList>
         <div class="detail-primary-total">
           <span class="detail-total-amount">

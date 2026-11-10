@@ -17,12 +17,15 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
 import { recurringPurchaseOrders, getRecurringForPurchaseOrder, persistPurchaseOrders, persistRecurringPurchaseOrders } from '~/data/purchaseOrders'
-import { getContactIdByName } from '~/data/contacts'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
 import { infoToast } from '~/utils/toasts'
 import BudgetPODetailSection from '~/components/patterns/BudgetPODetailSection.vue'
 import { budgetPOForRecord } from '~/data/budgetUiPurchaseOrders'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 
@@ -555,7 +558,7 @@ function saveSetRecurring() {
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList label="Vendor"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(order.vendor.name)}`, '_blank')">{{ order.vendor.name }}</a></ContentList>
+            <ContentList label="Vendor"><a class="detail-value-link" @click="openContact('vendors', order.vendor.name)" data-devchange="contact-link-open">{{ order.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList label="Email">

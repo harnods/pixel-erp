@@ -138,9 +138,11 @@ export function customerNameOf(id: string): string {
 }
 
 // ── Seed — coherent with salesInvoices.ts (unpaid invoices per customer) and
-// SIM today (22 Aug 2026). Covers: Active (unused), Partially used, Used up by
+// SIM today (22 Aug 2026). Covers: Open unused, Open partly used, Closed (used up) by
 // apply + refund, refund-only usage, a memo bigger than the customer's only
-// open invoice, and a memo issued before the report period (Case A). ─────────
+// open invoice, a memo issued before the report period (Case A), and a memo
+// issued AND used up inside Aug 2026 by several applications across two
+// invoices (#10086 — the Credit Memo report's Closed example, Figma 4531-72196).
 
 function stamp(date: string, time = '10:15'): string { return `${date}T${time}:00+07:00` }
 function created(date: string, details: CmActivityDetail[]): CmActivity[] {
@@ -172,6 +174,7 @@ function seedMemos(): SalesCreditMemo[] {
       { accountCode: '4-20001', reason: 'Late delivery compensation', amount: 5_000_000 },
     ], 'Partial return of the June order plus a goodwill credit.'),
     mkMemo('cm-10080', 10080, 'C013', '2026-07-20', [{ accountCode: '4-20001', reason: 'Volume discount adjustment', amount: 2_000_000 }], 'Q2 volume rebate.'),
+    mkMemo('cm-10086', 10086, 'C017', '2026-08-04', [{ accountCode: '4-20000', reason: 'Returned goods credit', amount: 10_000_000 }], 'Espresso capsules returned — short-dated stock.'),
   ]
 }
 
@@ -192,6 +195,18 @@ function seedApplications(): CreditMemoApplication[] {
     mk('cma-90099', 90099, 'C002', 'cm-10087', '2026-07-20', [
       { invoiceId: 'SI127', amount: 16_500_000 },
     ], 'Applied in full against the July invoice.'),
+    // #10086 (Santika) is used up in Aug over three applications on its two
+    // overdue invoices — both stay overdue with a reduced balance.
+    mk('cma-90096', 90096, 'C017', 'cm-10086', '2026-08-06', [
+      { invoiceId: 'SI067', amount: 2_500_000 },
+    ], 'Part of the capsule credit against the April invoice.'),
+    mk('cma-90097', 90097, 'C017', 'cm-10086', '2026-08-13', [
+      { invoiceId: 'SI092', amount: 2_500_000 },
+    ], 'Part of the capsule credit against the May invoice.'),
+    mk('cma-90098', 90098, 'C017', 'cm-10086', '2026-08-21', [
+      { invoiceId: 'SI067', amount: 2_000_000 },
+      { invoiceId: 'SI092', amount: 3_000_000 },
+    ], 'Remaining capsule credit split across both open invoices.'),
   ]
 }
 
@@ -214,9 +229,11 @@ function seedRefunds(): CreditMemoRefund[] {
   ]
 }
 
-const K_MEMOS = 'credit-memos-v1'
-const K_APPS = 'credit-memo-applications-v1'
-const K_REFUNDS = 'credit-memo-refunds-v1'
+// v2: seed gained memo #10086 + applications #90096–#90098 (Credit Memo report
+// Closed example) — bumped so browsers holding a v1 snapshot reseed.
+const K_MEMOS = 'credit-memos-v2'
+const K_APPS = 'credit-memo-applications-v2'
+const K_REFUNDS = 'credit-memo-refunds-v2'
 
 export const creditMemos = reactive<SalesCreditMemo[]>(loadSnapshot<SalesCreditMemo>(K_MEMOS) ?? seedMemos())
 export const creditMemoApplications = reactive<CreditMemoApplication[]>(loadSnapshot<CreditMemoApplication>(K_APPS) ?? seedApplications())
@@ -260,17 +277,17 @@ export function memoRemaining(memoId: string, ex: ExcludeOpts = {}): number {
   return memoTotal(m) - memoUsed(memoId, ex)
 }
 
-export type MemoStatus = 'active' | 'partially-used' | 'used-up'
+/** Open = remaining balance left to apply or refund; Closed = fully used. One
+ *  vocabulary with the Credit Memo report (Figma 4531-72196) and ErpStatusBadge's
+ *  open / closed badges — the report shows the same status as of its date. */
+export type MemoStatus = 'open' | 'closed'
 export function memoStatus(memoId: string): MemoStatus {
   const m = getCreditMemo(memoId)
-  if (!m) return 'used-up'
-  const rem = memoRemaining(memoId)
-  if (rem <= 0) return 'used-up'
-  if (rem >= memoTotal(m)) return 'active'
-  return 'partially-used'
+  if (!m) return 'closed'
+  return memoRemaining(memoId) > 0 ? 'open' : 'closed'
 }
 export const MEMO_STATUS_LABEL: Record<MemoStatus, string> = {
-  'active': 'Active', 'partially-used': 'Partially used', 'used-up': 'Used up',
+  open: 'Open', closed: 'Closed',
 }
 
 export function memosForCustomer(customerId: string): SalesCreditMemo[] {

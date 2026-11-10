@@ -20,7 +20,7 @@ import {
   syncInvoiceBalances, memoJournal, applicationJournal, refundJournal,
 } from '~/data/creditMemos'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
-import { creditMemoLedger, remainingOf, creditMemoReport, emptyCmReportFilters } from '~/data/creditMemoReport'
+import { creditMemoReport, emptyCmReportFilters } from '~/data/creditMemoReport'
 
 const inv = (id: string) => salesInvoices.find((i) => i.id === id)!
 
@@ -50,9 +50,10 @@ describe('seed coherence', () => {
     for (const i of salesInvoices) expect(i.balance).toBeGreaterThanOrEqual(0)
   })
   it('covers every memo status', () => {
-    expect(memoStatus('cm-10088')).toBe('active')
-    expect(memoStatus('cm-10089')).toBe('partially-used')
-    expect(memoStatus('cm-10087')).toBe('used-up')
+    expect(memoStatus('cm-10088')).toBe('open')
+    expect(memoStatus('cm-10089')).toBe('open')
+    expect(memoStatus('cm-10087')).toBe('closed')
+    expect(memoStatus('cm-10086')).toBe('closed')
   })
   it('seeded credit shows on invoices: fully credited → paid, partly → stays overdue', () => {
     expect(inv('SI031').balance).toBe(0)
@@ -119,7 +120,7 @@ describe('apply credit memo', () => {
     expect(inv('SI031').balance).toBe(4_500_000)
     expect(inv('SI031').status).toBe('overdue')
     expect(inv('SI131').balance).toBe(before.bal + 3_500_000)
-    expect(memoStatus('cm-10089')).toBe('active')
+    expect(memoStatus('cm-10089')).toBe('open')
   })
   it('a fully-credited invoice drops out of the applicable list', () => {
     expect(applicableInvoices('C006').map((i) => i.id)).not.toContain('SI031')
@@ -134,9 +135,9 @@ describe('credit memo refund', () => {
     const res = createRefund({ ...base, lines: [{ creditMemoId: 'cm-10088', reason: 'Cash back', amount: 4_000_000 }, { creditMemoId: 'cm-10080', reason: '', amount: 2_000_000 }] })
     expect(res.ok).toBe(true)
     expect(memoRemaining('cm-10088')).toBe(6_000_000)
-    expect(memoStatus('cm-10080')).toBe('used-up')
+    expect(memoStatus('cm-10080')).toBe('closed')
     expect(deleteRefund((res as { id: string }).id).ok).toBe(true)
-    expect(memoStatus('cm-10080')).toBe('active')
+    expect(memoStatus('cm-10080')).toBe('open')
   })
   it('refunds do not touch invoice balances', () => {
     const before = invoiceBalance('SI138')
@@ -182,13 +183,20 @@ describe('journals balance', () => {
 
 describe('credit memo report is derived from the documents', () => {
   it('report remaining equals document remaining for every memo', () => {
-    for (const c of creditMemoLedger()) for (const cm of c.cms) expect(remainingOf(cm)).toBe(memoRemaining(cm.id))
+    for (const c of creditMemoReport({ ...emptyCmReportFilters(), docType: 'CM' })) for (const cm of c.memos) expect(cm.remaining).toBe(memoRemaining(cm.id))
   })
   it('a new application appears in the report immediately', () => {
     createApplication({ customerId: 'C013', creditMemoId: 'cm-10088', date: '2026-08-22', memo: '', attachments: [], allocations: [{ invoiceId: 'SI138', amount: 2_000_000 }] })
-    const cm = creditMemoReport({ ...emptyCmReportFilters(), showZero: true }).flatMap((c) => c.cms).find((x) => x.id === 'cm-10088')!
-    expect(cm.mutations.some((m) => m.type === 'Applied' && m.amount === -2_000_000)).toBe(true)
-    expect(remainingOf(cm)).toBe(8_000_000)
+    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.memos).find((x) => x.id === 'cm-10088')!
+    expect(cm.entries.map((r) => [r.type, r.movement, r.linkedNo])).toEqual([['Applied', -2_000_000, 'Sales Invoice #40138']])
+    expect(cm.remaining).toBe(8_000_000)
+    expect(cm.status).toBe('Open')
+  })
+  it('a memo used up in the period stays in the default report as Closed', () => {
+    expect(memoStatus('cm-10086')).toBe('closed')
+    const cm = creditMemoReport(emptyCmReportFilters()).flatMap((c) => c.memos).find((x) => x.id === 'cm-10086')!
+    expect(cm.status).toBe('Closed')
+    expect(cm.entries.at(-1)?.balance).toBe(0)
   })
   it('cash paid is unchanged by credit', () => {
     expect(invoiceCashPaid('SI131')).toBe(0)

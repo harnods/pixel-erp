@@ -19,12 +19,15 @@ import MatchedDetailsDrawer from '~/components/patterns/MatchedDetailsDrawer.vue
 import JournalEntryDrawer, { type JournalEntryRow } from '~/components/patterns/JournalEntryDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
-import { getContactIdByName } from '~/data/contacts'
 import { bills, deleteBills, recurringBills, getRecurringForBill, persistBills, persistRecurringBills } from '~/data/bills'
 import { generateBillsBulkPdf } from '~/utils/billsBulkPdf'
 import { formatDate, formatDateLong } from '~/utils/date'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions, getDimensionById } from '~/data/dimensions'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -432,7 +435,7 @@ const billActionGroups = computed<ActionItem[][]>(() => [
 
       <!-- Beneficiary + Total — separated section, inline together -->
       <section class="bd-primary">
-        <ContentList :label="t('Beneficiary')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(bill.beneficiary.name)}`, '_blank')">{{ bill.beneficiary.name }}</a></ContentList>
+        <ContentList :label="t('Beneficiary')"><a class="detail-value-link" @click="openContact('vendors', bill.beneficiary.name)" data-devchange="contact-link-open">{{ bill.beneficiary.name }}</a></ContentList>
         <div class="detail-primary-total">
           <span class="detail-total-amount">
             <span class="detail-total-label">{{ t(hasLess ? 'Balance due' : 'Total') }}</span> {{ formatIDR(hasLess ? balanceDue : groupTotal) }}

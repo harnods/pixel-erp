@@ -28,6 +28,46 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'contact-link-open',
+    title: 'Detail pages: customer and vendor links work again',
+    description:
+      'Clicking the customer, vendor or beneficiary name on a transaction detail page (invoices, orders, quotes, deliveries, payments, bills, credit and debit memos) threw an error and opened nothing. It now opens the contact in a new tab. Every customer and vendor that transactions use now has a contact record, so the link no longer lands on Contact not found and those contacts appear in the Customers and Vendors lists.',
+    date: '2026-11-10',
+    files: ['useOpenContact.ts', 'contacts.ts', '18 *DetailsPage.vue / *DetailPage.vue'],
+  },
+  {
+    id: 'memo-status-open-closed',
+    title: 'Credit and debit memos: Open / Closed status',
+    description:
+      'Credit memos and debit memos now use the same two statuses as the Credit Memo report: Open while some balance is left to apply or refund, Closed once it is fully used. This replaces Active, Partially used and Used up on the memo detail pages and in the customer transactions list, so a memo shows the same status everywhere.',
+    date: '2026-11-10',
+    files: ['creditMemos.ts', 'debitMemos.ts', 'ErpStatusBadge.vue', 'CreditMemoDetailsPage.vue', 'DebitMemoDetailsPage.vue', 'translations.ts'],
+  },
+  {
+    id: 'cm-report-no-views',
+    title: 'Credit Memo report: saved views removed, full screen moved to the toolbar',
+    description:
+      'The Default view / Add view / All views tabs, the All views drawer and the saved-views store are gone from the Credit Memo report. The full-screen button now sits in the toolbar icon group after Column settings and before Export, the same place as on the Balance Sheet and Profit & Loss reports.',
+    date: '2026-11-10',
+    files: ['CreditMemoReportPage.vue', 'creditMemoReport.ts', 'translations.ts'],
+  },
+  {
+    id: 'cm-report-patterns',
+    title: 'Credit Memo report: aligned to the documented ERP patterns',
+    description:
+      'Audit pass against docs/design/RULES.md. All filters shows its active count as "All filters (N)" instead of a green pill. Applied filters and selected customers are closable gray tags, and the Vendor marker is a gray tag. The loading skeleton is 3 static rows under the real column headers, like every table. Column widths come from the shared column-width standard. The filtered-empty state uses the same illustration and copy as other tables. Dates use the shared date helpers, with no (GMT+7) suffix. Styles use only design tokens that resolve in this Pixel build, with no hardcoded px or colours, and the as-of date field has no placeholder. The two balance filters now use the shared amount field (Is greater than / Is between / Is less than). All filters (N) counts one per filter, including each Hide Rp 0 toggle. Export opens the shared Export modal, where you pick the detail-sheet columns, then downloads the same .xlsx. The Reports › Sales card now describes it as an as-of report covering customer credit memos and vendor debit memos.',
+    date: '2026-11-10',
+    files: ['CreditMemoReportPage.vue', 'CreditMemoFiltersDrawer.vue', 'creditMemoReport.ts', 'SalesReportsIndexPage.vue', 'translations.ts', 'erp.css', 'RULES.md'],
+  },
+  {
+    id: 'cm-report-poc-v3',
+    title: 'Credit Memo report: aligned to engineering prototype',
+    description:
+      'Reports › Sales › Credit Memo now follows the engineering prototype, PRD and RFC. It uses one As of date instead of a date range, and every memo issued on or before it is listed with its applications and refunds up to that date. There is no opening balance: each memo row shows its original amount, then the running balance. Debit memos appear under their vendor, with a Vendor label. All filters gains transaction type, customer, customer group (Include all / Either), customer and credit memo balance ranges, credit memo number, and Rp 0 toggles. Each active filter shows as a removable badge, and Reset filter keeps the date. Document numbers open in a new tab. Export now offers Excel only and downloads a real .xlsx with Customer summary and Credit memo detail sheets. The report keeps the Figma table, tree guides, views, skeleton and idle state.',
+    date: '2026-11-04',
+    files: ['CreditMemoReportPage.vue', 'creditMemoReport.ts', 'CreditMemoFiltersDrawer.vue', 'translations.ts'],
+  },
+  {
     id: 'vat-recon-empty-tab-chrome',
     title: 'VAT workspace: empty tabs show only the empty state',
     description:

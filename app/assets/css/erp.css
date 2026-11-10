@@ -360,6 +360,16 @@
  * an always-visible clear (✕). Restore the pieces the ERP relies on here.
  * erp.css is UNLAYERED, so these beat Pixel's @layer rules without !important. */
 
+/* MpTag `is-closable` — the close (×) overlays the tag's end and is revealed by a
+   `group-hover` opacity utility that this build never emits, so the × stayed at
+   opacity 0 (unclickable-looking) on every closable tag (applied-filter tags,
+   selected-value tags). Reveal it on tag hover and keyboard focus. */
+.mp-tag__root:hover > .mp-tag__close,
+.mp-tag__root:focus-within > .mp-tag__close {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* Form control roots must establish a positioning context so their absolutely-
    positioned addons (select/autocomplete arrow, datepicker calendar, clear button)
    stay inside the field instead of escaping to a far ancestor — the `position:
