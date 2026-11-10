@@ -16,7 +16,6 @@ import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
-import { getContactIdByName } from '~/data/contacts'
 import { getPurchaseInvoiceDetail } from '~/data/purchaseInvoiceDetails'
 import { purchaseInvoices, recurringPurchaseInvoices, getRecurringForPurchaseInvoice, persistPurchaseInvoices, persistRecurringPurchaseInvoices } from '~/data/purchaseInvoices'
 import {
@@ -28,6 +27,10 @@ import {
 } from '~/data/purchasePayments'
 import { infoToast } from '~/utils/toasts'
 import BudgetPIDetailSection from '~/components/patterns/BudgetPIDetailSection.vue'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 // `orderId` is the shared detail-route prop name — [...slug].vue binds :order-id
 // for every detail page, whatever the module.
@@ -430,7 +433,7 @@ function goBack() { router.push('/purchase-invoices') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(invoice.vendor.name)}`, '_blank')">{{ invoice.vendor.name }}</a></ContentList>
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="openContact('vendors', invoice.vendor.name)" data-devchange="contact-link-open">{{ invoice.vendor.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">

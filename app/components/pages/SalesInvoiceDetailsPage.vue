@@ -20,7 +20,6 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import CreateTaxDocumentDrawer from '~/components/patterns/CreateTaxDocumentDrawer.vue'
 import CannotCreateTaxDocumentDrawer from '~/components/patterns/CannotCreateTaxDocumentDrawer.vue'
 import TaxDocumentDetailDrawer from '~/components/patterns/TaxDocumentDetailDrawer.vue'
-import { getContactIdByName } from '~/data/contacts'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { canGenerateTaxDocument } from '~/data/salesInvoiceLineItems'
 import { salesInvoices } from '~/data'
@@ -50,6 +49,10 @@ import { useTaxSubmissionPermission } from '~/composables/useTaxSubmissionPermis
 import { useTaxInfoScenario } from '~/composables/useTaxInfoScenario'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 // `orderId` is the shared detail-route prop name — [...slug].vue binds :order-id
 // for every detail page, whatever the module.
@@ -726,7 +729,7 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
         <div class="content-list-grid">
           <div class="content-list-col">
             <ContentList :label="t('Customer')">
-              <a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(invoice.customer.name)}`, '_blank')">{{ invoice.customer.name }}</a>
+              <a class="detail-value-link" @click="openContact('customers', invoice.customer.name)" data-devchange="contact-link-open">{{ invoice.customer.name }}</a>
             </ContentList>
           </div>
           <div class="content-list-col">

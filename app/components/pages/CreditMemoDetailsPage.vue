@@ -35,6 +35,10 @@ import {
   applicationsForMemo, refundsForMemo, applicationTotal, invoiceLabel, invoiceById,
   canDeleteCreditMemo, deleteCreditMemo, memoJournal,
 } from '~/data/creditMemos'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -131,7 +135,7 @@ const cmActionGroups = computed<ActionItem[][]>(() => [
         </nav>
         <div class="cm-titlerow-left">
           <h1 class="cm-title">{{ memoLabel(memo.number) }}</h1>
-          <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" data-devchange="memo-status-open-closed" />
           <DetailJumpTo id="cmd-jump" :items="jumpItems" :aria-label="t('Switch credit memo')" :placeholder="t('Search...')" :empty-text="t('No credit memos found')" data-devchange="cm-detail-jump" @select="jumpTo" />
         </div>
       </div>
@@ -142,7 +146,7 @@ const cmActionGroups = computed<ActionItem[][]>(() => [
       <!-- Summary: Customer + Available credit + journal link -->
       <section class="cm-summary">
         <div class="cm-primary">
-          <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(customerNameOf(memo.customerId))}`, '_blank')">{{ customerNameOf(memo.customerId) }}</a></ContentList>
+          <ContentList :label="t('Customer')"><a class="detail-value-link" @click="openContact('customers', customerNameOf(memo.customerId))" data-devchange="contact-link-open">{{ customerNameOf(memo.customerId) }}</a></ContentList>
           <div class="cm-primary-right">
             <div class="cm-primary-figure">
               <span class="cm-figure-label">{{ t('Available credit') }}</span>

@@ -1,13 +1,15 @@
 /**
  * Credit Memo Report v3 — data contract (app/data/creditMemoReport.ts).
  * As-of semantics (POC + RFC §6.1), CM + DM, groups, ranges, number search,
- * show-zero toggles, export builder, presets, saved-view normalization.
+ * show-zero toggles, export builder, presets, stored-filter normalization. No saved views (removed).
  */
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
-  creditMemoReport, emptyCmReportFilters, activeFilterCount, validateFilters, buildExport,
+  creditMemoReport, emptyCmReportFilters, activeFilterCount, validateFilters, buildExport, amountPasses, EXPORT_DETAIL_HEADER,
   contactGroupsOf, contactOptions, CONTACT_GROUPS, PERIOD_PRESETS, resolvePreset,
-  normalizeCmView, normalizeCmViewFilters, normalizeCmFilters,
+  normalizeCmViewFilters, normalizeCmFilters,
   type CmReportFilters, type ReportMemo,
 } from '~/data/creditMemoReport'
 import { memoRemaining } from '~/data/creditMemos'
@@ -111,14 +113,26 @@ describe('contacts and groups', () => {
 
 describe('ranges and number search', () => {
   it('memo range filters on per-memo remaining', () => {
-    const ms = memos(F({ memoMin: 5_000_000, memoMax: 8_000_000 }))
+    const ms = memos(F({ memoCmp: 'between', memoMin: 5_000_000, memoMax: 8_000_000 }))
     expect(ms.length).toBeGreaterThan(0)
     for (const m of ms) { expect(m.remaining).toBeGreaterThanOrEqual(5_000_000); expect(m.remaining).toBeLessThanOrEqual(8_000_000) }
   })
   it('contact range filters on the contact total', () => {
-    const cs = creditMemoReport(F({ contactMin: 8_000_000 }))
+    const cs = creditMemoReport(F({ contactCmp: 'between', contactMin: 8_000_000 }))
     expect(cs.map((c) => c.id).sort()).toEqual(['C013', 'C025', 'V001', 'V007'])
-    expect(creditMemoReport(F({ contactMax: 0 })).every((c) => c.total === 0)).toBe(true)
+    expect(creditMemoReport(F({ contactCmp: 'between', contactMax: 0 })).every((c) => c.total === 0)).toBe(true)
+  })
+  it('AmountComparatorField comparators: gt / lt exclusive, between inclusive, unset passes', () => {
+    expect(amountPasses(10, 'gt', 10, null)).toBe(false)
+    expect(amountPasses(11, 'gt', 10, null)).toBe(true)
+    expect(amountPasses(10, 'lt', null, 10)).toBe(false)
+    expect(amountPasses(9, 'lt', null, 10)).toBe(true)
+    expect(amountPasses(10, 'between', 10, 10)).toBe(true)
+    expect(amountPasses(5, 'gt', null, null)).toBe(true)
+    // gt reads only Min, lt only Max — a stale other bound is ignored.
+    expect(amountPasses(50, 'gt', 10, 20)).toBe(true)
+    const gt = creditMemoReport(F({ contactCmp: 'gt', contactMin: 8_000_000 }))
+    expect(gt.every((c) => c.total > 8_000_000)).toBe(true)
   })
   it('memoNumber is a substring on the digits (leading # stripped); non-matching contacts dropped', () => {
     expect(memos(F({ memoNumber: '#10089' })).map((m) => m.id)).toEqual(['cm-10089'])
@@ -126,10 +140,12 @@ describe('ranges and number search', () => {
     expect(creditMemoReport(F({ memoNumber: '2009' })).every((c) => c.kind === 'vendor')).toBe(true)
     expect(creditMemoReport(F({ memoNumber: '99999' }))).toEqual([])
   })
-  it('validateFilters flags min > max inline', () => {
-    expect(validateFilters(F({ contactMin: 10, contactMax: 5 }))).toEqual({ contact: "Min can't be greater than max." })
-    expect(validateFilters(F({ memoMin: 10, memoMax: 5 }))).toEqual({ memo: "Min can't be greater than max." })
-    expect(validateFilters(F({ contactMin: 5, contactMax: 5, memoMin: null, memoMax: 1 }))).toEqual({})
+  it('validateFilters flags an inverted "Is between" range inline', () => {
+    expect(validateFilters(F({ contactCmp: 'between', contactMin: 10, contactMax: 5 }))).toEqual({ contact: "Min can't be greater than max." })
+    expect(validateFilters(F({ memoCmp: 'between', memoMin: 10, memoMax: 5 }))).toEqual({ memo: "Min can't be greater than max." })
+    expect(validateFilters(F({ contactCmp: 'between', contactMin: 5, contactMax: 5, memoMin: null, memoMax: 1 }))).toEqual({})
+    // gt / lt use one value, so they can't be inverted.
+    expect(validateFilters(F({ contactCmp: 'gt', contactMin: 10, contactMax: 5 }))).toEqual({})
   })
 })
 
@@ -167,14 +183,25 @@ describe('totals and sorting', () => {
   })
 })
 
-describe('activeFilterCount (POC updateFilterPill)', () => {
-  it('counts contacts + groups + ranges + number + non-default type; not asOf or toggles', () => {
-    expect(activeFilterCount(F({ asOf: '2026-01-01', showZeroContacts: false, showZeroMemos: false }))).toBe(0)
-    expect(activeFilterCount(F({ contactIds: ['C001', 'C002'], groupIds: ['grp-fnb'], contactMin: 1, memoMax: 2, memoNumber: '10', docType: 'CM' }))).toBe(7)
+describe('activeFilterCount (rule/filter-all-filters-active-count)', () => {
+  it('counts ONE per active filter row, including each Hide Rp 0 toggle; not asOf', () => {
+    expect(activeFilterCount(F({ asOf: '2026-01-01' }))).toBe(0)
+    expect(activeFilterCount(F({ showZeroContacts: false, showZeroMemos: false }))).toBe(2)
+    // 2 customers + 1 group still count one row each.
+    expect(activeFilterCount(F({ contactIds: ['C001', 'C002'], groupIds: ['grp-fnb', 'grp-mfg'], contactCmp: 'gt', contactMin: 1, memoCmp: 'lt', memoMax: 2, memoNumber: '10', docType: 'CM' }))).toBe(6)
+    // A comparator with no value is not an active filter.
+    expect(activeFilterCount(F({ contactCmp: 'lt', contactMin: 5 }))).toBe(0)
   })
 })
 
 describe('export', () => {
+  it('ExportModal column choice trims the detail sheet; Contact + Number always kept', () => {
+    const x = buildExport(F(), ['Balance'])
+    const dh = x.detail.findIndex((r) => r[0] === 'Contact')
+    expect(x.detail[dh]).toEqual(['Contact', 'Number', 'Balance'])
+    expect(x.detail.slice(dh + 1).every((r) => r.length === 3)).toBe(true)
+    expect(buildExport(F()).detail[dh]).toEqual(EXPORT_DETAIL_HEADER)
+  })
   it('summary + detail with header rows, IDR currency, integer amounts', () => {
     const x = buildExport(F())
     const sh = x.summary.findIndex((r) => r[0] === 'Contact')
@@ -216,18 +243,35 @@ describe('period presets', () => {
   })
 })
 
-describe('saved views', () => {
+describe('stored filter normalization', () => {
   it('legacy shapes (keyword/txnTypes/statuses/showZero) normalize to defaults', () => {
-    const v = normalizeCmView({ id: 'v1', name: 'Old', filters: { keyword: 'abc', keywordColumn: 'all', customers: ['Kopi'], txnTypes: ['Issued'], statuses: ['Open'], showZero: false } })
     const { asOf: _a, ...defaults } = emptyCmReportFilters()
-    expect(v).toEqual({ id: 'v1', name: 'Old', filters: defaults })
-    expect(normalizeCmView({ id: 'v2', name: 'Empty' }).filters).toEqual(defaults)
+    expect(normalizeCmViewFilters({ keyword: 'abc', keywordColumn: 'all', customers: ['Kopi'], txnTypes: ['Issued'], statuses: ['Open'], showZero: false })).toEqual(defaults)
+    expect(normalizeCmViewFilters(undefined)).toEqual(defaults)
   })
   it('views never store asOf; v3 fields round-trip; junk values dropped', () => {
     const f = normalizeCmViewFilters({ ...F({ docType: 'DM', contactIds: ['V001'], groupIds: ['grp-fnb', 'nope'], groupMode: 'either', memoMin: 1, memoNumber: '20', showZeroMemos: false }), asOf: '2026-01-01' })
     expect('asOf' in f).toBe(false)
     expect(f).toMatchObject({ docType: 'DM', contactIds: ['V001'], groupIds: ['grp-fnb'], groupMode: 'either', memoMin: 1, memoNumber: '20', showZeroMemos: false, showZeroContacts: true })
     expect(normalizeCmViewFilters({ docType: 'XX', contactMin: '5' })).toMatchObject({ docType: 'all', contactMin: null })
+    // Legacy min/max-only views get an inferred comparator.
+    expect(normalizeCmViewFilters({ contactMin: 1, contactMax: 9 })).toMatchObject({ contactCmp: 'between' })
+    expect(normalizeCmViewFilters({ memoMax: 9 })).toMatchObject({ memoCmp: 'lt' })
+    expect(normalizeCmViewFilters({ memoMin: 1 })).toMatchObject({ memoCmp: 'gt' })
+    expect(normalizeCmViewFilters({ memoCmp: 'between', memoMin: 1 })).toMatchObject({ memoCmp: 'between' })
     expect(normalizeCmFilters({ docType: 'CM' }, '2026-08-01')).toMatchObject({ asOf: '2026-08-01', docType: 'CM' })
+  })
+})
+
+describe('report page — no saved views, full screen in the toolbar', () => {
+  const src = readFileSync(resolve(__dirname, '../app/components/pages/CreditMemoReportPage.vue'), 'utf8')
+  it('renders no view tabs / All views drawer / view store', () => {
+    for (const s of ['cmr-viewbar', "t('Add view')", "t('All views')", "t('Default view')", 'creditMemoViews', 'addCmView']) expect(src).not.toContain(s)
+  })
+  it('full-screen button sits in the toolbar icon group, before Export', () => {
+    const tools = src.slice(src.indexOf('<MpButtonGroup class="cmr-tools">'), src.indexOf('</MpButtonGroup>'))
+    expect(tools).toContain('ColumnSettingsMenu')
+    expect(tools).toContain('left-icon="full-screen"')
+    expect(tools.indexOf('ColumnSettingsMenu')).toBeLessThan(tools.indexOf('left-icon="full-screen"'))
   })
 })

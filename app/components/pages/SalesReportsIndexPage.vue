@@ -32,7 +32,7 @@ const reports: ReportCard[] = [
   { slug: 'product-profitability', title: 'Product profitability', description: 'Shows gained total profit from sold products in a certain period.' },
   { slug: 'proforma-invoice-list', title: 'Proforma invoice list', description: 'Shows all created proforma invoices in a certain period.' },
   { slug: 'join-invoice-list', title: 'Join invoice list', description: 'Shows all join invoices in a certain period.' },
-  { slug: 'credit-memo', title: 'Credit memo', description: 'Shows all credit memos of each customer with their status and remaining balance in a certain period.', to: '/sales-report/credit-memo' },
+  { slug: 'credit-memo', title: 'Credit memo', description: 'Shows the remaining balance of each customer’s credit memos and each vendor’s debit memos as of a specific date.', to: '/sales-report/credit-memo' },
 ]
 
 // ── Responsive column count ──────────────────────────────────────────────────
@@ -69,7 +69,7 @@ function viewReport(r: ReportCard) {
 <template>
   <div class="reports-clip">
     <div ref="gridEl" class="reports-grid" :style="{ '--cols': cols }">
-      <div v-for="r in reports" :key="r.slug" class="report-card">
+      <div v-for="r in reports" :key="r.slug" class="report-card" :data-devchange="r.slug === 'credit-memo' ? 'cm-report-patterns' : undefined">
         <div class="report-card-body">
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>

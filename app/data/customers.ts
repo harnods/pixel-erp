@@ -37,7 +37,7 @@ export const customers: Customer[] = [
   { id: 'C025', code: 'CUST-025', name: 'Pochi Coffee Roasters',     type: 'company',    email: 'roastery@pochicoffee.com',       phone: '031-5550025', city: 'Surabaya',          balance: 31_800_000  },
   // The one buyer abroad — a Nordic specialty roaster taking green beans, which
   // is what an Indonesian coffee exporter actually sells overseas. Its contact
-  // record (CT013) carries domicile: 'foreign', so a tax document raised against
+  // record (CT044) carries domicile: 'foreign', so a tax document raised against
   // its invoices defaults to a Dokumen Lain Keluaran / export rather than a faktur.
   { id: 'C026', code: 'CUST-026', name: 'Nordic Roasters AB',         type: 'company',    email: 'green@nordicroasters.se',        phone: '+46-8-55500026', city: 'Stockholm',      balance: 184_000_000 },
 ]

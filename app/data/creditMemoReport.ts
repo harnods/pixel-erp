@@ -14,8 +14,6 @@
  *    every call, so the report can never disagree with the documents.
  *  • Contact total = Σ remaining > 0 over the VISIBLE memos (as the POC does).
  */
-import { reactive } from 'vue'
-import { loadSnapshot, saveSnapshot } from './persist'
 import { SIM_TODAY_ISO } from './simClock'
 import {
   creditMemos, creditMemoApplications, creditMemoRefunds, memoTotal as cmTotal, memoLabel as cmLabel,
@@ -63,14 +61,22 @@ export interface ReportContact {
   total: number                 // Σ remaining > 0 over the visible memos
   memos: ReportMemo[]           // remaining desc, then issueDate asc
 }
+/** Amount filter comparator — same set as the shared AmountComparatorField
+ *  (rule/filter-drawer-fields). gt / lt are exclusive and use one value (stored in
+ *  Min for gt, Max for lt); between is inclusive and uses both. */
+export type CmAmountComparator = 'gt' | 'between' | 'lt'
+export const CM_AMOUNT_COMPARATORS: CmAmountComparator[] = ['gt', 'between', 'lt']
+
 export interface CmReportFilters {
   asOf: string
   docType: DocTypeFilter
   contactIds: string[]
   groupIds: string[]
   groupMode: 'all' | 'either'
+  contactCmp: CmAmountComparator
   contactMin: number | null
   contactMax: number | null
+  memoCmp: CmAmountComparator
   memoMin: number | null
   memoMax: number | null
   memoNumber: string
@@ -82,7 +88,7 @@ export type CmViewFilters = Omit<CmReportFilters, 'asOf'>
 export function emptyCmReportFilters(): CmReportFilters {
   return {
     asOf: SIM_TODAY_ISO, docType: 'all', contactIds: [], groupIds: [], groupMode: 'all',
-    contactMin: null, contactMax: null, memoMin: null, memoMax: null, memoNumber: '',
+    contactCmp: 'gt', contactMin: null, contactMax: null, memoCmp: 'gt', memoMin: null, memoMax: null, memoNumber: '',
     showZeroContacts: true, showZeroMemos: true,
   }
 }
@@ -230,8 +236,7 @@ export function creditMemoReport(f: CmReportFilters): ReportContact[] {
     const m = memoAsOf(r, f.asOf)
     if (!m) continue
     if (!memoMatchesNumber(m, q)) continue
-    if (f.memoMin != null && m.remaining < f.memoMin) continue
-    if (f.memoMax != null && m.remaining > f.memoMax) continue
+    if (!amountPasses(m.remaining, f.memoCmp, f.memoMin, f.memoMax)) continue
     if (!f.showZeroMemos && m.remaining <= 0) continue
     let c = byContact.get(cid)
     if (!c) { c = { ...contactOf(cid, m.docType), total: 0, memos: [] }; byContact.set(cid, c) }
@@ -241,8 +246,7 @@ export function creditMemoReport(f: CmReportFilters): ReportContact[] {
   for (const c of byContact.values()) {
     if (!c.memos.length) continue
     c.total = c.memos.reduce((s, m) => s + (m.remaining > 0 ? m.remaining : 0), 0)
-    if (f.contactMin != null && c.total < f.contactMin) continue
-    if (f.contactMax != null && c.total > f.contactMax) continue
+    if (!amountPasses(c.total, f.contactCmp, f.contactMin, f.contactMax)) continue
     if (!f.showZeroContacts && c.total === 0) continue
     c.memos.sort((a, b) => b.remaining - a.remaining || a.issueDate.localeCompare(b.issueDate) || a.number.localeCompare(b.number))
     out.push(c)
@@ -250,22 +254,41 @@ export function creditMemoReport(f: CmReportFilters): ReportContact[] {
   return out.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name))
 }
 
-/** Filter-pill count (POC updateFilterPill): contacts + groups + each range +
- *  number search + a non-default type. asOf and the show-zero toggles excluded. */
+/** Does an amount pass a comparator filter? An unset filter (no value) passes. */
+export function amountPasses(n: number, cmp: CmAmountComparator, min: number | null, max: number | null): boolean {
+  if (cmp === 'gt') return min == null || n > min
+  if (cmp === 'lt') return max == null || n < max
+  return (min == null || n >= min) && (max == null || n <= max)
+}
+/** Is an amount filter set? gt reads Min, lt reads Max, between reads either. */
+export function amountActive(cmp: CmAmountComparator, min: number | null, max: number | null): boolean {
+  if (cmp === 'gt') return min != null
+  if (cmp === 'lt') return max != null
+  return min != null || max != null
+}
+
+/** "All filters (N)" — ONE per active filter row (rule/filter-all-filters-active-count):
+ *  type, customer, customer group, each balance, number, and each Hide Rp 0
+ *  toggle. asOf is the report's own date, not a filter. */
 export function activeFilterCount(f: CmReportFilters | CmViewFilters): number {
-  let n = f.contactIds.length + f.groupIds.length
-  if (f.contactMin != null || f.contactMax != null) n++
-  if (f.memoMin != null || f.memoMax != null) n++
-  if (normNumber(f.memoNumber)) n++
+  let n = 0
   if (f.docType !== 'all') n++
+  if (f.contactIds.length) n++
+  if (f.groupIds.length) n++
+  if (amountActive(f.contactCmp, f.contactMin, f.contactMax)) n++
+  if (amountActive(f.memoCmp, f.memoMin, f.memoMax)) n++
+  if (normNumber(f.memoNumber)) n++
+  if (!f.showZeroContacts) n++
+  if (!f.showZeroMemos) n++
   return n
 }
 
 export const RANGE_ERROR = "Min can't be greater than max."
-export function validateFilters(f: Pick<CmReportFilters, 'contactMin' | 'contactMax' | 'memoMin' | 'memoMax'>): { contact?: string; memo?: string } {
+/** Only "Is between" can be inverted (Min > Max). */
+export function validateFilters(f: Pick<CmReportFilters, 'contactCmp' | 'contactMin' | 'contactMax' | 'memoCmp' | 'memoMin' | 'memoMax'>): { contact?: string; memo?: string } {
   const e: { contact?: string; memo?: string } = {}
-  if (f.contactMin != null && f.contactMax != null && f.contactMin > f.contactMax) e.contact = RANGE_ERROR
-  if (f.memoMin != null && f.memoMax != null && f.memoMin > f.memoMax) e.memo = RANGE_ERROR
+  if (f.contactCmp === 'between' && f.contactMin != null && f.contactMax != null && f.contactMin > f.contactMax) e.contact = RANGE_ERROR
+  if (f.memoCmp === 'between' && f.memoMin != null && f.memoMax != null && f.memoMin > f.memoMax) e.memo = RANGE_ERROR
   return e
 }
 
@@ -276,7 +299,13 @@ export const EXPORT_DETAIL_HEADER = ['Contact', 'Contact type', 'Row type', 'Dat
 const kindLabel = (k: ReportContact['kind']) => (k === 'customer' ? 'Customer' : 'Vendor')
 const docLabel = (d: MemoDocType) => (d === 'CM' ? 'Credit memo' : 'Debit memo')
 
-export function buildExport(f: CmReportFilters): CmExport {
+/** Detail-sheet columns offered in the ExportModal (rule/export-modal). Contact and
+ *  Number identify a row, so they are always exported. */
+export const EXPORT_DETAIL_COLUMNS: { key: string; label: string; required?: boolean }[] =
+  EXPORT_DETAIL_HEADER.map((label) => ({ key: label, label, required: label === 'Contact' || label === 'Number' }))
+
+/** `columns` = the detail-sheet columns to keep (ExportModal); omitted → all. */
+export function buildExport(f: CmReportFilters, columns?: string[]): CmExport {
   const data = creditMemoReport({ ...f, showZeroContacts: true, showZeroMemos: true })
   const title = [['Credit Memo Report'], ['As of', f.asOf], []]
   const summary: (string | number)[][] = [...title, EXPORT_SUMMARY_HEADER]
@@ -290,13 +319,22 @@ export function buildExport(f: CmReportFilters): CmExport {
       }
     }
   }
+  if (columns) {
+    const keep = EXPORT_DETAIL_HEADER.map((h, i) => (columns.includes(h) || EXPORT_DETAIL_COLUMNS[i]!.required ? i : -1)).filter((i) => i >= 0)
+    const header = title.length
+    for (let r = header; r < detail.length; r++) detail[r] = keep.map((i) => detail[r]![i] ?? '')
+  }
   return { summary, detail }
 }
 
-// ── Saved views (filters minus asOf) ──────────────────────────────────────────
-export interface CmSavedView { id: string; name: string; filters: CmViewFilters }
-
+// ── Filter normalization (stored / partial / legacy filters) ─────────────────
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+/** A stored comparator, or one inferred from a legacy min/max-only view. */
+const cmpOf = (v: unknown, min: unknown, max: unknown): CmAmountComparator => {
+  if (CM_AMOUNT_COMPARATORS.includes(v as CmAmountComparator)) return v as CmAmountComparator
+  const hasMin = numOrNull(min) != null, hasMax = numOrNull(max) != null
+  return hasMin && hasMax ? 'between' : hasMax ? 'lt' : 'gt'
+}
 const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 /** Coerce stored / partial / legacy filters (keyword, txnTypes, statuses,
  *  showZero, customers…) into the v3 view shape; unknown fields → defaults. */
@@ -309,7 +347,9 @@ export function normalizeCmViewFilters(raw: unknown): CmViewFilters {
     contactIds: strList(r.contactIds),
     groupIds: strList(r.groupIds).filter((g) => groups.includes(g)),
     groupMode: r.groupMode === 'either' ? 'either' : 'all',
+    contactCmp: cmpOf(r.contactCmp, r.contactMin, r.contactMax),
     contactMin: numOrNull(r.contactMin), contactMax: numOrNull(r.contactMax),
+    memoCmp: cmpOf(r.memoCmp, r.memoMin, r.memoMax),
     memoMin: numOrNull(r.memoMin), memoMax: numOrNull(r.memoMax),
     memoNumber: typeof r.memoNumber === 'string' ? r.memoNumber : base.memoNumber,
     showZeroContacts: typeof r.showZeroContacts === 'boolean' ? r.showZeroContacts : base.showZeroContacts,
@@ -324,27 +364,3 @@ export function normalizeCmFilters(raw: unknown, asOf?: string): CmReportFilters
 }
 /** Strip asOf (views never store it). */
 export function toViewFilters(f: CmReportFilters | CmViewFilters): CmViewFilters { return normalizeCmViewFilters(f) }
-export function normalizeCmView(raw: { id: string; name: string; filters?: unknown }): CmSavedView {
-  return { id: raw.id, name: raw.name, filters: normalizeCmViewFilters(raw.filters) }
-}
-
-const K_VIEWS = 'credit-memo-views-v2'   // key kept: legacy views are normalized on load
-export const creditMemoViews = reactive<CmSavedView[]>(
-  (loadSnapshot<Parameters<typeof normalizeCmView>[0]>(K_VIEWS) ?? []).map(normalizeCmView),
-)
-function persistViews() { saveSnapshot(K_VIEWS, creditMemoViews) }
-let viewSeq = creditMemoViews.length + 1
-export function addCmView(v: { name: string; filters: CmReportFilters | CmViewFilters }): CmSavedView {
-  const view: CmSavedView = { name: v.name, filters: normalizeCmViewFilters(v.filters), id: `cmview-${Date.now()}-${viewSeq++}` }
-  creditMemoViews.push(view); persistViews(); return view
-}
-export function updateCmView(id: string, patch: { name?: string; filters?: CmReportFilters | CmViewFilters }): void {
-  const v = creditMemoViews.find((x) => x.id === id); if (!v) return
-  if (patch.name !== undefined) v.name = patch.name
-  if (patch.filters !== undefined) v.filters = normalizeCmViewFilters(patch.filters)
-  persistViews()
-}
-export function deleteCmView(id: string): void {
-  const i = creditMemoViews.findIndex((x) => x.id === id)
-  if (i !== -1) { creditMemoViews.splice(i, 1); persistViews() }
-}

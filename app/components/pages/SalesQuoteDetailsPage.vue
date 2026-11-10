@@ -14,9 +14,12 @@ import FilePreviewModal from '~/components/patterns/FilePreviewModal.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
-import { getContactIdByName } from '~/data/contacts'
 import { getSalesQuoteDetail } from '~/data/salesQuoteDetails'
 import { salesQuotes } from '~/data'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 
@@ -256,7 +259,7 @@ function goBack() { router.push('/sales-quotes') }
         <!-- Primary row: shares the header grid (col 1 = 318px) + emphasised Total -->
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(quote.customer.name)}`, '_blank')">{{ quote.customer.name }}</a></ContentList>
+            <ContentList :label="t('Customer')"><a class="detail-value-link" @click="openContact('customers', quote.customer.name)" data-devchange="contact-link-open">{{ quote.customer.name }}</a></ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Email')">

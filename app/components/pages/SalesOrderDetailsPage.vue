@@ -17,11 +17,14 @@ import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
-import { getContactIdByName } from '~/data/contacts'
 import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
 import { salesOrderCompletionRows, recurringSalesOrders, getRecurringForSalesOrder, persistSalesOrders, persistRecurringSalesOrders } from '~/data/salesOrders'
 import { addProductionRequest } from '~/data/productionRequests'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 
@@ -463,7 +466,7 @@ function copyLink() {
         <div class="content-list-grid">
           <div class="content-list-col">
             <ContentList :label="t('Customer')">
-              <a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(order.customer.name)}`, '_blank')">{{ order.customer.name }}</a>
+              <a class="detail-value-link" @click="openContact('customers', order.customer.name)" data-devchange="contact-link-open">{{ order.customer.name }}</a>
             </ContentList>
           </div>
           <div class="content-list-col">

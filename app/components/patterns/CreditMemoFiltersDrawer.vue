@@ -8,20 +8,22 @@
  *
  * Repo rules win over the POC visuals: ErpDrawer shell (rule/drawer-custom-shell,
  * header "All filters", close only via × / Cancel / Apply), ErpFilterSelect for
- * single selects, MultiSelectDropdown for multi selects, MpRadio / MpCheckbox,
+ * single selects, MultiSelectDropdown for multi selects, AmountComparatorField for
+ * the two balance filters (rule/filter-drawer-fields), MpRadio / MpCheckbox,
  * btn-enterprise footer (rule/filter-drawer-footer) and no input placeholders
- * (rule/input-no-placeholder — Min/Max are aria-labels, the en dash separates them).
+ * (rule/input-no-placeholder).
  *
  * Edits a local draft (re-synced from modelValue on every open) and commits on
- * Apply only. An invalid Min > Max range shows an inline caption under the field
+ * Apply only. An inverted "Is between" range (Min > Max) shows an inline caption under the field
  * on Apply and keeps the drawer open (validateFilters). Reset filter clears
  * everything EXCEPT the As of date (PRD AC-019-03).
  */
-import { MpIcon, MpButton, MpCheckbox, MpRadio, MpDatePicker, MpInput, MpTooltip } from '@mekari/pixel3'
+import { MpIcon, MpButton, MpCheckbox, MpRadio, MpDatePicker, MpInput, MpTooltip, MpTag } from '@mekari/pixel3'
+import AmountComparatorField from '~/components/patterns/AmountComparatorField.vue'
 import {
   CONTACT_GROUPS, PERIOD_PRESETS, contactOptions, emptyCmReportFilters, resolvePreset, validateFilters,
 } from '~/data/creditMemoReport'
-import type { CmReportFilters, DocTypeFilter, PeriodPreset } from '~/data/creditMemoReport'
+import type { CmAmountComparator, CmReportFilters, DocTypeFilter, PeriodPreset } from '~/data/creditMemoReport'
 
 const props = defineProps<{
   id: string
@@ -41,21 +43,35 @@ function clone(f: CmReportFilters): CmReportFilters {
 
 const draft = reactive<CmReportFilters>(clone(props.modelValue))
 const period = ref<PeriodPreset>('custom')
-// Min/Max are edited as text (digits only) and parsed on Apply.
-const amounts = reactive({ contactMin: '', contactMax: '', memoMin: '', memoMax: '' })
+// Balance filters — AmountComparatorField speaks digit strings (value for
+// gt / lt, min + max for between); the filters hold numbers. gt keeps its value
+// in Min, lt in Max (see CmAmountComparator).
+interface AmountDraft { cmp: CmAmountComparator; value: string; min: string; max: string }
+const emptyAmount = (): AmountDraft => ({ cmp: 'gt', value: '', min: '', max: '' })
+const amounts = reactive<{ contact: AmountDraft; memo: AmountDraft }>({ contact: emptyAmount(), memo: emptyAmount() })
 const errors = reactive<{ contact?: string; memo?: string }>({})
 
 function numToText(n: number | null): string { return n === null || n === undefined ? '' : String(n) }
 function textToNum(s: string): number | null {
-  const digits = s.replace(/[^\d.-]/g, '')
-  if (digits === '' || digits === '-') return null
+  const digits = s.replace(/\D/g, '')
+  if (digits === '') return null
   const n = Number(digits)
   return Number.isFinite(n) ? n : null
 }
+function toDraft(cmp: CmAmountComparator, min: number | null, max: number | null): AmountDraft {
+  if (cmp === 'gt') return { cmp, value: numToText(min), min: '', max: '' }
+  if (cmp === 'lt') return { cmp, value: numToText(max), min: '', max: '' }
+  return { cmp, value: '', min: numToText(min), max: numToText(max) }
+}
+function fromDraft(a: AmountDraft): { cmp: CmAmountComparator; min: number | null; max: number | null } {
+  if (a.cmp === 'gt') return { cmp: a.cmp, min: textToNum(a.value), max: null }
+  if (a.cmp === 'lt') return { cmp: a.cmp, min: null, max: textToNum(a.value) }
+  return { cmp: a.cmp, min: textToNum(a.min), max: textToNum(a.max) }
+}
 function syncFromModel() {
   Object.assign(draft, clone(props.modelValue))
-  amounts.contactMin = numToText(draft.contactMin); amounts.contactMax = numToText(draft.contactMax)
-  amounts.memoMin = numToText(draft.memoMin); amounts.memoMax = numToText(draft.memoMax)
+  amounts.contact = toDraft(draft.contactCmp, draft.contactMin, draft.contactMax)
+  amounts.memo = toDraft(draft.memoCmp, draft.memoMin, draft.memoMax)
   period.value = 'custom'
   errors.contact = undefined; errors.memo = undefined
 }
@@ -130,14 +146,16 @@ function resetAll() {
   const keepPeriod = period.value
   Object.assign(draft, emptyCmReportFilters(), { asOf: keepAsOf })
   period.value = keepPeriod
-  amounts.contactMin = ''; amounts.contactMax = ''; amounts.memoMin = ''; amounts.memoMax = ''
+  amounts.contact = emptyAmount(); amounts.memo = emptyAmount()
   errors.contact = undefined; errors.memo = undefined
 }
 function apply() {
+  const c = fromDraft(amounts.contact)
+  const m = fromDraft(amounts.memo)
   const next: CmReportFilters = {
     ...clone(draft),
-    contactMin: textToNum(amounts.contactMin), contactMax: textToNum(amounts.contactMax),
-    memoMin: textToNum(amounts.memoMin), memoMax: textToNum(amounts.memoMax),
+    contactCmp: c.cmp, contactMin: c.min, contactMax: c.max,
+    memoCmp: m.cmp, memoMin: m.min, memoMax: m.max,
     memoNumber: draft.memoNumber.trim(),
   }
   const v = validateFilters(next)
@@ -190,13 +208,9 @@ function apply() {
           :placeholder="t('Choose customer')" is-full-width
           @update:model-value="onCustomers"
         />
-        <div v-if="draft.contactIds.length > 1" class="cmfd-chips">
-          <span v-for="cid in draft.contactIds" :key="cid" class="cmfd-chip">
-            {{ customerName(cid) }}
-            <MpButton type="button" class="cmfd-chip-remove" variant="ghost" :aria-label="`${t('Remove')} ${customerName(cid)}`" @click="removeCustomer(cid)">
-              <MpIcon name="close" size="sm" />
-            </MpButton>
-          </span>
+        <!-- Selected customers — closable gray MpTag (rule/tag-gray-only), not hand-rolled chips. -->
+        <div v-if="draft.contactIds.length > 1" class="cmfd-chips" data-devchange="cm-report-patterns">
+          <MpTag v-for="cid in draft.contactIds" :key="cid" as="span" is-closable @close="removeCustomer(cid)">{{ customerName(cid) }}</MpTag>
         </div>
       </div>
 
@@ -224,22 +238,24 @@ function apply() {
       <!-- 6. Customer remaining balance -->
       <div class="cmfd-field">
         <span class="cmfd-field-label">{{ t('Customer remaining balance') }}</span>
-        <div class="cmfd-range">
-          <MpInput :id="`${id}-cmin`" v-model="amounts.contactMin" inputmode="numeric" :aria-label="t('Min')" :is-invalid="!!errors.contact" is-full-width />
-          <span class="cmfd-range-sep">–</span>
-          <MpInput :id="`${id}-cmax`" v-model="amounts.contactMax" inputmode="numeric" :aria-label="t('Max')" :is-invalid="!!errors.contact" is-full-width />
-        </div>
+        <AmountComparatorField
+          :id="`${id}-cbal`" data-devchange="cm-report-patterns"
+          :comparator="amounts.contact.cmp" :value="amounts.contact.value" :min="amounts.contact.min" :max="amounts.contact.max"
+          @update:comparator="amounts.contact.cmp = $event" @update:value="amounts.contact.value = $event"
+          @update:min="amounts.contact.min = $event" @update:max="amounts.contact.max = $event"
+        />
         <p v-if="errors.contact" class="cmfd-error" role="alert">{{ t(errors.contact) }}</p>
       </div>
 
       <!-- 7. Credit memo balance -->
       <div class="cmfd-field">
         <span class="cmfd-field-label">{{ t('Credit memo balance') }}</span>
-        <div class="cmfd-range">
-          <MpInput :id="`${id}-mmin`" v-model="amounts.memoMin" inputmode="numeric" :aria-label="t('Min')" :is-invalid="!!errors.memo" is-full-width />
-          <span class="cmfd-range-sep">–</span>
-          <MpInput :id="`${id}-mmax`" v-model="amounts.memoMax" inputmode="numeric" :aria-label="t('Max')" :is-invalid="!!errors.memo" is-full-width />
-        </div>
+        <AmountComparatorField
+          :id="`${id}-mbal`" data-devchange="cm-report-patterns"
+          :comparator="amounts.memo.cmp" :value="amounts.memo.value" :min="amounts.memo.min" :max="amounts.memo.max"
+          @update:comparator="amounts.memo.cmp = $event" @update:value="amounts.memo.value = $event"
+          @update:min="amounts.memo.min = $event" @update:max="amounts.memo.max = $event"
+        />
         <p v-if="errors.memo" class="cmfd-error" role="alert">{{ t(errors.memo) }}</p>
       </div>
 
@@ -274,27 +290,17 @@ function apply() {
 </template>
 
 <style scoped>
+/* Tokens only (rule/token-no-hardcoded-*). */
 .cmfd-field { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
-.cmfd-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
-.cmfd-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.cmfd-field-label { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default); }
+.cmfd-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary); }
 
 .cmfd-chips { display: flex; flex-wrap: wrap; gap: var(--mp-spacing-1); margin-top: var(--mp-spacing-1); }
-.cmfd-chip {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1);
-  padding: 0 var(--mp-spacing-1) 0 var(--mp-spacing-2);
-  background: var(--mp-background-neutral-subtle, #f0f1f3); border-radius: var(--mp-radii-sm, 4px);
-  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); white-space: nowrap;
-}
-.cmfd-chip-remove { display: inline-flex; align-items: center; justify-content: center; border: none; background: transparent; padding: 0; cursor: pointer; color: var(--mp-text-subtle); }
-.cmfd-chip-remove:hover { color: var(--mp-text-default); }
 
 .cmfd-radios { display: flex; align-items: center; gap: var(--mp-spacing-6); margin-top: var(--mp-spacing-2); }
 .cmfd-info { display: inline-flex; align-items: center; color: var(--mp-text-subtle); cursor: help; }
 
-.cmfd-range { display: flex; align-items: center; gap: var(--mp-spacing-2); }
-.cmfd-range > :deep(*:not(.cmfd-range-sep)) { flex: 1 1 0; min-width: 0; }
-.cmfd-range-sep { flex: none; color: var(--mp-text-secondary); }
-.cmfd-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.cmfd-error { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-danger); }
 
 .cmfd-checks { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
 .cmfd-foot-right { display: flex; align-items: center; gap: var(--mp-spacing-2); }
