@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import {
   MpButton, MpIcon, MpTextlink, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpModal, MpModalContent, MpModalHeader, MpModalCloseButton, MpModalBody, MpModalFooter, MpModalOverlay,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
@@ -13,6 +14,7 @@ import {
   getCrmModule, getGenericRecord, genericModuleStages, moveGenericRecordStage,
   genericPipelineFieldId, moduleStores, deleteGenericRecord, isRelatedListType,
   setGenericRecordProducts, genericRecordTotals, genericRecordActivityLog, lineSubtotal,
+  isCheckInEnabled, getCheckInRecords,
   type DealProperty, type DealLineItem, type DealProductsPayload, type Deal,
 } from '~/data/crm'
 import { formatMoney } from '~/utils/currency'
@@ -156,6 +158,28 @@ function onProductsSaved(payload: DealProductsPayload) {
 
 // ── Activity log ──
 const activityEntries = computed(() => rec.value ? genericRecordActivityLog(moduleId.value, rec.value) : [])
+
+// ── Check-in ──
+const checkinEnabled = computed(() => isCheckInEnabled(moduleId.value))
+const allCheckinRecords = computed(() => rec.value ? getCheckInRecords(moduleId.value, rec.value.id) : [])
+const checkinSearch = ref('')
+const checkinRecords = computed(() => {
+  const q = checkinSearch.value.toLowerCase().trim()
+  if (!q) return allCheckinRecords.value
+  return allCheckinRecords.value.filter(ci =>
+    ci.user.toLowerCase().includes(q) || ci.address.toLowerCase().includes(q) || ci.note.toLowerCase().includes(q),
+  )
+})
+const checkinMapOpen = ref(false)
+const checkinMapRecord = ref<import('~/data/crm').CheckInRecord | null>(null)
+function openCheckinMap(ci: import('~/data/crm').CheckInRecord) { checkinMapRecord.value = ci; checkinMapOpen.value = true }
+const checkinPhotoOpen = ref(false)
+const checkinPhotoRecord = ref<import('~/data/crm').CheckInRecord | null>(null)
+function openCheckinPhoto(ci: import('~/data/crm').CheckInRecord) { checkinPhotoRecord.value = ci; checkinPhotoOpen.value = true }
+function fmtDateTime(iso?: string) {
+  if (!iso) return '—'
+  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso))
+}
 </script>
 
 <template>
@@ -224,6 +248,7 @@ const activityEntries = computed(() => rec.value ? genericRecordActivityLog(modu
         <MpTabs :key="rec.id" :id="`${moduleId}-tabs`" :default-value="0" variant-color="green" class="detail-tabs">
           <MpTabList>
             <MpTab :id="`${moduleId}-tab-details`" value="details">{{ t('Record details') }}</MpTab>
+            <MpTab v-if="checkinEnabled" :id="`${moduleId}-tab-checkin`" value="checkin">{{ t('Check-in') }}</MpTab>
             <MpTab :id="`${moduleId}-tab-activity`" value="activity">{{ t('Activity') }}</MpTab>
           </MpTabList>
           <MpTabPanels>
@@ -311,6 +336,51 @@ const activityEntries = computed(() => rec.value ? genericRecordActivityLog(modu
                 </div>
               </section>
             </MpTabPanel>
+            <MpTabPanel v-if="checkinEnabled" value="checkin">
+              <div class="deal-files-filterbar">
+                <div class="filter-left" />
+                <div class="filter-right">
+                  <div class="filter-search">
+                    <MpIcon name="search" size="sm" />
+                    <input v-model="checkinSearch" class="filter-search-input" type="text" :placeholder="t('Search check-ins…')" />
+                    <MpButton v-if="checkinSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="checkinSearch = ''" />
+                  </div>
+                </div>
+              </div>
+              <table v-if="checkinRecords.length" class="detail-linked">
+                <colgroup>
+                  <col class="detail-linked-col--date" />
+                  <col />
+                  <col />
+                  <col />
+                  <col />
+                </colgroup>
+                <thead><tr>
+                  <th class="detail-th">{{ t('Checked in at') }}</th>
+                  <th class="detail-th">{{ t('User') }}</th>
+                  <th class="detail-th">{{ t('Location') }}</th>
+                  <th class="detail-th">{{ t('Note') }}</th>
+                  <th class="detail-th">{{ t('Evidence') }}</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="ci in checkinRecords" :key="ci.id" class="detail-item-row">
+                    <td class="detail-td">{{ fmtDateTime(ci.checkedInAt) }}</td>
+                    <td class="detail-td">{{ ci.user }}</td>
+                    <td class="detail-td">
+                      <span class="ci-address">{{ ci.address }}</span>
+                      <MpTextlink class="ci-map-link" @click="openCheckinMap(ci)">{{ t('View map') }}</MpTextlink>
+                    </td>
+                    <td class="detail-td">{{ ci.note || '—' }}</td>
+                    <td class="detail-td">
+                      <MpTextlink v-if="ci.hasPhoto" @click="openCheckinPhoto(ci)">{{ t('Photo captured') }}</MpTextlink>
+                      <span v-else>—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else-if="checkinSearch && allCheckinRecords.length" class="detail-tab-empty">{{ t('No results found') }}</p>
+              <p v-else class="detail-tab-empty">{{ t('No check-ins recorded yet.') }}</p>
+            </MpTabPanel>
             <MpTabPanel value="activity">
               <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
               <ActivityLogTable :entries="activityEntries" />
@@ -325,6 +395,7 @@ const activityEntries = computed(() => rec.value ? genericRecordActivityLog(modu
       <MpTabs :key="rec.id" :id="`${moduleId}-tabs`" :default-value="0" variant-color="green" class="detail-tabs detail-tabs--flat">
         <MpTabList class="detail-tablist-outer">
           <MpTab :id="`${moduleId}-tab-details`" value="details">{{ t('Record details') }}</MpTab>
+          <MpTab v-if="checkinEnabled" :id="`${moduleId}-tab-checkin`" value="checkin">{{ t('Check-in') }}</MpTab>
           <MpTab :id="`${moduleId}-tab-activity`" value="activity">{{ t('Activity') }}</MpTab>
         </MpTabList>
         <MpTabPanels class="detail-panels-outer">
@@ -411,6 +482,51 @@ const activityEntries = computed(() => rec.value ? genericRecordActivityLog(modu
               </div>
             </section>
           </MpTabPanel>
+          <MpTabPanel v-if="checkinEnabled" value="checkin">
+            <div class="deal-files-filterbar">
+              <div class="filter-left" />
+              <div class="filter-right">
+                <div class="filter-search">
+                  <MpIcon name="search" size="sm" />
+                  <input v-model="checkinSearch" class="filter-search-input" type="text" :placeholder="t('Search check-ins…')" />
+                  <MpButton v-if="checkinSearch" class="search-clear-btn" type="button" left-icon="close" :aria-label="t('Clear search')" @click="checkinSearch = ''" />
+                </div>
+              </div>
+            </div>
+            <table v-if="checkinRecords.length" class="detail-linked">
+              <colgroup>
+                <col class="detail-linked-col--date" />
+                <col />
+                <col />
+                <col />
+                <col />
+              </colgroup>
+              <thead><tr>
+                <th class="detail-th">{{ t('Checked in at') }}</th>
+                <th class="detail-th">{{ t('User') }}</th>
+                <th class="detail-th">{{ t('Location') }}</th>
+                <th class="detail-th">{{ t('Note') }}</th>
+                <th class="detail-th">{{ t('Evidence') }}</th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="ci in checkinRecords" :key="ci.id" class="detail-item-row">
+                  <td class="detail-td">{{ fmtDateTime(ci.checkedInAt) }}</td>
+                  <td class="detail-td">{{ ci.user }}</td>
+                  <td class="detail-td">
+                    <span class="ci-address">{{ ci.address }}</span>
+                    <MpTextlink class="ci-map-link" @click="openCheckinMap(ci)">{{ t('View map') }}</MpTextlink>
+                  </td>
+                  <td class="detail-td">{{ ci.note || '—' }}</td>
+                  <td class="detail-td">
+                    <MpTextlink v-if="ci.hasPhoto" @click="openCheckinPhoto(ci)">{{ t('Photo captured') }}</MpTextlink>
+                    <span v-else>—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else-if="checkinSearch && allCheckinRecords.length" class="detail-tab-empty">{{ t('No results found') }}</p>
+            <p v-else class="detail-tab-empty">{{ t('No check-ins recorded yet.') }}</p>
+          </MpTabPanel>
           <MpTabPanel value="activity">
             <h3 class="detail-tab-heading">{{ t('Activity log') }}</h3>
             <ActivityLogTable :entries="activityEntries" />
@@ -454,6 +570,55 @@ const activityEntries = computed(() => rec.value ? genericRecordActivityLog(modu
         <MpButton variant="secondary" is-rounded @click="back">{{ t('Back') }}</MpButton>
       </div>
     </div>
+
+    <!-- Check-in map modal -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="checkin-map-modal" :is-open="checkinMapOpen" size="lg" :is-keep-alive="false" @close="checkinMapOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Check-in location') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <div v-if="checkinMapRecord" class="ci-modal-map-wrap">
+            <iframe
+              :src="`https://www.google.com/maps?q=${checkinMapRecord.lat},${checkinMapRecord.lng}&z=16&output=embed`"
+              class="ci-modal-map" :title="t('Check-in location')" loading="lazy" referrerpolicy="no-referrer"
+            />
+            <p class="ci-modal-address">{{ checkinMapRecord.address }}</p>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="fpm-footer">
+            <MpButton variant="ghost" is-rounded @click="checkinMapOpen = false">{{ t('Close') }}</MpButton>
+            <MpButton v-if="checkinMapRecord" variant="primary" is-rounded :as="'a'" :href="`https://www.google.com/maps?q=${checkinMapRecord.lat},${checkinMapRecord.lng}`" target="_blank">{{ t('Open in Google Maps') }}</MpButton>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
+
+    <!-- Check-in evidence photo modal -->
+    <MpModal :is-close-on-esc="false" :is-close-on-overlay-click="false"
+      id="checkin-photo-modal" :is-open="checkinPhotoOpen" size="lg" :is-keep-alive="false" @close="checkinPhotoOpen = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>{{ t('Evidence photo') }}<MpModalCloseButton /></MpModalHeader>
+        <MpModalBody>
+          <div v-if="checkinPhotoRecord" class="ci-modal-photo-wrap">
+            <div class="ci-modal-photo-placeholder">
+              <MpIcon name="image" size="md" />
+              <p class="ci-modal-photo-label">{{ checkinPhotoRecord.user }} — {{ fmtDateTime(checkinPhotoRecord.checkedInAt) }}</p>
+              <p class="ci-modal-photo-note">{{ checkinPhotoRecord.note }}</p>
+            </div>
+          </div>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="fpm-footer">
+            <MpButton variant="ghost" is-rounded @click="checkinPhotoOpen = false">{{ t('Close') }}</MpButton>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
   </div>
 </template>
 
@@ -617,4 +782,16 @@ const activityEntries = computed(() => rec.value ? genericRecordActivityLog(modu
 .detail-empty-title { font-size: var(--mp-font-sizes-lg, 16px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); margin: 0; }
 .detail-empty-caption { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 .detail-empty-text { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── Check-in history tab ── */
+.ci-address { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.ci-map-link { font-size: var(--mp-font-sizes-sm); }
+.ci-modal-map-wrap { display: flex; flex-direction: column; gap: var(--mp-spacing-3); }
+.ci-modal-map { display: block; width: 100%; height: 400px; border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md); }
+.ci-modal-address { margin: 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.ci-modal-photo-wrap { display: flex; align-items: center; justify-content: center; }
+.ci-modal-photo-placeholder { display: flex; flex-direction: column; align-items: center; gap: var(--mp-spacing-2); padding: var(--mp-spacing-8) var(--mp-spacing-4); width: 100%; min-height: 320px; justify-content: center; background: var(--mp-background-neutral-subtle, #f8f9f9); border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-md); }
+.ci-modal-photo-label { margin: 0; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); text-align: center; }
+.ci-modal-photo-note { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); text-align: center; }
+.fpm-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

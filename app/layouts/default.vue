@@ -120,7 +120,10 @@ body {
   height: 100%;
   font-family: var(--mp-fonts-body);
   -webkit-font-smoothing: antialiased;
-  background: var(--mp-background-surface-bold);
+  /* Light canvas: anything that extends past the shell (e.g. a host overlay that
+     reserves room at the bottom) shows the page colour, not a dark-green band.
+     The dark backing lives on .app-shell instead. */
+  background: var(--mp-background-neutral-subtle);
   color: var(--mp-text-default);
 }
 
@@ -133,6 +136,7 @@ body {
   flex-direction: column;
   height: 100dvh;
   overflow: hidden;
+  background: var(--mp-background-surface-bold);
 }
 
 .main-container {

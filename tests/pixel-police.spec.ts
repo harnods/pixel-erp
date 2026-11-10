@@ -227,6 +227,12 @@ describe('pixel-police — VAT reconciliation is token-only', () => {
       'app/components/pages/VatReconciliationWorkspacePage.vue',
       'app/components/patterns/ReconciliationDetailDrawer.vue',
       'app/components/patterns/ReconciliationFiltersDrawer.vue',
+      'app/components/patterns/VatReconciliationAireneSuggestions.vue',
+      'app/components/patterns/VatReconciliationMatchConfirmModal.vue',
+      'app/components/patterns/VatReconciliationPairActions.vue',
+      'app/components/patterns/VatReconciliationRemarkModal.vue',
+      'app/components/patterns/VatReconciliationRowMarkers.vue',
+      'app/components/patterns/VatReconciliationTaxDocActions.vue',
     ])
   })
 

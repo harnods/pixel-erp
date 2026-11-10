@@ -22,7 +22,7 @@ import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import LastUpdatedCell from '~/components/patterns/LastUpdatedCell.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
-import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule, createCustomModule } from '~/data/crm'
+import { crmModules, type CrmModule, CRM_CONVERSION_LABELS, genericRecordsFor, canEditModule, createCustomModule, isCheckInEnabled } from '~/data/crm'
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -51,7 +51,7 @@ function continueNewModule() {
   router.push({ path: `/crm/settings/modules/${id}`, query: { edit: '1', accessLocked: '1' } })
 }
 
-type ModuleRow = CrmModule & { access: string; conversionLabel: string }
+type ModuleRow = CrmModule & { access: string; conversionLabel: string; checkinStatus: string }
 // The Modules index lists EVERY module — the Deals system module (edited via its
 // Pipeline/Layout builder) plus any custom modules.
 const rows = computed<ModuleRow[]>(() =>
@@ -60,6 +60,7 @@ const rows = computed<ModuleRow[]>(() =>
     recordCount: !m.system ? genericRecordsFor(m.id).length : m.recordCount,
     access: m.accessLevel === 'company' ? 'Company' : 'Team',
     conversionLabel: m.conversionTarget ? CRM_CONVERSION_LABELS[m.conversionTarget] : '—',
+    checkinStatus: isCheckInEnabled(m.id) ? 'Enabled' : 'Disabled',
   })),
 )
 
@@ -69,6 +70,7 @@ const columns: TableColumn[] = [
   { key: 'recordCount', label: 'Records',      kind: 'number', sortable: true, sortType: 'number' },
   { key: 'conversion',  label: 'ERP conversion', kind: 'status'                                    },
   { key: 'status',      label: 'Status',       kind: 'status', sortable: true, sortType: 'text'   },
+  { key: 'checkin',     label: 'Check-in',     kind: 'status', sortable: true, sortType: 'text'   },
   { key: 'updatedAt',   label: 'Last updated', kind: 'date',   sortable: true, sortType: 'date'   },
 ]
 
@@ -181,6 +183,9 @@ watch(statusFilter, () => setPage(1))
         <template #cell-status="{ row }">
           <ErpStatusBadge :status="statusBadge((row as unknown as ModuleRow).status).status" :label="t(statusBadge((row as unknown as ModuleRow).status).label)" />
         </template>
+        <template #cell-checkin="{ row }">
+          <span :class="{ 'cmm-checkin-enabled': (row as unknown as ModuleRow).checkinStatus === 'Enabled', 'cmm-checkin-disabled': (row as unknown as ModuleRow).checkinStatus === 'Disabled' }">{{ t((row as unknown as ModuleRow).checkinStatus) }}</span>
+        </template>
         <template #cell-updatedAt="{ row }">
           <LastUpdatedCell :at="(row as unknown as ModuleRow).updatedAt" :by="(row as unknown as ModuleRow).updatedBy" />
         </template>
@@ -254,6 +259,8 @@ watch(statusFilter, () => setPage(1))
 .cell-link { color: var(--mp-colors-text-link, #165082); text-decoration: none; cursor: pointer; }
 .cell-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .cmm-muted { color: var(--mp-text-secondary); }
+.cmm-checkin-enabled { color: var(--mp-colors-green-600, #16a34a); font-weight: var(--mp-font-weights-semi-bold, 600); }
+.cmm-checkin-disabled { color: var(--mp-text-secondary); }
 .cru-action--danger :deep(*), .cru-action--danger { color: var(--mp-colors-text-danger, #a8352d); }
 
 .row-kebab {

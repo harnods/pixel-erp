@@ -52,13 +52,19 @@ import {
   findExportDetail, type DocOutTransactionCode,
 } from '~/data/docOutCodes'
 import { remarkOptions, findRemark, hasRemarks } from '~/data/efakturRemarks'
-import { addTaxDocument, type TaxDocumentStatus, type TaxDocumentLane } from '~/data/taxDocuments'
+import { addTaxDocument, updateTaxDocument, type TaxDocument, type TaxDocumentStatus, type TaxDocumentLane } from '~/data/taxDocuments'
 import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
 import { useTaxInfoScenario, TAX_INFO_SCENARIOS } from '~/composables/useTaxInfoScenario'
 
 const props = defineProps<{
   isOpen: boolean
   invoice: SalesInvoiceDetail
+  /**
+   * A DRAFT to edit instead of raising a new document. The form opens filled
+   * with the draft's choices and saving rewrites that draft in place (same id,
+   * same NSFP) — only the faktur-level fields change, never the invoice.
+   */
+  editDocument?: TaxDocument | null
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
@@ -66,6 +72,9 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useLocale()
+
+const isEditing = computed(() => !!props.editDocument)
+const title = computed(() => (isEditing.value ? t('Edit tax document') : t('Create tax document')))
 
 // Tax-info scenario — which gap (if any) blocks creation. This drawer only
 // renders when nothing blocks, but it carries the switcher so the blocked
@@ -281,7 +290,31 @@ function reset() {
   // only sensible starting point once the form has defaulted to DK.
   if (documentKind.value === 'DK') selectDkCode('4')
 }
-watch(() => props.isOpen, (open) => { if (open) reset() })
+
+/** Edit mode — lay the draft's own choices over the reset form. Set directly,
+ *  not through the select handlers, which would cascade-reset what follows. */
+function prefill(doc: TaxDocument) {
+  taxDocDate.value = doc.date
+  documentKind.value = doc.docKind ?? (doc.lane === 'foreign' ? 'DK' : 'FK')
+  if (documentKind.value === 'FK') {
+    fkCode.value = doc.djpCode
+  } else {
+    dkCode.value = (doc.dkTransactionCode ?? '') as DocOutTransactionCode | ''
+    dkDetail.value = doc.djpCode
+    dkDocument.value = doc.dkDocumentCode ?? ''
+    dkReference.value = doc.reference ?? ''
+    dkDocumentNumber.value = doc.documentNumber ?? ''
+  }
+  remark.value = doc.additionalRemark ?? ''
+  description.value = doc.description ?? ''
+  clearErrors()
+}
+
+watch(() => props.isOpen, (open) => {
+  if (!open) return
+  reset()
+  if (props.editDocument) prefill(props.editDocument)
+})
 
 // ── Validation ────────────────────────────────────────────────────────────────
 function validate(): boolean {
@@ -318,8 +351,7 @@ function save(status: TaxDocumentStatus) {
   const lane: TaxDocumentLane = isDkExport.value ? 'foreign' : 'domestic'
   const djpCode = isFk.value ? fkCode.value : dkDetail.value
 
-  addTaxDocument({
-    salesInvoiceId: props.invoice.id,
+  const fields = {
     date: taxDocDate.value,
     documentType: isFk.value ? 'Output tax invoice' : 'Other output document',
     docKind: documentKind.value,
@@ -342,7 +374,9 @@ function save(status: TaxDocumentStatus) {
     documentNumber: showDkDocumentNumber.value ? dkDocumentNumber.value.trim() : undefined,
     status,
     invoiceSnapshot: buildTaxSnapshot(props.invoice),
-  })
+  }
+  if (props.editDocument) updateTaxDocument(props.editDocument.id, fields)
+  else addTaxDocument({ salesInvoiceId: props.invoice.id, ...fields })
   emit('saved')
   close()
 }
@@ -354,9 +388,9 @@ function submitToDjp() { save('awaiting-approval') }
   <Teleport to="body">
     <Transition name="ctd">
       <div v-if="isOpen" class="ctd-overlay">
-        <div class="ctd-panel" role="dialog" :aria-label="t('Create tax document')">
+        <div class="ctd-panel" role="dialog" :aria-label="title" :data-devchange="isEditing ? 'vat-recon-tax-doc-actions' : undefined">
           <div class="ctd-header">
-            <MpText weight="semiBold">{{ t('Create tax document') }}</MpText>
+            <MpText weight="semiBold">{{ title }}</MpText>
             <div class="ctd-header-actions">
               <MpPopover id="ctd-scenario-popover" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
                 <MpPopoverTrigger>

@@ -41,7 +41,7 @@ import {
   getTaxDocumentsForInvoice, formatTaxDocumentNumber, taxDocumentStatus,
   updateTaxDocumentStatus,
   taxDocMenuItemDefs, DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS,
-  getApprovedTaxDocument, generateReturnNoteDraft, outstandingReturnNote, removeTaxDocument,
+  getApprovedTaxDocument, generateReturnNoteDraft, outstandingReturnNote, removeTaxDocument, getTaxDocument,
   type TaxDocument,
 } from '~/data/taxDocuments'
 import { buildTaxSnapshot } from '~/data/taxDocumentChanges'
@@ -234,7 +234,11 @@ const taxInfoComplete = computed(() =>
     ? canGenerateTaxDocument(invoice.value.id)
     : taxInfoScenario.value === 'complete',
 )
+/** The draft the drawer is editing — null when it is raising a new document. */
+const editingTaxDoc = ref<TaxDocument | null>(null)
+
 function openCreateTaxDocument() {
+  editingTaxDoc.value = null
   taxDocDrawerOpen.value = taxInfoComplete.value
   cannotCreateTaxDocDrawerOpen.value = !taxInfoComplete.value
 }
@@ -242,8 +246,18 @@ function openCreateTaxDocument() {
 // Switching scenario from inside either drawer swaps to whichever one the new
 // scenario belongs to, rather than leaving the stale drawer up.
 watch(taxInfoScenario, () => {
+  if (editingTaxDoc.value) return
   if (taxDocDrawerOpen.value || cannotCreateTaxDocDrawerOpen.value) openCreateTaxDocument()
 })
+
+/** Only a draft can be edited — anything submitted goes through DJP's own
+ *  correction flow (replacement / cancellation), not the form. */
+function openEditTaxDocument(doc: TaxDocument) {
+  if (doc.status !== 'draft') return
+  editingTaxDoc.value = doc
+  cannotCreateTaxDocDrawerOpen.value = false
+  taxDocDrawerOpen.value = true
+}
 
 // Tabs only appear once they have something to show — an invoice with no
 // payments yet shouldn't offer an empty "Payments" tab, etc.
@@ -266,7 +280,11 @@ const paymentRows = computed<PaymentRow[]>(() => {
 const hasTaxDocuments = computed(() => taxDocuments.value.length > 0)
 
 function onTaxDocumentSaved() {
-  toast.notify({ variant: 'success', title: t('Tax document saved'), rootProps: { class: 'toast-enterprise' } })
+  const edited = !!editingTaxDoc.value
+  editingTaxDoc.value = null
+  toast.notify({ variant: 'success', title: t(edited ? 'Tax document updated' : 'Tax document saved'), rootProps: { class: 'toast-enterprise' } })
+  // Land on the tab that now holds it, so the saved draft is in view.
+  showTaxDocumentTab()
 }
 
 /**
@@ -389,6 +407,7 @@ function taxDocMenuItems(doc: TaxDocument, opts: { excludeViewDetails?: boolean 
           : item.label === 'Refresh DJP status' ? () => refreshTaxDocStatus(doc)
           : item.label === 'Print e-faktur' ? () => printEFaktur(doc)
           : item.label === 'Withdraw return note' ? () => withdrawReturnNote(doc)
+          : item.label === 'Edit' && !item.disabled ? () => openEditTaxDocument(doc)
           : undefined,
       }
     })
@@ -555,6 +574,36 @@ function showTaxDocumentTab() {
   jumpedTabIndex.value = taxDocTabIndex.value
   tabJumpNonce.value += 1
 }
+
+/**
+ * Arriving with an action — VAT reconciliation opens this page in a new tab to
+ * fix an invoice's missing faktur, and expects to land IN the fix:
+ *
+ *   ?action=create-tax-document                     → the Create drawer (or the
+ *     "Cannot create" one when tax info has a gap — same gate as the button)
+ *   ?action=edit-tax-document&taxDocument=<id>      → that draft, in edit mode
+ *
+ * The action is stripped from the URL once handled, so a refresh doesn't
+ * re-open a drawer the user already closed. A request that no longer applies
+ * (the invoice now has an approved faktur, or the draft was submitted) lands
+ * on the Tax document tab instead, where the current state is visible.
+ */
+onMounted(() => {
+  const action = route.query.action
+  if (action !== 'create-tax-document' && action !== 'edit-tax-document') return
+  const docId = String(route.query.taxDocument ?? '')
+  const { action: _a, taxDocument: _d, ...rest } = route.query
+  router.replace({ query: rest })
+
+  if (action === 'create-tax-document') {
+    if (hasStandingTaxDoc.value) { if (hasTaxDocuments.value) showTaxDocumentTab(); return }
+    openCreateTaxDocument()
+    return
+  }
+  const doc = getTaxDocument(docId)
+  if (doc && doc.salesInvoiceId === invoice.value.id && doc.status === 'draft') openEditTaxDocument(doc)
+  else if (hasTaxDocuments.value) showTaxDocumentTab()
+})
 
 const defaultTabIndex = computed(() => {
   if (jumpedTabIndex.value !== null) return jumpedTabIndex.value
@@ -1171,6 +1220,7 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
     <CreateTaxDocumentDrawer
       v-model:is-open="taxDocDrawerOpen"
       :invoice="invoice"
+      :edit-document="editingTaxDoc"
       @saved="onTaxDocumentSaved"
     />
 
