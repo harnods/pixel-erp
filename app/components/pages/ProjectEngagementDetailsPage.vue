@@ -94,7 +94,7 @@ function continueTo(key: EngagementStage) {
   goTab(key)
 }
 
-function goList() { router.push('/project-accounting') }
+function goList() { router.push('/projects') }
 
 const isClosed = computed(() => engagement.value ? projectStatusKey(engagement.value) === 'closed' : false)
 
@@ -107,7 +107,7 @@ const statusBadgeKey = computed(() => {
 })
 
 const jumpItems = computed<JumpItem[]>(() => engagements.map(e => ({ id: e.id, primary: e.name, secondary: e.client })))
-function jumpTo(id: string) { router.push(`/project-accounting/${id}`) }
+function jumpTo(id: string) { router.push(`/projects/${id}`) }
 
 const creationApproval = computed(() => engagement.value ? approvalFor(engagement.value, 'project-creation', null) : undefined)
 
@@ -692,7 +692,7 @@ const readyAmount = computed(() => readyLines.value.reduce((a, x) => a + entryFi
 function newInvoice(kind: string, label: string, milestoneId?: string) {
   const e = engagement.value
   if (!e) return
-  router.push({ path: '/project-accounting/invoice/new', query: { project: e.id, kind, label, milestone: milestoneId ?? undefined } })
+  router.push({ path: '/projects/invoice/new', query: { project: e.id, kind, label, milestone: milestoneId ?? undefined } })
 }
 
 const STATUS_LABEL: Record<BillingStatus, string> = { paid: 'Paid', invoiced: 'Unpaid', notdue: 'Not invoiced' }
@@ -806,7 +806,7 @@ function doClose() {
 
 function editAndResubmit() {
   const e = engagement.value
-  if (e) router.push({ path: '/project-accounting/new', query: { resubmit: e.id } })
+  if (e) router.push({ path: '/projects/new', query: { resubmit: e.id } })
 }
 
 function doReopen(reason: string) {
@@ -876,7 +876,7 @@ watch(reviewChip, () => { setReviewPage(1) })
     <!-- ── Title bar ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <MpTextlink id="pa-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ t('Project accounting') }}</MpTextlink>
+        <MpTextlink id="pa-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ t('Projects') }}</MpTextlink>
         <div class="detail-titlerow">
           <h1 class="detail-title">{{ engagement.name }}</h1>
           <ErpStatusBadge :status="statusBadgeKey" :label="t(projectStatusLabel(engagement))" badge-for="additionalInformation" />
@@ -1100,7 +1100,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                     </div>
                     <MpButton
                       v-if="!isClosed" is-rounded variant="tertiary" left-icon="add"
-                      @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                      @click="router.push({ path: '/projects/expense/new', query: { project: engagement.id } })"
                     >
                       {{ t('New expense') }}
                     </MpButton>
@@ -1133,7 +1133,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                     <p class="empty-full-title">{{ t('No cost lines') }}</p>
                     <p class="empty-full-desc">{{ t('Cost lines tagged to this project appear here.') }}</p>
                     <MpButton v-if="!isClosed" class="pa-empty-cta" is-rounded variant="secondary"
-                      @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                      @click="router.push({ path: '/projects/expense/new', query: { project: engagement.id } })"
                     >{{ t('New expense') }}</MpButton>
                   </div>
                 </template>
@@ -1256,7 +1256,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                       <p class="empty-full-title">{{ t('No lines to review') }}</p>
                       <p class="empty-full-desc">{{ t('Cost lines tagged to this project appear here for review.') }}</p>
                       <MpButton v-if="!isClosed" class="pa-empty-cta" is-rounded variant="secondary"
-                        @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                        @click="router.push({ path: '/projects/expense/new', query: { project: engagement.id } })"
                       >{{ t('New expense') }}</MpButton>
                     </div>
                   </template>
@@ -1318,7 +1318,7 @@ watch(reviewChip, () => { setReviewPage(1) })
                       <p class="empty-full-title">{{ t('No cost lines') }}</p>
                       <p class="empty-full-desc">{{ t('Cost lines tagged to this project appear here.') }}</p>
                       <MpButton v-if="!isClosed" class="pa-empty-cta" is-rounded variant="secondary"
-                        @click="router.push({ path: '/project-accounting/expense/new', query: { project: engagement.id } })"
+                        @click="router.push({ path: '/projects/expense/new', query: { project: engagement.id } })"
                       >{{ t('New expense') }}</MpButton>
                     </div>
                   </template>
@@ -1635,7 +1635,7 @@ watch(reviewChip, () => { setReviewPage(1) })
   <!-- Not found -->
   <div v-else class="pa-not-found">
     <p class="pa-card-title">{{ t('Project not found') }}</p>
-    <MpTextlink id="pa-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ t('Back to Project accounting') }}</MpTextlink>
+    <MpTextlink id="pa-not-found-back" as="a" class="detail-breadcrumb" @click.prevent="goList">{{ t('Back to Projects') }}</MpTextlink>
   </div>
 </template>
 

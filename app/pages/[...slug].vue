@@ -322,8 +322,8 @@ const pageRegistry: Record<string, Component> = {
   'Fixed assets report': defineAsyncComponent(() => import('~/components/pages/FixedAssetsReportsIndexPage.vue')),
   'Cash and bank report': defineAsyncComponent(() => import('~/components/pages/CashBankReportsIndexPage.vue')),
   'Tax report':         defineAsyncComponent(() => import('~/components/pages/TaxReportsIndexPage.vue')),
-  // Accounting → Project accounting. Engagement detail/forms resolve via detailMatch.
-  'Project accounting': defineAsyncComponent(() => import('~/components/pages/ProjectAccountingPage.vue')),
+  // Projects (project accounting). Engagement detail/forms resolve via detailMatch.
+  'Projects':           defineAsyncComponent(() => import('~/components/pages/ProjectAccountingPage.vue')),
   'Playground':         defineAsyncComponent(() => import('~/components/playground/PlaygroundPage.vue')),
   'Design erp':         defineAsyncComponent(() => import('~/components/pages/DesignErpDashboardPage.vue')),
   // Dashboard › Business performance (prod business-overview widget grid); Custom dashboard / Mekari Insight stay out of scope.
@@ -484,10 +484,6 @@ const CreateDeliveryOrderPage = asyncPage(() => import('~/components/pages/Creat
 const PutAwayDetailsPage = asyncPage(() => import('~/components/pages/PutAwayDetailsPage.vue'))
 const PutAwayItemsPage = asyncPage(() => import('~/components/pages/PutAwayItemsPage.vue'))
 const CreateWorkOrderPage = asyncPage(() => import('~/components/pages/CreateWorkOrderPage.vue'))
-// Projects module (Project MTO) — every route under these first segments renders
-// through ProjectsRouter, which owns its title bars (full-bleed, like CRM).
-const ProjectsRouter = asyncPage(() => import('~/components/projects/ProjectsRouter.vue'))
-const PROJECT_SEGMENTS = ['projects', 'project-approvals', 'project-documents', 'stock-availability', 'site-change-capture', 'project-audit-log', 'project-settings']
 const WorkOrderDetailsPage = asyncPage(() => import('~/components/pages/WorkOrderDetailsPage.vue'))
 const NewMaterialRecordPage = asyncPage(() => import('~/components/pages/NewMaterialRecordPage.vue'))
 const TrackRoutingPage = asyncPage(() => import('~/components/pages/TrackRoutingPage.vue'))
@@ -924,10 +920,10 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     if (segs[2] === 'pending') return { component: WmsPendingSetupPage, id: 'pending' }
     return { component: WmsCutoverProductsPage, id: 'products' }
   }
-  // /project-accounting/… → the engagement wizard, its two project-tagged
-  // transaction forms, and the engagement detail. The bare index falls through to
+  // /projects/… → the engagement wizard, its two project-tagged transaction
+  // forms, and the engagement detail. The bare /projects index falls through to
   // the registry. Keep the literal segments ahead of the /:id catch-all.
-  if (segs.length >= 2 && segs[0] === 'project-accounting') {
+  if (segs.length >= 2 && segs[0] === 'projects') {
     if (segs[1] === 'new') return { component: NewEngagementPage, id: 'new' }
     if (segs[1] === 'expense') return { component: ProjectExpensePage, id: 'new' }
     if (segs[1] === 'invoice') return { component: ProjectInvoicePage, id: 'new' }
@@ -1074,10 +1070,6 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   // /cash-management/:id → account detail page (balances, statement, transactions)
   if (segs.length >= 2 && segs[0] === 'cash-management') {
     return { component: CashManagementDetailPage, id: segs[1]! }
-  }
-  // Projects module — /projects[/:id[/…]], /project-approvals, /project-documents, …
-  if (segs.length >= 1 && PROJECT_SEGMENTS.includes(segs[0]!)) {
-    return { component: ProjectsRouter, id: segs.join('/') }
   }
   // /work-orders/new → create a new work order (full page, brings its own title bar)
   if (segs.length >= 2 && segs[0] === 'work-orders' && segs[1] === 'new') {
@@ -2751,12 +2743,10 @@ function startResize(e: MouseEvent) {
             @click="router.push('/users-and-roles/invite')"
           >{{ t('Invite user') }}</MpButton>
         </div>
-        <!-- Two buttons, not one menu: an action launcher needs a shared object noun
-             for its label (New transaction → New spend money), and a project and an
-             expense have none. Creation pattern instead (uxw-mekari-erp-terms). -->
-        <div v-else-if="currentPageKey === 'Project accounting'" class="page-title-actions">
-          <MpButton variant="secondary" is-rounded @click="router.push('/project-accounting/expense/new')">{{ t('New expense') }}</MpButton>
-          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/project-accounting/new')">{{ t('New project') }}</MpButton>
+        <!-- Projects list: only New project. A project expense starts from the
+             project's Costs tab, so it always has its project. -->
+        <div v-else-if="currentPageKey === 'Projects'" class="page-title-actions" data-devchange="projects-project-accounting">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/projects/new')">{{ t('New project') }}</MpButton>
         </div>
         <!-- Inventory › Grades: the modal lives in GradesPage (useGradeModal). -->
         <div v-else-if="currentPageKey === 'Grades'" class="page-title-actions">

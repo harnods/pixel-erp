@@ -32,7 +32,7 @@ const WAREHOUSE = 'e7'
 const AUDIT = 'e1'
 const TERRACE = 'e5'
 
-const tab = (id: string, key: string) => `/project-accounting/${id}?tab=${key}`
+const tab = (id: string, key: string) => `/projects/${id}?tab=${key}`
 
 /** The visible table row that contains `text` (steps that point at one row). */
 function rowWith(text: string): HTMLElement | null {
@@ -76,7 +76,7 @@ function collectFabrication() { if (tourCtx.invoiceId) recordPayment(WAREHOUSE, 
 
 const pa1: TourStep[] = [
   {
-    route: '/project-accounting',
+    route: '/projects',
     target: 'pa-portfolio',
     find: () => rowWith('Cikarang Warehouse Construction'),
     title: 'The project list opens on every project and its method.',
@@ -119,7 +119,7 @@ const pa1: TourStep[] = [
     placement: 'top',
   },
   {
-    route: `/project-accounting/invoice/new?project=${WAREHOUSE}&kind=output&label=Fabrication%20complete&milestone=m1`,
+    route: `/projects/invoice/new?project=${WAREHOUSE}&kind=output&label=Fabrication%20complete&milestone=m1`,
     target: 'pa-invoice-context',
     title: 'Create invoice opens the invoice already filled in.',
     body: 'The verified milestone becomes the invoice line, tagged to the project. The strip above shows where the invoice sits against the contract before it is saved.',
@@ -214,7 +214,7 @@ const pa2: TourStep[] = [
     placement: 'bottom',
   },
   {
-    route: `/project-accounting/invoice/new?project=${AUDIT}&kind=tm&label=Progress%20billing`,
+    route: `/projects/invoice/new?project=${AUDIT}&kind=tm&label=Progress%20billing`,
     target: 'pa-invoice-lines',
     title: 'Create invoice fills one line per reviewed cost line.',
     body: 'Each line carries the amount the review decided, tagged to the project. The invoice and the revenue agree line by line.',

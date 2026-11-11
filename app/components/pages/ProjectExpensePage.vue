@@ -141,13 +141,13 @@ async function save() {
     title: t('Expense {no} saved').replace('{no}', res.docNo),
     maxWidth: 'max-content',
   })
-  if (res.taggedIds.length) router.push({ path: `/project-accounting/${res.taggedIds[0]}`, query: { tab: 'execution' } })
-  else router.push('/project-accounting')
+  if (res.taggedIds.length) router.push({ path: `/projects/${res.taggedIds[0]}`, query: { tab: 'execution' } })
+  else router.push('/projects')
 }
 
 function cancel() {
-  if (presetProject) router.push(`/project-accounting/${presetProject}`)
-  else router.push('/project-accounting')
+  if (presetProject) router.push(`/projects/${presetProject}`)
+  else router.push('/projects')
 }
 </script>
 
@@ -156,7 +156,7 @@ function cancel() {
     <!-- ── Title bar (form variant) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <MpTextlink id="px-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Project accounting') }}</MpTextlink>
+        <MpTextlink id="px-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Projects') }}</MpTextlink>
         <h1 class="detail-title">{{ t('New expense') }}</h1>
       </div>
     </header>

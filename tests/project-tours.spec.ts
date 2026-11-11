@@ -93,7 +93,7 @@ describe('demo-layer contract', () => {
         expect(s.role, s.title).toBeUndefined()
         expect(markers.has(s.target), `data-tour="${s.target}"`).toBe(true)
         const r = typeof s.route === 'function' ? s.route() : s.route
-        expect(r, s.title).toMatch(/^\/project-accounting(\/(e1|e5|e7)\?tab=(setup|execution|recognition|billing|closed)|\/invoice\/new\?project=e\d&kind=(tm|output)|$)/)
+        expect(r, s.title).toMatch(/^\/projects(\/(e1|e5|e7)\?tab=(setup|execution|recognition|billing|closed)|\/invoice\/new\?project=e\d&kind=(tm|output)|$)/)
       }
     })
     it(`${t.code}: copy is product copy`, () => {

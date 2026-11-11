@@ -33,7 +33,7 @@ const replace = vi.fn()
 const routeQuery = reactive<Record<string, string>>({})
 
 vi.stubGlobal('useRouter', () => ({ push, replace }))
-vi.stubGlobal('useRoute', () => ({ path: '/project-accounting', query: routeQuery }))
+vi.stubGlobal('useRoute', () => ({ path: '/projects', query: routeQuery }))
 vi.stubGlobal('useTableState', useTableState)
 // Nuxt auto-imports app/composables; NewEngagementPage relies on that for View as.
 vi.stubGlobal('useProjectViewAs', useProjectViewAs)
@@ -115,7 +115,7 @@ describe('ProjectAccountingPage — the portfolio', () => {
   it('links a row through to its project', async () => {
     const w = await mountIndex()
     await w.find('.cell-link').trigger('click')
-    expect(push).toHaveBeenCalledWith(expect.stringContaining('/project-accounting/'))
+    expect(push).toHaveBeenCalledWith(expect.stringContaining('/projects/'))
     w.unmount()
   })
 
@@ -128,7 +128,7 @@ describe('ProjectAccountingPage — the portfolio', () => {
     const amountCell = row.findAll('td').find(td => td.text().includes('Rp'))!
     await amountCell.trigger('click')
 
-    expect(push).toHaveBeenCalledWith(expect.stringContaining('/project-accounting/'))
+    expect(push).toHaveBeenCalledWith(expect.stringContaining('/projects/'))
     w.unmount()
   })
 

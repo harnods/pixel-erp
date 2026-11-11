@@ -155,7 +155,6 @@ import { receiptCountsByStage } from '~/data/receipts'
 import { receivingOpenCount } from '~/data/receivingTasks'
 import { putAwayOpenCount } from '~/data/putAwayTasks'
 import { awaitingApprovalGroupCounts, awaitingApprovalTasks } from '~/data/tasks'
-import { pendingApprovals } from '~/data/projectApprovals'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -505,7 +504,6 @@ const erpNavGroups: NavItem[][] = [
             { label: 'Payroll settings' },
           ] },
           { label: 'Bank rules' },
-          { label: 'Project accounting' },
         ],
         [{ label: 'Accounting settings', iconType: 'settings' }],
       ],
@@ -602,29 +600,9 @@ const erpNavGroups: NavItem[][] = [
         [{ label: 'Production reports', iconType: 'shortcut', shortcutTo: { nav: 'Reports', sub: 'Production' } }, { label: 'Production settings', iconType: 'settings' }],
       ],
     },
-    {
-      // Project MTO — job costing for custom make-to-order + service engagements.
-      // Rail per PRD: Projects · Approvals (badged) · Documents · Stock
-      // availability · Site change capture, plus Audit log (P3) and Project settings.
-      // The budget baseline is owned by a separate Budget module, not by this rail.
-      // The Approvals count is a getter so the (static) nav
-      // array still re-renders when the pending count changes.
-      name: 'Projects', icon: 'briefcase',
-      submenu: [
-        [{ label: 'Projects' }, { label: 'Approvals', to: 'Project approvals' }, { label: 'Documents', to: 'Project documents' }],
-        [{ label: 'Stock availability' }, { label: 'Site change capture' }],
-        [{ label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
-      ],
-      expandOnClick: [
-        [
-          { label: 'Projects' },
-          { label: 'Approvals', to: 'Project approvals', get count() { return pendingApprovals().length || undefined } },
-          { label: 'Documents', to: 'Project documents' },
-        ],
-        [{ label: 'Stock availability' }, { label: 'Site change capture' }],
-        [{ label: 'Audit log', to: 'Project audit log' }, { label: 'Project settings', iconType: 'settings' }],
-      ],
-    },
+    // Projects — project accounting (engagements, budgets, recognition, billing).
+    // One rail item: /projects is the list; detail and forms open from the page.
+    { name: 'Projects', icon: 'briefcase' },
   ],
   [
     {
@@ -916,8 +894,8 @@ function findActive(pageKey: string, allowShortcuts: boolean): {
           if (sub) break
         }
         // Same collision on an expandOnClick item, whose children live in the
-        // promoted panel instead of panelSubmenu (e.g. Projects › Projects, both
-        // /projects — and every /projects/:id detail route resolves to that key).
+        // promoted panel instead of panelSubmenu (e.g. a section whose first child
+        // shares the section's route, and every :id detail route resolves to that key).
         // Without this the sub stays null and the panel highlights whatever was
         // last visited in the section instead of the page actually open.
         if (!sub && item.expandOnClick) {
