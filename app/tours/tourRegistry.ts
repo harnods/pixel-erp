@@ -44,8 +44,8 @@ export const TOUR_GROUPS: TourGroup[] = [
   },
   {
     key: 'project',
-    label: 'Project accounting',
-    matches: (p) => /^\/project-accounting/.test(p),
+    label: 'Projects',
+    matches: (p) => /^\/projects/.test(p),
     tours: PROJECT_TOURS,
   },
 ]

@@ -109,7 +109,7 @@ const isPayrollScreen = computed(
 );
 const isSalesDeliveryScreen = computed(() => route.path.startsWith('/sales-deliveries'))
 const isProjectScreen = computed(
-  () => currentPageKey.value === 'Project accounting' || route.path.startsWith('/project-accounting'),
+  () => currentPageKey.value === 'Projects' || route.path.startsWith('/projects'),
 );
 function goToInbox() {
   setActiveMenuLabel("Notifications");

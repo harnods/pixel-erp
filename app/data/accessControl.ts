@@ -4,7 +4,7 @@
  * drawers. Each user carries their assigned roles, shown as a subtitle.
  *
  * Also backs the Project assignment section of the New project form
- * (/project-accounting/new): the Project manager picker is scoped to
+ * (/projects/new): the Project manager picker is scoped to
  * PROJECT_LEAD_ROLES, the Team member drawer offers everyone.
  */
 

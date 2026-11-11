@@ -187,10 +187,10 @@ async function save() {
     title: pending ? (resubmitOf ? t('Project resubmitted for approval') : t('Project submitted for approval')) : t('Project created'),
     maxWidth: 'max-content',
   })
-  router.push(`/project-accounting/${created.id}`)
+  router.push(`/projects/${created.id}`)
 }
 
-function cancel() { router.push('/project-accounting') }
+function cancel() { router.push('/projects') }
 </script>
 
 <template>
@@ -198,7 +198,7 @@ function cancel() { router.push('/project-accounting') }
     <!-- ── Title bar (form variant: breadcrumb + New [entity]) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Project accounting') }}</MpTextlink>
+        <MpTextlink id="ne-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="cancel">{{ t('Projects') }}</MpTextlink>
         <h1 class="detail-title">{{ resubmitOf ? t('Edit and resubmit project') : t('New project') }}</h1>
       </div>
     </header>

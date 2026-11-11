@@ -1182,6 +1182,7 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Receiving draft saved": "Draf penerimaan berhasil disimpan",
   "There's nothing left to receive for it — acknowledging will cancel this task too.": "Tidak ada lagi yang perlu diterima — dengan mengonfirmasi, tugas ini juga akan dibatalkan.",
   "Back to task": "Kembali ke tugas",
+  "Back to Projects": "Kembali ke Proyek",
   "Receive items": "Terima item",
   "Purchase qty": "Jumlah pembelian",
   "Remaining qty to receive": "Sisa jumlah yang harus diterima",

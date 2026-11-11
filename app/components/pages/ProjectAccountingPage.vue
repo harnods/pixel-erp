@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Project accounting: the project list (Accounting › Project accounting).
+ * Projects: the project list (Projects rail, /projects) — project accounting.
  *
  * A `pageRegistry` page: it renders INSIDE the shared `.stage`, which already
  * supplies the white surface + 24px padding, so the root adds neither.
@@ -258,7 +258,7 @@ function clearFilters() {
   Object.assign(appliedFilters, emptyProjectFilters())
 }
 function clearAll() { search.value = ''; clearFilters() }
-function openProject(id: string) { router.push(`/project-accounting/${id}`) }
+function openProject(id: string) { router.push(`/projects/${id}`) }
 
 // ── Bulk export: a real CSV of the selected rows ──────────────────────────────
 function csvCell(v: string | number): string {
@@ -431,7 +431,7 @@ function statusBadgeType(r: Row): 'warning' | 'information' | 'announcement' | '
           <img src="/illustrations/empty-folder.png" alt="" class="empty-illustration" width="288" height="240" />
           <p class="empty-full-title">{{ t('No projects') }}</p>
           <p class="empty-full-desc">{{ t('Projects will appear here.') }}</p>
-          <MpButton class="pa-empty-cta" variant="primary" is-rounded left-icon="add" @click="router.push('/project-accounting/new')">{{ t('New project') }}</MpButton>
+          <MpButton class="pa-empty-cta" variant="primary" is-rounded left-icon="add" @click="router.push('/projects/new')">{{ t('New project') }}</MpButton>
         </div>
       </template>
     </ErpTablePage>

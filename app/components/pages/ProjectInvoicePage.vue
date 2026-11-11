@@ -237,8 +237,8 @@ const linesError = ref(false)
 const isSaving = ref(false)
 
 function back() {
-  if (engId) router.push({ path: `/project-accounting/${engId}`, query: { tab: 'billing' } })
-  else router.push('/project-accounting')
+  if (engId) router.push({ path: `/projects/${engId}`, query: { tab: 'billing' } })
+  else router.push('/projects')
 }
 
 async function save() {
@@ -273,7 +273,7 @@ async function save() {
     <!-- ── Title bar (form variant) ── -->
     <header class="detail-bar">
       <div class="detail-bar-left">
-        <MpTextlink id="pi-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="back">{{ t('Project accounting') }}</MpTextlink>
+        <MpTextlink id="pi-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="back">{{ t('Projects') }}</MpTextlink>
         <h1 class="detail-title">{{ t('New invoice') }}</h1>
         <p v-if="sourceNote" class="detail-subtitle">{{ sourceNote }}</p>
       </div>
