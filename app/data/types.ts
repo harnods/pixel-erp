@@ -18,6 +18,10 @@ export type ContactType      = 'company' | 'individual'
 // Sales delivery — fulfillment + billing lifecycle
 export type FulfillmentStatus = 'in transit' | 'direct' | 'delivered' | 'partially delivered'
 export type BillingStatus     = 'unbilled' | 'invoiced'
+/** A sales delivery can be part-billed (PRD Partial & Progress Invoicing, F-07):
+ *  some of its lines or quantities are on an invoice, the rest is still to bill.
+ *  Purchase deliveries keep the two-state BillingStatus. */
+export type SalesBillingStatus = BillingStatus | 'partially invoiced'
 
 // WMS
 export type WarehouseStatus = 'active' | 'archived'
@@ -81,6 +85,18 @@ export interface SalesInvoice {
   items?: SalesOrderItem[]
   deliveryId?: string
   recurringId?: string
+  /**
+   * Partial & progress invoicing of deliveries: the deliveries this invoice
+   * billed (oldest created first), its sales order, how it was billed, and the
+   * header amounts it carried — the delivery-prorated transaction discount and
+   * the deliveries' shipping (PRD Rules 11 and 14). What was billed per delivery
+   * line lives in deliveryBilling.ts (the F-07 billing record).
+   */
+  deliveryIds?: string[]
+  orderId?: string
+  billingBasis?: 'qty' | 'percent'
+  globalDiscount?: number
+  shippingFee?: number
 }
 
 export interface PurchaseInvoice {
@@ -315,13 +331,20 @@ export interface SalesDelivery {
   customer: Pick<Customer, 'id' | 'name'>
   date: string                            // delivery date, ISO
   fulfillmentStatus: FulfillmentStatus    // in transit | direct | delivered | partially delivered
-  billingStatus: BillingStatus            // unbilled | invoiced
+  billingStatus: SalesBillingStatus       // unbilled | partially invoiced | invoiced
   total: number                           // delivery total IDR
   tags?: string[]
   /** Set on contract deliveries raised against a sales order; the ~100 generated
    *  records carry neither, so both stay optional. */
   orderId?: string
   items?: SDDeliveryLine[]
+  /** When the record was created — billing splits run oldest CREATED first, never
+   *  by the editable transaction date (PRD Partial invoicing, Rule 5). */
+  createdAt?: string
+  /** Header amounts on the delivery (Rule 10). Absent = the Rule 10 default:
+   *  shipping = order shipping not yet used; discount = TD × goods share. */
+  shippingFee?: number
+  discount?: number
 }
 
 // Purchase Quote — the buy-side mirror of SalesQuote (vendor-keyed). Lightweight

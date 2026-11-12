@@ -206,7 +206,32 @@ const CONTRACT_ORDERS: SalesOrder[] = [
   contractOrder('SO103', 10192, 5, '2026-01-12', '2026-06-12', 'closed', [
     { product: 'Jasa instalasi', sku: 'SRV-FIT', description: 'Fit-out, delivered in full', qty: 1, unit: 'lot', unitPrice: 150_000_000, discountPct: 0, amount: 150_000_000 },
   ]),
+  billingOrder(),
 ]
+
+/**
+ * SO104 — the partial & progress invoicing demo (PRD PD 51301744716). Same
+ * figures as case C5 of partial-invoicing-simulation-v2.xlsx: four lines with
+ * line discounts, a Rp300.000 transaction discount and Rp150.000 shipping, so
+ * every header-amount rule shows on screen. Delivered in two deliveries
+ * (SD105, SD106); Sales Invoice #40202 already billed 30% of every line.
+ */
+function billingOrder(): SalesOrder {
+  const items: SalesOrderItem[] = [
+    { product: 'Grinder Kopi Komersial', sku: 'GRD-COM', description: 'Commercial grinder, staged supply', qty: 10, unit: 'unit', unitPrice: 670_000, discountPct: 10, amount: 6_030_000 },
+    { product: 'Biji Kopi Arabika Gayo', sku: 'BNS-GAYO', description: 'Roasted beans, 1 kg bag', qty: 20, unit: 'kg', unitPrice: 75_000, discountPct: 0, amount: 1_500_000 },
+    { product: 'Jasa Kalibrasi Mesin', sku: 'SRV-CAL', description: 'On-site calibration', qty: 5, unit: 'jam', unitPrice: 200_000, discountPct: 0, amount: 1_000_000 },
+    { product: 'Cup Kertas 8oz', sku: 'CUP-8OZ', description: 'Paper cup, pack of 50', qty: 50, unit: 'pak', unitPrice: 12_500, discountPct: 5, amount: 593_750 },
+  ]
+  const { total } = computeTotals(items, 300_000, 150_000)
+  return {
+    id: 'SO104', number: 10193, customer: { id: 'C008', name: 'Titik Temu Coffee' },
+    date: '2026-06-01', dueDate: '2026-09-01', status: 'partially processed',
+    // Same status → balance rule as contractOrder (tests/sales-order-totals.spec.ts).
+    balanceDue: Math.round(total / 2 / 50_000) * 50_000, total, tags: ['Contract'],
+    items, globalDiscount: 300_000, shippingFee: 150_000,
+  }
+}
 
 const K_SO = 'sales-orders-v1'
 

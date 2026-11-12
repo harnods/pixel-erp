@@ -193,12 +193,16 @@ function buildItems(idx: number, count: number, targetBase: number): SalesOrderI
  */
 function buildLinked(inv: SalesInvoice, idx: number): SILinkedTxn[] {
   // The delivery this invoice bills, when it was raised from one — and its order.
-  const sd = inv.deliveryId ? salesDeliveries.find(d => d.id === inv.deliveryId) : null
+  // An invoice billed from several deliveries (partial & progress invoicing) lists
+  // every one of them, oldest first, after their sales order.
+  const ids = inv.deliveryIds?.length ? inv.deliveryIds : inv.deliveryId ? [inv.deliveryId] : []
+  const sds = ids.map(id => salesDeliveries.find(d => d.id === id)).filter((d): d is NonNullable<typeof d> => !!d)
+  const sd = sds[0] ?? null
   const so = sd?.orderId ? salesOrders.find(o => o.id === sd.orderId) : null
   const linked: SILinkedTxn[] = sd
     ? [
         ...(so ? [{ date: so.date, type: 'Sales Order', number: `#${so.number}`, status: so.status }] : []),
-        { date: sd.date, type: 'Sales Delivery', number: `#${sd.number}`, status: sd.fulfillmentStatus },
+        ...sds.map(x => ({ date: x.date, type: 'Sales Delivery', number: `#${x.number}`, status: x.fulfillmentStatus })),
       ]
     : [
         { date: addDays(inv.date, -4), type: 'Sales Order',    number: `#${10090 + idx}`, status: 'closed'    },
@@ -222,8 +226,10 @@ function buildDetail(base: SalesInvoice, idx: number): SalesInvoiceDetail {
   const items = real ? base.items! : buildItems(idx, Math.max(1, base.itemCount), targetBase)
   // the closing line overshoots slightly (see buildItems) — booked as the
   // order-level discount, which lands the tax base exactly on targetBase
-  const globalDiscount = real ? 0 : items.reduce((s, it) => s + it.amount, 0) - targetBase
-  const totals = computeTotals(items, globalDiscount, 0, base.hasPpn ? undefined : 0)
+  // An invoice billed from deliveries carries the header amounts it was saved
+  // with — the delivery-prorated discount and the deliveries' shipping (Rules 11, 14).
+  const globalDiscount = real ? (base.globalDiscount ?? 0) : items.reduce((s, it) => s + it.amount, 0) - targetBase
+  const totals = computeTotals(items, globalDiscount, real ? (base.shippingFee ?? 0) : 0, base.hasPpn ? undefined : 0)
   const creditApplied = invoiceCreditApplied(base.id)
   const actualCash = invoiceCashReceived(base.id)
   const impliedSettlement = Math.max(0, base.total - base.balance - creditApplied)

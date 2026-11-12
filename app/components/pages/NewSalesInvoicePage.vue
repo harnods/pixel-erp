@@ -20,7 +20,7 @@ import { infoToast } from '~/utils/toasts'
 import {
   MpBanner, MpBannerIcon, MpBannerTitle, MpBannerDescription,
   MpButton, MpButtonGroup, MpFormControl, MpFormLabel, MpFormErrorMessage, MpInput, MpTextarea,
-  MpInputGroup, MpInputLeftAddon,
+  MpInputGroup, MpInputLeftAddon, MpInputRightAddon,
   MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpAutocomplete, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -33,11 +33,20 @@ import {
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
 import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
-import type { SalesInvoice, SILineItem } from '~/data/types'
-import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
+import type { SalesInvoice, SILineItem, SalesDelivery } from '~/data/types'
+import { salesOrders } from '~/data/salesOrders'
+import { orderLock } from '~/data/salesDeliveries'
+import {
+  planBilling, remainingInputs, manualFromPlan, billableDeliveries, fullyBilledDeliveries,
+  invoicesForDelivery, billedByLine, orderDeliveries, isBillable, commitBilling, pctText, qtyText, QTY_EPS,
+  type BillingBasis, type BillingPlan, type PlanLine, type SplitMode,
+} from '~/data/deliveryBilling'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import DeliveryBillingSplit from '~/components/patterns/DeliveryBillingSplit.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
+import { addSalesInvoice } from '~/data/salesInvoices'
 import { saveSalesInvoiceEdit } from '~/data/salesInvoiceEdits'
 import { getApprovedTaxDocument, generateChangeDrafts, updateTaxDocumentStatus, type TaxDocument } from '~/data/taxDocuments'
 import {
@@ -129,7 +138,165 @@ function onCustomerChange(id: unknown) {
   customerError.value = false
   const c = customers.find(x => x.id === id)
   if (c?.email && !emailTags.value.length) emailTags.value = toTagData([c.email])
+  // Another customer's deliveries can't stay ticked (spec 4a › Header).
+  const first = salesDeliveries.find(d => d.id === deliveryIds.value[0])
+  if (first && first.customer.id !== id) { deliveryIds.value = []; orderReplaced.value = false }
 }
+
+// ── Bill from deliveries (PRD Partial & Progress Invoicing) ─────────────────────
+// "Deliveries mode" = at least one sales delivery ticked. The lines, the split per
+// delivery and every total come from planBilling() — the page never computes a
+// billed amount itself. With nothing ticked the form is the plain manual invoice.
+const deliveryIds    = ref<string[]>([])
+const billingBasis   = ref<BillingBasis>('qty')
+/** orderLineIndex -> what the user typed (qty or %). Absent = not typed yet. */
+const lineInputs     = ref<Record<number, number>>({})
+const allLinesPct    = ref<number | ''>('')
+const split          = ref<SplitMode>('auto')
+const manual         = ref<Record<string, Record<number, number>>>({})
+/** Ticking a delivery of another order replaced the selection (B11). */
+const orderReplaced  = ref(false)
+/** Save was attempted in deliveries mode — the banner lists plan.errors from then on. */
+const billingSaveTried = ref(false)
+
+const billableGroups = computed(() => (customerId.value && !isEdit.value ? billableDeliveries(customerId.value) : []))
+const deliveriesMode = computed(() => !isEdit.value && deliveryIds.value.length > 0)
+const selectedOrderId = computed(() =>
+  deliveriesMode.value ? salesDeliveries.find(d => d.id === deliveryIds.value[0])?.orderId ?? '' : '',
+)
+const selectedOrder = computed(() => salesOrders.find(o => o.id === selectedOrderId.value) ?? null)
+
+const plan = computed<BillingPlan | null>(() => {
+  if (!selectedOrderId.value) return null
+  return planBilling({
+    orderId: selectedOrderId.value,
+    deliveryIds: deliveryIds.value,
+    basis: billingBasis.value,
+    lineInputs: lineInputs.value,
+    split: split.value,
+    manual: split.value === 'manual' ? manual.value : undefined,
+  })
+})
+
+const BASIS_OPTIONS = computed(() => [
+  { value: 'qty', label: t('Quantity') },
+  { value: 'percent', label: t('Percentage') },
+])
+
+function deliveryLabel(d: SalesDelivery) {
+  return `${t('Sales Delivery')} #${d.number} · ${isoToDMY(d.date)}`
+}
+/** B9 — fully billed deliveries are named under the field, never offered. */
+const fullyBilledNotes = computed(() => {
+  const orderIds = new Set<string>([...billableGroups.value.map(g => g.orderId), selectedOrderId.value].filter(Boolean))
+  return [...orderIds].flatMap(id => fullyBilledDeliveries(id)).map((d) => {
+    const invs = invoicesForDelivery(d.id)
+    return invs.length
+      ? `${t('Sales Delivery')} #${d.number} ${t('is fully billed by')} ${invs.map(i => `${t('Sales Invoice')} #${i.number}`).join(', ')}`
+      : `${t('Sales Delivery')} #${d.number} ${t('is fully billed')}`
+  })
+})
+
+function toggleDelivery(d: SalesDelivery) {
+  if (deliveryIds.value.includes(d.id)) {
+    deliveryIds.value = deliveryIds.value.filter(x => x !== d.id)
+    orderReplaced.value = false
+    return
+  }
+  // B11 — one invoice bills one sales order: another order's delivery replaces the selection.
+  if (selectedOrderId.value && d.orderId !== selectedOrderId.value) {
+    deliveryIds.value = [d.id]
+    orderReplaced.value = true
+  } else {
+    deliveryIds.value = [...deliveryIds.value, d.id]
+  }
+  noItemsError.value = false
+}
+
+/** Percentage when the order is percent-locked or was already billed by %; else quantity. */
+function defaultBasis(orderId: string): BillingBasis {
+  if (orderLock(orderId)) return 'percent'
+  return salesInvoices.some(i => i.orderId === orderId && i.billingBasis === 'percent') ? 'percent' : 'qty'
+}
+function resetBillingInputs() {
+  lineInputs.value = {}
+  allLinesPct.value = ''
+  billingSaveTried.value = false
+}
+// A new order behind the selection starts a fresh billing: its default method,
+// no typed inputs, oldest-first split, and the order as the reference.
+watch(selectedOrderId, (id, old) => {
+  if (!id || id === old) return
+  billingBasis.value = defaultBasis(id)
+  resetBillingInputs()
+  split.value = 'auto'
+  manual.value = {}
+  const o = salesOrders.find(x => x.id === id)
+  if (o) referenceNo.value = `${t('Sales Order')} #${o.number}`
+})
+
+function setBasis(v: string) {
+  if (v !== 'qty' && v !== 'percent') return
+  billingBasis.value = v
+  resetBillingInputs()
+}
+function setLineInput(idx: number, v: unknown) {
+  const next = { ...lineInputs.value }
+  if (v === '' || v === null || v === undefined) delete next[idx]
+  else next[idx] = Number(v)
+  lineInputs.value = next
+}
+/** B3 — one % written into every line; each line can be changed afterwards. */
+function setAllLines(v: unknown) {
+  if (v === '' || v === null || v === undefined) { allLinesPct.value = ''; return }
+  const n = Number(v)
+  allLinesPct.value = n
+  const next: Record<number, number> = {}
+  for (const l of plan.value?.lines ?? []) next[l.orderLineIndex] = n
+  lineInputs.value = next
+}
+const hasRemaining = computed(() => !!plan.value?.lines.some(l => l.maxQty > QTY_EPS))
+function billRemaining() {
+  if (!plan.value) return
+  // Remaining is an oldest-first figure — a hand-set split goes back to auto.
+  split.value = 'auto'
+  manual.value = {}
+  lineInputs.value = remainingInputs(plan.value)
+  allLinesPct.value = ''
+}
+function onSplitUpdate(v: SplitMode) {
+  // "Set per delivery" starts from the current split; back to auto drops the grid.
+  manual.value = v === 'manual' && plan.value ? manualFromPlan(plan.value) : {}
+  split.value = v
+}
+
+/** Order-wide "Billed so far": one % when every line is equal, else Mixed. */
+const billedSoFar = computed(() => {
+  const o = selectedOrder.value
+  if (!o) return ''
+  const billed = billedByLine(o.id)
+  const pcts = o.items.map((it, i) => (it.qty > 0 ? Math.round(((billed[i] ?? 0) / it.qty) * 10000) / 100 : 0))
+  return pcts.every(p => Math.abs(p - pcts[0]!) < 0.01) ? pctText(pcts[0] ?? 0) : t('Mixed')
+})
+
+function lineMaxText(l: PlanLine) {
+  return billingBasis.value === 'percent'
+    ? `${t('Max')} ${pctText(l.maxPercent)} / ${qtyText(l.maxQty)} ${l.unit}`
+    : `${t('Max')} ${qtyText(l.maxQty)} ${l.unit}`
+}
+function lineMaxCaption(l: PlanLine) {
+  return billingBasis.value === 'percent'
+    ? `${t('Max')} ${pctText(l.maxPercent)} · ${qtyText(l.maxQty)} ${l.unit}`
+    : `${t('Max')} ${qtyText(l.maxQty)} ${l.unit}`
+}
+function shareText(q: number, of: number) { return pctText(of > 0 ? (q / of) * 100 : 0) }
+
+/** What the banner lists after a save attempt in deliveries mode (inline, never a toast). */
+const billingErrors = computed(() => {
+  if (!billingSaveTried.value || !plan.value) return []
+  if (plan.value.errors.length) return plan.value.errors
+  return plan.value.isEmpty ? [t('Enter what to bill on at least one line')] : []
+})
 
 // ── Line items ────────────────────────────────────────────────────────────────
 interface LineItem {
@@ -192,39 +359,29 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
 const newRowSearch = ref('')
 function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
 /**
- * Invoice from a delivery (`?delivery=SD102`). The lines are the delivery's own —
- * at the quantities delivered, to six decimals where a percentage produced them,
- * and at the order's prices — so a 5,28 unit tranche invoices as 5,28 unit, not
- * 5 or 6. This is the downstream view TS-004 of the percentage-based delivery
- * plan checks for silent rounding. Deliveries with no order behind them keep
- * opening a blank invoice, as before.
+ * Entry from deliveries — `?order=SO104` ticks every billable delivery of that
+ * order, `?delivery=SD106` that one, `?deliveries=SD105,SD106` the list (one
+ * order only: the first delivery's order wins, B11). Deliveries with no order
+ * behind them, or nothing left to bill, keep opening a blank invoice, as before.
  */
 const route = useRoute()
-const sourceDelivery = computed(() => {
-  const id = String(route.query.delivery ?? '')
-  return id ? salesDeliveries.find(d => d.id === id && d.orderId && d.items?.length) ?? null : null
-})
-watch(sourceDelivery, (d) => {
-  if (!d) return
-  customerId.value = d.customer.id
-  onCustomerChange(d.customer.id)
-  referenceNo.value = `${t('Sales Delivery')} #${d.number}`
-  items.value = getSalesDeliveryDetail(d.id).lineItems.map(l => ({
-    _key: ++_seq,
-    product: l.product,
-    sku: l.sku,
-    description: l.description,
-    qty: l.qty,
-    unit: l.unit,
-    unitPrice: l.unitPrice,
-    discountPct: l.discountPct,
-    taxLabel: 'PPN 11%',
-    productError: false,
-    qtyError: false,
-    dimensions: {},
-    dimensionErrors: {},
-  }))
-}, { immediate: true })
+function initialDeliveryIds(): string[] {
+  if (isEdit.value) return []
+  const q = route.query
+  if (q.order) return orderDeliveries(String(q.order)).filter(d => d.items?.length && isBillable(d.id)).map(d => d.id)
+  const ids = q.deliveries ? String(q.deliveries).split(',') : q.delivery ? [String(q.delivery)] : []
+  const ds = ids
+    .map(id => salesDeliveries.find(d => d.id === id.trim()))
+    .filter((d): d is SalesDelivery => !!d && !!d.orderId && !!d.items?.length && isBillable(d.id))
+  return ds.filter(d => d.orderId === ds[0]?.orderId).map(d => d.id)
+}
+const startIds = initialDeliveryIds()
+const startDelivery = salesDeliveries.find(d => d.id === startIds[0])
+if (startDelivery) {
+  customerId.value = startDelivery.customer.id
+  onCustomerChange(startDelivery.customer.id)
+  deliveryIds.value = startIds
+}
 
 function selectNewProduct(p: typeof products[number]) {
   items.value.push({
@@ -294,7 +451,7 @@ const globalDiscountAmount = computed(() =>
 const taxBase     = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value)
 const taxAmount   = computed(() => Math.round(taxBase.value * 0.11))
 const shippingFee = ref(0)
-const total       = computed(() => taxBase.value + taxAmount.value + shippingFee.value)
+const total       = computed(() => plan.value ? plan.value.total : taxBase.value + taxAmount.value + shippingFee.value)
 
 // ── Less: Withholding tax ─────────────────────────────────────────────────────
 interface WithholdingRow {
@@ -416,6 +573,12 @@ prefillFromInvoice()
 function validate(): boolean {
   let ok = true
   if (!customerId.value) { customerError.value = true; ok = false }
+
+  if (plan.value) {
+    // Deliveries mode: the engine's cap / empty checks; the banner lists them.
+    billingSaveTried.value = true
+    if (plan.value.errors.length || plan.value.isEmpty) ok = false
+  } else {
   noItemsError.value = !items.value.length
   if (!items.value.length) ok = false
 
@@ -428,6 +591,7 @@ function validate(): boolean {
       })
     }
   })
+  }
 
   if (lessWithholding.value) {
     withholdingRows.value.forEach(row => {
@@ -637,6 +801,11 @@ function onSave() {
   if (isEdit.value) { saveEdit(); return }
 
   const customer = customers.find(c => c.id === customerId.value)!
+  const p = plan.value
+  const billedLines = p ? p.lines.filter(l => l.qty > QTY_EPS) : []
+  const billedDeliveryIds = p
+    ? p.deliveries.filter(d => d.cells.some(c => c.billNow > QTY_EPS)).map(d => d.deliveryId)
+    : []
   const invoice: SalesInvoice = {
     id: nextInvoiceId(),
     number: nextInvoiceNumber(),
@@ -646,24 +815,30 @@ function onSave() {
     total: total.value,
     balance: balanceDue.value,
     status: balanceDue.value === 0 ? 'paid' : 'open',
-    itemCount: items.value.length,
+    itemCount: p ? billedLines.length : items.value.length,
     hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t2 => String(t2.value)),
-    hasPpn: taxAmount.value > 0,
-    // Keep the real lines when billing a delivery, and mark that delivery
-    // invoiced — so the detail page shows what was actually billed.
-    ...(sourceDelivery.value
+    hasPpn: p ? true : taxAmount.value > 0,
+    // Billing deliveries: keep the billed lines and where they came from, so the
+    // detail page shows what was actually billed (deliveries oldest first).
+    ...(p
       ? {
-          deliveryId: sourceDelivery.value.id,
-          items: items.value.map(it => ({
-            product: it.product, sku: it.sku, description: it.description, qty: it.qty, unit: it.unit,
-            unitPrice: it.unitPrice, discountPct: it.discountPct, amount: lineAmount(it),
+          items: billedLines.map(l => ({
+            product: l.product, sku: l.sku, description: l.description, qty: l.qty, unit: l.unit,
+            unitPrice: l.unitPrice, discountPct: l.discountPct, amount: l.amount,
           })),
+          deliveryIds: billedDeliveryIds,
+          deliveryId: billedDeliveryIds[0],
+          orderId: p.orderId,
+          billingBasis: p.basis,
+          globalDiscount: p.globalDiscount,
+          shippingFee: p.shipping,
         }
       : {}),
   }
-  salesInvoices.push(invoice)
-  if (sourceDelivery.value) sourceDelivery.value.billingStatus = 'invoiced'
+  addSalesInvoice(invoice)
+  // Writes the billing records and refreshes each delivery's billing status.
+  if (p) commitBilling(p, { id: invoice.id, number: invoice.number })
   toast.notify({ variant: 'success', title: t('Invoice has been created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/sales-invoices/${invoice.id}`)
 }
@@ -810,10 +985,197 @@ function onSave() {
             <ErpDimensionTagUpsell id="si-dim-upsell" />
           </MpFormControl>
         </div>
+
+        <!-- Col 6: bill from deliveries — offered whenever the customer has a
+             sales delivery with something left to bill (spec 4a › Header). Same
+             checkbox-stack markup as the purchase invoice's f-deliveries. -->
+        <div v-if="billableGroups.length || deliveriesMode" class="si-header2-col" data-devchange="si-bill-deliveries">
+          <MpFormControl id="f-deliveries" class="si-field" :is-invalid="noItemsError && !deliveriesMode">
+            <MpFormLabel>{{ t('Sales deliveries') }}</MpFormLabel>
+            <div v-for="g in billableGroups" :key="g.orderId" class="sib-delivery-group">
+              <span v-if="billableGroups.length > 1" class="si-field-caption sib-group-caption">{{ t('Sales order') }} #{{ g.orderNumber }}</span>
+              <div class="si-checkbox-stack">
+                <MpCheckbox
+                  v-for="d in g.deliveries" :id="`f-delivery-${d.id}`" :key="d.id"
+                  :is-checked="deliveryIds.includes(d.id)"
+                  @change="toggleDelivery(d)"
+                >{{ deliveryLabel(d) }}</MpCheckbox>
+              </div>
+            </div>
+            <span v-if="orderReplaced" class="si-field-caption">{{ t('One invoice bills deliveries of one sales order.') }}</span>
+            <span v-for="note in fullyBilledNotes" :key="note" class="si-field-caption">{{ note }}</span>
+            <MpFormErrorMessage>{{ t('Select at least one sales delivery') }}</MpFormErrorMessage>
+          </MpFormControl>
+
+          <template v-if="deliveriesMode">
+            <MpFormControl id="f-so-no" class="si-field">
+              <MpFormLabel>{{ t('Sales order no.') }}</MpFormLabel>
+              <span class="si-readonly-value">{{ selectedOrder ? `#${selectedOrder.number}` : '-' }}</span>
+            </MpFormControl>
+            <MpFormControl id="f-billed-so-far" class="si-field">
+              <MpFormLabel>{{ t('Billed so far') }}</MpFormLabel>
+              <span class="si-readonly-value">{{ billedSoFar }}</span>
+            </MpFormControl>
+          </template>
+        </div>
+      </section>
+
+      <!-- ── Line items — billed from deliveries (deliveries mode) ── -->
+      <section v-if="plan" class="si-items-section" data-devchange="si-bill-lines">
+        <!-- One billing method for the whole invoice (B1), as the delivery form's
+             Input method; Bill remaining is a tertiary pill with the table it fills. -->
+        <div class="si-items-header-row sib-method-header" data-devchange="si-billing-method">
+          <MpFormControl id="f-billing-method" class="sd-method">
+            <MpFormLabel>{{ t('Billing method') }}</MpFormLabel>
+            <div class="sd-method-row">
+              <div class="sib-method-fields">
+                <ErpFilterSelect
+                  id="si-billing-method" :model-value="billingBasis" :options="BASIS_OPTIONS"
+                  :is-clearable="false" @update:model-value="setBasis"
+                />
+                <div v-if="billingBasis === 'percent' && split === 'auto'" class="sib-all-lines">
+                  <span class="sib-all-lines-label">{{ t('Percentage for all lines') }}</span>
+                  <MpInputGroup id="f-all-lines-pct" class="sib-all-lines-input">
+                    <MpInput type="number" :model-value="allLinesPct" is-full-width @update:model-value="setAllLines" />
+                    <MpInputRightAddon has-background>%</MpInputRightAddon>
+                  </MpInputGroup>
+                </div>
+              </div>
+              <MpButton v-if="hasRemaining" id="si-bill-remaining" is-rounded variant="tertiary" @click="billRemaining">{{ t('Bill remaining') }}</MpButton>
+            </div>
+          </MpFormControl>
+        </div>
+
+        <MpBanner v-if="billingErrors.length" id="si-billing-error-banner" variant="danger" class="si-items-error-banner">
+          <MpBannerIcon id="si-billing-error-banner-icon" />
+          <MpBannerTitle>{{ t('Failed to save') }}</MpBannerTitle>
+          <MpBannerDescription>
+            <ul class="sd-over-list">
+              <li v-for="e in billingErrors" :key="e">{{ e }}</li>
+            </ul>
+          </MpBannerDescription>
+        </MpBanner>
+
+        <div class="si-items-scroll">
+          <table class="si-items-table sib-table">
+            <colgroup>
+              <col class="si-col-product" />
+              <col class="sib-col-ordered" />
+              <col class="sib-col-billnow" />
+              <col class="si-col-unit" />
+              <col class="si-col-price" />
+              <col class="si-col-discount" />
+              <col class="si-col-tax" />
+              <col class="si-col-amount" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="si-th">{{ t('Product') }}</th>
+                <th class="si-th">{{ t('Qty ordered') }}</th>
+                <th class="si-th">{{ t('Bill now') }}</th>
+                <th class="si-th">{{ t('Unit') }}</th>
+                <th class="si-th">{{ t('Unit price') }}</th>
+                <th class="si-th">{{ t('Discount') }}</th>
+                <th class="si-th">{{ t('Tax') }}</th>
+                <th class="si-th">{{ t('Amount') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="l in plan.lines" :key="l.orderLineIndex" class="si-tr">
+                <td class="si-td si-td--border si-td--calc">
+                  <!-- Description is read-only from the order and saved on the invoice line;
+                       the column is dropped here so Qty ordered / Bill now keep their width. -->
+                  <div class="sib-cell-text"><ProductCell :name="l.product" :desc="l.sku" /></div>
+                </td>
+
+                <td class="si-td si-td--border si-td--calc sd-ordered">
+                  <span class="sd-ordered-qty">{{ qtyText(l.orderedQty) }}</span>
+                  <span class="sd-band-info">
+                    <span class="sd-progress-line sd-caption">
+                      <span>{{ t('Delivered') }}</span>
+                      <span>{{ qtyText(l.deliveredQty) }} ({{ shareText(l.deliveredQty, l.orderedQty) }})</span>
+                    </span>
+                    <span class="sd-progress-line sd-caption">
+                      <span>{{ t('Billed') }}</span>
+                      <span>{{ qtyText(l.billedQty) }} ({{ shareText(l.billedQty, l.orderedQty) }})</span>
+                    </span>
+                  </span>
+                </td>
+
+                <td
+                  class="si-td si-td--border"
+                  :class="split === 'auto' ? ['si-td--input', { 'si-td--error': l.overCap }] : ['si-td--calc', 'sd-ordered']"
+                >
+                  <template v-if="split === 'auto'">
+                    <MpTooltip
+                      v-if="l.overCap" :id="`si-billnow-tt-${l.orderLineIndex}`"
+                      :label="lineMaxText(l)" placement="top" use-portal class="si-error-tooltip-wrap"
+                    >
+                      <MpInputGroup v-if="billingBasis === 'percent'" :id="`f-billnow-group-${l.orderLineIndex}`" is-full-width>
+                        <MpInput type="number" :model-value="lineInputs[l.orderLineIndex] ?? ''" is-full-width :is-invalid="true"
+                          @update:model-value="(v) => setLineInput(l.orderLineIndex, v)" />
+                        <MpInputRightAddon has-background>%</MpInputRightAddon>
+                      </MpInputGroup>
+                      <MpInput v-else type="number" :model-value="lineInputs[l.orderLineIndex] ?? ''" is-full-width :is-invalid="true"
+                        @update:model-value="(v) => setLineInput(l.orderLineIndex, v)" />
+                    </MpTooltip>
+                    <template v-else>
+                      <MpInputGroup v-if="billingBasis === 'percent'" :id="`f-billnow-group-${l.orderLineIndex}`" is-full-width>
+                        <MpInput type="number" :model-value="lineInputs[l.orderLineIndex] ?? ''" is-full-width
+                          @update:model-value="(v) => setLineInput(l.orderLineIndex, v)" />
+                        <MpInputRightAddon has-background>%</MpInputRightAddon>
+                      </MpInputGroup>
+                      <MpInput v-else type="number" :model-value="lineInputs[l.orderLineIndex] ?? ''" is-full-width
+                        @update:model-value="(v) => setLineInput(l.orderLineIndex, v)" />
+                    </template>
+                    <span class="sd-band-info">
+                      <span v-if="billingBasis === 'percent'" class="sd-preview-line sd-caption">{{ qtyText(l.qty) }} {{ l.unit }}</span>
+                      <span class="sd-preview-line sd-caption">{{ fmt(l.amount) }}</span>
+                      <span class="sd-preview-line sd-caption">{{ lineMaxCaption(l) }}</span>
+                    </span>
+                  </template>
+                  <!-- Set per delivery: the line is the sum of the grid below — read-only here. -->
+                  <template v-else>
+                    <span class="sd-ordered-qty">{{ billingBasis === 'percent' ? pctText(l.percent) : qtyText(l.qty) }}</span>
+                    <span class="sd-band-info">
+                      <span class="sd-caption">{{ t('Set per delivery below') }}</span>
+                    </span>
+                  </template>
+                </td>
+
+                <td class="si-td si-td--border si-td--calc"><span class="sib-cell-text">{{ l.unit }}</span></td>
+                <td class="si-td si-td--border si-td--affix si-td--calc">
+                  <div class="si-affix-cell">
+                    <span class="si-affix">Rp</span>
+                    <span class="si-affix-value">{{ fmtPlain(l.unitPrice) }}</span>
+                  </div>
+                </td>
+                <td class="si-td si-td--border si-td--affix si-td--calc">
+                  <div class="si-affix-cell">
+                    <span class="si-affix-value">{{ l.discountPct }}</span>
+                    <span class="si-affix">%</span>
+                  </div>
+                </td>
+                <td class="si-td si-td--border si-td--calc"><span class="sib-cell-text">PPN 11%</span></td>
+                <td class="si-td si-td--border si-td--affix si-td--calc">
+                  <div class="si-affix-cell">
+                    <span class="si-affix">Rp</span>
+                    <span class="si-affix-value">{{ fmtPlain(l.amount) }}</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <DeliveryBillingSplit
+          :plan="plan" :split="split" v-model:manual="manual"
+          @update:split="onSplitUpdate"
+        />
       </section>
 
       <!-- ── Line items ── -->
-      <section class="si-items-section">
+      <section v-else class="si-items-section">
         <div class="si-items-header-row">
           <MpCheckbox id="f-price-incl-tax" v-model:is-checked="priceIncludesTax">{{ t('Price includes tax') }}</MpCheckbox>
         </div>
@@ -1046,9 +1408,37 @@ function onSave() {
         <div class="si-totals-col">
           <div class="si-totals-row si-totals-row--h3">
             <span>{{ t('Subtotal') }}</span>
-            <span>{{ fmt(subtotal) }}</span>
+            <span>{{ fmt(plan ? plan.subtotal : subtotal) }}</span>
           </div>
 
+          <!-- Deliveries mode: discount and shipping come from the deliveries (B6/B7) —
+               read-only figures with their source as a caption, no %/Rp swap. -->
+          <template v-if="plan">
+            <div class="si-totals-row">
+              <span>{{ t('Discounts per line') }}</span>
+              <span class="si-deduction">({{ fmt(plan.lineDiscount) }})</span>
+            </div>
+            <div class="si-totals-row" data-devchange="si-bill-global-discount">
+              <span class="sib-total-label">
+                <span>{{ t('Global discount') }}</span>
+                <span class="sd-caption">{{ t('Prorated from the deliveries') }}</span>
+              </span>
+              <span class="si-deduction">({{ fmt(plan.globalDiscount) }})</span>
+            </div>
+            <div class="si-totals-row">
+              <span>PPN 11%</span>
+              <span>{{ fmt(plan.ppn) }}</span>
+            </div>
+            <div class="si-totals-row" data-devchange="si-bill-shipping">
+              <span class="sib-total-label">
+                <span>{{ t('Shipping fee') }}</span>
+                <span class="sd-caption">{{ t('From the deliveries') }}</span>
+              </span>
+              <span>{{ fmt(plan.shipping) }}</span>
+            </div>
+          </template>
+
+          <template v-else>
           <!-- Discount block — the swap affordance sits in the gutter, as designed -->
           <div class="si-discount-block">
             <MpButton class="si-discount-swap" :aria-label="t('Switch discount mode')">
@@ -1100,6 +1490,7 @@ function onSave() {
                 @update:model-value="(v) => shippingFee = Number(v)" />
             </MpInputGroup>
           </div>
+          </template>
 
           <div class="si-total-rule" />
           <div class="si-totals-row si-totals-row--h3">
@@ -1594,4 +1985,40 @@ function onSave() {
   --mp-icon-color: var(--mp-text-inverse, #fff);
   color: var(--mp-text-inverse, #fff);
 }
+/* ── Bill from deliveries (spec 4a) ─────────────────────────────────────────
+   Visuals copied from NewSalesDeliveryPage.vue: read-only header values, the
+   table-wide method row, and two-band cells (docs/patterns/FormTable.md). */
+.si-readonly-value { display: block; padding: var(--mp-spacing-2) 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.sib-delivery-group { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
+.sib-delivery-group + .sib-delivery-group { margin-top: var(--mp-spacing-2); }
+.sib-group-caption { margin-top: 0; }
+.sd-method { display: flex; flex-direction: column; gap: var(--mp-spacing-1); flex: 1; }
+.sd-method-row { display: flex; justify-content: space-between; align-items: center; gap: var(--mp-spacing-4); }
+.sib-method-header { justify-content: flex-start; }
+.sib-method-fields { display: flex; align-items: center; gap: var(--mp-spacing-4); }
+.sib-all-lines { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.sib-all-lines-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); white-space: nowrap; }
+.sib-all-lines-input { width: 120px; }
+.sib-table { min-width: 1180px; }
+.sib-table .si-col-unit   { width: 88px; }
+.sib-table .si-col-price  { width: 150px; }
+.sib-table .si-col-tax    { width: 112px; }
+.sib-table .si-col-amount { width: 160px; }
+.sib-col-ordered { width: 176px; }
+.sib-col-billnow { width: 200px; }
+.sib-cell-text { display: block; padding: var(--mp-spacing-2\.5) 0; line-height: var(--mp-line-heights-md, 20px); }
+.sd-band-info {
+  display: flex; flex-direction: column;
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+}
+.sd-caption { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-secondary); }
+.si-td.sd-ordered { padding: 0; text-align: right; }
+.sd-ordered-qty { display: block; height: var(--mp-sizes-10, 40px); line-height: var(--mp-sizes-10, 40px); padding: 0 var(--mp-spacing-3); }
+.sd-ordered .sd-band-info { align-items: stretch; }
+.sd-progress-line { display: flex; justify-content: space-between; gap: var(--mp-spacing-2); white-space: nowrap; }
+.sd-preview-line { white-space: nowrap; }
+.sd-over-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-5); }
+.sd-over-list li { display: list-item; }
+.sib-total-label { display: flex; flex-direction: column; }
 </style>

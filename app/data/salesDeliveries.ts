@@ -141,6 +141,33 @@ const CONTRACT_DELIVERIES: SalesDelivery[] = [
     total: 150_000_000, tags: ['Contract'], orderId: 'SO103',
     items: [SRV(0, 'Jasa instalasi', 'SRV-FIT', 'Delivered in full', 1, 'percent', 100)],
   },
+  // SO104 — partial & progress invoicing demo (workbook case C5). Two deliveries
+  // by quantity; SD105 carries the order's shipping (Rule 10 default), SD106 none.
+  // SD105 is part-billed by Sales Invoice #40202 (30% of every line); SD106 not yet.
+  {
+    id: 'SD105', number: 20105, customer: { id: 'C008', name: 'Titik Temu Coffee' },
+    date: '2026-07-01', createdAt: '2026-07-01T09:00:00',
+    fulfillmentStatus: 'partially delivered', billingStatus: 'partially invoiced',
+    total: 0, tags: ['Contract'], orderId: 'SO104', shippingFee: 150_000,
+    items: [
+      { orderLineIndex: 0, product: 'Grinder Kopi Komersial', sku: 'GRD-COM', description: 'First shipment', unit: 'unit', qty: 4, inputMode: 'qty', inputValue: 4 },
+      { orderLineIndex: 1, product: 'Biji Kopi Arabika Gayo', sku: 'BNS-GAYO', description: 'First shipment', unit: 'kg', qty: 12, inputMode: 'qty', inputValue: 12 },
+      { orderLineIndex: 2, product: 'Jasa Kalibrasi Mesin', sku: 'SRV-CAL', description: 'First visit', unit: 'jam', qty: 2, inputMode: 'qty', inputValue: 2 },
+      { orderLineIndex: 3, product: 'Cup Kertas 8oz', sku: 'CUP-8OZ', description: 'First shipment', unit: 'pak', qty: 30, inputMode: 'qty', inputValue: 30 },
+    ],
+  },
+  {
+    id: 'SD106', number: 20106, customer: { id: 'C008', name: 'Titik Temu Coffee' },
+    date: '2026-07-20', createdAt: '2026-07-20T09:00:00',
+    fulfillmentStatus: 'delivered', billingStatus: 'unbilled',
+    total: 0, tags: ['Contract'], orderId: 'SO104', shippingFee: 0,
+    items: [
+      { orderLineIndex: 0, product: 'Grinder Kopi Komersial', sku: 'GRD-COM', description: 'Second shipment', unit: 'unit', qty: 6, inputMode: 'qty', inputValue: 6 },
+      { orderLineIndex: 1, product: 'Biji Kopi Arabika Gayo', sku: 'BNS-GAYO', description: 'Second shipment', unit: 'kg', qty: 8, inputMode: 'qty', inputValue: 8 },
+      { orderLineIndex: 2, product: 'Jasa Kalibrasi Mesin', sku: 'SRV-CAL', description: 'Second visit', unit: 'jam', qty: 3, inputMode: 'qty', inputValue: 3 },
+      { orderLineIndex: 3, product: 'Cup Kertas 8oz', sku: 'CUP-8OZ', description: 'Second shipment', unit: 'pak', qty: 20, inputMode: 'qty', inputValue: 20 },
+    ],
+  },
 ]
 
 /**
@@ -152,14 +179,45 @@ const CONTRACT_DELIVERIES: SalesDelivery[] = [
 function priced(d: SalesDelivery): SalesDelivery {
   const order = salesOrders.find(o => o.id === d.orderId)
   if (!order || !d.items) return d
-  const preTax = d.items.reduce((sum, l) => {
+  const goodsOf = (x: SalesDelivery) => (x.items ?? []).reduce((sum, l) => {
     const line = order.items[l.orderLineIndex]
     return sum + (line ? l.qty * line.unitPrice * (1 - line.discountPct / 100) : 0)
   }, 0)
-  return { ...d, total: Math.round(preTax + Math.round(preTax * 0.11)) }
+  const goods = goodsOf(d)
+  // Rule 10 (Partial invoicing PRD): a delivery carries its share of the order's
+  // transaction discount — TD × goods ÷ order goods — and the delivery that
+  // completes the order takes the remainder. deliveryBilling.ts reads the same
+  // rule; it is restated here because that module imports this one.
+  const td = order.globalDiscount ?? 0
+  let discount = 0
+  if (td > 0) {
+    const orderGoodsTotal = order.items.reduce((s, it) => s + it.qty * it.unitPrice * (1 - it.discountPct / 100), 0)
+    const siblings = CONTRACT_DELIVERIES.filter(x => x.orderId === d.orderId)
+    const isLast = siblings[siblings.length - 1]?.id === d.id
+    const earlier = siblings.slice(0, siblings.findIndex(x => x.id === d.id)).reduce((s, x) => s + td * goodsOf(x) / orderGoodsTotal, 0)
+    discount = d.discount ?? (isLast ? td - earlier : td * goods / orderGoodsTotal)
+  }
+  const preTax = goods - discount
+  return { ...d, total: Math.round(preTax + Math.round(preTax * 0.11) + (d.shippingFee ?? 0)) }
 }
 
 export const salesDeliveries: SalesDelivery[] = [...build(), ...CONTRACT_DELIVERIES.map(priced)]
+
+/**
+ * Billing status written by invoicing (deliveryBilling.ts commitBilling) — kept
+ * here so a reload, or a page that never loads the billing engine (the Sales
+ * deliveries index), still shows Partially invoiced / Invoiced.
+ */
+const BILLING_STATUS_KEY = 'sales-delivery-billing-status'
+for (const o of loadCreated<{ id: string; status: SalesDelivery['billingStatus'] }>(BILLING_STATUS_KEY)) {
+  const d = salesDeliveries.find(x => x.id === o.id)
+  if (d) d.billingStatus = o.status
+}
+export function persistDeliveryBillingStatus(id: string, status: SalesDelivery['billingStatus']): void {
+  const rest = loadCreated<{ id: string; status: SalesDelivery['billingStatus'] }>(BILLING_STATUS_KEY).filter(o => o.id !== id)
+  saveCreated(BILLING_STATUS_KEY, [...rest, { id, status }])
+}
+export function clearDeliveryBillingStatuses(): void { saveCreated(BILLING_STATUS_KEY, []) }
 
 /**
  * TS-001. How far a line had gone once THIS delivery posted — the cumulative

@@ -21,6 +21,7 @@ import { getSalesOrderDetail } from '~/data/salesOrderDetails'
 import { salesOrders } from '~/data'
 import { salesOrderCompletionRows, recurringSalesOrders, getRecurringForSalesOrder, persistSalesOrders, persistRecurringSalesOrders } from '~/data/salesOrders'
 import { addProductionRequest } from '~/data/productionRequests'
+import { billableDeliveries } from '~/data/deliveryBilling'
 import { useOpenContact } from '~/composables/useOpenContact'
 
 // Contact links open in a new tab (window is not reachable from the template).
@@ -248,7 +249,16 @@ const soActionGroups = computed<ActionItem[][]>(() => [
     { label: 'Preview', onClick: () => { previewOpen.value = true } },
     // Downstream documents, only while the order still has something to fulfil.
     { label: 'Create sales delivery', show: isOpenish.value, onClick: () => { router.push({ path: '/sales-deliveries/new', query: { order: order.value.id } }) } },
-    { label: 'Create sales invoice', show: isOpenish.value, onClick: () => { router.push('/sales-invoices/new') } },
+    // Deliveries of this order still have something to bill → the invoice opens in
+    // deliveries mode with every billable delivery of the order ticked; else blank form.
+    {
+      label: 'Create sales invoice',
+      show: isOpenish.value,
+      onClick: () => {
+        const hasBillable = billableDeliveries(order.value.customer.id).some((g) => g.orderId === order.value.id)
+        router.push(hasBillable ? { path: '/sales-invoices/new', query: { order: order.value.id } } : '/sales-invoices/new')
+      },
+    },
     { label: 'Create progress invoice', show: isOpenish.value, onClick: () => { router.push('/progress-invoice') } },
     { label: 'Create proforma invoice', show: isOpenish.value, onClick: () => { router.push('/proforma-invoice') } },
     { label: 'Add payment', show: isOpenish.value, onClick: notInPrototype },
@@ -699,7 +709,7 @@ function copyLink() {
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
         <PrintShareMenu id="so-print" />
-        <DetailActionsMenu id="so-actions" :groups="soActionGroups" />
+        <DetailActionsMenu id="so-actions" :groups="soActionGroups" data-devchange="so-detail-invoice-from-deliveries" />
       </div>
 
     </div><!-- /detail-stage -->

@@ -28,6 +28,102 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'si-billing-per-delivery',
+    title: "Billing per delivery",
+    description:
+      "When a sales invoice bills sales deliveries, a new 'Billing per delivery' section under the lines shows what this invoice takes from each delivery, oldest created first: delivered, billed before, bill now, left to bill and amount per product, plus the prorated discount, shipping and what stays unbilled on each delivery. 'Split' switches between 'Oldest delivery first' (read-only, PRD Rule 5) and 'Set per delivery', where the quantity per delivery is typed; a cell above what is left on its delivery turns red with its maximum.",
+    date: '2026-11-12',
+    files: ['DeliveryBillingSplit.vue'],
+  },
+  {
+    id: 'sd-index-partially-invoiced',
+    title: "Partially invoiced billing status",
+    description:
+      "Sales deliveries can now be Partially invoiced (yellow badge) when a sales invoice billed only part of them. The Billing status filter (toolbar and All filters) has a Partially invoiced option.",
+    date: '2026-11-12',
+    files: ['SalesDeliveriesPage.vue',  'ErpStatusBadge.vue'],
+  },
+  {
+    id: 'sd-index-create-invoice',
+    title: "Create sales invoice from partially invoiced deliveries",
+    description:
+      "The row action Create sales invoice now shows for unbilled and partially invoiced deliveries, so the rest of a delivery can be billed on a next invoice. Fully invoiced deliveries don't offer it.",
+    date: '2026-11-12',
+    files: ['SalesDeliveriesPage.vue'],
+  },
+  {
+    id: 'sd-detail-billed-on',
+    title: "Billed on \u2014 invoices that billed this delivery",
+    description:
+      "A sales delivery detail lists the sales invoices that billed it (Billed on, next to the references), each linking to the invoice.",
+    date: '2026-11-12',
+    files: ['SalesDeliveryDetailsPage.vue'],
+  },
+  {
+    id: 'sd-detail-create-invoice',
+    title: "Create sales invoice until fully invoiced",
+    description:
+      "On a sales delivery detail, Actions \u203a Create sales invoice now shows for unbilled and partially invoiced deliveries (it opens the invoice with this delivery ticked) and disappears once the delivery is fully invoiced.",
+    date: '2026-11-12',
+    files: ['SalesDeliveryDetailsPage.vue'],
+  },
+  {
+    id: 'so-detail-invoice-from-deliveries',
+    title: "Create sales invoice from the order's deliveries",
+    description:
+      "On a sales order with deliveries left to bill, Create sales invoice opens the invoice form with every billable delivery of the order ticked (/sales-invoices/new?order=<id>). Without billable deliveries it opens the blank form as before.",
+    date: '2026-11-12',
+    files: ['SalesOrderDetailsPage.vue'],
+  },
+  {
+    id: 'si-detail-billing-basis',
+    title: "Billing method on invoice details",
+    description:
+      "A sales invoice raised from sales deliveries shows its billing method next to the references: Billed by quantity or Billed by percentage.",
+    date: '2026-11-12',
+    files: ['SalesInvoiceDetailsPage.vue'],
+  },
+  {
+    id: 'si-bill-deliveries',
+    title: 'Sales invoice bills one or more sales deliveries',
+    description:
+      'New "Sales deliveries" field lists every delivery of the customer with something left to bill, grouped by sales order. Ticking one switches the form to billing from deliveries; ticking another order\'s delivery replaces the selection (one invoice, one order). Fully billed deliveries are named with the invoice that billed them. Opens prefilled from ?order=, ?delivery= or ?deliveries=.',
+    date: '2026-11-12',
+    files: ['NewSalesInvoicePage.vue', 'deliveryBilling.ts'],
+  },
+  {
+    id: 'si-billing-method',
+    title: 'Billing method — Quantity or Percentage',
+    description:
+      'One method for the whole invoice, like the delivery form\'s Input method. Defaults to Percentage when the order was delivered or billed by percentage. "Percentage for all lines" writes the same % into every line; "Bill remaining" fills each line with what is left on the ticked deliveries.',
+    date: '2026-11-12',
+    files: ['NewSalesInvoicePage.vue'],
+  },
+  {
+    id: 'si-bill-lines',
+    title: 'Lines billed from deliveries, capped per line',
+    description:
+      'Product, price and discount come from the order (read-only). Qty ordered shows delivered and billed so far; Bill now takes a qty or % and previews the qty, amount and the maximum. Over the cap the cell turns red with "Max 10% / 1 unit" and save is rejected inline. Below the table the amounts are split per delivery, oldest created first.',
+    date: '2026-11-12',
+    files: ['NewSalesInvoicePage.vue', 'DeliveryBillingSplit.vue'],
+  },
+  {
+    id: 'si-bill-global-discount',
+    title: 'Transaction discount prorated from the deliveries',
+    description:
+      'In deliveries mode the global discount is read-only: each delivery\'s share of the order discount, prorated by what this invoice bills. It is not part of the percentage base.',
+    date: '2026-11-12',
+    files: ['NewSalesInvoicePage.vue'],
+  },
+  {
+    id: 'si-bill-shipping',
+    title: 'Shipping fee from the deliveries',
+    description:
+      'Read-only in deliveries mode: each delivery\'s shipping is billed in full on the first invoice that draws from that delivery.',
+    date: '2026-11-12',
+    files: ['NewSalesInvoicePage.vue'],
+  },
+  {
     id: 'projects-project-accounting',
     title: 'Projects now opens Project accounting',
     description:

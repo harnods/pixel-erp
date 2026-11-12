@@ -172,6 +172,7 @@ const fulfillmentOptions = [
 
 const billingOptions = [
   { label: t('Unbilled'), value: 'unbilled' },
+  { label: t('Partially invoiced'), value: 'partially invoiced' },
   { label: t('Invoiced'), value: 'invoiced' },
 ]
 
@@ -302,7 +303,7 @@ function confirmBulkDelete() {
     <template #filters>
       <!-- Left: Fulfillment + Billing status selects + All filters -->
       <div class="filter-left">
-        <ErpFilterSelect id="sd-billing-status" v-model="billingFilter" :placeholder="t('Status')" :options="billingOptions" />
+        <ErpFilterSelect id="sd-billing-status" v-model="billingFilter" data-devchange="sd-index-partially-invoiced" :placeholder="t('Status')" :options="billingOptions" />
 
         <ErpFilterSelect id="sd-fulfillment-status" v-model="statusFilter" :placeholder="t('Fulfillment status')" :options="fulfillmentOptions" />
 
@@ -415,7 +416,7 @@ function confirmBulkDelete() {
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="navigateTo(`/sales-deliveries/${(row as Row).id}`)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="(row as Row).billingStatus === 'unbilled'" @click="navigateTo({ path: '/sales-invoices/new', query: { delivery: (row as Row).id } })">{{ t('Create sales invoice') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="(row as Row).billingStatus !== 'invoiced'" data-devchange="sd-index-create-invoice" @click="navigateTo({ path: '/sales-invoices/new', query: { delivery: (row as Row).id } })">{{ t('Create sales invoice') }}</MpPopoverListItem>
           </MpPopoverList>
           <div :class="css({ height: '1px', backgroundColor: 'var(--mp-border-default)', marginTop: 'var(--mp-spacing-1)', marginBottom: 'var(--mp-spacing-1)' })" />
           <MpPopoverList>
