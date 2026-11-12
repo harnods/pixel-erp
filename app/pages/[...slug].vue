@@ -230,6 +230,8 @@ const pageRegistry: Record<string, Component> = {
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
   'Grades':            defineAsyncComponent(() => import('~/components/pages/GradesPage.vue')),
+  // Inventory › Price rules (Sales + Purchase). New/edit → /price-rules/new, /price-rules/:id/edit.
+  'Price rules':       defineAsyncComponent(() => import('~/components/pages/PriceRulesPage.vue')),
   // Contacts — one index page serves all three role lists; the route slug picks
   // which role it filters by. New/detail/edit resolve via detailMatch below.
   'Customers':         defineAsyncComponent(() => import('~/components/pages/ContactsIndexPage.vue')),
@@ -470,6 +472,7 @@ const CompleteShipmentPage = asyncPage(() => import('~/components/pages/Complete
 const OutgoingOrderDetailsPage = asyncPage(() => import('~/components/pages/OutgoingOrderDetailsPage.vue'))
 const WarehouseTransferDetailsPage = asyncPage(() => import('~/components/pages/WarehouseTransferDetailsPage.vue'))
 const WarehouseTransferFormPage = asyncPage(() => import('~/components/pages/WarehouseTransferFormPage.vue'))
+const PriceRuleFormPage = asyncPage(() => import('~/components/pages/PriceRuleFormPage.vue'))
 const ReceivingIndexPage = asyncPage(() => import('~/components/pages/ReceivingIndexPage.vue'))
 const PutAwayIndexPage = asyncPage(() => import('~/components/pages/PutAwayIndexPage.vue'))
 const PartialReceptionIndexPage = asyncPage(() => import('~/components/pages/PartialReceptionIndexPage.vue'))
@@ -1108,6 +1111,12 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
   if (segs.length >= 2 && segs[0] === 'users-and-roles') {
     if (segs[1] === 'invite') return { component: InviteUserPage, id: 'invite' }
     if (segs.length >= 3 && segs[2] === 'edit') return { component: InviteUserPage, id: segs[1]! }
+  }
+  // Inventory › Price rules: /price-rules/new and /price-rules/:id/edit → full-page
+  // form (no detail page — the rule name opens edit). The bare index uses the registry.
+  if (segs.length >= 2 && segs[0] === 'price-rules') {
+    if (segs[1] === 'new') return { component: PriceRuleFormPage, id: 'new' }
+    if (segs[2] === 'edit') return { component: PriceRuleFormPage, id: segs[1]! }
   }
   // /warehouse-transfers/:id → detail page. /new and /:id/edit are the create/edit
   // forms (not built yet → placeholder). The bare index falls through to the registry.
@@ -2751,6 +2760,10 @@ function startResize(e: MouseEvent) {
         <!-- Inventory › Grades: the modal lives in GradesPage (useGradeModal). -->
         <div v-else-if="currentPageKey === 'Grades'" class="page-title-actions">
           <MpButton variant="primary" is-rounded left-icon="add" @click="openGradeCreate()">{{ t('New grade') }}</MpButton>
+        </div>
+        <!-- Inventory › Price rules: create is a full page (PriceRuleFormPage). -->
+        <div v-else-if="currentPageKey === 'Price rules'" class="page-title-actions">
+          <MpButton variant="primary" is-rounded left-icon="add" @click="router.push('/price-rules/new')">{{ t('New price rule') }}</MpButton>
         </div>
         <div v-else-if="currentPageKey === 'Work orders'" class="page-title-actions">
           <button class="btn-enterprise btn-enterprise--primary btn-enterprise--icon-before" @click="router.push('/work-orders/new')">

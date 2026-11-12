@@ -14,7 +14,7 @@ import {
   MpDatePicker, MpInputTag, MpCheckbox, MpUpload, MpUploadList,
   MpAutocomplete, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpIcon, MpTextlink, toast, css,
+  MpIcon, MpTextlink, MpBadge, toast, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
@@ -28,6 +28,8 @@ import { addPurchaseQuote } from '~/data/purchaseQuotes'
 import { getPurchaseQuoteDetail } from '~/data/purchaseQuoteDetails'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
+import ErpPurchaseRuleNote from '~/components/patterns/ErpPurchaseRuleNote.vue'
+import { resolvePurchaseRule, vendorPkpStatus, isPpnTax, type PurchaseRuleMatch } from '~/data/priceRules'
 
 // /purchase-quotes/new → create; /purchase-quotes/:id/edit → edit (prod PurchaseQuoteEditView).
 const props = defineProps<{ orderId?: string }>()
@@ -106,6 +108,11 @@ interface LineItem {
   taxLabel: string
   productError: boolean
   qtyError: boolean
+  // UI-only (never saved) — Purchase Price Rule / vendor PKP state
+  productId?: string
+  ruleMatch?: PurchaseRuleMatch | null
+  discountManual?: boolean
+  taxClearedFrom?: string
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
@@ -113,6 +120,59 @@ const items = ref<LineItem[]>([])
 function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
 function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
+}
+
+// ── Purchase Price Rule + vendor PKP ──────────────────────────────────────────
+// Rules fill a line's Discount only on a user pick (vendor, product) — a line
+// prefilled from a source/edit keeps its saved values until the user picks.
+// ruleMatch / discountManual / taxClearedFrom are UI-only and never saved.
+const txDateIso = computed(() => dmyToIso(txDate.value) || todayISO())
+const NO_TAX_LABEL = TAX_OPTIONS.find(o => !isPpnTax(o)) ?? 'No tax'
+const vendorPkp = computed(() => vendorPkpStatus(vendorId.value))
+
+function lineProductId(item: LineItem): string {
+  return item.productId ?? products.find(p => p.name === item.product && p.code === item.sku)?.id ?? ''
+}
+function applyRule(item: LineItem) {
+  const match = vendorId.value ? resolvePurchaseRule(vendorId.value, lineProductId(item), item.unitPrice, txDateIso.value) : null
+  const hadRule = !!item.ruleMatch
+  item.ruleMatch = match
+  if (item.discountManual) return
+  if (match) item.discountPct = match.discountPct
+  else if (hadRule) item.discountPct = 0
+}
+// Non-PKP vendor → PPN lines switch to no tax; back to PKP/unknown restores
+// only the lines this form cleared (a user tax pick clears the marker).
+function applyPkp(item: LineItem) {
+  if (vendorPkpStatus(vendorId.value) === false) {
+    if (isPpnTax(item.taxLabel)) { item.taxClearedFrom = item.taxLabel; item.taxLabel = NO_TAX_LABEL }
+  } else if (item.taxClearedFrom) {
+    item.taxLabel = item.taxClearedFrom
+    item.taxClearedFrom = undefined
+  }
+}
+function onDiscountInput(item: LineItem, v: unknown) {
+  const n = Number(v)
+  if (n === item.discountPct) return
+  item.discountPct = n
+  item.discountManual = !item.ruleMatch || n !== item.ruleMatch.discountPct
+}
+function onUnitPriceInput(item: LineItem, v: unknown) {
+  item.unitPrice = Number(v)
+  // A value (Rp/unit) rule converts against the unit cost — keep the % in sync.
+  if (item.ruleMatch) applyRule(item)
+}
+function onTaxPick(item: LineItem, v: unknown) {
+  item.taxLabel = String(v ?? '')
+  item.taxClearedFrom = undefined
+}
+function resetRule(item: LineItem) {
+  item.discountManual = false
+  applyRule(item)
+}
+function onVendorPick(id: unknown) {
+  onVendorChange(id)
+  for (const it of items.value) { applyPkp(it); applyRule(it) }
 }
 
 function productMatches(query: string) {
@@ -129,7 +189,11 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
   item.sku = p.code
   item.unit = p.unit
   item.unitPrice = p.price
+  item.productId = p.id
   item.productError = false
+  item.discountManual = false
+  applyPkp(item)
+  applyRule(item)
   openProductRow.value = null
 }
 
@@ -148,7 +212,11 @@ function selectNewProduct(p: typeof products[number]) {
     taxLabel: 'PPN 11%',
     productError: false,
     qtyError: false,
+    productId: p.id,
   })
+  const added = items.value[items.value.length - 1]!
+  applyPkp(added)
+  applyRule(added)
   newRowSearch.value = ''
   openProductRow.value = null
 }
@@ -199,7 +267,20 @@ const globalDiscountAmount = computed(() =>
 )
 
 const taxBase     = computed(() => subtotal.value - discountTotal.value - globalDiscountAmount.value)
-const taxAmount   = computed(() => Math.round(taxBase.value * 0.11))
+// Tax per line at its own rate (a Non-PKP line carries no PPN); a global
+// discount is prorated over the lines. All lines at PPN 11% = taxBase × 11%.
+function taxRateOf(label: string): number {
+  const m = /(\d+(?:[.,]\d+)?)\s*%/.exec(label)
+  return m ? Number(m[1]!.replace(',', '.')) / 100 : 0
+}
+const taxAmount   = computed(() => {
+  const net = subtotal.value - discountTotal.value
+  const ratio = net > 0 ? taxBase.value / net : 0
+  return Math.round(items.value.reduce((s, it) => {
+    const gross = it.qty * it.unitPrice
+    return s + (gross - Math.round(gross * it.discountPct / 100)) * taxRateOf(it.taxLabel)
+  }, 0) * ratio)
+})
 const shippingFee = ref(0)
 const total       = computed(() => taxBase.value + taxAmount.value + shippingFee.value)
 
@@ -320,9 +401,12 @@ function onSave(andNew = false) {
             id="f-vendor-inp" v-model="vendorId" :data="vendorOptions"
             label-prop="name" value-prop="id" is-searchable use-portal is-full-width
             :placeholder="t('Vendor')" :is-invalid="vendorError"
-            @update:model-value="onVendorChange"
+            @update:model-value="onVendorPick"
           />
           <MpFormErrorMessage>{{ t('Vendor is required') }}</MpFormErrorMessage>
+          <div v-if="vendorPkp !== null" class="si-pkp" data-devchange="purchase-price-rule-pkp-pq">
+            <MpBadge for="additionalInformation" :type="vendorPkp ? 'information' : 'announcement'">{{ vendorPkp ? t('PKP') : t('Non-PKP') }}</MpBadge>
+          </div>
         </MpFormControl>
 
         <MpFormControl id="f-email" class="si-field">
@@ -532,20 +616,25 @@ function onSave(andNew = false) {
                   <div class="si-affix-cell">
                     <span class="si-affix">Rp</span>
                     <MpInput type="number" :model-value="item.unitPrice" is-full-width class="si-affix-input"
-                      @update:model-value="(v) => item.unitPrice = Number(v)" />
+                      @update:model-value="(v) => onUnitPriceInput(item, v)" />
                   </div>
                 </td>
 
                 <td class="si-td si-td--input si-td--border si-td--affix">
                   <div class="si-affix-cell">
                     <MpInput type="number" :model-value="item.discountPct" is-full-width class="si-affix-input"
-                      @update:model-value="(v) => item.discountPct = Number(v)" />
+                      @update:model-value="(v) => onDiscountInput(item, v)" />
                     <span class="si-affix">%</span>
+                  </div>
+                  <div class="si-line-note">
+                    <ErpPurchaseRuleNote :match="item.ruleMatch ?? null" :is-edited="!!item.discountManual && !!item.ruleMatch" @reset="resetRule(item)" />
                   </div>
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
-                  <MpAutocomplete v-model="item.taxLabel" :data="taxOptions" use-portal is-full-width />
+                  <MpAutocomplete :model-value="item.taxLabel" :data="taxOptions" use-portal is-full-width
+                    @update:model-value="(v: unknown) => onTaxPick(item, v)" />
+                  <span v-if="item.taxClearedFrom" class="si-line-caption">{{ t('PPN not applied: Non-PKP vendor') }}</span>
                 </td>
 
                 <!-- Amount is derived (qty × price − discount), so it reads as a
@@ -897,6 +986,10 @@ function onSave(andNew = false) {
    to the vertical center of a Dimensions-stretched row. */
 .si-cell-center { display: flex; align-items: center; justify-content: center; height: var(--mp-sizes-10, 40px); }
 .si-td--input { padding: 0; }
+/* Purchase Price Rule / PKP annotations — quiet captions under a line cell */
+.si-pkp { margin-top: var(--mp-spacing-1, 4px); }
+.si-line-note { padding: 0 var(--mp-spacing-2, 8px) var(--mp-spacing-1, 4px); min-width: 0; }
+.si-line-caption { display: block; padding: var(--mp-spacing-1, 4px) var(--mp-spacing-2, 8px); font-size: var(--mp-font-sizes-xs); line-height: 16px; color: var(--mp-text-secondary); }
 .si-td--input :deep([class*='input']),
 .si-td--input :deep([class*='select']) { border-radius: 0; border-color: transparent; }
 .si-td--input :deep(.mp-input__root),

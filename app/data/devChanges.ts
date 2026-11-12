@@ -28,6 +28,62 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'purchase-price-rules-index',
+    title: 'Price rules: Sales and Purchase',
+    description:
+      'Inventory › Price rules is now a real list. Each rule is Sales (customers) or Purchase (vendors); filter by transaction type, see vendors with their PKP status, edit or delete a rule.',
+    date: '2026-11-12',
+    files: ['PriceRulesPage.vue', 'priceRules.ts', '[...slug].vue', 'erpSitemap.ts'],
+  },
+  {
+    id: 'purchase-price-rule-form',
+    title: 'Price rule form: Transaction type',
+    description:
+      'New and edit price rule start with Transaction type. Purchase swaps customers for vendors and offers discount percentage or value per unit only. Picking a category adds all its products.',
+    date: '2026-11-12',
+    files: ['PriceRuleFormPage.vue', 'priceRules.ts'],
+  },
+  {
+    id: 'purchase-price-rule-pkp',
+    title: 'PKP vendor checkbox',
+    description:
+      'Purchase rules record whether the vendor is PKP. Unchecked = Non-PKP: PPN is not applied on that vendor\'s purchases (PPh still applies). Saving is blocked if the same vendor has a different PKP status on another rule.',
+    date: '2026-11-12',
+    files: ['PriceRuleFormPage.vue', 'priceRules.ts'],
+  },
+  {
+    id: 'purchase-price-rule-line',
+    title: 'Purchase lines apply price rules',
+    description:
+      'On Purchase order, invoice and quote, picking a vendor or product fills the line discount from the best purchase rule (vendor + product > vendor only > product only). The note shows the rule; a typed discount shows Edited manually with Reset to rule.',
+    date: '2026-11-12',
+    files: ['ErpPurchaseRuleNote.vue', 'PurchaseOrderFormPage.vue', 'NewPurchaseInvoicePage.vue', 'NewPurchaseQuotePage.vue'],
+  },
+  {
+    id: 'purchase-price-rule-pkp-po',
+    title: 'Purchase order: vendor PKP status',
+    description:
+      'The vendor\'s PKP status shows under Vendor. For a Non-PKP vendor, PPN lines switch to no tax and the tax total is now summed per line.',
+    date: '2026-11-12',
+    files: ['PurchaseOrderFormPage.vue'],
+  },
+  {
+    id: 'purchase-price-rule-pkp-pi',
+    title: 'Purchase invoice: vendor PKP status',
+    description:
+      'The vendor\'s PKP status shows under Vendor. For a Non-PKP vendor, PPN lines switch to no tax; tax is summed per line.',
+    date: '2026-11-12',
+    files: ['NewPurchaseInvoicePage.vue'],
+  },
+  {
+    id: 'purchase-price-rule-pkp-pq',
+    title: 'Purchase quote: vendor PKP status',
+    description:
+      'The vendor\'s PKP status shows under Vendor. For a Non-PKP vendor, PPN lines switch to no tax; tax is summed per line.',
+    date: '2026-11-12',
+    files: ['NewPurchaseQuotePage.vue'],
+  },
+  {
     id: 'projects-project-accounting',
     title: 'Projects now opens Project accounting',
     description:

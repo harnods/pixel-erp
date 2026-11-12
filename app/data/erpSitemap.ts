@@ -76,6 +76,7 @@ export const BUILT_KEYS = new Set<string>([
   'Storage locations',
   'Couriers',
   'Grades',
+  'Price rules',
   'Warehouse transfers',
   'Stock adjustments',
   'Cycle counts',
