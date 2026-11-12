@@ -37,17 +37,27 @@ export const PRICE_RULE_TRANSACTION_TYPE_LABEL: Record<PriceRuleTransactionType,
   purchase: 'Purchase',
 }
 
-export type PriceRuleType = 'percent' | 'value' | 'markup_percent' | 'markup_value'
+export type PriceRuleType =
+  | 'percent' | 'value' | 'tier' | 'subtotal_tier' | 'end_discount'
+  | 'markup_percent' | 'markup_value'
+/** Labels and order mirror production Mekari ERP (Create Price Rule › Rule type). */
 export const PRICE_RULE_TYPE_LABEL: Record<PriceRuleType, string> = {
-  percent: 'Discount percentage',
-  value: 'Discount value per unit',
-  markup_percent: 'Markup percentage',
-  markup_value: 'Markup value per unit',
+  percent: 'Percentage discount',
+  value: 'Price amount discount',
+  tier: 'Tier percentage discount',
+  subtotal_tier: 'Sales subtotal discount',
+  end_discount: 'Last price discount',
+  markup_percent: 'Percentage markup',
+  markup_value: 'Price amount markup',
 }
+/** Production groups the two markups under a "MARKUP" heading. */
+export const PRICE_RULE_MARKUP_TYPES: PriceRuleType[] = ['markup_percent', 'markup_value']
 /** Which rule types each transaction type offers. Purchase = the two discount
- *  shapes the one-pager scopes in. */
+ *  shapes the one-pager scopes in (percentage / price amount per unit). The
+ *  sales tier / subtotal / last-price types exist in production; this prototype
+ *  lists them but doesn't model their tier tables. */
 export const PRICE_RULE_TYPES_BY_TRANSACTION: Record<PriceRuleTransactionType, PriceRuleType[]> = {
-  sales: ['percent', 'value', 'markup_percent', 'markup_value'],
+  sales: ['percent', 'value', 'tier', 'subtotal_tier', 'end_discount', 'markup_percent', 'markup_value'],
   purchase: ['percent', 'value'],
 }
 

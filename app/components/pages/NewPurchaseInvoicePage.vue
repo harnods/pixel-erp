@@ -749,7 +749,7 @@ onMounted(() => {
                   </div>
                 </td>
 
-                <td class="si-td si-td--input si-td--border si-td--affix">
+                <td class="si-td si-td--input si-td--border si-td--affix si-td--rule">
                   <div class="si-affix-cell">
                     <MpInput type="number" :model-value="item.discountPct" is-full-width class="si-affix-input"
                       @update:model-value="(v) => onDiscountInput(item, v)" />
@@ -1126,7 +1126,7 @@ onMounted(() => {
 .si-col-qty      { width: 64px; }
 .si-col-unit     { width: 104px; }
 .si-col-price    { width: 164px; }
-.si-col-discount { width: 88px; }
+.si-col-discount { width: 128px; }
 .si-col-tax      { width: 128px; }
 .si-col-amount   { width: 164px; }
 .si-col-del      { width: 52px; }
@@ -1204,6 +1204,10 @@ onMounted(() => {
    to match, while the input/value keep their own fixed height and simply
    dock to the top (a flex item with a definite cross size doesn't stretch). */
 .si-affix-cell { display: flex; align-items: stretch; position: absolute; inset: 0; min-height: var(--mp-sizes-10, 40px); }
+/* Discount cell carries the Purchase Price Rule note below the input, so its
+   control band stays in flow (40px) instead of filling the cell absolutely —
+   otherwise the note renders underneath the input. */
+.si-td--rule .si-affix-cell { position: relative; inset: auto; height: var(--mp-sizes-10, 40px); }
 .si-affix {
   flex-shrink: 0; display: flex; align-items: flex-start; justify-content: center;
   padding: var(--mp-sizes-2\.5, 10px) var(--mp-spacing-2) 0 var(--mp-spacing-2);
