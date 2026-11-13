@@ -13,10 +13,11 @@ import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
-import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data/purchaseRequests'
+import { purchaseRequests, getPurchaseRequest, updatePurchaseRequest, deletePurchaseRequests } from '~/data/purchaseRequests'
 import { infoToast } from '~/utils/toasts'
 import BudgetPRCard from '~/components/patterns/BudgetPRCard.vue'
 import { budgetPRForRequest, syncLinkedRequests } from '~/data/budgetUiPurchaseRequests'
+import { canViewPurchaseRequest } from '~/data/purchaseRequestAccess'
 
 const props = defineProps<{ orderId: string }>()
 
@@ -27,6 +28,12 @@ const hasApproval = true
 
 const router = useRouter()
 const request = computed(() => getPurchaseRequestDetail(props.orderId))
+// Restricted outlet persona: another user's request (e.g. opened by URL) shows
+// the no-access state instead of the record. Own requests stay fully usable.
+const canView = computed(() => {
+  const rec = getPurchaseRequest(props.orderId)
+  return !rec || canViewPurchaseRequest(rec)
+})
 // The budget record behind this request (FG-3), when it has one.
 const budgetPR = computed(() => budgetPRForRequest(props.orderId))
 watchEffect(syncLinkedRequests)
@@ -119,6 +126,7 @@ watch(() => props.orderId, () => {
 // ── Jump-to-transaction switcher (title-bar chevron) — shared DetailJumpTo ──────
 const jumpItems = computed(() =>
   [...purchaseRequests]
+    .filter(canViewPurchaseRequest)                 // self-only for the restricted persona
     .sort((a, b) => b.date.localeCompare(a.date))   // most recent first
     .slice(0, 12)
     .map(o => ({ id: o.id, primary: `${t('Purchase Request')} #${o.number}`, secondary: o.procurementStaff })),
@@ -153,7 +161,25 @@ function goBack() { router.push('/purchase-requests') }
 </script>
 
 <template>
-  <div class="detail-page">
+  <!-- ── No access: restricted outlet persona opening another user's request ── -->
+  <div v-if="!canView" class="detail-page" data-devchange="pr-self-only-outlet">
+    <header class="detail-bar">
+      <div class="detail-bar-left">
+        <MpTextlink id="pr-noaccess-breadcrumb" as="a" class="detail-breadcrumb" @click.prevent="goBack">{{ t('Purchase requests') }}</MpTextlink>
+        <div class="detail-titlerow-left">
+          <h1 class="detail-title">{{ t('Purchase Request') }}</h1>
+        </div>
+      </div>
+    </header>
+    <div class="pr-noaccess">
+      <img src="/illustrations/empty-folder.png" alt="" class="pr-noaccess-illustration" width="288" height="240" />
+      <p class="pr-noaccess-title">{{ t("You don't have access to this purchase request") }}</p>
+      <p class="pr-noaccess-desc">{{ t('You can only view purchase requests you created. Ask your admin if you need access.') }}</p>
+      <MpButton id="pr-noaccess-back" variant="secondary" is-rounded @click="goBack">{{ t('Back to purchase requests') }}</MpButton>
+    </div>
+  </div>
+
+  <div v-else class="detail-page">
 
     <!-- ── Title bar (breadcrumb + title + status dropdown + icon actions) ── -->
     <header class="detail-bar">
@@ -383,6 +409,18 @@ function goBack() { router.push('/purchase-requests') }
 </template>
 
 <style scoped>
+/* ── No-access state (self-only restricted persona) ── */
+.pr-noaccess {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: var(--mp-spacing-8) var(--mp-spacing-6); background: var(--mp-background-stage); text-align: center;
+}
+.pr-noaccess-illustration { width: auto; height: 240px; object-fit: contain; }
+.pr-noaccess-title {
+  margin: 0 0 var(--mp-spacing-0\.5);
+  font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default);
+}
+.pr-noaccess-desc { margin: 0 0 var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
 .detail-page {
   height: 100%;
   display: flex;

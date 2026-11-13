@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'purchase-price-rule-outlets',
+    title: 'Purchase price rules per outlet',
+    description:
+      'A purchase rule can name outlet warehouses (empty = all outlets). On purchase orders, invoices and quotes the transaction warehouse picks the outlet: an outlet rule beats an all-outlet rule, and changing the warehouse re-prices lines not edited by hand.',
+    date: '2026-11-13',
+    files: ['PriceRuleFormPage.vue', 'PriceRulesPage.vue', 'priceRules.ts', 'PurchaseOrderFormPage.vue', 'NewPurchaseInvoicePage.vue', 'NewPurchaseQuotePage.vue'],
+  },
+  {
+    id: 'pr-self-only-outlet',
+    title: 'Outlet users see only their own purchase requests',
+    description:
+      'Viewing as Requester (stand-in for an outlet user with Restrict access to view purchases created by other users) lists only the purchase requests they created; opening another user\'s request shows a no-access state. Other roles see every request.',
+    date: '2026-11-13',
+    files: ['PurchaseRequestsPage.vue', 'PurchaseRequestDetailsPage.vue', 'PurchaseRequestsAwaitingApprovalPage.vue', 'purchaseRequestAccess.ts'],
+  },
+  {
     id: 'purchase-price-rules-index',
     title: 'Price rules: Sales and Purchase',
     description:

@@ -21,6 +21,7 @@ import { purchaseRequests, updatePurchaseRequest } from '~/data'
 import type { PurchaseRequest } from '~/data'
 import { budget, approvePRAs, prWaitingStep, rupiah } from '~/data/budgetStore'
 import { budgetPRForRequest, syncLinkedRequests } from '~/data/budgetUiPurchaseRequests'
+import { canViewPurchaseRequest } from '~/data/purchaseRequestAccess'
 import { successToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -89,7 +90,8 @@ const columns: TableColumn[] = [
 // ─── Rows — only requests awaiting approval, newest first ──────────────────────
 const rows = computed<PurchaseRequest[]>(() =>
   [...purchaseRequests]
-    .filter(pr => pr.awaitingApproval)
+    // Self-only for the restricted outlet persona (same rule as the All tab).
+    .filter(pr => pr.awaitingApproval && canViewPurchaseRequest(pr))
     .sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number),
 )
 

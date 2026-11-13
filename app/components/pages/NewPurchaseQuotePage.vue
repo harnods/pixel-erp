@@ -134,7 +134,7 @@ function lineProductId(item: LineItem): string {
   return item.productId ?? products.find(p => p.name === item.product && p.code === item.sku)?.id ?? ''
 }
 function applyRule(item: LineItem) {
-  const match = vendorId.value ? resolvePurchaseRule(vendorId.value, lineProductId(item), item.unitPrice, txDateIso.value) : null
+  const match = vendorId.value ? resolvePurchaseRule(vendorId.value, lineProductId(item), item.unitPrice, txDateIso.value, warehouse.value) : null
   const hadRule = !!item.ruleMatch
   item.ruleMatch = match
   if (item.discountManual) return
@@ -173,6 +173,12 @@ function resetRule(item: LineItem) {
 function onVendorPick(id: unknown) {
   onVendorChange(id)
   for (const it of items.value) { applyPkp(it); applyRule(it) }
+}
+/** Warehouse = outlet: a user pick re-resolves every line like a vendor pick
+ *  (manual discounts stay); prefill sets the ref directly and never re-prices. */
+function onWarehousePick(v: unknown) {
+  warehouse.value = String(v ?? '')
+  for (const it of items.value) applyRule(it)
 }
 
 function productMatches(query: string) {
@@ -492,7 +498,7 @@ function onSave(andNew = false) {
 
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width />
+            <MpAutocomplete id="f-warehouse-inp" :model-value="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width @update:model-value="onWarehousePick" />
           </MpFormControl>
         </div>
 

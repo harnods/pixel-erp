@@ -3,7 +3,7 @@
  * Purchase Price Rule note under a purchase line's Discount input (PO / PI /
  * PQ forms). Two short lines at most:
  *   rule applied   → "Rule: <name>" (truncated, full name + tier in `title`)
- *                    / the tier label
+ *                    / the tier label ("Outlet · <tier>" for an outlet rule)
  *   edited by user → "Edited manually" / "Reset to rule" (the link only while a
  *                    rule still matches the line)
  * Quiet caption text, not a badge — it annotates a value, it isn't a status
@@ -16,13 +16,14 @@
  */
 import { computed } from 'vue'
 import { MpTextlink } from '@mekari/pixel3'
-import { PURCHASE_RULE_TIER_LABEL, type PurchaseRuleMatch } from '~/data/priceRules'
+import { purchaseRuleTierParts, type PurchaseRuleMatch } from '~/data/priceRules'
 
 const props = defineProps<{ match: PurchaseRuleMatch | null; isEdited: boolean }>()
 const emit = defineEmits<{ reset: [] }>()
 const { t } = useLocale()
 
-const tierLabel = computed(() => (props.match ? t(PURCHASE_RULE_TIER_LABEL[props.match.tier]) : ''))
+// "Outlet · Vendor + product" when the rule targets the transaction's warehouse.
+const tierLabel = computed(() => (props.match ? purchaseRuleTierParts(props.match).map((p) => t(p)).join(' · ') : ''))
 const fullLabel = computed(() => (props.match ? `${props.match.rule.name} · ${tierLabel.value}` : ''))
 </script>
 

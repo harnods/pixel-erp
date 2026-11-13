@@ -15,6 +15,10 @@
  * One vendor must carry the same PKP value on every rule (`purchasePkpConflict`).
  *
  * Purchase engine (`resolvePurchaseRule`) — single best match, no stacking:
+ *   first   outlet: a rule naming the transaction's warehouse (= outlet; one
+ *           company can run several outlets that buy at different prices)
+ *           beats an all-outlet rule (DECIDED 12 Nov). Rules naming OTHER
+ *           outlets never apply. Then, inside each group:
  *   tier 1  vendor + specific products
  *   tier 2  vendor + all products
  *   tier 3  all vendors + specific products
@@ -76,6 +80,9 @@ export interface PriceRule {
   contactIds: string[]
   /** Purchase rules with ≥1 vendor only; null otherwise. */
   vendorPkp: boolean | null
+  /** Purchase rules only: outlet warehouses (WAREHOUSES names) the rule
+   *  applies to; empty = all outlets. Always [] on sales rules. */
+  warehouses: string[]
   /** `YYYY-MM-DD`; '' = open-ended. */
   startDate: string
   endDate: string
@@ -91,8 +98,8 @@ const SEED_AT = '2026-10-01T09:00:00'
 const greenBeans = products.filter((p) => p.category === 'Green Beans').map((p) => p.id)
 const roasted = products.filter((p) => p.category === 'Roasted Beans').map((p) => p.id)
 
-function seed(r: Omit<PriceRule, 'createdAt' | 'updatedAt' | 'updatedBy' | 'startDate' | 'endDate' | 'status'> & Partial<PriceRule>): PriceRule {
-  return { startDate: '', endDate: '', status: 'active', createdAt: SEED_AT, updatedAt: SEED_AT, updatedBy: 'System', ...r }
+function seed(r: Omit<PriceRule, 'createdAt' | 'updatedAt' | 'updatedBy' | 'startDate' | 'endDate' | 'status' | 'warehouses'> & Partial<PriceRule>): PriceRule {
+  return { startDate: '', endDate: '', status: 'active', warehouses: [], createdAt: SEED_AT, updatedAt: SEED_AT, updatedBy: 'System', ...r }
 }
 
 /** Seeds cover every purchase tier plus one PKP and one Non-PKP vendor. Ids
@@ -104,9 +111,11 @@ const SEED_RULES: PriceRule[] = [
   seed({ id: 'PRL-102', name: 'Gayo Highland · green beans', transactionType: 'purchase', ruleType: 'percent', amount: 10, productIds: greenBeans, contactIds: ['V003'], vendorPkp: true }),
   seed({ id: 'PRL-103', name: 'Bajawa Ngada · Flores Bajawa beans', transactionType: 'purchase', ruleType: 'percent', amount: 7, productIds: ['p07'], contactIds: ['V016'], vendorPkp: false }),
   seed({ id: 'PRL-104', name: 'V60 paper filter · all vendors', transactionType: 'purchase', ruleType: 'value', amount: 5_000, productIds: ['p24'], contactIds: [], vendorPkp: null }),
+  // Outlet-specific: the Bandung outlet buys Gayo green beans at 12% (other outlets 10%).
+  seed({ id: 'PRL-105', name: 'Gayo Highland · green beans · Bandung outlet', transactionType: 'purchase', ruleType: 'percent', amount: 12, productIds: greenBeans, contactIds: ['V003'], vendorPkp: true, warehouses: ['Gudang Bandung Selatan'] }),
 ]
 
-const STORE_KEY = 'price-rules-v1'
+const STORE_KEY = 'price-rules-v2'
 const store = reactive<PriceRule[]>(loadSnapshot<PriceRule>(STORE_KEY) ?? SEED_RULES.map((r) => ({ ...r })))
 function persist() { saveSnapshot(STORE_KEY, store) }
 function now(): string { return new Date().toISOString() }
@@ -131,6 +140,7 @@ function normalise(input: PriceRuleInput): PriceRuleInput {
     productIds: [...input.productIds],
     contactIds: [...input.contactIds],
     vendorPkp: input.transactionType === 'purchase' && input.contactIds.length > 0 ? (input.vendorPkp ?? true) : null,
+    warehouses: input.transactionType === 'purchase' ? [...(input.warehouses ?? [])] : [],
   }
 }
 
@@ -156,7 +166,7 @@ export function deletePriceRule(id: string): void {
   if (i !== -1) { store.splice(i, 1); persist() }
 }
 export function emptyPriceRuleInput(transactionType: PriceRuleTransactionType = 'sales'): PriceRuleInput {
-  return { name: '', transactionType, ruleType: 'percent', amount: 0, productIds: [], contactIds: [], vendorPkp: null, startDate: '', endDate: '', status: 'active' }
+  return { name: '', transactionType, ruleType: 'percent', amount: 0, productIds: [], contactIds: [], vendorPkp: null, warehouses: [], startDate: '', endDate: '', status: 'active' }
 }
 
 // ── Purchase engine ────────────────────────────────────────────────────────────
@@ -171,6 +181,8 @@ export const PURCHASE_RULE_TIER_LABEL: Record<PurchaseRuleTier, string> = {
 export interface PurchaseRuleMatch {
   rule: PriceRule
   tier: PurchaseRuleTier
+  /** The rule names the transaction's outlet (warehouse). */
+  outletSpecific: boolean
   /** The rule as a line discount % (purchase lines only carry a %). A value
    *  rule converts against the line's unit cost, rounded to 2 decimals, capped
    *  at 100. */
@@ -201,22 +213,25 @@ export function resolvePurchaseRule(
   productId: string,
   unitCost: number,
   isoDate: string = new Date().toISOString().slice(0, 10),
+  /** The transaction's warehouse = outlet; '' = none picked → only all-outlet rules. */
+  warehouse = '',
 ): PurchaseRuleMatch | null {
   if (!vendorIdOrName || !productId) return null
   const vendorId = vendorIdOf(vendorIdOrName)
   const best = store
     .filter((r) => r.transactionType === 'purchase' && r.status === 'active' && inPeriod(r, isoDate))
-    .map((rule) => ({ rule, tier: tierOf(rule) }))
-    .filter((c): c is { rule: PriceRule; tier: PurchaseRuleTier } =>
+    .map((rule) => ({ rule, tier: tierOf(rule), outlet: (rule.warehouses ?? []).length > 0 }))
+    .filter((c): c is { rule: PriceRule; tier: PurchaseRuleTier; outlet: boolean } =>
       c.tier !== null
+      && (!c.outlet || (warehouse !== '' && c.rule.warehouses.includes(warehouse)))
       && (c.rule.contactIds.length === 0 || c.rule.contactIds.includes(vendorId))
       && (c.rule.productIds.length === 0 || c.rule.productIds.includes(productId)))
-    .sort((a, b) => a.tier - b.tier || b.rule.createdAt.localeCompare(a.rule.createdAt) || b.rule.id.localeCompare(a.rule.id))[0]
+    .sort((a, b) => Number(b.outlet) - Number(a.outlet) || a.tier - b.tier || b.rule.createdAt.localeCompare(a.rule.createdAt) || b.rule.id.localeCompare(a.rule.id))[0]
   if (!best) return null
   const raw = best.rule.ruleType === 'value'
     ? (unitCost > 0 ? Math.round((best.rule.amount / unitCost) * 10_000) / 100 : 0)
     : best.rule.amount
-  return { rule: best.rule, tier: best.tier, discountPct: Math.min(raw, 100) }
+  return { rule: best.rule, tier: best.tier, outletSpecific: best.outlet, discountPct: Math.min(raw, 100) }
 }
 
 /** true = PKP, false = Non-PKP, null = not set (tax follows the product). */
@@ -246,4 +261,11 @@ export function purchasePkpConflict(
 /** Is a tax label a PPN (VAT) tax — the only kind a Non-PKP vendor removes? */
 export function isPpnTax(taxLabel: string): boolean {
   return /^PPN\b/i.test(taxLabel.trim())
+}
+
+/** English source label for the note: "Outlet · Vendor + product" when the
+ *  rule is outlet-specific. Render each part through t(). */
+export function purchaseRuleTierParts(match: PurchaseRuleMatch): string[] {
+  const tier = PURCHASE_RULE_TIER_LABEL[match.tier]
+  return match.outletSpecific ? ['Outlet', tier] : [tier]
 }

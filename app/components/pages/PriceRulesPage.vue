@@ -11,6 +11,9 @@
  *   look for first.
  * - The row menu has no "View details" (index-page-format): there is no detail
  *   page — the rule name opens the edit form.
+ *
+ * Outlets column: purchase rules may target outlet warehouses (empty = all
+ * outlets); sales rules have no outlets, so their cell stays blank.
  */
 import { computed, onMounted, ref } from 'vue'
 import {
@@ -42,6 +45,7 @@ const columns: TableColumn[] = [
   { key: 'name', label: t('Rule name'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'transactionType', label: t('Transaction type'), kind: 'default' },
   { key: 'contacts', label: t('Customers / vendors'), kind: 'default' },
+  { key: 'outlets', label: t('Outlets'), kind: 'default' },
   { key: 'products', label: t('Products'), kind: 'default' },
   { key: 'discount', label: t('Discount'), kind: 'amount' },
   { key: 'period', label: t('Period'), kind: 'default' },
@@ -59,6 +63,13 @@ function contactsSummary(r: PriceRule): string {
   const base = n === 1 ? t('1 vendor') : `${n} ${t('vendors')}`
   if (r.vendorPkp === null) return base
   return `${base} · ${r.vendorPkp ? t('PKP') : t('Non-PKP')}`
+}
+/** Purchase only: 'All outlets' / the outlet name / 'N outlets'. Sales → blank. */
+function outletsSummary(r: PriceRule): string {
+  if (r.transactionType !== 'purchase') return ''
+  const w = r.warehouses ?? []
+  if (!w.length) return t('All outlets')
+  return w.length === 1 ? w[0]! : `${w.length} ${t('outlets')}`
 }
 function productsSummary(r: PriceRule): string {
   const n = r.productIds.length
@@ -85,6 +96,9 @@ interface PriceRuleRow extends Record<string, unknown> {
   name: string
   transactionType: string
   contacts: string
+  outlets: string
+  /** Outlet names, lower-cased — search target (the cell may only show a count). */
+  outletNames: string
   products: string
   discount: string
   period: string
@@ -100,6 +114,8 @@ const allRows = computed<PriceRuleRow[]>(() => (scenario.value === 'empty' ? [] 
   name: r.name,
   transactionType: r.transactionType,
   contacts: contactsSummary(r),
+  outlets: outletsSummary(r),
+  outletNames: (r.warehouses ?? []).join(' ').toLowerCase(),
   products: productsSummary(r),
   discount: discountLabel(r),
   period: periodLabel(r),
@@ -113,7 +129,8 @@ const {
 } = useTableState<PriceRuleRow>(rows, {
   perPage: 25,
   filterFn: (row, s) =>
-    !s || row.name.toLowerCase().includes(s) || row.contacts.toLowerCase().includes(s),
+    !s || row.name.toLowerCase().includes(s) || row.contacts.toLowerCase().includes(s)
+    || row.outlets.toLowerCase().includes(s) || row.outletNames.includes(s),
 })
 
 const hasActiveFilter = computed(() => !!search.value.trim() || !!typeFilter.value)
@@ -201,6 +218,10 @@ const asRule = (row: unknown) => row as PriceRuleRow
 
     <template #cell-transactionType="{ value }">
       {{ t(PRICE_RULE_TRANSACTION_TYPE_LABEL[value as 'sales' | 'purchase']) }}
+    </template>
+
+    <template #cell-outlets="{ value }">
+      <span data-devchange="purchase-price-rule-outlets">{{ value }}</span>
     </template>
 
     <template #cell-status="{ value }">

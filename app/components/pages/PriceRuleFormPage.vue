@@ -15,6 +15,10 @@
  * Non-PKP (PPN not applied, PPh untouched). A vendor must keep the same PKP status
  * on every rule — saving is blocked inline while `purchasePkpConflict` finds a
  * clash. Rule changes only affect new transactions.
+ *
+ * Outlets (purchase only): a company can run several outlets that buy at
+ * different prices; outlet = the transaction's warehouse. Empty = every outlet;
+ * an outlet-specific rule beats an all-outlet rule (resolvePurchaseRule).
  */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import {
@@ -30,6 +34,7 @@ import { customers } from '~/data/customers'
 import { products } from '~/data/products'
 import { contacts } from '~/data/contacts'
 import { contactGroups } from '~/data/contactGroups'
+import { WAREHOUSES } from '~/data/purchaseOrderDetails'
 import {
   priceRuleById, createPriceRule, updatePriceRule, emptyPriceRuleInput,
   purchasePkpConflict, vendorPkpStatus,
@@ -72,6 +77,7 @@ const initial: PriceRuleInput = editing.value
       productIds: [...editing.value.productIds],
       contactIds: [...editing.value.contactIds],
       vendorPkp: editing.value.vendorPkp,
+      warehouses: [...(editing.value.warehouses ?? [])],
       startDate: editing.value.startDate,
       endDate: editing.value.endDate,
       status: editing.value.status,
@@ -84,6 +90,8 @@ const ruleType = ref<PriceRuleType>(initial.ruleType)
 const amount = ref(initial.amount ? String(initial.amount) : '')
 const contactIds = ref<string[]>([...initial.contactIds])
 const productIds = ref<string[]>([...initial.productIds])
+/** Purchase only — outlet warehouse names; [] = every outlet. */
+const warehouseIds = ref<string[]>([...(initial.warehouses ?? [])])
 /** UI state of the PKP checkbox; saved as null when no vendor is picked. */
 const pkpChecked = ref(initial.vendorPkp ?? true)
 /** Active period — optional here (prototype rules are open-ended); null = always. */
@@ -120,6 +128,8 @@ const isTierType = computed(() => ['tier', 'subtotal_tier', 'end_discount'].incl
 const contactOptions = computed<PriceRulePickOption[]>(() =>
   (isPurchase.value ? vendors : customers).map(c => ({ id: c.id, name: c.name })),
 )
+/** Outlets = warehouses; the warehouse name doubles as the id (rules store names). */
+const outletOptions: PriceRulePickOption[] = WAREHOUSES.map(w => ({ id: w, name: w }))
 const productOptions: PriceRulePickOption[] = products.map(p => ({ id: p.id, name: p.name, subtitle: p.code }))
 
 /** Customer contact groups → member customers. The contact master (CT…) and the
@@ -154,6 +164,7 @@ const pickedProducts = computed(() =>
 // ── Drawers ──────────────────────────────────────────────────────────────────────
 const contactDrawerOpen = ref(false)
 const productDrawerOpen = ref(false)
+const outletDrawerOpen = ref(false)
 
 function onContactsSave(ids: string[]) {
   const hadNone = contactIds.value.length === 0
@@ -169,6 +180,8 @@ function onContactsSave(ids: string[]) {
 function removeContact(id: string) { contactIds.value = contactIds.value.filter(x => x !== id); pkpError.value = '' }
 function onProductsSave(ids: string[]) { productIds.value = ids }
 function removeProduct(id: string) { productIds.value = productIds.value.filter(x => x !== id) }
+function onOutletsSave(ids: string[]) { warehouseIds.value = ids }
+function removeOutlet(id: string) { warehouseIds.value = warehouseIds.value.filter(x => x !== id) }
 
 function onTransactionTypeChange(v: string) {
   const next = (v || 'sales') as PriceRuleTransactionType
@@ -176,6 +189,7 @@ function onTransactionTypeChange(v: string) {
   transactionType.value = next
   contactIds.value = []
   productIds.value = []
+  warehouseIds.value = []
   pkpError.value = ''
   pkpChecked.value = true
   if (!PRICE_RULE_TYPES_BY_TRANSACTION[next].includes(ruleType.value)) ruleType.value = PRICE_RULE_TYPES_BY_TRANSACTION[next][0]!
@@ -213,7 +227,7 @@ const contactCopy = computed(() => isPurchase.value
 
 // ── Unsaved changes guard ──────────────────────────────────────────────────────
 function snapshot(): string {
-  return JSON.stringify([name.value, transactionType.value, ruleType.value, amount.value, contactIds.value, productIds.value, pkpChecked.value, period.value?.map(dateToIso) ?? null, isActive.value])
+  return JSON.stringify([name.value, transactionType.value, ruleType.value, amount.value, contactIds.value, productIds.value, warehouseIds.value, pkpChecked.value, period.value?.map(dateToIso) ?? null, isActive.value])
 }
 const initialSnapshot = snapshot()
 const { disableGuard } = useUnsavedChangesGuard({ hasUnsavedChanges: () => !notFound.value && snapshot() !== initialSnapshot })
@@ -255,6 +269,7 @@ async function handleSave() {
     productIds: productIds.value,
     contactIds: contactIds.value,
     vendorPkp: pkp,
+    warehouses: isPurchase.value ? [...warehouseIds.value] : [],
     startDate: dateToIso(period.value?.[0]),
     endDate: dateToIso(period.value?.[1]),
     status: isActive.value ? 'active' : 'inactive',
@@ -335,7 +350,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               />
               <p class="prf-caption">
                 {{ typeSwitchNote
-                  ? t('Customers, vendors and products were cleared because the transaction type changed.')
+                  ? t('Customers, vendors, outlets and products were cleared because the transaction type changed.')
                   : t('Sales rules apply to customers. Purchase rules apply to vendors.') }}
               </p>
             </MpFormControl>
@@ -459,6 +474,40 @@ onUnmounted(() => { stageObserver?.disconnect() })
           </MpFormControl>
         </section>
 
+        <!-- ═══ Outlets (purchase only; outlet = the transaction's warehouse) ═══ -->
+        <section v-if="isPurchase" id="prf-outlets" class="prf-section" data-devchange="purchase-price-rule-outlets">
+          <header class="prf-section-head">
+            <h2 class="prf-section-title">{{ t('Outlets') }}</h2>
+            <p class="prf-section-caption">{{ t('Select the outlet warehouses this pricing applies to. Leave empty to apply to every outlet. A rule for a specific outlet takes priority over an all-outlet rule.') }}</p>
+          </header>
+
+          <div v-if="!warehouseIds.length" class="prf-empty">
+            <img src="/illustrations/empty-folder.png" alt="" class="prf-empty-img" width="140" height="120" />
+            <p class="prf-empty-title">{{ t('No outlets') }}</p>
+            <p class="prf-empty-caption">{{ t('Outlets will appear here. Leave empty to apply the rule to all outlets.') }}</p>
+            <MpButton id="prf-add-outlets" class="prf-empty-cta" variant="secondary" is-rounded left-icon="add" @click="outletDrawerOpen = true">{{ t('Add outlets') }}</MpButton>
+          </div>
+          <div v-else class="prf-picked">
+            <div class="prf-picked-head">
+              <span class="prf-picked-count">{{ warehouseIds.length }} {{ t('selected') }}</span>
+              <MpButton id="prf-add-outlets" variant="secondary" is-rounded left-icon="add" @click="outletDrawerOpen = true">{{ t('Add outlets') }}</MpButton>
+            </div>
+            <table class="prf-table">
+              <thead><tr><th>{{ t('Outlet warehouse') }}</th><th class="prf-table-act" /></tr></thead>
+              <tbody>
+                <tr v-for="(w, i) in warehouseIds" :key="w">
+                  <td>{{ w }}</td>
+                  <td class="prf-table-act">
+                    <MpTooltip :id="`prf-rm-outlet-${i}`" :label="t('Remove')" placement="top" use-portal>
+                      <MpButton class="prf-remove" variant="ghost" type="button" :aria-label="t('Remove')" @click="removeOutlet(w)"><MpIcon name="minus-circular" size="sm" /></MpButton>
+                    </MpTooltip>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <!-- ═══ Products ═══ -->
         <section id="prf-products" class="prf-section">
           <header class="prf-section-head">
@@ -524,6 +573,19 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :groups-empty-title="t('No contact groups')"
       :groups-empty-caption="t('Customer groups with members will appear here.')"
       @save="onContactsSave"
+    />
+    <PriceRuleSelectDrawer
+      v-if="!notFound && isPurchase"
+      id="prf-outlets-drawer"
+      v-model:open="outletDrawerOpen"
+      :title="t('Select outlets')"
+      :list-title="t('Outlets')"
+      :options="outletOptions"
+      :model-value="warehouseIds"
+      :selected-title="t('Selected outlets')"
+      :empty-title="t('No selected outlets')"
+      :empty-caption="t('Selected outlets will appear here.')"
+      @save="onOutletsSave"
     />
     <PriceRuleSelectDrawer
       v-if="!notFound"

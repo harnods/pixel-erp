@@ -51,6 +51,22 @@ describe('purchase price rule engine', () => {
     deletePriceRule(r.id)
     expect(priceRules().every((x) => x.transactionType === 'purchase' || x.vendorPkp === null)).toBe(true)
   })
+  it('outlet rule beats all-outlet rules only at that outlet (DECIDED 12 Nov)', () => {
+    const at = resolvePurchaseRule('V003', 'p01', 3_200_000, undefined, 'Gudang Bandung Selatan')!
+    expect(at.rule.id).toBe('PRL-105')
+    expect(at.outletSpecific).toBe(true)
+    expect(at.discountPct).toBe(12)
+    const other = resolvePurchaseRule('V003', 'p01', 3_200_000, undefined, 'Gudang Jakarta Pusat')!
+    expect(other.rule.id).toBe('PRL-102')
+    expect(other.outletSpecific).toBe(false)
+    expect(resolvePurchaseRule('V003', 'p01', 3_200_000)!.rule.id).toBe('PRL-102')
+  })
+  it('outlet rule outranks a more specific all-outlet tier', () => {
+    // Bandung outlet + vendor-only would still beat all-outlet vendor + product
+    const r = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'Bandung all', amount: 2, contactIds: ['V003'], warehouses: ['Gudang Bandung Selatan'] })
+    expect(resolvePurchaseRule('V003', 'p13', 85_000_000, undefined, 'Gudang Bandung Selatan')!.rule.id).toBe(r.id)
+    deletePriceRule(r.id)
+  })
   it('PPN detection', () => {
     expect(isPpnTax('PPN 11%')).toBe(true)
     expect(isPpnTax('PPh 23 2%')).toBe(false)

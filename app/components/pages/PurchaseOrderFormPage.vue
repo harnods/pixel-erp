@@ -180,7 +180,7 @@ const vendorPkp = computed(() => vendorPkpStatus(vendor.value))
 function productIdOf(name: string): string { return products.find(pp => pp.name === name)?.id ?? '' }
 function applyPurchaseRule(line: POLine) {
   const hadRule = !!line.ruleMatch
-  const m = resolvePurchaseRule(vendor.value, productIdOf(line.product), line.unitCost, txDateIso.value)
+  const m = resolvePurchaseRule(vendor.value, productIdOf(line.product), line.unitCost, txDateIso.value, warehouse.value)
   line.ruleMatch = m
   if (line.discountManual) return
   if (m) line.discountPct = m.discountPct
@@ -199,6 +199,13 @@ function applyVendorPkp(line: POLine) {
 watch(vendor, () => {
   allLines.value.forEach((line) => { applyPurchaseRule(line); applyVendorPkp(line) })
 })
+/** Warehouse = outlet: a user pick re-resolves every line like a vendor change
+ *  (manual discounts stay). Wired to the field's update event, not a watcher,
+ *  so prefill / duplicate never re-prices. */
+function onWarehousePick(v: unknown) {
+  warehouse.value = String(v ?? '')
+  allLines.value.forEach((line) => applyPurchaseRule(line))
+}
 function onDiscountInput(line: POLine, v: unknown) {
   const n = Number(v)
   line.discountPct = n
@@ -595,7 +602,7 @@ function onSendToFulfillment() {
             <!-- prod order: Transaction no. → Warehouse → Reference no. -->
             <MpFormControl id="f-warehouse" class="po-field">
               <MpFormLabel>Warehouse</MpFormLabel>
-              <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" />
+              <MpAutocomplete id="f-warehouse-inp" :model-value="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" @update:model-value="onWarehousePick" />
             </MpFormControl>
 
             <MpFormControl id="f-ref" class="po-field">

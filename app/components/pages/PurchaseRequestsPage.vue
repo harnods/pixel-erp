@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpBanner, MpBannerIcon, MpBannerDescription, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -21,6 +21,7 @@ import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from 
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import { infoToast } from '~/utils/toasts'
 import type { PurchaseRequest } from '~/data'
+import { canViewPurchaseRequest, isPurchaseRequestSelfOnly } from '~/data/purchaseRequestAccess'
 
 const toggleAirene = inject<() => void>('toggleAirene')
 const { t } = useLocale()
@@ -49,9 +50,14 @@ const columns: TableColumn[] = [
 const previewMode = ref<'data' | 'empty'>('data')
 
 // ─── Rows — newest request first (transactional log), awaiting subset on that tab ──
+// Restricted (outlet) persona — "Restrict access to view purchases created by
+// other users": the list is self-only. Other personas see every request.
+const selfOnly = computed(() => isPurchaseRequestSelfOnly())
+const visibleRequests = computed<PurchaseRequest[]>(() => purchaseRequests.filter(canViewPurchaseRequest))
+
 const rows = computed<PurchaseRequest[]>(() => {
   if (previewMode.value === 'empty') return []
-  const list = [...purchaseRequests].sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number)
+  const list = [...visibleRequests.value].sort((a, b) => b.date.localeCompare(a.date) || b.number - a.number)
   return isAwaiting.value ? list.filter(pr => pr.awaitingApproval) : list
 })
 
@@ -67,7 +73,7 @@ const keywordColumns = [
   { key: 'procurementStaff', label: t('Procurement staff') },
   { key: 'tags',             label: t('Tags')              },
 ]
-const tagOptions = computed(() => [...new Set(purchaseRequests.flatMap(pr => pr.tags ?? []))].sort())
+const tagOptions = computed(() => [...new Set(visibleRequests.value.flatMap(pr => pr.tags ?? []))].sort())
 
 function applyDrawerFilters(v: PurchaseRequestFiltersValue) { Object.assign(appliedFilters, v) }
 
@@ -292,6 +298,14 @@ const exportColumns = computed(() => [
       </MpPopover>
     </template>
 
+    <!-- ── Self-only notice (restricted outlet persona) ── -->
+    <template v-if="selfOnly" #stats>
+      <MpBanner id="pr-self-only-banner" variant="info" is-inline class="pr-self-only-banner" data-devchange="pr-self-only-outlet">
+        <MpBannerIcon id="pr-self-only-banner-icon" />
+        <MpBannerDescription id="pr-self-only-banner-desc">{{ t('You only see purchase requests you created.') }}</MpBannerDescription>
+      </MpBanner>
+    </template>
+
     <!-- ── Filter bar ── -->
     <template #filters>
       <!-- Left: Status select + All filters -->
@@ -385,7 +399,8 @@ const exportColumns = computed(() => [
       <div class="empty-full">
         <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
         <p class="empty-full-title">{{ t('No purchase requests') }}</p>
-        <p class="empty-full-desc">{{ t('Purchase requests will appear here.') }}</p>
+        <p v-if="selfOnly" class="empty-full-desc" data-devchange="pr-self-only-outlet">{{ t('Purchase requests you create will appear here.') }}</p>
+        <p v-else class="empty-full-desc">{{ t('Purchase requests will appear here.') }}</p>
         <MpButton variant="secondary" left-icon="add" is-rounded @click="navigateTo('/purchase-requests/new')">{{ t('New purchase request') }}</MpButton>
       </div>
     </template>
@@ -469,6 +484,9 @@ const exportColumns = computed(() => [
   border-radius: var(--mp-radii-sm); color: var(--mp-text-subtle);
 }
 .row-kebab:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-default); }
+
+/* Self-only notice sits in the stats slot, above the filter bar. */
+.pr-self-only-banner { width: 100%; }
 
 /* ── Full empty state ───────────────────────────────────────────────────── */
 .empty-full { display: flex; flex-direction: column; align-items: center; }
