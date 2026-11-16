@@ -803,7 +803,9 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
           @update:model-value="(v: string) => setQuickFilter('signal', v)"
         />
 
-        <MpButton variant="secondary" class="filter-all-btn" left-icon="filter" @click="filtersOpen = true">
+        <!-- rule/filter-bar-all-filters-drawer + rule/btn-secondary-black: the standard
+             secondary pill (dark border-bold, default text) — no page-scoped restyle. -->
+        <MpButton variant="secondary" left-icon="filter" is-rounded class="filter-all-btn" data-devchange="replenishment-all-filters-standard" @click="filtersOpen = true">
           {{ t('All filters') }}<template v-if="drawerFilterCount"> ({{ drawerFilterCount }})</template>
         </MpButton>
       </div>
@@ -845,19 +847,13 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
       <!-- A PO has one ship-to. Requesting across warehouses would fan out into many
            POs, so it is only offered for a single-warehouse selection. Covered-by-
            inbound rows have nothing to order (suggested qty 0), so no request there. -->
-      <template v-if="selectionHasOrderable(selectedRows as Set<number>)">
-        <span v-if="selectionSpansWarehouses(selectedRows as Set<number>)" class="rp-bulk-info">
-          <MpIcon name="info" size="sm" />
-          {{ t('Select replenishment from the same warehouse to create a purchase request.') }}
-        </span>
-        <MpButton
-          v-else
-          variant="secondary"
-          size="sm"
-          is-rounded
-          @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
-        >{{ t('Request to purchase') }}</MpButton>
-      </template>
+      <MpButton
+        v-if="selectionHasOrderable(selectedRows as Set<number>) && !selectionSpansWarehouses(selectedRows as Set<number>)"
+        variant="secondary"
+        size="sm"
+        is-rounded
+        @click="bulkCreatePr(selectedRows as Set<number>, deselectAll)"
+      >{{ t('Request to purchase') }}</MpButton>
       <MpButton
         v-if="canManageReplenishment"
         data-devchange="replenishment-view-only"
@@ -866,6 +862,15 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
         is-rounded
         @click="askBulkMute(selectedRows as Set<number>, deselectAll)"
       >{{ t('Mute replenishment') }}</MpButton>
+      <!-- Multi-warehouse selection: the action (Mute) comes first, then the guidance. -->
+      <span
+        v-if="selectionHasOrderable(selectedRows as Set<number>) && selectionSpansWarehouses(selectedRows as Set<number>)"
+        class="rp-bulk-info"
+        data-devchange="replenishment-bulk-info-order"
+      >
+        <MpIcon name="info" size="sm" />
+        {{ t('Select replenishment from the same warehouse to create a purchase request.') }}
+      </span>
     </template>
 
     <!-- ── Product ── -->
@@ -1244,14 +1249,6 @@ const aireneToggle = inject<(() => void) | null>('toggleAirene', null)
 /* ── Filter bar (mirrored from CycleCountRecommendationPage) ── */
 .filter-left { display: flex; align-items: center; gap: var(--mp-spacing-2); }
 .filter-right { display: flex; align-items: center; gap: var(--mp-spacing-2); margin-left: auto; }
-.filter-all-btn {
-  display: inline-flex; align-items: center; gap: var(--mp-spacing-1\.5);
-  padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
-  border: 1px solid var(--mp-border-default, #e3e7e9); border-radius: var(--mp-radii-full);
-  background: var(--mp-background-neutral, #ffffff); color: var(--mp-text-default);
-  font-size: var(--mp-font-sizes-md); cursor: pointer;
-}
-.filter-all-btn:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 .filter-search {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);

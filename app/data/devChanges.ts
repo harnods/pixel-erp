@@ -28,6 +28,30 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'replenishment-all-filters-standard',
+    title: 'Replenishment: "All filters" is the standard secondary pill button',
+    description:
+      'The worklist\'s All filters button now renders exactly like every other index page (rule/filter-bar-all-filters-drawer, rule/btn-secondary-black): MpButton secondary, rounded, filter icon, with the dark neutral border and default text. The page-scoped restyle (light border, custom padding) was removed.',
+    date: '2026-11-16',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
+    id: 'replenishment-bulk-info-order',
+    title: 'Replenishment: bulk bar shows "Mute replenishment" before the same-warehouse hint',
+    description:
+      'When the selection spans warehouses, the bulk bar now leads with the Mute replenishment action and puts the "Select replenishment from the same warehouse…" guidance after it. Single-warehouse selections keep Request to purchase + Mute replenishment.',
+    date: '2026-11-16',
+    files: ['ReplenishmentPage.vue'],
+  },
+  {
+    id: 'replenishment-settings-toggle-left',
+    title: 'Replenishment settings: "Track for replenishment" toggle sits left of its label',
+    description:
+      'Per rule/form-toggle-inline, the product replenishment settings drawer now shows the toggle on the left with the title and hint to its right (12px gap, top-aligned) instead of the label left / toggle far right layout. Turning tracking off still asks for confirmation on save.',
+    date: '2026-11-16',
+    files: ['SkuReplenishmentSettingsDrawer.vue'],
+  },
+  {
     id: 'product-main-category',
     title: 'Products: tickbox multi-select categories; tap a chip to set the main (primary) one',
     description:
