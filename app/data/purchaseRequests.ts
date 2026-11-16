@@ -2,6 +2,8 @@ import { reactive } from 'vue'
 import type { PurchaseRequest, PurchaseRequestLine, PurchaseRequestStatus, UrgencyLevel } from './types'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { CATALOG } from './catalog'
+import { vendors } from './vendors'
+import { vendorItemsForVendor, preferredVendorItem } from './vendorItems'
 
 /**
  * Mock purchase requests for the coffee business — 100 records generated
@@ -10,7 +12,16 @@ import { CATALOG } from './catalog'
  * snapshot so any future create/edit survives a refresh and `resetDb()` clears it.
  */
 
-const SNAPSHOT_KEY = 'purchase-requests-v2'
+// Bumped to v4 — every PR is now scoped to ONE vendor (1 PR = 1 vendor), and its
+// lines are drawn from that vendor's supplied products so a conversion to PO is
+// clean. Still seeds a replenishment origin on ~1 in 4 requests (Source column).
+const SNAPSHOT_KEY = 'purchase-requests-v5'
+
+// Vendors that actually supply products (have vendor-items) — services vendors
+// like PLN/Telkom have none, so a PR is never bound to them.
+const SUPPLIER_VENDORS = vendors.filter(v => vendorItemsForVendor(v.id).length > 0)
+
+function catalogBySku(sku: string) { return CATALOG.find(p => p.sku === sku) }
 
 // Procurement staff pool — the Figma placeholders plus a couple more, so the
 // column reads like a small procurement team.
@@ -36,23 +47,28 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-// Deterministic requested lines drawn from the shared product catalog, so the
-// PO form's accordion can group real products under each request.
-function buildLines(i: number, count: number): PurchaseRequestLine[] {
+// Deterministic requested lines drawn from ONE vendor's supplied products, so a
+// PR is coherent (1 PR = 1 vendor) and converts cleanly to a PO.
+function buildLinesForVendor(i: number, count: number, vendorId: string): PurchaseRequestLine[] {
+  const skus = vendorItemsForVendor(vendorId).map(vi => vi.sku)
+  if (!skus.length) return []
   const lines: PurchaseRequestLine[] = []
-  for (let j = 0; j < count; j++) {
-    const p = CATALOG[(i * 5 + j * 7) % CATALOG.length]!
+  const n = Math.min(count, skus.length)      // distinct SKUs, capped by the vendor's range
+  const start = i % skus.length
+  for (let j = 0; j < n; j++) {
+    const sku = skus[(start + j) % skus.length]!
+    const p = catalogBySku(sku)
     const requestedQty = 5 + ((i + j * 3) % 96)          // 5..100
     // Available is often short of requested (that's why a PO is raised).
     const availableQty = Math.round(requestedQty * ((j % 4) / 4))
     lines.push({
-      product: p.name,
-      sku: p.sku,
-      description: p.desc,
+      product: p?.name ?? sku,
+      sku,
+      description: p?.desc ?? '',
       requestedQty,
       availableQty,
-      unit: p.unit,
-      unitCost: p.price,
+      unit: p?.unit ?? 'Pcs',
+      unitCost: p?.price ?? 0,
       taxLabel: 'PPN 11%',
     })
   }
@@ -68,8 +84,9 @@ function build(): PurchaseRequest[] {
     const status = STATUSES[i % STATUSES.length]!
     const date = addDays('2026-01-02', i)         // one request per day
     const requiredDate = addDays(date, 21 + (i % 10))
-    const totalProducts = 2 + (i % 9)
-    const lines = buildLines(i, totalProducts)
+    const vendor = SUPPLIER_VENDORS[i % SUPPLIER_VENDORS.length]!
+    const lines = buildLinesForVendor(i, 2 + (i % 9), vendor.id)
+    const totalProducts = lines.length
 
     out.push({
       id: `PR${String(i + 1).padStart(3, '0')}`,
@@ -79,12 +96,84 @@ function build(): PurchaseRequest[] {
       requiredDate,
       status,
       totalProducts,
+      vendor: { id: vendor.id, name: vendor.name },
       urgency: URGENCY[i % URGENCY.length]!,
       tags: TAG_SETS[i % TAG_SETS.length],
       attachment: i % 6 === 0,
       // A handful sit in the approval queue (open requests awaiting sign-off).
       awaitingApproval: status === 'open' && i % 20 === 3,
+      // ~1 in 4 was raised by the replenishment worklist rather than by hand, so
+      // the Source column has both origins to show. (Runtime-created PRs from the
+      // worklist carry the full origin; this seed only needs it flagged.)
+      ...(i % 4 === 0
+        ? {
+            replenishment: {
+              source: 'replenishment' as const,
+              asOf: '2026-06-26',
+              runNo: 1,
+              warehouseId: 'wh-001',
+              createdBy: STAFF[i % STAFF.length]!,
+              lines: [],
+            },
+          }
+        : {}),
       lines,
+    })
+  }
+
+  // A few PRs that are GENUINELY partial requests raised from the replenishment worklist
+  // (US-030), so the "Requested qty" column is non-zero and realistic out of the box: an
+  // OPEN PR whose origin.lines attribute a PARTIAL qty (< the line's suggested) to a real
+  // SKU × warehouse. finalQty is deliberately well under the typical suggested qty, so
+  // Requested never exceeds Suggested from seed data.
+  const PARTIALS: { idx: number; sku: string; warehouseId: string; finalQty: number }[] = [
+    { idx: 101, sku: '1101', warehouseId: 'wh-001', finalQty: 40 },
+    { idx: 102, sku: '1003', warehouseId: 'wh-001', finalQty: 50 },
+    { idx: 103, sku: '1105', warehouseId: 'wh-009', finalQty: 20 },
+  ]
+  for (const pt of PARTIALS) {
+    const p = catalogBySku(pt.sku)
+    const vi = preferredVendorItem(pt.sku)
+    const vendor = (vi && vendors.find(v => v.id === vi.vendorId)) ?? SUPPLIER_VENDORS[0]!
+    const line: PurchaseRequestLine = {
+      product: p?.name ?? pt.sku, sku: pt.sku, description: p?.desc ?? '',
+      requestedQty: pt.finalQty, availableQty: 0, unit: p?.unit ?? 'Pcs',
+      unitCost: p?.price ?? 0, taxLabel: 'PPN 11%',
+    }
+    out.push({
+      id: `PR${String(pt.idx).padStart(3, '0')}`,
+      number: 90000 + pt.idx,
+      date: '2026-06-22',
+      procurementStaff: STAFF[0]!,
+      requiredDate: '2026-07-13',
+      status: 'open',
+      totalProducts: 1,
+      vendor: { id: vendor.id, name: vendor.name },
+      urgency: 'medium',
+      tags: ['Replenishment'],
+      replenishment: {
+        source: 'replenishment' as const,
+        asOf: '2026-06-26',
+        runNo: 1,
+        warehouseId: pt.warehouseId,
+        createdBy: STAFF[0]!,
+        lines: [{
+          sku: pt.sku,
+          recommendedQty: pt.finalQty,
+          finalQty: pt.finalQty,
+          deviation: 0,
+          suggestedVendorId: vi?.vendorId ?? null,
+          leadTimeDays: vi?.leadTimeDays ?? 14,
+          leadTimeTier: 'computed',
+          safetyDays: 7,
+          coverageDays: 14,
+          avgDailySales: 0,
+          reorderPoint: 0,
+          available: 0,
+          onOrder: 0,
+        }],
+      },
+      lines: [line],
     })
   }
   return out
@@ -106,7 +195,10 @@ export function awaitingPurchaseRequestCount(): number {
 
 export function addPurchaseRequest(data: Omit<PurchaseRequest, 'id' | 'number'> & { number?: number }): PurchaseRequest {
   const number = data.number ?? (Math.max(90000, ...purchaseRequests.map(p => p.number)) + 1)
-  const pr: PurchaseRequest = { ...data, id: `PR${String(purchaseRequests.length + 1).padStart(3, '0')}`, number }
+  // Next id = highest existing + 1, never `length + 1`: after a delete the length
+  // shrinks and `length + 1` re-issues an id that still exists.
+  const maxId = Math.max(0, ...purchaseRequests.map(p => Number(p.id.replace(/^PR/, '')) || 0))
+  const pr: PurchaseRequest = { ...data, id: `PR${String(maxId + 1).padStart(3, '0')}`, number }
   purchaseRequests.unshift(pr)
   persist()
   return pr

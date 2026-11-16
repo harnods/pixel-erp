@@ -70,6 +70,9 @@ function measure() {
   const chips = Array.from(el.querySelectorAll<HTMLElement>('[id^="erp-tag-"]'))
   const visible = chips.filter((c) => c.offsetTop + c.offsetHeight <= maxHeight + 1).length
   hiddenCount.value = Math.max(0, chips.length - visible)
+  // Taller than two rows but nothing actually hidden (e.g. a lone chip in a narrow
+  // column) is not overflow — never show "View 0 more".
+  if (hiddenCount.value === 0) overflowing.value = false
 }
 
 onMounted(() => {
@@ -88,7 +91,7 @@ watch(() => props.tags, () => nextTick(measure))
 
 <template>
   <div v-if="tags?.length" ref="rootEl" class="erp-tags" :class="{ 'erp-tags--count-based': countBased }">
-    <MpTag v-for="(tag, i) in visibleTags" :id="`erp-tag-${i}`" :key="tag">{{ tag }}</MpTag>
+    <MpTag v-for="(tag, i) in visibleTags" :id="`erp-tag-${i}`" :key="tag" :title="tag">{{ tag }}</MpTag>
 
     <MpPopover
       v-if="overflowing"
@@ -159,6 +162,17 @@ watch(() => props.tags, () => nextTick(measure))
 .erp-tags--count-based {
   overflow: visible;
 }
+
+/* A chip is one line: in a narrow column it truncates with an ellipsis instead of
+   breaking its label mid-word onto a second line. */
+.erp-tags :deep(.mp-tag__root) {
+  max-width: 100%; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* MpTag lays its label out as flex, where an ellipsis cannot apply — make the chip an
+   inline block (the label is plain text) so a too-long label truncates. */
+.erp-tags :deep(.mp-tag__root:not(:has(> *:not(:empty)))) { display: inline-block !important; line-height: var(--mp-sizes-6, 24px); }
+.erp-tags :deep(.mp-tag__root p) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block !important; }
 
 /* "More" link masks the end of line 2; bg matches the row (inherits hover bg) */
 .erp-tags-more {

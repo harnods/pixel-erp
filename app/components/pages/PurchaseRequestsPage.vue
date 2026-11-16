@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import {
   MpButton, MpButtonGroup, MpPopover, MpPopoverTrigger, MpPopoverContent,
-  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, toast, css,
+  MpPopoverList, MpPopoverListItem, MpIcon, MpTooltip, MpBadge, toast, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
@@ -15,6 +15,9 @@ import ScenarioFab from '~/components/patterns/ScenarioFab.vue'
 import ExportModal from '~/components/patterns/ExportModal.vue'
 import CopyLinkDrawer from '~/components/patterns/CopyLinkDrawer.vue'
 import ShareViaEmailModal from '~/components/patterns/ShareViaEmailModal.vue'
+import ConvertPrToPoModal from '~/components/patterns/ConvertPrToPoModal.vue'
+import BulkConvertPrToPoModal from '~/components/patterns/BulkConvertPrToPoModal.vue'
+import { convertPurchaseRequestToPos, convertPurchaseRequestsToPos, canConvertPurchaseRequest } from '~/data/replenishmentDraftPo'
 import { formatDate } from '~/utils/date'
 import PurchaseRequestFiltersDrawer, { emptyPurchaseRequestFilters, type PurchaseRequestFiltersValue } from '~/components/patterns/PurchaseRequestFiltersDrawer.vue'
 import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data'
@@ -23,7 +26,7 @@ import { infoToast } from '~/utils/toasts'
 import type { PurchaseRequest } from '~/data'
 
 const toggleAirene = inject<() => void>('toggleAirene')
-const { t } = useLocale()
+const { t, tf } = useLocale()
 const route = useRoute()
 const router = useRouter()
 
@@ -38,6 +41,7 @@ const columns: TableColumn[] = [
   { key: 'number',           label: t('Number'),           width: '208px', /* purchases-only: fits "Purchase <doc> #xxxxx" */ sortable: true,                 sortType: 'number' },
   { key: 'attachment',       label: '',                    width: '52px',  noHeader: true, align: 'center' },
   { key: 'procurementStaff', label: t('Procurement staff'), kind: 'name', sortable: true,                sortType: 'text'   },
+  { key: 'source',           label: t('Source'),           kind: 'status'                                                     },
   { key: 'requiredDate',     label: t('Required date'),    kind: 'date',                                   sortType: 'date'   },
   { key: 'status',           label: t('Status'),           kind: 'status',                                 sortType: 'text'   },
   { key: 'totalProducts',    label: t('Total products'),                                   sortable: true,  sortType: 'number' },
@@ -173,11 +177,83 @@ function clearFilters() {
 }
 
 // ─── Row actions ───────────────────────────────────────────────────────────────
-// Create purchase order → opens the PO form pre-loaded with this request's items
-// (grouped in the accordion table). Wired at the router level in [...slug].vue.
-const createPurchaseOrderFromRequests = inject<(ids: string[]) => void>('createPurchaseOrderFromRequests')
+// Create purchase order → opens the conversion modal, where the requested qty is
+// rounded to the chosen vendor's MOQ & purchase multiplier before the draft PO is
+// raised (PRD D12 / US-019). Works for replenishment and manual requests alike.
+// Only whoever holds purchase-order creation access can do this (US-020 AC-03): the
+// actions are hidden for everyone else, and the handlers refuse as a second line.
+const { canCreatePurchaseOrders } = usePurchasingAccess()
+const convertOpen = ref(false)
+const convertPr = ref<PurchaseRequest | null>(null)
 function createPurchaseOrder(pr: PurchaseRequest) {
-  createPurchaseOrderFromRequests?.([pr.id])
+  // Rule 41: a closed request, or one fully converted, has nothing left to order.
+  if (!canCreatePurchaseOrders.value || !canConvertPurchaseRequest(pr)) return
+  convertPr.value = pr
+  convertOpen.value = true
+}
+/**
+ * After a conversion the user lands on what was created — one draft opens directly,
+ * several open the Awaiting approval list — so the new order is never hard to find.
+ */
+function afterConvert(result: { created: { id: string }[]; skipped: unknown[] }) {
+  const n = result.created.length
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('Draft purchase order created') : tf('{n} draft purchase orders created', { n }),
+    ...(result.skipped.length ? { description: tf('Skipped products: {n}', { n: result.skipped.length }) } : {}),
+    maxWidth: 'max-content',
+  })
+  router.push(n === 1
+    ? { path: '/purchase-orders', query: { po: result.created[0]!.id } }
+    : { path: '/purchase-orders', query: { poTab: 'awaiting' } })
+}
+
+function confirmConvert(payload: {
+  warehouseId: string
+  vendorChoices: Record<string, string | null>
+  qtyOverrides: Record<string, number>
+}) {
+  const pr = convertPr.value
+  if (!pr) return
+  const result = convertPurchaseRequestToPos(pr, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
+  convertOpen.value = false
+  if (result.created.length === 0) {
+    toast.notify({ variant: 'error', title: t('Failed to create draft purchase order'), maxWidth: 'max-content' })
+    return
+  }
+  afterConvert(result)
+}
+
+// Bulk: merge several PRs into one PO per vendor — same-SKU lines are summed, then
+// the combined qty is rounded once to the vendor's MOQ & multiplier (US-018 / D12).
+const bulkConvertOpen = ref(false)
+const bulkConvertPrs = ref<PurchaseRequest[]>([])
+/** The bulk action is offered only when the selection has something left to order. */
+function bulkHasConvertible(selectedRows: Set<number>): boolean {
+  return (bulkSelectedRequests(selectedRows) as unknown as PurchaseRequest[]).some(canConvertPurchaseRequest)
+}
+function bulkCreatePurchaseOrder(selectedRows: Set<number>) {
+  if (!canCreatePurchaseOrders.value) return
+  // Only requests with something left to order (Rule 41) — never re-order a closed one.
+  const prs = (bulkSelectedRequests(selectedRows) as unknown as PurchaseRequest[]).filter(canConvertPurchaseRequest)
+  if (!prs.length) return
+  bulkConvertPrs.value = prs
+  bulkConvertOpen.value = true
+}
+function confirmBulkConvert(payload: {
+  warehouseId: string
+  vendorChoices: Record<string, string | null>
+  qtyOverrides: Record<string, number>
+}) {
+  const prs = bulkConvertPrs.value
+  if (!prs.length) return
+  const result = convertPurchaseRequestsToPos(prs, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
+  bulkConvertOpen.value = false
+  if (result.created.length === 0) {
+    toast.notify({ variant: 'error', title: t('Failed to create draft purchase order'), maxWidth: 'max-content' })
+    return
+  }
+  afterConvert(result)
 }
 function markCompleted(id: string) {
   updatePurchaseRequest(id, { status: 'closed', awaitingApproval: false })
@@ -280,6 +356,7 @@ const exportColumns = computed(() => [
         </MpPopoverTrigger>
         <MpPopoverContent class="erp-dropdown-menu">
           <MpPopoverList>
+            <MpPopoverListItem v-if="canCreatePurchaseOrders && bulkHasConvertible(selectedRows as Set<number>)" data-devchange="pr-create-po-permission" @click="bulkCreatePurchaseOrder(selectedRows as Set<number>)">{{ t('Create purchase order') }}</MpPopoverListItem>
             <MpPopoverListItem @click="infoToast('Not in this prototype')">{{ t('Print PDF') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openShareBulk(selectedRows as Set<number>)">{{ t('Share via email') }}</MpPopoverListItem>
             <MpPopoverListItem @click="openCopyLinks(bulkSelectedRequests(selectedRows as Set<number>).slice(0, 5))">{{ t('Copy link') }}</MpPopoverListItem>
@@ -362,6 +439,14 @@ const exportColumns = computed(() => [
       <ErpStatusBadge :status="value as string" />
     </template>
 
+    <!-- ── Cell: Source — replenishment-raised vs manual ── -->
+    <template #cell-source="{ row }">
+      <MpBadge v-if="(row as PurchaseRequest).replenishment" for="tableStatus" type="information">
+        {{ t('Replenishment') }}
+      </MpBadge>
+      <span v-else class="pr-source-manual">{{ t('Manual') }}</span>
+    </template>
+
     <!-- ── Cell: Total products ── -->
     <template #cell-totalProducts="{ value }">
       {{ value }}
@@ -399,7 +484,7 @@ const exportColumns = computed(() => [
         <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content', whiteSpace: 'nowrap' })">
           <MpPopoverList>
             <MpPopoverListItem @click="viewDetails((row as PurchaseRequest).id)">{{ t('View details') }}</MpPopoverListItem>
-            <MpPopoverListItem v-if="isProcessable(row as PurchaseRequest)" @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
+            <MpPopoverListItem v-if="canCreatePurchaseOrders && canConvertPurchaseRequest(row as PurchaseRequest)" @click="createPurchaseOrder(row as PurchaseRequest)">{{ t('Create purchase order') }}</MpPopoverListItem>
             <MpPopoverListItem v-if="isProcessable(row as PurchaseRequest)" @click="markCompleted((row as PurchaseRequest).id)">{{ t('Mark as completed') }}</MpPopoverListItem>
             <MpPopoverListItem @click="duplicate(row as PurchaseRequest)">{{ t('Duplicate') }}</MpPopoverListItem>
           </MpPopoverList>
@@ -444,6 +529,12 @@ const exportColumns = computed(() => [
   <CopyLinkDrawer :open="copyOpen" :items="copyItems" @close="copyOpen = false" @download-csv="copyOpen = false" />
   <ShareViaEmailModal :open="shareOpen" :title="shareTitle" :subject="shareSubject" :attachment-name="shareAttachment" :attachment-size-k-b="128" sender-email="rizal.candra@centralperk.co.id" @close="shareOpen = false" @send="shareOpen = false" />
 
+  <!-- ── Convert PR → draft PO (rounds requested qty to vendor MOQ & multiplier) ── -->
+  <ConvertPrToPoModal v-model:is-open="convertOpen" :pr="convertPr" @confirm="confirmConvert" />
+
+  <!-- ── Bulk: merge several PRs into one PO per vendor (sums qty, then rounds) ── -->
+  <BulkConvertPrToPoModal v-model:is-open="bulkConvertOpen" :prs="bulkConvertPrs" @confirm="confirmBulkConvert" />
+
   <!-- ── Prototype scenario FAB (bottom-right): toggle data vs empty-state view ── -->
   <ScenarioFab v-model="previewMode" />
 </template>
@@ -461,6 +552,9 @@ const exportColumns = computed(() => [
 .urgency { display: inline-flex; align-items: center; gap: var(--mp-spacing-2); }
 .urgency__ic { flex-shrink: 0; }
 .urgency__label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+
+/* Source: manual PRs read as muted text against the Replenishment badge */
+.pr-source-manual { color: var(--mp-text-subtle); }
 
 .row-kebab {
   display: inline-flex; align-items: center; justify-content: center;

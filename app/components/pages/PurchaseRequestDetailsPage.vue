@@ -1,7 +1,8 @@
 <!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/purchase-requests/views/PurchaseRequestShowView.vue + components/show/* -->
 <script setup lang="ts">
 import {
-  MpTooltip, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink, toast, css,
+  MpTooltip, MpBadge, MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpIcon, MpSpinner, MpButton, MpTextlink,
+  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, toast, css,
 } from '@mekari/pixel3'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
@@ -9,18 +10,26 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import DetailJumpTo from '~/components/patterns/DetailJumpTo.vue'
 import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import ConvertPrToPoModal from '~/components/patterns/ConvertPrToPoModal.vue'
+import {
+  convertPurchaseRequestToPos, canConvertPurchaseRequest, prLineStatus,
+} from '~/data/replenishmentDraftPo'
+import type { PurchaseRequest, PurchaseRequestLine } from '~/data/types'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getPurchaseRequestDetail } from '~/data/purchaseRequestDetails'
 import { purchaseRequests, updatePurchaseRequest, deletePurchaseRequests } from '~/data/purchaseRequests'
+import { vendorItemFor } from '~/data/vendorItems'
+import { leadTimeTierLabel } from '~/data/leadTimeHistory'
 import { infoToast } from '~/utils/toasts'
 import BudgetPRCard from '~/components/patterns/BudgetPRCard.vue'
 import { budgetPRForRequest, syncLinkedRequests } from '~/data/budgetUiPurchaseRequests'
 
 const props = defineProps<{ orderId: string }>()
 
-const { t } = useLocale()
+const { t, tf } = useLocale()
+const { canCreatePurchaseOrders } = usePurchasingAccess()
 
 // Title-bar icon actions (Task + Comment) — a purchase request has an approval flow.
 const hasApproval = true
@@ -30,6 +39,59 @@ const request = computed(() => getPurchaseRequestDetail(props.orderId))
 // The budget record behind this request (FG-3), when it has one.
 const budgetPR = computed(() => budgetPRForRequest(props.orderId))
 watchEffect(syncLinkedRequests)
+
+// ── Create purchase order (Rule 41 partial conversion) ────────────────────────
+// The same conversion modal as the list. Offered only to purchase-order creators,
+// and only while something on the request is still unconverted.
+const canConvert = computed(() => canCreatePurchaseOrders.value && canConvertPurchaseRequest(request.value))
+const convertOpen = ref(false)
+const convertPr = computed<PurchaseRequest | null>(() => purchaseRequests.find((p) => p.id === request.value.id) ?? null)
+function openConvert() { if (canConvert.value) convertOpen.value = true }
+function confirmConvert(payload: {
+  warehouseId: string
+  vendorChoices: Record<string, string | null>
+  qtyOverrides: Record<string, number>
+}) {
+  const pr = convertPr.value
+  if (!pr) return
+  const result = convertPurchaseRequestToPos(pr, payload.warehouseId, payload.vendorChoices, payload.qtyOverrides)
+  convertOpen.value = false
+  const n = result.created.length
+  if (!n) return
+  toast.notify({
+    variant: 'success',
+    title: n === 1 ? t('Draft purchase order created') : tf('{n} draft purchase orders created', { n }),
+    ...(result.skipped.length ? { description: tf('Skipped products: {n}', { n: result.skipped.length }) } : {}),
+    maxWidth: 'max-content',
+  })
+}
+
+/** Show the per-line conversion columns once anything on the request was converted. */
+const showConversion = computed(() => request.value.lines.some((l) => (l.convertedQty ?? 0) > 0))
+function lineStatus(line: PurchaseRequestLine) { return prLineStatus(request.value, line) }
+
+/**
+ * Replenishment basis per line (US-017 AC-02, US-019 AC-01, US-023): the suggested
+ * qty the requester started from, how far they moved it, and the suggested
+ * vendor's lead time / MOQ / purchase multiplier — so purchasing sees WHY this
+ * quantity was asked for without opening the worklist.
+ */
+const replenishmentBySku = computed(() => {
+  const origin = request.value.replenishment
+  const map = new Map<string, { recommended: number; deviation: number; note: string }>()
+  if (!origin) return map
+  for (const l of origin.lines) {
+    const vi = l.suggestedVendorId ? vendorItemFor(l.sku, l.suggestedVendorId) : null
+    const basis = l.leadTimeTier === 'computed' ? t('measured from receipts') : t(leadTimeTierLabel(l.leadTimeTier as never))
+    const parts = [tf('Lead time: {n} days, {basis}.', { n: l.leadTimeDays, basis })]
+    if (vi) {
+      parts.push(tf('MOQ: {n} {unit}.', { n: vi.moq, unit: vi.purchaseUnit }))
+      parts.push(tf('Purchase multiplier: {n}.', { n: vi.packSize }))
+    }
+    map.set(l.sku, { recommended: l.recommendedQty, deviation: l.deviation, note: parts.join(' ') })
+  }
+  return map
+})
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
@@ -56,7 +118,9 @@ const prActionGroups = computed<ActionItem[][]>(() => [
     // Open / partially processed requests can be completed or turned into a PO.
     { label: 'Mark as completed', show: isProcessable.value, onClick: onMarkCompleted },
     { label: 'Edit', onClick: () => { router.push(`/purchase-requests/${request.value.id}/edit`) } },
-    { label: 'Create purchase order', show: isProcessable.value, onClick: onCreatePurchaseOrder },
+    // The replenishment conversion modal (MOQ rounding, partial conversion — Rule 41):
+    // purchasing only, and only while something is left to convert.
+    { label: 'Create purchase order', show: canConvert.value, onClick: openConvert },
     { label: 'Duplicate', onClick: notInPrototype },
     { label: 'Void', onClick: notInPrototype },
     { label: 'Delete', onClick: () => { deleteOpen.value = true } },
@@ -211,6 +275,9 @@ function goBack() { router.push('/purchase-requests') }
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Transaction no.')" :value="`${t('Purchase Request')} #${request.number}`" />
+            <!-- US-023 AC-02: trace back to the worklist run that raised it. -->
+            <ContentList v-if="request.replenishment" :label="t('Replenishment run')" :value="`#${request.replenishment.runNo}`" />
+            <ContentList v-if="request.replenishment" :label="t('As of')" :value="formatDateLong(request.replenishment.asOf)" />
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Tags')">
@@ -225,6 +292,8 @@ function goBack() { router.push('/purchase-requests') }
         <!-- Row 2 (prod): Requestor | Required date | Urgency level; then local-only Department / Deliver to / Warehouse / Total products (kept) -->
         <div class="content-list-grid">
           <div class="content-list-col">
+            <!-- 1 PR = 1 vendor; a request left blank is sourced by purchasing. -->
+            <ContentList :label="t('Vendor')" :value="request.vendor?.name || t('Purchasing to source')" />
             <ContentList :label="t('Requestor')" :value="request.requestor" />
             <ContentList :label="t('Deliver to')" :value="request.deliverTo" />
           </div>
@@ -255,10 +324,15 @@ function goBack() { router.push('/purchase-requests') }
             <tr>
               <th class="detail-th">{{ t('Product') }}</th>
               <th class="detail-th">{{ t('Description') }}</th>
+              <th v-if="request.replenishment" class="detail-th detail-th--num">{{ t('Suggested qty') }}</th>
               <th class="detail-th detail-th--num">{{ t('Requested qty') }}</th>
               <th class="detail-th detail-th--num">{{ t('Processed qty') }}</th>
               <th class="detail-th detail-th--num">{{ t('Available qty') }}</th>
               <th class="detail-th">{{ t('Unit') }}</th>
+              <th class="detail-th" data-devchange="replenishment-pr-line-required-date">{{ t('Required date') }}</th>
+              <!-- Rule 41: how much of each line is already on a purchase order. -->
+              <!-- Line state once anything was converted (Rule 41); the qty itself is Processed qty. -->
+              <th v-if="showConversion" class="detail-th">{{ t('Status') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -266,16 +340,45 @@ function goBack() { router.push('/purchase-requests') }
               <td class="detail-td">
                 <div class="cell-with-action">
                   <span class="detail-item-primary">
-                    <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
+                    <span class="detail-item-nameline">
+                      <a class="cell-link detail-item-name" @click.stop>{{ it.product }}</a>
+                      <!-- US-019 AC-01: the suggested vendor's terms, on hover so rows stay compact. -->
+                      <MpTooltip
+                        v-if="replenishmentBySku.get(it.sku)"
+                        :id="`detail-tt-terms-${it.sku}`"
+                        :label="replenishmentBySku.get(it.sku)!.note"
+                        placement="top"
+                        use-portal
+                      >
+                        <MpIcon name="info" size="sm" class="detail-terms-icon" :aria-label="t('Vendor terms')" />
+                      </MpTooltip>
+                    </span>
                     <span class="detail-item-sku">{{ t('SKU') }}: {{ it.sku }}</span>
                   </span>
                 </div>
               </td>
               <td class="detail-td detail-td--muted">{{ it.description }}</td>
-              <td class="detail-td detail-td--num">{{ it.requestedQty }}</td>
-              <td class="detail-td detail-td--num">{{ request.processedQty[i] ?? 0 }}</td>
+              <td v-if="request.replenishment" class="detail-td detail-td--num detail-td--muted">
+                {{ replenishmentBySku.get(it.sku)?.recommended ?? '—' }}
+              </td>
+              <td class="detail-td detail-td--num">
+                {{ it.requestedQty }}
+                <!-- US-017 AC-02: the requester's change from the suggestion is recorded. -->
+                <MpBadge
+                  v-if="replenishmentBySku.get(it.sku)?.deviation"
+                  for="tableStatus"
+                  type="information"
+                  class="detail-item-deviation"
+                >{{ tf('{n} vs suggested', { n: (replenishmentBySku.get(it.sku)!.deviation > 0 ? '+' : '') + replenishmentBySku.get(it.sku)!.deviation }) }}</MpBadge>
+              </td>
+              <!-- Processed = already on a purchase order: the real converted qty (Rule 41)
+                   where the line has one, else the request's processed figure. -->
+              <td class="detail-td detail-td--num">{{ it.convertedQty ?? request.processedQty[i] ?? 0 }}</td>
               <td class="detail-td detail-td--num">{{ it.availableQty }}</td>
               <td class="detail-td">{{ it.unit }}</td>
+              <!-- RS-002: a line without its own date is needed by the request's date. -->
+              <td class="detail-td">{{ formatDateLong(it.requiredDate ?? request.requiredDate) }}</td>
+              <td v-if="showConversion" class="detail-td"><ErpStatusBadge :status="lineStatus(it)" badge-for="tableStatus" /></td>
             </tr>
           </tbody>
         </table>
@@ -294,7 +397,7 @@ function goBack() { router.push('/purchase-requests') }
       <section class="detail-notes">
         <div class="detail-notes-left">
           <ContentList :label="t('Memo')">
-            <p class="detail-note-text">{{ request.note }}</p>
+            <p class="detail-note-text">{{ request.note || '—' }}</p>
           </ContentList>
           <ContentList :label="`${t('Attachment')} (${request.attachments.length})`">
             <div v-if="request.attachments.length" class="detail-attach-list">
@@ -344,7 +447,7 @@ function goBack() { router.push('/purchase-requests') }
                 <tr v-for="(txn, i) in request.linkedTransactions" :key="i" class="detail-item-row">
                   <td class="detail-td">{{ formatDateNumeric(txn.date) }}</td>
                   <td class="detail-td">
-                    <a class="cell-link cell-text" @click.stop>{{ txn.type }} {{ txn.number }}</a>
+                    <a class="cell-link cell-text" @click.stop="txn.id && navigateTo({ path: '/purchase-orders', query: { po: txn.id } })">{{ txn.type }} {{ txn.number }}</a>
                   </td>
                   <td class="detail-td"><ErpStatusBadge :status="txn.status" /></td>
                   <td class="detail-td"></td>
@@ -362,6 +465,8 @@ function goBack() { router.push('/purchase-requests') }
       </div>
 
     </div><!-- /detail-stage -->
+
+    <ConvertPrToPoModal v-model:is-open="convertOpen" :pr="convertPr" @confirm="confirmConvert" />
 
     <ActivityLogModal
       :is-open="activityOpen"
@@ -707,4 +812,7 @@ function goBack() { router.push('/purchase-requests') }
   gap: var(--mp-spacing-3);
   padding-top: var(--mp-spacing-4);
 }
+.detail-item-deviation { display: flex; width: fit-content; margin: var(--mp-spacing-0\.5) 0 0 auto; }
+.detail-item-nameline { display: flex; align-items: center; gap: var(--mp-spacing-1); }
+.detail-terms-icon { flex-shrink: 0; color: var(--mp-colors-icon-default); cursor: help; }
 </style>

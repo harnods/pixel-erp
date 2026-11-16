@@ -376,6 +376,7 @@ const settingsPanelSubmenu: PanelSubItem[][] = [
     { label: 'Sales', to: 'Sales settings' },
     { label: 'Purchases', to: 'Purchase settings' },
     { label: 'Inventory', to: 'Inventory settings' },
+    { label: 'Replenishment', to: 'Replenishment settings' },
     { label: 'Warehouses', to: 'Warehouse settings' },
     { label: 'Production', to: 'Production settings' },
     { label: 'Default accounts' },
@@ -415,6 +416,7 @@ const wmsSettingsPanelSubmenu: PanelSubItem[][] = [
     // Storage locations is NOT here — it's a top-level nav item in WMS Standalone
     // (right after Cycle counts), not a settings page.
     { label: 'Inventory', to: 'Inventory settings' },
+    { label: 'Replenishment', to: 'Replenishment settings' },
     { label: 'Warehouse', to: 'Warehouse settings' },
   ],
 ]
@@ -559,6 +561,7 @@ const erpNavGroups: NavItem[][] = [
       panelSubmenu: [
         [
           { label: 'Products', to: 'Product list' },
+          { label: 'Replenishment' },
           { label: 'Categories' },
           { label: 'Variant options' },
           { label: 'Units' },
@@ -732,6 +735,7 @@ const wmsStandaloneNavGroups = computed<NavItem[][]>(() => [
       name: 'Inventory', icon: 'products',
       panelSubmenu: [[
         { label: 'Products', to: 'Product list' },
+        { label: 'Replenishment' },
         { label: 'Categories' },
         { label: 'Variant options' },
         { label: 'Units' },

@@ -1,4 +1,6 @@
+import { purchaseOrders } from '~/data/purchaseOrders'
 import { purchaseRequests } from './purchaseRequests'
+import { warehouses } from './warehouses'
 import type { PurchaseRequest } from './types'
 
 /**
@@ -18,6 +20,8 @@ export interface PRLinkedTxn {
   type: string          // "Purchase Order"
   number: string        // "#PO-40118"
   status: string        // mapped via ErpStatusBadge
+  /** Set when the row is a real record that can be opened. */
+  id?: string
 }
 
 export interface PurchaseRequestDetail extends PurchaseRequest {
@@ -59,6 +63,17 @@ function pick<T>(arr: T[], i: number): T { return arr[i % arr.length]! }
  * turned into a purchase order; open/voided requests link to nothing.
  */
 function buildLinked(pr: PurchaseRequest, idx: number): PRLinkedTxn[] {
+  // Real purchase orders converted from this request come first (US-023): the
+  // trace must work request → order, not only order → request.
+  const converted = purchaseOrders.filter((po) => {
+    const o = po.replenishment
+    return !!o && (o.purchaseRequestIds?.includes(pr.id) || o.purchaseRequestId === pr.id)
+  })
+  if (converted.length) {
+    return converted.map((po) => ({
+      date: po.date, type: 'Purchase Order', number: `#${po.number}`, status: po.status, id: po.id,
+    }))
+  }
   if (pr.status !== 'partially processed' && pr.status !== 'closed') return []
   return [{
     date: pr.date,
@@ -69,12 +84,17 @@ function buildLinked(pr: PurchaseRequest, idx: number): PRLinkedTxn[] {
 }
 
 function buildDetail(base: PurchaseRequest, idx: number): PurchaseRequestDetail {
+  // A request raised from the replenishment worklist is for one real warehouse, and
+  // carries no note — the demo chrome would otherwise name a different warehouse.
+  const replWarehouse = base.replenishment
+    ? warehouses.find((w) => w.id === base.replenishment!.warehouseId)
+    : undefined
   return {
     ...base,
     department: pick(DEPARTMENTS, idx),
-    warehouse: pick(WAREHOUSES, idx),
-    deliverTo: pick(DELIVER_TO, idx),
-    note: pick(NOTES, idx),
+    warehouse: replWarehouse?.name ?? pick(WAREHOUSES, idx),
+    deliverTo: replWarehouse?.address ?? pick(DELIVER_TO, idx),
+    note: base.replenishment ? '' : pick(NOTES, idx),
     requestor: pick(DEPARTMENTS, idx + 2),
     budgetYear: base.date.slice(0, 4),
     procurementStaffEmail: `${base.procurementStaff.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.|\.$/g, '')}@centralperk.co.id`,

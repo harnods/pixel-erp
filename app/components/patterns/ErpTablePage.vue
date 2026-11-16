@@ -66,6 +66,8 @@ export interface TableColumn {
   isFixed?: boolean  // sticky right (for a data column; actions are always sticky)
   noHeader?: boolean // render empty <th> — use for icon-only columns (e.g. attachment)
   noSkeleton?: boolean // skip the loading skeleton bar — use for layout-only columns (spacer, action columns)
+  /** Column is required: no "Hide column" in its header menu (mirror it as a disabled column-settings item). */
+  lockHide?: boolean
   /** Marks a trailing action column (e.g. an Approve + icon-button group) that must
    *  hug the right edge next to the sticky [...] column. The flexible spacer is then
    *  placed BEFORE this column instead of before the actions slot, so the whole action
@@ -391,6 +393,15 @@ function checkOverflow() {
   const w = tableWrapperEl.value
   if (!w) return
   isOverflowing.value = w.scrollWidth > w.clientWidth + 1
+  // The empty block is pinned to the VISIBLE width (see .erp-empty-pin): in a table
+  // wider than the screen it would otherwise centre in the full scroll width and sit
+  // off-screen, leaving a blank table with no explanation (rule/table-empty-state).
+  w.style.setProperty('--erp-wrapper-w', `${w.clientWidth}px`)
+}
+
+/** "product" -> "products", "company" -> "companies" for the filtered-empty title. */
+function pluralLabel(label: string): string {
+  return /[^aeiou]y$/i.test(label) ? `${label.slice(0, -1)}ies` : `${label}s`
 }
 
 // A row is "tall" when its height exceeds the single-line baseline (40px) by more
@@ -662,7 +673,7 @@ const bulkCountLabel = computed(() => {
                         <MpPopoverListItem @click="onSortOpt(col.key, 'desc')"><span class="erp-sort-opt"><MpIcon name="arrows-down" size="sm" />Z - A<MpTooltip v-if="sortKey === col.key && sortDir === 'desc'" :id="`erp-sort-reset-${col.key}-d`" label="Click to reset sort" placement="top" use-portal class="erp-sort-check-tt"><MpIcon name="check" size="sm" class="erp-sort-check" /></MpTooltip></span></MpPopoverListItem>
                       </template>
                       <div class="erp-sort-divider" />
-                      <MpPopoverListItem @click="emit('hideColumn', col.key)"><span class="erp-sort-opt"><MpIcon name="hide" size="sm" />Hide column</span></MpPopoverListItem>
+                      <MpPopoverListItem v-if="!col.lockHide" @click="emit('hideColumn', col.key)"><span class="erp-sort-opt"><MpIcon name="hide" size="sm" />Hide column</span></MpPopoverListItem>
                     </MpPopoverList>
                   </MpPopoverContent>
                 </MpPopover>
@@ -814,12 +825,19 @@ const bulkCountLabel = computed(() => {
               :colspan="totalCols"
             >
               <!-- Inline empty — search/filter eliminated all results (same illustration as
-                   the full empty state, so both empty states read consistently) -->
-              <div v-if="hasActiveFilter" class="empty-inline">
+                   the full empty state, so both empty states read consistently).
+                   Gated on search OR filter: a table whose only control is a search
+                   box (e.g. a detail-page tab) would otherwise fall through to the
+                   never-had-data slot and tell the user to create their first record
+                   when they have simply mistyped. `isFullEmpty` already counts both. -->
+              <div class="erp-empty-pin">
+              <div v-if="hasActiveFilter || hasActiveSearch" class="empty-inline">
                 <img src="/illustrations/empty-folder.png" alt="" class="empty-inline-illustration" width="288" height="240" />
-                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No ${props.filterEmptyLabel ?? 'results'} match your filters` }}</p>
+                <p class="empty-inline-title">{{ props.search ? `"${props.search}" not found` : `No ${props.filterEmptyLabel ? pluralLabel(props.filterEmptyLabel) : 'results'} match your filters` }}</p>
                 <p class="empty-inline-desc">{{ props.search ? 'Recheck the keywords you have typed and try searching again.' : 'Recheck the filters you have applied and try filtering again.' }}</p>
-                <a class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
+                <!-- Offer the reset that matches what is actually narrowing the list. -->
+                <a v-if="hasActiveFilter" class="empty-inline-clear" @click="emit('clearFilters')">Clear all filters</a>
+                <a v-else class="empty-inline-clear" @click="emit('clearSearch')">Clear search</a>
               </div>
               <slot v-else name="empty">
                 <!-- Full empty — no data ever; module supplies illustration + title + CTA -->
@@ -828,6 +846,7 @@ const bulkCountLabel = computed(() => {
                   <p class="empty-hint">There's nothing here yet.</p>
                 </div>
               </slot>
+              </div>
             </td>
           </tr>
 
@@ -910,7 +929,12 @@ const bulkCountLabel = computed(() => {
   margin-bottom: var(--mp-spacing-5);
   flex-shrink: 0;
   gap: var(--mp-spacing-3);
+  /* When the filters and the search + actions group don't fit on one line (a narrow
+     window, or a page with many filters), the right group wraps to its own line —
+     still right-aligned — instead of pushing the whole page sideways. */
+  flex-wrap: wrap;
 }
+.erp-filter-bar > :last-child { margin-left: auto; }
 
 /* Mobile — the left (filters) and right (search + actions) groups stack instead
    of colliding; the search group then takes the full row. */
@@ -1380,6 +1404,15 @@ const bulkCountLabel = computed(() => {
   padding: var(--mp-spacing-6) var(--mp-spacing-4) !important;
   height: auto;
   white-space: normal;
+}
+
+/* Sticks to the left edge of the scroll viewport and is exactly as wide as it, so
+   the block stays centred on screen however wide the table is. */
+.erp-empty-pin {
+  position: sticky;
+  left: var(--mp-spacing-4);
+  width: calc(var(--erp-wrapper-w, 100%) - 2 * var(--mp-spacing-4));
+  max-width: 100%;
 }
 
 .empty-default {

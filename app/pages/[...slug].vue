@@ -39,15 +39,18 @@ import { awaitingSalesInvoicesCount, recurringSalesInvoicesCount } from '~/data/
 import { awaitingSalesOrdersCount } from '~/data/salesOrders'
 import { awaitingSalesQuotesCount } from '~/data/salesQuotes'
 import { bills } from '~/data/bills'
-import { warehouses } from '~/data/warehouses'
 import { reviewFiles, purchaseInvoiceReviewFiles } from '~/data/reviewFiles'
 import { startUpload, uploadCenterOpen } from '~/data/uploadCenter'
 import ImportVendorInvoicesModal from '~/components/patterns/ImportVendorInvoicesModal.vue'
 import ImportSpreadsheetModal from '~/components/patterns/ImportSpreadsheetModal.vue'
 import BudgetLinesTitleActions from '~/components/patterns/BudgetLinesTitleActions.vue'
 import { useWarehouseContext } from '~/composables/useWarehouseContext'
-import { useRecommendationWarehouse } from '~/composables/useRecommendationWarehouse'
 import { getWarehouseConfig } from '~/data/warehouseConfig'
+// Needed by the cycle-count recommendation banner. Was already referenced by the
+// "recommendations are off" branch, which only escaped a crash because it returns
+// early before touching it — so that branch would 500 the moment a warehouse was
+// filtered.
+import { warehouses } from '~/data/warehouses'
 import {
   activePeriodId, periodLabelById,
   reconVersion, isPeriodFinalized, canFinalizePeriod, loadVatSetup,
@@ -62,6 +65,8 @@ const vatSetUp = computed(() => { void reconVersion.value; return !!loadVatSetup
 import { useUnsavedChangesModalState } from '~/composables/useUnsavedChangesGuard'
 import UnsavedChangesModal from '~/components/patterns/UnsavedChangesModal.vue'
 import { purchaseOrders, purchaseInvoicesAwaitingApproval } from '~/data'
+import { replenishmentDueCount, replenishmentSetupCount, replenishmentRevision } from '~/data/replenishment'
+import { employees } from '~/data/employees'
 import { loadSnapshot, saveSnapshot } from '~/data/persist'
 
 const { pageTitle, currentPageKey } = useNavigation()
@@ -227,6 +232,8 @@ const pageRegistry: Record<string, Component> = {
   'File manager':      defineAsyncComponent(() => import('~/components/pages/FileManagerPage.vue')),
   'Activity log':      defineAsyncComponent(() => import('~/components/pages/ActivityLogPage.vue')),
   'Product list':      defineAsyncComponent(() => import('~/components/pages/ProductsPage.vue')),
+  'Replenishment':     defineAsyncComponent(() => import('~/components/pages/ReplenishmentPage.vue')),
+  'Replenishment settings': defineAsyncComponent(() => import('~/components/pages/SettingsReplenishmentPage.vue')),
   'Storage locations': defineAsyncComponent(() => import('~/components/pages/StorageLocationsPage.vue')),
   'Couriers':          defineAsyncComponent(() => import('~/components/pages/CouriersPage.vue')),
   'Grades':            defineAsyncComponent(() => import('~/components/pages/GradesPage.vue')),
@@ -404,10 +411,12 @@ const NewRecurringPurchaseOrderPage = asyncPage(() => import('~/components/pages
 const PurchaseRequestDetailsPage = asyncPage(() => import('~/components/pages/PurchaseRequestDetailsPage.vue'))
 const NewPurchaseRequestPage = asyncPage(() => import('~/components/pages/NewPurchaseRequestPage.vue'))
 const ImportWarehousesPage = asyncPage(() => import('~/components/pages/ImportWarehousesPage.vue'))
+const ImportVendorTermsPage = asyncPage(() => import('~/components/pages/ImportVendorTermsPage.vue'))
 const ImportBatchUpdatePage = asyncPage(() => import('~/components/pages/ImportBatchUpdatePage.vue'))
 const NewWarehousePage = asyncPage(() => import('~/components/pages/NewWarehousePage.vue'))
 const WarehouseDetailsPage = asyncPage(() => import('~/components/pages/WarehouseDetailsPage.vue'))
 const ConfigureWarehousePage = asyncPage(() => import('~/components/pages/ConfigureWarehousePage.vue'))
+const SettingsReplenishmentPage = asyncPage(() => import('~/components/pages/SettingsReplenishmentPage.vue'))
 const StorageLocationDetailsPage = asyncPage(() => import('~/components/pages/StorageLocationDetailsPage.vue'))
 const CashManagementDetailPage = asyncPage(() => import('~/components/pages/CashManagementDetailPage.vue'))
 const CreateCashAccountPage = asyncPage(() => import('~/components/pages/CreateCashAccountPage.vue'))
@@ -503,6 +512,8 @@ const NewCountTaskPage = asyncPage(() => import('~/components/pages/NewCountTask
 const StockCountingPage = asyncPage(() => import('~/components/pages/StockCountingPage.vue'))
 const StockInOutFormPage = asyncPage(() => import('~/components/pages/StockInOutFormPage.vue'))
 const CycleCountRecommendationPage = asyncPage(() => import('~/components/pages/CycleCountRecommendationPage.vue'))
+const ReplenishmentPage = asyncPage(() => import('~/components/pages/ReplenishmentPage.vue'))
+const ReplenishmentSetupPage = asyncPage(() => import('~/components/pages/ReplenishmentSetupPage.vue'))
 const PurchaseOrderDetailPage = asyncPage(() => import('~/components/pages/PurchaseOrderDetailPage.vue'))
 const PurchaseOrderFormPage = asyncPage(() => import('~/components/pages/PurchaseOrderFormPage.vue'))
 const CreateApprovalWorkflowPage = asyncPage(() => import('~/components/pages/CreateApprovalWorkflowPage.vue'))
@@ -539,6 +550,13 @@ const TaggingRuleFormPage = asyncPage(() => import('~/components/pages/TaggingRu
 // built with; port to real routes if/when it needs deep-linking). ──────────────
 const purchaseOrdersTab = ref<'all' | 'awaiting' | 'rejected' | 'recurring'>('all')
 provide('purchaseOrdersTab', purchaseOrdersTab)
+// ?poTab= lets another page (e.g. the replenishment worklist after creating drafts)
+// land directly on the right Purchase orders tab.
+watch(() => [currentPageKey.value, route.query.poTab] as const, ([key, tab]) => {
+  if (key !== 'Purchase orders') return
+  if (tab === 'all' || tab === 'awaiting' || tab === 'rejected') purchaseOrdersTab.value = tab
+}, { immediate: true })
+
 const poAwaitingCount = computed(() => purchaseOrders.filter(o => o.status === 'draft').length)
 const poRejectedCount = computed(() => purchaseOrders.filter(o => o.status === 'rejected').length)
 const poDetailOrderId = ref<string | null>(null)
@@ -588,6 +606,13 @@ provide('closePurchaseOrderForm', () => {
   if (route.query.fromPr) router.replace({ query: { ...route.query, fromPr: undefined } })
 })
 watch(currentPageKey, () => { poDetailOrderId.value = null; poFormOpen.value = false; poFormDuplicateId.value = null; poFormRejectionBanner.value = null; poFormPrIds.value = [] })
+// ?po=<id> opens one purchase order directly — used when another page links to an
+// order (a request's linked transactions, or right after converting a request).
+// Declared AFTER the reset above so it wins when the page key changes too.
+watch(() => [currentPageKey.value, route.query.po] as const, ([key, id]) => {
+  if (key !== 'Purchase orders' || typeof id !== 'string' || !id) return
+  if (purchaseOrders.some((o) => o.id === id)) poDetailOrderId.value = id
+}, { immediate: true })
 // Open the PO form pre-loaded from purchase requests when arriving with ?fromPr
 // (runs after the reset watch above, so it wins on the same navigation).
 watch(() => [currentPageKey.value, route.query.fromPr] as const, ([key, fromPr]) => {
@@ -736,6 +761,11 @@ const { trigger: triggerXpm } = useXpmActions()
 // its own title bar). Add modules here as their detail pages get built.
 const detailMatch = computed<{ component: Component; id: string } | null>(() => {
   const segs = route.path.split('/').filter(Boolean)
+  // /replenishment-settings → a settings page that owns its title bar (breadcrumb
+  // back to Replenishment + H1 + Edit) — docs/patterns/settings-page.md.
+  if (segs.length === 1 && segs[0] === 'replenishment-settings') {
+    return { component: SettingsReplenishmentPage, id: 'settings' }
+  }
   if (segs[0] === 'get-crm') return { component: CrmLandingPage, id: '' }
   // /crm[/sub] → CRM (Qontak) level-1 pages. Each is full-bleed and owns its own
   // title bar + stage, so it renders outside the standard padded stage/title bar.
@@ -813,6 +843,9 @@ const detailMatch = computed<{ component: Component; id: string } | null>(() => 
     const id = segs[1]
     if (id === 'new') return { component: NewContactPage, id: 'new' }
     if (id && segs[2] === 'edit') return { component: NewContactPage, id }
+    // Bulk import of a vendor's ordering terms (TS-011) — a full page, not a
+    // modal: it has a preview-before-commit step with its own table.
+    if (id && segs[2] === 'import-terms') return { component: ImportVendorTermsPage, id }
     if (id) return { component: ContactDetailsPage, id }
   }
   // /cowork-chats → the full-stage Cowork chat (owns its title bar + stage).
@@ -1580,6 +1613,7 @@ const pageTabs: Record<string, string[]> = {
   'Work orders':       ['All work orders', 'Awaiting approval'],
   'Cycle counts':      ['Count task', 'Awaiting approval', 'Recommendations'],
   'Product list':      ['All products', 'Awaiting approval'],
+  'Replenishment':     ['To order', 'Needs setup'],
   // VAT reconciliation has no tabs: periods that need attention are sorted to
   // the top of the one list (VatReconciliationPeriodsPage).
   // Faktur workspaces: To match / Not reconciled / Matched are IN-PAGE tabs under
@@ -1610,6 +1644,20 @@ const currentTabCounts = computed<Record<string, number>>(() => {
   const wh = activeWarehouseFilter.value
   // WMS Overview tabs (Inbound / Outbound delivery) show no count badge.
   if (currentPageKey.value === 'Overview') return {}
+  if (currentPageKey.value === 'Replenishment') {
+    // Depend on the revision so muting/un-muting a product updates the badge —
+    // the count functions are plain reads and offer nothing else to track.
+    void replenishmentRevision.value
+    // Same scope + same functions the worklist table uses, so the badge can never
+    // disagree with the list it labels.
+    const scope = wh.length === 1 ? wh[0]! : 'all'
+    const out: Record<string, number> = {}
+    const due = replenishmentDueCount(scope === 'all' ? undefined : scope)
+    if (due) out['To order'] = due
+    const setup = replenishmentSetupCount(scope === 'all' ? undefined : scope)
+    if (setup) out['Needs setup'] = setup
+    return out
+  }
   if (currentPageKey.value === 'Inbound delivery') {
     const counts = receiptCountsByStage(wh)
     const out: Record<string, number> = {}
@@ -1908,6 +1956,12 @@ const tabComponents: Record<string, Record<string, Component>> = {
   'Product list': {
     'All products': ProductsPage,
     'Awaiting approval': ProductsPage,
+  },
+  'Replenishment': {
+    'To order': ReplenishmentPage,
+    // Not-tracked products are deliberate, so they get no tab of their own — the
+    // Needs setup tab reveals them on demand instead (see ReplenishmentSetupPage).
+    'Needs setup': () => h(ReplenishmentSetupPage, { mode: 'needs-setup' }),
   },
   'Users and roles': {
     'User list': UsersListPage,
@@ -2467,6 +2521,19 @@ function startResize(e: MouseEvent) {
         <div v-else-if="currentPageKey === 'Commitments'" class="page-title-actions">
           <button id="commitments-close-year" class="btn-enterprise btn-enterprise--secondary" @click="infoToast(t('Not in this prototype'))">
             {{ t('Close budget year') }}
+          </button>
+        </div>
+        <!-- Replenishment: the worklist is DERIVED, so there is no "+ New" primary.
+             Recalculate is the primary action, Settings the secondary. -->
+        <div v-else-if="currentPageKey === 'Replenishment'" class="page-title-actions">
+          <!-- Engineering RFC: no manual Recalculate button — a settings/SKU change
+               starts recalculation automatically and the worklist shows its progress. -->
+          <button
+            class="btn-enterprise btn-enterprise--secondary"
+            data-devchange="replenishment-import-removed"
+            @click="router.push('/replenishment-settings')"
+          >
+            {{ t('Settings') }}
           </button>
         </div>
         <div v-else-if="currentPageKey === 'Purchase requests'" class="page-title-actions">

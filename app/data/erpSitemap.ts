@@ -72,6 +72,10 @@ export const BUILT_KEYS = new Set<string>([
   'Purchase invoices',
   'Purchase orders',
   'Product list',
+  'Replenishment',
+  'Replenishment settings',
+  'To order',
+  'Needs setup',
   'Warehouses',
   'Storage locations',
   'Couriers',
@@ -184,6 +188,14 @@ const ACTIONS: Record<string, EntityAction[]> = {
     a('Import', 'partial', 'Upload bills wired; others no-op'), a('Payment details', 'partial', '→ placeholder'),
   ],
   // ── Inventory ──
+  'Replenishment': [
+    a('Worklist', 'built'), a('Why this number', 'built'),
+    a('Request to purchase', 'built'), a('Bulk request to purchase', 'built'),
+    a('Track / untrack', 'built'), a('Product settings', 'built'),
+    a('Recalculate', 'built', 'explicit action — there is no scheduler in the prototype'),
+    a('Export', 'partial', 'toast only'),
+  ],
+  'Replenishment settings': [a('Details', 'built'), a('Edit', 'built')],
   'Products': [
     a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Archive', 'partial', 'menu item no-op'),
     a('Delete', 'missing'), a('Duplicate', 'partial'), a('Import', 'partial'), a('Export', 'built'),
@@ -365,6 +377,10 @@ export const SITEMAP: SitemapModule[] = [
     module: 'Inventory',
     items: [
       leaf('Products', { to: 'Product list' }),
+      leaf('Replenishment', {
+        note: 'Tab-based worklist (To order / Needs setup).',
+        children: [leaf('To order'), leaf('Needs setup')],
+      }),
       leaf('Categories'),
       leaf('Variant options'),
       leaf('Units'),

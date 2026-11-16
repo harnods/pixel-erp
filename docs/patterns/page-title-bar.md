@@ -109,6 +109,24 @@ A page title bar is a **flex row**: the title block on the **left**, actions on 
 
 Live reference: [NewWarehousePage.vue](../../app/components/pages/NewWarehousePage.vue).
 
+### D. Settings page
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  [Module] ‹breadcrumb›                                               │
+│  [Module] settings                                  [ Edit ] / [View only]│
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- Same as Variant C on the left: a breadcrumb back to the module, directly above the H1
+  (`MpTextlink as="a"`, 12px link).
+- **Right**: the one page action. `Edit` is a secondary `MpButton` (`is-rounded`),
+  shown in view mode only; a `View only` `MpBadge for="additionalInformation"` replaces
+  it for users who can't edit. Save / Cancel live in the sticky edit-mode footer, not here.
+- Rendered via `detailMatch`. Full pattern: [settings-page.md](settings-page.md).
+
+Live reference: [SettingsReplenishmentPage.vue](../../app/components/pages/SettingsReplenishmentPage.vue).
+
 ---
 
 ## Title-bar status badge — `for="additionalInformation"`

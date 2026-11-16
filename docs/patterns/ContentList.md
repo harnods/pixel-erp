@@ -72,7 +72,7 @@ Do **not** hand-roll a horizontal key/value row with different metrics — use t
 | `value` | `string \| number` | — | Plain-text value. For rich values use the **default slot** instead. |
 | `horizontal` | `boolean` | `false` | Switch to the **horizontal** layout (label left, value right). See below. |
 
-The **default slot** overrides `value` for rich content (tags, links, multi-line).
+The **default slot** overrides `value` for rich content (tags, links, multi-line). The **`label` slot** overrides `label` when the caption needs an inline extra, such as an info icon with a tooltip (keep the text 12px/secondary; the icon is `MpIcon name="info" size="sm"` inside an `MpTooltip`).
 
 ---
 

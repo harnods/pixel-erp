@@ -4,6 +4,7 @@ import { vendors } from './vendors'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 import type { RecurringSchedule } from './salesInvoices'
 import { loadCreated, saveCreated, loadSnapshot, saveSnapshot } from './persist'
+import { CURATED_LEAD_TIME_DOCS } from './replenishmentLeadTimeDemo'
 
 /**
  * Purchase orders — a deterministic TIME SERIES spanning 1 Jan 2026 → today
@@ -66,23 +67,75 @@ function buildPurchaseOrders(): PurchaseOrder[] {
   return out.reverse() // newest first
 }
 
+// Curated closed POs behind the hero cells' real lead time (replenishmentLeadTimeDemo.ts).
+// They exist here so the lead-time trust drawer's "Export purchases (CSV)" cites POs a
+// user can actually open in Purchases.
+function buildCuratedLeadTimeOrders(): PurchaseOrder[] {
+  return CURATED_LEAD_TIME_DOCS.map((d) => ({
+    id: d.poId,
+    number: d.poNumber,
+    vendor: { id: d.vendorId, name: d.vendorName },
+    date: d.orderDate,
+    dueDate: d.receiptDate,
+    total: d.qty * d.unitCost,
+    balance: 0,
+    status: 'closed' as PurchaseOrderStatus,
+    itemCount: 1,
+    hasAttachment: false,
+    tags: ['Restock'],
+  }))
+}
+
 const K_PO = 'purchase-orders-v1'
+// User-created orders (New purchase order / Duplicate / converted from a purchase
+// request) survive a reload on top of the seed.
+const PO_CREATED_KEY = 'purchase-orders-created'
+/** The replenishment branch's earlier created-orders key — still read so nothing is lost. */
+const LEGACY_CREATED_KEY = 'purchase-orders-created-v1'
 
 export const purchaseOrders: PurchaseOrder[] = reactive<PurchaseOrder[]>(
-  loadSnapshot<PurchaseOrder>(K_PO) ?? buildPurchaseOrders(),
+  loadSnapshot<PurchaseOrder>(K_PO) ?? [...buildCuratedLeadTimeOrders(), ...buildPurchaseOrders()],
 )
+// A snapshot saved before the curated lead-time POs existed still gets them.
+for (const c of buildCuratedLeadTimeOrders()) if (!purchaseOrders.some((x) => x.id === c.id)) purchaseOrders.push(c)
+// Newest first: created orders go to the top, not the bottom of the index.
+for (const o of [...loadCreated<PurchaseOrder>(LEGACY_CREATED_KEY), ...loadCreated<PurchaseOrder>(PO_CREATED_KEY)]) {
+  if (!purchaseOrders.some((x) => x.id === o.id)) purchaseOrders.unshift(o)
+}
 
 export function persistPurchaseOrders(): void {
   saveSnapshot(K_PO, purchaseOrders)
 }
 
+/** Persist the user-created orders (their current state, e.g. after a status change). */
+export function persistCreatedPurchaseOrders(): void {
+  const ids = new Set(loadCreated<PurchaseOrder>(PO_CREATED_KEY).map((o) => o.id))
+  saveCreated(PO_CREATED_KEY, purchaseOrders.filter((o) => ids.has(o.id) || o.id.startsWith('po-new-')))
+}
 
-// User-created orders (New purchase order / Duplicate) survive a reload; the seed is untouched.
-const PO_CREATED_KEY = 'purchase-orders-created'
-for (const o of loadCreated<PurchaseOrder>(PO_CREATED_KEY)) if (!purchaseOrders.some(x => x.id === o.id)) purchaseOrders.push(o)
-export function addPurchaseOrder(order: PurchaseOrder): void {
-  purchaseOrders.push(order)
-  saveCreated(PO_CREATED_KEY, [...loadCreated<PurchaseOrder>(PO_CREATED_KEY).filter(x => x.id !== order.id), order])
+/** Next sequential id for a created order — kept clear of the `po-0NN` seed range. */
+export function nextPurchaseOrderId(): string {
+  const used = purchaseOrders.filter((o) => o.id.startsWith('po-new-')).length
+  return `po-new-${String(used + 1).padStart(3, '0')}`
+}
+
+/** Next document number, continuing the seed's `PO-2026-NNNN` sequence. */
+export function nextPurchaseOrderNumber(): string {
+  const max = purchaseOrders.reduce((m, o) => {
+    const n = parseInt(o.number.match(/(\d+)$/)?.[1] ?? '0', 10)
+    return Number.isNaN(n) ? m : Math.max(m, n)
+  }, 0)
+  return `PO-2026-${String(max + 1).padStart(4, '0')}`
+}
+
+/**
+ * Add a purchase order. `unshift`, not `push`: `purchaseOrders` is sorted
+ * newest-first, so appending would bury a brand-new order at the bottom of the index.
+ */
+export function addPurchaseOrder(order: PurchaseOrder): PurchaseOrder {
+  purchaseOrders.unshift(order)
+  saveCreated(PO_CREATED_KEY, [...loadCreated<PurchaseOrder>(PO_CREATED_KEY).filter((x) => x.id !== order.id), order])
+  return order
 }
 
 // ── Recurring Purchase Orders ──────────────────────────────────────────────────
