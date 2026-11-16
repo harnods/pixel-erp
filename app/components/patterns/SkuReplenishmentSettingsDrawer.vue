@@ -245,14 +245,15 @@ function confirmMute() {
             </div>
           </template>
 
-          <MpFormControl v-if="!readonly" id="rp-set-tracked-fc" class="rp-set-toggle-row">
+          <!-- rule/form-toggle-inline: toggle on the LEFT, label + hint on the right, 12px gap. -->
+          <MpFormControl v-if="!readonly" id="rp-set-tracked-fc" class="rp-set-toggle-row" data-devchange="replenishment-settings-toggle-left">
+            <MpToggle id="rp-set-tracked" v-model:is-checked="tracked" :aria-label="t('Track for replenishment')" aria-describedby="rp-set-tracked-hint" />
             <div class="rp-set-toggle-text">
-              <MpFormLabel>{{ t('Track for replenishment') }}</MpFormLabel>
-              <span class="rp-set-hint">
+              <MpFormLabel for="rp-set-tracked">{{ t('Track for replenishment') }}</MpFormLabel>
+              <span id="rp-set-tracked-hint" class="rp-set-hint">
                 {{ t('When off, this product never appears in the worklist for this warehouse, but a genuine stockout still raises an alert') }}
               </span>
             </div>
-            <MpToggle id="rp-set-tracked" v-model:is-checked="tracked" :aria-label="t('Track for replenishment')" />
           </MpFormControl>
 
           <!-- Reorder point and safety days sit side by side. -->
@@ -386,11 +387,12 @@ function confirmMute() {
 .rp-set-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
 
 .rp-set-toggle-row {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-4);
+  display: flex; align-items: flex-start; justify-content: flex-start; gap: var(--mp-spacing-3);
   padding-bottom: var(--mp-spacing-4);
   border-bottom: 1px solid var(--mp-border-default);
 }
-.rp-set-toggle-text { display: flex; flex-direction: column; min-width: 0; }
+.rp-set-toggle-text { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.rp-set-toggle-row > :first-child { flex-shrink: 0; }
 
 .rp-set-lead { display: flex; flex-direction: column; gap: var(--mp-spacing-1); }
 .rp-set-hint {
