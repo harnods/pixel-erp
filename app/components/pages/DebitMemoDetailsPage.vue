@@ -10,7 +10,6 @@ import {
   MpModal, MpModalContent, MpModalHeader, MpModalBody, MpModalFooter, MpModalOverlay, MpModalCloseButton,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
-import { getContactIdByName } from '~/data/contacts'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
@@ -28,6 +27,10 @@ import {
   applicationsForMemo, refundsForMemo, applicationTotal, purchaseInvoiceById,
   canDeleteDebitMemo, deleteDebitMemo, memoJournal,
 } from '~/data/debitMemos'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -113,7 +116,7 @@ const dmActionGroups = computed<ActionItem[][]>(() => [
         </nav>
         <div class="cm-titlerow-left">
           <h1 class="cm-title">{{ memoLabel(memo.number) }}</h1>
-          <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" />
+          <ErpStatusBadge :status="status" badge-for="additionalInformation" size="md" data-devchange="memo-status-open-closed" />
           <DetailJumpTo id="dmd-jump" :items="jumpItems" :aria-label="t('Switch debit memo')" :placeholder="t('Search...')" :empty-text="t('No debit memos found')" data-devchange="dm-detail-jump" @select="jumpTo" />
         </div>
       </div>
@@ -123,7 +126,7 @@ const dmActionGroups = computed<ActionItem[][]>(() => [
     <div class="cm-stage">
       <section class="cm-summary">
         <div class="cm-primary">
-          <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(vendorNameOf(memo.vendorId))}`, '_blank')">{{ vendorNameOf(memo.vendorId) }}</a></ContentList>
+          <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="openContact('vendors', vendorNameOf(memo.vendorId))" data-devchange="contact-link-open">{{ vendorNameOf(memo.vendorId) }}</a></ContentList>
           <div class="cm-primary-right">
             <div class="cm-primary-figure">
               <span class="cm-figure-label">{{ t('Available debit') }}</span>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import {
   MpButton, MpToggle, MpIcon, MpTextarea, MpAutocomplete, MpInput, MpCheckbox,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -9,6 +9,7 @@ import {
 } from '@mekari/pixel3'
 import SelectAccessDrawer from '~/components/patterns/SelectAccessDrawer.vue'
 import { crmCustomers } from '~/data/crm'
+import { salesInvoices } from '~/data/salesInvoices'
 
 const { t } = useLocale()
 
@@ -49,9 +50,74 @@ const reminders = reactive({
   excludeSpecificCustomers: false,
   excludedCustomerIds: [] as string[],
   excludeInvoices: false,
-  excludeInvoiceNumber: '',
+  excludedInvoiceIds: [] as string[],
   excludeOrders: false,
 })
+
+/**
+ * An excluded-items list stays at most VISIBLE_ROWS tall; past that it becomes
+ * its own scroll box that pulls the next PAGE_SIZE in as you reach the bottom,
+ * so a long exclusion list never pushes the rest of the settings off screen.
+ * Same observer-on-a-sentinel approach as ViewSerialDrawer.
+ */
+const EXCLUDE_VISIBLE_ROWS = 5
+const EXCLUDE_PAGE_SIZE = 10
+
+function useCappedList(source: () => string[]) {
+  const shown = ref(EXCLUDE_PAGE_SIZE)
+  const loadingMore = ref(false)
+  const boxEl = ref<HTMLElement | null>(null)
+  const sentinelEl = ref<HTMLElement | null>(null)
+  let observer: IntersectionObserver | null = null
+
+  const total = computed(() => source().length)
+  const isScrollable = computed(() => total.value > EXCLUDE_VISIBLE_ROWS)
+  const visible = computed(() => source().slice(0, shown.value))
+  const hasMore = computed(() => shown.value < total.value)
+
+  function loadMore() {
+    if (loadingMore.value || !hasMore.value) return
+    loadingMore.value = true
+    setTimeout(() => {
+      shown.value = Math.min(shown.value + EXCLUDE_PAGE_SIZE, total.value)
+      loadingMore.value = false
+      // The sentinel sits at the bottom of the box and often stays intersecting
+      // after a page loads; IntersectionObserver only reports transitions, so
+      // without re-arming here the second page never requests a third.
+      nextTick(setupObserver)
+    }, 300)
+  }
+
+  function setupObserver() {
+    observer?.disconnect()
+    if (!boxEl.value || !sentinelEl.value) return
+    observer = new IntersectionObserver(
+      entries => { if (entries[0]!.isIntersecting) loadMore() },
+      { root: boxEl.value, rootMargin: '0px 0px 80px 0px' },
+    )
+    observer.observe(sentinelEl.value)
+  }
+
+  // Re-arm whenever the list appears or its length changes (add/remove).
+  watch(total, () => {
+    if (shown.value > total.value) shown.value = Math.max(EXCLUDE_PAGE_SIZE, total.value)
+    nextTick(setupObserver)
+  })
+  watch(isScrollable, () => nextTick(setupObserver))
+  onMounted(() => nextTick(setupObserver))
+  onUnmounted(() => observer?.disconnect())
+
+  return { shown, loadingMore, boxEl, sentinelEl, total, isScrollable, visible, hasMore, setupObserver }
+}
+
+const {
+  boxEl: custBoxEl, sentinelEl: custSentinelEl, loadingMore: custLoadingMore,
+  total: custTotal, isScrollable: custScrollable, visible: custVisible,
+} = useCappedList(() => reminders.excludedCustomerIds)
+const {
+  boxEl: invBoxEl, sentinelEl: invSentinelEl, loadingMore: invLoadingMore,
+  total: invTotal, isScrollable: invScrollable, visible: invVisible,
+} = useCappedList(() => reminders.excludedInvoiceIds)
 
 const customerPickerOpen = ref(false)
 const customerOptions = computed(() =>
@@ -70,7 +136,26 @@ function toggleExcludeCustomers() {
 }
 function toggleApplyInvoices() {
   reminders.applyToSalesInvoices = !reminders.applyToSalesInvoices
-  if (!reminders.applyToSalesInvoices) { reminders.excludeInvoices = false; reminders.excludeInvoiceNumber = '' }
+  if (!reminders.applyToSalesInvoices) { reminders.excludeInvoices = false; reminders.excludedInvoiceIds = [] }
+}
+function toggleExcludeInvoices() {
+  reminders.excludeInvoices = !reminders.excludeInvoices
+  if (!reminders.excludeInvoices) reminders.excludedInvoiceIds = []
+}
+const invoicePickerOpen = ref(false)
+const invoiceOptions = computed(() =>
+  salesInvoices.map(i => ({ id: i.id, name: `${t('Sales Invoice')} #${i.number}`, subtitle: i.customer.name })),
+)
+function onInvoicePickerSave(ids: string[]) {
+  reminders.excludedInvoiceIds = ids
+  invoicePickerOpen.value = false
+}
+function removeExcludedInvoice(iid: string) {
+  reminders.excludedInvoiceIds = reminders.excludedInvoiceIds.filter(id => id !== iid)
+}
+function invoiceLabelOf(iid: string) {
+  const inv = salesInvoices.find(i => i.id === iid)
+  return inv ? `${t('Sales Invoice')} #${inv.number}` : iid
 }
 function toggleApplyOrders() {
   reminders.applyToSalesOrders = !reminders.applyToSalesOrders
@@ -480,14 +565,26 @@ const openMenuId = ref<string | null>(null)
                   <span>{{ t('Exclude specific customers') }}</span>
                 </label>
                 <div v-if="reminders.excludeSpecificCustomers" class="ss-exclude-sub">
-                  <ul v-if="reminders.excludedCustomerIds.length > 0" class="ss-excluded-list">
-                    <li v-for="cid in reminders.excludedCustomerIds" :key="cid" class="ss-excluded-list-item">
-                      <span class="ss-excluded-list-name">{{ crmCustomers.find(c => c.id === cid)?.company ?? cid }}</span>
-                      <MpTooltip :label="t('Remove')">
-                        <MpButton variant="ghost" size="sm" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeExcludedCustomer(cid)" />
-                      </MpTooltip>
-                    </li>
-                  </ul>
+                  <div
+                    v-if="custTotal > 0"
+                    ref="custBoxEl"
+                    class="ss-excluded-box"
+                    :class="{ 'ss-excluded-box--scroll': custScrollable }"
+                  >
+                    <ul class="ss-excluded-list">
+                      <li v-for="cid in custVisible" :key="cid" class="ss-excluded-list-item">
+                        <span class="ss-excluded-list-name">{{ crmCustomers.find(c => c.id === cid)?.company ?? cid }}</span>
+                        <MpTooltip :label="t('Remove')">
+                          <MpButton variant="ghost" size="sm" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeExcludedCustomer(cid)" />
+                        </MpTooltip>
+                      </li>
+                    </ul>
+                    <div ref="custSentinelEl" aria-hidden="true" class="ss-excluded-sentinel" />
+                    <p v-if="custLoadingMore" class="ss-excluded-loading">{{ t('Loading…') }}</p>
+                  </div>
+                  <p v-if="custScrollable" class="ss-excluded-count">
+                    {{ t('Showing') }} {{ custVisible.length }} {{ t('of') }} {{ custTotal }} {{ t('customers') }}
+                  </p>
                   <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" size="sm" @click="customerPickerOpen = true">{{ t('Add customer') }}</MpButton>
                 </div>
               </div>
@@ -495,19 +592,31 @@ const openMenuId = ref<string | null>(null)
               <!-- Exclude invoices — only shown when Apply to Sales Invoices is checked -->
               <div v-if="reminders.applyToSalesInvoices" class="ss-exclude-item">
                 <label class="ss-checkbox-row">
-                  <MpCheckbox id="ss-excl-invoices" :is-checked="reminders.excludeInvoices" @change="reminders.excludeInvoices = !reminders.excludeInvoices" />
+                  <MpCheckbox id="ss-excl-invoices" :is-checked="reminders.excludeInvoices" @change="toggleExcludeInvoices" />
                   <span>{{ t('Exclude invoices') }}</span>
                 </label>
                 <div v-if="reminders.excludeInvoices" class="ss-exclude-sub">
-                  <div class="ss-exclude-select">
-                    <MpAutocomplete
-                      id="ss-excl-invoice-select"
-                      v-model="reminders.excludeInvoiceNumber"
-                      :data="[]"
-                      :placeholder="t('Select invoice number')"
-                      use-portal
-                    />
+                  <div
+                    v-if="invTotal > 0"
+                    ref="invBoxEl"
+                    class="ss-excluded-box"
+                    :class="{ 'ss-excluded-box--scroll': invScrollable }"
+                  >
+                    <ul class="ss-excluded-list">
+                      <li v-for="iid in invVisible" :key="iid" class="ss-excluded-list-item">
+                        <span class="ss-excluded-list-name">{{ invoiceLabelOf(iid) }}</span>
+                        <MpTooltip :label="t('Remove')">
+                          <MpButton variant="ghost" size="sm" left-icon="minus-circular" :aria-label="t('Remove')" @click="removeExcludedInvoice(iid)" />
+                        </MpTooltip>
+                      </li>
+                    </ul>
+                    <div ref="invSentinelEl" aria-hidden="true" class="ss-excluded-sentinel" />
+                    <p v-if="invLoadingMore" class="ss-excluded-loading">{{ t('Loading…') }}</p>
                   </div>
+                  <p v-if="invScrollable" class="ss-excluded-count">
+                    {{ t('Showing') }} {{ invVisible.length }} {{ t('of') }} {{ invTotal }} {{ t('invoices') }}
+                  </p>
+                  <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary" size="sm" @click="invoicePickerOpen = true">{{ t('Add invoice') }}</MpButton>
                 </div>
               </div>
 
@@ -771,6 +880,19 @@ const openMenuId = ref<string | null>(null)
       @update:open="customerPickerOpen = $event"
       @save="onCustomerPickerSave"
     />
+
+    <!-- ── Invoice select drawer for Exclude invoices ───────────────────── -->
+    <SelectAccessDrawer
+      :open="invoicePickerOpen"
+      :title="t('Select invoices')"
+      :list-title="t('Invoices')"
+      :options="invoiceOptions"
+      :model-value="reminders.excludedInvoiceIds"
+      :empty-title="t('No invoice selected')"
+      :empty-caption="t('Select invoices from the list to exclude them from reminders.')"
+      @update:open="invoicePickerOpen = $event"
+      @save="onInvoicePickerSave"
+    />
   </div>
 </template>
 
@@ -1007,21 +1129,49 @@ const openMenuId = ref<string | null>(null)
   gap: var(--mp-spacing-1);
 }
 
+/* Up to 5 rows the list is plain; past that it becomes its own scroll box so a
+   long exclusion list never pushes the rest of the settings off screen. The
+   max-height is 5 rows plus their gaps, measured off .ss-excluded-list-item. */
+.ss-excluded-box {
+  --ss-excl-row: var(--mp-sizes-9, 36px);
+  margin-bottom: var(--mp-spacing-2);
+}
+.ss-excluded-box--scroll {
+  /* Exactly 5 rows plus their gaps and the box's own padding. */
+  max-height: calc(5 * var(--ss-excl-row) + 4 * var(--mp-spacing-1) + 2 * var(--mp-spacing-2));
+  overflow-y: auto;
+  border: 1px solid var(--mp-border-default, #e3e7e9);
+  border-radius: var(--mp-radii-lg, 8px);
+  padding: var(--mp-spacing-2);
+}
+.ss-excluded-box--scroll .ss-excluded-list { margin-bottom: 0; }
+.ss-excluded-sentinel { height: 1px; }
+.ss-excluded-loading {
+  margin: var(--mp-spacing-2) 0 0;
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+.ss-excluded-count {
+  margin: 0 0 var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm);
+  color: var(--mp-text-secondary);
+}
+
 .ss-excluded-list-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1) 0;
+  /* Fixed so the scroll box's 5-row cap below is exact, not a guessed pixel
+     height — the row height and the cap read the same token. */
+  min-height: var(--ss-excl-row);
+  box-sizing: border-box;
 }
 
 .ss-excluded-list-name {
   font-size: var(--mp-font-sizes-md);
   color: var(--mp-text-default);
-}
-
-.ss-exclude-select {
-  max-width: var(--mp-sizes-60, 240px); /* pixel-police-allow: form field width cap */
 }
 
 /* ─── Modal ─────────────────────────────────────────────────────────────── */

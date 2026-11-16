@@ -1,10 +1,13 @@
+<!-- prod-parity: quickbook/app/services/reports/report_authorization_service.rb (business_overview_tab) + jurnal-frontend-app/src/pages/reports/index/i18n.json -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { MpButton } from '@mekari/pixel3'
-// Reports → Financials index (Reports module → Financials submenu). Lists the
-// financial reports; each "View report" opens its report page. Same flush
-// edge-to-edge card grid as the Sales reports index (SalesReportsIndexPage) —
-// Pixel 3 DT 2.4 enterprise tokens.
+// Reports → Financials index (page key 'Financial report'). Card order follows prod's
+// ERP report list for this tab; titles and descriptions are prod's English copy.
+// Same flush edge-to-edge card grid as every Reports index: cards fill the stage
+// width as an equal-column grid, the last row is padded with empty filler cells so
+// the grid stays a complete rectangle, and the outer right + bottom borders are
+// clipped so the rightmost column never shows a border.
 import { infoToast } from '~/utils/toasts'
 
 const { t } = useLocale()
@@ -14,20 +17,24 @@ interface ReportCard {
   slug: string
   title: string
   description: string
+  /** Route of the built report; cards without one show "Not in this prototype". */
+  to?: string
+  /** Button label when prod's card action is not "View report". */
+  action?: string
 }
 const reports: ReportCard[] = [
-  { slug: 'profit-and-loss',    title: 'Profit & loss',    description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
-  { slug: 'balance-sheet',      title: 'Balance sheet',    description: "A snapshot of your company's financial position—including assets, liabilities, and equity—at a specific point in time." },
-  { slug: 'cash-flows',         title: 'Cash flows',       description: 'Tracks the movement of cash in and out of your business to help you analyze liquidity and cash availability.' },
-  { slug: 'general-ledger',     title: 'General ledger',   description: 'A complete record of all transactions posted to your accounts, sorted by date. Useful for detailed transaction auditing.' },
-  { slug: 'trial-balance',      title: 'Trial balance',    description: 'A summary of closing balances for all accounts in your chart of accounts to ensure debits and credits match.' },
-  { slug: 'journal-report',     title: 'Journal report',   description: 'Displays the chronological record of all journal entries, showing the debits and credits affected by each transaction.' },
-  { slug: 'executive-summary',  title: 'Executive summary', description: 'A high-level overview of key financial ratios and performance indicators designed for business owners and stakeholders.' },
-  { slug: 'changes-in-equity',  title: 'Statement of changes in equity', description: "Details the changes in the owner's equity throughout the period, including capital injections and retained earnings." },
-  { slug: 'budget-variance',    title: 'Budget variance',  description: 'Compares your actual financial performance against your planned budget to identify overspending or revenue gaps.' },
-  { slug: 'budget-manager',     title: 'Budget manager',   description: 'Set up and manage monthly or yearly budgets for your income and expense accounts.' },
-  { slug: 'anomaly-detection',  title: 'Anomaly detection', description: 'Identifies potential anomalies in transactions and accounts based on AI analysis, such as unusual amounts, excessive data changes, etc.' },
-  { slug: 'multidimensional',   title: 'Multidimensional', description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.' },
+  { slug: 'balance-sheet', title: 'Balance sheet', description: 'A snapshot of your company\'s financial position—including assets, liabilities, and equity—at a specific point in time.', to: '/financial-report/balance-sheet' },
+  { slug: 'general-ledger', title: 'General ledger', description: 'A complete record of all transactions posted to your accounts, sorted by date. Useful for detailed transaction auditing.', to: '/financial-report/general-ledger' },
+  { slug: 'profit-and-loss', title: 'Profit & loss', description: 'Displays your total income, expenses, and net profit over a specific period. Essential for understanding business performance.', to: '/financial-report/profit-and-loss' },
+  { slug: 'journal', title: 'Journal', description: 'Shows all journal entries for each transaction in a certain period. You can track transactions that go into each account.' },
+  { slug: 'cash-flows', title: 'Cash flow', description: 'Tracks the movement of cash in and out of your business to help you analyze liquidity and cash availability.', to: '/financial-report/cash-flows' },
+  { slug: 'trial-balance', title: 'Trial balance', description: 'Shows balances of each account, including opening balance, movement, and ending balance in a certain period.', to: '/financial-report/trial-balance' },
+  { slug: 'statement-of-changes-in-equity', title: 'Statement of changes in equity', description: 'Shows owner\'s equity changes or movements in a certain period.' },
+  { slug: 'executive-summary', title: 'Executive summary', description: 'Shows the summary of main financial report and its insight in a certain period.' },
+  { slug: 'budget-variance', title: 'Profit & loss budgeting', description: 'Shows the comparison between actual transaction amount and arranged budget per account.', to: '/financial-report/budget-variance' },
+  { slug: 'budget-report', title: 'Budget vs actual', description: 'Shows budget, reserved, committed, actual and available for each budget line, tied to the general ledger.', to: '/budget-report' },
+  { slug: 'budget-management', title: 'Budget management', description: 'Allows you to set and manage the budget for expenses and income of this company.' },
+  { slug: 'multidimensional', title: 'Multidimensional', description: 'Shows your profit & loss for each branch, project, or other dimension in a certain period.', to: '/financial-report/multidimensional' },
 ]
 
 const MIN_CARD_WIDTH = 260
@@ -54,15 +61,9 @@ onMounted(async () => {
 })
 onUnmounted(() => ro?.disconnect())
 
-const BUILT: Record<string, string> = {
-  multidimensional: '/financial-report/multidimensional',
-  'general-ledger': '/financial-report/general-ledger',
-  'budget-variance': '/financial-report/budget-variance',
-}
 function viewReport(r: ReportCard) {
-  const to = BUILT[r.slug]
-  if (to) router.push(to)
-  else infoToast(`${t(r.title)} report — coming soon`)
+  if (r.to) router.push(r.to)
+  else infoToast(t('Not in this prototype'))
 }
 </script>
 
@@ -74,7 +75,7 @@ function viewReport(r: ReportCard) {
           <h2 class="report-card-title">{{ t(r.title) }}</h2>
           <p class="report-card-desc">{{ t(r.description) }}</p>
         </div>
-        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t('View report') }}</MpButton>
+        <MpButton variant="secondary" is-rounded class="report-view-btn" @click="viewReport(r)">{{ t(r.action ?? 'View report') }}</MpButton>
       </div>
       <!-- Empty filler cells keep the last row's columns present (complete grid). -->
       <div v-for="n in fillerCount" :key="`filler-${n}`" class="report-card report-card--filler" aria-hidden="true" />

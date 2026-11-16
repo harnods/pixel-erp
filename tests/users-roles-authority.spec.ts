@@ -9,9 +9,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   AUTHORITY_ACTIONS, AUTHORITY_FEATURES, SYSTEM_ROLES, accountUsers,
-  authorityActionsFor, authorityRowKeys, customRoles,
+  authorityActionsFor, authorityFeaturesFor, authorityRowKeys, customRoles,
   getCustomRole, getSystemRole, systemRolesFor, userRoleNames, userRoleTypes,
 } from '~/data/usersRoles'
+import { ID_TRANSLATIONS } from '~/data/translations'
 
 describe('authority feature catalogue', () => {
   it('has unique feature ids and unique row keys across the whole matrix', () => {
@@ -41,25 +42,45 @@ describe('authority feature catalogue', () => {
   })
 })
 
-// The feature-level Project Accounting gate (authorityFeaturesFor + a
-// `project-accounting` feature carrying five subfeatures) was removed in
-// b0686289, which replaced AUTHORITY_FEATURES wholesale with the real 3-level
-// Figma hierarchy — that matrix has no project-accounting row and the helper
-// went with it. Its four tests were left behind asserting a model that no
-// longer exists.
-//
-// The gate that DID survive is role-level: Project Manager carries
-// requiresProjectAccounting and systemRolesFor() filters on it. That is covered
-// by "is offered only when the tenant has the Project Accounting component"
-// below, so nothing is lost here.
+describe('Project Accounting is gated on the billing component', () => {
+  const projectAccounting = AUTHORITY_FEATURES.find((f) => f.id === 'project-accounting')
 
-describe('Project Manager is a predefined (existing) role', () => {
+  it('carries the five project sub-features', () => {
+    expect(projectAccounting).toBeDefined()
+    expect(projectAccounting!.subfeatures.map((s) => s.label)).toEqual([
+      'Project setup',
+      'Cost tracking',
+      'Recognition and billing',
+      'Addenda',
+      'Project health',
+    ])
+  })
+
+  it('is offered when the tenant has the component', () => {
+    const ids = authorityFeaturesFor(true).map((f) => f.id)
+    expect(ids).toContain('project-accounting')
+  })
+
+  it('is dropped entirely — not shown-disabled — when the tenant does not', () => {
+    const ids = authorityFeaturesFor(false).map((f) => f.id)
+    expect(ids).not.toContain('project-accounting')
+    // Every other feature still stands.
+    expect(ids.length).toBe(AUTHORITY_FEATURES.length - 1)
+  })
+
+  it('leaves ungated features untouched either way', () => {
+    const ungated = AUTHORITY_FEATURES.filter((f) => !f.requiresProjectAccounting).map((f) => f.id)
+    expect(authorityFeaturesFor(false).map((f) => f.id)).toEqual(ungated)
+  })
+})
+
+describe('Project manager is a predefined (existing) role', () => {
   const pm = getSystemRole('project-manager')
 
   it('lives in the existing-role catalogue, not in custom roles', () => {
     expect(pm).toBeDefined()
-    expect(pm!.name).toBe('Project Manager')
-    expect(customRoles.some((r) => r.name === 'Project Manager')).toBe(false)
+    expect(pm!.name).toBe('Project manager')
+    expect(customRoles.some((r) => r.name === 'Project manager')).toBe(false)
   })
 
   it('describes what it can do and can be access-limited and time-limited', () => {
@@ -78,9 +99,18 @@ describe('Project Manager is a predefined (existing) role', () => {
   it('reads as an Existing role — not Custom — on a user who holds it', () => {
     const holder = accountUsers.find((u) => u.systemRoleIds.includes('project-manager'))
     expect(holder, 'no seeded user carries the role, so the list never shows it').toBeDefined()
-    expect(userRoleNames(holder!)).toContain('Project Manager')
+    expect(userRoleNames(holder!)).toContain('Project manager')
     expect(userRoleTypes(holder!)).toContain('existing')
     expect(userRoleTypes(holder!)).not.toContain('custom')
+  })
+})
+
+describe('Project accounting copy is translated (rule/copy-id-translations)', () => {
+  it('has an Indonesian string for the role and every permission row', () => {
+    const pa = AUTHORITY_FEATURES.find((f) => f.id === 'project-accounting')!
+    const pm = getSystemRole('project-manager')!
+    const strings = [pm.name, ...pm.permissions, pm.accessLimitation!, pa.label, ...pa.subfeatures.map((s) => s.label)]
+    for (const s of strings) expect(ID_TRANSLATIONS[s], `no translation for "${s}"`).toBeTruthy()
   })
 })
 

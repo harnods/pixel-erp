@@ -13,8 +13,14 @@
  *   <ScenarioFab v-model="scenario" :scenarios="[...]" /> // extra scenarios
  * where each scenario is { label, value }. Defaults map Default→'data',
  * Empty state→'empty' (the shape index pages already switch on).
+ *
+ * Optional: `heading` labels the list, and the default slot renders extra demo
+ * controls BELOW the list (e.g. quantity steppers + a footnote — see
+ * UsersListPage's CRM seats scenario). With slot content the popover stays open
+ * on select so those controls can be used in one go.
  */
-import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, MpIcon, css } from '@mekari/pixel3'
+import { useSlots } from 'vue'
+import { MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, MpIcon } from '@mekari/pixel3'
 
 export interface Scenario { label: string; value: string }
 
@@ -22,13 +28,17 @@ withDefaults(defineProps<{
   modelValue: string
   scenarios?: Scenario[]
   ariaLabel?: string
+  heading?: string
 }>(), {
   scenarios: () => [
     { label: 'Default', value: 'data' },
     { label: 'Empty state', value: 'empty' },
   ],
   ariaLabel: 'Scenario options',
+  heading: '',
 })
+
+const slots = useSlots()
 
 defineEmits<{ 'update:modelValue': [value: string] }>()
 </script>
@@ -41,7 +51,8 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
           <MpIcon name="settings" size="md" />
         </MpButton>
       </MpPopoverTrigger>
-      <MpPopoverContent is-close-on-select :class="css({ minWidth: '220px' })">
+      <MpPopoverContent :is-close-on-select="!slots.default" class="scenario-fab-content">
+        <p v-if="heading" class="scenario-fab-heading">{{ heading }}</p>
         <MpPopoverList>
           <MpPopoverListItem
             v-for="s in scenarios"
@@ -52,6 +63,7 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
             {{ s.label }}
           </MpPopoverListItem>
         </MpPopoverList>
+        <div v-if="slots.default" class="scenario-fab-extra"><slot /></div>
       </MpPopoverContent>
     </MpPopover>
   </div>
@@ -81,6 +93,24 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
   justify-content: center;
   transition: transform 0.1s ease;
 }
+.scenario-fab-heading {
+  padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary);
+}
+.scenario-fab-extra {
+  border-top: 1px solid var(--mp-border-default, #e3e7e9);
+  padding: var(--mp-spacing-3);
+}
 .scenario-fab:hover { transform: scale(1.05); background: var(--mp-background-inverse, #080d0e) !important; }
 .scenario-fab :deep(svg) { color: var(--mp-text-inverse, #ffffff) !important; }
+</style>
+
+<!-- Unscoped: the popover content is portalled to <body>. A plain class (not a
+     Panda css() call) so the viewport cap always ships, also on the dev server. -->
+<style>
+.scenario-fab-content {
+  min-width: 220px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
 </style>

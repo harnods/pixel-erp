@@ -8,12 +8,12 @@
  * the rule configuration surface.
  */
 import { reactive } from 'vue'
-import { loadSnapshot, saveSnapshot } from './persist'
+import { loadSnapshot, saveSnapshot, loadFlag, saveFlag } from './persist'
 import { users } from './users'
 
 export type ApprovalTransactionType =
   | 'sales-invoice' | 'sales-order' | 'purchase-order' | 'purchase-invoice'
-  | 'bill' | 'stock-adjustment' | 'warehouse-transfer'
+  | 'bill' | 'stock-adjustment' | 'warehouse-transfer' | 'work-order'
 
 export const TRANSACTION_TYPE_OPTIONS: { value: ApprovalTransactionType; label: string }[] = [
   { value: 'sales-invoice',     label: 'Sales invoice' },
@@ -23,7 +23,48 @@ export const TRANSACTION_TYPE_OPTIONS: { value: ApprovalTransactionType; label: 
   { value: 'bill',              label: 'Bill' },
   { value: 'stock-adjustment',  label: 'Stock adjustment' },
   { value: 'warehouse-transfer', label: 'Warehouse transfer' },
+  { value: 'work-order',        label: 'Work order' },
 ]
+
+/**
+ * Work order approval — the production transaction types a Work order rule can gate (MVP,
+ * 2026-10-05: work order creation and material consume / return are not gated; Start work
+ * order is). Work order rules have no amount condition: their criteria are a list of these
+ * types instead, and an EMPTY list means every type requires approval. A type can belong
+ * to only ONE Work order workflow (see woCriteriaConflicts).
+ */
+export type WoTransactionType = 'start' | 'adjustment' | 'completion' | 'cancel'
+
+export const WO_TRANSACTION_TYPE_OPTIONS: { value: WoTransactionType; label: string }[] = [
+  { value: 'start',      label: 'Start work order' },
+  { value: 'adjustment', label: 'Work order adjustment' },
+  { value: 'completion', label: 'Work order completion' },
+  { value: 'cancel',     label: 'Work order cancel/close' },
+]
+
+/** Types a Work order rule covers — empty criteria means all of them. */
+export function woRuleTypes(rule: Pick<ApprovalWorkflowRule, 'woCriteria'>): WoTransactionType[] {
+  const c = rule.woCriteria ?? []
+  return c.length ? c : WO_TRANSACTION_TYPE_OPTIONS.map(o => o.value)
+}
+
+/**
+ * Work order types already covered by OTHER *active* Work order workflows, with the
+ * workflow that owns each — a type can have only one active workflow. Inactive workflows
+ * don't block a type (turning one on asks to turn the conflicting one off).
+ */
+export function woTypesTakenByOthers(excludeRuleId?: string): Map<WoTransactionType, string> {
+  const taken = new Map<WoTransactionType, string>()
+  for (const r of approvalWorkflows) {
+    if (r.id === excludeRuleId || !r.isActive || r.appliesTo !== 'transaction' || r.transactionType !== 'work-order') continue
+    for (const t of woRuleTypes(r)) if (!taken.has(t)) taken.set(t, r.name)
+  }
+  return taken
+}
+
+export function woTransactionTypeLabel(type: string): string {
+  return WO_TRANSACTION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
+}
 
 export function transactionTypeLabel(type: string): string {
   return TRANSACTION_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type
@@ -43,7 +84,8 @@ export type ProjectAction = 'project-creation' | 'variation-order' | 'milestone-
 
 export const PROJECT_ACTION_OPTIONS: { value: ProjectAction; label: string }[] = [
   { value: 'project-creation',       label: 'Project creation' },
-  { value: 'variation-order',        label: 'Variation order' },
+  // Wire id stays 'variation-order'; the product word is Addendum.
+  { value: 'variation-order',        label: 'Addendum' },
   { value: 'milestone-verification', label: 'Milestone verification' },
 ]
 
@@ -73,7 +115,7 @@ export function amountFieldVisible(appliesTo: ApprovalAppliesTo, projectAction: 
 export function amountFieldLabel(appliesTo: ApprovalAppliesTo, projectAction: ProjectAction | ''): string {
   if (appliesTo === 'transaction') return 'Amount higher than'
   if (projectAction === 'project-creation') return 'Contract value higher than'
-  if (projectAction === 'variation-order') return 'Variation delta higher than'
+  if (projectAction === 'variation-order') return 'Addendum value change higher than'
   return ''
 }
 
@@ -85,20 +127,35 @@ export function projectScopeFieldVisible(appliesTo: ApprovalAppliesTo, projectAc
   return projectAction === 'variation-order' || projectAction === 'milestone-verification'
 }
 
-/** Lightweight project directory backing the "Some projects" picker — this prototype has no
- *  Projects module yet, so this is standalone mock data (not shared with any other feature). */
+/** Project directory backing the "Some projects" picker. Ids and names are the Project
+ *  accounting engagements (projectAccounting.ts), so a rule scope resolves to a real project.
+ *  Seeded with the seed engagements; projectAccounting.ts calls syncApprovalProjects() at load
+ *  and on create so projects added later are pickable too (one-way import, no cycle). */
 export interface Project {
   id: string
   name: string
 }
 
-export const projects: Project[] = [
-  { id: 'proj-1', name: 'Menara Sudirman Renovation' },
-  { id: 'proj-2', name: 'Gudang Bekasi Expansion' },
-  { id: 'proj-3', name: 'ERP Rollout Phase 2' },
-  { id: 'proj-4', name: 'Cikarang Plant Retrofit' },
-  { id: 'proj-5', name: 'Jakarta HQ Fit-out' },
-]
+export const projects: Project[] = reactive<Project[]>([
+  { id: 'e1', name: 'Financial Statement Audit 2025' },
+  { id: 'e2', name: 'Annual Tax Consulting' },
+  { id: 'e3', name: 'Monthly Retainer' },
+  { id: 'e5', name: 'Home Terrace Renovation' },
+  { id: 'e6', name: 'Wedding Organizer — Amanda & Reza' },
+  { id: 'e7', name: 'Cikarang Warehouse Construction' },
+])
+
+/** Keep the picker in step with the engagement list (adds new, renames, drops removed). */
+export function syncApprovalProjects(list: { id: string; name: string }[]): void {
+  list.forEach((e) => {
+    const p = projects.find((x) => x.id === e.id)
+    if (p) p.name = e.name
+    else projects.push({ id: e.id, name: e.name })
+  })
+  for (let i = projects.length - 1; i >= 0; i--) {
+    if (!list.some((e) => e.id === projects[i]!.id)) projects.splice(i, 1)
+  }
+}
 
 export function getProjectById(id: string): Project | undefined {
   return projects.find((p) => p.id === id)
@@ -138,6 +195,11 @@ export interface ApprovalWorkflowRule {
    *  entirely, not shown-disabled. Stays at its default ('all' / []) for those rules. */
   createdByScope: 'all' | 'some'
   createdByUserIds: string[]
+  /** Work order rules only — gated transaction types; [] = all four. */
+  woCriteria?: WoTransactionType[]
+  /** Work order rules only — may a requester who is also an approver approve their own
+   *  request? Off by default (PRD Rev 3). */
+  allowSelfApproval?: boolean
   levels: ApprovalWorkflowLevel[]
   applyToDraft: boolean
   isActive: boolean
@@ -154,6 +216,35 @@ function idOf(name: string): string {
 function projIdOf(name: string): string {
   return projects.find((p) => p.name === name)?.id ?? ''
 }
+
+/**
+ * One seeded Work order workflow per work order transaction type, all ACTIVE: the seed
+ * also carries pending Adjustment, Completion and Cancel/close requests, so leaving those
+ * three workflows off made the demo contradict itself — the queue showed requests of a
+ * type that, on the work order, saved straight through with no approval.
+ *
+ * A type can belong to one active workflow, so creating a new workflow for one of these
+ * means turning the seeded one off first (the conflict is reported on save). Partial
+ * completion and material consume / return are out of MVP scope — not gated.
+ */
+function woSeedRule(id: string, name: string, description: string, type: WoTransactionType, levelNames: string[][], updatedAt: string, isActive = true): ApprovalWorkflowRule {
+  return {
+    id, name, description,
+    appliesTo: 'transaction', transactionType: 'work-order', projectAction: '',
+    projectScope: 'all', projectIds: [], minAmount: null,
+    createdByScope: 'all', createdByUserIds: [],
+    woCriteria: [type], allowSelfApproval: false,
+    levels: levelNames.map((names, i) => ({ id: `lvl-${i + 1}`, matchType: 'any' as const, approverIds: names.map(idOf).filter(Boolean) })),
+    applyToDraft: true, isActive, updatedAt, updatedBy: 'Rizal Candra',
+  }
+}
+const SUPERVISOR_THEN_MANAGER = [['Budi Santoso'], ['Sari Indah', 'Dewi Rahayu']]
+const WO_SEED_RULES: ApprovalWorkflowRule[] = [
+  woSeedRule('awf-012', 'Start work order approval', 'Supervisor then production manager approve starting a work order', 'start', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:00:00'),
+  woSeedRule('awf-009', 'Work order adjustment approval', 'Corrections to a run are reviewed before they change the work order', 'adjustment', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:10:00'),
+  woSeedRule('awf-010', 'Work order completion approval', 'Output is reviewed before the work order closes', 'completion', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:20:00'),
+  woSeedRule('awf-011', 'Work order cancel/close approval', 'Remaining WIP is never written off unreviewed', 'cancel', SUPERVISOR_THEN_MANAGER, '2026-06-20T09:30:00'),
+]
 
 const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   {
@@ -219,12 +310,12 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   {
     id: 'awf-004',
     name: 'Milestone Verification Rule 001',
-    description: 'Requires PM sign-off before a milestone is marked verified',
+    description: 'Owner approves milestone verification before revenue is recognized',
     appliesTo: 'project',
     transactionType: '',
     projectAction: 'milestone-verification',
     projectScope: 'some',
-    projectIds: [projIdOf('Menara Sudirman Renovation'), projIdOf('Gudang Bekasi Expansion')].filter(Boolean),
+    projectIds: [projIdOf('Cikarang Warehouse Construction')].filter(Boolean),
     minAmount: null,
     createdByScope: 'all',
     createdByUserIds: [],
@@ -239,7 +330,7 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   {
     id: 'awf-005',
     name: 'Project Creation Rule 001',
-    description: 'Large contracts require director approval before a project is created',
+    description: 'Projects with a contract value above Rp500.000.000 need approval before they start',
     appliesTo: 'project',
     transactionType: '',
     projectAction: 'project-creation',
@@ -249,7 +340,7 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
     createdByScope: 'all',
     createdByUserIds: [],
     levels: [
-      { id: 'lvl-1', matchType: 'all', approverIds: [idOf('Rizal Candra'), idOf('Budi Santoso')].filter(Boolean) },
+      { id: 'lvl-1', matchType: 'any', approverIds: [idOf('Rizal Candra'), idOf('Budi Santoso')].filter(Boolean) },
     ],
     applyToDraft: true,
     isActive: true,
@@ -258,8 +349,8 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
   },
   {
     id: 'awf-006',
-    name: 'Variation Order Rule 001',
-    description: 'Variation orders that grow scope beyond the original contract need sign-off',
+    name: 'Addendum Rule 001',
+    description: 'Addenda that change the contract value by more than Rp25.000.000 need approval',
     appliesTo: 'project',
     transactionType: '',
     projectAction: 'variation-order',
@@ -276,14 +367,43 @@ const SEED_APPROVAL_WORKFLOWS: ApprovalWorkflowRule[] = [
     updatedAt: '2026-08-05T13:45:00',
     updatedBy: 'Rizal Candra',
   },
+  ...WO_SEED_RULES,
 ]
 
-const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v3'
+const APPROVAL_WORKFLOWS_KEY = 'approval-workflows-v6'
 const snapshot = loadSnapshot<ApprovalWorkflowRule>(APPROVAL_WORKFLOWS_KEY)
 export const approvalWorkflows = reactive<ApprovalWorkflowRule[]>(snapshot ?? [...SEED_APPROVAL_WORKFLOWS])
 
+// Snapshots saved before one-type-per-workflow (2026-10-08), or before Adjustment /
+// Completion / Cancel-close were seeded active (2026-10-19), carry older seeded Work order
+// rules — replace them with the current seeds once (flagged, so later edits stick).
+const WO_RULE_SEEDED_FLAG = 'approval-workflows-wo-seeded-v6'
+if (snapshot && !loadFlag(WO_RULE_SEEDED_FLAG)) {
+  // Partial completion left MVP scope — drop its seeded workflow.
+  const partialIdx = approvalWorkflows.findIndex((r) => r.id === 'awf-008')
+  if (partialIdx !== -1) approvalWorkflows.splice(partialIdx, 1)
+  for (const seed of WO_SEED_RULES) {
+    const i = approvalWorkflows.findIndex((r) => r.id === seed.id)
+    if (i === -1) approvalWorkflows.push(seed)
+    else approvalWorkflows.splice(i, 1, seed)
+  }
+  saveFlag(WO_RULE_SEEDED_FLAG, true)
+  saveSnapshot(APPROVAL_WORKFLOWS_KEY, approvalWorkflows)
+}
+
+/**
+ * Listeners run after every saved change to the workflows (create / edit / turn on-off /
+ * delete). Work order approval uses it so requests still waiting for approval follow
+ * the rule as it is now (woApproval.ts › syncPendingWithRules).
+ */
+const changeListeners: (() => void)[] = []
+export function onApprovalWorkflowsChanged(fn: () => void): void {
+  changeListeners.push(fn)
+}
+
 function persist(): void {
   saveSnapshot(APPROVAL_WORKFLOWS_KEY, approvalWorkflows)
+  for (const fn of changeListeners) fn()
 }
 
 let seq = approvalWorkflows.filter((r) => r.id.startsWith('awf-new-')).length
@@ -303,6 +423,8 @@ export interface ApprovalWorkflowInput {
   minAmount: number | null
   createdByScope: 'all' | 'some'
   createdByUserIds: string[]
+  woCriteria?: WoTransactionType[]
+  allowSelfApproval?: boolean
   levels: { matchType: 'any' | 'all'; approverIds: string[] }[]
   applyToDraft: boolean
 }
@@ -326,6 +448,8 @@ export function addApprovalWorkflow(data: ApprovalWorkflowInput): ApprovalWorkfl
     minAmount: data.minAmount,
     createdByScope: data.createdByScope,
     createdByUserIds: data.createdByUserIds,
+    woCriteria: data.transactionType === 'work-order' ? (data.woCriteria ?? []) : undefined,
+    allowSelfApproval: data.transactionType === 'work-order' ? !!data.allowSelfApproval : undefined,
     levels: toLevels(data.levels),
     applyToDraft: data.applyToDraft,
     isActive: true,
@@ -351,12 +475,23 @@ export function updateApprovalWorkflow(id: string, data: ApprovalWorkflowInput):
   rule.minAmount = data.minAmount
   rule.createdByScope = data.createdByScope
   rule.createdByUserIds = data.createdByUserIds
+  rule.woCriteria = data.transactionType === 'work-order' ? (data.woCriteria ?? []) : undefined
+  rule.allowSelfApproval = data.transactionType === 'work-order' ? !!data.allowSelfApproval : undefined
   rule.levels = toLevels(data.levels)
   rule.applyToDraft = data.applyToDraft
   rule.updatedAt = new Date().toISOString()
   rule.updatedBy = ACTING_USER
   persist()
   return rule
+}
+
+/** Other ACTIVE Work order workflows that cover a type this one covers (turning it on would overlap). */
+export function activeWoConflicts(id: string): ApprovalWorkflowRule[] {
+  const rule = approvalWorkflows.find((r) => r.id === id)
+  if (!rule || rule.transactionType !== 'work-order') return []
+  const types = new Set(woRuleTypes(rule))
+  return approvalWorkflows.filter((r) => r.id !== id && r.isActive && r.transactionType === 'work-order'
+    && woRuleTypes(r).some((t) => types.has(t)))
 }
 
 export function setApprovalWorkflowActive(id: string, isActive: boolean): void {
@@ -376,17 +511,13 @@ export function deleteApprovalWorkflow(id: string): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// check_approval_required — the interface contract Project Creation, Variation
-// Order, and Milestone Verification flows call before executing their gated
-// action (spec §5). Names/shape follow the spec verbatim rather than this
-// file's usual camelCase so callers can match the contract directly.
-//
-// NOTE: this prototype has no Project Creation / Variation Order / Milestone
-// Verification modules yet (no Projects feature exists in this app), so
-// nothing calls this today — it exists to be correct and ready for those
-// modules once built. `status` here reflects only "would a rule gate this
-// action" (no_rule | pending); a real implementation would also need to look
-// up an in-flight submission's actual status to report "approved".
+// check_approval_required — the interface contract the Project accounting
+// flows (project creation, addendum, milestone verification) call before
+// executing their gated action (spec §5). Names/shape follow the spec verbatim
+// rather than this file's usual camelCase so callers can match the contract.
+// projectAccounting.ts is the caller: a match stores a PendingApproval on the
+// project and the action waits for an approver. `status` reflects only "would
+// a rule gate this action" (no_rule | pending).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ApprovalLevelResult {

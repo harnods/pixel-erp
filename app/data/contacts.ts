@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
+import { customers } from './customers'
 import { vendors } from './vendors'
 import type { Vendor } from './types'
 
@@ -70,6 +71,8 @@ export interface Contact {
   currency: string
   memo: string
   updatedBy: string
+  /** Archived contacts are hidden from the lists unless "Show archived …" is on. */
+  archived?: boolean
   /** ISO timestamp of the last edit. */
   updatedAt: string
   /**
@@ -88,7 +91,7 @@ export function nitkuFull(c: Pick<Contact, 'npwp' | 'nitkuSuffix'>): string {
 
 /** Options for the fixed-value selects on the New contact form. */
 export const TITLE_OPTIONS = ['Mr', 'Mrs', 'Ms']
-export const IDENTITY_TYPE_OPTIONS = ['KTP', 'SIM', 'Passport', 'KITAS']
+export const IDENTITY_TYPE_OPTIONS = ['KTP', 'Passport', 'SIM', 'KITAS']
 export const CONTACT_GROUP_OPTIONS = [
   'VIP Customers',
   'Food & Beverages',
@@ -104,6 +107,9 @@ export const BANK_OPTIONS = [
 export const AR_ACCOUNT_OPTIONS = ['1-10100 Account Receivable', '1-10200 Other Receivable']
 export const AP_ACCOUNT_OPTIONS = ['2-20100 Trade Payable', '2-20200 Other Payable']
 export const PAYMENT_TERMS_OPTIONS = ['Net 7', 'Net 14', 'Net 30', 'Net 60', 'Cash on delivery']
+export const COUNTRY_OPTIONS = [
+  'Indonesia', 'Singapore', 'Malaysia', 'Thailand', 'Philippines', 'Vietnam', 'Australia', 'United States',
+]
 export const CURRENCY_OPTIONS = ['Indonesian Rupiah (Rp)', 'US Dollar ($)', 'Singapore Dollar (S$)']
 
 /** Empty-ish record used to seed the create form and to fill sparse seed rows. */
@@ -191,7 +197,9 @@ const SEED: Contact[] = [
   // CreateTaxDocumentDrawer), the way a domestic buyer defaults to a faktur.
   {
     ...blank(),
-    id: 'CT013',
+    // CT044, not CT013: CT013 belongs to the vendor block (Klasik Beans
+    // Cooperative), and the shared id made getContact('CT013') return this record.
+    id: 'CT044',
     types: ['customer'],
     displayName: 'Nordic Roasters AB',
     title: 'Mr',
@@ -217,6 +225,9 @@ const SEED: Contact[] = [
     updatedAt: '2026-01-05T08:10:00+07:00',
   },
 ]
+
+// An archived customer — only listed with "Show archived customers" on.
+SEED.push({ ...account('CT043', 'Warung Kopi Modern', 'CV Warung Kopi Modern', 'admin@warungkopimodern.id', '021-5550016', 'Depok', [], 0, '2025-12-12T10:00:00+07:00'), creditLimit: null, archived: true })
 
 // Vendors and "other" contacts share the same store — the role checkboxes on the
 // form decide which index a record shows up in.
@@ -288,13 +299,65 @@ const VENDOR_SEED: Contact[] = [
 
 SEED.push(...VENDOR_SEED)
 
-// v3: main's vendor contacts (CT013…), now linked to the vendor master. Supersedes
-// v1 (no master links) and v2 (generated CT101… copies of the same vendors).
-const STORE_KEY = 'contacts-v3'
+// Every customer / vendor that transactions reference (customers.ts C0nn,
+// vendors.ts V0nn) must have a contact record, or the detail pages' contact links
+// land on "Contact not found". Backfill the ones the hand-written seed above
+// doesn't cover, matched on name, with ids continuing after the last seeded one
+// (deterministic: master-file order).
+const seededNames = () => new Set(SEED.flatMap((c) => [c.displayName, c.companyName].map((n) => n.trim().toLowerCase())))
+const BACKFILL_UPDATED_AT = '2026-01-05T09:00:00+07:00'
+function backfillMasterContacts(): void {
+  const known = seededNames()
+  let next = SEED.reduce((n, c) => Math.max(n, Number(c.id.replace(/\D/g, '')) || 0), 0)
+  const id = () => `CT${String(++next).padStart(3, '0')}`
+  for (const c of customers) {
+    if (known.has(c.name.trim().toLowerCase())) continue
+    SEED.push(account(id(), c.name, c.name, c.email, c.phone, c.city, [], 0, BACKFILL_UPDATED_AT))
+  }
+  for (const v of vendors) {
+    if (known.has(v.name.trim().toLowerCase())) continue
+    SEED.push(vendor(id(), v.name, v.name, v.email, v.phone, v.city, [], 0, BACKFILL_UPDATED_AT))
+  }
+}
+backfillMasterContacts()
 
-export const contacts = reactive<Contact[]>(
-  loadSnapshot<Contact>(STORE_KEY) ?? SEED.map((c) => ({ ...c, banks: c.banks.map((b) => ({ ...b })) })),
-)
+// v4: main's vendor contacts (CT013…) linked to the vendor master, plus the master
+// backfill above. Supersedes v1 (no master links), v2 (generated CT101… copies) and
+// v3 (before the backfill).
+const STORE_KEY = 'contacts-v4'
+
+// Seed ids added after the first release — merged into an older saved snapshot
+// once (tracked by key), so returning sessions also get the vendor contacts.
+const SEED_V2_KEY = 'contacts-v1-seed2'
+// v3: the customers.ts / vendors.ts backfill — merged into an older snapshot once.
+const SEED_V3_KEY = 'contacts-v1-seed3'
+
+function cloneSeed(c: Contact): Contact { return { ...c, banks: c.banks.map((b) => ({ ...b })) } }
+function initialContacts(): Contact[] {
+  const saved = loadSnapshot<Contact>(STORE_KEY)
+  if (!saved) return SEED.map(cloneSeed)
+  if (import.meta.client && !localStorage.getItem(SEED_V2_KEY)) {
+    localStorage.setItem(SEED_V2_KEY, '1')
+    const have = new Set(saved.map((c) => c.id))
+    const haveName = new Set(saved.map((c) => c.displayName.trim().toLowerCase()))
+    for (const c of SEED) if (!have.has(c.id) && !haveName.has(c.displayName.trim().toLowerCase()) && Number(c.id.slice(2)) >= 13) saved.push(cloneSeed(c))
+  }
+  if (import.meta.client && !localStorage.getItem(SEED_V3_KEY)) {
+    localStorage.setItem(SEED_V3_KEY, '1')
+    const haveIds = new Set(saved.map((c) => c.id))
+    const haveNames = new Set(saved.map((c) => c.displayName.trim().toLowerCase()))
+    let max = saved.reduce((n, c) => Math.max(n, Number(c.id.replace(/\D/g, '')) || 0), 0)
+    for (const c of SEED) {
+      if (haveNames.has(c.displayName.trim().toLowerCase())) continue
+      // A user-created contact may already hold this seed id — take the next free one.
+      const id = haveIds.has(c.id) ? `CT${String(++max).padStart(3, '0')}` : c.id
+      haveIds.add(id)
+      saved.push({ ...cloneSeed(c), id })
+    }
+  }
+  return saved
+}
+export const contacts = reactive<Contact[]>(initialContacts())
 
 export function persistContacts(): void {
   saveSnapshot(STORE_KEY, contacts)

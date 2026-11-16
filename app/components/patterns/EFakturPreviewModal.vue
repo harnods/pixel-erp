@@ -107,7 +107,7 @@ function downloadPdf() {
           <div class="fk-sheet">
             <!-- Superseded faktur: DJP's own cap, laid over the identity blocks
                  exactly where the printed form puts it. Non-interactive and
-                 aria-hidden — the status is already conveyed by the DJP Status
+                 aria-hidden — the status is already conveyed by the Tax document status
                  badge in the table, so this is decoration for print fidelity. -->
             <div v-if="stamp" class="fk-stamp" aria-hidden="true">{{ stamp }}</div>
 

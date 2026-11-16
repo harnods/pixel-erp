@@ -49,7 +49,8 @@ const {
 })
 
 const columns: TableColumn[] = [
-  { key: 'date',        label: 'Date',        kind: 'date', sortable: true, sortType: 'date' },
+  // Renders formatDateTime, which the 160px `date` kind clips.
+  { key: 'date',        label: 'Date',        kind: 'datetime', sortable: true, sortType: 'date' },
   { key: 'source',      label: 'Source' },
   { key: 'description', label: 'Description', kind: 'address' },
   { key: 'name',        label: 'Name',        kind: 'name' },

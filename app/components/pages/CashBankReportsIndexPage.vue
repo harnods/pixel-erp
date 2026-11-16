@@ -45,7 +45,9 @@ onMounted(async () => {
 onUnmounted(() => ro?.disconnect())
 
 // Built report detail pages navigate; the rest show a coming-soon toast for now.
-const BUILT: Record<string, string> = {}
+const BUILT: Record<string, string> = {
+  'bank-statement-history': '/cash-and-bank-report/cash-and-bank',
+}
 function viewReport(r: ReportCard) {
   const to = BUILT[r.slug]
   if (to) router.push(to)

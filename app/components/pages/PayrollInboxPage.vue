@@ -1,0 +1,407 @@
+<script setup lang="ts">
+/**
+ * Payroll inbox (FG-2). One row per run and its current
+ * version, the sync log of what Talenta sent, and the month headcount (everyone
+ * who reaches Payroll): each month's run against the previous posted run, by group,
+ * as counts.
+ * Talenta sends arrive from the "Simulate Talenta send" menu. Everything reads
+ * the payroll engine; no figure is stored here.
+ */
+import { computed, ref, watch } from 'vue'
+import { MpButton, MpButtonGroup, MpIcon, MpInput, MpTooltip, MpSegmentedControl } from '@mekari/pixel3'
+import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
+import ExportModal from '~/components/patterns/ExportModal.vue'
+import PayrollInboxSimulateMenu from '~/components/payroll/PayrollInboxSimulateMenu.vue'
+import { can, payroll, sendLog, sendLogCsv, today, rupiah, wib, monthLabel, monthOf, runs, runStatus, type SendOutcome } from '~/data/payrollStore'
+import { runRow, headcountMonths, latestHeadcountMonth, monthHeadcount } from '~/data/payrollUiIntake'
+import { statusLabel, statusType, nextStepLabel } from '~/data/payrollUiRunCopy'
+
+const { t } = useLocale()
+const EMPTY_ILLUSTRATION = '/illustrations/empty-folder.png'
+const router = useRouter()
+const route = useRoute()
+
+type View = 'runs' | 'log' | 'month'
+// Month headcount is for the Owner or LM only; Accountant/Ultimate falls back to Runs, even from a ?view=month link.
+const canHeadcount = computed(() => can('headcount'))
+const VIEWS = computed<View[]>(() => (canHeadcount.value ? ['runs', 'log', 'month'] : ['runs', 'log']))
+const fromQuery = (q: unknown): View => (VIEWS.value.includes(q as View) ? (q as View) : 'runs')
+const view = ref<View>(fromQuery(route.query.view))
+watch(view, (v) => { if ((route.query.view ?? 'runs') !== v) router.replace({ query: { ...route.query, view: v === 'runs' ? undefined : v } }) }, { immediate: true })
+watch(() => route.query.view, (q) => { const next = fromQuery(q); if (next !== view.value) view.value = next })
+const viewOptions = computed(() => [
+  { id: 'pi-view-runs', value: 'runs', label: t('Runs') },
+  { id: 'pi-view-log', value: 'log', label: t('Sync log') },
+  ...(canHeadcount.value ? [{ id: 'pi-view-month', value: 'month', label: t('Month headcount') }] : []),
+])
+watch(canHeadcount, (ok) => { if (!ok && view.value === 'month') view.value = 'runs' })
+
+// ── Stats ──────────────────────────────────────────────────────────────────
+const rows = computed(() => runs.value.map(runRow))
+const asOf = computed(() => `${t('As of')} ${wib(payroll.clock).replace(/ \d\d:\d\d WIB$/, '')}`)
+const held = computed(() => rows.value.filter((r) => ['Held', 'Waiting for your choice', 'Confirm source'].includes(r.status)))
+const ready = computed(() => rows.value.filter((r) => r.status === 'Ready to post'))
+const thisMonth = computed(() => monthOf(today()))
+const postedThisMonth = computed(() => payroll.journals.filter((j) => j.type === 'Payroll' && monthOf(wibDate(j.postedAt)) === thisMonth.value))
+function wibDate(iso: string) { return new Date(Date.parse(iso) + 7 * 3_600_000).toISOString().slice(0, 10) }
+const trackedMonth = computed(() => monthHeadcount(latestHeadcountMonth()))
+const changeSummary = (m: { joined: number; left: number; moved: unknown[] }) => [
+  m.joined ? `${m.joined} ${t('joined')}` : '',
+  m.left ? `${m.left} ${t('left')}` : '',
+  m.moved.length ? `${m.moved.length} ${t('moved')}` : '',
+].filter(Boolean).join(', ')
+
+// ── Runs table ─────────────────────────────────────────────────────────────
+const statusFilter = ref('')
+const search = ref('')
+const page = ref(1)
+const perPage = ref(25)
+const runStatusOptions = computed(() => [...new Set(rows.value.map((r) => r.status))].map((s) => ({ value: s, label: t(statusLabel(s)) })))
+const filteredRuns = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  return rows.value.filter((r) => {
+    if (statusFilter.value === 'needs-fix') { if (!held.value.includes(r)) return false }
+    else if (statusFilter.value && r.status !== statusFilter.value) return false
+    return !q || `${r.period} ${r.key} ${r.type} ${r.reason}`.toLowerCase().includes(q)
+  })
+})
+const pagedRuns = computed(() => filteredRuns.value.slice((page.value - 1) * perPage.value, page.value * perPage.value))
+watch([statusFilter, search], () => { page.value = 1 })
+const runColumns = computed<TableColumn[]>(() => [
+  { key: 'period', label: t('Period'), kind: 'number' },
+  { key: 'status', label: t('Status'), kind: 'status' },
+  { key: 'reason', label: t('Next step'), kind: 'address' },
+  { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
+  { key: 'takeHome', label: t('Take-home pay'), kind: 'amount', align: 'right' },
+  { key: 'received', label: t('Sent by Talenta'), kind: 'date' },
+])
+const statusFilterOptions = computed(() => [{ value: 'needs-fix', label: t('To fix before posting') }, ...runStatusOptions.value])
+function openRun(id: string) { router.push(`/payroll-runs/${id}`) }
+function drill(filter: string) { view.value = 'runs'; statusFilter.value = filter }
+
+// ── Sync log: what Talenta sent, one row per send ─────────────────────────
+const logResult = ref('')
+const logSearch = ref('')
+const logPage = ref(1)
+const logPerPage = ref(25)
+const logRows = computed(() => sendLog.value.map((l) => ({ ...l, at: wib(l.at) })))
+const filteredLog = computed(() => {
+  const q = logSearch.value.trim().toLowerCase()
+  return logRows.value.filter((r) => (!logResult.value || r.result === logResult.value) && (!q || `${r.period} ${r.version}`.toLowerCase().includes(q)))
+})
+const pagedLog = computed(() => filteredLog.value.slice((logPage.value - 1) * logPerPage.value, logPage.value * logPerPage.value))
+watch([logResult, logSearch], () => { logPage.value = 1 })
+const logResultOptions = computed(() => (['Accepted', 'Held', 'Duplicate', 'Rejected'] as SendOutcome[]).map((s) => ({ value: s, label: t(statusLabel(s)) })))
+const logColumns = computed<TableColumn[]>(() => [
+  { key: 'at', label: t('Received'), kind: 'date' },
+  { key: 'period', label: t('Period'), kind: 'number' },
+  { key: 'version', label: t('Version'), kind: 'unit' },
+  { key: 'staff', label: t('Staff'), kind: 'unit', align: 'right' },
+  { key: 'payItems', label: t('Pay items'), kind: 'unit', align: 'right' },
+  { key: 'result', label: t('Result'), kind: 'status' },
+  { key: 'runId', label: t('Run'), kind: 'unit' },
+])
+// Export opens the shared ExportModal (rule/export-modal). The CSV always carries every
+// sync log column (sendLogCsv), so each column is listed as required.
+const exportOpen = ref(false)
+const exportColumns = computed(() => logColumns.value.map((c) => ({ key: c.key, label: c.label, required: true })))
+function exportLog(scope: string) {
+  const picked = scope === 'page' ? pagedLog.value : filteredLog.value
+  const blob = new Blob([`\ufeff${sendLogCsv(picked.map((r) => sendLog.value.find((l) => l.id === r.id)!))}`], { type: 'text/csv;charset=utf-8;' })
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'payroll-sync-log.csv'; el.click(); URL.revokeObjectURL(el.href)
+  exportOpen.value = false
+}
+
+// ── Month headcount ────────────────────────────────────────────────────────
+const monthOptions = computed(() => headcountMonths().map((m) => ({ value: m, label: monthLabel(m) })))
+const month = ref(trackedMonth.value.month)
+const tracker = computed(() => monthHeadcount(month.value || trackedMonth.value.month))
+const groupColumns = computed<TableColumn[]>(() => [
+  { key: 'label', label: t('Group'), kind: 'name' },
+  { key: 'last', label: t('Last period'), kind: 'unit', align: 'right' },
+  { key: 'current', label: t('This month'), kind: 'unit', align: 'right' },
+  { key: 'change', label: t('Change'), kind: 'unit', align: 'right' },
+  { key: 'state', label: t('Status'), kind: 'status' },
+])
+const groupRows = computed(() => tracker.value.groups.map((g) => ({
+  key: g.key, label: g.label, last: tracker.value.previous ? g.last : '', current: g.current,
+  change: tracker.value.previous ? (g.change > 0 ? `+${g.change}` : String(g.change)) : '',
+  flagged: g.flagged,
+  state: !g.flagged ? 'No change' : g.expected ? 'Expected' : 'Check',
+})))
+
+// The run record links back here with ?view=…; keep the month picker in step with resets.
+watch(() => payroll.runs, () => { if (!headcountMonths().includes(month.value)) month.value = trackedMonth.value.month })
+const heldCount = computed(() => runs.value.filter((r) => ['Held', 'Waiting for your choice', 'Confirm source'].includes(runStatus(r))).length)
+</script>
+
+<template>
+  <div class="pi">
+    <div class="pi__toolbar">
+      <MpSegmentedControl id="pi-view" v-model="view" name="pi-view" :data="viewOptions" class="pi__views" data-tour="payroll-inbox-views" />
+      <PayrollInboxSimulateMenu @sent="(id) => { if (id && view === 'runs') statusFilter = '' }" />
+    </div>
+
+    <!-- ── Runs ── -->
+    <ErpTablePage
+      v-if="view === 'runs'"
+      data-tour="payroll-inbox-runs"
+      :columns="runColumns"
+      :rows="(pagedRuns as unknown as Record<string, unknown>[])"
+      :total="filteredRuns.length"
+      :current-page="page"
+      :per-page="perPage"
+      :search="search"
+      :has-active-search="!!search"
+      :has-active-filter="!!statusFilter || !!search"
+      filter-empty-label="run"
+      is-row-clickable
+      @row-click="(row) => openRun((row as { id: string }).id)"
+      @page-change="(p) => page = p"
+      @per-page-change="(n) => { perPage = n; page = 1 }"
+      @clear-filters="() => { statusFilter = ''; search = '' }"
+      @clear-search="search = ''"
+      @clear-all="() => { statusFilter = ''; search = '' }"
+    >
+      <template #stats>
+        <div class="stats-section">
+          <div class="stat-card stat-card--bordered">
+            <div class="stat-title">{{ t('To fix before posting') }}</div>
+            <div class="stat-period">{{ asOf }}</div>
+            <div class="stat-amount" :class="{ 'stat-amount--danger': heldCount > 0 }">{{ heldCount }}</div>
+            <a v-if="heldCount" class="stat-link" @click="drill('needs-fix')">{{ t('Show runs to fix') }}</a>
+          </div>
+          <div class="stat-card stat-card--bordered">
+            <div class="stat-title">{{ t('Ready to post') }}</div>
+            <div class="stat-period">{{ t('Take-home pay in draft journals') }}</div>
+            <div class="stat-amount">{{ rupiah(ready.reduce((s, r) => s + r.takeHome, 0)) }}</div>
+            <a v-if="ready.length" class="stat-link" @click="drill('Ready to post')">{{ ready.length }} {{ t(ready.length === 1 ? 'draft journal' : 'draft journals') }}</a>
+          </div>
+          <div class="stat-card" :class="{ 'stat-card--bordered': canHeadcount }">
+            <div class="stat-title">{{ t('Posted this month') }}</div>
+            <div class="stat-period">{{ t('Payroll journals posted in') }} {{ monthLabel(thisMonth) }}</div>
+            <div class="stat-amount">{{ postedThisMonth.length }}</div>
+            <a v-if="postedThisMonth.length" class="stat-link" @click="drill('Posted')">{{ postedThisMonth.map((j) => j.number).join(', ') }}</a>
+          </div>
+          <div v-if="canHeadcount" class="stat-card">
+            <div class="stat-title">{{ t('Headcount change') }}</div>
+            <div class="stat-period">{{ trackedMonth.previous ? `${trackedMonth.label} ${t('against')} ${monthLabel(trackedMonth.previous.month)}` : trackedMonth.label }}</div>
+            <div class="stat-amount">{{ trackedMonth.changed }}</div>
+            <a class="stat-link" @click="() => { month = trackedMonth.month; view = 'month' }">{{ changeSummary(trackedMonth) || t('No change') }}</a>
+          </div>
+        </div>
+      </template>
+
+      <template #filters>
+        <div class="filter-left">
+          <ErpFilterSelect id="pi-status" v-model="statusFilter" :placeholder="t('Status')" :options="statusFilterOptions" />
+          <MpButton v-if="statusFilter" variant="ghost" is-rounded @click="statusFilter = ''">{{ t('Clear filters') }}</MpButton>
+        </div>
+        <div class="filter-right">
+          <div class="filter-search">
+            <MpIcon name="search" size="sm" />
+            <MpInput id="pi-search" v-model="search" variant="unstyled" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+            <MpButton v-if="search" variant="ghost" class="search-clear-btn" :aria-label="t('Clear search')" is-rounded @click="search = ''"><MpIcon name="close" size="sm" /></MpButton>
+          </div>
+        </div>
+      </template>
+
+      <template #cell-period="{ row }">
+        <div class="pi__period">
+          <span class="cell-link cell-text" @click.stop="openRun((row as { id: string }).id)">{{ (row as { period: string }).period }}</span>
+          <!-- Type and version sit under the period: two narrow columns pushed the table past the stage at 1440. -->
+          <span class="pi__muted">{{ t((row as { type: string }).type) }} · {{ (row as { version: string }).version }}<template v-if="(row as { versions: number }).versions > 1">{{ ` ${t('of')} ${(row as { versions: number }).versions}` }}</template></span>
+        </div>
+      </template>
+      <template #cell-takeHome="{ value }">{{ rupiah(value as number) }}</template>
+      <!-- "21 Sep 2026 10:00 WIB" is 1-3px wider than the fixed date column; wrap rather than push the table past the stage. -->
+      <template #cell-received="{ value }"><span class="pi__wrap">{{ value }}</span></template>
+      <template #cell-status="{ value }">
+        <ErpStatusBadge :status="String(value)" :label="t(statusLabel(String(value)))" :type="statusType(String(value))" />
+      </template>
+      <template #cell-reason="{ row }">
+        <span class="pi__wrap">{{ (row as { reason: string }).reason || t(nextStepLabel((row as { status: string }).status, (row as { nextStep: string }).nextStep)) }}</span>
+      </template>
+      <template #empty>
+        <div class="empty-full">
+          <img :src="EMPTY_ILLUSTRATION" alt="" class="empty-illustration">
+          <p class="empty-full-title">{{ t('No payroll runs') }}</p>
+          <p class="empty-full-desc">{{ t('Payroll runs will appear here.') }}</p>
+        </div>
+      </template>
+    </ErpTablePage>
+
+    <!-- ── Sync log ── -->
+    <ErpTablePage
+      v-else-if="view === 'log'"
+      data-tour="payroll-synclog"
+      :columns="logColumns"
+      :rows="(pagedLog as unknown as Record<string, unknown>[])"
+      :total="filteredLog.length"
+      :current-page="logPage"
+      :per-page="logPerPage"
+      :search="logSearch"
+      :has-active-search="!!logSearch"
+      :has-active-filter="!!logResult || !!logSearch"
+      filter-empty-label="send"
+      no-row-hover
+      @page-change="(p) => logPage = p"
+      @per-page-change="(n) => { logPerPage = n; logPage = 1 }"
+      @clear-filters="() => { logResult = ''; logSearch = '' }"
+      @clear-search="logSearch = ''"
+      @clear-all="() => { logResult = ''; logSearch = '' }"
+    >
+      <template #filters>
+        <div class="filter-left">
+          <ErpFilterSelect id="pl-result" v-model="logResult" :placeholder="t('Result')" :options="logResultOptions" />
+          <MpButton v-if="logResult" variant="ghost" is-rounded @click="logResult = ''">{{ t('Clear filters') }}</MpButton>
+        </div>
+        <div class="filter-right">
+          <MpButtonGroup class="filter-btn-group">
+            <MpTooltip :label="t('Export')" placement="bottom">
+              <MpButton variant="ghost" left-icon="download" :aria-label="t('Export')" is-rounded @click="exportOpen = true" />
+            </MpTooltip>
+          </MpButtonGroup>
+          <div class="filter-search">
+            <MpIcon name="search" size="sm" />
+            <MpInput id="pl-search" v-model="logSearch" variant="unstyled" class="filter-search-input" type="text" :placeholder="t('Search...')" />
+            <MpButton v-if="logSearch" variant="ghost" class="search-clear-btn" :aria-label="t('Clear search')" is-rounded @click="logSearch = ''"><MpIcon name="close" size="sm" /></MpButton>
+          </div>
+        </div>
+      </template>
+      <template #cell-result="{ row }">
+        <div class="pi__result">
+          <ErpStatusBadge :status="(row as { result: string }).result" :label="t(statusLabel((row as { result: string }).result))" :type="statusType((row as { result: string }).result)" />
+          <span v-if="(row as { reason: string }).reason" class="pi__muted pi__wrap">{{ (row as { reason: string }).reason }}</span>
+        </div>
+      </template>
+      <template #cell-runId="{ row }">
+        <span v-if="(row as { runId: string | null }).runId" class="cell-link cell-text" @click.stop="openRun((row as { runId: string }).runId)">{{ t('Open run') }}</span>
+      </template>
+      <template #empty>
+        <div class="empty-full">
+          <img :src="EMPTY_ILLUSTRATION" alt="" class="empty-illustration">
+          <p class="empty-full-title">{{ t('No sends') }}</p>
+          <p class="empty-full-desc">{{ t('Talenta sends will appear here.') }}</p>
+        </div>
+      </template>
+    </ErpTablePage>
+
+    <!-- ── Month headcount ── -->
+    <div v-else-if="view === 'month' && canHeadcount" class="pi__month" data-tour="payroll-month-headcount">
+      <div class="stats-section pi__stats">
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('Talenta send') }}</div>
+          <div class="stat-period">{{ tracker.label }} · {{ tracker.period }}</div>
+          <div class="stat-amount" :class="{ 'stat-amount--danger': tracker.status === 'Missing send' }">{{ t(statusLabel(tracker.status)) }}</div>
+          <a v-if="tracker.runId" class="stat-link" @click="openRun(tracker.runId)">{{ t('Open run') }} {{ tracker.version }}</a>
+        </div>
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('Last period') }}</div>
+          <div class="stat-period">{{ tracker.previous ? `${t('Posted')} ${tracker.previous.label}` : t('No earlier posted run') }}</div>
+          <div class="stat-amount">{{ tracker.last ?? '-' }}</div>
+        </div>
+        <div class="stat-card stat-card--bordered">
+          <div class="stat-title">{{ t('This month') }}</div>
+          <div class="stat-period">{{ tracker.version ? `${t('Staff in')} ${tracker.version}` : t('No run yet') }}</div>
+          <div class="stat-amount">{{ tracker.current }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">{{ t('Staff changed') }}</div>
+          <div class="stat-period">{{ t('Joined, left or moved group') }}</div>
+          <div class="stat-amount">{{ tracker.changed }}</div>
+          <a v-if="tracker.runId && tracker.unexpected" class="stat-link" @click="openRun(tracker.runId)">{{ tracker.unexpected }} {{ t(tracker.unexpected === 1 ? 'group to check' : 'groups to check') }}</a>
+        </div>
+      </div>
+
+      <ErpTablePage
+        :columns="groupColumns"
+        :rows="(groupRows as unknown as Record<string, unknown>[])"
+        :total="groupRows.length"
+        :current-page="1"
+        :per-page="100"
+        no-row-hover
+      >
+        <template #filters>
+          <div class="filter-left">
+            <ErpFilterSelect id="pm-month" v-model="month" :placeholder="t('Month')" :options="monthOptions" :is-clearable="false" />
+            <span class="pi__muted">{{ tracker.runStatus ? `${t('Regular run')} ${tracker.version} · ${t(statusLabel(tracker.runStatus))}` : t(statusLabel(tracker.status)) }}</span>
+          </div>
+        </template>
+        <template #cell-state="{ value }">
+          <ErpStatusBadge :status="String(value)" :label="t(statusLabel(String(value)))" :type="statusType(String(value))" />
+        </template>
+      </ErpTablePage>
+    </div>
+
+    <ExportModal
+      :open="exportOpen"
+      :title="t('Export sync log')"
+      :entity-label="t('sends')"
+      :columns="exportColumns"
+      :total="filteredLog.length"
+      :show-column-search="false"
+      @close="exportOpen = false"
+      @export="(p) => exportLog(p.scope)"
+    />
+  </div>
+</template>
+
+<style scoped>
+.pi { display: flex; flex-direction: column; }
+.pi__toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-4);
+  margin-bottom: var(--mp-spacing-6);
+}
+.pi__views :deep(.mp-segmented-control__item), .pi__views :deep([data-part='item']) { min-width: max-content; }
+.pi__stats { padding-bottom: var(--mp-spacing-5); margin-bottom: var(--mp-spacing-5); border-bottom: 1px solid var(--mp-border-default); }
+.pi__month { display: flex; flex-direction: column; }
+.pi__muted { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); }
+.pi__wrap { white-space: normal; overflow-wrap: anywhere; }
+.pi__period { display: flex; flex-direction: column; gap: var(--mp-spacing-1); min-width: 0; }
+.pi__result { display: flex; flex-direction: column; align-items: flex-start; gap: var(--mp-spacing-1); }
+
+/* House stats band (BillsIndexPage). */
+.stats-section { display: flex; gap: var(--mp-spacing-6); align-items: flex-start; }
+.stat-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--mp-spacing-1); padding-right: var(--mp-spacing-6); align-self: stretch; }
+.stat-card--bordered { border-right: 1px solid var(--mp-border-default); }
+.stat-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-default); line-height: var(--mp-line-heights-md); white-space: nowrap; }
+.stat-period { font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary); line-height: var(--mp-line-heights-sm, 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-amount { font-size: var(--mp-font-sizes-xl, 20px); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-2xl, 32px); white-space: nowrap; }
+.stat-amount--danger { color: var(--mp-text-danger); }
+.stat-link {
+  display: inline-flex; font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-regular);
+  color: var(--mp-text-link); line-height: var(--mp-line-heights-md); text-decoration: none; cursor: pointer;
+  padding: 0 var(--mp-spacing-0\.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* House filter bar (BillsIndexPage). */
+.filter-left { display: flex; align-items: center; gap: var(--mp-spacing-4); min-width: 0; }
+.filter-right { display: flex; align-items: center; gap: var(--mp-spacing-3); }
+.filter-search {
+  display: flex; align-items: center; gap: var(--mp-spacing-2); width: var(--filter-search-w, 248px);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3); background: var(--mp-background-neutral);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-full, 999px); color: var(--mp-text-subtle);
+}
+/* MpInput (unstyled) inside the pill: the class lands on the native control, the root takes the free width. */
+.filter-search :deep(.mp-input__root) { flex: 1; min-width: 0; }
+.filter-search :deep(.filter-search-input) {
+  width: 100%; height: auto; padding: 0; border: none; outline: none; background: transparent;
+  font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md); color: var(--mp-text-default);
+}
+.filter-search :deep(.filter-search-input::placeholder) { color: var(--mp-text-placeholder); }
+/* The pill draws the focus ring (erp.css inset ring on .filter-search:focus-within); drop the field's own ring. */
+.filter-search :deep(.filter-search-input.mp-input__control:focus) { box-shadow: none; } /* pixel-police-allow-shadow: removes a ring, adds none */
+.search-clear-btn {
+  flex: none; width: var(--mp-sizes-5, 1.25rem); height: var(--mp-sizes-5, 1.25rem); min-width: 0; padding: 0;
+  color: var(--mp-text-secondary);
+}
+
+/* Full empty state (docs/patterns/ErpTablePage.md › Empty state). */
+.empty-full { display: flex; flex-direction: column; align-items: center; }
+.empty-illustration { width: var(--empty-illo-w, 288px); height: var(--empty-illo-h, 240px); object-fit: contain; }
+.empty-full-title { margin: 0; font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.empty-full-desc { margin: var(--mp-spacing-0\.5) 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+</style>

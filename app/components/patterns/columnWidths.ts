@@ -15,6 +15,7 @@
  */
 export type ColumnKind =
   | 'date'     // any date column (created, due, transaction date …)
+  | 'datetime' // a timestamp, optionally stacked over a byline ("by <user>")
   | 'number'   // document / transaction number (often a link)
   | 'name'     // vendor / customer / beneficiary / warehouse / product … any name
   | 'status'   // status column rendered with a badge
@@ -22,6 +23,7 @@ export type ColumnKind =
   | 'tags'     // tag chips
   | 'badges'   // several stacked status badges per cell (e.g. a Signals column)
   | 'unit'     // unit of measurement (pcs, kg …)
+  | 'rank'     // a short ordinal — rank, sequence, position (1, 2 … 10)
   | 'address'  // address or any content that can wrap to multiple lines
   | 'wide'     // a default-type column whose HEADER label is longer than the default min (e.g. "Demand velocity per day")
   | 'default'  // anything not defined above
@@ -40,6 +42,11 @@ export interface ColWidthRange {
  */
 export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   date:    { minWidth: '160px', maxWidth: '160px' }, // fixed
+  // A timestamp column. Measured, "30/01/2026, 11.00" is 123px and a 160px
+  // column gives 136px of content, so this is NOT about clipping — it is
+  // breathing room for a cell carrying date, time and often a byline under it,
+  // which reads cramped at the bare-date width.
+  datetime: { minWidth: '220px', maxWidth: '220px' }, // fixed
   // 240 min, not 160. Two things have to fit here at the MINIMUM, because a
   // saturated table never grows a column past it:
   //   • the codified "<Module name> #<number>" format (~141px for
@@ -55,6 +62,7 @@ export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   tags:    { minWidth: '160px', maxWidth: '240px' },
   badges:  { minWidth: '192px', maxWidth: '240px' }, // floor fits a ~3-word badge label (e.g. "Stocks out before resupply") + cell padding
   unit:    { minWidth: '128px', maxWidth: '128px' }, // fixed
+  rank:    { minWidth: '88px',  maxWidth: '88px' },  // fixed — fits the header + sort control
   address: { minWidth: '200px', maxWidth: '240px' },
   wide:    { minWidth: '216px', maxWidth: '240px' }, // same cap as default, higher floor so a long header never clips
   default: { minWidth: '160px', maxWidth: '240px' },

@@ -9,7 +9,6 @@ import {
   MpButton, MpIcon, MpTextlink, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
-import { getContactIdByName } from '~/data/contacts'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
@@ -23,6 +22,10 @@ import {
   debitMemoApplications, getApplication, getDebitMemo, applicationTotal, applicationLabel, memoLabel,
   pinvLabel, purchaseInvoiceById, vendorNameOf, deleteApplication, applicationJournal,
 } from '~/data/debitMemos'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -95,7 +98,7 @@ const dmaActionGroups = computed<ActionItem[][]>(() => [
     <div class="cm-stage">
       <section class="cm-summary">
         <div class="cm-primary cm-primary--cols">
-          <div class="cm-col"><ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(vendorNameOf(app.vendorId))}`, '_blank')">{{ vendorNameOf(app.vendorId) }}</a></ContentList></div>
+          <div class="cm-col"><ContentList :label="t('Vendor')"><a class="detail-value-link" @click="openContact('vendors', vendorNameOf(app.vendorId))" data-devchange="contact-link-open">{{ vendorNameOf(app.vendorId) }}</a></ContentList></div>
           <div class="cm-col">
             <ContentList :label="t('Debit memo')">
               <a class="cm-link" @click="goMemo">{{ memo ? memoLabel(memo.number) : '—' }}</a>

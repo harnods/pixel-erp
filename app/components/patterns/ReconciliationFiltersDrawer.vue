@@ -68,10 +68,12 @@ function togglePeriod(value: string) {
 
         <div class="rf-filters-body">
           <!-- Masa pajak — a checklist, not a select: reconciling a quarter means
-               picking three periods at once. -->
+               picking three periods at once. The list grows every month, so it sits
+               in a bordered box that scrolls past a fixed height — the same box
+               StockAdjustmentsFiltersDrawer uses for its Warehouse/Assignee lists. -->
           <div class="rf-field">
             <span class="rf-field-label">{{ t('Tax period') }}</span>
-            <ul class="rf-checklist">
+            <ul class="rf-checklist rf-checklist--boxed" data-devchange="vat-recon-index-no-tabs">
               <li v-for="opt in periodOptions" :key="opt.value" class="rf-check-item" @click="togglePeriod(opt.value)">
                 <span @click.stop>
                   <MpCheckbox
@@ -200,6 +202,17 @@ function togglePeriod(value: string) {
   display: flex;
   flex-direction: column;
   gap: var(--mp-spacing-1);
+}
+.rf-checklist--boxed {
+  /* StockAdjustmentsFiltersDrawer › .sa-filters-checkbox-list */
+  max-height: var(--rf-checklist-max-h);
+  overflow-y: auto;
+  border: 1px solid var(--mp-border-default);
+  border-radius: var(--mp-radii-md);
+  padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  /* ~5½ rows: the half-visible row signals there is more to scroll. (200px, the
+     Stock adjustments value, left a 6-period list overflowing by only 6px.) */
+  --rf-checklist-max-h: 180px;
 }
 .rf-check-item {
   display: flex;

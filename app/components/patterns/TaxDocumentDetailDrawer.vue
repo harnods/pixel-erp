@@ -21,7 +21,7 @@ import type { SalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { VAT_CODES, computeTaxDocumentSummary } from '~/data/vatCodes'
 import { FOREIGN_TRANSACTION_DETAILS, computeForeignTaxDocumentSummary } from '~/data/foreignTransactionDetails'
 import {
-  DJP_STATUS_CONFIG, formatPaymentStage, formatTaxDocumentKind,
+  DJP_STATUS_CONFIG, TAX_DOCUMENT_STATUS_LABELS, formatPaymentStage, taxDocumentStatus,
   type TaxDocument,
 } from '~/data/taxDocuments'
 
@@ -110,8 +110,8 @@ function close() { emit('update:isOpen', false) }
               <!-- Lineage — where this document sits relative to the one it
                    supersedes (PRD-05: replacement / cancellation records). -->
               <div class="tdd-row">
-                <span class="tdd-row-label">{{ t('Type') }}</span>
-                <span class="tdd-row-value">{{ t(formatTaxDocumentKind(doc)) }}</span>
+                <span class="tdd-row-label">{{ t('Tax document status') }}</span>
+                <span class="tdd-row-value">{{ t(TAX_DOCUMENT_STATUS_LABELS[taxDocumentStatus(doc)]) }}</span>
               </div>
               <div v-if="relatedNumber" class="tdd-row">
                 <span class="tdd-row-label">{{ relatedLabel }}</span>

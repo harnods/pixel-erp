@@ -77,6 +77,16 @@ const GL_ACCOUNTS: { code: string; name: string; starting: number; count: number
 ]
 
 /**
+ * The chart of accounts as plain code/name pairs, for forms that need to pick a
+ * GL account (e.g. the recurring general journal). The report's own
+ * `ledgerAccounts()` computes balances over a date range, which a picker does
+ * not need.
+ */
+export function chartOfAccounts(): { code: string; name: string }[] {
+  return GL_ACCOUNTS.map(a => ({ code: a.code, name: a.name }))
+}
+
+/**
  * Which transaction module each ledger entry type belongs to — so a posting can
  * only carry tags from dimensions that were switched on for THAT transaction
  * type in Settings > Dimensions. Journal entries aren't raised from any of the

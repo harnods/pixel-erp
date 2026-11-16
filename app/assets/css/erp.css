@@ -360,6 +360,16 @@
  * an always-visible clear (✕). Restore the pieces the ERP relies on here.
  * erp.css is UNLAYERED, so these beat Pixel's @layer rules without !important. */
 
+/* MpTag `is-closable` — the close (×) overlays the tag's end and is revealed by a
+   `group-hover` opacity utility that this build never emits, so the × stayed at
+   opacity 0 (unclickable-looking) on every closable tag (applied-filter tags,
+   selected-value tags). Reveal it on tag hover and keyboard focus. */
+.mp-tag__root:hover > .mp-tag__close,
+.mp-tag__root:focus-within > .mp-tag__close {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* Form control roots must establish a positioning context so their absolutely-
    positioned addons (select/autocomplete arrow, datepicker calendar, clear button)
    stay inside the field instead of escaping to a far ancestor — the `position:
@@ -766,4 +776,22 @@ input[type="number"] {
   .mp-checkbox__root[aria-disabled="true"] .mp-checkbox__control {
     border-color: var(--mp-border-default, #e3e7e9) !important;
   }
+}
+
+/* ── Row kebab (`.row-kebab`) — icon must never collapse (global ERP override) ──
+   Many tables render the row "⋯" trigger as <MpButton class="row-kebab"> with a raw
+   inline <svg width="20"> child. Pixel's MpButton adds 16px left + right padding
+   (border-box); the page's `.row-kebab { width: 32px }` then leaves a 0px content
+   box, and the svg (a shrinkable flex item) renders 0px wide — the button is there
+   and clickable but invisible. Drop the horizontal padding and stop the icon from
+   shrinking so the 32px square always shows its three dots.
+   erp.css is UNLAYERED, so this beats Pixel's @layer padding without !important;
+   a page whose scoped `.row-kebab` sets its own padding (higher specificity) keeps
+   it. See rule/table-row-kebab-icon. */
+.row-kebab {
+  padding-left: 0;
+  padding-right: 0;
+}
+.row-kebab > svg {
+  flex-shrink: 0;
 }

@@ -1,4 +1,5 @@
 import { reactive } from "vue";
+import type { BatchAttributeValues } from "./batchAttributes";
 import { warehouses } from "./warehouses";
 import { operatorForWarehouse } from "./warehouseTeam";
 import { receipts } from "./receipts";
@@ -29,6 +30,8 @@ export interface PutAwayBatchAssignment {
   qty: number;
   unit: string;
   destLocations?: Array<{ locationId: string; qty: number }>;
+  /** Batch attribute snapshot saved with the line (ATINV-9082). */
+  attributes?: BatchAttributeValues;
 }
 
 /** One serial's destination bin, as assigned via Manage serial number during put-away. */

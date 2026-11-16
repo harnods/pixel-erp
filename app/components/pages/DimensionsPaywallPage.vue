@@ -1,3 +1,4 @@
+<!-- prod-parity-aligned: jurnal-non-core-feature-frontend/src/modules/multidimensional/views/paywall/MultidimensionalPaywall.vue -->
 <!--
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Mekari ERP — Settings › Dimensions (first-run / paywall)
@@ -43,7 +44,7 @@ const { t } = useLocale()
 const COPY = {
   heroTitle: t('Elevate your business performance tracking with Dimensions'),
   heroBody: t(
-    'Classify transaction lines by SBU, branch, or any category for your business without adding new accounts. Data is automatically reflected in profit and loss reports, budgets, and the Multidimensional report.',
+    'Classify transaction lines by SBU, branch, or any category for your business without adding new accounts. Data is automatically displayed in profit and loss reports, budgets, and the Multidimensional report.',
   ),
   primaryCta: t('Start using Dimensions'),
   learnMore: t('Learn more'),
@@ -67,7 +68,7 @@ const COPY = {
   howItWorksTitle: t('How does this feature work?'),
   steps: [
     {
-      label: t('Step 1'),
+      label: t('STEP 1'),
       thumb: '/illustrations/dimensions-step-1.png',
       title: t('Activate and configure Dimensions'),
       items: [
@@ -76,24 +77,24 @@ const COPY = {
       ],
     },
     {
-      label: t('Step 2'),
+      label: t('STEP 2'),
       thumb: '/illustrations/dimensions-step-2.png',
       title: t('Use Dimensions in your transactions'),
       items: [
         { text: t('On each line of your transaction, click the Dimensions column.') },
         { text: t('Select the dimension that applies to the line item, for example, Branch: Jakarta.') },
         {
-          text: t('The system automatically tags the dimension at the transaction line level and reflects it in reports, including:'),
+          text: t('The system automatically tags the dimension at the transaction line level and displays it in reports, including:'),
           subBullets: [
             t('Multidimensional report (shows profit and loss by dimension)'),
             t('Budget variance report'),
-            t('General ledger report, grouped by dimension.'),
+            t('General ledger report, grouped by dimension'),
           ],
         },
       ],
     },
     {
-      label: t('Step 3'),
+      label: t('STEP 3'),
       thumb: '/illustrations/dimensions-step-3.png',
       title: t('Analyze your Multidimensional report'),
       items: [
@@ -115,7 +116,7 @@ const COPY = {
 
 // "Learn more" has no destination yet, and the feedback pair records nothing —
 // both say so rather than looking clickable and doing nothing.
-function learnMore() { infoToast(t('Dimensions guide — coming soon')) }
+function learnMore() { infoToast(t('Not in this prototype')) }
 
 const feedback = ref<'up' | 'down' | ''>('')
 function sendFeedback(v: 'up' | 'down') {

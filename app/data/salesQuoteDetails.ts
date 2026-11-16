@@ -35,6 +35,9 @@ export interface SalesQuoteDetail extends SalesQuote {
   paymentTerms: string
   warehouse: string
   salesperson: string
+  /** Estimated ship date (ISO) — prod "Estimated ship date". */
+  shipDate: string
+  shipVia: string
   lineItems: SQLineItem[]
   message: string
   memo: string
@@ -61,6 +64,12 @@ const SHIP_TO = [
 const WAREHOUSES = ['Default warehouse', 'Cibinong warehouse', 'Pulogadung DC', 'Bandung hub']
 const PAYMENT_TERMS = ['Net 30', 'Net 14', 'Cash on delivery', 'Net 45']
 const SALESPEOPLE = ['Rizal Candra', 'Dewi Anggraini', 'Bram Sitohang', 'Nadia Puspita']
+const SHIP_VIA = ['JNE Trucking', 'Internal fleet', 'SiCepat Cargo', 'Customer pickup']
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function pick<T>(arr: T[], i: number): T { return arr[i % arr.length]! }
 
@@ -139,6 +148,8 @@ function buildDetail(base: SalesQuote, idx: number): SalesQuoteDetail {
     paymentTerms: pick(PAYMENT_TERMS, idx),
     warehouse: pick(WAREHOUSES, idx),
     salesperson: pick(SALESPEOPLE, idx),
+    shipDate: addDaysIso(base.date, 7),
+    shipVia: pick(SHIP_VIA, idx),
     lineItems,
     message: 'This quote is valid until the expiration date above. Prices are subject to stock availability.',
     memo: 'Follow up with the customer two days before expiration.',

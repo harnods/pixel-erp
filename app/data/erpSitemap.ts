@@ -79,6 +79,7 @@ export const BUILT_KEYS = new Set<string>([
   'Warehouses',
   'Storage locations',
   'Couriers',
+  'Grades',
   'Warehouse transfers',
   'Stock adjustments',
   'Cycle counts',
@@ -105,6 +106,9 @@ export const BUILT_KEYS = new Set<string>([
   // PutAwayIndexPage exists and serves the Inbound delivery › Put-away tab and
   // the /put-away/:id detail route; the "Put-away" leaf resolves to "Put away".
   'Put away',
+
+  // ── Projects (project accounting; /projects/… detail + forms via detailMatch) ──
+  'Projects',
 
   // ── tabComponents index pages ──
   'Overview',
@@ -240,6 +244,11 @@ const ACTIONS: Record<string, EntityAction[]> = {
   'Couriers': [
     a('Add', 'built'), a('Edit', 'built'), a('Delete', 'built'),
   ],
+  'Grades': [
+    a('New', 'built'), a('Edit', 'built'), a('Activate', 'built'), a('Deactivate', 'built'),
+    a('Delete', 'built', 'blocked while a batch uses the grade → offers Deactivate'),
+    a('Activity log', 'built', 'per grade, from the Last updated cell'), a('Export', 'partial', 'modal only; no file'),
+  ],
   'Warehouse transfers': [
     a('New', 'built'), a('Details', 'built'), a('Edit', 'built'), a('Duplicate', 'built'),
     a('Approve', 'built'), a('Cancel', 'built'), a('Import', 'partial'),
@@ -312,7 +321,7 @@ export const SITEMAP: SitemapModule[] = [
         note: 'Reports › Tax index (report cards). VAT reconciliation is the built card; the rest are coming-soon.',
         children: [
           leaf('VAT reconciliation', {
-            note: 'Tabs: All reconciliations · Needs attention. A masa row opens its Faktur keluaran / Faktur masukan workspace; the Difference cell opens Unmatched & discrepancies for that masa; Matching rules is a title-bar settings destination.',
+            note: 'One list, no tabs — periods that need attention are sorted to the top. A masa row opens its VAT Out workspace (/faktur-keluaran; the VAT In workspace /faktur-masukan is hidden until OD-008); the Difference cell opens Unmatched & discrepancies for that masa; Matching rules is a title-bar settings destination.',
           }),
         ],
       }),
@@ -375,6 +384,7 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Categories'),
       leaf('Variant options'),
       leaf('Units'),
+      leaf('Grades'),
       leaf('Price rules'),
     ],
   },
@@ -419,6 +429,12 @@ export const SITEMAP: SitemapModule[] = [
       leaf('Production request'),
       leaf('Work orders'),
       leaf('Bill of materials'),
+    ],
+  },
+  {
+    module: 'Projects',
+    items: [
+      leaf('Projects', { note: 'Project accounting. /projects/new, /projects/:id, /projects/expense/new and /projects/invoice/new resolve via detailMatch.' }),
     ],
   },
   {

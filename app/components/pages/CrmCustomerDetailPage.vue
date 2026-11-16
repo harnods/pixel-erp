@@ -122,7 +122,8 @@ const contactColumns: TableColumn[] = [
   { key: 'email',       label: 'Email',                       sortable: true, sortType: 'text' },
   { key: 'phone',       label: 'Mobile',                      sortable: true, sortType: 'text' },
   { key: 'owner',       label: 'Contact owner', kind: 'name', sortable: true, sortType: 'text' },
-  { key: 'lastUpdated', label: 'Last updated',  kind: 'date'                                    },
+  // LastUpdatedCell stacks formatDateTime over a byline — the `datetime` kind.
+  { key: 'lastUpdated', label: 'Last updated',  kind: 'datetime'                                },
 ]
 const contactVisibility = reactive<Record<string, boolean>>(Object.fromEntries(contactColumns.map((c) => [c.key, true])))
 const contactColumnItems = contactColumns.map((c, i) => ({ key: c.key, label: c.label, disabled: i === 0 }))

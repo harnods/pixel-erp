@@ -13,8 +13,11 @@ import ScanBar from '~/components/patterns/ScanBar.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
-import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, acknowledgeCanceledReceipt, type ReceivingBatchLine } from '~/data/receivingTasks'
-import { productBySku } from '~/data/inventory'
+import { saveReceivingDraft, endReceiving as endReceivingTask, receivingTasksForReceipt, acknowledgeCanceledReceipt, receivingTaskVendorId, type ReceivingBatchLine } from '~/data/receivingTasks'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import { VENDOR_MISMATCH_COPY, vendorMismatches } from '~/data/batchDrawerAttributes'
+import { vendors } from '~/data/vendors'
+import { isProductBatchTracked, isProductSerialTracked } from '~/data/trackStockBy'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
 import { notifyScanError, sameCode } from '~/utils/scan'
@@ -99,8 +102,6 @@ const filteredItems = computed(() => {
 })
 
 // ── Batch / serial helpers (same heuristic as stock count / stock in-out) ──────
-const BATCH_CATS = new Set(['Green Beans', 'Roasted Beans'])
-const SERIAL_CATS = new Set(['Espresso Machine', 'Grinder', 'Equipment'])
 const stockMap = computed(() => {
   const wh = getWarehouseDetail(po.value?.warehouseId ?? '')
   return new Map((wh?.stock ?? []).map(s => [s.sku, s]))
@@ -108,14 +109,12 @@ const stockMap = computed(() => {
 function isBatchTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return (si.batches?.length ?? 0) > 0
-  const p = productBySku(sku)
-  return p ? BATCH_CATS.has(p.category) : false
+  return isProductBatchTracked(sku)
 }
 function isSerialTrackedSku(sku: string): boolean {
   const si = stockMap.value.get(sku)
   if (si) return !!si.serials
-  const p = productBySku(sku)
-  return p ? SERIAL_CATS.has(p.category) : false
+  return isProductSerialTracked(sku)
 }
 
 // ── Manage batch drawer — received qty for batch-tracked SKUs comes from here,
@@ -173,6 +172,7 @@ watch([() => props.orderId, lineItems], () => {
     if (it.batchLines?.length) {
       nextBatch[it.skuCode] = it.batchLines.map(b => ({
         key: b.batchNo, batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, onHand: 0, counted: b.qty, unit: b.unit,
+        ...(b.attributes ? { attributes: b.attributes } : {}),
       }))
     }
     if (it.serialNumbers?.length) nextSerial[it.skuCode] = it.serialNumbers
@@ -333,7 +333,41 @@ function endReceiving() {
     toast.notify({ variant: 'error', title: t('Receive at least one item to finish, or cancel the task instead.'), maxWidth: 'max-content' })
     return
   }
+  if (askVendorMismatch()) return
   showConfirm.value = true
+}
+
+// ── Vendor mismatch (PRD story 20 → story 14): existing batches recorded with another
+// vendor than this PO's — one confirm for all of them; their vendor is never changed. ──
+const poVendorId = computed(() => receivingTaskVendorId(props.orderId))
+const mismatchOpen = ref(false)
+const mismatchText = ref('')
+const mismatchItems = ref<string[]>([])
+function askVendorMismatch(): boolean {
+  const vendorId = poVendorId.value
+  if (!vendorId) return false
+  const found: { batchNo: string; productName: string; vendorName: string }[] = []
+  for (const item of lineItems.value) {
+    if (!isBatchTrackedSku(item.skuCode)) continue
+    const input = (batchLinesBySku.value[item.skuCode] ?? [])
+      .filter(b => (b.counted ?? 0) > 0)
+      .map(b => ({ batchNo: b.batchNo, attributes: b.attributes ?? {} }))
+    for (const m of vendorMismatches(item.skuCode, vendorId, input)) {
+      found.push({ batchNo: m.batchNo, productName: item.productName, vendorName: vendors.find(v => v.id === m.batchVendorId)?.name ?? m.batchVendorId })
+    }
+  }
+  if (!found.length) return false
+  const poVendor = vendors.find(v => v.id === vendorId)?.name ?? ''
+  if (found.length === 1) {
+    const one = found[0]!
+    mismatchText.value = `${one.batchNo} (${one.productName}): ${t(VENDOR_MISMATCH_COPY).replace('{batchVendor}', one.vendorName).replace('{deliveryVendor}', poVendor)}`
+    mismatchItems.value = []
+  } else {
+    mismatchText.value = t('These batches are recorded with a different vendor than this transaction ({deliveryVendor}). The vendor of the batches will not be changed.').replace('{deliveryVendor}', poVendor)
+    mismatchItems.value = found.map(m => `${m.batchNo} (${m.productName}) — ${m.vendorName}`)
+  }
+  mismatchOpen.value = true
+  return true
 }
 
 // Batch/serial identity recorded here would otherwise be thrown away once the qty
@@ -347,6 +381,7 @@ function buildReceivingDetail(): Record<string, { batchLines?: ReceivingBatchLin
         detail[item.skuCode] = {
           batchLines: lines.map(b => ({
             batchNo: b.batchNo, expiryDate: b.expiryDate, desc: b.desc, qty: b.counted ?? 0, unit: b.unit,
+            ...(b.attributes ? { attributes: b.attributes } : {}),
           })),
         }
       }
@@ -632,7 +667,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
                   <!-- Manage action column — only for batch/serial SKUs -->
                   <td v-if="isBatchTrackedSku(item.skuCode)" class="ri-td ri-td--action">
                     <MpTooltip :id="`ri-tt-batch-${item.skuCode}`" :label="t('Manage batch')" placement="top" use-portal>
-                      <MpButton class="ri-view-btn" variant="secondary" :aria-label="t('Manage batch')" @click="openBatchDrawer(item.skuCode)">
+                      <MpButton class="ri-view-btn" variant="secondary" :aria-label="t('Manage batch')" data-devchange="receiving-batch-attributes" @click="openBatchDrawer(item.skuCode)">
                         <MpIcon name="competencies" size="md" />
                       </MpButton>
                     </MpTooltip>
@@ -717,12 +752,20 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
     <MpModalOverlay />
   </MpModal>
 
+  <ConfirmModal
+    :is-open="mismatchOpen" :title="t('Save with batches from another vendor?')" :description="mismatchText"
+    :items="mismatchItems"
+    :confirm-label="t('Finish receiving')" :is-danger="false"
+    @update:is-open="(v: boolean) => { mismatchOpen = v }" @confirm="showConfirm = true"
+  />
+
   <ManageBatchDrawer
     v-if="batchDrawerSku"
     :open="batchDrawerOpen"
     :sku="batchDrawerSku"
     :warehouse-id="po?.warehouseId ?? ''"
     kind="receiving"
+    :vendor-id="poVendorId"
     :target-count="lineItems.find(i => i.skuCode === batchDrawerSku)?.targetQty ?? 0"
     :max-count="Math.max(0, (lineItems.find(i => i.skuCode === batchDrawerSku)?.expectedQty ?? 0) - (priorReceivedPerSku[batchDrawerSku] ?? 0))"
     :model-value="batchLinesBySku[batchDrawerSku] ?? []"

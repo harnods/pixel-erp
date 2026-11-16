@@ -39,10 +39,15 @@ function mountSerialDrawer(props: Record<string, unknown>) {
   })
 }
 
+// The fixture lot (1001 Batch #00001 in wh-006) is the demo's lot with its required
+// Vendor still empty, which a receiving drawer now blocks on (ATINV-9082 §5.1). The
+// row carries a Vendor, as if the operator filled it in, so these tests isolate the
+// qty cap.
 function committedRowFor(batch: { batchNo: string; expiryDate: string; onHand: number; location: string }) {
   return {
     key: batch.batchNo, batchNo: batch.batchNo, expiryDate: batch.expiryDate,
     desc: '', onHand: batch.onHand, counted: null, unit: 'Unit', location: batch.location,
+    attributes: { expiry_date: batch.expiryDate, supplier: 'V001' },
   }
 }
 

@@ -19,7 +19,10 @@ import {
   cashAccountLabel, whtAccountLabel, invoiceById, vendorNameOf, deletePurchasePayment,
   paymentJournal, invoiceLabel,
 } from '~/data/purchasePayments'
-import { getContactIdByName } from '~/data/contacts'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -107,7 +110,7 @@ const ppActionGroups = computed<ActionItem[][]>(() => [
       <section class="detail-summary">
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="window.open(`/vendors/${getContactIdByName(vendorNameOf(payment.vendorId))}`, '_blank')">{{ vendorNameOf(payment.vendorId) }}</a></ContentList>
+            <ContentList :label="t('Vendor')"><a class="detail-value-link" @click="openContact('vendors', vendorNameOf(payment.vendorId))" data-devchange="contact-link-open">{{ vendorNameOf(payment.vendorId) }}</a></ContentList>
           </div>
           <div class="content-list-col" />
           <div class="detail-primary-total">

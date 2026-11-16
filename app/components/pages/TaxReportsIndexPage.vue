@@ -9,6 +9,7 @@ import { MpButton } from '@mekari/pixel3'
 // /vat-reconciliation. The rest are placeholders (coming-soon toast), same as
 // the unbuilt cards on the sibling report indexes.
 import { infoToast } from '~/utils/toasts'
+import { VAT_IN_ENABLED } from '~/data/vatReconFlags'
 const { t } = useLocale()
 const router = useRouter()
 
@@ -18,7 +19,10 @@ interface ReportCard {
   description: string
 }
 const reports: ReportCard[] = [
-  { slug: 'vat-reconciliation',      title: 'VAT reconciliation',      description: 'Matches your sales and purchase invoices against the faktur pajak recorded in DJP Coretax, per tax period, and shows what is still unreconciled.' },
+  // Purchase invoices (VAT In, OD-008) only while VAT_IN_ENABLED is on.
+  { slug: 'vat-reconciliation',      title: 'VAT reconciliation',      description: VAT_IN_ENABLED
+    ? 'Matches your sales and purchase transactions against their tax documents, per tax period, and shows what is still unreconciled.'
+    : 'Matches your transactions against their tax documents, per tax period, and shows what is still unreconciled.' },
   { slug: 'output-tax-invoice-list', title: 'Output tax invoice list', description: 'Every faktur pajak you issued in a period, with its transaction code, DPP, and PPN. The working list behind your SPT Masa PPN.' },
   { slug: 'input-tax-invoice-list',  title: 'Input tax invoice list',  description: 'Every faktur pajak you received in a period, showing which ones are creditable and which are still waiting on a vendor.' },
   { slug: 'value-added-tax',         title: 'Value added tax (PPN)',   description: 'Calculates net VAT obligations by comparing Output Tax (from sales) and Input Tax (from purchases) within the period.' },

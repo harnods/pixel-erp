@@ -39,8 +39,9 @@ describe('seed coherence', () => {
   })
   it('covers every memo status', () => {
     const statuses = new Set(debitMemos.map((m) => memoStatus(m.id)))
-    expect(statuses.has('active')).toBe(true)
-    expect(statuses.has('partially-used')).toBe(true)
+    expect(statuses.has('open')).toBe(true)
+    // Open / Closed only — the vocabulary the Credit Memo report shows.
+    for (const st of statuses) expect(['open', 'closed']).toContain(st)
   })
   it('purchase invoice detail splits cash vs debit applied', () => {
     const d = getPurchaseInvoiceDetail('PI031')

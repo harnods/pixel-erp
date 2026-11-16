@@ -1,4 +1,6 @@
+<!-- prod-parity-aligned: jurnal-transaction-frontend/src/modules/sales/invoices/views/SalesInvoiceCreateView.vue -->
 <script setup lang="ts">
+import { infoToast } from '~/utils/toasts'
 /**
  * "New sales invoice" form — Sales ▸ Sales invoices ▸ New sales invoice
  * (Figma: Sales - Sales Invoices node 9152-107281).
@@ -27,15 +29,17 @@ import {
 import { formatIDR } from '~/utils/currency'
 import type { DataInterface } from '@mekari/pixel3'
 import {
-  customers, products, salesInvoices,
+  customers, products, salesInvoices, salesDeliveries,
   PAYMENT_TERMS, WAREHOUSES, UNIT_OPTIONS, TAX_OPTIONS,
 } from '~/data'
+import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesInvoice, SILineItem } from '~/data/types'
+import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
 import { saveSalesInvoiceEdit } from '~/data/salesInvoiceEdits'
-import { getApprovedTaxDocument, generateChangeDrafts, type TaxDocument } from '~/data/taxDocuments'
+import { getApprovedTaxDocument, generateChangeDrafts, updateTaxDocumentStatus, type TaxDocument } from '~/data/taxDocuments'
 import {
   buildTaxSnapshot, detectTaxChanges, resolveTaxAction,
   type DetectedTaxChange, type SalesInvoiceTaxSnapshot, type TaxAction,
@@ -187,6 +191,41 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
 
 const newRowSearch = ref('')
 function onProductAdd(_search?: string) { /* open create-product flow here (rule/select-quick-add) */ void _search }
+/**
+ * Invoice from a delivery (`?delivery=SD102`). The lines are the delivery's own —
+ * at the quantities delivered, to six decimals where a percentage produced them,
+ * and at the order's prices — so a 5,28 unit tranche invoices as 5,28 unit, not
+ * 5 or 6. This is the downstream view TS-004 of the percentage-based delivery
+ * plan checks for silent rounding. Deliveries with no order behind them keep
+ * opening a blank invoice, as before.
+ */
+const route = useRoute()
+const sourceDelivery = computed(() => {
+  const id = String(route.query.delivery ?? '')
+  return id ? salesDeliveries.find(d => d.id === id && d.orderId && d.items?.length) ?? null : null
+})
+watch(sourceDelivery, (d) => {
+  if (!d) return
+  customerId.value = d.customer.id
+  onCustomerChange(d.customer.id)
+  referenceNo.value = `${t('Sales Delivery')} #${d.number}`
+  items.value = getSalesDeliveryDetail(d.id).lineItems.map(l => ({
+    _key: ++_seq,
+    product: l.product,
+    sku: l.sku,
+    description: l.description,
+    qty: l.qty,
+    unit: l.unit,
+    unitPrice: l.unitPrice,
+    discountPct: l.discountPct,
+    taxLabel: 'PPN 11%',
+    productError: false,
+    qtyError: false,
+    dimensions: {},
+    dimensionErrors: {},
+  }))
+}, { immediate: true })
+
 function selectNewProduct(p: typeof products[number]) {
   items.value.push({
     _key: ++_seq,
@@ -313,7 +352,10 @@ function fmtPlain(n: number) {
 // ── Notes + attachments ───────────────────────────────────────────────────────
 const message = ref('')
 const memo    = ref('')
-const attachments = ref<{ name: string; sizeKB: number }[]>([])
+// Seeded from the File manager's "Add file › Create a new transaction"
+// hand-off, so the form opens with those files already attached. Reading it
+// clears it, so a later visit starts empty. Empty on every other entry.
+const attachments = ref<{ name: string; sizeKB: number }[]>(takePendingAttachments())
 function iconForFile(name: string): 'pdf' | 'excel-document' | 'word-document' | 'doc' {
   if (name.endsWith('.pdf')) return 'pdf'
   if (name.endsWith('.xlsx') || name.endsWith('.xls')) return 'excel-document'
@@ -525,25 +567,40 @@ function commitEdit() {
 }
 
 /** Confirmed from the review drawer — save, then raise whatever DJP needs. */
-function onTaxReviewConfirm() {
+/**
+ * @param submit  "Save & submit to DJP" rather than "Save as draft".
+ *
+ * A cancellation generates TWO documents — the Cancellation itself and the fresh
+ * Normal faktur for the corrected transaction — and submitting sends BOTH. DJP
+ * imposes no ordering between them (PER-11/PJ/2025 Lampiran D.6 requires only
+ * that the cancelled faktur stays on file), and a button that says "submit"
+ * while quietly holding one of the two back would be lying about what it did.
+ */
+function onTaxReviewConfirm(submit: boolean) {
   commitEdit()
   const source = approvedTaxDoc.value
   const action = taxReviewAction.value
 
   // Explicit over `!== 'none'`: TaxAction also covers 'return-note', which an
   // edit can never resolve to and generateChangeDrafts must never be handed.
+  let generated: TaxDocument[] = []
   if (source && (action === 'replacement' || action === 'cancellation')) {
-    generateChangeDrafts({
+    generated = generateChangeDrafts({
       source, action, changes: taxReviewChanges.value,
       date: todayDMY(),
       invoiceSnapshot: editedSnapshot(),
     })
+    if (submit) generated.forEach(d => updateTaxDocumentStatus(d.id, 'awaiting-approval'))
   }
 
   taxReviewOpen.value = false
   toast.notify({
     variant: 'success',
-    title: action === 'none' ? t('Sales invoice updated') : t('Sales invoice updated and tax document draft generated'),
+    title: action === 'none'
+      ? t('Sales invoice updated')
+      : submit
+        ? t('Sales invoice updated and tax document submitted to DJP')
+        : t('Sales invoice updated and tax document draft generated'),
     rootProps: { class: 'toast-enterprise' },
   })
   // Land on the Tax document tab when there is a new draft waiting to be reviewed.
@@ -593,9 +650,21 @@ function onSave() {
     hasAttachment: attachments.value.length > 0,
     tags: tagsList.value.map(t2 => String(t2.value)),
     hasPpn: taxAmount.value > 0,
+    // Keep the real lines when billing a delivery, and mark that delivery
+    // invoiced — so the detail page shows what was actually billed.
+    ...(sourceDelivery.value
+      ? {
+          deliveryId: sourceDelivery.value.id,
+          items: items.value.map(it => ({
+            product: it.product, sku: it.sku, description: it.description, qty: it.qty, unit: it.unit,
+            unitPrice: it.unitPrice, discountPct: it.discountPct, amount: lineAmount(it),
+          })),
+        }
+      : {}),
   }
   salesInvoices.push(invoice)
-  toast.notify({ variant: 'success', title: t('Sales invoice created'), rootProps: { class: 'toast-enterprise' } })
+  if (sourceDelivery.value) sourceDelivery.value.billingStatus = 'invoiced'
+  toast.notify({ variant: 'success', title: t('Invoice has been created'), rootProps: { class: 'toast-enterprise' } })
   router.push(`/sales-invoices/${invoice.id}`)
 }
 </script>
@@ -644,7 +713,7 @@ function onSave() {
 
         <MpFormControl id="f-email" class="si-field">
           <MpFormLabel>{{ t('Email') }}</MpFormLabel>
-          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('+Add email')" @change="onEmailChange" />
+          <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('Enter email and press Enter')" @change="onEmailChange" />
         </MpFormControl>
 
         <div class="si-header1-total">
@@ -663,7 +732,7 @@ function onSave() {
 
           <div class="si-checkbox-stack">
             <MpCheckbox id="f-requires-shipping" v-model:is-checked="requiresShipping">{{ t('Requires shipping') }}</MpCheckbox>
-            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to different address') }}</MpCheckbox>
+            <MpCheckbox id="f-ship-diff" v-model:is-checked="shipToDifferent">{{ t('Ship to a different address') }}</MpCheckbox>
           </div>
 
           <MpFormControl v-if="shipToDifferent" id="f-ship-to" class="si-field">
@@ -693,7 +762,7 @@ function onSave() {
         <!-- Col 3: shipping — only when "Requires shipping" is on -->
         <div v-if="requiresShipping" class="si-header2-col">
           <MpFormControl id="f-ship-date" class="si-field">
-            <MpFormLabel>{{ t('Ship date') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Delivery date') }}</MpFormLabel>
             <MpDatePicker id="f-ship-date-inp" v-model="shipDate" class="si-datepicker" format="DD/MM/YYYY" value-type="format" use-portal />
           </MpFormControl>
 
@@ -736,7 +805,7 @@ function onSave() {
         <!-- Col 5: tags — last column, same 24px gap as every other pair -->
         <div class="si-header2-col">
           <MpFormControl id="f-tags" class="si-field">
-            <MpFormLabel>{{ t('Tag') }}</MpFormLabel>
+            <MpFormLabel>{{ t('Tags') }}</MpFormLabel>
             <MpInputTag id="f-tags-inp" :data="tagsList" :placeholder="t('Select tags')" @change="onTagsChange" />
             <ErpDimensionTagUpsell id="si-dim-upsell" />
           </MpFormControl>
@@ -987,7 +1056,7 @@ function onSave() {
             </MpButton>
             <div class="si-discount-rows">
               <div class="si-totals-row">
-                <span>{{ t('Discount per line') }}</span>
+                <span>{{ t('Discounts per line') }}</span>
                 <span class="si-deduction">({{ fmt(discountTotal) }})</span>
               </div>
               <div class="si-totals-row">
@@ -1433,7 +1502,7 @@ function onSave() {
    --mp-spacing-5: that token resolves to 20.8px here (rem-based). */
 .si-notes-col { display: flex; flex-direction: column; gap: 20px; width: 432px; flex-shrink: 0; }
 .si-note-field { display: flex; flex-direction: column; }
-.si-field-caption { font-size: var(--mp-font-sizes-xs); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
+.si-field-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin-top: var(--mp-spacing-1, 4px); }
 /* char-counter on the label row (rule/input-char-counter) */
 .si-lbl-row { display: flex; align-items: baseline; justify-content: space-between; }
 .si-counter { font-size: var(--mp-font-sizes-sm, 0.75rem); color: var(--mp-text-secondary); }

@@ -42,3 +42,4 @@ package-lock.json
 
 # Playwright test artifacts
 test-results/
+.superpowers/

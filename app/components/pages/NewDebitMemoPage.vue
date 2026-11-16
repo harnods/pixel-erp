@@ -119,7 +119,13 @@ function cancel() {
   router.push('/purchase-invoices')
 }
 
-function onFiles(files: FileList | null) { if (!files) return; for (const f of Array.from(files)) if (!attachedFiles.value.some((x) => x.name === f.name)) attachedFiles.value.push(f) }
+function onFiles(payload: Event | FileList | null) {
+  // MpUpload's @change emits the native Event (ev.target.files), not a
+  // FileList. Accept both so the field actually stages what was picked.
+  const files: FileList | null | undefined =
+    payload && 'target' in payload ? (payload.target as HTMLInputElement).files : (payload as FileList | null)
+  if (!files) return; for (const f of Array.from(files)) if (!attachedFiles.value.some((x) => x.name === f.name)) attachedFiles.value.push(f)
+}
 function removeFile(name: string) { attachedFiles.value = attachedFiles.value.filter((f) => f.name !== name) }
 function fileIcon(name: string) {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''

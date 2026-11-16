@@ -13,7 +13,6 @@ import {
   MpButton, MpIcon, MpTextlink, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
-import { getContactIdByName } from '~/data/contacts'
 import PrintShareMenu from '~/components/patterns/PrintShareMenu.vue'
 import DetailActionsMenu from '~/components/patterns/DetailActionsMenu.vue'
 import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
@@ -27,6 +26,10 @@ import {
   creditMemoRefunds, getRefund, getCreditMemo, refundTotal, refundLabel, memoLabel,
   cashAccountLabel, customerNameOf, deleteRefund, refundJournal,
 } from '~/data/creditMemos'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -95,7 +98,7 @@ const cmrActionGroups = computed<ActionItem[][]>(() => [
     <div class="cm-stage">
       <section class="cm-summary">
         <div class="cm-primary">
-          <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(customerNameOf(refund.customerId))}`, '_blank')">{{ customerNameOf(refund.customerId) }}</a></ContentList>
+          <ContentList :label="t('Customer')"><a class="detail-value-link" @click="openContact('customers', customerNameOf(refund.customerId))" data-devchange="contact-link-open">{{ customerNameOf(refund.customerId) }}</a></ContentList>
           <div class="cm-primary-right">
             <div class="cm-primary-figure">
               <span class="cm-figure-label">{{ t('Total') }}</span>

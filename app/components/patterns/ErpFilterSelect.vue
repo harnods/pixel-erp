@@ -12,7 +12,8 @@ import {
   MpIcon, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css,
 } from '@mekari/pixel3'
 
-type Opt = { value: string; label: string }
+/** `group` (optional) prints a small header above the first option of each run of the same group. */
+type Opt = { value: string; label: string; group?: string }
 
 const props = withDefaults(defineProps<{
   id: string
@@ -22,16 +23,30 @@ const props = withDefaults(defineProps<{
   width?: string
   /** filter selects show an (×) to reset; set false for required form selects */
   isClearable?: boolean
+  /**
+   * `cell` drops the field border/height so the control can fill a table cell
+   * edge-to-edge (the cell itself draws the boundary). Same searchable
+   * behaviour — only the chrome changes. Used by the WMS cutover product table.
+   */
+  variant?: 'field' | 'cell'
+  /** Greys out and blocks input — for a cell whose group checkbox is off. */
+  isDisabled?: boolean
+  /** No-match copy. UXW blank-slate pattern: "No matching {object} found". */
+  emptyText?: string
   /** Read-only: the menu never opens and the × is withheld. Also used for a
    *  value forced by another field — a cascade's auto-filled level. */
   disabled?: boolean
-}>(), { width: '176px', isClearable: true, disabled: false })
+}>(), { width: '176px', isClearable: true, variant: 'field', disabled: false, isDisabled: false, emptyText: 'No results found' })
+
+const isInert = computed(() => props.disabled || props.isDisabled)
 
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const normalized = computed<Opt[]>(() =>
   props.options.map((o) => (typeof o === 'string' ? { value: o, label: o } : o)),
 )
+/** The group header to print before option i of the filtered list (when it starts a new group). */
+const groupHead = (i: number) => { const g = filtered.value[i]?.group; return g && filtered.value[i - 1]?.group !== g ? g : '' }
 const selectedLabel = computed(() => normalized.value.find((o) => o.value === props.modelValue)?.label ?? '')
 
 // Combobox state: the trigger input is typeable while open.
@@ -43,7 +58,7 @@ const filtered = computed<Opt[]>(() => {
   return q ? normalized.value.filter((o) => o.label.toLowerCase().includes(q)) : normalized.value
 })
 
-function focusOpen() { if (props.disabled || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
+function focusOpen() { if (isInert.value || open.value) return; open.value = true; query.value = ''; nextTick(() => inputEl.value?.focus()) }
 function onInput(e: Event) { query.value = (e.target as HTMLInputElement).value; if (!open.value) open.value = true }
 function onBlur() { window.setTimeout(() => { open.value = false; query.value = '' }, 120) }
 function close() { open.value = false; query.value = '' }
@@ -54,7 +69,7 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 </script>
 
 <template>
-  <div class="efs" :class="{ 'efs--filled': !!modelValue && isClearable && !open && !disabled, 'efs--disabled': disabled, 'efs--full': width === '100%' }" :style="{ '--efs-w': width }">
+  <div class="efs" :class="[`efs--${variant}`, { 'efs--filled': !!modelValue && isClearable && !open && !isInert, 'efs--disabled': isInert, 'efs--full': width === '100%' }]" :style="{ '--efs-w': width }">
     <MpPopover :id="id" is-manual :is-open="open" placement="bottom-start" use-portal is-adaptive-width :is-keep-alive="false" @close="close">
       <MpPopoverTrigger>
         <div class="efs-trigger" @click="focusOpen">
@@ -64,9 +79,9 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
             type="text"
             :value="open ? query : selectedLabel"
             :placeholder="modelValue ? selectedLabel : placeholder"
-            :disabled="disabled"
-            :readonly="disabled"
-            :tabindex="disabled ? -1 : undefined"
+            :disabled="isInert"
+            :readonly="isInert"
+            :tabindex="isInert ? -1 : undefined"
             @focus="focusOpen"
             @input="onInput"
             @keydown.enter.prevent="enter"
@@ -78,18 +93,20 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
       </MpPopoverTrigger>
       <MpPopoverContent :class="contentClass">
         <MpPopoverList>
-          <MpPopoverListItem
-            v-for="o in filtered" :key="o.value"
-            :is-active="o.value === modelValue"
-            @mousedown.prevent
-            @click="pick(o.value)"
-          >{{ o.label }}</MpPopoverListItem>
-          <div v-if="!filtered.length" class="efs-empty">No results</div>
+          <template v-for="(o, i) in filtered" :key="o.value">
+            <div v-if="groupHead(i)" class="efs-group" role="presentation">{{ groupHead(i) }}</div>
+            <MpPopoverListItem
+              :is-active="o.value === modelValue"
+              @mousedown.prevent
+              @click="pick(o.value)"
+            >{{ o.label }}</MpPopoverListItem>
+          </template>
+          <div v-if="!filtered.length" class="efs-empty">{{ emptyText }}</div>
         </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
 
-    <MpButton v-if="modelValue && isClearable && !open && !disabled" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
+    <MpButton v-if="modelValue && isClearable && !open && !isInert" type="button" class="efs-clear" variant="ghost" aria-label="Clear" @click.stop="pick('')">
       <MpIcon name="close" size="sm" />
     </MpButton>
   </div>
@@ -130,6 +147,8 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 .efs--filled:hover .efs-clear { display: inline-flex; }
 .efs-clear:hover { color: var(--mp-text-default); }
 
+.efs-group { align-self: stretch; width: 100%; box-sizing: border-box; text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3) var(--mp-spacing-1); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-secondary); border-top: 1px solid var(--mp-colors-border-default, #e7edf5); }
+.efs-group:first-child { border-top: 0; }
 .efs--disabled .efs-trigger {
   background: var(--mp-colors-background-disabled, #f5f5f5);
   border-color: var(--mp-colors-border-form, #1d1f2429);
@@ -137,6 +156,27 @@ const contentClass = css({ minWidth: '176px', maxHeight: '320px', overflowY: 'au
 }
 .efs--disabled .efs-input { color: var(--mp-text-secondary); cursor: default; }
 .efs--disabled .efs-chevron { color: var(--mp-text-disabled, #9ca3af); }
-
 .efs-empty { padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+
+/* ── `cell` variant — fills a table cell edge-to-edge ──────────────────────
+   The cell draws the boundary, so the control drops its own border and radius
+   and inherits the row height. Same searchable combobox behaviour otherwise. */
+.efs--cell { display: flex; width: 100%; }
+.efs--cell .efs-trigger {
+  width: 100%;
+  height: var(--mp-sizes-10, 40px);
+  padding: 0 var(--mp-spacing-3);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.efs--cell .efs-trigger:focus-within {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--mp-colors-border-bold, #8c9596);
+}
+.efs--cell .efs-clear { right: var(--mp-spacing-6); }
+
+.efs--disabled .efs-trigger { cursor: not-allowed; }
+.efs--disabled .efs-input { cursor: not-allowed; color: var(--mp-text-disabled, #9aa4a6); }
+.efs--disabled .efs-chevron { opacity: 0.4; }
 </style>

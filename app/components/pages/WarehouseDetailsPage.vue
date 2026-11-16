@@ -29,7 +29,7 @@ import { getWarehouseDetail, ensureLocationBarcode, type WarehouseStockItem } fr
 import { outgoingOrders } from '~/data/outgoing'
 import { getWarehouseTransactions, TRANSACTION_TYPES } from '~/data/warehouseTransactions'
 import { warehouses, getWarehouseActivity, unarchiveWarehouses, picForWarehouse } from '~/data/warehouses'
-import { getStorageTree, getStorageLeaves, type LocNode } from '~/data/storageLocations'
+import { getStorageTree, getStorageLeaves, canHaveSubLocation, type LocNode } from '~/data/storageLocations'
 import { archiveWarehousesSafe, deleteLocationSafe } from '~/data/integrityGuards'
 import {
   getWarehouseTeam, getWarehouseManagers, addTeamMember, removeTeamMember,
@@ -1620,7 +1620,7 @@ watch(filteredStock, () => nextTick(() => initStickyState()))
                         </MpPopoverTrigger>
                         <MpPopoverContent :class="css({ minWidth: '180px', width: 'max-content', whiteSpace: 'nowrap' })">
                           <MpPopoverList>
-                            <MpPopoverListItem @click="addSubLoc(row.node)">{{ t('Add sub-location') }}</MpPopoverListItem>
+                            <MpPopoverListItem v-if="canHaveSubLocation(row.node.level)" data-devchange="location-deepest-level" @click="addSubLoc(row.node)">{{ t('Add sub-location') }}</MpPopoverListItem>
                             <MpPopoverListItem :class="css({ color: 'var(--mp-text-critical, var(--mp-text-danger))' })" @click="deleteLoc(row.node)">{{ t('Delete') }}</MpPopoverListItem>
                           </MpPopoverList>
                         </MpPopoverContent>

@@ -7,24 +7,54 @@
  *
  * Status-aware: the header primary action, the raw-material/routing status columns,
  * and the reserved/consumed/start/end values all reflect the work order's status.
+ *
+ * Work order approval: Approve split button in the header for the viewer's level, pending
+ * notices under the tabs, and Start / Adjust / Complete / Cancel-close through
+ * WoTransactionModal (approval rule from VAL). Grooming 2026-10-09:
+ *   • the status badge stays as-is — no Draft / Waiting approval status;
+ *   • while a request is pending the work order is frozen — every action refuses inline
+ *     (buttons never disabled) except Print and the requester's Cancel approval request;
+ *   • rejection notices are sticky until dismissed (×); the Adjust / Cancel-close reason
+ *     shows in a notice; the Approval log icon in the header (rule/detail-approval-header)
+ *     opens every request on the work order in ApprovalLogModal.
  */
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { formatIDR } from '~/utils/currency'
 import {
-  MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
+  MpPopover, MpPopoverTrigger, MpTooltip, MpPopoverContent, MpPopoverList, MpPopoverListItem,
   MpIcon, MpSelect, MpDatePicker, MpButton, css, toast,
+  MpFormControl, MpFormErrorMessage, MpFormLabel,
+  MpModal, MpModalBody, MpModalCloseButton, MpModalContent, MpModalFooter, MpModalHeader, MpModalOverlay,
 } from '@mekari/pixel3'
+import ApprovalLogModal from '~/components/patterns/ApprovalLogModal.vue'
+import RejectTransactionModal from '~/components/patterns/RejectTransactionModal.vue'
+import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
+import WoTransactionModal, { type WoTransactionMode, type WoTransactionResult } from '~/components/patterns/WoTransactionModal.vue'
+import WoApprovalNotice, { type WoNotice } from '~/components/patterns/WoApprovalNotice.vue'
+import ApprovalCommentPopover from '~/components/patterns/ApprovalCommentPopover.vue'
+import {
+  pendingForWorkOrder, rejectedNotices, rejectionOf, dismissRejection, guardMessage, startWorkOrder, findGatingRule,
+  approvalLogsForWorkOrder, approvalLogFor, queueFor, rejectRequest,
+  approveRequest, typeLabel, requestTitle, requestById,
+  canCancelRequest, cancelRequest, requestsForWorkOrder, commentsFor, addComment,
+  type WoApprovalRequest,
+} from '~/data/woApproval'
+import { valUnavailable } from '~/data/valApprovalRule'
+import { WO_APPROVAL_ACTORS } from '~/composables/useWoApprovalActor'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ContentList from '~/components/patterns/ContentList.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
+import RoutingConfirmationModal from '~/components/patterns/RoutingConfirmationModal.vue'
 import CompleteWorkOrderModal, { type CompleteWorkOrderRow } from '~/components/patterns/CompleteWorkOrderModal.vue'
 import PickSerialNumberDrawer from '~/components/patterns/PickSerialNumberDrawer.vue'
 import PickBatchDrawer from '~/components/patterns/PickBatchDrawer.vue'
 import { formatDate } from '~/utils/date'
-import { workOrders, persistWorkOrders, type WorkOrder, type WorkOrderStatus } from '~/data/workOrders'
+import { workOrders, persistWorkOrders, type WorkOrder } from '~/data/workOrders'
 import { workOrderLinks } from '~/data/workOrderLinks'
 import { billOfMaterials, catalogProduct } from '~/data/billOfMaterials'
+import { canTrackRouting, isRoutingComplete, isWithinWindow, routingStepsFor, todayIso, workOrderEndWindow } from '~/data/workOrderRouting'
+import { neededQtyFor } from '~/data/workOrderAdjustment'
 import { recordsForWorkOrder, addMaterialConsumeReturnRecord, remainingReservation } from '~/data/materialConsumeReturn'
 import { isBatchTracked, isSerialized } from '~/data/warehouseDetails'
 import { warehouses } from '~/data/warehouses'
@@ -60,7 +90,9 @@ const activeBottomTab = ref('Partial production')
 // ── Top-level tabs (Overview / Material consume & return) ────────────────────
 const topTabs = ['Overview', 'Material consume & return'] as const
 type TopTab = typeof topTabs[number]
-const activeTopTab = ref<TopTab>(route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview')
+const activeTopTab = ref<TopTab>(
+  route.query.tab === 'material-consume-return' ? 'Material consume & return' : 'Overview',
+)
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const num = (n: number) => n.toLocaleString('id-ID')
@@ -70,25 +102,32 @@ const bomNo = computed(() => bom.value?.number ?? '—')
 const planRange = computed(() => wo.value ? `${formatDate(wo.value.planStartDate)} - ${formatDate(wo.value.planEndDate)}` : '—')
 
 // ── Header status → primary action ──────────────────────────────────────────────
-const STATUS_LABEL: Record<WorkOrderStatus, string> = {
-  'not started': t('Not started'), 'in progress': t('In progress'), 'partially produced': t('Partially produced'),
-  'partially completed': t('Partially completed'), 'completed': t('Completed'), 'canceled': t('Canceled'),
-}
-const primaryAction = computed(() => {
-  switch (wo.value?.status) {
-    case 'not started': return t('Start work order')
+const primaryActionKey = computed(() => {
+  if (!wo.value) return ''
+  switch (wo.value.status) {
+    case 'not started': return 'Start work order'
     case 'in progress':
-    case 'partially produced': return t('Complete work order')
-    case 'partially completed': return t('Complete work order')
+    case 'partially produced':
+      return canTrackRouting(wo.value) && !isRoutingComplete(routingSteps.value) ? 'Track routing' : 'Complete work order'
+    case 'partially completed': return 'Complete work order'
     default: return '' // completed / canceled → no primary action
   }
 })
-// Actions menu items — terminal statuses drop the destructive/edit options.
+const primaryAction = computed(() => primaryActionKey.value ? t(primaryActionKey.value) : '')
+// Actions menu items — terminal statuses drop the destructive/edit options. The
+// requester's own pending request adds "Cancel approval request" (until someone approves).
+// While approval is running, Adjust, Cancel/close, Edit, Replace attachment and Delete are hidden.
+const HIDDEN_WHILE_PENDING = new Set(['Adjust work order', 'Cancel/close work order', 'Edit', 'Replace attachment', 'Delete'])
 const actionItems = computed(() => {
   const s = wo.value?.status
-  if (s === 'completed') return ['Print']
-  if (s === 'canceled') return ['Print', 'Delete']
-  return ['Edit', 'Replace attachment', 'Print', 'Delete']
+  const own = cancelableRequest.value ? ['Cancel approval request'] : []
+  let items: string[]
+  if (s === 'completed') items = ['Print']
+  else if (s === 'canceled') items = ['Print', 'Delete']
+  else if (s === 'in progress' || s === 'partially produced') items = ['Adjust work order', 'Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
+  else items = ['Cancel/close work order', 'Edit', 'Replace attachment', 'Print', 'Delete']
+  if (pending.value.length) items = items.filter(i => !HIDDEN_WHILE_PENDING.has(i))
+  return [...own, ...items]
 })
 
 // ── Attachments (representative) ────────────────────────────────────────────────
@@ -101,9 +140,6 @@ const attachments = [
 const collapsed = reactive<Record<string, boolean>>({
   raw: false, cost: false, routing: false, finished: false,
 })
-
-// ── Line-item status derivation (from the work order status) ─────────────────────
-const routingLineStatus = computed(() => STATUS_LABEL[wo.value?.status ?? 'not started'])
 
 // Consumed = the real total from this work order's Material consume & return
 // records (Consume qty net of any Return qty) — the same records the Material
@@ -124,7 +160,7 @@ const showEnd = computed(() => ['partially completed', 'completed', 'canceled'].
 const EXECUTION_WAREHOUSE = 'Production Jakarta'
 const rawMaterials = computed(() => (bom.value?.rawMaterials ?? []).map(r => {
   const p = catalogProduct(r.productId)
-  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: r.needed, unit: r.unit }
+  return { productId: r.productId, product: p?.name ?? '—', sku: p?.sku ?? '—', purchaseCost: r.purchaseCost, warehouse: EXECUTION_WAREHOUSE, needed: neededQtyFor(wo.value, r.productId, r.needed), unit: r.unit }
 }))
 const rawEst = (r: { purchaseCost: number; needed: number }) => r.purchaseCost * r.needed
 const rawSubtotal = computed(() => rawMaterials.value.reduce((s, r) => s + rawEst(r), 0))
@@ -174,16 +210,15 @@ const viewTrackingType = computed<'serial' | 'batch' | undefined>(() => {
   if (isBatchTracked(category)) return 'batch'
   return undefined
 })
-function completeWorkOrder() {
+function completeWorkOrder(endDate: string = todayIso()) {
   if (!wo.value) return
   wo.value.status = 'completed'
-  wo.value.endDate = new Date().toISOString().slice(0, 10)
+  wo.value.endDate = endDate
   persistWorkOrders()
   toast.notify({ variant: 'success', title: 'Work order completed' })
 }
-function onAutoConsumeAndComplete() {
+function autoConsumeRemaining(isoDate: string) {
   if (!wo.value) return
-  const isoDate = new Date().toISOString().slice(0, 10)
   remainingRawMaterials.value.forEach((r) => {
     addMaterialConsumeReturnRecord({
       workOrderId: wo.value!.id,
@@ -205,12 +240,255 @@ function onAutoConsumeAndComplete() {
       serialSelection: r.reservedSerial,
     })
   })
+}
+function onAutoConsumeAndComplete() {
+  // A tracked work order still asks for its actual end date, so nothing is
+  // consumed until that's confirmed — cancelling leaves the work order untouched.
+  if (usesRoutingCompletion.value) { autoConsumeOnFinish.value = true; openEndDateModal(); return }
+  const isoDate = todayIso()
+  autoConsumeRemaining(isoDate)
+  completeWorkOrder(isoDate)
+}
+
+// ── Complete a tracked work order (Figma: finish wo with actual date) ────────
+// Confirm routing (or adjust first) → settle remaining materials → actual end date.
+const usesRoutingCompletion = computed(() => !!wo.value && canTrackRouting(wo.value))
+const showRoutingConfirm = ref(false)
+const autoConsumeOnFinish = ref(false)
+// Adjust: when an approval rule gates adjustments it goes through WoTransactionModal
+// (a request); otherwise main's full Adjust work order page.
+function goAdjust() {
+  showRoutingConfirm.value = false
+  showCompleteModal.value = false
+  if (findGatingRule('adjustment', actor.value)) { openTransaction('adjustment'); return }
+  router.push(`/work-orders/${props.orderId}/adjust`)
+}
+function continueCompletion() {
+  showRoutingConfirm.value = false
+  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
+  if (usesRoutingCompletion.value) { autoConsumeOnFinish.value = false; openEndDateModal(); return }
   completeWorkOrder()
 }
+// Not gated Complete (WoTransactionModal complete-now) → main's completion flow: a tracked
+// work order confirms its routing first, then remaining materials → actual end date.
+function runCompletion() {
+  if (usesRoutingCompletion.value) { showRoutingConfirm.value = true; return }
+  continueCompletion()
+}
+
+// Actual date modal — shared by Start work order and the end of the flow above.
+const showDateModal = ref(false)
+const dateModalMode = ref<'start' | 'end'>('end')
+const dateValue = ref('') // DD/MM/YYYY
+const dateError = ref('')
+const dateWindow = computed(() => dateModalMode.value === 'start'
+  ? { min: '', max: todayIso() }
+  : wo.value ? workOrderEndWindow(wo.value, routingSteps.value) : { min: '', max: '' })
+const dateHint = computed(() => dateModalMode.value === 'start'
+  ? t('You can only select dates until today.')
+  : t('You can only select dates from the routing end date until today.'))
+function openDateModal(mode: 'start' | 'end') {
+  dateModalMode.value = mode
+  dateValue.value = ''
+  dateError.value = ''
+  showDateModal.value = true
+}
+function openEndDateModal() { openDateModal('end') }
+function isDateDisabled(date: Date): boolean {
+  const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return !isWithinWindow(iso, dateWindow.value)
+}
+function confirmDate() {
+  const m = dateValue.value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) { dateError.value = t('Select a date.'); return }
+  const iso = `${m[3]}-${m[2]}-${m[1]}`
+  if (!isWithinWindow(iso, dateWindow.value)) { dateError.value = dateHint.value; return }
+  if (dateModalMode.value === 'start') {
+    startNow(iso)
+  } else {
+    if (autoConsumeOnFinish.value) autoConsumeRemaining(iso)
+    completeWorkOrder(iso)
+  }
+  showDateModal.value = false
+}
+
+// Adjust work order's Save & finish lands here with ?finish=1 to continue the flow.
+onMounted(() => {
+  if (route.query.finish !== '1') return
+  router.replace(`/work-orders/${props.orderId}`)
+  if (primaryActionKey.value === 'Complete work order') continueCompletion()
+})
 function handlePrimaryAction() {
-  if (primaryAction.value !== 'Complete work order') return
-  if (remainingRawMaterials.value.length > 0) { showCompleteModal.value = true; return }
-  completeWorkOrder()
+  if (!wo.value) return
+  // Every action confirms in WoTransactionModal, which asks VAL for the approval rule:
+  // gated → held as a request; not gated → applied as before (material reserved at start).
+  if (blocked()) return
+  if (primaryActionKey.value === 'Start work order') { openTransaction('start'); return }
+  // Track routing logs progress on its own page — no approval of its own.
+  if (primaryActionKey.value === 'Track routing') { router.push(`/work-orders/${props.orderId}/track-routing`); return }
+  if (primaryActionKey.value !== 'Complete work order') return
+  openTransaction('completion')
+}
+
+// ── Work order approval ───────────────────────────────────────────────────────
+const { actor, setActor } = useWoApprovalActor()
+const pending = computed(() => (wo.value ? pendingForWorkOrder(wo.value.id) : []))
+const rejections = computed(() => (wo.value ? rejectedNotices(wo.value.id) : []))
+const actionReason = computed(() => wo.value?.actionReason)
+const actionReasonRequest = computed(() => requestById(actionReason.value?.requestId))
+
+/**
+ * Only ONE notice shows on the work order — the latest. An inline refusal (the user just
+ * clicked a locked action) always wins; otherwise the newest of: a pending request
+ * (submitted at), an undismissed rejection (rejected at) and the Adjust / Cancel-close
+ * reason (given at). A pending request's reason rides on its pending notice instead.
+ */
+type Notice = WoNotice
+const notice = computed<Notice | null>(() => {
+  if (guardText.value) return { kind: 'guard' }
+  const candidates: { at: string; rank: number; n: Notice }[] = []
+  for (const r of pending.value) candidates.push({ at: r.log[0]?.at ?? r.transactionDate, rank: 3, n: { kind: 'pending', request: r } })
+  for (const r of rejections.value) candidates.push({ at: rejectionOf(r)?.at ?? '', rank: 2, n: { kind: 'rejected', request: r } })
+  if (actionReason.value && actionReasonRequest.value?.status !== 'pending') candidates.push({ at: actionReason.value.at, rank: 1, n: { kind: 'reason' } })
+  candidates.sort((a, b) => b.at.localeCompare(a.at) || b.rank - a.rank)
+  return candidates[0]?.n ?? null
+})
+
+
+// Freeze — any pending request locks every action but Print and Cancel approval request.
+// Actions stay enabled and explain themselves inline (rule: never disabled).
+const guardText = ref('')
+function blocked(): boolean {
+  const msg = wo.value ? guardMessage(wo.value.id) : null
+  guardText.value = msg ?? ''
+  return !!msg
+}
+
+// Cancel approval request — the requester's own pending request, until someone approves.
+const cancelableRequest = computed(() => pending.value.find(r => canCancelRequest(r, actor.value)))
+const cancelRequestOpen = ref(false)
+const cancelRequestTarget = ref<WoApprovalRequest | null>(null)
+function askCancelRequest(req: WoApprovalRequest | undefined) {
+  if (!req) return
+  cancelRequestTarget.value = req
+  cancelRequestOpen.value = true
+}
+const cancelRequestDescription = computed(() => {
+  const req = cancelRequestTarget.value
+  if (!req) return ''
+  return t('{title} won\'t be applied and the work order is unlocked. You can submit it again later.')
+    .replace('{title}', t(requestTitle(req)))
+})
+function confirmCancelRequest() {
+  const req = cancelRequestTarget.value
+  if (!req) return
+  if (!cancelRequest(req.id, actor.value)) {
+    guardText.value = 'This request can\'t be canceled anymore because an approver has already approved it.'
+    return
+  }
+  guardText.value = ''
+  toast.notify({ variant: 'success', title: t('Approval request canceled') })
+}
+
+// Approve from the header — only when a request on this WO awaits the viewer's level.
+const myRequest = computed(() => (wo.value ? queueFor(actor.value).find(r => r.workOrderId === wo.value!.id) : undefined))
+function approveHere() {
+  const req = myRequest.value
+  if (!req) return
+  const result = approveRequest(req.id, actor.value)
+  if (!result) return
+  guardText.value = ''
+  // rule/btn-save-toast — short past-participle phrase
+  toast.notify({ variant: 'success', title: t('Request approved') })
+}
+
+// Reject from the header split button — reason required (RejectTransactionModal).
+const rejectOpen = ref(false)
+const rejectDescription = computed(() => {
+  const req = myRequest.value
+  if (!req) return ''
+  return t('{title} won\'t be applied. The requester will see your reason in the approval log.')
+    .replace('{title}', `${t(typeLabel(req.type))}${req.ref ? ` ${req.ref}` : ''}`)
+})
+function rejectHere(reason: string) {
+  const req = myRequest.value
+  rejectOpen.value = false
+  if (!req || !rejectRequest(req.id, actor.value, reason)) return
+  guardText.value = ''
+  toast.notify({ variant: 'success', title: t('Request rejected') })
+}
+
+const approvalLogOpen = ref(false)
+// One request (from a rejection notice) or all of them (header icon / pending notices).
+const approvalLogRequestId = ref('')
+const approvalLogs = computed(() => {
+  if (!wo.value) return []
+  const one = requestById(approvalLogRequestId.value)
+  return one ? [approvalLogFor(one)] : approvalLogsForWorkOrder(wo.value.id)
+})
+// Header Comments — the thread of the pending request, else the latest one.
+const commentRequest = computed(() => {
+  if (!wo.value) return undefined
+  return pending.value[0] ?? requestsForWorkOrder(wo.value.id).slice().sort((a, b) => (b.log[0]?.at ?? '').localeCompare(a.log[0]?.at ?? ''))[0]
+})
+const headerComments = computed(() => (commentRequest.value ? commentsFor(commentRequest.value.id) : [])
+  .map(c => ({ id: c.id, author: c.author, timestamp: c.timestamp, text: c.text })))
+function postHeaderComment(text: string) {
+  if (commentRequest.value) addComment(commentRequest.value.id, actor.value, text)
+}
+function openApprovalLog(requestId = '') {
+  approvalLogRequestId.value = requestId
+  approvalLogOpen.value = true
+}
+
+// Start / Adjust / gated Complete / Cancel-close — WoTransactionModal.
+const transactionOpen = ref(false)
+const transactionMode = ref<WoTransactionMode>('adjustment')
+function openTransaction(mode: WoTransactionMode) {
+  transactionMode.value = mode
+  transactionOpen.value = true
+}
+function onTransactionDone(result: WoTransactionResult, mode: WoTransactionMode) {
+  guardText.value = ''
+  // Adjust / Cancel-close land back on the detail Overview, where the reason notice shows.
+  if (mode === 'adjustment' || mode === 'cancel') activeTopTab.value = 'Overview'
+  toast.notify({
+    variant: 'success',
+    // rule/btn-save-toast — short past-participle phrase
+    title: result === 'submitted' ? t('Request submitted')
+      : result === 'auto-approved' ? t('Request approved')
+        : t('Work order updated'),
+  })
+}
+
+// Not gated cancel/close — applied immediately, remaining reservation released.
+function cancelNow() {
+  if (!wo.value) return
+  wo.value.status = 'canceled'
+  wo.value.endDate = new Date().toISOString().slice(0, 10)
+  wo.value.materialReservations = undefined
+  persistWorkOrders()
+  toast.notify({ variant: 'success', title: t('Work order canceled') })
+}
+
+// Not gated start — In progress from the actual start date, planned material reserved.
+function startNow(startDate?: string) {
+  if (!wo.value) return
+  startWorkOrder(wo.value, startDate)
+  toast.notify({ variant: 'success', title: t('Work order started') })
+}
+
+function onActionItem(item: string) {
+  // Exempt from the freeze.
+  if (item === 'Print') return
+  if (item === 'Cancel approval request') { askCancelRequest(cancelableRequest.value); return }
+  if (blocked()) return
+  if (item === 'Adjust work order') { goAdjust(); return }
+  if (item === 'Cancel/close work order') openTransaction('cancel')
+}
+function onNewRecord() {
+  if (blocked()) return
+  goNewRecord()
 }
 
 // ── Material consume & return — sourced from the persisted store ────────────
@@ -301,25 +579,34 @@ const crrVisibleColumns = computed<TableColumn[]>(() => crrColumns.filter(c => c
 const PRODUCTION_COST_GROUPS = ['Labor', 'Overhead', 'Other'] as const
 const productionCost = computed(() => PRODUCTION_COST_GROUPS.map(g => {
   const row = (bom.value?.productionCost ?? []).find(c => c.group === g)
-  return { group: `${g} cost`, account: row?.account ?? '', driver: row?.costDriver ?? '', unitCost: row?.amount ?? 0, multiplier: row ? 1 : 0 }
+  return { group: `${g} cost`, account: row?.account ?? '', driver: row?.costDriver ?? '', unitCost: row?.amount ?? 0, multiplier: row ? wo.value?.adjustment?.costMultipliers[g] ?? 1 : 0 }
 }))
 const costAmount = (c: { unitCost: number; multiplier: number }) => c.unitCost * c.multiplier
 const productionCostSubtotal = computed(() => productionCost.value.reduce((s, c) => s + costAmount(c), 0))
 
-const routing = computed(() => (bom.value?.routing ?? []).map(r => ({
-  process: r.process, description: r.description, mapping: r.accountMapping,
-  planStart: wo.value?.planStartDate ?? '', planEnd: wo.value?.planEndDate ?? '', amount: r.amount,
-})))
+const routingSteps = computed(() => wo.value ? routingStepsFor(wo.value, bom.value) : [])
+// Tracked work orders show each step's own progress. Untracked or canceled ones
+// have none, so their steps mirror the work order itself.
+const routing = computed(() => routingSteps.value.map((r) => {
+  const followsSteps = !!wo.value?.trackRouting && wo.value.status !== 'canceled'
+  return {
+    process: r.process, description: r.description, mapping: r.accountMapping,
+    planStart: r.planStart, planEnd: r.planEnd, amount: r.amount,
+    startDate: followsSteps ? r.startDate : (showStart.value ? r.planStart : undefined),
+    endDate: followsSteps ? r.endDate : (showEnd.value ? r.planEnd : undefined),
+    status: followsSteps ? r.status : wo.value?.status ?? 'not started',
+  }
+}))
 const routingSubtotal = computed(() => routing.value.reduce((s, r) => s + r.amount, 0))
 const totalProductionCost = computed(() => rawSubtotal.value + productionCostSubtotal.value + routingSubtotal.value)
 
-const otherOutputs = computed(() => (bom.value?.otherOutputs ?? []).map(o => {
+const otherOutputs = computed(() => (wo.value?.adjustment?.otherOutputs ?? bom.value?.otherOutputs ?? []).map(o => {
   const p = catalogProduct(o.productId)
   return { product: p?.name ?? '—', sku: p?.sku ?? '—', qty: o.qty, unit: o.unit, percentage: o.percentage, estCost: o.estCost }
 }))
 const otherOutputsSubtotal = computed(() => otherOutputs.value.reduce((s, r) => s + r.estCost, 0))
 
-const productionWaste = computed(() => (bom.value?.productionWaste ?? []).map(w => ({
+const productionWaste = computed(() => (wo.value?.adjustment?.productionWaste ?? bom.value?.productionWaste ?? []).map(w => ({
   mapping: w.accountMapping, method: w.allocationMethod, percentage: w.percentage, amount: w.amount,
 })))
 const wasteSubtotal = computed(() => productionWaste.value.reduce((s, r) => s + r.amount, 0))
@@ -333,7 +620,7 @@ const mainOutput = computed(() => {
     sku: fg?.sku ?? '—',
     qty: wo.value?.producedQty || bom.value?.finishedGoodQty || 0,
     unit: bom.value?.finishedGoodUnit ?? 'Pcs',
-    percentage: bom.value?.finishedGoodPercentage ?? 100,
+    percentage: wo.value?.adjustment?.mainPercentage ?? bom.value?.finishedGoodPercentage ?? 100,
     estCost,
   }
 })
@@ -406,16 +693,30 @@ function suppressFabClick(e: MouseEvent) {
         <MpButton class="detail-breadcrumb" variant="ghost" @click="goList">{{ t('Work orders') }}</MpButton>
         <div class="detail-titlerow-left">
           <h1 class="detail-title">{{ t('Work order') }} #{{ wo.number.split('-').pop() }}</h1>
+          <!-- Work order status as-is — a pending request doesn't change it (grooming 2026-10-09) -->
           <ErpStatusBadge
             :status="wo.status"
             :label="wo.status === 'in progress' ? t('In progress') : undefined"
             badge-for="additionalInformation" size="md"
+            data-devchange="wo-approval-status"
           />
         </div>
       </div>
 
       <!-- Header actions -->
       <div class="detail-bar-actions">
+        <!-- Approval log — same header icon as the transaction details (rule/detail-approval-header) -->
+        <MpTooltip id="wod-tt-approval" :label="t('Approval log')" placement="bottom" use-portal>
+          <MpButton variant="ghost" class="detail-icon-btn" :aria-label="t('Approval log')" left-icon="task-todo" data-devchange="wo-approval-log-tab" @click="openApprovalLog()" />
+        </MpTooltip>
+        <!-- Comments — the latest request's thread (rule/detail-approval-header: Approval log + Comments) -->
+        <ApprovalCommentPopover
+          id="wod-comments"
+          data-devchange="wo-approval-log-tab"
+          :comments="headerComments"
+          :author="actor"
+          @post="postHeaderComment"
+        />
         <MpPopover id="wod-actions" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
           <MpPopoverTrigger>
             <MpButton class="detail-btn detail-btn--secondary" variant="secondary">
@@ -429,13 +730,32 @@ function suppressFabClick(e: MouseEvent) {
             <MpPopoverList>
               <MpPopoverListItem
                 v-for="item in actionItems" :key="item"
-                :class="item === 'Delete' ? css({ color: 'var(--mp-text-critical)' }) : ''"
+                :class="item === 'Delete' || item === 'Cancel/close work order' ? css({ color: 'var(--mp-text-critical)' }) : ''"
+                :data-devchange="item === 'Cancel approval request' ? 'wo-approval-cancel-request' : undefined"
+                @click="onActionItem(item)"
               >{{ t(item) }}</MpPopoverListItem>
             </MpPopoverList>
           </MpPopoverContent>
         </MpPopover>
 
-        <MpButton v-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
+        <!-- Approver view — when a request on this work order awaits the viewer's level,
+             the primary action becomes Approve (the work order can't move on until it's
+             decided anyway); the chevron segment offers Reject. The Approval log and
+             Comments icons sit left of Actions (rule/detail-approval-header). -->
+        <div v-if="myRequest" class="detail-split-btn" data-devchange="wo-approval-detail">
+          <MpButton variant="primary" is-rounded class="btn-enterprise btn-enterprise--primary detail-split-btn__main" @click="approveHere">{{ t('Approve') }}</MpButton>
+          <MpPopover id="wod-approve-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+            <MpPopoverTrigger>
+              <MpButton variant="primary" is-rounded class="btn-enterprise btn-enterprise--primary detail-split-btn__chevron" left-icon="chevrons-down" :aria-label="t('More approval actions')" />
+            </MpPopoverTrigger>
+            <MpPopoverContent class="erp-dropdown-menu">
+              <MpPopoverList>
+                <MpPopoverListItem @click="rejectOpen = true">{{ t('Reject') }}</MpPopoverListItem>
+              </MpPopoverList>
+            </MpPopoverContent>
+          </MpPopover>
+        </div>
+        <MpButton v-else-if="primaryAction" class="detail-btn detail-btn--primary" variant="primary" data-devchange="wo-primary-track-routing" @click="handlePrimaryAction">{{ primaryAction }}</MpButton>
       </div>
     </header>
 
@@ -446,11 +766,17 @@ function suppressFabClick(e: MouseEvent) {
         class="detail-toptab" variant="ghost" :class="{ 'detail-toptab--active': activeTopTab === tab }"
         role="tab" :aria-selected="activeTopTab === tab"
         @click="activeTopTab = tab"
-      >{{ tab }}</MpButton>
+      >{{ t(tab) }}</MpButton>
     </div>
 
     <!-- ── Scrollable stage ── -->
     <div v-if="activeTopTab === 'Overview'" class="detail-stage">
+      <!-- Approval notice — top of the scrolling content, scrolls with it -->
+      <WoApprovalNotice
+        v-if="notice" :notice="notice" :guard-text="guardText"
+        :action-reason="actionReason" :action-reason-ref="actionReasonRequest?.ref"
+        @clear-guard="guardText = ''" @dismiss="dismissRejection"
+      />
 
       <!-- ── Work order info ── -->
       <section class="wod-section">
@@ -472,7 +798,9 @@ function suppressFabClick(e: MouseEvent) {
           <div class="content-list-col">
             <ContentList :label="t('Type')" :value="wo.type" />
             <ContentList :label="t('Track routing')" :value="wo.trackRouting ? t('Yes') : t('No')" />
-            <ContentList :label="t('Produced qty')" :value="`${wo.producedQty}`" />
+            <ContentList :label="t('Produced qty')">
+              {{ wo.producedQty }}
+            </ContentList>
           </div>
           <div class="content-list-col">
             <ContentList :label="t('Production plan dates')" :value="planRange" />
@@ -520,7 +848,9 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--num">{{ formatIDR(r.purchaseCost) }}</td>
                   <td class="wod-td">{{ r.warehouse }}</td>
                   <td class="wod-td wod-td--num">{{ num(r.needed) }}</td>
-                  <td class="wod-td wod-td--num">{{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}</td>
+                  <td class="wod-td wod-td--num">
+                    {{ num(consumedFor(r.productId)) }}/{{ num(r.needed) }}
+                  </td>
                   <td class="wod-td">{{ r.unit }}</td>
                   <td class="wod-td wod-td--num">{{ formatIDR(rawEst(r)) }}</td>
                 </tr>
@@ -591,9 +921,9 @@ function suppressFabClick(e: MouseEvent) {
                   <td class="wod-td wod-td--wrap">{{ r.description }}</td>
                   <td class="wod-td">{{ r.mapping }}</td>
                   <td class="wod-td">{{ formatDate(r.planStart) }} - {{ formatDate(r.planEnd) }}</td>
-                  <td class="wod-td">{{ showStart ? formatDate(r.planStart) : '—' }}</td>
-                  <td class="wod-td">{{ showEnd ? formatDate(r.planEnd) : '—' }}</td>
-                  <td class="wod-td"><span class="wod-line-status wod-line-status--muted">{{ routingLineStatus }}</span></td>
+                  <td class="wod-td">{{ r.startDate ? formatDate(r.startDate) : '—' }}</td>
+                  <td class="wod-td">{{ r.endDate ? formatDate(r.endDate) : '—' }}</td>
+                  <td class="wod-td" data-devchange="wo-routing-status-badge"><ErpStatusBadge :status="r.status" :label="t(r.status.charAt(0).toUpperCase() + r.status.slice(1))" /></td>
                   <td class="wod-td wod-td--num">{{ formatIDR(r.amount) }}</td>
                 </tr>
               </tbody>
@@ -753,16 +1083,28 @@ function suppressFabClick(e: MouseEvent) {
 
     <!-- ── Material consume & return — no records at all: illustration only, no filter bar ── -->
     <div v-else-if="consumeReturnRecords.length === 0" class="detail-stage detail-stage--crr">
+      <!-- Approval notice — top of the scrolling content, scrolls with it -->
+      <WoApprovalNotice
+        v-if="notice" :notice="notice" :guard-text="guardText"
+        :action-reason="actionReason" :action-reason-ref="actionReasonRequest?.ref"
+        @clear-guard="guardText = ''" @dismiss="dismissRejection"
+      />
       <div class="crr-full-empty">
         <img src="/illustrations/empty-folder.png" alt="" class="crr-empty-illustration" width="288" height="240" />
         <p class="wod-empty-title">No material consume & return</p>
         <p class="wod-empty-desc">Material consume & return will appear here.</p>
-        <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
+        <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="onNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
       </div>
     </div>
 
     <!-- ── Material consume & return — with records ── -->
     <div v-else class="detail-stage detail-stage--crr">
+      <!-- Approval notice — top of the scrolling content, scrolls with it -->
+      <WoApprovalNotice
+        v-if="notice" :notice="notice" :guard-text="guardText"
+        :action-reason="actionReason" :action-reason-ref="actionReasonRequest?.ref"
+        @clear-guard="guardText = ''" @dismiss="dismissRejection"
+      />
       <ErpTablePage
         :columns="crrVisibleColumns"
         :rows="(crrPaginated as unknown as Record<string, unknown>[])"
@@ -823,7 +1165,7 @@ function suppressFabClick(e: MouseEvent) {
               <input v-model="crrSearch" class="filter-search-input" type="text" placeholder="Search..." />
             </div>
 
-            <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="goNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
+            <MpButton class="detail-btn detail-btn--secondary" variant="secondary" @click="onNewRecord"><MpIcon name="add" size="sm" />New record</MpButton>
           </div>
         </template>
 
@@ -891,15 +1233,97 @@ function suppressFabClick(e: MouseEvent) {
         <MpPopoverList>
           <MpPopoverListItem v-for="o in flowOptions" :key="o.value" :is-active="o.value === flow" @click="flow = o.value">{{ o.label }}</MpPopoverListItem>
         </MpPopoverList>
+        <p class="wod-flow-fab-heading">{{ t('Approval view') }}</p>
+        <MpPopoverList>
+          <MpPopoverListItem v-for="a in WO_APPROVAL_ACTORS" :key="a.name" :is-active="a.name === actor" @click="setActor(a.name)">{{ t(a.label) }}</MpPopoverListItem>
+        </MpPopoverList>
+        <p class="wod-flow-fab-heading">{{ t('Approval rule service (VAL)') }}</p>
+        <MpPopoverList>
+          <MpPopoverListItem :is-active="!valUnavailable" @click="valUnavailable = false">{{ t('Available') }}</MpPopoverListItem>
+          <MpPopoverListItem :is-active="valUnavailable" @click="valUnavailable = true">{{ t('Unavailable (error state)') }}</MpPopoverListItem>
+        </MpPopoverList>
       </MpPopoverContent>
     </MpPopover>
+
+    <ApprovalLogModal
+      :is-open="approvalLogOpen"
+      :logs="approvalLogs"
+      empty-text="No approval request on this work order"
+      @close="approvalLogOpen = false"
+    />
+    <ConfirmModal
+      v-model:is-open="cancelRequestOpen"
+      :title="t('Cancel approval request?')"
+      :description="cancelRequestDescription"
+      :confirm-label="t('Cancel approval request')"
+      :cancel-label="t('Cancel')"
+      @confirm="confirmCancelRequest"
+    />
+    <RejectTransactionModal
+      :is-open="rejectOpen"
+      doc-type="request"
+      :title="t('Reject request?')"
+      :description="rejectDescription"
+      @close="rejectOpen = false"
+      @reject="rejectHere"
+    />
+    <WoTransactionModal
+      v-model:is-open="transactionOpen"
+      :mode="transactionMode"
+      :work-order="wo"
+      :requester="actor"
+      @done="onTransactionDone"
+      @complete-now="runCompletion"
+      @cancel-now="cancelNow"
+      @start-now="startNow"
+    />
 
     <CompleteWorkOrderModal
       v-model:is-open="showCompleteModal"
       :rows="remainingRawMaterials"
+      @adjust="goAdjust"
       @complete="onAutoConsumeAndComplete"
       @view-tracking="onViewTracking"
     />
+
+    <RoutingConfirmationModal
+      :is-open="showRoutingConfirm"
+      data-devchange="wo-routing-confirmation"
+      @close="showRoutingConfirm = false"
+      @adjust="goAdjust"
+      @save="continueCompletion"
+    />
+
+    <MpModal
+      id="wod-date-modal" :is-open="showDateModal" size="md" :is-keep-alive="false"
+      :is-close-on-esc="false" :is-close-on-overlay-click="false" @close="showDateModal = false"
+    >
+      <MpModalContent>
+        <MpModalHeader>
+          {{ dateModalMode === 'start' ? t('Start work order') : t('Confirm work order completion') }}
+          <MpModalCloseButton />
+        </MpModalHeader>
+        <MpModalBody>
+          <MpFormControl id="wod-date" is-required :is-invalid="!!dateError" data-devchange="wo-start-date-modal">
+            <MpFormLabel>{{ dateModalMode === 'start' ? t('Actual start date') : t('Actual end date') }}</MpFormLabel>
+            <MpDatePicker
+              id="wod-date-picker" v-model="dateValue" format="DD/MM/YYYY" value-type="format"
+              :placeholder="t('Select date')" use-portal :disabled-date="isDateDisabled"
+              :class="css({ width: '100%' })" @update:model-value="dateError = ''"
+            />
+            <MpFormErrorMessage v-if="dateError">{{ dateError }}</MpFormErrorMessage>
+            <p v-else class="wod-date-hint">{{ dateHint }}</p>
+          </MpFormControl>
+        </MpModalBody>
+        <MpModalFooter>
+          <div class="wod-date-footer">
+            <MpButton variant="ghost" is-rounded @click="showDateModal = false">{{ t('Cancel') }}</MpButton>
+            <MpButton variant="primary" is-rounded @click="confirmDate">{{ dateModalMode === 'start' ? t('Start') : t('Confirm') }}</MpButton>
+          </div>
+        </MpModalFooter>
+      </MpModalContent>
+      <MpModalOverlay />
+    </MpModal>
 
     <!-- "View batch" / "View serial number" from the complete-work-order modal —
          same pick drawer used elsewhere, just for looking at what's still
@@ -947,6 +1371,22 @@ function suppressFabClick(e: MouseEvent) {
 </template>
 
 <style scoped>
+/* ── Work order approval ──────────────────────────────────────────────────── */
+/* Header icon button (Approval log) — same as StockAdjustmentDetailsPage. */
+.detail-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-9, 36px); height: var(--mp-sizes-9, 36px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
+.detail-icon-btn:hover { background: var(--mp-background-neutral-hovered); }
+/* Split button — Approve + chevron (Reject) sharing one pill; outer corners rounded only. */
+.detail-split-btn { display: inline-flex; align-items: stretch; }
+.detail-split-btn__main { border-radius: var(--mp-radii-full) 0 0 var(--mp-radii-full) !important; }
+.detail-split-btn__chevron {
+  padding-left: var(--mp-spacing-3) !important; padding-right: var(--mp-spacing-3) !important;
+  border-radius: 0 var(--mp-radii-full) var(--mp-radii-full) 0 !important;
+  border-left: 1px solid var(--mp-border-default) !important;
+}
+/* The approval notice is the stage's first child — keep the first section flush under it. */
+.wan + .wod-section { padding-top: 0; }
+.wod-waiting { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); white-space: nowrap; }
+
 /* The view-tracking drawer opens from inside CompleteWorkOrderModal (z-index
    1400) — without this it'd render behind that modal instead of on top of it. */
 :deep(.psn-overlay), :deep(.pbd-overlay) { z-index: 1500; }
@@ -1146,11 +1586,6 @@ function suppressFabClick(e: MouseEvent) {
 .wod-table tbody tr:first-child .wod-th { border-top: none; }
 
 /* line status text */
-.wod-line-status { font-size: var(--mp-font-sizes-md); }
-.wod-line-status--warning { color: var(--mp-colors-text-warning, #a14a0b); }
-.wod-line-status--information { color: var(--mp-colors-text-information, #4b61dc); }
-.wod-line-status--success { color: var(--mp-colors-text-success, #0f6d4d); }
-.wod-line-status--muted { color: var(--mp-text-secondary); }
 
 /* ── Subtotal + summary ──────────────────────────────────────────────────── */
 .wod-subtotal-row {
@@ -1166,4 +1601,7 @@ function suppressFabClick(e: MouseEvent) {
 }
 .wod-summary-row > :last-child { min-width: 200px; text-align: right; font-variant-numeric: tabular-nums; color: var(--mp-text-default); }
 .wod-summary-row--total { font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+
+.wod-date-hint { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.wod-date-footer { display: flex; justify-content: flex-end; gap: var(--mp-spacing-2); width: 100%; }
 </style>

@@ -41,7 +41,8 @@ const { search, statusFilter, currentPage, paginated, total, perPage, setPage, s
 
 const columns: TableColumn[] = [
   { key: 'id',          label: 'Transaction number', kind: 'number', sortable: true, sortType: 'text' },
-  { key: 'requestDate', label: 'Request date',       kind: 'date', sortable: true, sortType: 'date' },
+  // Renders formatDateTime, which the 160px `date` kind clips.
+  { key: 'requestDate', label: 'Request date',       kind: 'datetime', sortable: true, sortType: 'date' },
   { key: 'claimType',   label: 'Claim type',                         sortType: 'text' },
   { key: 'category',    label: 'Claim category',                     sortType: 'text' },
   { key: 'status',      label: 'Status',             kind: 'status' },

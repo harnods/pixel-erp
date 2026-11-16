@@ -243,17 +243,17 @@ export function memoRemaining(memoId: string, ex: ExcludeOpts = {}): number {
   return memoTotal(m) - memoUsed(memoId, ex)
 }
 
-export type MemoStatus = 'active' | 'partially-used' | 'used-up'
+/** Open = remaining balance left to apply or refund; Closed = fully used. One
+ *  vocabulary with the Credit Memo report (Figma 4531-72196) and ErpStatusBadge's
+ *  open / closed badges — the report shows the same status as of its date. */
+export type MemoStatus = 'open' | 'closed'
 export function memoStatus(memoId: string): MemoStatus {
   const m = getDebitMemo(memoId)
-  if (!m) return 'used-up'
-  const rem = memoRemaining(memoId)
-  if (rem <= 0) return 'used-up'
-  if (rem >= memoTotal(m)) return 'active'
-  return 'partially-used'
+  if (!m) return 'closed'
+  return memoRemaining(memoId) > 0 ? 'open' : 'closed'
 }
 export const MEMO_STATUS_LABEL: Record<MemoStatus, string> = {
-  'active': 'Active', 'partially-used': 'Partially used', 'used-up': 'Used up',
+  open: 'Open', closed: 'Closed',
 }
 
 export function memosForVendor(vendorId: string): PurchaseDebitMemo[] {

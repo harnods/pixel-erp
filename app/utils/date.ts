@@ -15,6 +15,18 @@
 
 const EMPTY = '—'
 
+/**
+ * A date as the user's calendar sees it — `YYYY-MM-DD` in LOCAL time.
+ *
+ * `toISOString().slice(0, 10)` is the UTC day, which is the day before east of UTC
+ * for anything before 07:00 in WIB — a transaction saved at 06:40 would be dated
+ * yesterday. Use this wherever a business date is stored or compared.
+ */
+export function localDate(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 function time24(d: Date): string {
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
 }

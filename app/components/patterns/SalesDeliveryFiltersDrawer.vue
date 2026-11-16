@@ -74,6 +74,11 @@ const props = defineProps<{
   fulfillmentOptions: { value: string; label: string }[]
   billingOptions: { value: string; label: string }[]
   tagOptions: string[]
+  /** Copy overrides (prod parity); defaults keep the original wording. */
+  keywordPlaceholder?: string
+  dateLabel?: string
+  datePlaceholder?: string
+  resetLabel?: string
 }>()
 const emit = defineEmits<{
   (e: 'update:isOpen', v: boolean): void
@@ -123,7 +128,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
             v-model="draft.keyword"
             class="sdf-keyword-input"
             type="text"
-            placeholder="Search keywords..."
+            :placeholder="keywordPlaceholder ?? 'Search keywords...'"
             @keydown.enter.prevent="apply"
           >
           <MpPopover :id="`${id}-keyword-scope`" is-manual :is-open="keywordColumnOpen" use-portal :is-keep-alive="false" @open="keywordColumnOpen = true" @close="keywordColumnOpen = false">
@@ -152,10 +157,10 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
 
       <!-- Delivery date — past-preset range (Today / Last 7 / Last 30 days). -->
       <div class="sdf-field">
-        <span class="sdf-field-label">Delivery date</span>
+        <span class="sdf-field-label">{{ dateLabel ?? 'Delivery date' }}</span>
         <AdvancedDateRangePicker
           :id="`${id}-deliverydate`" :model-value="draft.deliveryDate"
-          is-full-width hide-label placeholder="Select delivery date"
+          is-full-width hide-label :placeholder="datePlaceholder ?? 'Select delivery date'"
           @update:model-value="draft.deliveryDate = $event"
         />
       </div>
@@ -254,7 +259,7 @@ function onTagBackspace() { if (!tagDraft.value && draft.tags.length) draft.tags
     </template>
 
     <template #footer>
-      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">Reset filter</MpButton>
+      <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="clearAll">{{ resetLabel ?? 'Reset filter' }}</MpButton>
       <div class="sdf-footer-right">
         <MpButton class="btn-enterprise btn-enterprise--ghost" variant="ghost" type="button" @click="close">Cancel</MpButton>
         <MpButton class="btn-enterprise btn-enterprise--primary" variant="primary" type="button" @click="apply">Apply</MpButton>

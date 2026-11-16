@@ -20,7 +20,10 @@ import {
   paymentJournal,
 } from '~/data/paymentsReceived'
 import { invoiceLabel } from '~/data/creditMemos'
-import { getContactIdByName } from '~/data/contacts'
+import { useOpenContact } from '~/composables/useOpenContact'
+
+// Contact links open in a new tab (window is not reachable from the template).
+const openContact = useOpenContact()
 
 const props = defineProps<{ orderId: string }>()
 const { t } = useLocale()
@@ -108,7 +111,7 @@ const prActionGroups = computed<ActionItem[][]>(() => [
       <section class="detail-summary">
         <div class="content-list-grid">
           <div class="content-list-col">
-            <ContentList :label="t('Customer')"><a class="detail-value-link" @click="window.open(`/customers/${getContactIdByName(customerNameOf(payment.customerId))}`, '_blank')">{{ customerNameOf(payment.customerId) }}</a></ContentList>
+            <ContentList :label="t('Customer')"><a class="detail-value-link" @click="openContact('customers', customerNameOf(payment.customerId))" data-devchange="contact-link-open">{{ customerNameOf(payment.customerId) }}</a></ContentList>
           </div>
           <div class="content-list-col" />
           <div class="detail-primary-total">
