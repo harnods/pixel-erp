@@ -6569,4 +6569,8 @@ export const ID_TRANSLATIONS: Record<string, string> = {
   "Billed on": "Ditagih di",
   "Billed by quantity": "Ditagih per kuantitas",
   "Billed by percentage": "Ditagih per persentase",
+  // ── Sales invoice from deliveries — Manage deliveries per line (2026-11-18) ──
+  "Manage deliveries": "Atur pengiriman",
+  "Deliveries are used in the order they were created, except on lines where you chose them with Manage deliveries.": "Pengiriman dipakai sesuai urutan dibuat, kecuali di baris yang pengirimannya dipilih lewat Atur pengiriman.",
+  "Enter how much to bill from each delivery. Bill now on the line becomes the total.": "Isi jumlah yang ditagih dari tiap pengiriman. Ditagih sekarang di baris akan jadi totalnya.",
 }

@@ -42,6 +42,8 @@ const splitOptions = computed(() => [
 ])
 
 const isManual = computed(() => props.split === 'manual')
+/** Some line's deliveries were chosen with Manage deliveries (not oldest-first). */
+const hasChosen = computed(() => props.plan.lines.some(l => l.isChosen))
 
 /** Product name / unit for a cell come from the plan's order lines. */
 const lineByIndex = computed(() => new Map<number, PlanLine>(props.plan.lines.map((l) => [l.orderLineIndex, l])))
@@ -94,7 +96,7 @@ const discountText = (n: number) => formatIDR(Math.round(n) > 0 ? -Math.round(n)
           @update:model-value="onSplit"
         />
         <span class="dbs-caption">
-          {{ isManual ? t('Enter the quantity to bill from each delivery.') : t('Deliveries are used in the order they were created.') }}
+          {{ isManual ? t('Enter the quantity to bill from each delivery.') : hasChosen ? t('Deliveries are used in the order they were created, except on lines where you chose them with Manage deliveries.') : t('Deliveries are used in the order they were created.') }}
         </span>
       </MpFormControl>
     </div>

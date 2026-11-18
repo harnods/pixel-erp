@@ -271,6 +271,10 @@ export interface BillingInput {
   /** Manual split: qty per delivery per order line. Cells not given start from the
    *  oldest-first default, so switching to manual never blanks the table. */
   manual?: Record<string, Record<number, number>>
+  /** Per line, the deliveries the user chose (Manage deliveries): orderLineIndex ->
+   *  deliveryId -> qty. A line listed here bills exactly these figures and ignores
+   *  its lineInputs; the other lines keep the oldest-first split. */
+  lineSplits?: Record<number, Record<string, number>>
   /** When editing an invoice, its own records are left out of "billed before". */
   excludeInvoiceId?: string
 }
@@ -285,7 +289,7 @@ export interface PlanCell {
   leftAfter: number
   goodsNow: number
   discountNow: number
-  /** Manual split only: billNow above this cell's available. */
+  /** Manual split / chosen deliveries: billNow above this cell's available. */
   overCap: boolean
 }
 
@@ -316,6 +320,8 @@ export interface PlanLine {
   maxPercent: number
   /** Auto split: qty above the line's cap (Rule 4 rejection). */
   overCap: boolean
+  /** The user chose the deliveries for this line (lineSplits), not oldest-first. */
+  isChosen: boolean
 }
 
 export interface PlanDelivery {
@@ -415,6 +421,17 @@ export function planBilling(input: BillingInput): BillingPlan {
     }
     lineOver[i] = input.split === 'auto' && rest > QTY_EPS
   }
+  // Lines whose deliveries the user chose: exactly those figures, nothing oldest-first.
+  const chosen = new Set<number>()
+  if (input.split === 'auto' && input.lineSplits) {
+    for (const i of lineIdx) {
+      const pick = input.lineSplits[i]
+      if (!pick) continue
+      chosen.add(i)
+      lineOver[i] = false
+      for (const d of selected) (cellQty[d.id] ??= {})[i] = trunc6(Math.max(0, pick[d.id] ?? 0))
+    }
+  }
   if (input.split === 'manual' && input.manual) {
     for (const d of selected) {
       for (const i of lineIdx) {
@@ -438,7 +455,7 @@ export function planBilling(input: BillingInput): BillingPlan {
       const goods = now * netPrice(order, i)
       const clears = now > 0 && b.billed + now >= b.delivered - QTY_EPS
       const disc = now <= 0 ? 0 : clears ? b.discount - b.discountBilled : (b.delivered > 0 ? b.discount * now / b.delivered : 0)
-      const overCap = input.split === 'manual' && now > b.available + QTY_EPS
+      const overCap = (input.split === 'manual' || chosen.has(i)) && now > b.available + QTY_EPS
       if (overCap) {
         errors.push(`${order.items[i]!.product}: max ${qtyText(b.available)} ${order.items[i]!.unit} on Sales Delivery #${d.number}`)
       }
@@ -474,7 +491,8 @@ export function planBilling(input: BillingInput): BillingPlan {
     const maxQty = selected.reduce((s, d) => s + (balances[d.id]![i]?.available ?? 0), 0)
     const percent = it.qty > 0 ? qty / it.qty * 100 : 0
     const maxPercent = it.qty > 0 ? Math.floor(maxQty / it.qty * 100 * 100 + 1e-6) / 100 : 0
-    const shownInput = input.split === 'auto' ? (input.lineInputs[i] ?? 0) : (input.basis === 'qty' ? qty : percent)
+    const derived = input.split === 'manual' || chosen.has(i)
+    const shownInput = derived ? (input.basis === 'qty' ? qty : percent) : (input.lineInputs[i] ?? 0)
     if (lineOver[i]) {
       errors.push(input.basis === 'percent'
         ? `${it.product}: max ${pctText(maxPercent)} / ${qtyText(maxQty)} ${it.unit}`
@@ -486,6 +504,7 @@ export function planBilling(input: BillingInput): BillingPlan {
       deliveredQty: delivered[i] ?? 0, billedQty: billed[i] ?? 0, availableQty: maxQty,
       input: shownInput, qty, percent,
       amount: Math.round(qty * netPrice(order, i)), maxQty, maxPercent, overCap: !!lineOver[i],
+      isChosen: chosen.has(i),
     }
   })
 

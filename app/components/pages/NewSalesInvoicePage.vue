@@ -43,6 +43,7 @@ import {
 } from '~/data/deliveryBilling'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import DeliveryBillingSplit from '~/components/patterns/DeliveryBillingSplit.vue'
+import ManageBillingDeliveriesDrawer from '~/components/patterns/ManageBillingDeliveriesDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
 import { getSalesInvoiceDetail } from '~/data/salesInvoiceDetails'
@@ -154,6 +155,10 @@ const lineInputs     = ref<Record<number, number>>({})
 const allLinesPct    = ref<number | ''>('')
 const split          = ref<SplitMode>('auto')
 const manual         = ref<Record<string, Record<number, number>>>({})
+/** Manage deliveries: orderLineIndex -> deliveryId -> qty the user chose for that line. */
+const lineSplits     = ref<Record<number, Record<string, number>>>({})
+/** The line whose Manage deliveries drawer is open. */
+const manageLineIdx  = ref<number | null>(null)
 /** Ticking a delivery of another order replaced the selection (B11). */
 const orderReplaced  = ref(false)
 /** Save was attempted in deliveries mode — the banner lists plan.errors from then on. */
@@ -175,6 +180,7 @@ const plan = computed<BillingPlan | null>(() => {
     lineInputs: lineInputs.value,
     split: split.value,
     manual: split.value === 'manual' ? manual.value : undefined,
+    lineSplits: lineSplits.value,
   })
 })
 
@@ -198,6 +204,8 @@ const fullyBilledNotes = computed(() => {
 })
 
 function toggleDelivery(d: SalesDelivery) {
+  // Chosen deliveries per line only hold for the selection they were made on.
+  lineSplits.value = {}
   if (deliveryIds.value.includes(d.id)) {
     deliveryIds.value = deliveryIds.value.filter(x => x !== d.id)
     orderReplaced.value = false
@@ -221,6 +229,7 @@ function defaultBasis(orderId: string): BillingBasis {
 function resetBillingInputs() {
   lineInputs.value = {}
   allLinesPct.value = ''
+  lineSplits.value = {}
   billingSaveTried.value = false
 }
 // A new order behind the selection starts a fresh billing: its default method,
@@ -245,6 +254,14 @@ function setLineInput(idx: number, v: unknown) {
   if (v === '' || v === null || v === undefined) delete next[idx]
   else next[idx] = Number(v)
   lineInputs.value = next
+  // Typing Bill now goes back to oldest delivery first for this line.
+  dropLineSplit(idx)
+}
+function dropLineSplit(idx: number) {
+  if (!(idx in lineSplits.value)) return
+  const rest = { ...lineSplits.value }
+  delete rest[idx]
+  lineSplits.value = rest
 }
 /** B3 — one % written into every line; each line can be changed afterwards. */
 function setAllLines(v: unknown) {
@@ -254,6 +271,7 @@ function setAllLines(v: unknown) {
   const next: Record<number, number> = {}
   for (const l of plan.value?.lines ?? []) next[l.orderLineIndex] = n
   lineInputs.value = next
+  lineSplits.value = {}
 }
 const hasRemaining = computed(() => !!plan.value?.lines.some(l => l.maxQty > QTY_EPS))
 function billRemaining() {
@@ -261,6 +279,7 @@ function billRemaining() {
   // Remaining is an oldest-first figure — a hand-set split goes back to auto.
   split.value = 'auto'
   manual.value = {}
+  lineSplits.value = {}
   lineInputs.value = remainingInputs(plan.value)
   allLinesPct.value = ''
 }
@@ -289,6 +308,37 @@ function lineMaxCaption(l: PlanLine) {
     ? `${t('Max')} ${pctText(l.maxPercent)} · ${qtyText(l.maxQty)} ${l.unit}`
     : `${t('Max')} ${qtyText(l.maxQty)} ${l.unit}`
 }
+// ── Manage deliveries (F-07): choose how much of a line comes from each delivery ──
+/** Ticked deliveries that still have something left to bill on this line. */
+function openDeliveriesFor(l: PlanLine) {
+  return plan.value?.deliveries.filter(d => (d.cells.find(c => c.orderLineIndex === l.orderLineIndex)?.available ?? 0) > QTY_EPS) ?? []
+}
+/** Only worth offering when the line bills part of what is left and 2+ deliveries could supply it. */
+function canManageDeliveries(l: PlanLine) {
+  if (l.isChosen) return true
+  return l.qty > QTY_EPS && l.qty < l.maxQty - QTY_EPS && openDeliveriesFor(l).length > 1
+}
+/** "#105: 1 · #106: 5" — where this line's Bill now comes from. */
+function lineSourceText(l: PlanLine) {
+  const parts = (plan.value?.deliveries ?? []).flatMap((d) => {
+    const c = d.cells.find(x => x.orderLineIndex === l.orderLineIndex)
+    return c && c.billNow > QTY_EPS ? [`#${d.number}: ${qtyText(c.billNow)}`] : []
+  })
+  return parts.length ? `${t('From')} ${parts.join(' · ')}` : ''
+}
+const manageLine = computed(() => plan.value?.lines.find(l => l.orderLineIndex === manageLineIdx.value) ?? null)
+function saveLineSplit(pick: Record<string, number>) {
+  const l = manageLine.value
+  if (!l) return
+  lineSplits.value = { ...lineSplits.value, [l.orderLineIndex]: pick }
+  // Bill now shows the total of the chosen deliveries (qty, or % of ordered).
+  const total = Object.values(pick).reduce((s, q) => s + q, 0)
+  const shown = billingBasis.value === 'qty' ? total : (l.orderedQty > 0 ? Math.round(total / l.orderedQty * 100 * 1e6) / 1e6 : 0)
+  lineInputs.value = { ...lineInputs.value, [l.orderLineIndex]: shown }
+  allLinesPct.value = ''
+  manageLineIdx.value = null
+}
+
 function shareText(q: number, of: number) { return pctText(of > 0 ? (q / of) * 100 : 0) }
 
 /** What the banner lists after a save attempt in deliveries mode (inline, never a toast). */
@@ -1132,6 +1182,13 @@ function onSave() {
                       <span v-if="billingBasis === 'percent'" class="sd-preview-line sd-caption">{{ qtyText(l.qty) }} {{ l.unit }}</span>
                       <span class="sd-preview-line sd-caption">{{ fmt(l.amount) }}</span>
                       <span class="sd-preview-line sd-caption">{{ lineMaxCaption(l) }}</span>
+                      <template v-if="canManageDeliveries(l)">
+                        <span class="sd-caption sib-source" data-devchange="si-manage-deliveries">{{ lineSourceText(l) }}</span>
+                        <a
+                          :id="`si-manage-deliveries-${l.orderLineIndex}`" class="sib-manage-link" href="#"
+                          @click.prevent="manageLineIdx = l.orderLineIndex"
+                        >{{ t('Manage deliveries') }}</a>
+                      </template>
                     </span>
                   </template>
                   <!-- Set per delivery: the line is the sum of the grid below — read-only here. -->
@@ -1171,6 +1228,10 @@ function onSave() {
         <DeliveryBillingSplit
           :plan="plan" :split="split" v-model:manual="manual"
           @update:split="onSplitUpdate"
+        />
+        <ManageBillingDeliveriesDrawer
+          :is-open="manageLineIdx !== null" :plan="plan" :line="manageLine"
+          @close="manageLineIdx = null" @save="saveLineSplit"
         />
       </section>
 
@@ -2018,6 +2079,9 @@ function onSave() {
 .sd-ordered .sd-band-info { align-items: stretch; }
 .sd-progress-line { display: flex; justify-content: space-between; gap: var(--mp-spacing-2); white-space: nowrap; }
 .sd-preview-line { white-space: nowrap; }
+.sib-source { white-space: normal; }
+.sib-manage-link { font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm, 16px); color: var(--mp-text-link); cursor: pointer; text-decoration: none; }
+.sib-manage-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .sd-over-list { list-style: disc outside; margin: 0; padding-left: var(--mp-spacing-5); }
 .sd-over-list li { display: list-item; }
 .sib-total-label { display: flex; flex-direction: column; }

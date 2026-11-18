@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'si-manage-deliveries',
+    title: "Manage deliveries per line",
+    description:
+      "When a line bills only part of what is left and two or more ticked sales deliveries still have it, the Bill now cell shows where the quantity comes from (e.g. 'From #105: 1 · #106: 5', oldest delivery first) and a 'Manage deliveries' link. The drawer lists each ticked delivery with delivered, billed before and left to bill; type how much to bill from each and Save — Bill now becomes the total. A delivery above what is left turns red with its maximum. Typing Bill now again goes back to oldest delivery first.",
+    date: '2026-11-18',
+    files: ['NewSalesInvoicePage.vue', 'ManageBillingDeliveriesDrawer.vue', 'deliveryBilling.ts'],
+  },
+  {
+    id: 'si-manage-deliveries-drawer',
+    title: "Manage deliveries drawer",
+    description:
+      "Drawer behind 'Manage deliveries' on a sales invoice line: one row per ticked sales delivery (oldest created first) with a Bill now input in the line's unit; the header shows qty ordered, left to bill and the running total (and its % of ordered in Percentage billing). Save is never disabled — a row above what is left on its delivery is flagged on Save.",
+    date: '2026-11-18',
+    files: ['ManageBillingDeliveriesDrawer.vue'],
+  },
+  {
     id: 'si-billing-per-delivery',
     title: "Billing per delivery",
     description:
