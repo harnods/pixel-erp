@@ -51,7 +51,9 @@ describe('Sales invoice detail ↔ index row coherence', () => {
 
   it('every line is priced at its real CATALOG price — no synthesised prices', () => {
     const failures: string[] = []
-    for (const inv of salesInvoices) {
+    // Invoices billed from deliveries carry their sales order's own lines (contract
+    // SKUs such as SRV-CAL) — nothing is synthesised, so there is no price to check.
+    for (const inv of salesInvoices.filter(s => !s.deliveryIds?.length)) {
       const detail = getSalesInvoiceDetail(inv.id)
       for (const it of detail.lineItems) {
         const real = catalogPrice.get(it.sku)
@@ -73,7 +75,9 @@ describe('Sales invoice detail ↔ index row coherence', () => {
    */
   it('the balancing global discount stays under one cheapest-unit, never a headline deduction', () => {
     const failures: string[] = []
-    for (const inv of salesInvoices) {
+    // A delivery-billed invoice's discount is the order's real transaction discount
+    // (prorated from its deliveries), not a balancing residue.
+    for (const inv of salesInvoices.filter(s => !s.deliveryIds?.length)) {
       const { globalDiscount } = getSalesInvoiceDetail(inv.id).totals
       if (globalDiscount < 0) {
         failures.push(`${inv.number}: negative global discount ${globalDiscount}`)

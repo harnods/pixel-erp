@@ -76,6 +76,8 @@ const statusConfig: Record<string, StatusConfig> = {
   'out for delivery':{ type: 'information', label: 'Out for delivery' },
   'pending put-away':{ type: 'warning', label: 'Pending put-away' },
   unbilled:   { type: 'warning',      label: 'Unbilled'   },
+  // Sales delivery billed in part by one or more sales invoices (partial / % billing).
+  'partially invoiced': { type: 'warning', label: 'Partially invoiced' },
   billing:    { type: 'warning',      label: 'Billing'    },
   'in review':{ type: 'warning',      label: 'In review'  },
   'partially reconciled': { type: 'warning', label: 'Partially reconciled' },

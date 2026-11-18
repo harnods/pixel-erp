@@ -77,6 +77,12 @@ function dimensionValuesFor(dimensions?: Record<string, string>): { name: string
 
 // ─── Recurring info drawer ──────────────────────────────────────────────────
 const sourceInvoice = computed(() => salesInvoices.find(si => si.id === props.orderId))
+/** Invoice raised from sales deliveries — how it was billed (one method per invoice, B1). */
+const billingBasisLabel = computed(() => {
+  const basis = sourceInvoice.value?.billingBasis
+  if (!basis) return ''
+  return basis === 'percent' ? t('Billed by percentage') : t('Billed by quantity')
+})
 const recurringTemplate = computed(() => {
   const rid = sourceInvoice.value?.recurringId
   return rid ? getRecurringForInvoice(rid) : undefined
@@ -812,6 +818,7 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
             <ContentList :label="t('Transaction no.')" :value="`${t('Sales Invoice')} #${invoice.number}`" />
             <ContentList :label="t('Reference no.')" :value="invoice.referenceNo" />
             <ContentList :label="t('Warehouse')" :value="invoice.warehouse" />
+            <ContentList v-if="billingBasisLabel" :label="t('Billing method')" :value="billingBasisLabel" data-devchange="si-detail-billing-basis" />
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">

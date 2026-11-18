@@ -18,6 +18,7 @@ import type { ActionItem } from '~/components/patterns/DetailActionsMenu.vue'
 import { getSalesDeliveryDetail } from '~/data/salesDeliveryDetails'
 import { salesDeliveries } from '~/data'
 import { isInClosedPeriod } from '~/data/salesDeliveries'
+import { invoicesForDelivery } from '~/data/deliveryBilling'
 import { lockDate } from '~/data/closeBooks'
 import { useOpenContact } from '~/composables/useOpenContact'
 
@@ -42,6 +43,9 @@ function notInPrototype() { infoToast(t('Not in this prototype')) }
  *  option is not offered at all (PRD UX flow), rather than offered and refused. */
 const editLocked = computed(() => !!delivery.value && isInClosedPeriod(delivery.value, lockDate()))
 const delivery = computed(() => getSalesDeliveryDetail(props.orderId))
+/** Sales invoices that billed (part of) this delivery — shown next to the
+ *  reference fields so a partially invoiced delivery says where it was billed. */
+const billedOn = computed(() => (delivery.value ? invoicesForDelivery(delivery.value.id) : []))
 
 const activityOpen = ref(false)
 // Destructive delete → confirm modal (rule/btn-danger-confirm)
@@ -61,10 +65,11 @@ if (import.meta.client) {
 const sdActionGroups = computed<ActionItem[][]>(() => [
   [
     { label: 'Preview', onClick: () => { previewOpen.value = true } },
-    // An unbilled delivery raises its invoice from here (TS-004); once billed it's gone.
+    // An unbilled or partially invoiced delivery raises its (next) invoice from
+    // here (TS-004, partial billing PRD); once fully invoiced it's gone.
     {
       label: 'Create sales invoice',
-      show: delivery.value.billingStatus === 'unbilled',
+      show: delivery.value.billingStatus !== 'invoiced',
       onClick: () => { router.push({ path: '/sales-invoices/new', query: { delivery: delivery.value.id } }) },
     },
   ],
@@ -322,6 +327,9 @@ function goBack() { router.push('/sales-deliveries') }
             <ContentList :label="t('Transaction no.')" :value="`${t('Sales Delivery')} #${delivery.number}`" />
             <ContentList :label="t('Reference no.')" :value="delivery.referenceNo" />
             <ContentList :label="t('Warehouse')" :value="delivery.warehouse" />
+            <ContentList v-if="billedOn.length" :label="t('Billed on')" data-devchange="sd-detail-billed-on">
+              <NuxtLink v-for="inv in billedOn" :key="inv.id" :to="`/sales-invoices/${inv.id}`" class="detail-value-link content-list__line">{{ t('Sales Invoice') }} #{{ inv.number }}</NuxtLink>
+            </ContentList>
           </div>
           <!-- col 5: tags -->
           <div class="content-list-col">
@@ -462,7 +470,7 @@ function goBack() { router.push('/sales-deliveries') }
       <!-- ── Footer action bar ── -->
       <div class="detail-footer">
         <PrintShareMenu id="sd-print" />
-        <DetailActionsMenu id="sd-actions" :groups="sdActionGroups" />
+        <DetailActionsMenu id="sd-actions" :groups="sdActionGroups" data-devchange="sd-detail-create-invoice" />
       </div>
 
     </div><!-- /detail-stage -->

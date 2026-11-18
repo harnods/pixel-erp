@@ -41,7 +41,8 @@ describe('join invoices seed', () => {
     expect(joinNumber(joinInvoicesOf('sales').find((j) => j.sequence === 10001)!)).toBe('Join Invoice - 10001')
   })
   it('does not change the source invoice seeds', () => {
-    expect(salesInvoices.length).toBe(150)
+    // 150 generated + Sales Invoice #40202, the partial-invoicing seed (SO104).
+    expect(salesInvoices.length).toBe(151)
     expect(purchaseInvoices.length).toBe(80)
   })
 })

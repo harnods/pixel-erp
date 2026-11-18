@@ -578,7 +578,12 @@ function onSave() {
     customer: { id: customer.id, name: customer.name },
     date: dmyToIso(txDate.value),
     fulfillmentStatus: 'in transit',
-    billingStatus: 'unbilled',
+    // An edit keeps what invoicing already did to the delivery (partially invoiced
+    // stays partially invoiced); billing records, not the edit, drive this status.
+    billingStatus: editing.value?.billingStatus ?? 'unbilled',
+    // Creation time orders deliveries for invoice splitting (oldest first, Rule 5);
+    // an edit keeps the original.
+    createdAt: editing.value?.createdAt ?? new Date().toISOString().slice(0, 19),
     total: total.value,
     tags: tagsList.value.map(t2 => String(t2.value)),
     ...(sourceOrder.value

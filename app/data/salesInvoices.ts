@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import type { SalesInvoice } from './types'
 import { customers, EXPORT_CUSTOMER_ID } from './customers'
-import { loadSnapshot, saveSnapshot } from './persist'
+import { loadSnapshot, saveSnapshot, loadCreated, saveCreated } from './persist'
 import { SIM_SPAN_DAYS, simDay, daysUntil } from './simClock'
 
 /**
@@ -95,10 +95,42 @@ function buildSalesInvoices(): SalesInvoice[] {
   }
 
   // Newest first (matches how the Sales Invoices page reads best).
-  return out.reverse()
+  // Newest-first order is positional for the generated 150 (details derive
+  // from the index), so the partial-invoicing seed goes after them.
+  const list = out.reverse()
+  // Partial & progress invoicing demo: 30% of every line of SO104, billed from
+  // Sales Delivery #20105 (workbook C5, INV1). The billing record that backs it is
+  // in deliveryBilling.ts; tests/delivery-billing.spec.ts keeps the two equal.
+  list.push({
+    id: 'SI201', number: 40202, customer: { id: 'C008', name: 'Titik Temu Coffee' },
+    date: '2026-07-06', dueDate: '2026-08-05', total: 3_088_309, balance: 3_088_309, status: 'overdue',
+    itemCount: 4, hasPpn: true, tags: ['Contract'],
+    orderId: 'SO104', deliveryIds: ['SD105'], deliveryId: 'SD105', billingBasis: 'percent',
+    globalDiscount: 90_000, shippingFee: 150_000,
+    items: [
+      { product: 'Grinder Kopi Komersial', sku: 'GRD-COM', description: 'Termin 1 — 30%', qty: 3, unit: 'unit', unitPrice: 670_000, discountPct: 10, amount: 1_809_000 },
+      { product: 'Biji Kopi Arabika Gayo', sku: 'BNS-GAYO', description: 'Termin 1 — 30%', qty: 6, unit: 'kg', unitPrice: 75_000, discountPct: 0, amount: 450_000 },
+      { product: 'Jasa Kalibrasi Mesin', sku: 'SRV-CAL', description: 'Termin 1 — 30%', qty: 1.5, unit: 'jam', unitPrice: 200_000, discountPct: 0, amount: 300_000 },
+      { product: 'Cup Kertas 8oz', sku: 'CUP-8OZ', description: 'Termin 1 — 30%', qty: 15, unit: 'pak', unitPrice: 12_500, discountPct: 5, amount: 178_125 },
+    ],
+  })
+
+  return list
 }
 
 export const salesInvoices = reactive<SalesInvoice[]>(buildSalesInvoices())
+
+// Invoices created in the New sales invoice form survive a reload — appended after
+// the seed (same pattern as salesOrders.ts addSalesOrder). Without this, an invoice
+// billed from deliveries would vanish while its billing records (deliveryBilling.ts)
+// stay, leaving the delivery pointing at a missing invoice.
+const CREATED_KEY = 'sales-invoices-created'
+for (const inv of loadCreated<SalesInvoice>(CREATED_KEY)) if (!salesInvoices.some(x => x.id === inv.id)) salesInvoices.push(inv)
+export function addSalesInvoice(invoice: SalesInvoice): SalesInvoice {
+  salesInvoices.push(invoice)
+  saveCreated(CREATED_KEY, [...loadCreated<SalesInvoice>(CREATED_KEY), invoice])
+  return invoice
+}
 
 /** Delete one or more sales invoices from the list (bulk or single). Returns the count actually removed. */
 export function deleteSalesInvoices(ids: string[]): number {
