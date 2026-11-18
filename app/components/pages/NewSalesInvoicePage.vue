@@ -313,10 +313,12 @@ function lineMaxCaption(l: PlanLine) {
 function openDeliveriesFor(l: PlanLine) {
   return plan.value?.deliveries.filter(d => (d.cells.find(c => c.orderLineIndex === l.orderLineIndex)?.available ?? 0) > QTY_EPS) ?? []
 }
-/** Only worth offering when the line bills part of what is left and 2+ deliveries could supply it. */
+/** Offered whenever 2+ ticked deliveries still have this line and it doesn't bill all of it
+ *  (billing everything left leaves nothing to choose). Empty lines show it too, so the
+ *  user can start from the deliveries instead of typing Bill now first. */
 function canManageDeliveries(l: PlanLine) {
   if (l.isChosen) return true
-  return l.qty > QTY_EPS && l.qty < l.maxQty - QTY_EPS && openDeliveriesFor(l).length > 1
+  return l.qty < l.maxQty - QTY_EPS && openDeliveriesFor(l).length > 1
 }
 /** "#105: 1 · #106: 5" — where this line's Bill now comes from. */
 function lineSourceText(l: PlanLine) {
@@ -1183,7 +1185,7 @@ function onSave() {
                       <span class="sd-preview-line sd-caption">{{ fmt(l.amount) }}</span>
                       <span class="sd-preview-line sd-caption">{{ lineMaxCaption(l) }}</span>
                       <template v-if="canManageDeliveries(l)">
-                        <span class="sd-caption sib-source" data-devchange="si-manage-deliveries">{{ lineSourceText(l) }}</span>
+                        <span v-if="lineSourceText(l)" class="sd-caption sib-source" data-devchange="si-manage-deliveries">{{ lineSourceText(l) }}</span>
                         <a
                           :id="`si-manage-deliveries-${l.orderLineIndex}`" class="sib-manage-link" href="#"
                           @click.prevent="manageLineIdx = l.orderLineIndex"
