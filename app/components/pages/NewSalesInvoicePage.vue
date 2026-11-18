@@ -35,14 +35,11 @@ import {
 import { takePendingAttachments } from '~/data/fileAttachmentHandoff'
 import type { SalesInvoice, SILineItem, SalesDelivery } from '~/data/types'
 import { salesOrders } from '~/data/salesOrders'
-import { orderLock } from '~/data/salesDeliveries'
 import {
-  planBilling, remainingInputs, manualFromPlan, billableDeliveries, fullyBilledDeliveries,
+  planBilling, remainingInputs, billableDeliveries, fullyBilledDeliveries,
   invoicesForDelivery, billedByLine, orderDeliveries, isBillable, commitBilling, pctText, qtyText, QTY_EPS,
   type BillingBasis, type BillingPlan, type PlanLine, type SplitMode,
 } from '~/data/deliveryBilling'
-import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
-import DeliveryBillingSplit from '~/components/patterns/DeliveryBillingSplit.vue'
 import ManageBillingDeliveriesDrawer from '~/components/patterns/ManageBillingDeliveriesDrawer.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import TaxImpactReviewDrawer from '~/components/patterns/TaxImpactReviewDrawer.vue'
@@ -153,6 +150,13 @@ const billingBasis   = ref<BillingBasis>('qty')
 /** orderLineIndex -> what the user typed (qty or %). Absent = not typed yet. */
 const lineInputs     = ref<Record<number, number>>({})
 const allLinesPct    = ref<number | ''>('')
+// Two prototypes on one form: `?billing=percent` bills by percentage (oldest delivery
+// first, no Manage deliveries); anything else bills by quantity. Fixed per route —
+// there is no Billing method choice on the form.
+const FIXED_BASIS: BillingBasis = useRoute().query.billing === 'percent' ? 'percent' : 'qty'
+billingBasis.value = FIXED_BASIS
+/** The old "Set per delivery" grid is gone — the split is always oldest-first unless a
+ *  line's deliveries were chosen (lineSplits). */
 const split          = ref<SplitMode>('auto')
 const manual         = ref<Record<string, Record<number, number>>>({})
 /** Manage deliveries: orderLineIndex -> deliveryId -> qty the user chose for that line. */
@@ -183,11 +187,6 @@ const plan = computed<BillingPlan | null>(() => {
     lineSplits: lineSplits.value,
   })
 })
-
-const BASIS_OPTIONS = computed(() => [
-  { value: 'qty', label: t('Quantity') },
-  { value: 'percent', label: t('Percentage') },
-])
 
 function deliveryLabel(d: SalesDelivery) {
   return `${t('Sales Delivery')} #${d.number} · ${isoToDMY(d.date)}`
@@ -221,11 +220,6 @@ function toggleDelivery(d: SalesDelivery) {
   noItemsError.value = false
 }
 
-/** Percentage when the order is percent-locked or was already billed by %; else quantity. */
-function defaultBasis(orderId: string): BillingBasis {
-  if (orderLock(orderId)) return 'percent'
-  return salesInvoices.some(i => i.orderId === orderId && i.billingBasis === 'percent') ? 'percent' : 'qty'
-}
 function resetBillingInputs() {
   lineInputs.value = {}
   allLinesPct.value = ''
@@ -236,7 +230,7 @@ function resetBillingInputs() {
 // no typed inputs, oldest-first split, and the order as the reference.
 watch(selectedOrderId, (id, old) => {
   if (!id || id === old) return
-  billingBasis.value = defaultBasis(id)
+  billingBasis.value = FIXED_BASIS
   resetBillingInputs()
   split.value = 'auto'
   manual.value = {}
@@ -244,11 +238,6 @@ watch(selectedOrderId, (id, old) => {
   if (o) referenceNo.value = `${t('Sales Order')} #${o.number}`
 })
 
-function setBasis(v: string) {
-  if (v !== 'qty' && v !== 'percent') return
-  billingBasis.value = v
-  resetBillingInputs()
-}
 function setLineInput(idx: number, v: unknown) {
   const next = { ...lineInputs.value }
   if (v === '' || v === null || v === undefined) delete next[idx]
@@ -283,11 +272,6 @@ function billRemaining() {
   lineInputs.value = remainingInputs(plan.value)
   allLinesPct.value = ''
 }
-function onSplitUpdate(v: SplitMode) {
-  // "Set per delivery" starts from the current split; back to auto drops the grid.
-  manual.value = v === 'manual' && plan.value ? manualFromPlan(plan.value) : {}
-  split.value = v
-}
 
 /** Order-wide "Billed so far": one % when every line is equal, else Mixed. */
 const billedSoFar = computed(() => {
@@ -317,8 +301,13 @@ function openDeliveriesFor(l: PlanLine) {
  *  (billing everything left leaves nothing to choose). Empty lines show it too, so the
  *  user can start from the deliveries instead of typing Bill now first. */
 function canManageDeliveries(l: PlanLine) {
+  if (billingBasis.value !== 'qty') return false   // the % prototype stays oldest-first
   if (l.isChosen) return true
   return l.qty < l.maxQty - QTY_EPS && openDeliveriesFor(l).length > 1
+}
+/** The source caption shows once the line bills something and 2+ deliveries are ticked. */
+function showSource(l: PlanLine) {
+  return !!lineSourceText(l) && (plan.value?.deliveries.length ?? 0) > 1
 }
 /** "#105: 1 · #106: 5" — where this line's Bill now comes from. */
 function lineSourceText(l: PlanLine) {
@@ -1081,10 +1070,7 @@ function onSave() {
             <MpFormLabel>{{ t('Billing method') }}</MpFormLabel>
             <div class="sd-method-row">
               <div class="sib-method-fields">
-                <ErpFilterSelect
-                  id="si-billing-method" :model-value="billingBasis" :options="BASIS_OPTIONS"
-                  :is-clearable="false" @update:model-value="setBasis"
-                />
+                <span id="si-billing-method" class="si-readonly-value">{{ billingBasis === 'percent' ? t('Percentage') : t('Quantity') }}</span>
                 <div v-if="billingBasis === 'percent' && split === 'auto'" class="sib-all-lines">
                   <span class="sib-all-lines-label">{{ t('Percentage for all lines') }}</span>
                   <MpInputGroup id="f-all-lines-pct" class="sib-all-lines-input">
@@ -1184,13 +1170,13 @@ function onSave() {
                       <span v-if="billingBasis === 'percent'" class="sd-preview-line sd-caption">{{ qtyText(l.qty) }} {{ l.unit }}</span>
                       <span class="sd-preview-line sd-caption">{{ fmt(l.amount) }}</span>
                       <span class="sd-preview-line sd-caption">{{ lineMaxCaption(l) }}</span>
-                      <template v-if="canManageDeliveries(l)">
-                        <span v-if="lineSourceText(l)" class="sd-caption sib-source" data-devchange="si-manage-deliveries">{{ lineSourceText(l) }}</span>
-                        <a
-                          :id="`si-manage-deliveries-${l.orderLineIndex}`" class="sib-manage-link" href="#"
-                          @click.prevent="manageLineIdx = l.orderLineIndex"
-                        >{{ t('Manage deliveries') }}</a>
-                      </template>
+                      <!-- Where Bill now comes from — the only per-delivery view left on the form. -->
+                      <span v-if="showSource(l)" class="sd-caption sib-source" data-devchange="si-manage-deliveries">{{ lineSourceText(l) }}</span>
+                      <a
+                        v-if="canManageDeliveries(l)"
+                        :id="`si-manage-deliveries-${l.orderLineIndex}`" class="sib-manage-link" href="#"
+                        @click.prevent="manageLineIdx = l.orderLineIndex"
+                      >{{ t('Manage deliveries') }}</a>
                     </span>
                   </template>
                   <!-- Set per delivery: the line is the sum of the grid below — read-only here. -->
@@ -1227,10 +1213,6 @@ function onSave() {
           </table>
         </div>
 
-        <DeliveryBillingSplit
-          :plan="plan" :split="split" v-model:manual="manual"
-          @update:split="onSplitUpdate"
-        />
         <ManageBillingDeliveriesDrawer
           :is-open="manageLineIdx !== null" :plan="plan" :line="manageLine"
           @close="manageLineIdx = null" @save="saveLineSplit"

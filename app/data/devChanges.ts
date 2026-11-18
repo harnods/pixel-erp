@@ -44,14 +44,6 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['ManageBillingDeliveriesDrawer.vue'],
   },
   {
-    id: 'si-billing-per-delivery',
-    title: "Billing per delivery",
-    description:
-      "When a sales invoice bills sales deliveries, a new 'Billing per delivery' section under the lines shows what this invoice takes from each delivery, oldest created first: delivered, billed before, bill now, left to bill and amount per product, plus the prorated discount, shipping and what stays unbilled on each delivery. 'Split' switches between 'Oldest delivery first' (read-only, PRD Rule 5) and 'Set per delivery', where the quantity per delivery is typed; a cell above what is left on its delivery turns red with its maximum.",
-    date: '2026-11-12',
-    files: ['DeliveryBillingSplit.vue'],
-  },
-  {
     id: 'sd-index-partially-invoiced',
     title: "Partially invoiced billing status",
     description:
@@ -109,19 +101,19 @@ export const DEV_CHANGES: DevChange[] = [
   },
   {
     id: 'si-billing-method',
-    title: 'Billing method — Quantity or Percentage',
+    title: 'Billing method — fixed per prototype',
     description:
-      'One method for the whole invoice, like the delivery form\'s Input method. Defaults to Percentage when the order was delivered or billed by percentage. "Percentage for all lines" writes the same % into every line; "Bill remaining" fills each line with what is left on the ticked deliveries.',
-    date: '2026-11-12',
+      'Two separate prototypes on the same form: /sales-invoices/new?order=SO104 bills by Quantity (with Manage deliveries per line), /sales-invoices/new?order=SO104&billing=percent bills by Percentage (oldest delivery first, "Percentage for all lines"). The method is shown read-only — there is no Quantity/Percentage choice on the form. "Bill remaining" fills each line with what is left on the ticked deliveries.',
+    date: '2026-11-18',
     files: ['NewSalesInvoicePage.vue'],
   },
   {
     id: 'si-bill-lines',
     title: 'Lines billed from deliveries, capped per line',
     description:
-      'Product, price and discount come from the order (read-only). Qty ordered shows delivered and billed so far; Bill now takes a qty or % and previews the qty, amount and the maximum. Over the cap the cell turns red with "Max 10% / 1 unit" and save is rejected inline. Below the table the amounts are split per delivery, oldest created first.',
-    date: '2026-11-12',
-    files: ['NewSalesInvoicePage.vue', 'DeliveryBillingSplit.vue'],
+      'Product, price and discount come from the order (read-only). Qty ordered shows delivered and billed so far; Bill now takes a qty or % and previews the qty, amount and the maximum. Over the cap the cell turns red with "Max 10% / 1 unit" and save is rejected inline. The split per delivery is oldest created first (in Quantity, a line can choose its deliveries with Manage deliveries); there is no Billing per delivery section under the table.',
+    date: '2026-11-18',
+    files: ['NewSalesInvoicePage.vue'],
   },
   {
     id: 'si-bill-global-discount',
