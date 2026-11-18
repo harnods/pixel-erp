@@ -8,7 +8,7 @@
  */
 import {
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
-  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpInput, MpButton, MpButtonGroup, css,
+  MpTabs, MpTabList, MpTab, MpTabPanels, MpTabPanel, MpSelect, MpCheckbox, MpTooltip, MpIcon, MpBadge, MpInput, MpInputGroup, MpInputRightAddon, MpButton, MpButtonGroup, MpTextlink, css,
 } from '@mekari/pixel3'
 import { formatIDR } from '~/utils/currency'
 import ContentList from '~/components/patterns/ContentList.vue'
@@ -18,6 +18,7 @@ import ErpPagination from '~/components/patterns/ErpPagination.vue'
 import StockSerialDrawer from '~/components/patterns/StockSerialDrawer.vue'
 import PdfPreviewModal from '~/components/patterns/PdfPreviewModal.vue'
 import PrintBarcodeOptionsModal from '~/components/patterns/PrintBarcodeOptionsModal.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import BatchFormModal from '~/components/patterns/BatchFormModal.vue'
 import BatchExportModal from '~/components/patterns/BatchExportModal.vue'
 import {
@@ -31,13 +32,32 @@ import {
 import { gradeById } from '~/data/grades'
 import { vendors } from '~/data/vendors'
 import { getWarehouseDetail, setWarehouseMinStock, type WarehouseStockItem } from '~/data/warehouseDetails'
+import {
+  buildRow, invalidateReplenishmentCaches, isManualFloorTooLow, productActionRollup,
+  warehouseMinStockRollup, atpFor,
+} from '~/data/replenishment'
+import { deriveLeadTime, isEstimatedTier, type LeadTimeTier } from '~/data/leadTimeHistory'
+import { getSkuWarehouseOverride, saveSkuWarehouseOverride, inheritedSafetyDays } from '~/data/replenishmentSettings'
+import { replenishmentRevision } from '~/data/replenishmentStore'
 import { cutoverState } from '~/data/wmsCutover'
 import { formatDateTimeLong } from '~/utils/date'
 import { generateBarcodeLabelPdf, generateBarcodeSheetPdf } from '~/utils/barcodeLabelPdf'
 import { TODAY } from '~/data/master'
+import {
+  vendorItemsForSku, preferredVendorItem, preferredVendorFor, vendorNameFor,
+  preferredVendorIdForWarehouse, setPreferredVendor, clearPreferredVendorForWarehouse,
+  vendorItemFor, inactivePreferredVendorFor, vendorsByPriority, setVendorPriority, type VendorItem,
+} from '~/data/vendorItems'
+import { contacts } from '~/data/contacts'
+import {
+  unitConversionsForSku, upsertUnitConversion, removeUnitConversion, describeQty,
+} from '~/data/productUnits'
 import type jsPDF from 'jspdf'
 
 const props = defineProps<{ orderId: string }>()
+const { t, tf } = useLocale()
+// Changing a warehouse's reorder point, safety days or preferred vendor needs replenishment access.
+const { canManageReplenishment } = useReplenishmentAccess()
 const router = useRouter()
 const route = useRoute()
 
@@ -90,7 +110,7 @@ const stockTabName = computed(() => {
 // product it IS the tracking tab, so de-dupe instead of listing it twice. The
 // list has to match the rendered tab order exactly: MpTabs addresses tabs by
 // index, so an entry missing here sends ?section= to the wrong tab.
-const TAB_NAMES = computed(() => ['transactions', 'unit-conversions', ...new Set([stockTabName.value, 'warehouses'])])
+const TAB_NAMES = computed(() => ['transactions', 'vendors', 'unit-conversions', ...new Set([stockTabName.value, 'warehouses'])])
 const activeTabIndex = computed({
   get(): number {
     const tab = route.query.section as string | undefined
@@ -101,6 +121,239 @@ const activeTabIndex = computed({
     router.replace({ query: { ...route.query, section: TAB_NAMES.value[idx] ?? 'transactions' } })
   },
 })
+
+// ── Unit conversions (the product's multi-unit setup) ─────────────────────────
+// One larger unit = N base units. Vendor MOQ and pack size are quoted in one of
+// these, so this table is what gives the vendor form its unit options.
+const unitTick = ref(0)
+const conversions = computed(() => {
+  void unitTick.value
+  return product.value ? unitConversionsForSku(product.value.sku) : []
+})
+
+const newUnitName = ref('')
+const newUnitFactor = ref('')
+const unitError = ref('')
+
+function addConversion() {
+  if (!product.value) return
+  const name = newUnitName.value.trim()
+  const factor = Number(newUnitFactor.value)
+  // Validate on click and show an inline error — never a disabled button.
+  if (!name) { unitError.value = 'Enter a unit name'; return }
+  if (name.toLowerCase() === product.value.unit.toLowerCase()) {
+    unitError.value = `"${name}" is already the base unit`
+    return
+  }
+  if (!factor || Number.isNaN(factor) || factor <= 1 || !Number.isInteger(factor)) {
+    unitError.value = 'Quantity must be a whole number greater than 1'
+    return
+  }
+  upsertUnitConversion(product.value.sku, name, factor)
+  newUnitName.value = ''
+  newUnitFactor.value = ''
+  unitError.value = ''
+  unitTick.value++
+  // Vendor terms quote MOQ in these units, so their labels change too.
+  vendorTick.value++
+}
+
+function editFactor(name: string, raw: string) {
+  if (!product.value) return
+  const factor = Number(raw)
+  if (!factor || Number.isNaN(factor) || factor <= 1) return
+  upsertUnitConversion(product.value.sku, name, factor)
+  unitTick.value++
+  vendorTick.value++
+}
+
+function deleteConversion(name: string) {
+  if (!product.value) return
+  // A unit still used by a vendor's MOQ cannot be removed without silently
+  // changing what that MOQ means, so say so instead of doing it.
+  const inUse = vendorItemsForSku(product.value.sku).filter((v) => v.purchaseUnit === name)
+  if (inUse.length) {
+    unitError.value = `${name} is used by ${inUse.length === 1 ? 'a vendor' : inUse.length + ' vendors'}. Change their MOQ unit first.`
+    return
+  }
+  removeUnitConversion(product.value.sku, name)
+  unitError.value = ''
+  unitTick.value++
+}
+
+// ── Vendors (who sells us this product, and on what terms) ────────────────────
+// Read live from the vendor↔item link table, so the terms shown here are the same
+// ones the replenishment engine uses to size a suggested order.
+const vendorTick = ref(0)
+
+/** In priority order (Rule 61) — the order a fallback would follow (Rule 62). */
+const vendorRows = computed(() => {
+  void vendorTick.value // re-read after the drawer saves
+  return product.value ? vendorsByPriority(product.value.sku) : []
+})
+
+// ── Edit priority (Vendor Supply Profile Rule 61) ──────────────────────────────
+// A draft ORDER of vendor ids: picking a number for a vendor swaps it with whoever
+// held that number, so priority stays 1…N and unique without a validation step.
+const priorityEditing = ref(false)
+const priorityDraft = ref<string[]>([])
+/** Rows as the table shows them: in draft order while editing. */
+const vendorRowsShown = computed(() => {
+  if (!priorityEditing.value) return vendorRows.value
+  const byId = new Map(vendorRows.value.map((v) => [v.vendorId, v]))
+  return priorityDraft.value.map((id) => byId.get(id)).filter((v): v is VendorItem => !!v)
+})
+function startEditPriority() {
+  if (!canManageReplenishment.value) return
+  priorityDraft.value = vendorRows.value.map((v) => v.vendorId)
+  expandedVendor.value = null
+  priorityEditing.value = true
+}
+function setDraftPriority(vendorId: string, rank: number) {
+  const order = [...priorityDraft.value]
+  const from = order.indexOf(vendorId)
+  const to = rank - 1
+  if (from === -1 || from === to) return
+  ;[order[from], order[to]] = [order[to]!, order[from]!]
+  priorityDraft.value = order
+}
+function cancelEditPriority() { priorityEditing.value = false }
+function savePriority() {
+  const sku = product.value?.sku
+  if (!sku) return
+  setVendorPriority(sku, priorityDraft.value)
+  invalidateReplenishmentCaches()
+  vendorTick.value++
+  priorityEditing.value = false
+}
+
+const preferredVendor = computed(() => {
+  void vendorTick.value
+  return product.value ? preferredVendorItem(product.value.sku) : undefined
+})
+
+/**
+ * What the Purchase info "Preferred vendor" field can honestly say (D23): the vendor is
+ * chosen PER WAREHOUSE, so one name is only true when every stocked warehouse uses the
+ * same one. Otherwise it reads "Varies by warehouse".
+ */
+const purchaseInfoVendor = computed<{ kind: 'same'; vendorId: string; item: VendorItem | undefined } | { kind: 'varies' } | { kind: 'none' }>(() => {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const picks = preferredByWarehouse.value
+  const ids = new Set(picks.map((r) => r.vendorId).filter((v): v is string => !!v))
+  if (ids.size > 1 || (ids.size === 1 && picks.some((r) => !r.vendorId))) return { kind: 'varies' }
+  const only = [...ids][0]
+  if (only) return { kind: 'same', vendorId: only, item: product.value ? vendorItemFor(product.value.sku, only) : undefined }
+  const fallback = preferredVendor.value
+  return fallback ? { kind: 'same', vendorId: fallback.vendorId, item: fallback } : { kind: 'none' }
+})
+
+/**
+ * Lead time is derived per vendor × product × WAREHOUSE (US-001 VR-01), so a
+ * vendor no longer has one number — it has one per warehouse the product is
+ * stocked in. Show the range across those warehouses (or a single value when
+ * they agree); the authoritative per-warehouse figures live on the Stock-by-
+ * warehouses tab.
+ */
+function vendorLeadLabel(vendorId: string): string {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return '—'
+  const days = warehouseStock.value
+    .map((s) => deriveLeadTime(vendorId, sku, undefined, s.warehouseId).days)
+    .filter((d): d is number => d != null)
+  if (!days.length) {
+    const d = deriveLeadTime(vendorId, sku).days
+    return d != null ? `${d} days` : '—'
+  }
+  const min = Math.min(...days)
+  const max = Math.max(...days)
+  return min === max ? `${min} days` : `${min}–${max} days`
+}
+
+/**
+ * The preferred vendor PER WAREHOUSE (D23): a SKU can prefer a different vendor in
+ * each warehouse, so one global "preferred" checkmark is no longer the truth. This
+ * resolves each stocked warehouse's own pick (falling back to the SKU-level default
+ * via the ladder) plus that pair's single lead time — the source for the summary
+ * table on the Vendors tab.
+ */
+const preferredByWarehouse = computed(() => {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return [] as {
+    warehouseId: string; warehouseName: string
+    vendorId: string | null; vendorName: string | null
+    leadDays: number | null; leadEstimated: boolean; estimatedBasis: string
+  }[]
+  return warehouseStock.value.map((s) => {
+    const vi = preferredVendorFor(sku, s.warehouseId)
+    // Lead time uses the preferred vendor's own history even when it was deactivated
+    // (US-001) — never the next (fallback) vendor's. The row still SHOWS the ordering
+    // vendor (vi); only the lead-time source stays on the deactivated preferred.
+    const leadVendorId = inactivePreferredVendorFor(sku, s.warehouseId)?.vendorId ?? vi?.vendorId
+    const d = leadVendorId ? deriveLeadTime(leadVendorId, sku, undefined, s.warehouseId) : null
+    return {
+      warehouseId: s.warehouseId,
+      warehouseName: s.warehouseName,
+      vendorId: vi?.vendorId ?? null,
+      vendorName: vi ? vendorNameFor(vi.vendorId) : null,
+      leadDays: d?.days ?? null,
+      leadEstimated: d ? isEstimatedTier(d.tier) : false,
+      estimatedBasis: d && isEstimatedTier(d.tier) ? estimatedBasis(d.tier) : '',
+    }
+  })
+})
+
+/** The warehouses in which a given vendor is the preferred pick — drives the ✓ in the
+ *  terms table (preferred in ≥1 warehouse). Editing happens on Stock by warehouses. */
+function preferredInWarehouses(vendorId: string) {
+  return preferredByWarehouse.value.filter((r) => r.vendorId === vendorId)
+}
+/** "how many" a vendor is preferred in — "All N warehouses" when it is every one. */
+function preferredCountLabel(vendorId: string): string {
+  const n = preferredInWarehouses(vendorId).length
+  const total = preferredByWarehouse.value.length
+  if (n > 0 && n === total) return tf('All {n} warehouses', { n })
+  return n === 1 ? t('1 warehouse') : tf('{n} warehouses', { n })
+}
+
+// Which vendor rows have their per-warehouse lead-time breakdown expanded.
+/** One vendor's warehouse list open at a time (the same rule as the warehouse calculations). */
+const expandedVendor = ref<string | null>(null)
+function toggleVendor(vendorId: string) {
+  expandedVendor.value = expandedVendor.value === vendorId ? null : vendorId
+}
+/** A click anywhere on the row opens it — except on something that has its own job. */
+function onVendorRowClick(e: MouseEvent, vendorId: string): void {
+  if ((e.target as HTMLElement).closest('a, button, input, label, [role="button"]')) return
+  toggleVendor(vendorId)
+}
+
+/**
+ * A vendor link a purchase request created (RS-015): never bought from, so no price,
+ * and its MOQ / multiplier are 0 until someone agrees terms. 0 reads "Not set", never
+ * as a real zero.
+ */
+function termsMissing(vi: VendorItem): boolean {
+  return vi.moq <= 0 || vi.packSize <= 0 || vi.unitCost <= 0
+}
+/** Terms are edited on the vendor's own Products tab. */
+function goToVendorTerms(vendorId: string): void {
+  const contact = contacts.find((c) => c.vendorMasterId === vendorId)
+  router.push(contact ? `/vendors/${contact.id}?tab=products` : '/vendors')
+}
+
+/** MOQ in the purchase unit, plus what that means in stock units — "4 Pallet" is
+ *  meaningless on its own when a pallet is 20 sacks. */
+function moqLabel(moq: number, purchaseUnit: string, unitsPer: number): string {
+  const base = `${moq.toLocaleString('id-ID')} ${purchaseUnit}`
+  if (unitsPer <= 1 || !product.value) return base
+  return `${base} = ${(moq * unitsPer).toLocaleString('id-ID')} ${product.value.unit}`
+}
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 function formatQty(n: number, unit: string) {
@@ -157,7 +410,7 @@ const activityEntries = computed<ActivityEntry[]>(() => {
     details: [
       { label: 'Name', value: p.name },
       { label: 'SKU', value: p.sku },
-      { label: 'Category', value: p.category },
+      { label: 'Category', value: (p.categories?.length ? p.categories : [p.category]).join(', ') },
     ],
   }]
 })
@@ -186,7 +439,38 @@ const pagedTransactions = computed(() => {
 watch([txTypeFilter, txSearch], () => { txPage.value = 1 })
 
 // ── Stock by warehouses tab ──────────────────────────────────────────────────────
-const warehouseStock = computed(() => product.value ? getProductWarehouseStock(product.value.sku) : [])
+/**
+ * Per-warehouse stock, with Reserved / Available / In transit taken from the
+ * replenishment engine (PRD US-003 / US-004) — the same figures the worklist and its
+ * calculation drawer show. This tab sits beside the reorder point and explains it, so
+ * it must not read the warehouse module's picking holds and placeholder in-transit,
+ * which disagreed with the worklist for the same product and warehouse.
+ */
+const warehouseStock = computed(() => {
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return []
+  return getProductWarehouseStock(sku).map((s) => {
+    const atp = atpFor(sku, s.warehouseId)
+    return { ...s, reserved: atp.reserved, available: atp.available, onTheWay: atp.onOrder }
+  })
+})
+
+/**
+ * Header stock totals, summed from the Stock by warehouses rows so the header and the
+ * tab tell one story (replenishment Reserved / Available, US-003). A product with no
+ * stocked warehouse rows falls back to its own fields.
+ */
+const stockTotals = computed(() => {
+  const p = product.value
+  const rows = warehouseStock.value
+  if (!p) return { onHand: 0, reserved: 0, available: 0 }
+  if (!rows.length) return { onHand: p.onHand, reserved: p.reserved, available: p.available }
+  return rows.reduce(
+    (acc, r) => ({ onHand: acc.onHand + r.onHand, reserved: acc.reserved + r.reserved, available: acc.available + r.available }),
+    { onHand: 0, reserved: 0, available: 0 },
+  )
+})
 const whPage = ref(1)
 const whPerPage = ref(25)
 const pagedWarehouseStock = computed(() => {
@@ -194,29 +478,491 @@ const pagedWarehouseStock = computed(() => {
   return warehouseStock.value.slice(start, start + whPerPage.value)
 })
 
-// Min. stock is the only figure here a person SETS — on hand, reserved, available
-// and in transit are all measured by the warehouse, so they stay read only. Edits
-// are held in a draft until Save: min. stock drives low-stock counts and
-// replenishment, so a half-typed number shouldn't take effect on the way to the
-// right one.
+/**
+ * Replenishment settings at the WAREHOUSE grain (PRD US-024, US-011 AC-02).
+ *
+ * This is the grain the PRD actually specifies — "Reorder point, settings,
+ * demand, lead time, worklist and netting are all at the item × warehouse
+ * grain" (decision D2). A SKU selling 3/day in Jakarta and 0.2/day in Medan
+ * genuinely needs different floors, and a product-level number cannot express
+ * that. The product form sets the SKU-level DEFAULT; this table overrides it per
+ * location, which is the precedence chain's top tier.
+ *
+ * Safety days is the input; min. stock is what it works out to, because the PRD
+ * defines them as one quantity: "Reorder Point = MINIMUM STOCK THRESHOLD =
+ * avg daily demand × (lead time + safety days)".
+ */
+/** Where this product is short right now — the action rollup (D13a), shown in
+ *  Product info in place of a company-wide minimum that never existed. */
+const actionRollup = computed(() => {
+  const sku = product.value?.sku
+  void replenishmentRevision.value
+  return sku ? productActionRollup(sku) : null
+})
+
+const whReplenishment = computed(() => {
+  // The engine reads its settings from localStorage, which Vue cannot track, so
+  // without this the table would keep showing the pre-save values after an edit —
+  // the same stale-read that once made the worklist tab badge disagree with its
+  // own list. `writeStore` bumps this on every save.
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  const out: Record<string, {
+    effective: number
+    source: string
+    safetyDays: number
+    safetyDaysSource: string
+    velocity: number
+    leadTimeDays: number
+    leadTimeTier: string
+    leadTimeEstimated: boolean
+    leadTimeSampleSize: number
+    manualTooLow: boolean
+    vendorName: string
+    vendorId: string | null
+    lookbackDays: number
+    lookbackUnits: number
+    /** What the formula gives, ignoring any override. */
+    recommended: number | null
+    /** Safety days this warehouse would use with no value of its own. */
+    inheritedSafetyDays: number
+  }> = {}
+  if (!sku) return out
+
+  // Same function the product page sums, so the column and the rollup above it
+  // cannot drift (D13 / US-024 AC-04).
+  const roll = warehouseMinStockRollup(sku)
+  for (const s of warehouseStock.value) {
+    const row = buildRow(sku, s.warehouseId)
+    const velocity = row.velocity.avgDailySales
+    const rollRow = roll.perWarehouse.find((w) => w.warehouseId === s.warehouseId)
+    out[s.warehouseId] = {
+      effective: row.reorderPoint,
+      source: row.reorderPointSource,
+      safetyDays: row.safetyDays,
+      safetyDaysSource: row.safetyDaysSource,
+      velocity,
+      leadTimeDays: row.leadTimeDays,
+      leadTimeTier: row.leadTimeTier,
+      leadTimeEstimated: row.leadTimeEstimated,
+      leadTimeSampleSize: row.leadTimeSampleSize,
+      vendorName: row.vendor?.name ?? '',
+      vendorId: row.vendor?.id ?? null,
+      lookbackDays: row.velocity.lookbackDays,
+      lookbackUnits: row.velocity.lookbackUnits,
+      // No demand basis means no floor to recommend — the same rule the worklist
+      // applies, so this table cannot show a number the engine would refuse.
+      recommended: velocity > 0 ? Math.ceil(velocity * (row.leadTimeDays + row.safetyDays)) : null,
+      // US-024 VR-03 — a hand-set floor well under what demand justifies is how a
+      // busy warehouse quietly stops being flagged.
+      manualTooLow: rollRow ? isManualFloorTooLow(rollRow) : false,
+      inheritedSafetyDays: inheritedSafetyDays(sku, s.warehouseId),
+    }
+  }
+  return out
+})
+
+/**
+ * The little grey line under each figure, in read AND edit mode.
+ *
+ * It used to disappear the moment Edit was clicked, which is exactly backwards:
+ * "7" and "39" mean nothing on their own, and the moment you most need to know
+ * whether a number is inherited or calculated is while you are deciding whether
+ * to overwrite it. The full arithmetic stays on the cell's hover title; these are
+ * the short forms that fit a 130px column.
+ */
+/**
+ * Two columns, two rules — because their distributions differ.
+ *
+ * SAFETY DAYS is uniform: every row inherits the same figure unless somebody
+ * overrode that one warehouse. A word on all nine rows would say the same thing
+ * nine times, so only the departure is marked.
+ *
+ * MIN. STOCK is genuinely mixed — 63% of warehouse rows across the catalogue are
+ * demand-calculated and 37% have no sales to calculate from, never lopsided per
+ * product. With no dominant state a blank cell does not read as "calculated", it
+ * reads as "missing", and marking only some rows leaves the column ragged. So
+ * every row states its own provenance in one word.
+ *
+ * The full arithmetic stays on each cell's hover title in both columns.
+ */
+function whSafetyIsCustom(warehouseId: string): boolean {
+  return whReplenishment.value[warehouseId]?.safetyDaysSource === 'sku-warehouse'
+}
+
+function whMinStockIsCustom(warehouseId: string): boolean {
+  const src = whReplenishment.value[warehouseId]?.source
+  return src === 'sku-warehouse' || src === 'sku'
+}
+
+/**
+ * What the formula WOULD give for this warehouse, whether or not it is in use.
+ *
+ * Shown beside an overridden figure so the two are legible at once: telling a
+ * user their number is "custom" answers which is which, but not the question
+ * they actually have — is my override still sensible? Demand moves, so a floor
+ * typed three months ago can quietly drift far from what the product now needs,
+ * and the only way to notice is to see both numbers together.
+ */
+function whCalculatedHint(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r || r.recommended === null) return ''
+  return tf('Calculated: {n}', { n: r.recommended })
+}
+
+/**
+ * A caption only where someone set the reorder point by hand: the calculated figure
+ * stays visible beside it (D17). A calculated number carries no label — the chevron
+ * beside it opens the working.
+ */
+function whMinStockSub(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r || !whMinStockIsCustom(warehouseId)) return ''
+  return whCalculatedHint(warehouseId) || t('Set for this warehouse')
+}
+
+/** The draft differs from what the warehouse would inherit / what the formula gives. */
+function whSafetyDiffers(warehouseId: string): boolean {
+  const r = whReplenishment.value[warehouseId]
+  return !!r && whSafetyDraft[warehouseId] !== String(r.inheritedSafetyDays)
+}
+function whRopDiffers(warehouseId: string): boolean {
+  const r = whReplenishment.value[warehouseId]
+  return !!r && r.recommended !== null && whMinDraft[warehouseId] !== String(r.recommended)
+}
+
+/**
+ * Which rows have their working shown.
+ *
+ * The product form can afford a permanent disclosure under one field; a table of
+ * nine rows cannot, so the breakdown opens per row and only on request. Same
+ * content and same wording as the form, so a user who learned it in one place
+ * recognises it in the other.
+ */
+const expandedWh = ref<Set<string>>(new Set())
+
+/** One calculation open at a time: opening another closes the one before it. */
+function toggleWhDetails(warehouseId: string): void {
+  expandedWh.value = expandedWh.value.has(warehouseId) ? new Set() : new Set([warehouseId])
+}
+
+/** A click anywhere on the row opens it — except on something that has its own job. */
+function onWhRowClick(e: MouseEvent, warehouseId: string): void {
+  if (whEditing.value) return
+  if ((e.target as HTMLElement).closest('a, button, input, label, [role="button"]')) return
+  toggleWhDetails(warehouseId)
+}
+
+/** Where this warehouse's lead time came from — measured, estimated, or vendorless. */
+function whLeadTimeLine(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  if (!r.vendorId) return tf('No preferred vendor, so this uses the category default of {n} days.', { n: r.leadTimeDays })
+  if (r.leadTimeEstimated) return tf('Lead time is an estimate. {vendor} has no delivered purchase orders yet.', { vendor: r.vendorName })
+  return tf('Lead time is measured from {vendor}, the average of the last {n} receipts.', { vendor: r.vendorName, n: r.leadTimeSampleSize })
+}
+
+/** Where the lead time on the calculation card comes from — vendor and basis. */
+function whLeadBasis(warehouseId: string): string {
+  const r = whReplenishment.value[warehouseId]
+  if (!r) return ''
+  if (!r.vendorId) return t('Category default')
+  if (r.leadTimeEstimated) return tf('{vendor}, estimated', { vendor: r.vendorName })
+  return tf('{vendor}, avg of last {n} receipts', { vendor: r.vendorName, n: r.leadTimeSampleSize })
+}
+
+/** Where the safety days on the calculation card come from. */
+function whSafetySource(warehouseId: string): string {
+  switch (whReplenishment.value[warehouseId]?.safetyDaysSource) {
+    case 'sku-warehouse': return t('Set for this warehouse')
+    case 'sku': return t('Set for this product')
+    case 'warehouse': return t('Warehouse setting')
+    case 'category': return t('Category default')
+    default: return t('Default')
+  }
+}
+
+/**
+ * The reorder point the table CELL shows: with no sales there is nothing to calculate,
+ * so the cell shows the stored figure the low-stock alerts enforce — the panel must
+ * compare stock against that same number, not the engine's 0.
+ */
+function whRopShown(s: { warehouseId: string; minStock: number }): number {
+  const r = whReplenishment.value[s.warehouseId]
+  if (r && r.recommended === null && r.source === 'none') return s.minStock
+  return r?.effective ?? s.minStock
+}
+
+/** Room above the larger of position and reorder point, so the marker never sits at the end. */
+const POSITION_HEADROOM = 1.3
+
+/** Fill and marker positions of the stock-position bar, as percentages of its track. */
+function whPositionPct(s: { warehouseId: string; available: number; onTheWay: number; minStock: number }): { fill: string; marker: string } {
+  const rop = whRopShown(s)
+  const position = Math.max(0, s.available + s.onTheWay)
+  const scale = Math.max(position, rop, 1) * POSITION_HEADROOM
+  return { fill: `${Math.min(100, (position / scale) * 100)}%`, marker: `${Math.min(100, (rop / scale) * 100)}%` }
+}
+
+/** The two captions under the bar: the position's arithmetic, and how it stands against the point. */
+function whPositionCaption(s: { warehouseId: string; available: number; onTheWay: number; minStock: number; unit: string }): { left: string; right: string; short: boolean } {
+  const rop = whRopShown(s)
+  const position = s.available + s.onTheWay
+  const gap = rop - position
+  const left = tf('{available} available + {transit} in transit = {total} {unit}', {
+    available: s.available.toLocaleString('id-ID'), transit: s.onTheWay.toLocaleString('id-ID'),
+    total: position.toLocaleString('id-ID'), unit: s.unit,
+  })
+  const right = gap > 0
+    ? tf('{n} {unit} below reorder point ({rop})', { n: gap.toLocaleString('id-ID'), unit: s.unit, rop: rop.toLocaleString('id-ID') })
+    : gap < 0
+      ? tf('{n} {unit} above reorder point ({rop})', { n: Math.abs(gap).toLocaleString('id-ID'), unit: s.unit, rop: rop.toLocaleString('id-ID') })
+      : tf('At reorder point ({rop})', { rop: rop.toLocaleString('id-ID') })
+  return { left, right, short: gap > 0 }
+}
+
+/** The working behind one warehouse's reorder point, as whole sentences. */
+function whWhyLines(s: { warehouseId: string; warehouseName: string; minStock: number; unit: string }): string[] {
+  const r = whReplenishment.value[s.warehouseId]
+  if (!r) return []
+  const lines: string[] = []
+  if (r.recommended !== null) {
+    lines.push(tf('{velocity} per day × ({lead} lead time days + {safety} safety days) = {n} {unit}', {
+      velocity: r.velocity.toFixed(2), lead: r.leadTimeDays, safety: r.safetyDays, n: r.recommended, unit: s.unit,
+    }))
+    lines.push(tf('{n} {unit} sold here over {days} days.', { n: r.lookbackUnits, unit: s.unit, days: r.lookbackDays }))
+  } else {
+    lines.push(tf('Nothing sold from {warehouse} in the last {days} days, so there is no demand to calculate from. The {n} {unit} shown still applies to low-stock alerts.', {
+      warehouse: s.warehouseName, days: r.lookbackDays, n: s.minStock.toLocaleString('id-ID'), unit: s.unit,
+    }))
+  }
+  lines.push(whLeadTimeLine(s.warehouseId))
+  if (whMinStockIsCustom(s.warehouseId)) lines.push(t('This warehouse uses a value you set, not the calculation.'))
+  return lines
+}
+
+// On hand, reserved, available and in transit are all MEASURED by the warehouse,
+// so they stay read only. Safety days and min. stock are decisions, so they are
+// the two editable columns. Edits are held in a draft until Save — both drive
+// low-stock alerts and the replenishment worklist, so a half-typed number
+// shouldn't take effect on the way to the right one.
 const whEditing = ref(false)
+/** Invalid cells after a failed save, keyed `safety:<wh>` / `rop:<wh>` (rule/field-invalid-caption). */
+const whErrors = reactive<Record<string, boolean>>({})
+const whFormError = ref('')
+function clearWhErrors() { for (const k of Object.keys(whErrors)) delete whErrors[k]; whFormError.value = '' }
+function cancelEditMinStock() { clearWhErrors(); whEditing.value = false }
 const whMinDraft = reactive<Record<string, string>>({})
+const whSafetyDraft = reactive<Record<string, string>>({})
+/** Preferred vendor per warehouse (D23) — editable here, the one place it is set. */
+const whPreferredDraft = reactive<Record<string, string>>({})
+
+/** The SKU's linked vendors, as options for the per-warehouse preferred selector. */
+const whVendorOptions = computed(() => {
+  void vendorTick.value
+  return vendorRows.value.map((v) => ({ value: v.vendorId, label: vendorNameFor(v.vendorId) }))
+})
+/** This warehouse's own preferred vendor went inactive: lead time fell back to the next listed one (US-001 EH-01). */
+function whInactivePreferred(warehouseId: string): boolean {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  return !!sku && !!inactivePreferredVendorFor(sku, warehouseId)
+}
+/** The read-mode preferred vendor name for a warehouse (resolved pick, D23). */
+function whPreferredName(warehouseId: string): string {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  if (!sku) return ''
+  return preferredVendorFor(sku, warehouseId)?.vendorId
+    ? vendorNameFor(preferredVendorFor(sku, warehouseId)!.vendorId)
+    : ''
+}
+/**
+ * The lead time for a warehouse's preferred vendor — the draft pick while editing,
+ * the saved pick otherwise. This is the single per-warehouse figure (D10), shown as
+ * a sub-line so the vendor choice and its consequence read together.
+ */
+/**
+ * The tag on a lead time that was not measured (US-001 AC-04): says WHICH default it
+ * comes from — the product's category, or the "Other categories" floor.
+ */
+function estimatedBasis(tier: LeadTimeTier): string {
+  return tier === 'global' ? t('Estimated (other categories)') : t('Estimated (category default)')
+}
+
+function whLeadInfo(warehouseId: string): { days: number | null; estimated: boolean; basis: string } {
+  void vendorTick.value
+  void replenishmentRevision.value
+  const sku = product.value?.sku
+  // Lead time stays on the preferred vendor's own history even when deactivated (never
+  // the next vendor); while editing, follow the draft pick the user is choosing.
+  const vendorId = whEditing.value
+    ? (whPreferredDraft[warehouseId] || '')
+    : (sku ? (inactivePreferredVendorFor(sku, warehouseId)?.vendorId ?? preferredVendorFor(sku, warehouseId)?.vendorId ?? '') : '')
+  if (!sku || !vendorId) return { days: null, estimated: false, basis: '' }
+  const d = deriveLeadTime(vendorId, sku, undefined, warehouseId)
+  return { days: d.days, estimated: isEstimatedTier(d.tier), basis: estimatedBasis(d.tier) }
+}
+
+/**
+ * Bulk safety-days edit.
+ *
+ * Safety days is the same policy decision for most warehouses most of the time —
+ * typing 14 into nine boxes is the kind of work software should do. Applying
+ * fills the DRAFTS rather than saving, so a bulk change is reviewed in the table
+ * alongside everything else and committed by the same Save.
+ */
+const whSelected = ref<Set<string>>(new Set())
+const whBulkSafety = ref('')
+const whBulkMinStock = ref('')
+const whBulkPreferred = ref('')
+
+const whAllSelected = computed(() =>
+  warehouseStock.value.length > 0 && whSelected.value.size === warehouseStock.value.length,
+)
+
+function toggleWhSelected(warehouseId: string): void {
+  const next = new Set(whSelected.value)
+  next.has(warehouseId) ? next.delete(warehouseId) : next.add(warehouseId)
+  whSelected.value = next
+}
+
+function toggleWhSelectAll(): void {
+  whSelected.value = whAllSelected.value
+    ? new Set()
+    : new Set(warehouseStock.value.map((s) => s.warehouseId))
+}
+
+/**
+ * Apply whichever bulk boxes were filled to every selected warehouse.
+ *
+ * A bulk write is a one-off that stamps EXPLICIT values on the rows it touches —
+ * different in kind from the product-level defaults, which are live and inherited
+ * (D15). Use this for a set of warehouses that genuinely differ; use the product
+ * default for "most of them behave the same".
+ *
+ * An empty box is left alone rather than treated as a clear, because clearing
+ * nine warehouses by accident is the more expensive mistake. `Clear` is explicit.
+ */
+function applyBulk(): void {
+  const safety = whBulkSafety.value.trim().replace(/\D/g, '')
+  const min = whBulkMinStock.value.trim().replace(/\D/g, '')
+  const vendor = whBulkPreferred.value
+  for (const id of whSelected.value) {
+    if (safety !== '') whSafetyDraft[id] = safety
+    if (min !== '') whMinDraft[id] = min
+    if (vendor !== '') whPreferredDraft[id] = vendor
+  }
+  whBulkSafety.value = ''
+  whBulkMinStock.value = ''
+  whBulkPreferred.value = ''
+  whSelected.value = new Set()
+}
+
+/**
+ * Hand the selected warehouses back to the cascade — the explicit counterpart to
+ * filling a box, so "make these inherit again" is one deliberate action.
+ *
+ * What they return TO depends on the field: safety days falls back to its
+ * inherited default (warehouse → category → company); min. stock returns to the
+ * calculated figure where there are sales, or the stored floor where there are
+ * none. There is no product-level or category min-stock default any more (D17).
+ */
+function clearBulk(): void {
+  const skuDefaultVendorId = product.value ? (preferredVendorItem(product.value.sku)?.vendorId ?? '') : ''
+  for (const id of whSelected.value) {
+    const r = whReplenishment.value[id]
+    if (!r) continue
+    whSafetyDraft[id] = String(r.inheritedSafetyDays)
+    if (r.recommended !== null) whMinDraft[id] = String(r.recommended)
+    // Preferred falls back to the SKU-level default (cleared on save, D23).
+    whPreferredDraft[id] = skuDefaultVendorId
+  }
+  whSelected.value = new Set()
+}
+
 function startEditMinStock() {
+  if (!canManageReplenishment.value) return
+  whSelected.value = new Set()
+  whBulkSafety.value = ''
   for (const id of Object.keys(whMinDraft)) delete whMinDraft[id]
-  for (const s of warehouseStock.value) whMinDraft[s.warehouseId] = String(s.minStock)
+  for (const id of Object.keys(whSafetyDraft)) delete whSafetyDraft[id]
+  for (const id of Object.keys(whPreferredDraft)) delete whPreferredDraft[id]
+  const sku = product.value?.sku
+  // The form opens FILLED with the value in force, never blank. Saving a value that
+  // still equals its default stores no override (see saveMinStock), so it keeps
+  // inheriting / tracking demand.
+  for (const s of warehouseStock.value) {
+    const r = whReplenishment.value[s.warehouseId]
+    const override = sku ? getSkuWarehouseOverride(sku, s.warehouseId) : {}
+    whMinDraft[s.warehouseId] = String(override.reorderPoint ?? r?.recommended ?? s.minStock)
+    whSafetyDraft[s.warehouseId] = String(r?.safetyDays ?? '')
+    // The resolved preferred vendor (explicit pick, else the SKU default via the ladder).
+    whPreferredDraft[s.warehouseId] = sku ? (preferredVendorFor(sku, s.warehouseId)?.vendorId ?? '') : ''
+  }
+  clearWhErrors()
   whEditing.value = true
 }
+
 function saveMinStock() {
-  if (!product.value) return
+  const sku = product.value?.sku
+  if (!sku) return
+
+  // Validate on click and mark the cells — never a disabled button
+  // (rule/btn-no-disabled-validation). Safety days: whole number of 1 or more.
+  // Reorder point: whole number of 0 or more. Neither may be empty.
+  clearWhErrors()
+  const whole = (raw: string) => /^\d+$/.test(raw.trim())
   for (const s of warehouseStock.value) {
-    const cleaned = (whMinDraft[s.warehouseId] ?? '').replace(/\D/g, '')
-    // A cleared field means "I didn't finish typing", not "no floor" — leave the
-    // warehouse as it was. Zero is still settable by typing it.
-    if (cleaned === '') continue
-    const next = Number(cleaned)
-    if (next === s.minStock) continue
-    setWarehouseMinStock(s.warehouseId, product.value.sku, next)
+    const safetyRaw = String(whSafetyDraft[s.warehouseId] ?? '')
+    const ropRaw = String(whMinDraft[s.warehouseId] ?? '')
+    if (!whole(safetyRaw) || Number(safetyRaw) < 1) whErrors[`safety:${s.warehouseId}`] = true
+    if (!whole(ropRaw)) whErrors[`rop:${s.warehouseId}`] = true
   }
+  if (Object.keys(whErrors).length) {
+    whFormError.value = t('Fix the highlighted fields to save')
+    return
+  }
+
+  for (const s of warehouseStock.value) {
+    const rec = whReplenishment.value[s.warehouseId]
+    const typedSafety = Number(whSafetyDraft[s.warehouseId])
+    const typedRop = Number(whMinDraft[s.warehouseId])
+
+    // A value equal to its default is not an override: store nothing, so safety
+    // days keeps inheriting and the reorder point keeps tracking demand.
+    const safetyDays = typedSafety === rec?.inheritedSafetyDays ? undefined : typedSafety
+    const isDefaultRop = rec?.recommended !== null && rec?.recommended !== undefined
+      ? typedRop === rec.recommended
+      : typedRop === s.minStock
+    const reorderPoint = isDefaultRop ? undefined : typedRop
+
+    saveSkuWarehouseOverride(sku, s.warehouseId, { safetyDays, reorderPoint })
+
+    // Keep the legacy per-warehouse minStock in step. It feeds the low-stock
+    // counts on the Products and warehouse screens and in Cowork, which read
+    // `minStock` rather than the engine.
+    if (reorderPoint !== undefined && reorderPoint !== s.minStock) {
+      setWarehouseMinStock(s.warehouseId, sku, reorderPoint)
+    }
+
+    // Preferred vendor per warehouse (D23). A pick equal to the SKU-level default is
+    // not an override — clear it so the warehouse keeps inheriting; otherwise store
+    // the explicit per-warehouse pick. Only write when it actually changed.
+    const chosenVendor = whPreferredDraft[s.warehouseId] || ''
+    const skuDefaultVendorId = preferredVendorItem(sku)?.vendorId ?? ''
+    const currentExplicit = preferredVendorIdForWarehouse(sku, s.warehouseId)
+    if (chosenVendor && chosenVendor !== skuDefaultVendorId) {
+      if (chosenVendor !== currentExplicit) setPreferredVendor(sku, chosenVendor, s.warehouseId)
+    } else if (currentExplicit) {
+      clearPreferredVendorForWarehouse(sku, s.warehouseId)
+    }
+  }
+
+  invalidateReplenishmentCaches()
+  vendorTick.value++ // refresh the Vendors tab ✓ and any preferred-derived reads
   whEditing.value = false
 }
 
@@ -445,7 +1191,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <div class="pd-field-col" style="width: 368px">
             <ContentList label="SKU" :value="product.sku" />
             <ContentList label="Barcode" :value="product.barcode" />
-            <ContentList label="Category" :value="product.category" />
+            <ContentList label="Category" :value="(product.categories?.length ? product.categories : [product.category]).join(', ')" />
             <ContentList label="Base unit" :value="product.unit" />
             <ContentList label="Description">
               <ClampText :text="product.desc" :lines="2" />
@@ -462,10 +1208,30 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             </ContentList>
           </div>
           <div class="pd-field-col pd-field-col--flex">
-            <ContentList label="On hand" :value="formatQty(product.onHand, product.unit)" />
-            <ContentList label="Reserved" :value="formatQty(product.reserved, product.unit)" />
-            <ContentList label="Available" :value="formatQty(product.available, product.unit)" />
-            <ContentList label="Min. stock" :value="formatQty(product.minStock, product.unit)" />
+            <ContentList label="On hand" :value="formatQty(stockTotals.onHand, product.unit)" />
+            <ContentList label="Reserved" :value="formatQty(stockTotals.reserved, product.unit)" data-devchange="product-warehouses-engine-atp" />
+            <ContentList label="Available" :value="formatQty(stockTotals.available, product.unit)" />
+            <!--
+              NOT a company-wide min. stock. That row used to read
+              `product.minStock`, which is a seed figure keyed on the product's
+              position in the catalogue — settable nowhere, equal to no
+              warehouse's floor, and a company-wide threshold of exactly the kind
+              D13/D15 reject ("stock in one warehouse cannot cover a shortage in
+              another"). It is kept as DATA because the Products index and Cowork
+              still derive their low-stock status from it, but showing it here
+              invited a number nobody could act on or change.
+
+              What replaces it is the same action rollup the product form shows:
+              where this product is actually short, and how much to ask for.
+            -->
+            <!-- Whole labelled fields, not sentence fragments (docs/patterns/ContentList.md). -->
+            <template v-if="actionRollup && actionRollup.warehouseCount">
+              <ContentList
+                :label="t('Due for reorder')"
+                :value="tf('{n} of {total} warehouses', { n: actionRollup.dueCount, total: actionRollup.warehouseCount })"
+              />
+            </template>
+            <ContentList v-else :label="t('Due for reorder')" value="—" />
           </div>
         </div>
       </section>
@@ -487,6 +1253,22 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
                 <a v-else class="pd-link">{{ product.defaultPurchaseAccount }}</a>
               </ContentList>
               <ContentList label="Default purchase tax" :value="isMigrationPending ? '—' : product.defaultPurchaseTax" />
+              <!-- Preferred vendor + its minimum order — the two facts a buyer
+                   opens this page for. The full comparison is in the Vendors tab. -->
+              <ContentList label="Preferred vendor">
+                <template v-if="purchaseInfoVendor.kind === 'same'">
+                  <span>{{ vendorNameFor(purchaseInfoVendor.vendorId) }}</span>
+                  <span class="pd-vendor-note">{{ tf('Lead time: {lead}', { lead: vendorLeadLabel(purchaseInfoVendor.vendorId) }) }}</span>
+                  <span v-if="purchaseInfoVendor.item" class="pd-vendor-note">{{ tf('MOQ: {moq}', { moq: purchaseInfoVendor.item.moq > 0 ? moqLabel(purchaseInfoVendor.item.moq, purchaseInfoVendor.item.purchaseUnit, purchaseInfoVendor.item.unitsPerPurchaseUnit) : t('Not set') }) }}</span>
+                </template>
+                <template v-else-if="purchaseInfoVendor.kind === 'varies'">
+                  <span class="pd-vendor-name" data-devchange="product-preferred-varies-by-warehouse">{{ t('Varies by warehouse') }}</span>
+                </template>
+                <template v-else>
+                  <span class="pd-vendor-none">{{ t('Not set') }}</span>
+                  <span class="pd-vendor-note">{{ t('This product cannot be ordered until a vendor is added') }}</span>
+                </template>
+              </ContentList>
             </div>
           </div>
         </section>
@@ -537,6 +1319,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
       <MpTabs id="pd-detail-tabs" v-model="activeTabIndex" is-manual variant-color="green" class="detail-tabs">
         <MpTabList>
           <MpTab id="pd-tab-transactions" value="transactions">Transactions</MpTab>
+          <MpTab id="pd-tab-vendors" value="vendors">Vendors</MpTab>
           <MpTab id="pd-tab-units" value="unit-conversions">Unit conversions</MpTab>
           <MpTab v-if="product.trackStockBy === 'Batch'" id="pd-tab-batches" value="batches">Stock by batches</MpTab>
           <MpTab v-else-if="product.trackStockBy === 'Serial number'" id="pd-tab-serials" value="serials">Stock by serial numbers</MpTab>
@@ -594,14 +1377,14 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="pagedTransactions.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
-                  <col style="width: 120px" />
-                  <col style="width: 220px" />
-                  <col style="width: 110px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
-                  <col style="width: 100px" />
-                  <col style="width: 90px" />
+                  <col style="width: 120px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 110px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 100px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 90px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
                   <tr>
@@ -655,11 +1438,300 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           </MpTabPanel>
 
           <!-- Unit conversions -->
-          <MpTabPanel value="unit-conversions">
-            <div class="empty-full">
+          <!-- Vendors — who supplies this product and on what terms. Same numbers
+               the replenishment engine sizes an order from, so a buyer can see why
+               a suggested quantity came out the way it did. -->
+          <MpTabPanel value="vendors">
+            <!-- Rule 61: with edit rights, the buyer sets which vendor takes over first. -->
+            <div v-if="vendorRows.length > 1 && !priorityEditing && canManageReplenishment" class="pd-filter-bar pd-filter-bar--end">
+              <MpButton id="pd-vendor-priority-edit" variant="secondary" is-rounded data-devchange="product-vendor-priority" @click="startEditPriority">{{ t('Edit priority') }}</MpButton>
+            </div>
+            <div v-if="vendorRows.length" class="pd-vendor-panel">
+              <div class="pd-table-scroll" :class="{ 'pd-form-table': priorityEditing }">
+                <table class="pd-table">
+                  <colgroup>
+                    <col style="width: 208px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 112px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 88px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 96px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 152px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="pd-th">{{ t('Vendor') }}</th>
+                      <th class="pd-th">
+                        <span class="pd-th-info">
+                          {{ t('Priority') }}
+                          <MpTooltip
+                            id="pd-th-priority-tip"
+                            :label="t('1 is first. If a preferred vendor becomes inactive, the next vendor by priority takes over. Without a set priority, vendors are ordered by their latest invoice, then by name.')"
+                            placement="top" use-portal
+                          >
+                            <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                          </MpTooltip>
+                        </span>
+                      </th>
+                      <th class="pd-th">{{ t('Preferred') }}</th>
+                      <th class="pd-th pd-th--num">
+                        <span class="pd-th-info">
+                          {{ t('Lead time') }}
+                          <MpTooltip
+                            id="pd-th-lead-tip"
+                            :label="t('Measured per warehouse from its own purchase-to-receipt history, so it can differ by warehouse.')"
+                            placement="top" use-portal
+                          >
+                            <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                          </MpTooltip>
+                        </span>
+                      </th>
+                      <th class="pd-th pd-th--num">{{ t('MOQ') }}</th>
+                      <th class="pd-th">{{ t('Unit') }}</th>
+                      <th class="pd-th pd-th--num">{{ t('MOQ in base unit') }}</th>
+                      <th class="pd-th pd-th--num">
+                        <span class="pd-th-info">
+                          {{ t('Purchase multiplier') }}
+                          <MpTooltip
+                            id="pd-th-multiplier-tip"
+                            :label="t('An order is raised to the MOQ, then rounded up to the purchase multiplier.')"
+                            placement="top" use-portal
+                          >
+                            <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                          </MpTooltip>
+                        </span>
+                      </th>
+                      <th class="pd-th pd-th--num">{{ t('Unit cost') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="(vi, rank) in vendorRowsShown" :key="vi.id">
+                      <tr
+                        class="pd-tr"
+                        :class="{ 'pd-tr--clickable': !priorityEditing && preferredInWarehouses(vi.vendorId).length, 'pd-tr--open': expandedVendor === vi.vendorId }"
+                        @click="!priorityEditing && onVendorRowClick($event, vi.vendorId)"
+                      >
+                        <td class="pd-td">
+                          <!-- Name on the left, the disclosure chevron right-aligned so the chevrons
+                               form one column — the same cell as the warehouse rows. -->
+                          <span class="pd-wh-name pd-wh-name--top">
+                            <span class="pd-vendor-cell">
+                              <span class="pd-vendor-name">{{ vendorNameFor(vi.vendorId) }}</span>
+                              <span v-if="vi.unitsPerPurchaseUnit > 1" class="pd-vendor-note">
+                                {{ tf('1 {unit} = {n} {base}', { unit: vi.purchaseUnit, n: vi.unitsPerPurchaseUnit, base: product.unit }) }}
+                              </span>
+                              <!-- RS-015: a link a purchase request created — say where it came
+                                   from and that nothing has been bought or agreed yet. -->
+                              <template v-if="vi.linkedFrom">
+                                <span class="pd-vendor-note" data-devchange="product-vendor-linked-from-pr">
+                                  {{ tf('Added from Purchase Request #{n}. No purchase yet', { n: vi.linkedFrom.purchaseRequestNumber }) }}
+                                </span>
+                              </template>
+                              <MpTextlink
+                                v-if="termsMissing(vi)"
+                                :id="`pd-vendor-set-terms-${vi.vendorId}`"
+                                as="a"
+                                class="pd-vendor-terms-link"
+                                @click.prevent.stop="goToVendorTerms(vi.vendorId)"
+                              >{{ t('Set terms') }}</MpTextlink>
+                            </span>
+                            <MpButton
+                              v-if="!priorityEditing && preferredInWarehouses(vi.vendorId).length"
+                              :id="`pd-vendor-why-${vi.vendorId}`"
+                              variant="ghost"
+                              class="pd-cell-toggle"
+                              data-devchange="product-vendors-expand"
+                              :aria-label="expandedVendor === vi.vendorId ? t('Hide warehouses') : t('Show warehouses')"
+                              :aria-expanded="expandedVendor === vi.vendorId"
+                              @click.stop="toggleVendor(vi.vendorId)"
+                            >
+                              <MpIcon :name="expandedVendor === vi.vendorId ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                            </MpButton>
+                          </span>
+                        </td>
+                        <!-- Priority: a number; while editing, a select-like cell
+                             (FormTable.md › Select cell) whose pick swaps two vendors. -->
+                        <td class="pd-td" :class="{ 'pd-td--select': priorityEditing }">
+                          <MpPopover
+                            v-if="priorityEditing"
+                            :id="`pd-vendor-priority-${vi.vendorId}`"
+                            is-close-on-select
+                            use-portal
+                            :is-keep-alive="false"
+                            placement="bottom-start"
+                          >
+                            <MpPopoverTrigger>
+                              <div class="pd-select-trigger" role="button" tabindex="0" :aria-label="t('Priority')">
+                                <span class="pd-select-text"><span class="pd-vendor-name">{{ rank + 1 }}</span></span>
+                                <MpIcon name="chevrons-down" size="sm" class="pd-select-chevron" />
+                              </div>
+                            </MpPopoverTrigger>
+                            <MpPopoverContent :class="css({ minWidth: '96px' })">
+                              <MpPopoverList>
+                                <MpPopoverListItem
+                                  v-for="n in vendorRowsShown.length"
+                                  :key="n"
+                                  :is-active="n === rank + 1"
+                                  @click="setDraftPriority(vi.vendorId, n)"
+                                >{{ n }}</MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
+                          <template v-else>{{ rank + 1 }}</template>
+                        </td>
+                        <td class="pd-td">
+                          <span v-if="preferredInWarehouses(vi.vendorId).length">{{ preferredCountLabel(vi.vendorId) }}</span>
+                          <span v-else class="pd-vendor-alt">—</span>
+                        </td>
+                        <td class="pd-td pd-td--num">{{ vendorLeadLabel(vi.vendorId) }}</td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="vi.moq > 0">{{ vi.moq.toLocaleString('id-ID') }}</template>
+                          <span v-else class="pd-vendor-alt">{{ t('Not set') }}</span>
+                        </td>
+                        <td class="pd-td">{{ vi.purchaseUnit }}</td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="vi.moq > 0">{{ (vi.moq * vi.unitsPerPurchaseUnit).toLocaleString('id-ID') }} {{ product.unit }}</template>
+                          <template v-else>—</template>
+                        </td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="vi.packSize > 0">{{ vi.packSize }} {{ vi.purchaseUnit }}</template>
+                          <span v-else class="pd-vendor-alt">{{ t('Not set') }}</span>
+                        </td>
+                        <td class="pd-td pd-td--num">
+                          <template v-if="vi.unitCost > 0">{{ formatIDR(vi.unitCost) }}</template>
+                          <span v-else class="pd-vendor-alt">{{ t('Not set') }}</span>
+                        </td>
+                      </tr>
+
+                      <!-- Opened: one line per warehouse that prefers this vendor — its name under
+                           Preferred, its lead time under Lead time. -->
+                      <template v-if="!priorityEditing && expandedVendor === vi.vendorId">
+                        <tr v-for="w in preferredInWarehouses(vi.vendorId)" :key="`${vi.id}-${w.warehouseId}`" class="pd-tr pd-tr--sub">
+                          <td class="pd-td" />
+                          <td class="pd-td" />
+                          <td class="pd-td">{{ w.warehouseName }}</td>
+                          <td class="pd-td pd-td--num">
+                            <template v-if="w.leadDays != null">
+                              {{ tf('{n} days', { n: w.leadDays }) }}
+                              <span v-if="w.leadEstimated" class="pd-lead-est pd-lead-est--below">{{ w.estimatedBasis }}</span>
+                            </template>
+                            <template v-else>—</template>
+                          </td>
+                          <td class="pd-td" colspan="5" />
+                        </tr>
+                      </template>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <!-- Edit-mode actions (rule/btn-responsive-footer, rule/form-edit-save-changes). -->
+              <div v-if="priorityEditing" class="pd-wh-footer">
+                <MpButtonGroup class="erp-action-footer">
+                  <MpButton id="pd-vendor-priority-cancel" variant="ghost" is-rounded @click="cancelEditPriority">{{ t('Cancel') }}</MpButton>
+                  <MpButton id="pd-vendor-priority-save" variant="primary" is-rounded @click="savePriority">{{ t('Save changes') }}</MpButton>
+                </MpButtonGroup>
+              </div>
+            </div>
+            <div v-else class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
-              <p class="empty-full-title">No unit conversions</p>
-              <p class="empty-full-desc">Unit conversions will appear here.</p>
+              <p class="empty-full-title">{{ t('No vendors') }}</p>
+              <p class="empty-full-desc">
+                {{ t('No vendor supplies this product yet, so it cannot be ordered or replenished. Link it to a vendor from the Vendors module.') }}
+              </p>
+              <MpButton id="pd-go-vendors" variant="secondary" is-rounded class="empty-cta" @click="router.push('/vendors')">{{ t('Go to Vendors') }}</MpButton>
+            </div>
+          </MpTabPanel>
+
+          <!-- Unit conversions — larger units this product is handled in. Vendor MOQ
+               and pack size are quoted in one of these, so editing a factor here
+               changes what every vendor's minimum means. -->
+          <MpTabPanel value="unit-conversions">
+            <div class="pd-unit-panel">
+              <p class="pd-unit-intro">
+                Base unit is <strong>{{ product.unit }}</strong>. Add the larger units this product
+                is bought or handled in — a vendor's minimum order can then be quoted in any of them.
+              </p>
+
+              <div v-if="conversions.length" class="pd-table-scroll">
+                <table class="pd-table">
+                  <colgroup>
+                    <col style="width: 220px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 160px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
+                    <col style="width: 90px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="pd-th">Unit</th>
+                      <th class="pd-th pd-th--num">Quantity</th>
+                      <th class="pd-th">Conversion</th>
+                      <th class="pd-th">Used by</th>
+                      <th class="pd-th" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="c in conversions" :key="c.id" class="pd-tr">
+                      <td class="pd-td">{{ c.name }}</td>
+                      <td class="pd-td pd-td--num">
+                        <MpInput
+                          :id="`pd-uc-factor-${c.name}`"
+                          :model-value="String(c.factor)"
+                          type="number"
+                          :class="css({ width: '88px' })"
+                          @update:model-value="(v: string) => editFactor(c.name, v)"
+                        />
+                      </td>
+                      <td class="pd-td">1 {{ c.name }} = {{ c.factor }} {{ product.unit }}</td>
+                      <td class="pd-td">
+                        <span v-if="vendorRows.filter(v => v.purchaseUnit === c.name).length" class="pd-vendor-note">
+                          {{ vendorRows.filter(v => v.purchaseUnit === c.name).length }}
+                          vendor MOQ
+                        </span>
+                        <span v-else class="pd-vendor-alt">—</span>
+                      </td>
+                      <td class="pd-td pd-td--num">
+                        <button
+                          class="pd-uc-remove"
+                          type="button"
+                          aria-label="Remove"
+                          @click="deleteConversion(c.name)"
+                        ><MpIcon name="minus-circular" size="md" /></button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="pd-unit-empty">
+                No larger units yet — this product is only handled by the {{ product.unit }}.
+              </p>
+
+              <div class="pd-unit-add">
+                <span class="pd-unit-add-label">Add unit</span>
+                <MpInput
+                  id="pd-uc-new-name"
+                  v-model="newUnitName"
+                  placeholder="Pack"
+                  :class="css({ width: '160px' })"
+                />
+                <span class="pd-unit-eq">=</span>
+                <MpInput
+                  id="pd-uc-new-factor"
+                  v-model="newUnitFactor"
+                  type="number"
+                  placeholder="12"
+                  :class="css({ width: '96px' })"
+                />
+                <span class="pd-unit-eq">{{ product.unit }}</span>
+                <button
+                  class="btn-enterprise btn-enterprise--secondary"
+                  type="button"
+                  @click="addConversion"
+                >Add</button>
+              </div>
+              <p v-if="unitError" class="pd-unit-error">{{ unitError }}</p>
             </div>
           </MpTabPanel>
 
@@ -843,9 +1915,9 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
             <div v-if="pagedSerialStock.length" class="pd-table-scroll">
               <table class="pd-table">
                 <colgroup>
-                  <col style="width: 240px" />
-                  <col style="width: 200px" />
-                  <col style="width: 200px" />
+                  <col style="width: 240px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
                   <tr>
@@ -888,77 +1960,340 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
           <!-- Stock by warehouses — shown for every product, alongside the batch /
                serial breakdown rather than instead of it. -->
           <MpTabPanel value="warehouses">
-            <div v-if="pagedWarehouseStock.length" class="pd-filter-bar pd-filter-bar--end">
-              <div v-if="whEditing" class="pd-filter-right">
-                <MpButton
-                  class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                  variant="ghost"
-                  type="button"
-                  @click="whEditing = false"
-                >Cancel</MpButton>
-                <MpButton
-                  class="btn-enterprise btn-enterprise--primary btn-enterprise--sm"
-                  variant="primary"
-                  type="button"
-                  @click="saveMinStock"
-                >Save</MpButton>
-              </div>
-              <MpButton
-                v-else
-                class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-                variant="secondary"
-                type="button"
-                @click="startEditMinStock"
-              >Edit</MpButton>
+            <div v-if="pagedWarehouseStock.length && !whEditing && canManageReplenishment" class="pd-filter-bar pd-filter-bar--end">
+              <MpButton id="pd-wh-edit" variant="secondary" is-rounded data-devchange="product-warehouses-tidy" @click="startEditMinStock">{{ t('Edit') }}</MpButton>
             </div>
-            <div v-if="pagedWarehouseStock.length" class="pd-table-scroll">
+            <div v-if="pagedWarehouseStock.length" class="pd-table-scroll pd-wh-scroll" :class="{ 'pd-form-table': whEditing }">
               <table class="pd-table">
                 <colgroup>
-                  <col style="width: 240px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 110px" />
-                  <col style="width: 90px" />
+                  <col v-if="whEditing" style="width: 44px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 200px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 104px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 152px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col v-if="!whEditing" style="width: 72px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col style="width: 136px" /><!-- pixel-police-allow: table column width, not spacing -->
+                  <col :style="{ width: whEditing ? '380px' : '220px' }" /><!-- pixel-police-allow: table column width, not spacing -->
                 </colgroup>
                 <thead>
+                  <!-- Bulk set — the same value for several warehouses should not be typed nine times.
+                       Each field sits above the column it fills, so the column header is its label. -->
+                  <tr v-if="whEditing" class="pd-bulk-row" data-devchange="product-warehouses-bulk-row">
+                    <td colspan="6" class="pd-bulk-cell">
+                      <span class="pd-bulk-lead">
+                        <span v-if="whSelected.size" class="pd-bulk-count">{{ tf('{n} warehouses selected', { n: whSelected.size }) }}</span>
+                        <span v-else class="pd-bulk-hint">{{ t('Select warehouses to set their safety days, reorder point or preferred vendor together') }}</span>
+                      </span>
+                    </td>
+                    <td class="pd-bulk-cell">
+                      <MpInputGroup v-if="whSelected.size" id="pd-wh-bulk-min-stock-group">
+                        <MpInput id="pd-wh-bulk-min-stock" v-model="whBulkMinStock" type="number" :aria-label="t('Reorder point')" />
+                        <MpInputRightAddon has-background>{{ pagedWarehouseStock[0]?.unit }}</MpInputRightAddon>
+                      </MpInputGroup>
+                    </td>
+                    <td class="pd-bulk-cell">
+                      <MpInputGroup v-if="whSelected.size" id="pd-wh-bulk-safety-group">
+                        <MpInput id="pd-wh-bulk-safety" v-model="whBulkSafety" type="number" :aria-label="t('Safety days')" />
+                        <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
+                      </MpInputGroup>
+                    </td>
+                    <td class="pd-bulk-cell">
+                      <span v-if="whSelected.size" class="pd-bulk-vendor">
+                        <ErpFilterSelect
+                          id="pd-wh-bulk-preferred"
+                          v-model="whBulkPreferred"
+                          :options="whVendorOptions"
+                          :placeholder="t('Select vendor')"
+                          width="100%"
+                        />
+                        <!-- Split button: Apply acts at once; the chevron only holds "Use defaults". -->
+                        <span class="pd-split">
+                          <MpButton id="pd-wh-bulk-apply" variant="secondary" size="sm" is-rounded class="pd-split-main" @click="applyBulk">{{ t('Apply') }}</MpButton>
+                          <MpPopover id="pd-wh-bulk-menu" is-close-on-select use-portal :is-keep-alive="false" placement="bottom-end">
+                            <MpPopoverTrigger>
+                              <MpButton variant="secondary" size="sm" is-rounded class="pd-split-more" :aria-label="t('More actions')" right-icon="chevrons-down" />
+                            </MpPopoverTrigger>
+                            <MpPopoverContent :class="css({ minWidth: '160px', width: 'max-content' })">
+                              <MpPopoverList>
+                                <MpPopoverListItem @click="clearBulk">{{ t('Use defaults') }}</MpPopoverListItem>
+                              </MpPopoverList>
+                            </MpPopoverContent>
+                          </MpPopover>
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
                   <tr>
-                    <th class="pd-th">Warehouse</th>
-                    <th class="pd-th pd-th--num">On hand qty</th>
-                    <th class="pd-th pd-th--num">Reserved qty</th>
-                    <th class="pd-th pd-th--num">Available qty</th>
-                    <th class="pd-th pd-th--num">In transit qty</th>
-                    <th class="pd-th pd-th--num">Min. stock</th>
-                    <th class="pd-th">Unit</th>
+                    <th v-if="whEditing" class="pd-th">
+                      <MpCheckbox id="pd-wh-select-all" :is-checked="whAllSelected" @change="toggleWhSelectAll" />
+                    </th>
+                    <th class="pd-th">{{ t('Warehouse') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('On hand qty') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('Reserved qty') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('Available qty') }}</th>
+                    <th class="pd-th pd-th--num">{{ t('In transit qty') }}</th>
+                    <th class="pd-th pd-th--num">
+                      <span class="pd-th-info">
+                        {{ t('Reorder point') }}
+                        <MpTooltip
+                          id="pd-th-minstock-tip"
+                          :label="t('Calculated per warehouse as daily sales × (lead time + safety days). A value you set replaces the calculation.')"
+                          placement="top" use-portal
+                        >
+                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                        </MpTooltip>
+                      </span>
+                    </th>
+                    <th v-if="!whEditing" class="pd-th">{{ t('Unit') }}</th>
+                    <th class="pd-th pd-th--num">
+                      <span class="pd-th-info">
+                        {{ t('Safety days') }}
+                        <MpTooltip
+                          id="pd-th-safety-tip"
+                          :label="t('Extra cover on top of the vendor lead time. A warehouse without its own value uses the category default from Replenishment settings.')"
+                          placement="top" use-portal
+                        >
+                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                        </MpTooltip>
+                      </span>
+                    </th>
+                    <th class="pd-th">
+                      <span class="pd-th-info">
+                        {{ t('Preferred vendor') }}
+                        <MpTooltip
+                          id="pd-th-preferred-tip"
+                          :label="t('The vendor this warehouse orders from. It can differ by warehouse, and its lead time sets the reorder point.')"
+                          placement="top" use-portal
+                        >
+                          <span class="pd-th-icon"><MpIcon name="info" size="sm" /></span>
+                        </MpTooltip>
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="s in pagedWarehouseStock" :key="s.warehouseId" class="pd-tr">
+                  <template v-for="s in pagedWarehouseStock" :key="s.warehouseId">
+                  <tr class="pd-tr" :class="{ 'pd-tr--clickable': !whEditing, 'pd-tr--open': expandedWh.has(s.warehouseId) }" @click="onWhRowClick($event, s.warehouseId)">
+                    <td v-if="whEditing" class="pd-td">
+                      <MpCheckbox
+                        :id="`pd-wh-select-${s.warehouseId}`"
+                        :is-checked="whSelected.has(s.warehouseId)"
+                        @change="toggleWhSelected(s.warehouseId)"
+                      />
+                    </td>
                     <td class="pd-td">
-                      <a class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
+                      <span class="pd-wh-name">
+                        <!-- While editing, the name is just a label — nothing here navigates away mid-edit. -->
+                        <span v-if="whEditing" class="cell-text">{{ s.warehouseName }}</span>
+                        <a v-else class="cell-link cell-text" @click.stop="router.push(`/warehouses/${s.warehouseId}`)">{{ s.warehouseName }}</a>
+                        <!-- The working behind this warehouse's reorder point opens from the chevron
+                             (or anywhere on the row); right-aligned so the chevrons form one column. -->
+                        <MpButton
+                          v-if="!whEditing"
+                          :id="`pd-wh-why-${s.warehouseId}`"
+                          variant="ghost"
+                          class="pd-cell-toggle"
+                          :aria-label="expandedWh.has(s.warehouseId) ? t('Hide calculation') : t('Show calculation')"
+                          :aria-expanded="expandedWh.has(s.warehouseId)"
+                          @click.stop="toggleWhDetails(s.warehouseId)"
+                        >
+                          <MpIcon :name="expandedWh.has(s.warehouseId) ? 'chevrons-up' : 'chevrons-down'" size="sm" />
+                        </MpButton>
+                      </span>
                     </td>
                     <td class="pd-td pd-td--num">{{ s.onHand.toLocaleString('id-ID') }}</td>
                     <td class="pd-td pd-td--num">{{ s.reserved.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ s.available.toLocaleString('id-ID') }}</td>
-                    <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
+                    <!-- Same as the worklist: reserved above on hand is Oversold (US-003). -->
                     <td class="pd-td pd-td--num">
-                      <MpInput
-                        v-if="whEditing"
-                        :id="`pd-wh-min-stock-${s.warehouseId}`"
-                        v-model="whMinDraft[s.warehouseId]"
-                        type="number"
-                        :aria-label="`Min. stock for ${s.warehouseName}`"
-                        :class="css({ width: '88px' })"
-                      />
-                      <template v-else>{{ s.minStock.toLocaleString('id-ID') }}</template>
+                      <span :class="{ 'pd-qty-danger': s.available < 0 }">{{ s.available.toLocaleString('id-ID') }}</span>
+                      <span v-if="s.available < 0" class="pd-cell-sub pd-oversold" data-devchange="product-warehouses-engine-atp">{{ t('Oversold') }}</span>
                     </td>
-                    <td class="pd-td">{{ s.unit }}</td>
+                    <td class="pd-td pd-td--num">{{ s.onTheWay.toLocaleString('id-ID') }}</td>
+
+                    <!-- Reorder point — calculated unless someone set it for this warehouse. -->
+                    <td
+                      class="pd-td pd-td--num"
+                      :class="{ 'pd-td--input': whEditing, 'pd-td--error': whEditing && whErrors[`rop:${s.warehouseId}`] }"
+                    >
+                      <MpInputGroup v-if="whEditing" :id="`pd-wh-min-stock-group-${s.warehouseId}`">
+                        <MpInput
+                          :id="`pd-wh-min-stock-${s.warehouseId}`"
+                          v-model="whMinDraft[s.warehouseId]"
+                          type="number"
+                          :aria-label="tf('Reorder point for {warehouse}', { warehouse: s.warehouseName })"
+                        />
+                        <MpInputRightAddon has-background>{{ s.unit }}</MpInputRightAddon>
+                      </MpInputGroup>
+                      <!-- With no sales there is nothing to calculate, so the stored figure the
+                           low-stock alerts enforce is shown and labelled as such. -->
+                      <template v-else-if="whReplenishment[s.warehouseId]?.recommended === null && whReplenishment[s.warehouseId]?.source === 'none'">
+                        {{ s.minStock.toLocaleString('id-ID') }}
+                      </template>
+                      <template v-else>
+                        {{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }}
+                      </template>
+                      <span v-if="whReplenishment[s.warehouseId]?.manualTooLow" class="pd-cell-warn">{{ t('Below calculated') }}</span>
+                      <span v-if="whMinStockSub(s.warehouseId)" class="pd-cell-sub">{{ whMinStockSub(s.warehouseId) }}</span>
+                      <MpTextlink
+                        v-if="whEditing && whRopDiffers(s.warehouseId)"
+                        :id="`pd-wh-rop-calc-${s.warehouseId}`"
+                        as="a"
+                        class="pd-cell-link"
+                        @click.prevent="whMinDraft[s.warehouseId] = String(whReplenishment[s.warehouseId]?.recommended ?? '')"
+                      >{{ t('Use calculated') }}</MpTextlink>
+                    </td>
+
+                    <td v-if="!whEditing" class="pd-td">{{ s.unit }}</td>
+
+                    <!-- Safety days — opens filled with the value in force (docs/patterns/FormTable.md). -->
+                    <td
+                      class="pd-td pd-td--num"
+                      :class="{ 'pd-td--input': whEditing, 'pd-td--error': whEditing && whErrors[`safety:${s.warehouseId}`] }"
+                    >
+                      <MpInputGroup v-if="whEditing" :id="`pd-wh-safety-group-${s.warehouseId}`">
+                        <MpInput
+                          :id="`pd-wh-safety-${s.warehouseId}`"
+                          v-model="whSafetyDraft[s.warehouseId]"
+                          type="number"
+                          :aria-label="tf('Safety days for {warehouse}', { warehouse: s.warehouseName })"
+                        />
+                        <MpInputRightAddon has-background>{{ t('days') }}</MpInputRightAddon>
+                      </MpInputGroup>
+                      <template v-else>{{ whReplenishment[s.warehouseId]?.safetyDays ?? '—' }}</template>
+                      <span v-if="whSafetyIsCustom(s.warehouseId)" class="pd-cell-sub">{{ t('Set for this warehouse') }}</span>
+                      <MpTextlink
+                        v-if="whEditing && whSafetyDiffers(s.warehouseId)"
+                        :id="`pd-wh-safety-default-${s.warehouseId}`"
+                        as="a"
+                        class="pd-cell-link"
+                        @click.prevent="whSafetyDraft[s.warehouseId] = String(whReplenishment[s.warehouseId]?.inheritedSafetyDays ?? '')"
+                      >{{ t('Use default') }}</MpTextlink>
+                    </td>
+
+
+                    <!-- Preferred vendor — the one place it is set per warehouse (D23). -->
+                    <td
+                      class="pd-td"
+                      :class="{ 'pd-td--select': whEditing && whVendorOptions.length }"
+                      data-devchange="product-warehouses-preferred-vendor"
+                    >
+                      <!-- Editing: a select-like cell (FormTable.md › Select / Search Cell) — custom
+                           single-root trigger, no inner border; the cell draws the focus ring. -->
+                      <MpPopover
+                        v-if="whEditing && whVendorOptions.length"
+                        :id="`pd-wh-preferred-${s.warehouseId}`"
+                        is-close-on-select
+                        use-portal
+                        :is-keep-alive="false"
+                        placement="bottom-start"
+                      >
+                        <MpPopoverTrigger>
+                          <div class="pd-select-trigger" role="button" tabindex="0">
+                            <span class="pd-select-text">
+                              <span v-if="whPreferredDraft[s.warehouseId]" class="pd-vendor-name">{{ vendorNameFor(whPreferredDraft[s.warehouseId]!) }}</span>
+                              <span v-else class="pd-vendor-alt">{{ t('Select vendor') }}</span>
+                              <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
+                                {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
+                                <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ whLeadInfo(s.warehouseId).basis }}</span>
+                              </span>
+                            </span>
+                            <MpIcon name="chevrons-down" size="sm" class="pd-select-chevron" />
+                          </div>
+                        </MpPopoverTrigger>
+                        <MpPopoverContent :class="css({ minWidth: '240px', width: 'max-content' })">
+                          <MpPopoverList>
+                            <MpPopoverListItem
+                              v-for="o in whVendorOptions"
+                              :key="o.value"
+                              :is-active="o.value === whPreferredDraft[s.warehouseId]"
+                              @click="whPreferredDraft[s.warehouseId] = o.value"
+                            >{{ o.label }}</MpPopoverListItem>
+                          </MpPopoverList>
+                        </MpPopoverContent>
+                      </MpPopover>
+                      <template v-else>
+                        <span v-if="whPreferredName(s.warehouseId)" class="pd-vendor-name">{{ whPreferredName(s.warehouseId) }}</span>
+                        <span v-else class="pd-vendor-alt">{{ t('No preferred vendor set') }}</span>
+                        <span v-if="whInactivePreferred(s.warehouseId)" class="pd-cell-sub pd-cell-sub--warning" data-devchange="product-warehouses-inactive-preferred">{{ t('Preferred vendor is inactive') }}</span>
+                        <span v-if="whLeadInfo(s.warehouseId).days != null" class="pd-cell-sub">
+                          {{ tf('Lead time: {n} days', { n: whLeadInfo(s.warehouseId).days }) }}
+                          <span v-if="whLeadInfo(s.warehouseId).estimated" class="pd-lead-est">{{ whLeadInfo(s.warehouseId).basis }}</span>
+                        </span>
+                      </template>
+                    </td>
                   </tr>
+
+                  <!-- Working shown on request. -->
+                  <!-- How the reorder point is calculated: the formula as cards, then where stock
+                       stands against it. Every figure comes from the same row the table reads. -->
+                  <tr v-if="expandedWh.has(s.warehouseId) && !whEditing" :key="`${s.warehouseId}-why`" class="pd-tr pd-tr--details">
+                    <td class="pd-td pd-td--details" colspan="9">
+                      <div class="pd-calc" data-devchange="product-warehouses-calc-panel">
+                        <template v-if="whReplenishment[s.warehouseId]?.recommended != null">
+                          <p class="pd-calc-title">{{ t('How reorder point is calculated') }}</p>
+                          <div class="pd-calc-formula">
+                            <div class="pd-calc-card">
+                              <span class="pd-calc-label">{{ t('Avg daily sales') }}</span>
+                              <span class="pd-calc-value">{{ whReplenishment[s.warehouseId]!.velocity.toFixed(2) }} {{ s.unit }}</span>
+                              <span class="pd-calc-sub">{{ tf('{n} {unit} ÷ {days} days', { n: whReplenishment[s.warehouseId]!.lookbackUnits, unit: s.unit, days: whReplenishment[s.warehouseId]!.lookbackDays }) }}</span>
+                            </div>
+                            <span class="pd-calc-op">× (</span>
+                            <div class="pd-calc-card">
+                              <span class="pd-calc-label">{{ t('Lead time') }}</span>
+                              <span class="pd-calc-value">{{ tf('{n} days', { n: whReplenishment[s.warehouseId]!.leadTimeDays }) }}</span>
+                              <span class="pd-calc-sub pd-calc-sub--link">{{ whLeadBasis(s.warehouseId) }}</span>
+                            </div>
+                            <span class="pd-calc-op">+</span>
+                            <div class="pd-calc-card">
+                              <span class="pd-calc-label">{{ t('Safety days') }}</span>
+                              <span class="pd-calc-value">{{ tf('{n} days', { n: whReplenishment[s.warehouseId]!.safetyDays }) }}</span>
+                              <span class="pd-calc-sub">{{ whSafetySource(s.warehouseId) }}</span>
+                            </div>
+                            <span class="pd-calc-op">) =</span>
+                            <div class="pd-calc-card pd-calc-card--result">
+                              <span class="pd-calc-label">{{ t('Reorder point') }}</span>
+                              <span class="pd-calc-value">{{ (whReplenishment[s.warehouseId]?.effective ?? s.minStock).toLocaleString('id-ID') }} {{ s.unit }}</span>
+                              <span class="pd-calc-sub">{{ whMinStockIsCustom(s.warehouseId) ? t('Set for this warehouse') : t('Calculated') }}</span>
+                              <span v-if="whMinStockIsCustom(s.warehouseId)" class="pd-calc-sub">{{ whCalculatedHint(s.warehouseId) }}</span>
+                            </div>
+                          </div>
+                        </template>
+                        <p v-else class="pd-calc-note">{{ whWhyLines(s)[0] }}</p>
+
+                        <p class="pd-calc-title">{{ t('Stock position vs reorder point') }}</p>
+                        <div class="pd-calc-bar" role="img" :aria-label="whPositionCaption(s).right">
+                          <span class="pd-calc-fill" :style="{ width: whPositionPct(s).fill }" />
+                          <span class="pd-calc-marker" :style="{ left: whPositionPct(s).marker }" />
+                        </div>
+                        <div class="pd-calc-captions">
+                          <span>{{ whPositionCaption(s).left }}</span>
+                          <span :class="{ 'pd-calc-short': whPositionCaption(s).short }">{{ whPositionCaption(s).right }}</span>
+                        </div>
+                        <p class="pd-calc-links">
+                          <MpTextlink :id="`pd-wh-lead-defaults-${s.warehouseId}`" as="a" class="pd-cell-link" @click.prevent="router.push('/replenishment-settings#lead-time')">
+                            {{ t('View lead time defaults') }}
+                          </MpTextlink>
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                  </template>
                 </tbody>
               </table>
             </div>
-            <div v-else class="empty-full">
+
+            <!-- Edit-mode actions: inline error on the left, ghost Cancel + primary Save changes
+                 (rule/btn-responsive-footer, rule/form-edit-save-changes, rule/form-errors-inline). -->
+            <div v-if="whEditing && pagedWarehouseStock.length" class="pd-wh-footer">
+              <p v-if="whFormError" class="pd-wh-error" role="alert">{{ whFormError }}</p>
+              <MpButtonGroup class="erp-action-footer">
+                <MpButton id="pd-wh-cancel" variant="ghost" is-rounded @click="cancelEditMinStock">{{ t('Cancel') }}</MpButton>
+                <MpButton id="pd-wh-save" variant="primary" is-rounded @click="saveMinStock">{{ t('Save changes') }}</MpButton>
+              </MpButtonGroup>
+            </div>
+            <div v-if="!pagedWarehouseStock.length" class="empty-full">
               <img :src="emptyIllustration" alt="" class="empty-illustration" width="288" height="240" />
               <p class="empty-full-title">No stock</p>
               <p class="empty-full-desc">Warehouses will appear here.</p>
@@ -1153,6 +2488,107 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-search-clear:hover { background: var(--mp-background-neutral-hovered, #eef0f3); }
 
 /* ── Tables (ErpTablePage header/row spec, raw table — mirrors WarehouseDetailsPage's tab tables) ── */
+/* Where a number came from, under the number itself — muted so the figure still
+   reads first and the provenance is there when questioned. */
+
+/* The disclosure chevron, left of the warehouse it explains. MpButton pins its own padding,
+   so it is reset to a bare icon target. */
+.pd-cell-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: auto; min-width: 0; height: auto; padding: var(--mp-spacing-0\.5);
+  vertical-align: middle; color: var(--mp-text-secondary);
+}
+.pd-wh-name { display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-2); }
+.pd-tr--clickable { cursor: pointer; }
+.pd-tr--clickable:hover > .pd-td { background: var(--mp-background-neutral-subtle); }
+.pd-cell-toggle:hover { color: var(--mp-text-default); }
+
+.pd-tr--details > .pd-td--details { padding: 0; }
+/* ── How the reorder point is calculated (the expanded warehouse row) ── */
+/* The scroll area is a size container, so the panel can be exactly as wide as what is
+   visible (100cqw) and stay pinned left while the table scrolls under it. */
+.pd-wh-scroll { container-type: inline-size; }
+.pd-calc {
+  position: sticky; left: 0; box-sizing: border-box; width: 100cqw;
+  display: flex; flex-direction: column; gap: var(--mp-spacing-2);
+  padding: var(--mp-spacing-3) var(--mp-spacing-4); text-align: left; white-space: normal;
+  background: var(--mp-background-neutral-subtle);
+}
+.pd-calc-title { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pd-calc-formula { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mp-spacing-2); }
+.pd-calc-op { color: var(--mp-text-secondary); font-size: var(--mp-font-sizes-sm); white-space: nowrap; }
+.pd-calc-card {
+  display: flex; flex-direction: column;
+  min-width: 0; padding: var(--mp-spacing-2) var(--mp-spacing-3);
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+}
+.pd-calc-card--result { border-color: var(--mp-colors-border-selected); }
+.pd-calc-label { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-default); }
+.pd-calc-value { font-size: var(--mp-font-sizes-lg); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); line-height: var(--mp-line-heights-lg); }
+.pd-calc-sub { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pd-calc-sub--link { color: var(--mp-text-link); }
+.pd-calc-card--result .pd-calc-label,
+.pd-calc-card--result .pd-calc-value,
+.pd-calc-card--result .pd-calc-sub { color: var(--mp-text-selected); }
+.pd-calc-note { margin: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+/* Track, the stock held, and a marker where the reorder point sits. */
+.pd-calc-bar {
+  position: relative; height: var(--mp-sizes-2); overflow: hidden;
+  background: var(--mp-background-neutral); border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-sm);
+}
+.pd-calc-fill { position: absolute; inset: 0 auto 0 0; background: var(--mp-border-bold); }
+.pd-calc-marker { position: absolute; top: 0; bottom: 0; width: var(--mp-spacing-0\.5); background: var(--mp-colors-background-warning-bold); }
+.pd-calc-captions { display: flex; justify-content: space-between; gap: var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+.pd-calc-short { color: var(--mp-colors-text-warning); }
+.pd-calc-links { margin: 0; display: flex; gap: var(--mp-spacing-3); }
+.pd-calc-links .pd-cell-link { margin-left: 0; }
+
+
+
+/* MpTextlink pins 14px with a layered !important; scale it to the 12px caption. */
+.pd-cell-link { display: flex; width: fit-content; margin-left: auto; zoom: calc(12 / 14); }
+
+/* A hand-set floor materially under the calculated one. Amber, not red: it is a
+   judgement the buyer is allowed to make, not an error. */
+.pd-cell-warn {
+  display: block; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
+  color: var(--mp-colors-text-warning);
+}
+
+.pd-cell-sub {
+  display: block; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm);
+  font-weight: var(--mp-font-weights-regular); color: var(--mp-text-secondary);
+}
+/* The bulk-set row: a table row above the headers, so each field sits over its column. */
+.pd-bulk-row > .pd-bulk-cell {
+  padding: var(--mp-spacing-2); vertical-align: middle;
+  background: var(--mp-background-neutral-subtle);
+}
+.pd-bulk-lead { display: flex; align-items: center; gap: var(--mp-spacing-3); white-space: normal; }
+.pd-bulk-row :deep(.mp-input__root) { width: 100%; }
+.pd-bulk-vendor { display: flex; align-items: center; gap: var(--mp-spacing-2); }
+.pd-bulk-vendor :deep(.efs) { flex: 1; min-width: 0; }
+/* Split button: the main half and the chevron half read as one control. */
+.pd-split { display: inline-flex; flex-shrink: 0; }
+.pd-split :deep(.pd-split-main) { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; }
+.pd-split :deep(.pd-split-more) {
+  border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important;
+  margin-left: -1px; padding-left: var(--mp-spacing-1\.5) !important; padding-right: var(--mp-spacing-1\.5) !important;
+}
+/* Header label plus its info affordance. Inline-flex so the icon rides the text
+   baseline instead of forcing the numeric column's right alignment open. */
+.pd-th-info { display: inline-flex; align-items: center; gap: 4px; }
+.pd-th-icon {
+  display: inline-flex;
+  color: var(--mp-icon-subdued, #9ca3af);
+  cursor: help;
+}
+.pd-th-icon:hover { color: var(--mp-icon-default, #4b5563); }
+
+.pd-bulk-count { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-text-default); }
+.pd-cell-sub--warning { color: var(--mp-colors-text-warning); }
+.pd-bulk-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); }
+
 .pd-table-scroll { overflow-x: auto; }
 .pd-table { width: 100%; min-width: max-content; border-collapse: collapse; }
 .pd-th {
@@ -1164,6 +2600,7 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   white-space: nowrap;
 }
 .pd-th--num { text-align: right; padding: var(--mp-spacing-1) var(--mp-spacing-2) var(--mp-spacing-1) var(--mp-spacing-4); }
+.pd-tx-number { color: var(--mp-text-default); }
 .pd-td {
   padding: 10px var(--mp-spacing-4) 10px var(--mp-spacing-2);
   font-size: var(--mp-font-sizes-md); line-height: var(--mp-line-heights-md);
@@ -1171,6 +2608,67 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
   vertical-align: top; white-space: nowrap; background: var(--mp-background-neutral, #ffffff);
 }
 .pd-td--num { text-align: right; padding: 10px var(--mp-spacing-2) 10px var(--mp-spacing-4); font-variant-numeric: tabular-nums; }
+/* Edit mode is a form table (docs/patterns/FormTable.md): read-only cells go gray,
+   the two editable cells stay white, own their border + focus ring, and the input
+   inside is borderless and fills the 40px baseline (rule/table-form-cell-no-border,
+   rule/table-nonform-bg-gray). */
+.pd-form-table .pd-td { background: var(--mp-background-neutral-subtle); border-right: 1px solid var(--mp-border-default); }
+.pd-form-table .pd-td:last-child { border-right: none; }
+.pd-form-table .pd-td--input { padding: 0; background: var(--mp-background-neutral); position: relative; vertical-align: top; }
+.pd-form-table .pd-td--input :deep([class*='input']) {
+  width: 100%; height: var(--mp-sizes-10);
+  border-color: transparent; border-radius: 0; box-shadow: none !important; /* pixel-police-allow-shadow: strips the input's own ring, the cell draws it */
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+/* A cell whose only content is the input (no "Use default" / "Use calculated" link or caption
+   under it) lets the input fill the whole cell, so no empty band is left under it. */
+.pd-form-table .pd-td--input:has(> :only-child) { height: 1px; }
+/* Suffix (days / unit) inside an input cell: Pixel lays the addon over the input's padding,
+   which leaves a white gap between the number and the segment. In a cell it sits in the flow
+   instead — the input takes what is left, the addon is a flush subtle segment at the end. */
+.pd-form-table .pd-td--input :deep([class*='input-group']) { display: flex; width: 100%; height: var(--mp-sizes-10); }
+.pd-form-table .pd-td--input :deep([class*='input-group'] > [class*='input__root']) { flex: 1 1 0; width: auto; min-width: 0; }
+.pd-form-table .pd-td--input :deep([class*='input-group'] [class*='input__control']) { padding-right: var(--mp-spacing-2); }
+.pd-form-table .pd-td--input :deep([class*='input-addon']) {
+  position: static; inset: auto; transform: none; flex: 0 0 auto; width: auto; height: auto; align-self: stretch;
+  display: flex; align-items: center; padding: 0 var(--mp-spacing-3);
+  text-align: left; border-radius: 0; border-color: transparent;
+  background: var(--mp-background-neutral-subtle); color: var(--mp-text-secondary);
+}
+.pd-form-table .pd-td--input:has(> :only-child) :deep([class*='input']) { height: 100%; }
+.pd-form-table .pd-td--input:has(> :only-child):focus-within::after,
+.pd-form-table .pd-td--error:has(> :only-child)::after { height: auto; bottom: 0; }
+.pd-form-table .pd-td--input:focus-within::after,
+.pd-form-table .pd-td--error::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: var(--mp-sizes-10);
+  border: 1px solid var(--mp-border-bold); pointer-events: none;
+}
+.pd-form-table .pd-td--error { background: var(--mp-colors-background-danger); }
+.pd-form-table .pd-td--error::after { border-color: var(--mp-colors-border-danger); }
+.pd-form-table .pd-td--error :deep([class*='input']) { background: transparent; }
+.pd-form-table .pd-td--input > .pd-cell-sub,
+.pd-form-table .pd-td--input > .pd-cell-warn,
+.pd-form-table .pd-td--input > .pd-cell-link { margin-right: var(--mp-spacing-2); }
+.pd-form-table .pd-td--input > .pd-cell-sub,
+.pd-form-table .pd-td--input > .pd-cell-warn { padding-right: var(--mp-spacing-2); margin-right: 0; }
+.pd-form-table .pd-td--select { padding: 0; background: var(--mp-background-neutral); position: relative; }
+.pd-form-table .pd-td--select:focus-within::after {
+  content: ''; position: absolute; inset: 0; border: 1px solid var(--mp-border-bold); pointer-events: none;
+}
+/* Custom single-root select trigger: the cell owns the border and focus ring. */
+.pd-select-trigger {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mp-spacing-2);
+  min-height: var(--mp-sizes-10); padding: var(--mp-spacing-2\.5) var(--mp-spacing-2) var(--mp-spacing-2\.5) var(--mp-spacing-3);
+  cursor: pointer; text-align: left;
+}
+.pd-select-text { display: flex; flex-direction: column; min-width: 0; }
+.pd-select-text .pd-vendor-name { overflow-wrap: anywhere; }
+.pd-select-chevron { flex-shrink: 0; margin-top: var(--mp-spacing-0\.5); }
+.pd-wh-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-4);
+  margin-top: var(--mp-spacing-4);
+}
+.pd-wh-error { margin: 0 auto 0 0; font-size: var(--mp-font-sizes-md); color: var(--mp-text-danger); }
 .pd-td--action { text-align: right; padding-top: var(--mp-spacing-1); padding-bottom: var(--mp-spacing-1); }
 .pd-tx-number { color: var(--mp-text-default); }
 .row-kebab { display: inline-flex; align-items: center; justify-content: center; width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px); border-radius: var(--mp-radii-md); background: none; border: none; cursor: pointer; color: var(--mp-icon-default); }
@@ -1211,4 +2709,52 @@ function openSerialDrawer(warehouseId: string, tab: 'available' | 'reserved') {
 .pd-section-head .linked-section-title { margin: 0; }
 .detail-btn--secondary { background: var(--mp-background-neutral, #fff); border-color: var(--mp-text-default, #080d0e); color: var(--mp-text-default); }
 .detail-btn--secondary:hover { background: var(--mp-background-neutral-subtle, #f8f9f9); }
+
+/* ── Unit conversions ── */
+.pd-unit-panel { display: flex; flex-direction: column; }
+.pd-unit-intro { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); margin-bottom: var(--mp-spacing-3); }
+.pd-unit-empty {
+  padding: var(--mp-spacing-4);
+  border: 1px solid var(--mp-border-default); border-radius: var(--mp-radii-md);
+  background: var(--mp-background-neutral-subtle);
+  font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary);
+}
+.pd-unit-add {
+  display: flex; align-items: center; gap: var(--mp-spacing-2);
+  margin-top: var(--mp-spacing-4); flex-wrap: wrap;
+}
+.pd-unit-add-label { font-size: var(--mp-font-sizes-md); color: var(--mp-text-default); }
+.pd-unit-eq { font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.pd-unit-error { margin-top: var(--mp-spacing-2); font-size: var(--mp-font-sizes-sm); color: var(--mp-text-danger); }
+.pd-uc-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--mp-sizes-8, 32px); height: var(--mp-sizes-8, 32px);
+  border: none; background: none; border-radius: var(--mp-radii-md);
+  cursor: pointer; color: var(--mp-text-secondary);
+}
+.pd-uc-remove:hover { background: var(--mp-background-neutral-hovered); color: var(--mp-text-danger); }
+
+/* ── Vendors ── */
+.pd-vendor-panel { display: flex; flex-direction: column; }
+.pd-vendor-name { display: block; color: var(--mp-text-default); }
+.pd-vendor-note {
+  display: block; margin-top: 2px;
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle);
+}
+.pd-vendor-none { color: var(--mp-text-secondary); }
+.pd-vendor-terms-link { align-self: flex-start; margin-top: var(--mp-spacing-0\.5); font-size: var(--mp-font-sizes-sm); }
+.pd-vendor-alt { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-subtle); }
+
+/* The vendor name and its unit note, stacked, left of the chevron. */
+.pd-vendor-cell { display: flex; flex-direction: column; min-width: 0; }
+/* The warehouse lines opened under a vendor: lighter, and joined to the row above. */
+.pd-tr--sub > .pd-td { background: var(--mp-background-neutral-subtle); border-bottom-color: transparent; font-size: var(--mp-font-sizes-md); color: var(--mp-text-secondary); }
+.pd-tr--sub:last-of-type > .pd-td, .pd-tr--sub:has(+ .pd-tr:not(.pd-tr--sub)) > .pd-td { border-bottom-color: var(--mp-border-default); }
+.pd-oversold { color: var(--mp-text-danger); }
+/* Same emphasis as the worklist's oversold number. */
+.pd-qty-danger { color: var(--mp-text-danger); font-weight: var(--mp-font-weights-semi-bold); }
+.pd-wh-name--top { align-items: flex-start; }
+/* The estimate basis sits on its own line under the days, not beside them. */
+.pd-lead-est--below { display: block; margin-left: 0; margin-top: 2px; }
+.pd-lead-est { margin-left: 4px; color: var(--mp-text-subtle); font-size: var(--mp-font-sizes-xs, 11px); }
 </style>

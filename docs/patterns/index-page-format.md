@@ -87,8 +87,6 @@ Reuse as-is; do not redesign per module.
      pass `has-active-filter` + handle `clearFilters`).
 5. **Pagination**: default **25 rows/page**.
 
-All wired with `useTableState(rows, { perPage: 25, filterFn })` (search + status + sort + pagination).
-
 ---
 
 ## B. Per module — what you define

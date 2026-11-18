@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 import { loadSnapshot, saveSnapshot } from './persist'
 import { customers } from './customers'
 import { vendors } from './vendors'
+import type { Vendor } from './types'
 
 /**
  * Contact master — the Contacts module's record: one company/person the business
@@ -74,6 +75,13 @@ export interface Contact {
   archived?: boolean
   /** ISO timestamp of the last edit. */
   updatedAt: string
+  /**
+   * Link to the purchasing vendor master (`vendors.ts`, `V0NN`) when this contact
+   * is a supplier we buy from. It's the join that lets the vendor detail page show
+   * the products this vendor supplies with their MOQ and price (`vendorItems.ts`).
+   * Absent on customers and on vendor contacts with no procurement record.
+   */
+  vendorMasterId?: string
 }
 
 /** The joined 22-digit NITKU shown on the detail page (empty when no NPWP). */
@@ -226,12 +234,28 @@ SEED.push({ ...account('CT043', 'Warung Kopi Modern', 'CV Warung Kopi Modern', '
 SEED[6]!.types = ['customer', 'vendor']
 SEED[8]!.types = ['other']
 
+// ── Purchasing vendors as contacts ────────────────────────────────────────────
+// The suppliers we BUY from also live in the vendor master (`vendors.ts`, V0NN),
+// because purchase orders and AP reference them there. A contact whose name matches a
+// master vendor is linked back by `vendorMasterId` — that link is what lets the vendor
+// detail page list the products it supplies with their MOQ and price (Vendor Supply
+// Profile). Contacts with no master vendor simply have no link.
+const SUPPLIER_GROUP: Record<Vendor['id'], string> = {
+  V001: 'Green bean supplier', V002: 'Green bean supplier', V003: 'Green bean supplier',
+  V004: 'Green bean supplier', V005: 'Green bean supplier',
+  V006: 'Packaging supplier', V007: 'Equipment supplier',
+  V008: 'Logistics', V009: 'Utilities', V010: 'Utilities',
+  V011: 'Property', V012: 'Software',
+}
 function vendor(
   id: string, displayName: string, companyName: string, email: string, phone: string,
   city: string, groups: string[], creditLimit: number, updatedAt: string,
 ): Contact {
+  const master = vendors.find((v: Vendor) => v.name === displayName)
   return {
-    ...blank(), id, displayName, companyName, groups,
+    ...blank(), id, displayName, companyName,
+    groups: master && !groups.length ? [SUPPLIER_GROUP[master.id] ?? 'Supplier'] : groups,
+    ...(master ? { vendorMasterId: master.id } : {}),
     types: ['vendor'],
     emails: [email], phone, mobile: '',
     billingAddress: `${city}, Indonesia`, shippingAddress: `${city}, Indonesia`,
@@ -297,7 +321,11 @@ function backfillMasterContacts(): void {
 }
 backfillMasterContacts()
 
-const STORE_KEY = 'contacts-v1'
+// v4: main's vendor contacts (CT013…) linked to the vendor master, plus the master
+// backfill above. Supersedes v1 (no master links), v2 (generated CT101… copies) and
+// v3 (before the backfill).
+const STORE_KEY = 'contacts-v4'
+
 // Seed ids added after the first release — merged into an older saved snapshot
 // once (tracked by key), so returning sessions also get the vendor contacts.
 const SEED_V2_KEY = 'contacts-v1-seed2'

@@ -254,6 +254,17 @@ export interface PurchaseRequestLine {
   unit: string
   unitCost: number          // IDR
   taxLabel: string
+  /**
+   * When this line is needed (Vendor Supply Profile RS-002). Optional: a line without
+   * its own date is needed by the request's `requiredDate`.
+   */
+  requiredDate?: string     // ISO
+  /**
+   * How much of `requestedQty` is already on purchase orders, in the same unit
+   * (Vendor Supply Profile Rule 41). A line converted for less than requested stays
+   * partially converted until the rest is converted or the request is closed.
+   */
+  convertedQty?: number
 }
 
 export interface PurchaseRequest {
@@ -269,6 +280,16 @@ export interface PurchaseRequest {
   attachment?: boolean                    // has a supporting document attached
   awaitingApproval?: boolean              // sits in the "Awaiting approval" queue
   lines: PurchaseRequestLine[]            // requested products
+  /**
+   * The single vendor this request is for — one PR is scoped to one vendor
+   * (matching the PR creation form's Vendor field). Every line is sourced from
+   * this vendor, and conversion produces one PO for it. Optional: a PR may be
+   * left unbound ("purchasing to source"), and purchasing then picks the vendor
+   * at PO time.
+   */
+  vendor?: { id: string; name: string }
+  /** Set when this request was raised from the replenishment worklist. */
+  replenishment?: PurchaseRequestReplenishmentOrigin
 }
 
 export interface SalesQuote {
@@ -410,5 +431,85 @@ export interface PurchaseOrder {
   sentToFulfillment?: boolean
   /** Set when this order is rejected — drives the persistent rejection banner. */
   rejection?: { user: string; date: string; reason: string }
+  /** Set when this order was raised from the replenishment worklist. */
+  replenishment?: PurchaseOrderReplenishmentOrigin
   recurringId?: string
+}
+
+/**
+ * Provenance for a PO raised from Inventory › Replenishment — the audit trail that
+ * makes replenishment accounting-native rather than a parallel path (PRD OD-012).
+ *
+ * `deviation` is stored rather than derived: it is the auditable fact ("someone
+ * ordered 8 more than recommended"), and recomputing it later would compare against
+ * a recommendation that has since moved.
+ */
+/**
+ * What a replenishment-raised Purchase Request carries back to the worklist run
+ * that produced it (PRD US-020 AC-02, US-027 AC-02).
+ *
+ * The deviation is stored explicitly rather than recomputed, because it is the
+ * auditable fact — the recommendation it deviated FROM will change on the next
+ * recalculation, so a later subtraction would quietly report a different number
+ * than the one the requester actually saw.
+ */
+export interface PurchaseRequestReplenishmentOrigin {
+  source: 'replenishment'
+  /** The worklist snapshot this came from (stock clock). */
+  asOf: string
+  runNo: number
+  warehouseId: string
+  createdBy: string
+  lines: {
+    sku: string
+    /**
+     * Engine output in STOCK units — the lead-time-adjusted demand-coverage NEED.
+     * Deliberately NOT MOQ/pack rounded: decision D12 applies rounding at PO time
+     * against purchasing's final vendor, so rounding here would round twice, to
+     * the wrong vendor's pack.
+     */
+    recommendedQty: number
+    /** What the requester actually asked for. */
+    finalQty: number
+    deviation: number
+    /** Non-binding — purchasing may source elsewhere (US-022 VR-05). */
+    suggestedVendorId: string | null
+    leadTimeDays: number
+    /** Which rung of the US-001 ladder produced that lead time. */
+    leadTimeTier: string
+    safetyDays: number
+    coverageDays: number
+    avgDailySales: number
+    reorderPoint: number
+    available: number
+    onOrder: number
+  }[]
+}
+
+export interface PurchaseOrderReplenishmentOrigin {
+  source: 'replenishment'
+  /** Set when this PO was converted from a replenishment PR (US-027 AC-02). */
+  purchaseRequestId?: string
+  /** Every request this PO was built from — more than one when requests were merged. */
+  purchaseRequestIds?: string[]
+  /** The worklist snapshot date this came from (stock clock, not the PO clock). */
+  asOf: string
+  runNo: number
+  warehouseId: string
+  createdBy: string
+  lines: {
+    sku: string
+    vendorItemId: string
+    /** Engine output, in purchase units. */
+    recommendedQty: number
+    /** What was actually ordered. */
+    finalQty: number
+    deviation: number
+    leadTimeDays: number
+    safetyDays: number
+    avgDailySales: number
+    reorderPoint: number
+    available: number
+    onOrder: number
+  }[]
 }

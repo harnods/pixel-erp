@@ -15,7 +15,7 @@ import {
 } from '@mekari/pixel3'
 import type { DataInterface } from '@mekari/pixel3'
 import {
-  products, purchaseRequests,
+  products, purchaseRequests, vendors,
   WAREHOUSES, UNIT_OPTIONS,
   addPurchaseRequest, updatePurchaseRequest, getPurchaseRequest,
 } from '~/data'
@@ -66,6 +66,10 @@ const requiredDate     = ref(isoToDMY(editSource?.requiredDate ?? ''))
 const urgency          = ref(editSource ? editSource.urgency.charAt(0).toUpperCase() + editSource.urgency.slice(1) : 'Medium')
 const urgencyError     = ref(false)
 const warehouse        = ref('')
+// A purchase request is scoped to ONE vendor (1 PR = 1 vendor); optional — a request
+// left blank is sourced by purchasing.
+const vendorName       = ref(editSource?.vendor?.name ?? '')
+const VENDOR_OPTIONS = vendors.map(v => v.name)
 const tagsList         = ref<DataInterface[]>((editSource?.tags ?? []).map((v, i) => ({ text: v, id: `${i}-${v}`, value: v, isInvalid: false, isReadOnly: false })))
 function onTagsChange(data: DataInterface[]) { tagsList.value = data }
 const message = ref('')
@@ -251,6 +255,7 @@ function persist(): boolean {
     unitCost: it.unitCost,
     taxLabel: 'PPN 11%',
   }))
+  const chosenVendor = vendors.find(v => v.name === vendorName.value.trim())
   const header = {
     date: dmyToIso(requestDate.value),
     procurementStaff: procurementStaff.value.trim(),
@@ -258,6 +263,8 @@ function persist(): boolean {
     totalProducts: lines.length,
     urgency: urgency.value.toLowerCase() as UrgencyLevel,
     tags: tagsList.value.map(tg => String(tg.value)),
+    // Cleared on edit when the field is emptied, so a request can go back to "purchasing to source".
+    vendor: chosenVendor ? { id: chosenVendor.id, name: chosenVendor.name } : undefined,
     lines,
   }
   let number: number
@@ -353,6 +360,12 @@ function onBlockedSaveDraft() {
               @update:model-value="staffError = false"
             />
             <MpFormErrorMessage>{{ t('Procurement staff is required') }}</MpFormErrorMessage>
+          </MpFormControl>
+
+          <!-- One PR = one vendor. Optional — leave blank for "purchasing to source". -->
+          <MpFormControl id="f-vendor" class="si-field">
+            <MpFormLabel>{{ t('Vendor') }}</MpFormLabel>
+            <MpAutocomplete id="f-vendor-inp" v-model="vendorName" :data="VENDOR_OPTIONS" use-portal is-clearable is-full-width :placeholder="t('Select vendor')" />
           </MpFormControl>
         </div>
 

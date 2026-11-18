@@ -1,0 +1,275 @@
+/**
+ * Global replenishment policy — the knobs the recommendation engine reads.
+ *
+ * Company-wide (CID-level), deliberately NOT per-warehouse: none of the MVP
+ * features asks for per-warehouse FSN thresholds or velocity weights, and adding
+ * keys to `warehouseConfig.ts` would touch a module picking, put-away and cycle
+ * counts all read. The per-warehouse variation that IS required (reorder point,
+ * safety days, max level, tracking) lives in `replenishmentSettings.ts` at
+ * SKU×warehouse granularity, which is strictly finer.
+ *
+ * Shape mirrors `warehouseSettings.ts`: a DEFAULTS object, a get/save pair,
+ * localStorage-backed and `import.meta.client`-guarded so SSR never touches it.
+ */
+import { TODAY_ISO } from './master'
+import { clearStore, readStore, writeStore } from './replenishmentStore'
+
+const STORAGE_KEY = 'erp-db:replenishment-config'
+
+/** Whether a SKU sitting EXACTLY at its reorder point is due (PRD US-010 AC-02). */
+export type ReplBoundaryMode = 'inclusive' | 'exclusive'
+
+/**
+ * How an order's SIZE is decided once a SKU is due (PRD decision D9).
+ *
+ * `coverage-days` orders enough to cover lead + safety + N more days of demand;
+ * `max-level` tops the SKU up to a fixed unit ceiling instead (US-011 AC-03).
+ * Without one of these the order would only refill to the trigger and re-fire
+ * immediately — which is why every reference ERP takes a second input here.
+ */
+
+export interface ReplenishmentConfig {
+  /**
+   * How far back to average sales for average daily demand, in days (US-002).
+   * The spec's primary demand input: avg daily demand = qty in window ÷ window.
+   */
+  lookbackDays: number
+  lookbackDaysByCategory: Record<string, number>
+  /**
+   * Days of demand each order should cover BEYOND lead + safety (D9).
+   * Sizes the quantity; it plays no part in deciding whether a SKU is due.
+   */
+  coverageDaysGlobal: number
+  coverageDaysByCategory: Record<string, number>
+  /** How many of the most recent PO-backed receipts to average (US-001 AC-01). */
+  leadTimeSampleCount: number
+  /** Below this many PO-backed samples the computed tier is not trusted (VR-04). */
+  leadTimeMinSamples: number
+  /** PO→receipt gaps beyond this are dropped as outliers (US-001 AC-06). The
+   *  global value; per-category overrides live in leadTimeOutlierCapByCategory. */
+  leadTimeOutlierCapDays: number
+  /** Per-category outlier cap; falls back to leadTimeOutlierCapDays (US-001 AC-09). */
+  leadTimeOutlierCapByCategory: Record<string, number>
+  /** Tier 3 of the lead-time ladder — a per-category default (US-001 AC-04). */
+  leadTimeByCategory: Record<string, number>
+  /**
+   * The categories that have their OWN defaults row (US-001 / D21). Persisted so a
+   * category the buyer added stays listed even before it carries any value — map keys
+   * alone can't record that, because an all-inherit category has no entry in any map.
+   * Invariant kept by `getReplenishmentConfig`: every per-category map key is listed.
+   */
+  listedCategories: string[]
+  /** Fallback buffer, in days, when no category or SKU override applies. */
+  safetyDaysGlobal: number
+  safetyDaysByCategory: Record<string, number>
+  /** Below this many days of movement history a SKU is "cold start" (US-003). */
+  coldStartMinDays: number
+  reorderBoundary: ReplBoundaryMode
+  /** FSN classification window, in days (US-012). */
+  fsnWindowDays: number
+  /** ≥ this share of periods with movement ⇒ Fast. */
+  fsnFastPct: number
+  /** ≥ this share (and below fast) ⇒ Slow; anything less ⇒ Non-moving. */
+  fsnSlowPct: number
+  /** Coefficient of variation above which demand is flagged "volatile" (US-002). */
+  volatileCvThreshold: number
+  /**
+   * The "Other categories" lead-time floor — the last rung of the ladder (US-001
+   * Tier 3, D22). A positive NUMBER is an estimate ("estimated — Other categories");
+   * `null` means "Not set" (wait-for-data): a product that resolves only to this
+   * floor gets a BLANK lead time, no reorder point, and is routed to Needs setup
+   * with a reason — never a fabricated 0. Offered ONLY on lead time; the safety-days
+   * and order-coverage floors stay numeric (0 is a valid policy value there).
+   */
+  fallbackLeadTimeDays: number | null
+  /**
+   * Daily Inbox summary of the products that need ordering, with a link to the worklist
+   * (PRD US-021 AC-05). Email delivery is not built in the prototype, so the reminder is
+   * in-app only.
+   */
+  dailyReminder: boolean
+}
+
+export const REPL_DEFAULTS: ReplenishmentConfig = {
+  lookbackDays: 60,
+  lookbackDaysByCategory: {},
+  coverageDaysGlobal: 30,
+  // Beans move fast and are cheap to hold, so they carry a longer horizon than a
+  // machine nobody wants sitting in a warehouse for a month.
+  coverageDaysByCategory: {
+    'Green Beans': 45,
+    'Roasted Beans': 21,
+    'Espresso Machine': 30,
+    Grinder: 30,
+    Equipment: 30,
+    Accessory: 30,
+  },
+  leadTimeSampleCount: 5,
+  leadTimeMinSamples: 2,
+  leadTimeOutlierCapDays: 90,
+  leadTimeOutlierCapByCategory: {
+    'Green Beans': 90,
+    'Roasted Beans': 60,
+    'Espresso Machine': 120,
+    Grinder: 100,
+    Equipment: 120,
+    Accessory: 60,
+  },
+  // Tier 2 — added-category lead-time defaults (US-001 AC-04, D22). Deliberately
+  // NOT every category: the ones left out (e.g. Green Beans, Grinder) have no
+  // estimate, and because the "Other categories" floor is "Not set" out of the box
+  // (fallbackLeadTimeDays: null), a product there with no measured history gets a
+  // BLANK lead time and waits in Needs setup. A buyer adds a category here (via the
+  // settings picker), or sets the floor, to give it an estimate instead.
+  leadTimeByCategory: {
+    'Roasted Beans': 10,
+    'Espresso Machine': 30,
+    Equipment: 21,
+    Accessory: 10,
+  },
+  // The categories listed out of the box (union of the per-category maps above),
+  // sorted. getReplenishmentConfig() re-derives this to keep map keys ⊆ listed.
+  listedCategories: ['Accessory', 'Equipment', 'Espresso Machine', 'Green Beans', 'Grinder', 'Roasted Beans'],
+  safetyDaysGlobal: 7,
+  safetyDaysByCategory: {
+    'Green Beans': 10,
+    'Roasted Beans': 7,
+    'Espresso Machine': 14,
+    Grinder: 14,
+    Equipment: 14,
+    Accessory: 5,
+  },
+  coldStartMinDays: 14,
+  reorderBoundary: 'inclusive',
+  fsnWindowDays: 90,
+  fsnFastPct: 60,
+  fsnSlowPct: 10,
+  volatileCvThreshold: 1.2,
+  // "Not set" out of the box (D22): a product with no measured lead time AND no
+  // category default waits in Needs setup with a reason, rather than getting a
+  // fabricated estimate. A buyer can set a numeric floor here to turn it into an
+  // estimate instead.
+  fallbackLeadTimeDays: null,
+  dailyReminder: true,
+}
+
+/**
+ * The "as of" anchor for every replenishment number.
+ *
+ * Deliberately `master.TODAY_ISO` (2026-06-26), NOT `simClock.SIM_TODAY_ISO`
+ * (2026-08-22): replenishment reads the stock world — warehouseDetails, receipts,
+ * outgoing — and all of those are anchored to master. Never call simClock's
+ * `daysUntil` / `daysSince` on a stock or receipt date.
+ */
+export const REPL_ASOF_ISO = TODAY_ISO
+
+function load(): Partial<ReplenishmentConfig> {
+  return readStore<Partial<ReplenishmentConfig>>(STORAGE_KEY, {})
+}
+
+/** Config with defaults filled in for any missing / never-saved key. */
+export function getReplenishmentConfig(): ReplenishmentConfig {
+  const saved = load()
+  // Nested values must merge, not replace, or a partial save drops categories.
+  const safetyDaysByCategory = { ...REPL_DEFAULTS.safetyDaysByCategory, ...(saved.safetyDaysByCategory ?? {}) }
+  const coverageDaysByCategory = { ...REPL_DEFAULTS.coverageDaysByCategory, ...(saved.coverageDaysByCategory ?? {}) }
+  const lookbackDaysByCategory = { ...REPL_DEFAULTS.lookbackDaysByCategory, ...(saved.lookbackDaysByCategory ?? {}) }
+  const leadTimeByCategory = { ...REPL_DEFAULTS.leadTimeByCategory, ...(saved.leadTimeByCategory ?? {}) }
+  const leadTimeOutlierCapByCategory = { ...REPL_DEFAULTS.leadTimeOutlierCapByCategory, ...(saved.leadTimeOutlierCapByCategory ?? {}) }
+  // A category is listed if it was saved as listed OR it still carries any per-category
+  // value. Older configs (saved before listedCategories existed) have no list, so it is
+  // derived from the map keys — which is exactly the pre-fix behaviour, now explicit.
+  const fromMaps = new Set<string>()
+  for (const m of [safetyDaysByCategory, coverageDaysByCategory, leadTimeByCategory, leadTimeOutlierCapByCategory]) {
+    for (const k of Object.keys(m)) fromMaps.add(k)
+  }
+  const listedCategories = [...new Set([...(saved.listedCategories ?? []), ...fromMaps])].sort()
+  return {
+    ...REPL_DEFAULTS,
+    ...saved,
+    safetyDaysByCategory,
+    coverageDaysByCategory,
+    lookbackDaysByCategory,
+    leadTimeByCategory,
+    leadTimeOutlierCapByCategory,
+    listedCategories,
+  }
+}
+
+export function saveReplenishmentConfig(cfg: ReplenishmentConfig): void {
+  writeStore(STORAGE_KEY, cfg)
+}
+
+export function resetReplenishmentConfig(): void {
+  clearStore(STORAGE_KEY)
+}
+
+/** Safety days for a category, falling back to the global value. */
+export function safetyDaysForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
+  return cfg.safetyDaysByCategory[category] ?? cfg.safetyDaysGlobal
+}
+
+/**
+ * Coverage days for a category, falling back to the global value (D9 / US-011).
+ * Only ever sizes the order — never any part of the due/not-due decision.
+ */
+export function coverageDaysForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
+  return cfg.coverageDaysByCategory[category] ?? cfg.coverageDaysGlobal
+}
+
+/** Demand lookback window for a category, falling back to the global value (US-002 VR-01). */
+export function lookbackDaysForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
+  return cfg.lookbackDaysByCategory[category] ?? cfg.lookbackDays
+}
+
+/** Tier 3 of the lead-time ladder — the category default (US-001 AC-04). */
+export function leadTimeOutlierCapForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number {
+  return cfg.leadTimeOutlierCapByCategory[category] ?? cfg.leadTimeOutlierCapDays
+}
+
+export function leadTimeForCategory(category: string, cfg: ReplenishmentConfig = getReplenishmentConfig()): number | null {
+  return cfg.leadTimeByCategory[category] ?? null
+}
+
+// ── What a category means for a product's replenishment ──────────────────────
+
+/** The four category-level defaults a product inherits (PRD §2.5, US-008 AC-01). */
+export interface CategoryReplenishmentDefaults {
+  /** Tier 2/3 lead time; null = the "Other categories" floor is "Not set". */
+  leadTimeDays: number | null
+  safetyDays: number
+  coverageDays: number
+  ignoreGapsOverDays: number
+}
+
+export function replenishmentDefaultsForCategory(
+  category: string,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+): CategoryReplenishmentDefaults {
+  return {
+    leadTimeDays: leadTimeForCategory(category, cfg) ?? cfg.fallbackLeadTimeDays,
+    safetyDays: safetyDaysForCategory(category, cfg),
+    coverageDays: coverageDaysForCategory(category, cfg),
+    ignoreGapsOverDays: leadTimeOutlierCapForCategory(category, cfg),
+  }
+}
+
+export type CategoryDefaultField = keyof CategoryReplenishmentDefaults
+
+/**
+ * Which inherited defaults change when a product moves from one category to another
+ * (PRD §2.5: "the product form warns on save when the first category change alters
+ * the effective defaults"). Empty when nothing a product inherits would differ.
+ */
+export function categoryDefaultChanges(
+  from: string,
+  to: string,
+  cfg: ReplenishmentConfig = getReplenishmentConfig(),
+): { field: CategoryDefaultField; from: number | null; to: number | null }[] {
+  if (from === to) return []
+  const a = replenishmentDefaultsForCategory(from, cfg)
+  const b = replenishmentDefaultsForCategory(to, cfg)
+  return (Object.keys(a) as CategoryDefaultField[])
+    .filter((k) => a[k] !== b[k])
+    .map((k) => ({ field: k, from: a[k], to: b[k] }))
+}

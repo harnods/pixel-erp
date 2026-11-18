@@ -15,7 +15,7 @@ import { toast } from '@mekari/pixel3'
 
 toast.notify({
   variant: 'success',
-  title: 'Warehouse saved.',
+  title: 'Warehouse saved',
   maxWidth: 'max-content',
 })
 ```
@@ -24,16 +24,18 @@ toast.notify({
 
 ## Variants
 
-Only use these variants in ERP:
+Only use these variants in ERP (`rule/toast-use-mptoast`, `rule/toast-success-only`):
 
-| Variant | Use for | Icon |
-|---|---|---|
-| `success` | A user action completed successfully | Pixel toast's default success icon |
-| `error` | A user action cannot be completed, or needs user correction | Pixel toast's default error icon |
+| Variant | Use for | How | Icon |
+|---|---|---|---|
+| `success` | A user action completed successfully | `toast.notify({ variant: 'success' })` or `successToast()` | Pixel toast's default success icon |
+| `info` | Neutral status the user should know but did not cause (e.g. a saved filter was reset) | **`infoToast()`** from `~/utils/toasts` — never `variant: 'info'`, which Pixel does not have | Blue info icon drawn by the helper |
+| `error` | A system / async failure the user cannot fix at a field | `toast.notify({ variant: 'error' })` or `errorToast()` | Pixel toast's default error icon |
 
-Do not use `greeting`, `info`, `warning`, custom icons, emoji, or inline SVG
-inside toast content. Toast icons must come from the Pixel toast component /
-Pixel icon library through the selected variant.
+Do not pass `variant: 'info'` or `'warning'` to `toast.notify()` — Pixel ships only
+`success | error | greeting`, so those render a fallback icon. Do not use custom icons,
+emoji, or inline SVG inside toast content. Form and field validation is never a toast;
+it is inline (`rule/form-errors-inline`).
 
 ---
 
@@ -49,42 +51,57 @@ Copy format:
 - object/context first, then action;
 - past tense for success;
 - sentence case;
-- end with a period;
-- usually 2–4 words;
+- **no trailing period** (`rule/btn-save-toast`, UXW library). When a toast holds two
+  sentences, a period separates them and the last one still has none:
+  `Request submitted. Please wait for the approval`;
+- at most **60 characters**, usually 2–4 words;
 - no long operational explanation in the title.
 
 ### Success
 
-Use a short result statement: `{Context object} {past-tense action}.`
+Use a short result statement: `{Context object} {past-tense action}`
 
 | Action | Pattern | Example |
 |---|---|---|
-| Create | `{Context object} created.` | `Picking list created.` |
-| Save draft | `{Context object} draft saved.` | `Picking draft saved.` |
-| Save/update | `{Context object} saved.` / `{Context object} updated.` | `Warehouse saved.` / `Warehouse settings saved.` |
-| Approve | `{Context object} approved.` | `Warehouse transfer approved.` |
-| Archive | `{Context object} archived.` | `Warehouse archived.` |
-| Unarchive | `{Context object} unarchived.` | `Warehouse unarchived.` |
-| Delete/remove | `{Context object} deleted.` / `{Context object} removed.` | `Warehouse deleted.` |
+| Create | `{Context object} created` | `Picking list created` |
+| Save draft | `{Context object} draft saved` | `Picking draft saved` |
+| Save/update | `{Context object} saved` / `{Context object} updated` | `Warehouse saved` / `Warehouse settings saved` |
+| Approve | `{Context object} approved` | `Warehouse transfer approved` |
+| Archive | `{Context object} archived` | `Warehouse archived` |
+| Unarchive | `{Context object} unarchived` | `Warehouse unarchived` |
+| Delete/remove | `{Context object} deleted` / `{Context object} removed` | `Warehouse deleted` |
 
 Keep success toast title concise. Add `description` only when the result needs
 extra context; most success toasts should be title-only.
 
 Avoid making the title too specific when it becomes long. For example, use
-`Warehouse transfer approved.` instead of including a long document number in the
+`Warehouse transfer approved` instead of including a long document number in the
 toast title, unless UXW requires the identifier.
 
-### Error
+### Info
 
-Use an actionable instruction or a clear reason. Keep it short, but error copy can
-be slightly more explicit than success copy when the user needs to fix something.
+Neutral status the user did not cause. Raise it with `infoToast()`. The UXW library has
+no formula for this type yet, so confirm new copy with UXW.
 
 | Case | Pattern | Example |
 |---|---|---|
-| Missing input | `You must {action}.` | `You must select warehouse.` |
-| Wrong prerequisite | `{Action} first.` | `Enter counted qty first.` |
-| Not allowed | `{Reason}.` + optional next step in description | `Already packed.` + `These orders already have a packing task.` |
-| Import/process failed | `{Object/action} failed.` + recovery instruction | `Import failed.` + `Try again or download the error file.` |
+| A saved preference was reset | `{Object} reset. {Reason}` | `Saved filter reset. Warehouse no longer available` |
+
+### Error
+
+Reserved for a **system or processing failure** the user cannot fix at a field
+(`rule/toast-success-only`). Follow the UXW formula: `Failed to {verb} {object}`, plus
+optional context. Present tense, sentence case, no trailing period, at most 60 characters.
+
+| Case | Pattern | Example |
+|---|---|---|
+| An action failed | `Failed to {verb} {object}` | `Failed to save warehouse changes` |
+| Failed, with a next step | `Failed to {verb} {object}. {Next step}` | `Failed to import file. Try again or download the error file` |
+| Unknown failure | `Something went wrong, please try again` | `Something went wrong, please try again` |
+
+Missing input, a wrong prerequisite, or any other field or form validation is **not** a
+toast. Show it inline at the field or below the form (`rule/form-errors-inline`), using
+the UXW inline-error patterns: `You must fill in {label}` / `You must select {label}`.
 
 Do not use "coming soon" as toast copy for production UI. If an action is not
 available, remove the action or use an UXW-approved error state/copy.
@@ -99,7 +116,7 @@ fixed wrapping width.
 ```ts
 toast.notify({
   variant: 'error',
-  title: 'You must select warehouse.',
+  title: 'Failed to save warehouse changes',
   maxWidth: 'max-content',
 })
 ```
@@ -110,7 +127,7 @@ consistent:
 ```ts
 import { notifyScanError } from '~/utils/scan'
 
-notifyScanError('Barcode not found: "123456".')
+notifyScanError('Barcode not found: "123456"')
 ```
 
 ---

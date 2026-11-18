@@ -67,7 +67,7 @@ const valueClass = computed(() =>
 
 <template>
   <div :class="rootClass">
-    <span v-if="label" :class="labelClass">{{ label }}</span>
+    <span v-if="label || $slots.label" :class="labelClass"><slot name="label">{{ label }}</slot></span>
     <div :class="valueClass">
       <slot>{{ value ?? '—' }}</slot>
     </div>

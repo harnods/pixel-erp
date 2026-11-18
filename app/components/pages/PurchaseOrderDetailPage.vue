@@ -16,6 +16,8 @@ import ActivityLogModal from '~/components/patterns/ActivityLogModal.vue'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpDrawer from '~/components/patterns/ErpDrawer.vue'
 import { getPurchaseOrderDetail, purchaseOrders } from '~/data'
+import { purchaseRequests } from '~/data/purchaseRequests'
+import { getContactIdByName } from '~/data/contacts'
 import { recurringPurchaseOrders, getRecurringForPurchaseOrder, persistPurchaseOrders, persistRecurringPurchaseOrders } from '~/data/purchaseOrders'
 import ErpLineDimensionsView from '~/components/patterns/ErpLineDimensionsView.vue'
 import { applicableDimensions } from '~/data/dimensions'
@@ -44,6 +46,16 @@ const rejectPurchaseOrder = inject<(id: string, reason: string) => void>('reject
 const duplicatePurchaseOrder = inject<(id: string, banner?: { user: string; date: string; reason?: string } | null) => void>('duplicatePurchaseOrder')
 
 const order = computed(() => getPurchaseOrderDetail(props.orderId))
+
+/** The request(s) this PO was converted from — several when requests were merged. */
+const originRequests = computed(() => {
+  const o = order.value.replenishment
+  const ids = o?.purchaseRequestIds ?? (o?.purchaseRequestId ? [o.purchaseRequestId] : [])
+  return ids.map((id) => {
+    const pr = purchaseRequests.find((r) => r.id === id)
+    return { id, label: pr ? `Purchase Request #${pr.number}` : id }
+  })
+})
 // prod header shows "Balance due X" once something was paid/received, else "Total X".
 const listRecord = computed(() => purchaseOrders.find(o => o.id === props.orderId))
 const balanceDue = computed(() => listRecord.value?.balance ?? order.value.totals.total)
@@ -595,6 +607,15 @@ function saveSetRecurring() {
           <!-- col 4: references -->
           <div class="content-list-col">
             <ContentList label="Transaction no." :value="`Purchase Order #${order.number}`" />
+            <!-- US-023 AC-02: a PO converted from a replenishment request links back to it. -->
+            <ContentList v-if="originRequests.length" label="Purchase request">
+              <a
+                v-for="r in originRequests"
+                :key="r.id"
+                class="cell-link content-list__line"
+                @click.prevent="navigateTo(`/purchase-requests/${r.id}`)"
+              >{{ r.label }}</a>
+            </ContentList>
             <ContentList label="Reference no." :value="order.referenceNo" />
           </div>
           <!-- col 5: warehouse + tags -->

@@ -9,6 +9,8 @@ export interface NotificationField {
 export interface NotificationAction {
   label: string
   primary?: boolean
+  /** Where the action goes when clicked; actions without one are display-only. */
+  to?: string
 }
 
 export interface Notification {

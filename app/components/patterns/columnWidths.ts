@@ -21,9 +21,11 @@ export type ColumnKind =
   | 'status'   // status column rendered with a badge
   | 'amount'   // any monetary amount (balance due, total, price …)
   | 'tags'     // tag chips
+  | 'badges'   // several stacked status badges per cell (e.g. a Signals column)
   | 'unit'     // unit of measurement (pcs, kg …)
   | 'rank'     // a short ordinal — rank, sequence, position (1, 2 … 10)
   | 'address'  // address or any content that can wrap to multiple lines
+  | 'wide'     // a default-type column whose HEADER label is longer than the default min (e.g. "Demand velocity per day")
   | 'default'  // anything not defined above
 
 export interface ColWidthRange {
@@ -58,9 +60,11 @@ export const COLUMN_WIDTH: Record<ColumnKind, ColWidthRange> = {
   status:  { minWidth: '128px', maxWidth: '160px' },
   amount:  { minWidth: '160px', maxWidth: '240px' },
   tags:    { minWidth: '160px', maxWidth: '240px' },
+  badges:  { minWidth: '192px', maxWidth: '240px' }, // floor fits a ~3-word badge label (e.g. "Stocks out before resupply") + cell padding
   unit:    { minWidth: '128px', maxWidth: '128px' }, // fixed
   rank:    { minWidth: '88px',  maxWidth: '88px' },  // fixed — fits the header + sort control
   address: { minWidth: '200px', maxWidth: '240px' },
+  wide:    { minWidth: '216px', maxWidth: '240px' }, // same cap as default, higher floor so a long header never clips
   default: { minWidth: '160px', maxWidth: '240px' },
 }
 

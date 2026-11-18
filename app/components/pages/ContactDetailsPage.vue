@@ -19,13 +19,15 @@ import {
   toast, css,
 } from '@mekari/pixel3'
 import ContentList from '~/components/patterns/ContentList.vue'
+import VendorProductsTab from '~/components/patterns/VendorProductsTab.vue'
+import ScenarioFab, { type Scenario } from '~/components/patterns/ScenarioFab.vue'
+import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpStatusBadge from '~/components/patterns/ErpStatusBadge.vue'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
-import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
 import { getCustomerTransactions, getCustomerTxnSummary, customerIdForContact, type CustomerTransaction } from '~/data/customerTransactions'
 import { vendors } from '~/data/vendors'
@@ -54,15 +56,23 @@ const listSlug = computed(() => {
 })
 const listLabel = computed(() => LISTS[listSlug.value]!.label)
 
+// A vendor contact gets a Products tab (the price list we buy at); customers and
+// other contacts don't, so it is inserted only when the role is present.
+const isVendor = computed(() => contact.value?.types.includes('vendor') ?? false)
+
 // ── Tab persistence via ?tab= so back/forward restores the tab ───────────────
-const TAB_NAMES = ['details', 'transactions', 'files']
+const TAB_NAMES = computed(() =>
+  isVendor.value
+    ? ['details', 'products', 'transactions', 'files']
+    : ['details', 'transactions', 'files'],
+)
 const activeTabIndex = computed({
   get(): number {
-    const idx = TAB_NAMES.indexOf(route.query.tab as string)
+    const idx = TAB_NAMES.value.indexOf(route.query.tab as string)
     return idx >= 0 ? idx : 0
   },
   set(idx: number) {
-    router.replace({ query: { ...route.query, tab: TAB_NAMES[idx] ?? 'details' } })
+    router.replace({ query: { ...route.query, tab: TAB_NAMES.value[idx] ?? 'details' } })
   },
 })
 
@@ -152,6 +162,32 @@ function formatDate(iso?: string): string {
   if (!iso) return ''
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso))
 }
+
+// ── Products tab — the Vendor Supply Profile ──────────────────────────────────
+// Owned by VendorProductsTab.vue. The list is DERIVED from approved supplier
+// invoices rather than maintained here, so this page holds no product state at
+// all — only the demo scenario the ScenarioFab switches between.
+//
+// Note on what moved out: the agreed unit cost the replenishment engine orders at
+// (`vendorItem.unitCost`) is no longer edited on this tab. The tab now shows the
+// price actually PAID, read off the source invoice, which is a different figure
+// with a different provenance. The agreed cost stays editable where it is used —
+// Product detail › Vendors › Edit vendors (VendorItemDrawer).
+const PRODUCT_SCENARIOS: Scenario[] = [
+  { label: 'Default', value: 'data' },
+  { label: 'Empty vendor', value: 'empty' },
+  { label: 'No price permission', value: 'no-price-permission' },
+  { label: 'Backfill running', value: 'backfill' },
+]
+const productsScenario = ref<'data' | 'empty' | 'no-price-permission' | 'backfill'>('data')
+
+/** Column width for the related-records and Files tables — from the shared standard, never hardcoded.
+ *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
+function colStyle(kind: ColumnKind) {
+  const { minWidth, maxWidth } = columnWidth(kind)
+  return { width: maxWidth, minWidth, maxWidth }
+}
+
 function overdueDaysLabel(row: CustomerTransaction): string | null {
   if (row.status !== 'overdue' || !row.dueDate) return null
   const days = Math.floor((Date.now() - new Date(row.dueDate).getTime()) / 86_400_000)
@@ -200,13 +236,6 @@ const deleteMessage = computed(() => {
   const tp = contact.value?.types[0]
   return tp === 'vendor' ? 'Deleted vendor cannot be restored.' : tp === 'other' ? 'Deleted other contact cannot be restored.' : 'Deleted customer cannot be restored.'
 })
-
-/** Files-tab column width — from the shared standard, never hardcoded.
- *  Columns grow to their max (the trailing spacer <col> soaks up the rest). */
-function colStyle(kind: ColumnKind) {
-  const { minWidth, maxWidth } = columnWidth(kind)
-  return { width: maxWidth, minWidth, maxWidth }
-}
 
 // Prototype placeholders for the actions menu (no data model yet).
 function soon() {}
@@ -276,6 +305,7 @@ function archiveContact() {
 
         <MpTabList>
           <MpTab id="cd-tab-details" value="details">{{ t('Contact details') }}</MpTab>
+          <MpTab v-if="isVendor" id="cd-tab-products" value="products">{{ t('Products') }}</MpTab>
           <MpTab id="cd-tab-transactions" value="transactions">{{ t('Transactions') }}</MpTab>
           <MpTab id="cd-tab-files" value="files">{{ t('Files') }}</MpTab>
         </MpTabList>
@@ -394,6 +424,22 @@ function archiveContact() {
               </section>
 
             </div>
+          </MpTabPanel>
+
+          <!-- ─────────── Products (vendors only) ───────────
+               The Vendor Supply Profile surface (PRD v1.0). Lives in its own
+               component: it carries a searchable, paged table plus an add/edit/
+               remove/audit/import surface, which is more than a detail-page panel
+               should hold inline. -->
+          <MpTabPanel v-if="isVendor" value="products">
+            <section class="cd-section cd-section--last">
+              <VendorProductsTab
+                :vendor-master-id="contact.vendorMasterId ?? ''"
+                :contact-id="contact.id"
+                :vendor-name="contact.displayName"
+                :scenario="productsScenario"
+              />
+            </section>
           </MpTabPanel>
 
           <!-- ─────────── Transactions ─────────── -->
@@ -548,6 +594,16 @@ function archiveContact() {
       </div>
     </MpTabs>
 
+    <!-- Demo scenario switcher for the Products tab's reachable states
+         (rule/detail-scenario-fab). Only shown while that tab is open, since the
+         scenarios it toggles have no meaning on the other three. -->
+    <ScenarioFab
+      v-if="isVendor && TAB_NAMES[activeTabIndex] === 'products'"
+      v-model="productsScenario"
+      :scenarios="PRODUCT_SCENARIOS"
+      :aria-label="t('Products tab scenarios')"
+    />
+
     <ConfirmModal
       v-model:is-open="isDeleteModalOpen"
       :title="t(deleteTitle)"
@@ -656,6 +712,11 @@ function archiveContact() {
 
 .cd-link { color: var(--mp-text-link); cursor: pointer; }
 .cd-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cd-product-badge { margin-left: 8px; vertical-align: middle; }
+.cd-prod-actions { margin-left: auto; display: flex; gap: var(--mp-spacing-2); }
+.cd-prod-hint { font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary); margin: 0 0 var(--mp-spacing-4); }
+.cd-add-row td { vertical-align: top; }
+.cd-add-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--mp-spacing-2); }
 
 .cd-empty {
   margin: 0; display: flex; align-items: center; gap: var(--mp-spacing-2);

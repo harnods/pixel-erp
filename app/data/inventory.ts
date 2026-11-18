@@ -21,7 +21,13 @@ export interface Product {
   name: string
   desc: string
   img: string
+  /** The PRIMARY category — drives replenishment defaults (safety/coverage/lead) and
+   *  every single-category read. Always equals `categories[0]`. */
   category: string
+  /** All categories a product belongs to (ordered; the first is the primary). A product
+   *  can carry several, like production. Optional for back-compat: a record without it
+   *  has the single `category`. Read it through `productCategoriesOf`. */
+  categories?: string[]
   unit: string
   /** harga jual — default sales price (ex-tax, per unit, IDR) */
   sellPrice: number
@@ -54,6 +60,7 @@ export const PRODUCTS: readonly Product[] = CATALOG.map((c) => ({
   desc: c.desc,
   img: c.img,
   category: c.category,
+  categories: [c.category],
   unit: c.unit,
   sellPrice: c.price,
   buyPrice: Math.round(c.price * 0.58),
@@ -65,6 +72,12 @@ const BY_SKU = new Map(PRODUCTS.map((p) => [p.sku, p]))
 /** Product master row for a SKU (undefined if the SKU isn't in the catalog). */
 export function productBySku(sku: string): Product | undefined {
   return BY_SKU.get(sku)
+}
+
+/** A product's categories, falling back to its single `category` for legacy records.
+ *  The first entry is the primary category. */
+export function productCategoriesOf(p: Pick<Product, 'category' | 'categories'>): string[] {
+  return p.categories?.length ? p.categories : (p.category ? [p.category] : [])
 }
 
 // Deterministic per-warehouse PRNG seed (bit-mixed from the warehouse id) so each
