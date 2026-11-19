@@ -27,6 +27,7 @@ import ErpTagList from '~/components/patterns/ErpTagList.vue'
 import ColumnSettingsMenu from '~/components/patterns/ColumnSettingsMenu.vue'
 import { columnWidth, type ColumnKind } from '~/components/patterns/columnWidths'
 import { getContact, deleteContact, nitkuFull, type ContactType } from '~/data/contacts'
+import { vendorPkpByName } from '~/data/vendors'
 import { getCustomerTransactions, getCustomerTxnSummary, customerIdForContact, type CustomerTransaction } from '~/data/customerTransactions'
 import { vendors } from '~/data/vendors'
 import { formatIDR } from '~/utils/currency'
@@ -340,9 +341,11 @@ function archiveContact() {
                 <div v-if="contact.domicile === 'domestic'" class="cd-grid">
                   <ContentList :label="t('NPWP')" :value="contact.npwp || undefined" />
                   <ContentList :label="t('NITKU')" :value="nitkuFull(contact) || undefined" />
+                  <ContentList v-if="contact.types.includes('vendor')" :label="t('PKP status')" :value="vendorPkpByName(contact.displayName) ? t('PKP') : t('Non-PKP')" data-devchange="vendor-pkp-status" />
                 </div>
                 <div v-else class="cd-grid">
                   <ContentList :label="t('Tax Identification Number (TIN)')" :value="contact.tin || undefined" />
+                  <ContentList v-if="contact.types.includes('vendor')" :label="t('PKP status')" :value="vendorPkpByName(contact.displayName) ? t('PKP') : t('Non-PKP')" data-devchange="vendor-pkp-status" />
                 </div>
               </section>
 

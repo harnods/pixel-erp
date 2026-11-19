@@ -25,8 +25,9 @@ import { applicableDimensions } from '~/data/dimensions'
 import BudgetPOCheckSection from '~/components/patterns/BudgetPOCheckSection.vue'
 import { createPO, previewPOFromRequests, syncPurchaseOrderRecord } from '~/data/budgetStore'
 import { budgetRequestFor } from '~/data/budgetUiPurchaseOrders'
-import { resolvePurchaseRule, vendorPkpStatus, isPpnTax, type PurchaseRuleMatch } from '~/data/priceRules'
+import { resolvePurchaseRule, purchaseRuleOptions, vendorPkpStatus, isPpnTax, type PurchaseRuleMatch, type PriceRulePick } from '~/data/priceRules'
 import ErpPurchaseRuleNote from '~/components/patterns/ErpPurchaseRuleNote.vue'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
 const props = defineProps<{
   duplicateOrderId?: string | null
@@ -108,8 +109,10 @@ interface POLine {
   // ── Purchase Price Rule — UI-only state, never saved ──
   /** The rule currently matching this line (null = none). */
   ruleMatch?: PurchaseRuleMatch | null
-  /** The user typed a discount that differs from the rule — rules leave it alone. */
+  /** The user typed a discount / unit cost that differs from the rule — rules leave it alone. */
   discountManual?: boolean
+  /** Unit cost before the rule (markup / last-price rules change unit cost). */
+  ruleBase?: number
   /** The PPN label a Non-PKP vendor auto-cleared (restored if the vendor turns PKP). */
   taxClearedFrom?: string | null
 }
@@ -156,35 +159,65 @@ function onBulkDimensions(patch: Record<string, string>) {
 }
 
 function toggleGroup(g: POGroup) { g.collapsed = !g.collapsed }
-function removeGroup(prId: string) { groups.value = groups.value.filter(g => g.prId !== prId) }
-function removeGroupLine(g: POGroup, key: number) { g.lines = g.lines.filter(l => l._key !== key) }
-function removeBlankItem(key: number) { blankItems.value = blankItems.value.filter(l => l._key !== key) }
+function removeGroup(prId: string) { groups.value = groups.value.filter(g => g.prId !== prId); reapplyRuledLines() }
+function removeGroupLine(g: POGroup, key: number) { g.lines = g.lines.filter(l => l._key !== key); reapplyRuledLines() }
+function removeBlankItem(key: number) { blankItems.value = blankItems.value.filter(l => l._key !== key); reapplyRuledLines() }
 
 // Product select (fills sku / unit / unit cost from the master).
 function onProductSelect(line: POLine) {
   const p = products.find(pp => pp.name === line.product)
   if (p) { line.sku = p.code; line.unit = p.unit; if (!line.unitCost) line.unitCost = p.price }
+  line.ruleBase = undefined
+  line.discountManual = false
   applyPurchaseRule(line)
   applyVendorPkp(line)
+  reapplyRuledLines()
 }
 
 // ── Purchase Price Rule + vendor PKP ─────────────────────────────────────────
-// Rules apply only on a user pick (vendor change, product pick) — never on load,
-// so a PO prefilled from requests or duplicated from a saved PO keeps its prices.
-// Priority / single best match live in resolvePurchaseRule (vendor + product >
-// vendor only > product only). A manually edited discount is left alone.
+// Rules apply only on a user action (vendor change, Price rule pick, product
+// pick, qty / unit cost edit, line add / remove) — never on load, so a PO
+// prefilled from requests, a delivery or a budget, or duplicated / edited from a
+// saved PO keeps its prices. The engine (resolvePurchaseRule) picks the single
+// best rule per line (vendor + product > vendor only > product only) or the
+// rule picked in the header field where it covers the line. A line edited by
+// hand is left alone unless its rule is locked (allowOverride off).
 const NO_TAX_LABEL = TAX_OPTIONS.find(x => !isPpnTax(x)) ?? 'Non-PPN'
 const txDateIso = computed(() => (txDate.value ? dmyToIso(txDate.value) : '') || todayISO())
-/** true = PKP, false = Non-PKP, null = not recorded on any purchase rule. */
+/** true = PKP, false = Non-PKP (vendor master), null = vendor not found. */
 const vendorPkp = computed(() => vendorPkpStatus(vendor.value))
+/** Header "Price rule" field: 'auto' | 'none' | rule id. */
+const priceRulePick = ref<PriceRulePick>('auto')
+const priceRuleOptions = computed(() => [
+  { value: 'auto', label: t('Automatic') },
+  ...purchaseRuleOptions(vendor.value, txDateIso.value).map(r => ({ value: r.id, label: r.name })),
+  { value: 'none', label: t('No price rule') },
+])
 function productIdOf(name: string): string { return products.find(pp => pp.name === name)?.id ?? '' }
+/** Document subtotal before discounts (subtotal-tier rules). */
+function docSubtotal(): number { return allLines.value.reduce((s, l) => s + l.qty * l.unitCost, 0) }
+function isLocked(line: POLine): boolean { return !!line.ruleMatch && !line.ruleMatch.editable }
 function applyPurchaseRule(line: POLine) {
   const hadRule = !!line.ruleMatch
-  const m = resolvePurchaseRule(vendor.value, productIdOf(line.product), line.unitCost, txDateIso.value, warehouse.value)
+  const base = line.ruleBase ?? line.unitCost
+  const m = resolvePurchaseRule({
+    vendorIdOrName: vendor.value, productId: productIdOf(line.product), baseCost: base,
+    qty: line.qty, docSubtotal: docSubtotal(), isoDate: txDateIso.value, pick: priceRulePick.value,
+  })
   line.ruleMatch = m
+  if (m && !m.editable) line.discountManual = false
   if (line.discountManual) return
-  if (m) line.discountPct = m.discountPct
-  else if (hadRule) line.discountPct = 0
+  if (m) { line.ruleBase = base; line.unitCost = m.unitCost; line.discountPct = m.discountPct }
+  else if (hadRule) {
+    if (line.ruleBase != null) line.unitCost = line.ruleBase
+    line.ruleBase = undefined
+    line.discountPct = 0
+  }
+}
+/** Qty / unit cost / line set changed → re-run the lines a rule already prices
+ *  (tier and subtotal-tier rules move with qty and the document subtotal). */
+function reapplyRuledLines() {
+  allLines.value.forEach((line) => { if (line.ruleMatch && !line.discountManual) applyPurchaseRule(line) })
 }
 /** Non-PKP vendor → PPN not applied (PPh untouched); back to PKP/unknown →
  *  restore only the lines this form cleared itself. */
@@ -196,25 +229,38 @@ function applyVendorPkp(line: POLine) {
     line.taxClearedFrom = null
   }
 }
+// Vendor change resets the Price rule field to Automatic and re-prices every line.
 watch(vendor, () => {
+  priceRulePick.value = 'auto'
   allLines.value.forEach((line) => { applyPurchaseRule(line); applyVendorPkp(line) })
 })
-/** Warehouse = outlet: a user pick re-resolves every line like a vendor change
- *  (manual discounts stay). Wired to the field's update event, not a watcher,
- *  so prefill / duplicate never re-prices. */
-function onWarehousePick(v: unknown) {
-  warehouse.value = String(v ?? '')
-  allLines.value.forEach((line) => applyPurchaseRule(line))
+/** Price rule pick → re-apply to every line not edited by hand. */
+function onPriceRulePick(v: string) {
+  priceRulePick.value = (v || 'auto') as PriceRulePick
+  allLines.value.forEach((line) => { if (!line.discountManual) applyPurchaseRule(line) })
 }
 function onDiscountInput(line: POLine, v: unknown) {
+  if (isLocked(line)) return
   const n = Number(v)
   line.discountPct = n
   line.discountManual = !!line.ruleMatch && n !== line.ruleMatch.discountPct
 }
+function onQtyInput(line: POLine, v: unknown) {
+  line.qty = Number(v)
+  reapplyRuledLines()
+}
 function onUnitCostInput(line: POLine, v: unknown) {
-  line.unitCost = Number(v)
-  // A Rp-per-unit rule converts against unit cost — keep an applied rule's % in step.
-  if (line.ruleMatch && !line.discountManual) applyPurchaseRule(line)
+  if (isLocked(line)) return
+  const n = Number(v)
+  line.unitCost = n
+  const m = line.ruleMatch
+  if (m && !line.discountManual) {
+    // A rule that sets the unit cost (last price / markup): typing over it is a
+    // manual edit. A discount rule: the typed cost is the new rule base.
+    if (line.ruleBase != null && m.unitCost !== line.ruleBase) line.discountManual = n !== m.unitCost
+    else line.ruleBase = n
+  }
+  reapplyRuledLines()
 }
 function resetLineToRule(line: POLine) {
   line.discountManual = false
@@ -240,6 +286,7 @@ function onNewProduct() {
   const added = blankItems.value[blankItems.value.length - 1]!
   applyPurchaseRule(added)
   applyVendorPkp(added)
+  reapplyRuledLines()
   newProduct.value = ''
 }
 
@@ -521,6 +568,16 @@ function onSendToFulfillment() {
             </div>
           </MpFormControl>
 
+          <MpFormControl id="f-price-rule" class="po-field po-col-span-3" data-devchange="purchase-price-rule-pick">
+            <MpFormLabel>{{ t('Price rule') }}</MpFormLabel>
+            <ErpFilterSelect
+              id="f-price-rule-inp" :model-value="priceRulePick" :options="priceRuleOptions"
+              :placeholder="t('Automatic')" width="100%" :is-clearable="false"
+              @update:model-value="onPriceRulePick"
+            />
+            <p class="si-field-caption">{{ t('Automatic picks the best rule per line. Pick a rule to use it on every line it covers.') }}</p>
+          </MpFormControl>
+
           <MpFormControl id="f-email" class="po-field po-col-span-3">
             <MpFormLabel>Email</MpFormLabel>
             <MpInputTag id="f-email-inp" :data="emailTags" placeholder="Enter email address" @change="onEmailChange" />
@@ -602,7 +659,7 @@ function onSendToFulfillment() {
             <!-- prod order: Transaction no. → Warehouse → Reference no. -->
             <MpFormControl id="f-warehouse" class="po-field">
               <MpFormLabel>Warehouse</MpFormLabel>
-              <MpAutocomplete id="f-warehouse-inp" :model-value="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" @update:model-value="onWarehousePick" />
+              <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" use-portal is-clearable is-full-width placeholder="Select warehouse" />
             </MpFormControl>
 
             <MpFormControl id="f-ref" class="po-field">
@@ -699,23 +756,23 @@ function onSendToFulfillment() {
                     <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ line.requestedQty }}</td>
                     <td class="pit-td pit-td--num pit-td--ro pit-td--border">{{ line.availableQty }}</td>
                     <td class="pit-td pit-td--input pit-td--num pit-td--border">
-                      <MpInput :id="`po-qty-${line._key}`" type="number" :model-value="line.qty" is-full-width class="pit-num-input" @update:model-value="(v) => line.qty = Number(v)" />
+                      <MpInput :id="`po-qty-${line._key}`" type="number" :model-value="line.qty" is-full-width class="pit-num-input" @update:model-value="(v) => onQtyInput(line, v)" />
                     </td>
                     <td class="pit-td pit-td--ro pit-td--clip pit-td--border">{{ line.unit }}</td>
                     <td class="pit-td pit-td--input pit-td--num pit-td--border">
                       <div class="pit-affix-cell">
                         <span class="pit-affix pit-affix--prefix">Rp</span>
-                        <MpInput :id="`po-cost-${line._key}`" type="number" :model-value="line.unitCost" is-full-width class="pit-num-input" @update:model-value="(v) => onUnitCostInput(line, v)" />
+                        <MpInput :id="`po-cost-${line._key}`" type="number" :is-read-only="isLocked(line)" :model-value="line.unitCost" is-full-width class="pit-num-input" @update:model-value="(v) => onUnitCostInput(line, v)" />
                       </div>
                     </td>
                     <td class="pit-td pit-td--input pit-td--num pit-td--border">
                       <div class="pit-band-control">
                         <div class="pit-affix-cell">
-                          <MpInput :id="`po-disc-${line._key}`" type="number" :model-value="line.discountPct" is-full-width class="pit-num-input" @update:model-value="(v) => onDiscountInput(line, v)" />
+                          <MpInput :id="`po-disc-${line._key}`" type="number" :is-read-only="isLocked(line)" :model-value="line.discountPct" is-full-width class="pit-num-input" @update:model-value="(v) => onDiscountInput(line, v)" />
                           <span class="pit-affix pit-affix--suffix">%</span>
                         </div>
                       </div>
-                      <ErpPurchaseRuleNote :match="line.ruleMatch ?? null" :is-edited="!!line.discountManual" @reset="resetLineToRule(line)" />
+                      <ErpPurchaseRuleNote :match="line.ruleMatch ?? null" :is-edited="!!line.discountManual" :locked="isLocked(line)" @reset="resetLineToRule(line)" />
                     </td>
                     <td class="pit-td pit-td--input pit-td--border">
                       <MpAutocomplete :id="`po-tax-${line._key}`" :model-value="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width @update:model-value="(v) => onTaxPick(line, v)" />
@@ -788,7 +845,7 @@ function onSendToFulfillment() {
                     <MpInput :id="`po-bdesc-${line._key}`" v-model="line.description" is-full-width />
                   </td>
                   <td class="pit-td pit-td--input pit-td--num pit-td--border">
-                    <MpInput :id="`po-bqty-${line._key}`" type="number" :model-value="line.qty" is-full-width class="pit-num-input" @update:model-value="(v) => line.qty = Number(v)" />
+                    <MpInput :id="`po-bqty-${line._key}`" type="number" :model-value="line.qty" is-full-width class="pit-num-input" @update:model-value="(v) => onQtyInput(line, v)" />
                   </td>
                   <td class="pit-td pit-td--input pit-td--border">
                     <MpAutocomplete :id="`po-bunit-${line._key}`" v-model="line.unit" :data="unitData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width />
@@ -796,17 +853,17 @@ function onSendToFulfillment() {
                   <td class="pit-td pit-td--input pit-td--num pit-td--border">
                     <div class="pit-affix-cell">
                       <span class="pit-affix pit-affix--prefix">Rp</span>
-                      <MpInput :id="`po-bcost-${line._key}`" type="number" :model-value="line.unitCost" is-full-width class="pit-num-input" @update:model-value="(v) => onUnitCostInput(line, v)" />
+                      <MpInput :id="`po-bcost-${line._key}`" type="number" :is-read-only="isLocked(line)" :model-value="line.unitCost" is-full-width class="pit-num-input" @update:model-value="(v) => onUnitCostInput(line, v)" />
                     </div>
                   </td>
                   <td class="pit-td pit-td--input pit-td--num pit-td--border">
                     <div class="pit-band-control">
                       <div class="pit-affix-cell">
-                        <MpInput :id="`po-bdisc-${line._key}`" type="number" :model-value="line.discountPct" is-full-width class="pit-num-input" @update:model-value="(v) => onDiscountInput(line, v)" />
+                        <MpInput :id="`po-bdisc-${line._key}`" type="number" :is-read-only="isLocked(line)" :model-value="line.discountPct" is-full-width class="pit-num-input" @update:model-value="(v) => onDiscountInput(line, v)" />
                         <span class="pit-affix pit-affix--suffix">%</span>
                       </div>
                     </div>
-                    <ErpPurchaseRuleNote :match="line.ruleMatch ?? null" :is-edited="!!line.discountManual" @reset="resetLineToRule(line)" />
+                    <ErpPurchaseRuleNote :match="line.ruleMatch ?? null" :is-edited="!!line.discountManual" :locked="isLocked(line)" @reset="resetLineToRule(line)" />
                   </td>
                   <td class="pit-td pit-td--input pit-td--border">
                     <MpAutocomplete :id="`po-btax-${line._key}`" :model-value="line.taxLabel" :data="taxData" label-prop="name" value-prop="name" is-searchable use-portal is-full-width @update:model-value="(v) => onTaxPick(line, v)" />
@@ -1091,7 +1148,8 @@ function onSendToFulfillment() {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: var(--mp-spacing-4) var(--mp-spacing-5);
-  align-items: end;
+  /* start: the Vendor badge / Price rule caption hang below; labels stay level */
+  align-items: start;
 }
 .po-header1-total {
   grid-column: 10 / span 3;

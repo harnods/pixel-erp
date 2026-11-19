@@ -26,6 +26,7 @@ import {
   AR_ACCOUNT_OPTIONS, AP_ACCOUNT_OPTIONS, PAYMENT_TERMS_OPTIONS, CURRENCY_OPTIONS, COUNTRY_OPTIONS,
   type ContactType, type ContactBank,
 } from '~/data/contacts'
+import { vendorPkpByName, setVendorPkp } from '~/data/vendors'
 import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
 
@@ -69,6 +70,10 @@ const isIndonesia = computed(() => addressDetails.country === 'Indonesia')
 const provinceLabel = computed(() => (isIndonesia.value ? 'Province' : 'State/Province'))
 
 const banks = ref<ContactBank[]>([{ id: 'b1', bankName: '', branch: '', accountNo: '', accountName: '' }])
+/** Vendor master PKP status (Purchase Price Rule v4) — default PKP. Lives on
+ *  vendors.ts (`vendors[].pkp`), joined by display name; only saved for vendors. */
+const vendorPkp = ref(true)
+const isVendor = computed(() => form.types.includes('vendor'))
 
 onMounted(() => {
   if (!isEdit.value) return
@@ -81,6 +86,7 @@ onMounted(() => {
     ? c.banks.map((b) => ({ ...b }))
     : [{ id: 'b1', bankName: '', branch: '', accountNo: '', accountName: '' }]
   sameAsBilling.value = !!c.shippingAddress && c.shippingAddress === c.billingAddress
+  vendorPkp.value = vendorPkpByName(c.displayName)
 })
 
 // ── Contact type (at least one role) ─────────────────────────────────────────
@@ -230,6 +236,7 @@ async function save() {
     updatedAt: new Date().toISOString(),
   }
 
+  if (isVendor.value) setVendorPkp(payload.displayName, vendorPkp.value)
   if (isEdit.value) {
     updateContact(props.orderId!, payload)
     toast.notify({ variant: 'success', title: t('Contact updated successfully.'), maxWidth: 'max-content' })
@@ -541,6 +548,28 @@ async function save() {
                   <span>{{ t('Foreign') }}</span>
                 </label>
               </div>
+            </MpFormControl>
+
+            <!-- PKP status (vendor master; vendors only) -->
+            <MpFormControl v-if="isVendor" id="nc-pkp" data-devchange="vendor-pkp-status">
+              <MpFormLabel>{{ t('PKP status') }}</MpFormLabel>
+              <div class="nc-types-row">
+                <label class="nc-choice">
+                  <MpRadio
+                    id="nc-pkp-yes" name="nc-pkp" value="pkp"
+                    :is-checked="vendorPkp" @change="vendorPkp = true"
+                  />
+                  <span>{{ t('PKP') }}</span>
+                </label>
+                <label class="nc-choice">
+                  <MpRadio
+                    id="nc-pkp-no" name="nc-pkp" value="non-pkp"
+                    :is-checked="!vendorPkp" @change="vendorPkp = false"
+                  />
+                  <span>{{ t('Non-PKP') }}</span>
+                </label>
+              </div>
+              <MpFormHelpText>{{ t('Non-PKP vendors don\'t charge PPN. Purchases from them won\'t apply PPN; PPh still applies.') }}</MpFormHelpText>
             </MpFormControl>
 
             <!-- Domestic: NPWP (16) – NITKU (6) + Validate.

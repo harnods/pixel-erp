@@ -1,4 +1,6 @@
+import { reactive } from 'vue'
 import type { Vendor } from './types'
+import { loadSnapshot, saveSnapshot } from './persist'
 
 /**
  * Vendor master — the single source of truth for who the coffee business BUYS
@@ -10,7 +12,7 @@ import type { Vendor } from './types'
  * importers & cooperatives, packaging, machines/equipment, logistics, and the
  * recurring operating suppliers (utilities, internet, rent, software).
  */
-export const vendors: Vendor[] = [
+export const vendors: Vendor[] = reactive<Vendor[]>([
   { id: 'V001', code: 'VND-001', name: 'Klasik Beans Cooperative',   type: 'company', email: 'sales@klasikbeans.coop',      phone: '022-5560001', city: 'Bandung',    payable: 0 },
   { id: 'V002', code: 'VND-002', name: 'Sagaleh Coffee Supply',      type: 'company', email: 'order@sagaleh.co.id',         phone: '0751-556002', city: 'Padang',     payable: 0 },
   { id: 'V003', code: 'VND-003', name: 'Gayo Highland Exporters',    type: 'company', email: 'export@gayohighland.com',      phone: '0643-556003', city: 'Takengon',   payable: 0 },
@@ -26,7 +28,7 @@ export const vendors: Vendor[] = [
   { id: 'V013', code: 'VND-013', name: 'Flores Manggarai Arabica',   type: 'company', email: 'sales@floresmanggarai.co.id', phone: '0385-556013', city: 'Ruteng',     payable: 0 },
   { id: 'V014', code: 'VND-014', name: 'Kintamani Bali Coffee',      type: 'company', email: 'order@kintamanicoffee.com',   phone: '0366-556014', city: 'Bangli',     payable: 0 },
   { id: 'V015', code: 'VND-015', name: 'Wamena Papua Highlands',     type: 'company', email: 'highland@wamenacoffee.co.id', phone: '0969-556015', city: 'Wamena',     payable: 0 },
-  { id: 'V016', code: 'VND-016', name: 'Bajawa Ngada Cooperative',   type: 'company', email: 'coop@bajawangada.org',        phone: '0384-556016', city: 'Bajawa',     payable: 0 },
+  { id: 'V016', code: 'VND-016', name: 'Bajawa Ngada Cooperative',   type: 'company', email: 'coop@bajawangada.org',        phone: '0384-556016', city: 'Bajawa',     payable: 0, pkp: false },
   { id: 'V017', code: 'VND-017', name: 'Temanggung Java Estate',     type: 'company', email: 'estate@temanggung.co.id',     phone: '0293-556017', city: 'Temanggung', payable: 0 },
   { id: 'V018', code: 'VND-018', name: 'Enrekang Kalosi Traders',    type: 'company', email: 'trade@kalositraders.co.id',   phone: '0420-556018', city: 'Enrekang',   payable: 0 },
   { id: 'V019', code: 'VND-019', name: 'Simalungun Sidikalang Mill', type: 'company', email: 'mill@sidikalangcoffee.com',   phone: '0631-556019', city: 'Sidikalang', payable: 0 },
@@ -41,9 +43,47 @@ export const vendors: Vendor[] = [
   { id: 'V028', code: 'VND-028', name: 'Budi Jaya Safety Equipment', type: 'individual', email: 'budi@jayasafety.co.id',    phone: '021-5560028', city: 'Jakarta',    payable: 0 },
   { id: 'V029', code: 'VND-029', name: 'Ibu Ratna Catering',         type: 'individual', email: 'ratna.catering@gmail.com', phone: '0812-5560029', city: 'Bandung',   payable: 0 },
   { id: 'V030', code: 'VND-030', name: 'Dian Pest Control',          type: 'individual', email: 'dian.pestcontrol@gmail.com', phone: '0813-5560030', city: 'Bogor',   payable: 0 },
-]
+])
 
 /** Lookup a vendor by id (falls back to the first vendor). */
 export function vendorById(id: string): Vendor {
   return vendors.find((v) => v.id === id) ?? vendors[0]!
+}
+
+// ── PKP status (vendor master; Purchase Price Rule v4) ───────────────────────
+// Contacts › Vendors (contacts.ts, CT…) and this FK table (V…) only share the
+// display name, so the contact form writes PKP by name. Overrides persist as a
+// snapshot keyed by lower-cased name: a vendor in this table gets `pkp` set
+// (vendorPkpStatus() reads it); a vendor contact that isn't in this table yet
+// (created in Contacts) keeps its status in the snapshot only.
+const PKP_KEY = 'vendor-pkp-v1'
+interface PkpOverride { name: string; pkp: boolean }
+const pkpOverrides = reactive<PkpOverride[]>(loadSnapshot<PkpOverride>(PKP_KEY) ?? [])
+const norm = (s: string) => s.trim().toLowerCase()
+function vendorByIdOrName(idOrName: string): Vendor | undefined {
+  const n = norm(idOrName)
+  return vendors.find((v) => v.id === idOrName || norm(v.name) === n)
+}
+for (const o of pkpOverrides) {
+  const v = vendorByIdOrName(o.name)
+  if (v) v.pkp = o.pkp
+}
+
+/** PKP status of a vendor by id or name — true = PKP (the default). */
+export function vendorPkpByName(idOrName: string): boolean {
+  const v = vendorByIdOrName(idOrName)
+  if (v) return v.pkp !== false
+  return pkpOverrides.find((o) => norm(o.name) === norm(idOrName))?.pkp ?? true
+}
+
+/** Set a vendor's PKP status (from the contact form) and persist it. */
+export function setVendorPkp(name: string, pkp: boolean): void {
+  if (!name.trim()) return
+  const v = vendorByIdOrName(name)
+  if (v) v.pkp = pkp
+  const key = norm(v?.name ?? name)
+  const i = pkpOverrides.findIndex((o) => norm(o.name) === key)
+  if (i === -1) pkpOverrides.push({ name: v?.name ?? name.trim(), pkp })
+  else pkpOverrides[i]!.pkp = pkp
+  saveSnapshot(PKP_KEY, pkpOverrides)
 }

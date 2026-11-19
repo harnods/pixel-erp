@@ -28,12 +28,68 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
-    id: 'purchase-price-rule-outlets',
-    title: 'Purchase price rules per outlet',
+    id: 'purchase-price-rule-pkp-po',
+    title: 'Purchase order: vendor PKP status',
     description:
-      'A purchase rule can name outlet warehouses (empty = all outlets). On purchase orders, invoices and quotes the transaction warehouse picks the outlet: an outlet rule beats an all-outlet rule, and changing the warehouse re-prices lines not edited by hand.',
-    date: '2026-11-13',
-    files: ['PriceRuleFormPage.vue', 'PriceRulesPage.vue', 'priceRules.ts', 'PurchaseOrderFormPage.vue', 'NewPurchaseInvoicePage.vue', 'NewPurchaseQuotePage.vue'],
+      'Vendor PKP / Non-PKP badge, read from the vendor master (v4). Non-PKP vendors drop PPN on every line; PPh still applies.',
+    date: '2026-11-19',
+    files: ['PurchaseOrderFormPage.vue'],
+  },
+  {
+    id: 'purchase-price-rule-pkp-pi',
+    title: 'Purchase invoice: vendor PKP status',
+    description:
+      'Vendor PKP / Non-PKP badge, read from the vendor master (v4). Non-PKP vendors drop PPN on every line; PPh still applies.',
+    date: '2026-11-19',
+    files: ['NewPurchaseInvoicePage.vue'],
+  },
+  {
+    id: 'purchase-price-rule-pkp-pq',
+    title: 'Purchase quote: vendor PKP status',
+    description:
+      'Vendor PKP / Non-PKP badge, read from the vendor master (v4). Non-PKP vendors drop PPN on every line; PPh still applies.',
+    date: '2026-11-19',
+    files: ['NewPurchaseQuotePage.vue'],
+  },
+  {
+    id: 'purchase-price-rule-pick',
+    title: 'Price rule field on purchase documents',
+    description:
+      'Purchase order, invoice and quote have a Price rule field next to Vendor: Automatic (best rule per line), a specific rule (e.g. an outlet deal) applied to every line it covers, or No price rule. Changing the vendor resets it to Automatic.',
+    date: '2026-11-19',
+    files: ['PurchaseOrderFormPage.vue', 'NewPurchaseInvoicePage.vue', 'NewPurchaseQuotePage.vue', 'priceRules.ts'],
+  },
+  {
+    id: 'price-rule-allow-changes',
+    title: 'Allow changes on transaction',
+    description:
+      'Every price rule (sales and purchase) can lock the price and discount it sets. Locked lines are read-only and show Locked by rule.',
+    date: '2026-11-19',
+    files: ['PriceRuleFormPage.vue', 'PriceRulesPage.vue', 'ErpPurchaseRuleNote.vue'],
+  },
+  {
+    id: 'price-rule-tier-table',
+    title: 'Tier tables for sales and purchase rules',
+    description:
+      'Customer and vendor rules offer the same seven rule types. Tier percentage and subtotal discounts get a tier table (up to 5 steps).',
+    date: '2026-11-19',
+    files: ['PriceRuleFormPage.vue', 'priceRules.ts'],
+  },
+  {
+    id: 'vendor-pkp-status',
+    title: 'PKP status on the vendor',
+    description:
+      'Vendors carry a PKP status (default PKP). Purchases from a Non-PKP vendor drop PPN on every line; PPh still applies.',
+    date: '2026-11-19',
+    files: ['NewContactPage.vue', 'ContactDetailsPage.vue', 'vendors.ts'],
+  },
+  {
+    id: 'purchase-use-price-rules',
+    title: 'Use price rules in Purchase settings',
+    description:
+      'Mirrors the Sales settings toggle: automatically apply pricing rules to purchase transactions.',
+    date: '2026-11-19',
+    files: ['SettingsPurchasePage.vue'],
   },
   {
     id: 'pr-self-only-outlet',
@@ -60,44 +116,12 @@ export const DEV_CHANGES: DevChange[] = [
     files: ['PriceRuleFormPage.vue', 'priceRules.ts'],
   },
   {
-    id: 'purchase-price-rule-pkp',
-    title: 'PKP vendor checkbox',
-    description:
-      'Purchase rules record whether the vendor is PKP. Unchecked = Non-PKP: PPN is not applied on that vendor\'s purchases (PPh still applies). Saving is blocked if the same vendor has a different PKP status on another rule.',
-    date: '2026-11-12',
-    files: ['PriceRuleFormPage.vue', 'priceRules.ts'],
-  },
-  {
     id: 'purchase-price-rule-line',
     title: 'Purchase lines apply price rules',
     description:
       'On Purchase order, invoice and quote, picking a vendor or product fills the line discount from the best purchase rule (vendor + product > vendor only > product only). The note shows the rule; a typed discount shows Edited manually with Reset to rule.',
     date: '2026-11-12',
     files: ['ErpPurchaseRuleNote.vue', 'PurchaseOrderFormPage.vue', 'NewPurchaseInvoicePage.vue', 'NewPurchaseQuotePage.vue'],
-  },
-  {
-    id: 'purchase-price-rule-pkp-po',
-    title: 'Purchase order: vendor PKP status',
-    description:
-      'The vendor\'s PKP status shows under Vendor. For a Non-PKP vendor, PPN lines switch to no tax and the tax total is now summed per line.',
-    date: '2026-11-12',
-    files: ['PurchaseOrderFormPage.vue'],
-  },
-  {
-    id: 'purchase-price-rule-pkp-pi',
-    title: 'Purchase invoice: vendor PKP status',
-    description:
-      'The vendor\'s PKP status shows under Vendor. For a Non-PKP vendor, PPN lines switch to no tax; tax is summed per line.',
-    date: '2026-11-12',
-    files: ['NewPurchaseInvoicePage.vue'],
-  },
-  {
-    id: 'purchase-price-rule-pkp-pq',
-    title: 'Purchase quote: vendor PKP status',
-    description:
-      'The vendor\'s PKP status shows under Vendor. For a Non-PKP vendor, PPN lines switch to no tax; tax is summed per line.',
-    date: '2026-11-12',
-    files: ['NewPurchaseQuotePage.vue'],
   },
   {
     id: 'projects-project-accounting',

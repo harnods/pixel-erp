@@ -3,7 +3,9 @@
  * Purchase Price Rule note under a purchase line's Discount input (PO / PI /
  * PQ forms). Two short lines at most:
  *   rule applied   → "Rule: <name>" (truncated, full name + tier in `title`)
- *                    / the tier label ("Outlet · <tier>" for an outlet rule)
+ *                    / the tier label ("Picked · <tier>" for a header pick)
+ *   locked rule    → "Rule: <name>" / "Locked by rule" — no Reset link (the
+ *                    line's unit cost + discount are read-only)
  *   edited by user → "Edited manually" / "Reset to rule" (the link only while a
  *                    rule still matches the line)
  * Quiet caption text, not a badge — it annotates a value, it isn't a status
@@ -11,25 +13,31 @@
  * two-band info band — put it right after a 40px control band in the cell.
  *
  * Contract (used by three forms — keep the props/emit stable):
- *   props  match: PurchaseRuleMatch | null, isEdited: boolean
+ *   props  match: PurchaseRuleMatch | null, isEdited: boolean, locked?: boolean
  *   emit   reset
  */
 import { computed } from 'vue'
 import { MpTextlink } from '@mekari/pixel3'
 import { purchaseRuleTierParts, type PurchaseRuleMatch } from '~/data/priceRules'
 
-const props = defineProps<{ match: PurchaseRuleMatch | null; isEdited: boolean }>()
+const props = defineProps<{ match: PurchaseRuleMatch | null; isEdited: boolean; locked?: boolean }>()
 const emit = defineEmits<{ reset: [] }>()
 const { t } = useLocale()
 
-// "Outlet · Vendor + product" when the rule targets the transaction's warehouse.
+// "Picked · Vendor + product" when the rule was picked in the header field.
 const tierLabel = computed(() => (props.match ? purchaseRuleTierParts(props.match).map((p) => t(p)).join(' · ') : ''))
 const fullLabel = computed(() => (props.match ? `${props.match.rule.name} · ${tierLabel.value}` : ''))
+// A locked rule wins over a stale manual edit — the inputs are read-only then.
+const isLocked = computed(() => !!props.locked && !!props.match)
 </script>
 
 <template>
   <div v-if="isEdited || match" class="prn" data-devchange="purchase-price-rule-line">
-    <template v-if="isEdited">
+    <template v-if="isLocked && match">
+      <span class="prn-text prn-trunc" :title="fullLabel">{{ t('Rule') }}: {{ match.rule.name }}</span>
+      <span class="prn-text prn-trunc" :title="fullLabel">{{ t('Locked by rule') }}</span>
+    </template>
+    <template v-else-if="isEdited">
       <span class="prn-text">{{ t('Edited manually') }}</span>
       <MpTextlink v-if="match" as="button" class="prn-link" @click="emit('reset')">{{ t('Reset to rule') }}</MpTextlink>
     </template>

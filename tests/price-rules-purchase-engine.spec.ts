@@ -1,71 +1,71 @@
 import { describe, it, expect } from 'vitest'
 import {
-  resolvePurchaseRule, vendorPkpStatus, purchasePkpConflict, isPpnTax, priceRules,
-  createPriceRule, deletePriceRule, emptyPriceRuleInput,
+  resolvePurchaseRule, purchaseRuleOptions, vendorPkpStatus, isPpnTax, priceRules,
+  createPriceRule, deletePriceRule, emptyPriceRuleInput, PRICE_RULE_TYPES_BY_TRANSACTION,
 } from '~/data/priceRules'
 
-// Purchase Price Rule engine (one-pager PD 51412239134 §5 / AC1-AC5).
-describe('purchase price rule engine', () => {
-  it('vendor + product beats vendor only (AC1, AC3)', () => {
-    const m = resolvePurchaseRule('V003', 'p01', 3_200_000)!
+// Purchase Price Rule engine (one-pager PD 51412239134 v4).
+const line = (vendorIdOrName: string, productId: string, baseCost: number, extra: Partial<Parameters<typeof resolvePurchaseRule>[0]> = {}) =>
+  resolvePurchaseRule({ vendorIdOrName, productId, baseCost, qty: 1, docSubtotal: baseCost, ...extra })
+
+describe('purchase price rule engine (v4)', () => {
+  it('customer and vendor rules offer the same rule types', () => {
+    expect(PRICE_RULE_TYPES_BY_TRANSACTION.purchase).toEqual(PRICE_RULE_TYPES_BY_TRANSACTION.sales)
+  })
+  it('automatic: vendor + product beats vendor only', () => {
+    const m = line('V003', 'p01', 3_200_000)!
     expect(m.rule.id).toBe('PRL-102')
-    expect(m.tier).toBe(1)
+    expect(m.picked).toBe(false)
     expect(m.discountPct).toBe(10)
+    expect(line('Gayo Highland Exporters', 'p13', 85_000_000)!.rule.id).toBe('PRL-101')
   })
-  it('falls back to vendor only for a product outside the rule', () => {
-    const m = resolvePurchaseRule('Gayo Highland Exporters', 'p13', 85_000_000)!
-    expect(m.rule.id).toBe('PRL-101')
-    expect(m.tier).toBe(2)
-    expect(m.discountPct).toBe(5)
+  it('picked rule (outlet deal) wins on the lines it covers', () => {
+    const m = line('V003', 'p01', 3_200_000, { pick: 'PRL-105' })!
+    expect(m.rule.id).toBe('PRL-105')
+    expect(m.picked).toBe(true)
+    expect(m.discountPct).toBe(12)
   })
-  it('vendor only beats product only', () => {
-    expect(resolvePurchaseRule('V003', 'p24', 85_000)!.rule.id).toBe('PRL-101')
+  it('picked rule that does not cover the product falls back to automatic', () => {
+    expect(line('V003', 'p13', 85_000_000, { pick: 'PRL-105' })!.rule.id).toBe('PRL-101')
   })
-  it('product-only value rule converts Rp/unit to % for other vendors', () => {
-    const m = resolvePurchaseRule('V006', 'p24', 85_000)!
+  it('"none" applies no rule', () => {
+    expect(line('V003', 'p01', 3_200_000, { pick: 'none' })).toBeNull()
+  })
+  it('header options list the vendor rules plus all-vendor rules', () => {
+    const ids = purchaseRuleOptions('V003').map((r) => r.id)
+    expect(ids).toEqual(expect.arrayContaining(['PRL-101', 'PRL-102', 'PRL-104', 'PRL-105']))
+    expect(ids).not.toContain('PRL-103')
+  })
+  it('product-only value rule converts Rp/unit to %', () => {
+    const m = line('V005', 'p24', 85_000)!
     expect(m.tier).toBe(3)
     expect(m.discountPct).toBe(5.88)
   })
-  it('no rule for another vendor (AC2)', () => {
-    expect(resolvePurchaseRule('V005', 'p01', 3_200_000)).toBeNull()
+  it('quantity tiers on a vendor rule, locked on the transaction', () => {
+    expect(line('V006', 'p24', 85_000, { qty: 5 })!.discountPct).toBe(0)
+    const m = line('V006', 'p24', 85_000, { qty: 60 })!
+    expect(m.discountPct).toBe(8)
+    expect(m.editable).toBe(false)
   })
-  it('PKP status per vendor (AC4, AC5)', () => {
+  it('markup and last price set the unit cost', () => {
+    const mk = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'Markup', ruleType: 'markup_percent', amount: 10, contactIds: ['V007'] })
+    expect(line('V007', 'p13', 85_000_000)!.unitCost).toBe(93_500_000)
+    deletePriceRule(mk.id)
+    const lp = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'Fixed', ruleType: 'end_discount', amount: 80_000_000, contactIds: ['V007'], productIds: ['p13'] })
+    expect(line('V007', 'p13', 85_000_000)!.unitCost).toBe(80_000_000)
+    deletePriceRule(lp.id)
+  })
+  it('PKP comes from the vendor master', () => {
     expect(vendorPkpStatus('V003')).toBe(true)
-    expect(vendorPkpStatus('V016')).toBe(false)
-    expect(vendorPkpStatus('V005')).toBeNull()
-  })
-  it('blocks a conflicting PKP status for the same vendor', () => {
-    expect(purchasePkpConflict(['V003'], false)?.rule.vendorPkp).toBe(true)
-    expect(purchasePkpConflict(['V003'], true)).toBeNull()
-    expect(purchasePkpConflict(['V016'], false, 'PRL-103')).toBeNull()
+    expect(vendorPkpStatus('Bajawa Ngada Cooperative')).toBe(false)
+    expect(vendorPkpStatus('nope')).toBeNull()
   })
   it('ignores sales rules and inactive rules', () => {
-    expect(resolvePurchaseRule('V001', 'p09', 280_000)).toBeNull()
+    expect(line('V001', 'p09', 280_000)).toBeNull()
     const r = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'Off', amount: 50, productIds: ['p09'], status: 'inactive' })
-    expect(resolvePurchaseRule('V001', 'p09', 280_000)).toBeNull()
+    expect(line('V001', 'p09', 280_000)).toBeNull()
     deletePriceRule(r.id)
-  })
-  it('normalises PKP to null on all-vendor and sales rules', () => {
-    const r = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'All', amount: 1, productIds: ['p20'], vendorPkp: false })
-    expect(r.vendorPkp).toBeNull()
-    deletePriceRule(r.id)
-    expect(priceRules().every((x) => x.transactionType === 'purchase' || x.vendorPkp === null)).toBe(true)
-  })
-  it('outlet rule beats all-outlet rules only at that outlet (DECIDED 12 Nov)', () => {
-    const at = resolvePurchaseRule('V003', 'p01', 3_200_000, undefined, 'Gudang Bandung Selatan')!
-    expect(at.rule.id).toBe('PRL-105')
-    expect(at.outletSpecific).toBe(true)
-    expect(at.discountPct).toBe(12)
-    const other = resolvePurchaseRule('V003', 'p01', 3_200_000, undefined, 'Gudang Jakarta Pusat')!
-    expect(other.rule.id).toBe('PRL-102')
-    expect(other.outletSpecific).toBe(false)
-    expect(resolvePurchaseRule('V003', 'p01', 3_200_000)!.rule.id).toBe('PRL-102')
-  })
-  it('outlet rule outranks a more specific all-outlet tier', () => {
-    // Bandung outlet + vendor-only would still beat all-outlet vendor + product
-    const r = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'Bandung all', amount: 2, contactIds: ['V003'], warehouses: ['Gudang Bandung Selatan'] })
-    expect(resolvePurchaseRule('V003', 'p13', 85_000_000, undefined, 'Gudang Bandung Selatan')!.rule.id).toBe(r.id)
-    deletePriceRule(r.id)
+    expect(priceRules().every((x) => x.allowOverride !== undefined)).toBe(true)
   })
   it('PPN detection', () => {
     expect(isPpnTax('PPN 11%')).toBe(true)

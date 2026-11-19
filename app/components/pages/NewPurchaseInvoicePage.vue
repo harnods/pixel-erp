@@ -35,7 +35,8 @@ import ConfirmModal from '~/components/patterns/ConfirmModal.vue'
 import NumberFormatSettingsModal, { type NumberFormatConfig } from '~/components/patterns/NumberFormatSettingsModal.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ErpPurchaseRuleNote from '~/components/patterns/ErpPurchaseRuleNote.vue'
-import { resolvePurchaseRule, vendorPkpStatus, isPpnTax, type PurchaseRuleMatch } from '~/data/priceRules'
+import ErpFilterSelect from '~/components/patterns/ErpFilterSelect.vue'
+import { resolvePurchaseRule, purchaseRuleOptions, vendorPkpStatus, isPpnTax, type PurchaseRuleMatch, type PriceRulePick } from '~/data/priceRules'
 import BudgetPIPanel from '~/components/patterns/BudgetPIPanel.vue'
 import { poById, previewBill, postBillAs } from '~/data/budgetStore'
 import { buildBudgetBillInput, emptyBudgetPILine, type BudgetPIState } from '~/data/budgetUiPurchaseOrders'
@@ -125,37 +126,70 @@ interface LineItem {
   productId?: string
   ruleMatch?: PurchaseRuleMatch | null
   discountManual?: boolean
+  /** Unit cost before the rule (markup / last-price rules change unit cost). */
+  ruleBase?: number
   taxClearedFrom?: string
 }
 let _seq = 0
 const items = ref<LineItem[]>([])
 
-function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key) }
+function removeItem(key: number) { items.value = items.value.filter(it => it._key !== key); reapplyRuledLines() }
 function lineAmount(item: LineItem) {
   return Math.round(item.qty * item.unitPrice * (1 - item.discountPct / 100))
 }
 
 // ── Purchase Price Rule + vendor PKP ──────────────────────────────────────────
-// Rules fill a line's Discount only on a user pick (vendor, product) — a line
-// prefilled from a source/edit keeps its saved values until the user picks.
-// ruleMatch / discountManual / taxClearedFrom are UI-only and never saved.
+// Rules apply only on a user action (vendor pick, Price rule pick, product pick,
+// qty / unit cost edit, line add / remove) — a line prefilled from a source or
+// an edit keeps its saved values. The engine (resolvePurchaseRule) picks the
+// single best rule per line, or the rule picked in the header field where it
+// covers the line. A line edited by hand is left alone unless its rule is
+// locked (allowOverride off → unit cost + discount read-only).
+// ruleMatch / ruleBase / discountManual / taxClearedFrom are UI-only, never saved.
 const txDateIso = computed(() => dmyToIso(txDate.value) || todayISO())
 const NO_TAX_LABEL = TAX_OPTIONS.find(o => !isPpnTax(o)) ?? 'No tax'
+/** true = PKP, false = Non-PKP (vendor master), null = no vendor. */
 const vendorPkp = computed(() => vendorPkpStatus(vendorId.value))
+/** Header "Price rule" field: 'auto' | 'none' | rule id. */
+const priceRulePick = ref<PriceRulePick>('auto')
+const priceRuleOptions = computed(() => [
+  { value: 'auto', label: t('Automatic') },
+  ...purchaseRuleOptions(vendorId.value, txDateIso.value).map(r => ({ value: r.id, label: r.name })),
+  { value: 'none', label: t('No price rule') },
+])
 
 function lineProductId(item: LineItem): string {
   return item.productId ?? products.find(p => p.name === item.product && p.code === item.sku)?.id ?? ''
 }
+/** Document subtotal before discounts (subtotal-tier rules). */
+function docSubtotal(): number { return items.value.reduce((s, it) => s + it.qty * it.unitPrice, 0) }
+function isLocked(item: LineItem): boolean { return !!item.ruleMatch && !item.ruleMatch.editable }
 function applyRule(item: LineItem) {
-  const match = vendorId.value ? resolvePurchaseRule(vendorId.value, lineProductId(item), item.unitPrice, txDateIso.value, warehouse.value) : null
+  const base = item.ruleBase ?? item.unitPrice
+  const match = vendorId.value
+    ? resolvePurchaseRule({
+        vendorIdOrName: vendorId.value, productId: lineProductId(item), baseCost: base,
+        qty: item.qty, docSubtotal: docSubtotal(), isoDate: txDateIso.value, pick: priceRulePick.value,
+      })
+    : null
   const hadRule = !!item.ruleMatch
   item.ruleMatch = match
+  if (match && !match.editable) item.discountManual = false
   if (item.discountManual) return
-  if (match) item.discountPct = match.discountPct
-  else if (hadRule) item.discountPct = 0
+  if (match) { item.ruleBase = base; item.unitPrice = match.unitCost; item.discountPct = match.discountPct }
+  else if (hadRule) {
+    if (item.ruleBase != null) item.unitPrice = item.ruleBase
+    item.ruleBase = undefined
+    item.discountPct = 0
+  }
 }
-// Non-PKP vendor → PPN lines switch to no tax; back to PKP/unknown restores
-// only the lines this form cleared (a user tax pick clears the marker).
+/** Qty / unit cost / line set changed → re-run the lines a rule already prices
+ *  (tier and subtotal-tier rules move with qty and the document subtotal). */
+function reapplyRuledLines() {
+  for (const it of items.value) if (it.ruleMatch && !it.discountManual) applyRule(it)
+}
+// Non-PKP vendor → PPN lines switch to no tax (PPh untouched); back to PKP
+// restores only the lines this form cleared (a user tax pick clears the marker).
 function applyPkp(item: LineItem) {
   if (vendorPkpStatus(vendorId.value) === false) {
     if (isPpnTax(item.taxLabel)) { item.taxClearedFrom = item.taxLabel; item.taxLabel = NO_TAX_LABEL }
@@ -165,15 +199,29 @@ function applyPkp(item: LineItem) {
   }
 }
 function onDiscountInput(item: LineItem, v: unknown) {
+  if (isLocked(item)) return
   const n = Number(v)
   if (n === item.discountPct) return
   item.discountPct = n
   item.discountManual = !item.ruleMatch || n !== item.ruleMatch.discountPct
 }
+function onQtyInput(item: LineItem, v: unknown) {
+  item.qty = Number(v)
+  item.qtyError = false
+  reapplyRuledLines()
+}
 function onUnitPriceInput(item: LineItem, v: unknown) {
-  item.unitPrice = Number(v)
-  // A value (Rp/unit) rule converts against the unit cost — keep the % in sync.
-  if (item.ruleMatch) applyRule(item)
+  if (isLocked(item)) return
+  const n = Number(v)
+  item.unitPrice = n
+  const m = item.ruleMatch
+  if (m && !item.discountManual) {
+    // A rule that sets the unit cost (last price / markup): typing over it is a
+    // manual edit. A discount rule: the typed cost is the new rule base.
+    if (item.ruleBase != null && m.unitCost !== item.ruleBase) item.discountManual = n !== m.unitCost
+    else item.ruleBase = n
+  }
+  reapplyRuledLines()
 }
 function onTaxPick(item: LineItem, v: unknown) {
   item.taxLabel = String(v ?? '')
@@ -183,15 +231,16 @@ function resetRule(item: LineItem) {
   item.discountManual = false
   applyRule(item)
 }
+/** Vendor pick resets the Price rule field to Automatic and re-prices every line. */
 function onVendorPick(id: unknown) {
   onVendorChange(id)
+  priceRulePick.value = 'auto'
   for (const it of items.value) { applyPkp(it); applyRule(it) }
 }
-/** Warehouse = outlet: a user pick re-resolves every line like a vendor pick
- *  (manual discounts stay); prefill sets the ref directly and never re-prices. */
-function onWarehousePick(v: unknown) {
-  warehouse.value = String(v ?? '')
-  for (const it of items.value) applyRule(it)
+/** Price rule pick → re-apply to every line not edited by hand. */
+function onPriceRulePick(v: string) {
+  priceRulePick.value = (v || 'auto') as PriceRulePick
+  for (const it of items.value) if (!it.discountManual) applyRule(it)
 }
 
 function productMatches(query: string) {
@@ -211,8 +260,10 @@ function selectProduct(item: LineItem, p: typeof products[number]) {
   item.productId = p.id
   item.productError = false
   item.discountManual = false
+  item.ruleBase = undefined
   applyPkp(item)
   applyRule(item)
+  reapplyRuledLines()
   openProductRow.value = null
 }
 
@@ -236,6 +287,7 @@ function selectNewProduct(p: typeof products[number]) {
   const added = items.value[items.value.length - 1]!
   applyPkp(added)
   applyRule(added)
+  reapplyRuledLines()
   newRowSearch.value = ''
   openProductRow.value = null
 }
@@ -530,6 +582,16 @@ onMounted(() => {
           </div>
         </MpFormControl>
 
+        <MpFormControl id="f-price-rule" class="si-field" data-devchange="purchase-price-rule-pick">
+          <MpFormLabel>{{ t('Price rule') }}</MpFormLabel>
+          <ErpFilterSelect
+            id="f-price-rule-inp" :model-value="priceRulePick" :options="priceRuleOptions"
+            :placeholder="t('Automatic')" width="100%" :is-clearable="false"
+            @update:model-value="onPriceRulePick"
+          />
+          <p class="si-field-caption">{{ t('Automatic picks the best rule per line. Pick a rule to use it on every line it covers.') }}</p>
+        </MpFormControl>
+
         <MpFormControl id="f-email" class="si-field">
           <MpFormLabel>{{ t('Email') }}</MpFormLabel>
           <MpInputTag id="f-email-inp" :data="emailTags" :placeholder="t('Enter email and press Enter')" @change="onEmailChange" />
@@ -617,7 +679,7 @@ onMounted(() => {
 
           <MpFormControl id="f-warehouse" class="si-field">
             <MpFormLabel>{{ t('Warehouse') }}</MpFormLabel>
-            <MpAutocomplete id="f-warehouse-inp" :model-value="warehouse" :data="WAREHOUSES" :placeholder="t('Select warehouse')" use-portal is-clearable is-full-width @update:model-value="onWarehousePick" />
+            <MpAutocomplete id="f-warehouse-inp" v-model="warehouse" :data="WAREHOUSES" :placeholder="t('Select warehouse')" use-portal is-clearable is-full-width />
           </MpFormControl>
         </div>
 
@@ -735,10 +797,10 @@ onMounted(() => {
                   >
                     <MpInput type="number" :model-value="item.qty" is-full-width
                       :is-invalid="item.qtyError"
-                      @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                      @update:model-value="(v) => onQtyInput(item, v)" />
                   </MpTooltip>
                   <MpInput v-else type="number" :model-value="item.qty" is-full-width
-                    @update:model-value="(v) => { item.qty = Number(v); item.qtyError = false }" />
+                    @update:model-value="(v) => onQtyInput(item, v)" />
                 </td>
 
                 <td class="si-td si-td--input si-td--border">
@@ -750,19 +812,19 @@ onMounted(() => {
                 <td class="si-td si-td--input si-td--border si-td--affix">
                   <div class="si-affix-cell">
                     <span class="si-affix">Rp</span>
-                    <MpInput type="number" :model-value="item.unitPrice" is-full-width class="si-affix-input"
+                    <MpInput type="number" :model-value="item.unitPrice" :is-read-only="isLocked(item)" is-full-width class="si-affix-input"
                       @update:model-value="(v) => onUnitPriceInput(item, v)" />
                   </div>
                 </td>
 
                 <td class="si-td si-td--input si-td--border si-td--affix si-td--rule">
                   <div class="si-affix-cell">
-                    <MpInput type="number" :model-value="item.discountPct" is-full-width class="si-affix-input"
+                    <MpInput type="number" :model-value="item.discountPct" :is-read-only="isLocked(item)" is-full-width class="si-affix-input"
                       @update:model-value="(v) => onDiscountInput(item, v)" />
                     <span class="si-affix">%</span>
                   </div>
                   <div class="si-line-note">
-                    <ErpPurchaseRuleNote :match="item.ruleMatch ?? null" :is-edited="!!item.discountManual && !!item.ruleMatch" @reset="resetRule(item)" />
+                    <ErpPurchaseRuleNote :match="item.ruleMatch ?? null" :is-edited="!!item.discountManual && !!item.ruleMatch" :locked="isLocked(item)" @reset="resetRule(item)" />
                   </div>
                 </td>
 

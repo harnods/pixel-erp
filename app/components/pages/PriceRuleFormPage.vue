@@ -8,17 +8,22 @@
  * three sections — Rule info · Contacts · Products — each picker opening a
  * two-pane "Select …" drawer (PriceRuleSelectDrawer), sticky Cancel / Save footer.
  *
- * Purchase Price Rule additions: a rule is Sales (customers) or Purchase
- * (vendors). Products are stored by id; the Categories / Contact groups tabs are
- * only shortcuts that add their members (never re-resolved later). Purchase rules
- * carry the vendor's PKP status: checked = PKP (product PPN applies), unchecked =
- * Non-PKP (PPN not applied, PPh untouched). A vendor must keep the same PKP status
- * on every rule — saving is blocked inline while `purchasePkpConflict` finds a
- * clash. Rule changes only affect new transactions.
+ * Purchase Price Rule v4 (DECIDED 17 Nov): a rule is Sales (customers) or
+ * Purchase (vendors) and the two are IDENTICAL — all 7 rule types, active period,
+ * tier tables, contact groups, products/categories. Only Customers vs Vendors
+ * differs. Products are stored by id; the Categories / Contact groups tabs are
+ * only shortcuts that add their members (never re-resolved later).
  *
- * Outlets (purchase only): a company can run several outlets that buy at
- * different prices; outlet = the transaction's warehouse. Empty = every outlet;
- * an outlet-specific rule beats an all-outlet rule (resolvePurchaseRule).
+ * Tier types keep a step table (max 5): 'tier' thresholds are a quantity,
+ * 'subtotal_tier' thresholds a document subtotal (Rp). Thresholds must rise
+ * step by step; discounts are 0–100%.
+ *
+ * "Allow changes on transaction" (allowOverride, default on): off → the price
+ * and discount this rule sets are read-only on the transaction line.
+ *
+ * No Outlets section and no PKP here: an outlet's deal is its own named rule,
+ * picked in the transaction's Price rule field; PKP lives on the vendor master
+ * (Contacts › Vendors). Rule changes only affect new transactions.
  */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import {
@@ -34,10 +39,8 @@ import { customers } from '~/data/customers'
 import { products } from '~/data/products'
 import { contacts } from '~/data/contacts'
 import { contactGroups } from '~/data/contactGroups'
-import { WAREHOUSES } from '~/data/purchaseOrderDetails'
 import {
   priceRuleById, createPriceRule, updatePriceRule, emptyPriceRuleInput,
-  purchasePkpConflict, vendorPkpStatus,
   PRICE_RULE_TRANSACTION_TYPES, PRICE_RULE_TRANSACTION_TYPE_LABEL,
   PRICE_RULE_TYPE_LABEL, PRICE_RULE_TYPES_BY_TRANSACTION, PRICE_RULE_MARKUP_TYPES,
   type PriceRuleInput, type PriceRuleTransactionType, type PriceRuleType,
@@ -76,8 +79,8 @@ const initial: PriceRuleInput = editing.value
       amount: editing.value.amount,
       productIds: [...editing.value.productIds],
       contactIds: [...editing.value.contactIds],
-      vendorPkp: editing.value.vendorPkp,
-      warehouses: [...(editing.value.warehouses ?? [])],
+      tiers: editing.value.tiers.map(x => ({ ...x })),
+      allowOverride: editing.value.allowOverride,
       startDate: editing.value.startDate,
       endDate: editing.value.endDate,
       status: editing.value.status,
@@ -90,10 +93,12 @@ const ruleType = ref<PriceRuleType>(initial.ruleType)
 const amount = ref(initial.amount ? String(initial.amount) : '')
 const contactIds = ref<string[]>([...initial.contactIds])
 const productIds = ref<string[]>([...initial.productIds])
-/** Purchase only — outlet warehouse names; [] = every outlet. */
-const warehouseIds = ref<string[]>([...(initial.warehouses ?? [])])
-/** UI state of the PKP checkbox; saved as null when no vendor is picked. */
-const pkpChecked = ref(initial.vendorPkp ?? true)
+/** Tier steps as typed (strings so an empty cell stays empty). */
+interface TierRow { key: number; threshold: string; discount: string }
+let tierKey = 0
+const tiers = ref<TierRow[]>(initial.tiers.map(x => ({ key: ++tierKey, threshold: String(x.threshold), discount: String(x.discount) })))
+/** "Allow changes on transaction" — default on. */
+const allowOverride = ref(initial.allowOverride)
 /** Active period — optional here (prototype rules are open-ended); null = always. */
 const period = ref<Date[] | null>(
   initial.startDate || initial.endDate
@@ -104,32 +109,87 @@ const isActive = ref(initial.status === 'active')
 
 const nameError = ref('')
 const amountError = ref('')
-const pkpError = ref('')
+/** Per-cell tier errors (key → field) + one table-level message. */
+const tierCellErrors = ref<Record<string, true>>({})
+const tierError = ref('')
 const typeSwitchNote = ref(false)
 
 // ── Options ──────────────────────────────────────────────────────────────────────
 const isPurchase = computed(() => transactionType.value === 'purchase')
 const transactionTypeOptions = PRICE_RULE_TRANSACTION_TYPES.map(v => ({ value: v, label: t(PRICE_RULE_TRANSACTION_TYPE_LABEL[v]) }))
 /** Production order; the two markups sit under a "MARKUP" group heading. */
+/** Purchase reads "Subtotal discount" (the production label says "Sales"). */
+function ruleTypeLabel(v: PriceRuleType): string {
+  return isPurchase.value && v === 'subtotal_tier' ? t('Subtotal discount') : t(PRICE_RULE_TYPE_LABEL[v])
+}
 const ruleTypeOptions = computed(() =>
   PRICE_RULE_TYPES_BY_TRANSACTION[transactionType.value].map(v => ({
     value: v,
-    label: t(PRICE_RULE_TYPE_LABEL[v]),
+    label: ruleTypeLabel(v),
     ...(PRICE_RULE_MARKUP_TYPES.includes(v) ? { group: t('MARKUP') } : {}),
   })),
 )
 const isMarkup = computed(() => PRICE_RULE_MARKUP_TYPES.includes(ruleType.value))
-/** Price amount types are Rp per unit; every other type is a %. */
-const isAmountType = computed(() => ruleType.value === 'value' || ruleType.value === 'markup_value')
-/** Sales-only tier shapes — production has tier tables; the prototype doesn't model them. */
-const isTierType = computed(() => ['tier', 'subtotal_tier', 'end_discount'].includes(ruleType.value))
+/** Price amount types (and the last price) are Rp per unit; the rest are %. */
+const isAmountType = computed(() => ['value', 'markup_value', 'end_discount'].includes(ruleType.value))
+/** Step-table types: no single amount, a tier table instead. */
+const isTierType = computed(() => ruleType.value === 'tier' || ruleType.value === 'subtotal_tier')
+const isSubtotalTier = computed(() => ruleType.value === 'subtotal_tier')
+const TIER_MAX = 5
+const amountLabel = computed(() => {
+  if (isMarkup.value) return t('Markup')
+  if (ruleType.value === 'end_discount') return t('Last price')
+  return t('Discount')
+})
+
+// ── Tier table ────────────────────────────────────────────────────────────────
+function addTier() {
+  if (tiers.value.length >= TIER_MAX) return
+  tiers.value.push({ key: ++tierKey, threshold: '', discount: '' })
+  tierError.value = ''
+}
+function removeTier(key: number) {
+  tiers.value = tiers.value.filter(x => x.key !== key)
+  tierCellErrors.value = {}
+  tierError.value = ''
+}
+function clearTierCell(key: number, field: 'threshold' | 'discount') {
+  const next = { ...tierCellErrors.value }
+  delete next[`${key}-${field}`]
+  tierCellErrors.value = next
+  if (!Object.keys(next).length) tierError.value = ''
+}
+/** Inline tier validation: ≥ 1 step, thresholds > 0 and rising, discount 0–100. */
+function validateTiers(): boolean {
+  const cells: Record<string, true> = {}
+  const msgs: string[] = []
+  if (!tiers.value.length) { tierCellErrors.value = {}; tierError.value = t('Add at least one tier'); return false }
+  let prev = -Infinity
+  for (const row of tiers.value) {
+    const th = Number(row.threshold)
+    if (row.threshold === '' || !Number.isFinite(th) || th <= 0) {
+      cells[`${row.key}-threshold`] = true
+      msgs.push(isSubtotalTier.value ? t('Enter a minimum subtotal above 0') : t('Enter a minimum quantity above 0'))
+    } else if (th <= prev) {
+      cells[`${row.key}-threshold`] = true
+      msgs.push(t('Each tier\'s minimum must be higher than the tier above it'))
+    }
+    if (Number.isFinite(th) && row.threshold !== '') prev = Math.max(prev, th)
+    const d = Number(row.discount)
+    if (row.discount === '' || !Number.isFinite(d) || d < 0 || d > 100) {
+      cells[`${row.key}-discount`] = true
+      msgs.push(t('Discount must be between 0 and 100'))
+    }
+  }
+  tierCellErrors.value = cells
+  tierError.value = msgs[0] ?? ''
+  return !msgs.length
+}
 
 // Contacts (customers / vendors) and products as drawer options.
 const contactOptions = computed<PriceRulePickOption[]>(() =>
   (isPurchase.value ? vendors : customers).map(c => ({ id: c.id, name: c.name })),
 )
-/** Outlets = warehouses; the warehouse name doubles as the id (rules store names). */
-const outletOptions: PriceRulePickOption[] = WAREHOUSES.map(w => ({ id: w, name: w }))
 const productOptions: PriceRulePickOption[] = products.map(p => ({ id: p.id, name: p.name, subtitle: p.code }))
 
 /** Customer contact groups → member customers. The contact master (CT…) and the
@@ -145,6 +205,22 @@ const customerGroupOptions = computed<PriceRulePickGroup[]>(() =>
       )
       const memberIds = customers.filter(c => names.has(c.name.trim().toLowerCase())).map(c => c.id)
       return { id: g.id, name: g.name, subtitle: `${memberIds.length} ${memberIds.length === 1 ? t('customer') : t('customers')}`, memberIds }
+    }),
+)
+/** Vendor contact groups → member vendors, joined on the display name the same
+ *  way (contact master CT… vs vendors FK table V…). Seeded vendor groups have no
+ *  members yet, so the tab shows its empty state until a vendor joins one. */
+const vendorGroupOptions = computed<PriceRulePickGroup[]>(() =>
+  contactGroups
+    .filter(g => g.type === 'vendor')
+    .map((g) => {
+      const names = new Set(
+        contacts
+          .filter(c => c.types.includes('vendor') && c.groups.includes(g.name))
+          .flatMap(c => [c.displayName.trim().toLowerCase(), c.companyName.trim().toLowerCase()]),
+      )
+      const memberIds = vendors.filter(v => names.has(v.name.trim().toLowerCase())).map(v => v.id)
+      return { id: g.id, name: g.name, subtitle: `${memberIds.length} ${memberIds.length === 1 ? t('vendor') : t('vendors')}`, memberIds }
     }),
 )
 const categoryOptions: PriceRulePickGroup[] = [...new Set(products.map(p => p.category))].sort().map((cat) => {
@@ -164,24 +240,11 @@ const pickedProducts = computed(() =>
 // ── Drawers ──────────────────────────────────────────────────────────────────────
 const contactDrawerOpen = ref(false)
 const productDrawerOpen = ref(false)
-const outletDrawerOpen = ref(false)
 
-function onContactsSave(ids: string[]) {
-  const hadNone = contactIds.value.length === 0
-  contactIds.value = ids
-  pkpError.value = ''
-  // Prefill PKP from the vendor's existing rules so the first pick doesn't clash.
-  if (isPurchase.value && ids.length) {
-    const known = vendorPkpStatus(ids[0]!) ?? ids.map(id => vendorPkpStatus(id)).find(v => v !== null) ?? null
-    if (known !== null) pkpChecked.value = known
-    else if (hadNone) pkpChecked.value = true
-  }
-}
-function removeContact(id: string) { contactIds.value = contactIds.value.filter(x => x !== id); pkpError.value = '' }
+function onContactsSave(ids: string[]) { contactIds.value = ids }
+function removeContact(id: string) { contactIds.value = contactIds.value.filter(x => x !== id) }
 function onProductsSave(ids: string[]) { productIds.value = ids }
 function removeProduct(id: string) { productIds.value = productIds.value.filter(x => x !== id) }
-function onOutletsSave(ids: string[]) { warehouseIds.value = ids }
-function removeOutlet(id: string) { warehouseIds.value = warehouseIds.value.filter(x => x !== id) }
 
 function onTransactionTypeChange(v: string) {
   const next = (v || 'sales') as PriceRuleTransactionType
@@ -189,11 +252,18 @@ function onTransactionTypeChange(v: string) {
   transactionType.value = next
   contactIds.value = []
   productIds.value = []
-  warehouseIds.value = []
-  pkpError.value = ''
-  pkpChecked.value = true
   if (!PRICE_RULE_TYPES_BY_TRANSACTION[next].includes(ruleType.value)) ruleType.value = PRICE_RULE_TYPES_BY_TRANSACTION[next][0]!
   typeSwitchNote.value = true
+}
+
+function onRuleTypeChange(v: string) {
+  if (!v) return
+  ruleType.value = v as PriceRuleType
+  amountError.value = ''
+  tierError.value = ''
+  tierCellErrors.value = {}
+  // A tier type starts with one empty step so the table is never blank.
+  if (isTierType.value && !tiers.value.length) addTier()
 }
 
 // ── Copy that changes with the transaction type ──────────────────────────────────
@@ -227,7 +297,7 @@ const contactCopy = computed(() => isPurchase.value
 
 // ── Unsaved changes guard ──────────────────────────────────────────────────────
 function snapshot(): string {
-  return JSON.stringify([name.value, transactionType.value, ruleType.value, amount.value, contactIds.value, productIds.value, warehouseIds.value, pkpChecked.value, period.value?.map(dateToIso) ?? null, isActive.value])
+  return JSON.stringify([name.value, transactionType.value, ruleType.value, amount.value, contactIds.value, productIds.value, tiers.value.map(x => [x.threshold, x.discount]), allowOverride.value, period.value?.map(dateToIso) ?? null, isActive.value])
 }
 const initialSnapshot = snapshot()
 const { disableGuard } = useUnsavedChangesGuard({ hasUnsavedChanges: () => !notFound.value && snapshot() !== initialSnapshot })
@@ -239,24 +309,13 @@ const isSaving = ref(false)
 async function handleSave() {
   nameError.value = ''
   amountError.value = ''
-  pkpError.value = ''
   let valid = true
   if (!name.value.trim()) { nameError.value = t('You must fill in rule name'); valid = false }
-  const n = Number(amount.value)
-  if (!amount.value || !Number.isFinite(n) || n <= 0) { amountError.value = t('You must fill in an amount above 0'); valid = false }
+  const n = isTierType.value ? 0 : Number(amount.value)
+  if (isTierType.value) {
+    if (!validateTiers()) valid = false
+  } else if (!amount.value || !Number.isFinite(n) || n <= 0) { amountError.value = t('You must fill in an amount above 0'); valid = false }
   else if (!isAmountType.value && !isMarkup.value && n > 100) { amountError.value = t('Percentage cannot be more than 100'); valid = false }
-  const pkp = isPurchase.value && contactIds.value.length > 0 ? pkpChecked.value : null
-  if (pkp !== null) {
-    const clash = purchasePkpConflict(contactIds.value, pkp, editing.value?.id)
-    if (clash) {
-      // One template so the ID translation can reorder; replacements after t().
-      pkpError.value = t('{vendor} is {status} on “{rule}”. Use the same PKP status on every rule for this vendor')
-        .replace('{vendor}', clash.vendorName)
-        .replace('{status}', clash.rule.vendorPkp ? t('PKP') : t('Non-PKP'))
-        .replace('{rule}', clash.rule.name)
-      valid = false
-    }
-  }
   if (!valid) { scrollToFirstError(); return }
 
   isSaving.value = true
@@ -268,8 +327,8 @@ async function handleSave() {
     amount: n,
     productIds: productIds.value,
     contactIds: contactIds.value,
-    vendorPkp: pkp,
-    warehouses: isPurchase.value ? [...warehouseIds.value] : [],
+    tiers: isTierType.value ? tiers.value.map(x => ({ threshold: Number(x.threshold), discount: Number(x.discount) })) : [],
+    allowOverride: allowOverride.value,
     startDate: dateToIso(period.value?.[0]),
     endDate: dateToIso(period.value?.[1]),
     status: isActive.value ? 'active' : 'inactive',
@@ -350,7 +409,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
               />
               <p class="prf-caption">
                 {{ typeSwitchNote
-                  ? t('Customers, vendors, outlets and products were cleared because the transaction type changed.')
+                  ? t('Customers, vendors and products were cleared because the transaction type changed.')
                   : t('Sales rules apply to customers. Purchase rules apply to vendors.') }}
               </p>
             </MpFormControl>
@@ -387,14 +446,13 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 :options="ruleTypeOptions"
                 :is-clearable="false"
                 width="100%"
-                @update:model-value="(v: string) => { if (v) { ruleType = v as PriceRuleType; amountError = '' } }"
+                @update:model-value="onRuleTypeChange"
               />
-              <p v-if="isTierType" class="prf-caption">{{ t('Tier setup isn\'t part of this prototype.') }}</p>
             </MpFormControl>
 
-            <!-- Discount / markup amount -->
-            <MpFormControl id="prf-amount" class="prf-half" is-required :is-invalid="!!amountError">
-              <MpFormLabel>{{ isMarkup ? t('Markup') : t('Discount') }}</MpFormLabel>
+            <!-- Discount / markup amount (single-value types) -->
+            <MpFormControl v-if="!isTierType" id="prf-amount" class="prf-half" is-required :is-invalid="!!amountError">
+              <MpFormLabel>{{ amountLabel }}</MpFormLabel>
               <MpInputGroup id="prf-amount-group" is-full-width>
                 <MpInputLeftAddon v-if="isAmountType" has-background>Rp</MpInputLeftAddon>
                 <MpInput
@@ -405,6 +463,71 @@ onUnmounted(() => { stageObserver?.disconnect() })
               </MpInputGroup>
               <MpFormErrorMessage>{{ amountError }}</MpFormErrorMessage>
             </MpFormControl>
+
+            <!-- Tier table (tier = quantity steps, subtotal_tier = subtotal steps; docs/patterns/FormTable.md) -->
+            <div v-if="isTierType" id="prf-tiers" class="prf-full" data-devchange="price-rule-tier-table">
+              <div class="prf-tier-head">
+                <span class="prf-tier-title">{{ t('Tiers') }}<span class="prf-required">*</span></span>
+                <span class="prf-caption">{{ isSubtotalTier ? t('The discount applies when the transaction subtotal reaches the minimum.') : t('The discount applies when the line quantity reaches the minimum.') }}</span>
+              </div>
+              <table class="prf-tier-table">
+                <colgroup><col><col><col class="prf-tier-col-act"></colgroup>
+                <thead>
+                  <tr>
+                    <th class="prf-tier-th">{{ isSubtotalTier ? t('Minimum subtotal') : t('Minimum quantity') }}</th>
+                    <th class="prf-tier-th prf-tier-th--num">{{ t('Discount') }}</th>
+                    <th class="prf-tier-th" />
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, i) in tiers" :key="row.key">
+                    <td class="prf-tier-td prf-tier-td--input" :class="{ 'prf-tier-td--error': tierCellErrors[`${row.key}-threshold`] }">
+                      <MpInputGroup :id="`prf-tier-${i}-threshold-group`" is-full-width>
+                        <MpInputLeftAddon v-if="isSubtotalTier">Rp</MpInputLeftAddon>
+                        <MpInput
+                          :id="`prf-tier-${i}-threshold`" v-model="row.threshold" type="number" is-full-width
+                          :aria-label="isSubtotalTier ? t('Minimum subtotal') : t('Minimum quantity')"
+                          @update:model-value="clearTierCell(row.key, 'threshold')"
+                        />
+                      </MpInputGroup>
+                    </td>
+                    <td class="prf-tier-td prf-tier-td--input" :class="{ 'prf-tier-td--error': tierCellErrors[`${row.key}-discount`] }">
+                      <MpInputGroup :id="`prf-tier-${i}-discount-group`" is-full-width>
+                        <MpInput
+                          :id="`prf-tier-${i}-discount`" v-model="row.discount" type="number" is-full-width class="prf-tier-num"
+                          :aria-label="t('Discount')"
+                          @update:model-value="clearTierCell(row.key, 'discount')"
+                        />
+                        <MpInputRightAddon>%</MpInputRightAddon>
+                      </MpInputGroup>
+                    </td>
+                    <td class="prf-tier-td prf-tier-td--act">
+                      <MpTooltip :id="`prf-rm-tier-${i}`" :label="t('Remove')" placement="top" use-portal>
+                        <MpButton class="prf-remove" variant="ghost" type="button" :aria-label="t('Remove')" @click="removeTier(row.key)"><MpIcon name="minus-circular" size="sm" /></MpButton>
+                      </MpTooltip>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="tierError" class="prf-tier-error" role="alert">{{ tierError }}</p>
+              <div class="prf-tier-foot">
+                <MpButton id="prf-add-tier" variant="secondary" is-rounded left-icon="add" :is-disabled="tiers.length >= TIER_MAX" @click="addTier">{{ t('Add tier') }}</MpButton>
+                <span class="prf-caption">{{ t('Up to 5 tiers.') }}</span>
+              </div>
+            </div>
+
+            <!-- Allow changes on transaction (rule/checkbox-multiline-top) -->
+            <div class="prf-full prf-checkbox" data-devchange="price-rule-allow-changes">
+              <MpCheckbox
+                id="prf-allow-override"
+                :is-checked="allowOverride" @update:is-checked="(v: boolean) => (allowOverride = v)"
+              >
+                <span class="prf-check-label">
+                  <span class="prf-check-title">{{ t('Allow changes on transaction') }}</span>
+                  <span class="prf-check-caption">{{ t('When off, the price and discount this rule sets can\'t be edited on the transaction.') }}</span>
+                </span>
+              </MpCheckbox>
+            </div>
 
             <!-- Status (rule/form-toggle-inline) -->
             <div class="prf-full prf-toggle-row">
@@ -452,60 +575,6 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </table>
           </div>
 
-          <!-- PKP vendor (purchase only) -->
-          <MpFormControl
-            v-if="isPurchase" id="prf-pkp" class="prf-pkp"
-            :is-invalid="!!pkpError" data-devchange="purchase-price-rule-pkp"
-          >
-            <MpCheckbox
-              id="prf-pkp-check"
-              class="prf-checkbox"
-              :is-checked="contactIds.length > 0 ? pkpChecked : true"
-              :is-disabled="contactIds.length === 0"
-              @update:is-checked="(v: boolean) => { pkpChecked = v; pkpError = '' }"
-            >
-              <span class="prf-check-label">
-                <span class="prf-check-title">{{ t('PKP vendor') }}</span>
-                <span class="prf-check-caption">{{ t('Checked: the product\'s PPN applies. Unchecked: Non-PKP, PPN is not applied and PPh still applies.') }}</span>
-                <span v-if="contactIds.length === 0" class="prf-check-caption">{{ t('Select at least one vendor to set PKP status.') }}</span>
-              </span>
-            </MpCheckbox>
-            <MpFormErrorMessage>{{ pkpError }}</MpFormErrorMessage>
-          </MpFormControl>
-        </section>
-
-        <!-- ═══ Outlets (purchase only; outlet = the transaction's warehouse) ═══ -->
-        <section v-if="isPurchase" id="prf-outlets" class="prf-section" data-devchange="purchase-price-rule-outlets">
-          <header class="prf-section-head">
-            <h2 class="prf-section-title">{{ t('Outlets') }}</h2>
-            <p class="prf-section-caption">{{ t('Select the outlet warehouses this pricing applies to. Leave empty to apply to every outlet. A rule for a specific outlet takes priority over an all-outlet rule.') }}</p>
-          </header>
-
-          <div v-if="!warehouseIds.length" class="prf-empty">
-            <img src="/illustrations/empty-folder.png" alt="" class="prf-empty-img" width="140" height="120" />
-            <p class="prf-empty-title">{{ t('No outlets') }}</p>
-            <p class="prf-empty-caption">{{ t('Outlets will appear here. Leave empty to apply the rule to all outlets.') }}</p>
-            <MpButton id="prf-add-outlets" class="prf-empty-cta" variant="secondary" is-rounded left-icon="add" @click="outletDrawerOpen = true">{{ t('Add outlets') }}</MpButton>
-          </div>
-          <div v-else class="prf-picked">
-            <div class="prf-picked-head">
-              <span class="prf-picked-count">{{ warehouseIds.length }} {{ t('selected') }}</span>
-              <MpButton id="prf-add-outlets" variant="secondary" is-rounded left-icon="add" @click="outletDrawerOpen = true">{{ t('Add outlets') }}</MpButton>
-            </div>
-            <table class="prf-table">
-              <thead><tr><th>{{ t('Outlet warehouse') }}</th><th class="prf-table-act" /></tr></thead>
-              <tbody>
-                <tr v-for="(w, i) in warehouseIds" :key="w">
-                  <td>{{ w }}</td>
-                  <td class="prf-table-act">
-                    <MpTooltip :id="`prf-rm-outlet-${i}`" :label="t('Remove')" placement="top" use-portal>
-                      <MpButton class="prf-remove" variant="ghost" type="button" :aria-label="t('Remove')" @click="removeOutlet(w)"><MpIcon name="minus-circular" size="sm" /></MpButton>
-                    </MpTooltip>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </section>
 
         <!-- ═══ Products ═══ -->
@@ -568,24 +637,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :selected-title="contactCopy.selectedTitle"
       :empty-title="contactCopy.drawerEmptyTitle"
       :empty-caption="contactCopy.drawerEmptyCaption"
-      :group-tab-label="isPurchase ? undefined : t('Contact groups')"
-      :groups="isPurchase ? undefined : customerGroupOptions"
+      :group-tab-label="t('Contact groups')"
+      :groups="isPurchase ? vendorGroupOptions : customerGroupOptions"
       :groups-empty-title="t('No contact groups')"
-      :groups-empty-caption="t('Customer groups with members will appear here.')"
+      :groups-empty-caption="isPurchase ? t('Vendor groups with members will appear here.') : t('Customer groups with members will appear here.')"
       @save="onContactsSave"
-    />
-    <PriceRuleSelectDrawer
-      v-if="!notFound && isPurchase"
-      id="prf-outlets-drawer"
-      v-model:open="outletDrawerOpen"
-      :title="t('Select outlets')"
-      :list-title="t('Outlets')"
-      :options="outletOptions"
-      :model-value="warehouseIds"
-      :selected-title="t('Selected outlets')"
-      :empty-title="t('No selected outlets')"
-      :empty-caption="t('Selected outlets will appear here.')"
-      @save="onOutletsSave"
     />
     <PriceRuleSelectDrawer
       v-if="!notFound"
@@ -660,10 +716,34 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .prf-cell-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #626b79); }
 .prf-remove { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-height: 0; padding: 0; border: none; background: none; border-radius: var(--mp-radii-full, 999px); color: var(--mp-colors-text-secondary, #626b79); }
 
-/* ── PKP vendor ── */
-.prf-pkp { margin-top: var(--mp-spacing-5); max-width: 558px; }
+/* ── Tier table (docs/patterns/FormTable.md: native table, internal column
+      borders, borderless inputs, cell owns focus/error ring via ::after) ── */
+.prf-tier-head { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); margin-bottom: var(--mp-spacing-2); }
+.prf-tier-title { font-size: var(--mp-font-sizes-md); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-default, #232933); }
+.prf-required { margin-left: var(--mp-spacing-0\.5); color: var(--mp-colors-text-danger, #da473f); }
+.prf-tier-table { width: 100%; border-collapse: collapse; table-layout: fixed; border-top: 1px solid var(--mp-colors-border-default, #e3e7e9); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.prf-tier-col-act { width: 48px; }
+.prf-tier-th { text-align: left; padding: var(--mp-spacing-2) var(--mp-spacing-3); font-size: var(--mp-font-sizes-sm); font-weight: var(--mp-font-weights-semi-bold); color: var(--mp-colors-text-secondary, #626b79); background: var(--mp-background-neutral-subtle, #f8f9f9); border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.prf-tier-th--num { text-align: right; }
+.prf-tier-td { border-bottom: 1px solid var(--mp-colors-border-default, #e3e7e9); border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); }
+.prf-tier-th:last-child, .prf-tier-td:last-child { border-right: none; }
+.prf-tier-td--input { padding: 0; position: relative; background: var(--mp-background-neutral, #ffffff); }
+.prf-tier-td--input:focus-within::after { content: ''; position: absolute; inset: 0; border: 1px solid var(--mp-colors-border-bold, #8f97a3); z-index: 2; pointer-events: none; }
+.prf-tier-td--input :deep([class*='input']) { border-color: transparent; border-radius: 0; box-shadow: none !important; background: transparent; } /* zeroing Pixel's own input shadow, not adding one — pixel-police-allow-shadow */
+.prf-tier-td--input :deep(input) { height: var(--mp-sizes-10, 40px); font-variant-numeric: tabular-nums; }
+.prf-tier-num :deep(input), .prf-tier-num { text-align: right; }
+.prf-tier-td--error { background: var(--mp-background-danger-subtle, #fceeed); }
+.prf-tier-td--error::after { content: ''; position: absolute; inset: 0; border: 1px solid var(--mp-colors-border-danger, #e2483d); z-index: 2; pointer-events: none; }
+.prf-tier-td--error:focus-within::after { border-color: var(--mp-colors-border-danger, #e2483d); }
+.prf-tier-td--act { text-align: center; padding: 0; }
+.prf-tier-error { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-danger, #da473f); }
+.prf-tier-foot { display: flex; align-items: center; gap: var(--mp-spacing-3); margin-top: var(--mp-spacing-3); }
+.prf-tier-foot .prf-caption { margin-top: 0; }
+
+/* ── Allow changes on transaction ── */
 /* rule/checkbox-multiline-top: title + caption → box aligned to the first line. */
 .prf-checkbox :deep(.mp-checkbox__root) { align-items: flex-start; }
+.prf-checkbox :deep(.mp-checkbox__label), .prf-check-label { white-space: normal; }
 .prf-check-label { display: flex; flex-direction: column; gap: var(--mp-spacing-0\.5); }
 .prf-check-title { font-size: var(--mp-font-sizes-md); color: var(--mp-colors-text-default, #232933); }
 .prf-check-caption { font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #626b79); }

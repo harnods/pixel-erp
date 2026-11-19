@@ -18,6 +18,9 @@ const general = reactive({
   globalDiscount: true,
   lineItemDiscount: true,
   depositDownPayment: true,
+  // Purchase Price Rule v4 — mirrors Sales settings › Use price rules. Store-only
+  // in the prototype: the purchase forms don't read it yet.
+  usePriceRules: true,
   defaultMessage: '',
 })
 
@@ -80,6 +83,7 @@ const GENERAL_TOGGLES = [
   { key: 'globalDiscount', title: t('Global discount'), desc: t('Allow a total discount on the subtotal.') },
   { key: 'lineItemDiscount', title: t('Line item discount'), desc: t('Allow discounts per specific product line.') },
   { key: 'depositDownPayment', title: t('Deposit (Down payment)'), desc: t('Allow recording initial deposits on orders.') },
+  { key: 'usePriceRules', title: t('Use price rules'), desc: t('Automatically apply pricing rules to purchase transactions.') },
 ] as const
 
 const isEditing = reactive<Record<string, boolean>>({
@@ -134,7 +138,10 @@ const PAYMENT_TERM_OPTIONS = [
           <span v-else class="ps-row-value">{{ general.defaultPaymentTerms }}</span>
         </div>
 
-        <div v-for="toggle in GENERAL_TOGGLES" :key="toggle.key" class="ps-row">
+        <div
+          v-for="toggle in GENERAL_TOGGLES" :key="toggle.key" class="ps-row"
+          :data-devchange="toggle.key === 'usePriceRules' ? 'purchase-use-price-rules' : undefined"
+        >
           <div class="ps-row-info">
             <span class="ps-row-title">{{ toggle.title }}</span>
             <span class="ps-row-desc">{{ toggle.desc }}</span>

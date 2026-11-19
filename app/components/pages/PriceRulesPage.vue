@@ -12,12 +12,13 @@
  * - The row menu has no "View details" (index-page-format): there is no detail
  *   page — the rule name opens the edit form.
  *
- * Outlets column: purchase rules may target outlet warehouses (empty = all
- * outlets); sales rules have no outlets, so their cell stays blank.
+ * v4 (DECIDED 17 Nov): no Outlets column and no PKP in the contacts summary —
+ * an outlet deal is its own named rule, PKP lives on the vendor master. A rule
+ * with "Allow changes on transaction" off shows a quiet "Locked" note.
  */
 import { computed, onMounted, ref } from 'vue'
 import {
-  MpButton, MpIcon,
+  MpButton, MpIcon, MpTooltip,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, css,
 } from '@mekari/pixel3'
 import ErpTablePage, { type TableColumn } from '~/components/patterns/ErpTablePage.vue'
@@ -45,7 +46,6 @@ const columns: TableColumn[] = [
   { key: 'name', label: t('Rule name'), kind: 'name', sortable: true, sortType: 'text' },
   { key: 'transactionType', label: t('Transaction type'), kind: 'default' },
   { key: 'contacts', label: t('Customers / vendors'), kind: 'default' },
-  { key: 'outlets', label: t('Outlets'), kind: 'default' },
   { key: 'products', label: t('Products'), kind: 'default' },
   { key: 'discount', label: t('Discount'), kind: 'amount' },
   { key: 'period', label: t('Period'), kind: 'default' },
@@ -60,26 +60,28 @@ function contactsSummary(r: PriceRule): string {
     return n === 1 ? t('1 customer') : `${n} ${t('customers')}`
   }
   if (!n) return t('All vendors')
-  const base = n === 1 ? t('1 vendor') : `${n} ${t('vendors')}`
-  if (r.vendorPkp === null) return base
-  return `${base} · ${r.vendorPkp ? t('PKP') : t('Non-PKP')}`
-}
-/** Purchase only: 'All outlets' / the outlet name / 'N outlets'. Sales → blank. */
-function outletsSummary(r: PriceRule): string {
-  if (r.transactionType !== 'purchase') return ''
-  const w = r.warehouses ?? []
-  if (!w.length) return t('All outlets')
-  return w.length === 1 ? w[0]! : `${w.length} ${t('outlets')}`
+  return n === 1 ? t('1 vendor') : `${n} ${t('vendors')}`
 }
 function productsSummary(r: PriceRule): string {
   const n = r.productIds.length
   if (!n) return t('All products')
   return n === 1 ? t('1 product') : `${n} ${t('products')}`
 }
+/** Tier types show their discount range across steps, e.g. "5–8%". */
+function tierRange(r: PriceRule): string {
+  if (!r.tiers.length) return '–'
+  const ds = r.tiers.map(x => x.discount)
+  const lo = Math.min(...ds)
+  const hi = Math.max(...ds)
+  return lo === hi ? `${lo}%` : `${lo}–${hi}%`
+}
 function discountLabel(r: PriceRule): string {
   switch (r.ruleType) {
     case 'percent': return `${r.amount}%`
     case 'value': return `${formatIDR(r.amount)} / ${t('unit')}`
+    case 'tier':
+    case 'subtotal_tier': return tierRange(r)
+    case 'end_discount': return `${formatIDR(r.amount)} / ${t('unit')}`
     case 'markup_percent': return `+${r.amount}%`
     case 'markup_value': return `+${formatIDR(r.amount)} / ${t('unit')}`
   }
@@ -96,13 +98,12 @@ interface PriceRuleRow extends Record<string, unknown> {
   name: string
   transactionType: string
   contacts: string
-  outlets: string
-  /** Outlet names, lower-cased — search target (the cell may only show a count). */
-  outletNames: string
   products: string
   discount: string
   period: string
   status: string
+  /** "Allow changes on transaction" off → price + discount read-only. */
+  locked: boolean
 }
 
 // ─── Quick filter: Transaction type ────────────────────────────────────────────
@@ -114,12 +115,11 @@ const allRows = computed<PriceRuleRow[]>(() => (scenario.value === 'empty' ? [] 
   name: r.name,
   transactionType: r.transactionType,
   contacts: contactsSummary(r),
-  outlets: outletsSummary(r),
-  outletNames: (r.warehouses ?? []).join(' ').toLowerCase(),
   products: productsSummary(r),
   discount: discountLabel(r),
   period: periodLabel(r),
   status: r.status,
+  locked: !r.allowOverride,
 })))
 const rows = computed(() => (typeFilter.value ? allRows.value.filter(r => r.transactionType === typeFilter.value) : allRows.value))
 
@@ -129,8 +129,7 @@ const {
 } = useTableState<PriceRuleRow>(rows, {
   perPage: 25,
   filterFn: (row, s) =>
-    !s || row.name.toLowerCase().includes(s) || row.contacts.toLowerCase().includes(s)
-    || row.outlets.toLowerCase().includes(s) || row.outletNames.includes(s),
+    !s || row.name.toLowerCase().includes(s) || row.contacts.toLowerCase().includes(s),
 })
 
 const hasActiveFilter = computed(() => !!search.value.trim() || !!typeFilter.value)
@@ -210,18 +209,23 @@ const asRule = (row: unknown) => row as PriceRuleRow
 
     <!-- ── Cells ── -->
     <template #cell-name="{ value, row }">
+      <span class="prl-name">
       <span
-        class="cell-link" role="button" tabindex="0"
+        class="cell-link prl-name-link" role="button" tabindex="0" :title="String(value)"
         @click.stop="openEdit(asRule(row).id)" @keydown.enter="openEdit(asRule(row).id)"
       >{{ value }}</span>
+      <MpTooltip
+        v-if="asRule(row).locked" :id="`prl-locked-${asRule(row).id}`"
+        :label="t('Price and discount from this rule can\'t be edited on the transaction.')"
+        placement="top" use-portal
+      >
+        <span class="prl-locked" data-devchange="price-rule-allow-changes">{{ t('Locked') }}</span>
+      </MpTooltip>
+      </span>
     </template>
 
     <template #cell-transactionType="{ value }">
       {{ t(PRICE_RULE_TRANSACTION_TYPE_LABEL[value as 'sales' | 'purchase']) }}
-    </template>
-
-    <template #cell-outlets="{ value }">
-      <span data-devchange="purchase-price-rule-outlets">{{ value }}</span>
     </template>
 
     <template #cell-status="{ value }">
@@ -293,6 +297,16 @@ const asRule = (row: unknown) => row as PriceRuleRow
   width: var(--mp-sizes-9\.5, 38px) !important; height: var(--mp-sizes-9\.5, 38px) !important;
   min-width: 0 !important; padding: 0 !important;
   margin-left: auto;
+}
+
+/* Long rule names truncate inside the column (no overlap with Transaction type). */
+.prl-name { display: flex; align-items: center; min-width: 0; max-width: 100%; }
+.prl-name-link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prl-name :deep(.mp-tooltip), .prl-locked { flex-shrink: 0; white-space: nowrap; }
+/* Quiet "Locked" note after the rule name (allowOverride off). */
+.prl-locked {
+  margin-left: var(--mp-spacing-2);
+  font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #626b79);
 }
 
 /* ── Empty state ── */

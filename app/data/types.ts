@@ -44,6 +44,9 @@ export interface Vendor {
   phone: string
   city: string
   payable: number
+  /** PKP status on the vendor master (Purchase Price Rule v4). Missing = PKP;
+   *  false = Non-PKP → PPN is not applied on this vendor's purchases. */
+  pkp?: boolean
 }
 
 export interface Product {
