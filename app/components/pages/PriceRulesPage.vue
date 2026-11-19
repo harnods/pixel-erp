@@ -15,6 +15,10 @@
  * v4 (DECIDED 17 Nov): no Outlets column and no PKP in the contacts summary —
  * an outlet deal is its own named rule, PKP lives on the vendor master. A rule
  * with "Allow changes on transaction" off shows a quiet "Locked" note.
+ *
+ * v5 (DECIDED 19 Nov): Products summarises the live category scope plus named
+ * products ("1 category · 3 products"); a fixed price rule reads
+ * "Price list · 3 products" in the Discount column.
  */
 import { computed, onMounted, ref } from 'vue'
 import {
@@ -62,10 +66,18 @@ function contactsSummary(r: PriceRule): string {
   if (!n) return t('All vendors')
   return n === 1 ? t('1 vendor') : `${n} ${t('vendors')}`
 }
-function productsSummary(r: PriceRule): string {
-  const n = r.productIds.length
-  if (!n) return t('All products')
+function productCount(n: number): string {
   return n === 1 ? t('1 product') : `${n} ${t('products')}`
+}
+/** Live categories + named products, e.g. "1 category · 3 products". */
+function productsSummary(r: PriceRule): string {
+  const c = r.categoryIds?.length ?? 0
+  const n = r.productIds.length
+  if (!c && !n) return t('All products')
+  const parts: string[] = []
+  if (c) parts.push(c === 1 ? t('1 category') : `${c} ${t('categories')}`)
+  if (n) parts.push(productCount(n))
+  return parts.join(' · ')
 }
 /** Tier types show their discount range across steps, e.g. "5–8%". */
 function tierRange(r: PriceRule): string {
@@ -84,6 +96,7 @@ function discountLabel(r: PriceRule): string {
     case 'end_discount': return `${formatIDR(r.amount)} / ${t('unit')}`
     case 'markup_percent': return `+${r.amount}%`
     case 'markup_value': return `+${formatIDR(r.amount)} / ${t('unit')}`
+    case 'fixed_price': return `${t('Price list')} · ${productCount(r.productIds.length)}`
   }
 }
 function periodLabel(r: PriceRule): string {
@@ -104,6 +117,10 @@ interface PriceRuleRow extends Record<string, unknown> {
   status: string
   /** "Allow changes on transaction" off → price + discount read-only. */
   locked: boolean
+  /** Has a live category scope (v5). */
+  hasCategories: boolean
+  /** 'Fixed price per product' rule (v5). */
+  fixedPrice: boolean
 }
 
 // ─── Quick filter: Transaction type ────────────────────────────────────────────
@@ -120,6 +137,8 @@ const allRows = computed<PriceRuleRow[]>(() => (scenario.value === 'empty' ? [] 
   period: periodLabel(r),
   status: r.status,
   locked: !r.allowOverride,
+  hasCategories: (r.categoryIds?.length ?? 0) > 0,
+  fixedPrice: r.ruleType === 'fixed_price',
 })))
 const rows = computed(() => (typeFilter.value ? allRows.value.filter(r => r.transactionType === typeFilter.value) : allRows.value))
 
@@ -226,6 +245,14 @@ const asRule = (row: unknown) => row as PriceRuleRow
 
     <template #cell-transactionType="{ value }">
       {{ t(PRICE_RULE_TRANSACTION_TYPE_LABEL[value as 'sales' | 'purchase']) }}
+    </template>
+
+    <template #cell-products="{ value, row }">
+      <span :data-devchange="asRule(row).hasCategories ? 'price-rule-category-scope' : undefined">{{ value }}</span>
+    </template>
+
+    <template #cell-discount="{ value, row }">
+      <span :data-devchange="asRule(row).fixedPrice ? 'price-rule-fixed-price' : undefined">{{ value }}</span>
     </template>
 
     <template #cell-status="{ value }">

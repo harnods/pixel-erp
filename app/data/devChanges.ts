@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'price-rule-category-scope',
+    title: 'Product categories are a live scope',
+    description:
+      'Picking a category in a price rule stores the category, not its current products, so products added to it later are covered. Categories and specific products can be combined on sales and purchase rules.',
+    date: '2026-11-19',
+    files: ['PriceRuleFormPage.vue', 'PriceRuleSelectDrawer.vue', 'PriceRulesPage.vue', 'priceRules.ts'],
+  },
+  {
+    id: 'price-rule-fixed-price',
+    title: 'Fixed price per product rule type',
+    description:
+      'A price list rule: pick specific products and set a fixed Rp price for each in the Products table. Categories aren\'t available for this type.',
+    date: '2026-11-19',
+    files: ['PriceRuleFormPage.vue', 'PriceRuleSelectDrawer.vue', 'PriceRulesPage.vue', 'priceRules.ts'],
+  },
+  {
     id: 'purchase-price-rule-pkp-po',
     title: 'Purchase order: vendor PKP status',
     description:

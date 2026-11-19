@@ -6,8 +6,13 @@
  * type, active period, contact/group scope, product/category scope and the
  * "Allow changes on transaction" option work on both. Only the contact side
  * differs (customers vs vendors). Products are stored by id; picking a
- * category is a shortcut that adds its products. Empty `productIds` = all
- * products; empty `contactIds` = all customers / all vendors.
+ * category is a LIVE scope (DECIDED 19 Nov, v5): `categoryIds` holds category
+ * names and covers every product in them, including products created later.
+ * Empty `productIds` and `categoryIds` = all products; empty `contactIds` =
+ * all customers / all vendors.
+ *
+ * 'fixed_price' (v5, DECIDED 19 Nov) is a price list: one unit price per
+ * product in `productPrices`; specific products only.
  *
  * No outlet field and no PKP on the rule (DECIDED 17 Nov):
  *   - an outlet's deal is its own named rule, picked in the transaction's
@@ -43,7 +48,7 @@ export const PRICE_RULE_TRANSACTION_TYPE_LABEL: Record<PriceRuleTransactionType,
 
 export type PriceRuleType =
   | 'percent' | 'value' | 'tier' | 'subtotal_tier' | 'end_discount'
-  | 'markup_percent' | 'markup_value'
+  | 'markup_percent' | 'markup_value' | 'fixed_price'
 /** Labels and order mirror production Mekari ERP (Create Price Rule › Rule type). */
 export const PRICE_RULE_TYPE_LABEL: Record<PriceRuleType, string> = {
   percent: 'Percentage discount',
@@ -53,6 +58,7 @@ export const PRICE_RULE_TYPE_LABEL: Record<PriceRuleType, string> = {
   end_discount: 'Last price discount',
   markup_percent: 'Percentage markup',
   markup_value: 'Price amount markup',
+  fixed_price: 'Fixed price per product',
 }
 /** Production groups the two markups under a "MARKUP" heading. */
 export const PRICE_RULE_MARKUP_TYPES: PriceRuleType[] = ['markup_percent', 'markup_value']
@@ -61,8 +67,8 @@ export const PRICE_RULE_MARKUP_TYPES: PriceRuleType[] = ['markup_percent', 'mark
  *  sales tier / subtotal / last-price types exist in production; this prototype
  *  lists them but doesn't model their tier tables. */
 export const PRICE_RULE_TYPES_BY_TRANSACTION: Record<PriceRuleTransactionType, PriceRuleType[]> = {
-  sales: ['percent', 'value', 'tier', 'subtotal_tier', 'end_discount', 'markup_percent', 'markup_value'],
-  purchase: ['percent', 'value', 'tier', 'subtotal_tier', 'end_discount', 'markup_percent', 'markup_value'],
+  sales: ['percent', 'value', 'tier', 'subtotal_tier', 'end_discount', 'markup_percent', 'markup_value', 'fixed_price'],
+  purchase: ['percent', 'value', 'tier', 'subtotal_tier', 'end_discount', 'markup_percent', 'markup_value', 'fixed_price'],
 }
 
 export type PriceRuleStatus = 'active' | 'inactive'
@@ -74,8 +80,12 @@ export interface PriceRule {
   ruleType: PriceRuleType
   /** % for percent/markup_percent, Rp per unit for value/markup_value. */
   amount: number
-  /** Product ids; empty = all products. */
+  /** Product ids. Empty together with `categoryIds` = all products. */
   productIds: string[]
+  /** Product category names — live scope (v5). */
+  categoryIds: string[]
+  /** 'fixed_price' only: unit price per product id. {} otherwise. */
+  productPrices: Record<string, number>
   /** Customer ids (sales) or vendor ids (purchase); empty = all. */
   contactIds: string[]
   /** Tier steps for 'tier' (threshold = qty) and 'subtotal_tier'
@@ -98,8 +108,8 @@ const SEED_AT = '2026-10-01T09:00:00'
 const greenBeans = products.filter((p) => p.category === 'Green Beans').map((p) => p.id)
 const roasted = products.filter((p) => p.category === 'Roasted Beans').map((p) => p.id)
 
-function seed(r: Omit<PriceRule, 'createdAt' | 'updatedAt' | 'updatedBy' | 'startDate' | 'endDate' | 'status' | 'tiers' | 'allowOverride'> & Partial<PriceRule>): PriceRule {
-  return { startDate: '', endDate: '', status: 'active', tiers: [], allowOverride: true, createdAt: SEED_AT, updatedAt: SEED_AT, updatedBy: 'System', ...r }
+function seed(r: Omit<PriceRule, 'createdAt' | 'updatedAt' | 'updatedBy' | 'startDate' | 'endDate' | 'status' | 'tiers' | 'allowOverride' | 'categoryIds' | 'productPrices'> & Partial<PriceRule>): PriceRule {
+  return { startDate: '', endDate: '', status: 'active', tiers: [], allowOverride: true, categoryIds: [], productPrices: {}, createdAt: SEED_AT, updatedAt: SEED_AT, updatedBy: 'System', ...r }
 }
 
 /** Seeds cover every purchase tier plus one PKP and one Non-PKP vendor. Ids
@@ -108,17 +118,19 @@ const SEED_RULES: PriceRule[] = [
   seed({ id: 'PRL-001', name: 'Wholesale cafés · roasted beans', transactionType: 'sales', ruleType: 'percent', amount: 5, productIds: roasted, contactIds: ['C001', 'C002', 'C004'] }),
   seed({ id: 'PRL-002', name: 'Hotel accounts · equipment markup', transactionType: 'sales', ruleType: 'markup_percent', amount: 3, productIds: ['p13', 'p14', 'p16'], contactIds: ['C003'] }),
   seed({ id: 'PRL-101', name: 'Gayo Highland · all products', transactionType: 'purchase', ruleType: 'percent', amount: 5, productIds: [], contactIds: ['V003'] }),
-  seed({ id: 'PRL-102', name: 'Gayo Highland · green beans', transactionType: 'purchase', ruleType: 'percent', amount: 10, productIds: greenBeans, contactIds: ['V003'] }),
+  seed({ id: 'PRL-102', name: 'Gayo Highland · green beans', transactionType: 'purchase', ruleType: 'percent', amount: 10, productIds: [], categoryIds: ['Green Beans'], contactIds: ['V003'] }),
   seed({ id: 'PRL-103', name: 'Bajawa Ngada · Flores Bajawa beans', transactionType: 'purchase', ruleType: 'percent', amount: 7, productIds: ['p07'], contactIds: ['V016'] }),
   seed({ id: 'PRL-104', name: 'V60 paper filter · all vendors', transactionType: 'purchase', ruleType: 'value', amount: 5_000, productIds: ['p24'], contactIds: [] }),
   // Outlet deal, picked in the transaction's Price rule field. createdAt is older
   // than PRL-102 so Automatic keeps choosing PRL-102 (10%); picking it gives 12%.
-  seed({ id: 'PRL-105', name: 'Gayo Highland · green beans · Bandung outlet deal', transactionType: 'purchase', ruleType: 'percent', amount: 12, productIds: greenBeans, contactIds: ['V003'], createdAt: '2026-09-01T09:00:00', updatedAt: '2026-09-01T09:00:00' }),
+  seed({ id: 'PRL-105', name: 'Gayo Highland · green beans · Bandung outlet deal', transactionType: 'purchase', ruleType: 'percent', amount: 12, productIds: [], categoryIds: ['Green Beans'], contactIds: ['V003'], createdAt: '2026-09-01T09:00:00', updatedAt: '2026-09-01T09:00:00' }),
   // Parity demo: vendor quantity tiers, locked on the transaction.
   seed({ id: 'PRL-106', name: 'Kemasan Prima · V60 filter volume tiers', transactionType: 'purchase', ruleType: 'tier', amount: 0, productIds: ['p24'], contactIds: ['V006'], tiers: [{ threshold: 10, discount: 5 }, { threshold: 50, discount: 8 }], allowOverride: false }),
+  // Price list (v5): the supplier's agreed unit price per product, locked.
+  seed({ id: 'PRL-107', name: 'Kemasan Prima · price list Nov 2026', transactionType: 'purchase', ruleType: 'fixed_price', amount: 0, productIds: ['p20', 'p21', 'p22'], contactIds: ['V006'], productPrices: { p20: 345_000, p21: 410_000, p22: 585000 }, allowOverride: false, createdAt: '2026-10-02T09:00:00', updatedAt: '2026-10-02T09:00:00' }),
 ]
 
-const STORE_KEY = 'price-rules-v3'
+const STORE_KEY = 'price-rules-v5'
 const store = reactive<PriceRule[]>(loadSnapshot<PriceRule>(STORE_KEY) ?? SEED_RULES.map((r) => ({ ...r })))
 function persist() { saveSnapshot(STORE_KEY, store) }
 function now(): string { return new Date().toISOString() }
@@ -141,6 +153,10 @@ function normalise(input: PriceRuleInput): PriceRuleInput {
     name: input.name.trim(),
     ruleType: allowed.includes(input.ruleType) ? input.ruleType : allowed[0]!,
     productIds: [...input.productIds],
+    categoryIds: input.ruleType === 'fixed_price' ? [] : [...(input.categoryIds ?? [])],
+    productPrices: input.ruleType === 'fixed_price'
+      ? Object.fromEntries(input.productIds.map((id) => [id, input.productPrices?.[id] ?? 0]))
+      : {},
     contactIds: [...input.contactIds],
     tiers: input.ruleType === 'tier' || input.ruleType === 'subtotal_tier' ? (input.tiers ?? []).map((t) => ({ ...t })) : [],
     allowOverride: input.allowOverride ?? true,
@@ -169,16 +185,21 @@ export function deletePriceRule(id: string): void {
   if (i !== -1) { store.splice(i, 1); persist() }
 }
 export function emptyPriceRuleInput(transactionType: PriceRuleTransactionType = 'sales'): PriceRuleInput {
-  return { name: '', transactionType, ruleType: 'percent', amount: 0, productIds: [], contactIds: [], tiers: [], allowOverride: true, startDate: '', endDate: '', status: 'active' }
+  return { name: '', transactionType, ruleType: 'percent', amount: 0, productIds: [], categoryIds: [], productPrices: {}, contactIds: [], tiers: [], allowOverride: true, startDate: '', endDate: '', status: 'active' }
 }
 
 // ── Purchase engine ────────────────────────────────────────────────────────────
-export type PurchaseRuleTier = 1 | 2 | 3
+/** Automatic precedence (v5): 1 vendor + product named · 2 vendor + product's
+ *  category · 3 vendor + all products · 4 all vendors + product named ·
+ *  5 all vendors + product's category. Ties → newest rule. */
+export type PurchaseRuleTier = 1 | 2 | 3 | 4 | 5
 /** English source labels — render through `t()`. */
 export const PURCHASE_RULE_TIER_LABEL: Record<PurchaseRuleTier, string> = {
   1: 'Vendor + product',
-  2: 'Vendor only',
-  3: 'Product only',
+  2: 'Vendor + category',
+  3: 'Vendor only',
+  4: 'Product only',
+  5: 'Category only',
 }
 
 /** Header "Price rule" field value. */
@@ -189,7 +210,7 @@ export interface PurchaseRuleMatch {
   tier: PurchaseRuleTier
   /** Picked in the header Price rule field (vs automatic). */
   picked: boolean
-  /** Resulting unit cost (changes only for last price / markups). */
+  /** Resulting unit cost (changes for last price / markups / fixed price). */
   unitCost: number
   /** Resulting line discount %, 2 decimals, 0–100. */
   discountPct: number
@@ -214,17 +235,19 @@ function inPeriod(r: PriceRule, isoDate: string): boolean {
   if (r.endDate && isoDate > r.endDate) return false
   return true
 }
-function tierOf(r: PriceRule): PurchaseRuleTier | null {
-  const v = r.contactIds.length > 0
-  const p = r.productIds.length > 0
-  if (v && p) return 1
-  if (v) return 2
-  if (p) return 3
+/** The tier this rule matches the line at, or null when it doesn't cover it. */
+function tierFor(r: PriceRule, vendorId: string, productId: string): PurchaseRuleTier | null {
+  const hasVendor = r.contactIds.length > 0
+  if (hasVendor && !r.contactIds.includes(vendorId)) return null
+  if (r.ruleType === 'fixed_price') {
+    if (!(productId in r.productPrices)) return null
+    return hasVendor ? 1 : 4
+  }
+  if (r.productIds.includes(productId)) return hasVendor ? 1 : 4
+  const category = products.find((p) => p.id === productId)?.category ?? ''
+  if (category && r.categoryIds.includes(category)) return hasVendor ? 2 : 5
+  if (r.productIds.length === 0 && r.categoryIds.length === 0 && hasVendor) return 3
   return null
-}
-function covers(r: PriceRule, vendorId: string, productId: string): boolean {
-  return (r.contactIds.length === 0 || r.contactIds.includes(vendorId))
-    && (r.productIds.length === 0 || r.productIds.includes(productId))
 }
 const today = () => new Date().toISOString().slice(0, 10)
 const round2 = (n: number) => Math.round(n * 100) / 100
@@ -244,7 +267,8 @@ export function purchaseRuleOptions(vendorIdOrName: string, isoDate: string = to
   if (!vendorIdOrName) return []
   const vendorId = vendorIdOf(vendorIdOrName)
   return activePurchase(isoDate)
-    .filter((r) => tierOf(r) !== null && (r.contactIds.length === 0 || r.contactIds.includes(vendorId)))
+    .filter((r) => (r.contactIds.length === 0 || r.contactIds.includes(vendorId))
+      && (r.contactIds.length > 0 || r.productIds.length > 0 || r.categoryIds.length > 0))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
 }
 
@@ -261,6 +285,7 @@ function apply(r: PriceRule, line: PurchaseLineInput): { unitCost: number; disco
     case 'end_discount': return { unitCost: r.amount, discountPct: 0 }
     case 'markup_percent': return { unitCost: round2(base * (1 + r.amount / 100)), discountPct: 0 }
     case 'markup_value': return { unitCost: base + r.amount, discountPct: 0 }
+    case 'fixed_price': return { unitCost: r.productPrices[line.productId] ?? base, discountPct: 0 }
   }
 }
 
@@ -272,13 +297,13 @@ export function resolvePurchaseRule(line: PurchaseLineInput): PurchaseRuleMatch 
   let chosen: { rule: PriceRule; tier: PurchaseRuleTier; picked: boolean } | null = null
   if (pick !== 'auto') {
     const r = rules.find((x) => x.id === pick)
-    const tier = r ? tierOf(r) : null
-    if (r && tier && covers(r, vendorId, line.productId)) chosen = { rule: r, tier, picked: true }
+    const tier = r ? tierFor(r, vendorId, line.productId) : null
+    if (r && tier) chosen = { rule: r, tier, picked: true }
   }
   if (!chosen) {
     const best = rules
-      .map((rule) => ({ rule, tier: tierOf(rule) }))
-      .filter((c): c is { rule: PriceRule; tier: PurchaseRuleTier } => c.tier !== null && covers(c.rule, vendorId, line.productId))
+      .map((rule) => ({ rule, tier: tierFor(rule, vendorId, line.productId) }))
+      .filter((c): c is { rule: PriceRule; tier: PurchaseRuleTier } => c.tier !== null)
       .sort((a, b) => a.tier - b.tier || b.rule.createdAt.localeCompare(a.rule.createdAt) || b.rule.id.localeCompare(a.rule.id))[0]
     if (best) chosen = { ...best, picked: false }
   }

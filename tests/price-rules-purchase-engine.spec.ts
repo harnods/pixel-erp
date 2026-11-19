@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { products } from '~/data/products'
 import {
   resolvePurchaseRule, purchaseRuleOptions, vendorPkpStatus, isPpnTax, priceRules,
   createPriceRule, deletePriceRule, emptyPriceRuleInput, PRICE_RULE_TYPES_BY_TRANSACTION,
@@ -8,7 +9,7 @@ import {
 const line = (vendorIdOrName: string, productId: string, baseCost: number, extra: Partial<Parameters<typeof resolvePurchaseRule>[0]> = {}) =>
   resolvePurchaseRule({ vendorIdOrName, productId, baseCost, qty: 1, docSubtotal: baseCost, ...extra })
 
-describe('purchase price rule engine (v4)', () => {
+describe('purchase price rule engine (v5)', () => {
   it('customer and vendor rules offer the same rule types', () => {
     expect(PRICE_RULE_TYPES_BY_TRANSACTION.purchase).toEqual(PRICE_RULE_TYPES_BY_TRANSACTION.sales)
   })
@@ -38,7 +39,7 @@ describe('purchase price rule engine (v4)', () => {
   })
   it('product-only value rule converts Rp/unit to %', () => {
     const m = line('V005', 'p24', 85_000)!
-    expect(m.tier).toBe(3)
+    expect(m.tier).toBe(4)
     expect(m.discountPct).toBe(5.88)
   })
   it('quantity tiers on a vendor rule, locked on the transaction', () => {
@@ -66,6 +67,35 @@ describe('purchase price rule engine (v4)', () => {
     expect(line('V001', 'p09', 280_000)).toBeNull()
     deletePriceRule(r.id)
     expect(priceRules().every((x) => x.allowOverride !== undefined)).toBe(true)
+  })
+  it('category is a live scope: a product created later in the category is covered', () => {
+    const m = line('V003', 'p02', 3_000_000)!
+    expect(m.rule.id).toBe('PRL-102')
+    expect(m.tier).toBe(2)
+    products.push({ ...products.find((p) => p.id === 'p01')!, id: 'p99', name: 'Green Beans New Lot' })
+    expect(line('V003', 'p99', 3_000_000)!.rule.id).toBe('PRL-102')
+    products.pop()
+  })
+  it('vendor + product beats vendor + category', () => {
+    const r = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'p01 only', amount: 3, productIds: ['p01'], contactIds: ['V003'] })
+    expect(line('V003', 'p01', 3_200_000)!.rule.id).toBe(r.id)
+    expect(line('V003', 'p02', 3_000_000)!.rule.id).toBe('PRL-102')
+    deletePriceRule(r.id)
+  })
+  it('fixed price per product (price list), locked', () => {
+    const m = line('V006', 'p20', 380_000)!
+    expect(m.rule.id).toBe('PRL-107')
+    expect(m.unitCost).toBe(345_000)
+    expect(m.discountPct).toBe(0)
+    expect(m.editable).toBe(false)
+    expect(line('V006', 'p21', 450_000)!.unitCost).toBe(410_000)
+  })
+  it('fixed price keeps only listed products', () => {
+    const r = createPriceRule({ ...emptyPriceRuleInput('purchase'), name: 'PL', ruleType: 'fixed_price', productIds: ['p09'], categoryIds: ['Roasted Beans'], productPrices: { p09: 250_000 }, contactIds: ['V001'] })
+    expect(r.categoryIds).toEqual([])
+    expect(line('V001', 'p10', 300_000)).toBeNull()
+    expect(line('V001', 'p09', 280_000)!.unitCost).toBe(250_000)
+    deletePriceRule(r.id)
   })
   it('PPN detection', () => {
     expect(isPpnTax('PPN 11%')).toBe(true)

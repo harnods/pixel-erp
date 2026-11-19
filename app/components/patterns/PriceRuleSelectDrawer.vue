@@ -6,8 +6,15 @@
  * with "Add all" and a + per row; right = the running selection (illustration
  * empty state until something is picked). Cancel discards, Save commits.
  *
- * A group (contact group / product category) is only a shortcut: adding it adds
- * its member item ids — the selection always stores item ids, never groups.
+ * Two group modes (`groupMode`):
+ *   - 'expand' (default — contact groups): a group is a shortcut; adding it adds
+ *     its member item ids, the selection stores item ids only.
+ *   - 'scope' (product categories, v5 DECIDED 19 Nov): a group is a LIVE scope —
+ *     it is selected as itself (listed on the right as "Category · N products
+ *     today") and Save returns its id in `groupIds`, so items created later in
+ *     that group are covered too. Items and groups can be combined.
+ * `groupsLockedCaption` hides the group tab and shows the caption instead
+ * (fixed price per product: specific products only).
  * Built on the SelectAccessDrawer working-copy pattern and the custom Teleport
  * drawer shell (docs/patterns/Drawer.md; no overlay/Esc close).
  */
@@ -36,20 +43,32 @@ const props = defineProps<{
   groups?: PriceRulePickGroup[]
   groupsEmptyTitle?: string
   groupsEmptyCaption?: string
+  /** 'expand' = group adds its members (default); 'scope' = group is kept as itself. */
+  groupMode?: 'expand' | 'scope'
+  /** 'scope' mode: committed group ids. */
+  groupsValue?: string[]
+  /** Kind label for a selected group in 'scope' mode, e.g. "Category". */
+  groupKindLabel?: string
+  /** Set → group tab hidden, this caption shown instead. */
+  groupsLockedCaption?: string
 }>()
 const emit = defineEmits<{
   'update:open': [boolean]
-  save: [ids: string[]]
+  save: [ids: string[], groupIds: string[]]
 }>()
 
 const { t } = useLocale()
 
 const sel = ref<Set<string>>(new Set())
+/** 'scope' mode: selected group ids. */
+const selGroups = ref<Set<string>>(new Set())
+const isScope = computed(() => props.groupMode === 'scope')
+const showGroupTab = computed(() => !!props.groupTabLabel && !props.groupsLockedCaption)
 const tab = ref<'items' | 'groups'>('items')
 const leftSearch = ref('')
 const rightSearch = ref('')
 watch(() => props.open, (o) => {
-  if (o) { sel.value = new Set(props.modelValue); tab.value = 'items'; leftSearch.value = ''; rightSearch.value = '' }
+  if (o) { sel.value = new Set(props.modelValue); selGroups.value = new Set(isScope.value && !props.groupsLockedCaption ? (props.groupsValue ?? []) : []); tab.value = 'items'; leftSearch.value = ''; rightSearch.value = '' }
 })
 
 const tabData = computed(() => [
@@ -64,21 +83,33 @@ function match(name: string, subtitle: string | undefined, q: string) {
 }
 const available = computed(() => props.options.filter(o => !sel.value.has(o.id) && match(o.name, o.subtitle, leftSearch.value)))
 /** Groups that would still add something (all-selected / memberless groups drop out, like picked items). */
-const addableGroups = computed(() => (props.groups ?? []).filter(g => g.memberIds.some(id => !sel.value.has(id))))
+const addableGroups = computed(() => (props.groups ?? []).filter(g => (isScope.value ? !selGroups.value.has(g.id) : g.memberIds.some(id => !sel.value.has(id)))))
 const availableGroups = computed(() => addableGroups.value.filter(g => match(g.name, g.subtitle, leftSearch.value)))
 const selectedAll = computed(() => props.options.filter(o => sel.value.has(o.id)))
 const selected = computed(() => selectedAll.value.filter(o => match(o.name, o.subtitle, rightSearch.value)))
+/** 'scope' mode: selected groups, shown above the items on the right. */
+const selectedGroupsAll = computed(() => (props.groups ?? []).filter(g => selGroups.value.has(g.id)))
+const selectedGroups = computed(() => selectedGroupsAll.value.filter(g => match(g.name, g.subtitle, rightSearch.value)))
+const selectedCount = computed(() => selectedAll.value.length + selectedGroupsAll.value.length)
+function groupSub(g: PriceRulePickGroup): string {
+  return [props.groupKindLabel, g.subtitle].filter(Boolean).join(' · ')
+}
 
 const leftTitle = computed(() => (tab.value === 'groups' ? (props.groupTabLabel ?? '') : props.listTitle))
 const leftCount = computed(() => (tab.value === 'groups' ? availableGroups.value.length : available.value.length))
 
 function add(ids: string[]) { const s = new Set(sel.value); for (const id of ids) s.add(id); sel.value = s }
 function remove(id: string) { const s = new Set(sel.value); s.delete(id); sel.value = s }
+function addGroups(gs: PriceRulePickGroup[]) {
+  if (!isScope.value) { add(gs.flatMap(g => g.memberIds)); return }
+  const s = new Set(selGroups.value); for (const g of gs) s.add(g.id); selGroups.value = s
+}
+function removeGroup(id: string) { const s = new Set(selGroups.value); s.delete(id); selGroups.value = s }
 function addAll() {
-  if (tab.value === 'groups') add(availableGroups.value.flatMap(g => g.memberIds))
+  if (tab.value === 'groups') addGroups(availableGroups.value)
   else add(available.value.map(o => o.id))
 }
-function removeAll() { sel.value = new Set() }
+function removeAll() { sel.value = new Set(); selGroups.value = new Set() }
 
 const isSaving = ref(false)
 function close() { isSaving.value = false; emit('update:open', false) }
@@ -86,7 +117,7 @@ async function save() {
   isSaving.value = true
   await new Promise(r => setTimeout(r, 300))
   // Keep the source-list order so the form table reads predictably.
-  emit('save', props.options.filter(o => sel.value.has(o.id)).map(o => o.id))
+  emit('save', props.options.filter(o => sel.value.has(o.id)).map(o => o.id), (props.groups ?? []).filter(g => selGroups.value.has(g.id)).map(g => g.id))
   isSaving.value = false
   emit('update:open', false)
 }
@@ -106,7 +137,7 @@ async function save() {
             <!-- Source -->
             <section class="prsd-col">
               <MpSegmentedControl
-                v-if="groupTabLabel"
+                v-if="showGroupTab"
                 :id="`${id}-tabs`"
                 :name="`${id}-tabs`"
                 class="prsd-tabs"
@@ -114,6 +145,7 @@ async function save() {
                 :data="tabData"
                 @update:model-value="(v: string) => { tab = v === 'groups' ? 'groups' : 'items'; leftSearch = '' }"
               />
+              <p v-if="groupsLockedCaption" :id="`${id}-groups-locked`" class="prsd-note" data-devchange="price-rule-fixed-price">{{ groupsLockedCaption }}</p>
               <div class="prsd-search">
                 <MpIcon name="search" size="sm" class="prsd-search-icon" />
                 <input :id="`${id}-search`" v-model="leftSearch" class="prsd-search-input" type="text" :placeholder="t('Search...')" />
@@ -135,7 +167,7 @@ async function save() {
                 </div>
                 <div class="prsd-list">
                   <template v-if="tab === 'groups'">
-                    <MpButton v-for="g in availableGroups" :key="g.id" class="prsd-item" variant="ghost" type="button" @click="add(g.memberIds)"><!-- pixel-police-allow -->
+                    <MpButton v-for="g in availableGroups" :key="g.id" class="prsd-item" variant="ghost" type="button" @click="addGroups([g])"><!-- pixel-police-allow -->
                       <span class="prsd-info">
                         <span class="prsd-name">{{ g.name }}</span>
                         <span v-if="g.subtitle" class="prsd-sub">{{ g.subtitle }}</span>
@@ -161,7 +193,7 @@ async function save() {
 
             <!-- Selection -->
             <section class="prsd-col">
-              <template v-if="selectedAll.length">
+              <template v-if="selectedCount">
                 <div class="prsd-search">
                   <MpIcon name="search" size="sm" class="prsd-search-icon" />
                   <input :id="`${id}-selected-search`" v-model="rightSearch" class="prsd-search-input" type="text" :placeholder="t('Search...')" />
@@ -170,10 +202,21 @@ async function save() {
                   </MpButton>
                 </div>
                 <div class="prsd-col-head">
-                  <h3 class="prsd-col-title">{{ selectedTitle }} ({{ selectedAll.length }})</h3>
+                  <h3 class="prsd-col-title">{{ selectedTitle }} ({{ selectedCount }})</h3>
                   <MpButton class="prsd-link" variant="ghost" type="button" @click="removeAll">{{ t('Remove all') }}</MpButton>
                 </div>
                 <div class="prsd-list">
+                  <div v-for="g in selectedGroups" :key="`g-${g.id}`" class="prsd-item prsd-item--static">
+                    <span class="prsd-info">
+                      <span class="prsd-name">{{ g.name }}</span>
+                      <span class="prsd-sub">{{ groupSub(g) }}</span>
+                    </span>
+                    <MpTooltip :id="`${id}-rm-group-${g.id}`" :label="t('Remove')" placement="top" use-portal>
+                      <MpButton class="prsd-remove" variant="ghost" type="button" :aria-label="t('Remove')" @click="removeGroup(g.id)">
+                        <MpIcon name="minus-circular" size="sm" />
+                      </MpButton>
+                    </MpTooltip>
+                  </div>
                   <div v-for="o in selected" :key="o.id" class="prsd-item prsd-item--static">
                     <span class="prsd-info">
                       <span class="prsd-name">{{ o.name }}</span>
@@ -185,7 +228,7 @@ async function save() {
                       </MpButton>
                     </MpTooltip>
                   </div>
-                  <p v-if="!selected.length" class="prsd-empty-text">{{ t('No results found') }}</p>
+                  <p v-if="!selected.length && !selectedGroups.length" class="prsd-empty-text">{{ t('No results found') }}</p>
                 </div>
               </template>
               <div v-else class="prsd-empty">
@@ -234,6 +277,7 @@ async function save() {
 .prsd-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1px 1fr; }
 .prsd-col { display: flex; flex-direction: column; min-height: 0; padding: var(--mp-spacing-4); }
 .prsd-divider { background: var(--mp-colors-border-default, #e3e7e9); }
+.prsd-note { margin: 0 0 var(--mp-spacing-3); flex-shrink: 0; font-size: var(--mp-font-sizes-sm); color: var(--mp-text-secondary, #626b79); }
 .prsd-tabs { margin-bottom: var(--mp-spacing-3); flex-shrink: 0; }
 .prsd-tabs :deep(.mp-segmented-control__root), .prsd-tabs { width: 100%; }
 

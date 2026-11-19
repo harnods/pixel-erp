@@ -11,8 +11,17 @@
  * Purchase Price Rule v4 (DECIDED 17 Nov): a rule is Sales (customers) or
  * Purchase (vendors) and the two are IDENTICAL — all 7 rule types, active period,
  * tier tables, contact groups, products/categories. Only Customers vs Vendors
- * differs. Products are stored by id; the Categories / Contact groups tabs are
- * only shortcuts that add their members (never re-resolved later).
+ * differs. Contact groups are a shortcut that adds their members.
+ *
+ * v5 (DECIDED 19 Nov):
+ *   - Product categories are a LIVE scope: picking a category stores the
+ *     category name (categoryIds), not its current products, so a product
+ *     created later in it is covered. Categories and specific products combine
+ *     (a line matches if its product OR its category is listed); both empty =
+ *     all products. Same for sales and purchase rules.
+ *   - 'Fixed price per product' (fixed_price) is a price list: specific products
+ *     only (no categories), each with its own required Rp price in the Products
+ *     table (FormTable cells, inline errors); no single amount field.
  *
  * Tier types keep a step table (max 5): 'tier' thresholds are a quantity,
  * 'subtotal_tier' thresholds a document subtotal (Rp). Thresholds must rise
@@ -78,6 +87,8 @@ const initial: PriceRuleInput = editing.value
       ruleType: editing.value.ruleType,
       amount: editing.value.amount,
       productIds: [...editing.value.productIds],
+      categoryIds: [...(editing.value.categoryIds ?? [])],
+      productPrices: { ...(editing.value.productPrices ?? {}) },
       contactIds: [...editing.value.contactIds],
       tiers: editing.value.tiers.map(x => ({ ...x })),
       allowOverride: editing.value.allowOverride,
@@ -93,6 +104,17 @@ const ruleType = ref<PriceRuleType>(initial.ruleType)
 const amount = ref(initial.amount ? String(initial.amount) : '')
 const contactIds = ref<string[]>([...initial.contactIds])
 const productIds = ref<string[]>([...initial.productIds])
+/** Live category scope (category names, v5). */
+const categoryIds = ref<string[]>([...(initial.categoryIds ?? [])])
+/** fixed_price: Rp per product id, as typed (string so an empty cell stays empty). */
+const productPrices = ref<Record<string, string>>(
+  Object.fromEntries(Object.entries(initial.productPrices ?? {}).map(([id, v]) => [id, v ? String(v) : ''])),
+)
+/** fixed_price: per-cell price errors (product id) + one table-level message. */
+const priceCellErrors = ref<Record<string, true>>({})
+const priceError = ref('')
+/** Categories were dropped because the rule type became fixed_price. */
+const categoriesClearedNote = ref(false)
 /** Tier steps as typed (strings so an empty cell stays empty). */
 interface TierRow { key: number; threshold: string; discount: string }
 let tierKey = 0
@@ -122,8 +144,14 @@ const transactionTypeOptions = PRICE_RULE_TRANSACTION_TYPES.map(v => ({ value: v
 function ruleTypeLabel(v: PriceRuleType): string {
   return isPurchase.value && v === 'subtotal_tier' ? t('Subtotal discount') : t(PRICE_RULE_TYPE_LABEL[v])
 }
+/** v5: 'Fixed price per product' sits after the discount types, not under MARKUP. */
+const ruleTypeOrder = computed<PriceRuleType[]>(() => {
+  const all = PRICE_RULE_TYPES_BY_TRANSACTION[transactionType.value]
+  const markups = all.filter(v => PRICE_RULE_MARKUP_TYPES.includes(v))
+  return [...all.filter(v => !PRICE_RULE_MARKUP_TYPES.includes(v)), ...markups]
+})
 const ruleTypeOptions = computed(() =>
-  PRICE_RULE_TYPES_BY_TRANSACTION[transactionType.value].map(v => ({
+  ruleTypeOrder.value.map(v => ({
     value: v,
     label: ruleTypeLabel(v),
     ...(PRICE_RULE_MARKUP_TYPES.includes(v) ? { group: t('MARKUP') } : {}),
@@ -135,6 +163,8 @@ const isAmountType = computed(() => ['value', 'markup_value', 'end_discount'].in
 /** Step-table types: no single amount, a tier table instead. */
 const isTierType = computed(() => ruleType.value === 'tier' || ruleType.value === 'subtotal_tier')
 const isSubtotalTier = computed(() => ruleType.value === 'subtotal_tier')
+/** Price list: one Rp price per product, no single amount. */
+const isFixedPrice = computed(() => ruleType.value === 'fixed_price')
 const TIER_MAX = 5
 const amountLabel = computed(() => {
   if (isMarkup.value) return t('Markup')
@@ -223,9 +253,14 @@ const vendorGroupOptions = computed<PriceRulePickGroup[]>(() =>
       return { id: g.id, name: g.name, subtitle: `${memberIds.length} ${memberIds.length === 1 ? t('vendor') : t('vendors')}`, memberIds }
     }),
 )
+/** Product categories — a LIVE scope (v5): the group id IS the category name
+ *  stored in categoryIds; memberIds is only today's count for the subtitle. */
+function productsTodayLabel(n: number): string {
+  return n === 1 ? t('1 product today') : t('{n} products today').replace('{n}', String(n))
+}
 const categoryOptions: PriceRulePickGroup[] = [...new Set(products.map(p => p.category))].sort().map((cat) => {
   const memberIds = products.filter(p => p.category === cat).map(p => p.id)
-  return { id: `cat-${cat}`, name: cat, subtitle: `${memberIds.length} ${memberIds.length === 1 ? t('product') : t('products')}`, memberIds }
+  return { id: cat, name: cat, subtitle: productsTodayLabel(memberIds.length), memberIds }
 })
 
 function contactName(id: string) { return contactOptions.value.find(c => c.id === id)?.name ?? id }
@@ -236,6 +271,10 @@ const pickedProducts = computed(() =>
     return { id, name: p?.name ?? id, code: p?.code ?? '', category: p?.category ?? '' }
   }),
 )
+const pickedCategories = computed(() =>
+  categoryIds.value.map(name => ({ name, count: products.filter(p => p.category === name).length })),
+)
+const productScopeCount = computed(() => productIds.value.length + categoryIds.value.length)
 
 // ── Drawers ──────────────────────────────────────────────────────────────────────
 const contactDrawerOpen = ref(false)
@@ -243,8 +282,36 @@ const productDrawerOpen = ref(false)
 
 function onContactsSave(ids: string[]) { contactIds.value = ids }
 function removeContact(id: string) { contactIds.value = contactIds.value.filter(x => x !== id) }
-function onProductsSave(ids: string[]) { productIds.value = ids }
-function removeProduct(id: string) { productIds.value = productIds.value.filter(x => x !== id) }
+function onProductsSave(ids: string[], groupIds: string[] = []) {
+  productIds.value = ids
+  categoryIds.value = isFixedPrice.value ? [] : groupIds
+  if (ids.length || groupIds.length) categoriesClearedNote.value = false
+  priceError.value = ''
+}
+function removeProduct(id: string) {
+  productIds.value = productIds.value.filter(x => x !== id)
+  clearPriceCell(id)
+}
+function removeCategory(name: string) { categoryIds.value = categoryIds.value.filter(x => x !== name) }
+function clearPriceCell(id: string) {
+  const next = { ...priceCellErrors.value }
+  delete next[id]
+  priceCellErrors.value = next
+  if (!Object.keys(next).length) priceError.value = ''
+}
+/** fixed_price: ≥ 1 product, every listed product priced above 0. */
+function validatePrices(): boolean {
+  if (!productIds.value.length) { priceCellErrors.value = {}; priceError.value = t('Add at least one product'); return false }
+  const cells: Record<string, true> = {}
+  for (const id of productIds.value) {
+    const v = productPrices.value[id] ?? ''
+    const n = Number(v)
+    if (v === '' || !Number.isFinite(n) || n <= 0) cells[id] = true
+  }
+  priceCellErrors.value = cells
+  priceError.value = Object.keys(cells).length ? t('Enter a fixed price above 0') : ''
+  return !priceError.value
+}
 
 function onTransactionTypeChange(v: string) {
   const next = (v || 'sales') as PriceRuleTransactionType
@@ -252,6 +319,10 @@ function onTransactionTypeChange(v: string) {
   transactionType.value = next
   contactIds.value = []
   productIds.value = []
+  categoryIds.value = []
+  productPrices.value = {}
+  priceCellErrors.value = {}
+  priceError.value = ''
   if (!PRICE_RULE_TYPES_BY_TRANSACTION[next].includes(ruleType.value)) ruleType.value = PRICE_RULE_TYPES_BY_TRANSACTION[next][0]!
   typeSwitchNote.value = true
 }
@@ -262,6 +333,11 @@ function onRuleTypeChange(v: string) {
   amountError.value = ''
   tierError.value = ''
   tierCellErrors.value = {}
+  priceCellErrors.value = {}
+  priceError.value = ''
+  // A price list is per product: drop the categories and say so.
+  if (isFixedPrice.value && categoryIds.value.length) { categoryIds.value = []; categoriesClearedNote.value = true }
+  if (!isFixedPrice.value) categoriesClearedNote.value = false
   // A tier type starts with one empty step so the table is never blank.
   if (isTierType.value && !tiers.value.length) addTier()
 }
@@ -297,7 +373,7 @@ const contactCopy = computed(() => isPurchase.value
 
 // ── Unsaved changes guard ──────────────────────────────────────────────────────
 function snapshot(): string {
-  return JSON.stringify([name.value, transactionType.value, ruleType.value, amount.value, contactIds.value, productIds.value, tiers.value.map(x => [x.threshold, x.discount]), allowOverride.value, period.value?.map(dateToIso) ?? null, isActive.value])
+  return JSON.stringify([name.value, transactionType.value, ruleType.value, amount.value, contactIds.value, productIds.value, categoryIds.value, productIds.value.map(id => productPrices.value[id] ?? ''), tiers.value.map(x => [x.threshold, x.discount]), allowOverride.value, period.value?.map(dateToIso) ?? null, isActive.value])
 }
 const initialSnapshot = snapshot()
 const { disableGuard } = useUnsavedChangesGuard({ hasUnsavedChanges: () => !notFound.value && snapshot() !== initialSnapshot })
@@ -311,9 +387,11 @@ async function handleSave() {
   amountError.value = ''
   let valid = true
   if (!name.value.trim()) { nameError.value = t('You must fill in rule name'); valid = false }
-  const n = isTierType.value ? 0 : Number(amount.value)
+  const n = isTierType.value || isFixedPrice.value ? 0 : Number(amount.value)
   if (isTierType.value) {
     if (!validateTiers()) valid = false
+  } else if (isFixedPrice.value) {
+    if (!validatePrices()) valid = false
   } else if (!amount.value || !Number.isFinite(n) || n <= 0) { amountError.value = t('You must fill in an amount above 0'); valid = false }
   else if (!isAmountType.value && !isMarkup.value && n > 100) { amountError.value = t('Percentage cannot be more than 100'); valid = false }
   if (!valid) { scrollToFirstError(); return }
@@ -326,6 +404,8 @@ async function handleSave() {
     ruleType: ruleType.value,
     amount: n,
     productIds: productIds.value,
+    categoryIds: isFixedPrice.value ? [] : categoryIds.value,
+    productPrices: isFixedPrice.value ? Object.fromEntries(productIds.value.map(id => [id, Number(productPrices.value[id])])) : {},
     contactIds: contactIds.value,
     tiers: isTierType.value ? tiers.value.map(x => ({ threshold: Number(x.threshold), discount: Number(x.discount) })) : [],
     allowOverride: allowOverride.value,
@@ -437,7 +517,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
             </MpFormControl>
 
             <!-- Rule type -->
-            <MpFormControl id="prf-rule-type" class="prf-half" is-required>
+            <MpFormControl id="prf-rule-type" class="prf-half" is-required data-devchange="price-rule-fixed-price">
               <MpFormLabel>{{ t('Rule type') }}</MpFormLabel>
               <ErpFilterSelect
                 id="prf-rule-type-select"
@@ -448,10 +528,11 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 width="100%"
                 @update:model-value="onRuleTypeChange"
               />
+              <p v-if="isFixedPrice" class="prf-caption">{{ t('Set the price for each product in the Products section.') }}</p>
             </MpFormControl>
 
             <!-- Discount / markup amount (single-value types) -->
-            <MpFormControl v-if="!isTierType" id="prf-amount" class="prf-half" is-required :is-invalid="!!amountError">
+            <MpFormControl v-if="!isTierType && !isFixedPrice" id="prf-amount" class="prf-half" is-required :is-invalid="!!amountError">
               <MpFormLabel>{{ amountLabel }}</MpFormLabel>
               <MpInputGroup id="prf-amount-group" is-full-width>
                 <MpInputLeftAddon v-if="isAmountType" has-background>Rp</MpInputLeftAddon>
@@ -577,33 +658,74 @@ onUnmounted(() => { stageObserver?.disconnect() })
 
         </section>
 
-        <!-- ═══ Products ═══ -->
-        <section id="prf-products" class="prf-section">
+        <!-- ═══ Products (v5: products + live categories; fixed_price = price list) ═══ -->
+        <section id="prf-products" class="prf-section" data-devchange="price-rule-category-scope">
           <header class="prf-section-head">
             <h2 class="prf-section-title">{{ t('Products') }}</h2>
-            <p class="prf-section-caption">{{ t('Select the products that this rule applies to.') }}</p>
+            <p class="prf-section-caption">
+              {{ isFixedPrice
+                ? t('Select the products and set a fixed price for each.')
+                : t('Select the products or categories this rule applies to. A category also covers products added to it later.') }}
+            </p>
+            <p v-if="categoriesClearedNote" class="prf-caption">{{ t('Categories were removed because a fixed price is set per product.') }}</p>
           </header>
 
-          <div v-if="!productIds.length" class="prf-empty">
+          <div v-if="!productScopeCount" class="prf-empty">
             <img src="/illustrations/empty-folder.png" alt="" class="prf-empty-img" width="140" height="120" />
             <p class="prf-empty-title">{{ t('No products') }}</p>
-            <p class="prf-empty-caption">{{ t('Products will appear here. Leave empty to apply the rule to all products.') }}</p>
+            <p class="prf-empty-caption">
+              {{ isFixedPrice
+                ? t('Products will appear here. Add at least one product and set its price.')
+                : t('Products will appear here. Leave empty to apply the rule to all products.') }}
+            </p>
             <MpButton id="prf-add-products" class="prf-empty-cta" variant="secondary" is-rounded left-icon="add" @click="productDrawerOpen = true">{{ t('Add products') }}</MpButton>
+            <p v-if="priceError" class="prf-tier-error" role="alert" data-invalid>{{ priceError }}</p>
           </div>
           <div v-else class="prf-picked">
             <div class="prf-picked-head">
-              <span class="prf-picked-count">{{ productIds.length }} {{ t('selected') }}</span>
+              <span class="prf-picked-count">{{ productScopeCount }} {{ t('selected') }}</span>
               <MpButton id="prf-add-products" variant="secondary" is-rounded left-icon="add" @click="productDrawerOpen = true">{{ t('Add products') }}</MpButton>
             </div>
-            <table class="prf-table">
-              <thead><tr><th>{{ t('Product name') }}</th><th>{{ t('Category') }}</th><th class="prf-table-act" /></tr></thead>
+            <table id="prf-products-table" class="prf-table">
+              <thead>
+                <tr>
+                  <th>{{ categoryIds.length ? t('Name') : t('Product name') }}</th>
+                  <th>{{ t('Category') }}</th>
+                  <th v-if="isFixedPrice" class="prf-price-th">{{ t('Fixed price') }}<span class="prf-required">*</span></th>
+                  <th class="prf-table-act" />
+                </tr>
+              </thead>
               <tbody>
-                <tr v-for="p in pickedProducts" :key="p.id">
+                <!-- Category rows: a live scope, not today's products -->
+                <tr v-for="c in pickedCategories" :key="`cat-${c.name}`" :data-category="c.name">
+                  <td>
+                    <span class="prf-cell-name">{{ c.name }}</span>
+                    <span class="prf-cell-sub">{{ t('Category') }}</span>
+                  </td>
+                  <td class="prf-cell-muted">{{ productsTodayLabel(c.count) }}</td>
+                  <td class="prf-table-act">
+                    <MpTooltip :id="`prf-rm-category-${c.name}`" :label="t('Remove')" placement="top" use-portal>
+                      <MpButton class="prf-remove" variant="ghost" type="button" :aria-label="t('Remove')" @click="removeCategory(c.name)"><MpIcon name="minus-circular" size="sm" /></MpButton>
+                    </MpTooltip>
+                  </td>
+                </tr>
+                <tr v-for="(p, i) in pickedProducts" :key="p.id">
                   <td>
                     <span class="prf-cell-name">{{ p.name }}</span>
                     <span v-if="p.code" class="prf-cell-sub">{{ p.code }}</span>
                   </td>
                   <td>{{ p.category }}</td>
+                  <!-- Fixed price cell (docs/patterns/FormTable.md: borderless input, cell owns ring) -->
+                  <td v-if="isFixedPrice" class="prf-tier-td--input prf-price-td" :class="{ 'prf-tier-td--error': priceCellErrors[p.id] }">
+                    <MpInputGroup :id="`prf-price-${i}-group`" is-full-width>
+                      <MpInputLeftAddon>Rp</MpInputLeftAddon>
+                      <MpInput
+                        :id="`prf-price-${i}`" v-model="productPrices[p.id]" type="number" is-full-width class="prf-tier-num"
+                        :aria-label="`${t('Fixed price')} · ${p.name}`"
+                        @update:model-value="clearPriceCell(p.id)"
+                      />
+                    </MpInputGroup>
+                  </td>
                   <td class="prf-table-act">
                     <MpTooltip :id="`prf-rm-product-${p.id}`" :label="t('Remove')" placement="top" use-portal>
                       <MpButton class="prf-remove" variant="ghost" type="button" :aria-label="t('Remove')" @click="removeProduct(p.id)"><MpIcon name="minus-circular" size="sm" /></MpButton>
@@ -612,6 +734,7 @@ onUnmounted(() => { stageObserver?.disconnect() })
                 </tr>
               </tbody>
             </table>
+            <p v-if="priceError" class="prf-tier-error" role="alert" data-invalid>{{ priceError }}</p>
           </div>
         </section>
       </template>
@@ -658,6 +781,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
       :groups="categoryOptions"
       :groups-empty-title="t('No categories')"
       :groups-empty-caption="t('Categories will appear here.')"
+      group-mode="scope"
+      :groups-value="categoryIds"
+      :group-kind-label="t('Category')"
+      :groups-locked-caption="isFixedPrice ? t('A fixed price is set per product, so pick the products.') : undefined"
       @save="onProductsSave"
     />
   </div>
@@ -714,6 +841,10 @@ onUnmounted(() => { stageObserver?.disconnect() })
 .prf-table-act { width: 48px; text-align: right; }
 .prf-cell-name { display: block; }
 .prf-cell-sub { display: block; font-size: var(--mp-font-sizes-sm); color: var(--mp-colors-text-secondary, #626b79); }
+.prf-cell-muted { color: var(--mp-colors-text-secondary, #626b79); }
+/* Fixed price column: an editable FormTable cell inside the picked-products table. */
+.prf-price-th { width: 200px; text-align: right !important; }
+.prf-price-td { padding: 0 !important; border-left: 1px solid var(--mp-colors-border-default, #e3e7e9); border-right: 1px solid var(--mp-colors-border-default, #e3e7e9); }
 .prf-remove { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; min-height: 0; padding: 0; border: none; background: none; border-radius: var(--mp-radii-full, 999px); color: var(--mp-colors-text-secondary, #626b79); }
 
 /* ── Tier table (docs/patterns/FormTable.md: native table, internal column
