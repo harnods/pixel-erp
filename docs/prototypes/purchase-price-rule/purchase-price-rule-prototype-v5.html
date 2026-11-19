@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Purchase Price Rule — prototype v5 (Jurnal + Mekari ERP)</title>
+<style>
+:root{
+  --brand:#4b61dd;--brand-hover:#3d50c2;--brand-soft:#edf0ff;--text:#232933;--text-2:#626b79;--text-3:#8b95a5;
+  --border:#e0e3e8;--border-strong:#c9ced6;--bg:#f5f6f8;--surface:#fff;--danger:#da473f;--danger-soft:#fdeceb;
+  --success:#0f8a4f;--success-soft:#e6f6ee;--warn:#b25e09;--warn-soft:#fff3e0;--info:#1b6ad8;--info-soft:#e8f1fd;
+  --r:6px;--font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:var(--font);font-size:14px;color:var(--text);background:var(--bg)}
+button,input,select{font:inherit;color:inherit}
+a{color:var(--brand);text-decoration:none;cursor:pointer}
+/* ── chrome ── */
+.proto-bar{height:40px;background:#1f2430;color:#fff;display:flex;align-items:center;gap:16px;padding:0 16px;font-size:13px}
+.proto-bar b{font-weight:600}
+.seg{display:inline-flex;background:#353b48;border-radius:6px;padding:2px}
+.seg button{border:0;background:transparent;color:#cfd4dc;padding:4px 12px;border-radius:5px;cursor:pointer}
+.seg button.on{background:#fff;color:#1f2430;font-weight:600}
+.proto-bar .sp{flex:1}
+.proto-bar .muted{color:#9aa3b2}
+.app{display:flex;height:calc(100% - 40px)}
+.side{width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:auto}
+.brand{height:56px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:16px}
+.brand .logo{width:26px;height:26px;border-radius:6px;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:13px}
+.nav{padding:8px}
+.nav .grp{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-3);padding:12px 10px 4px}
+.nav a{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;color:var(--text);font-size:14px}
+.nav a:hover{background:#f0f2f5}
+.nav a.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.nav a .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+.erp .side{background:#f8f9fb}
+.erp .brand .logo{background:#232933}
+.main{flex:1;overflow:auto;display:flex;flex-direction:column;min-width:0}
+.top{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0}
+.top .crumb{color:var(--text-2);font-size:13px}
+.top .sp{flex:1}
+.avatar{width:30px;height:30px;border-radius:50%;background:#7c4ddd;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:600}
+.body{display:flex;flex:1;min-height:0}
+.page{flex:1;padding:24px;overflow:auto;min-width:0}
+.guide{width:330px;flex-shrink:0;border-left:1px solid var(--border);background:var(--surface);overflow:auto;padding:16px}
+.guide.hide{display:none}
+h1{font-size:22px;margin:0;font-weight:700}
+h2{font-size:16px;margin:0 0 2px;font-weight:600}
+.cap{color:var(--text-2);font-size:13px;margin:2px 0 0}
+.head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.head .sp{flex:1}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.section{padding:20px 24px;border-bottom:1px solid var(--border)}
+.section:last-child{border-bottom:0}
+/* ── controls ── */
+.btn{border:1px solid var(--border-strong);background:#fff;border-radius:var(--r);padding:7px 14px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{background:#f5f6f8}
+.btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.pri:hover{background:var(--brand-hover)}
+.btn.sm{padding:4px 10px;font-size:13px}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--brand)}
+.btn.icon{padding:4px 8px;color:var(--text-2)}
+.inp,select.inp{border:1px solid var(--border-strong);border-radius:var(--r);padding:7px 10px;background:#fff;width:100%;min-width:0}
+.inp:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
+.inp[readonly],.inp:disabled{background:#f1f3f6;color:var(--text-2)}
+.inp.err{border-color:var(--danger)}
+.num{text-align:right}
+label.f{display:block;font-weight:500;margin-bottom:6px}
+label.f .req{color:var(--danger)}
+.help{font-size:12px;color:var(--text-2);margin-top:4px}
+.errtxt{font-size:12px;color:var(--danger);margin-top:4px}
+.grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:16px 20px;max-width:640px}
+.c2{grid-column:span 2}.c3{grid-column:span 3}.c6{grid-column:1/-1}
+.chk{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.chk input{margin-top:3px;accent-color:var(--brand);width:16px;height:16px}
+.chk .t{font-weight:500}
+.radio-row{display:flex;gap:20px;flex-wrap:wrap}
+.radio-row label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.radio-row input{accent-color:var(--brand)}
+/* ── tables ── */
+table{border-collapse:collapse;width:100%}
+th{font-size:12px;color:var(--text-2);font-weight:600;text-align:left;padding:10px 12px;background:#f8f9fb;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.badge{display:inline-block;font-size:12px;font-weight:600;border-radius:10px;padding:2px 8px;white-space:nowrap}
+.b-sales{background:var(--info-soft);color:var(--info)}
+.b-purchase{background:#f2ebff;color:#6b3fd1}
+.b-pkp{background:var(--info-soft);color:var(--info)}
+.b-nonpkp{background:var(--warn-soft);color:var(--warn)}
+.b-on{background:var(--success-soft);color:var(--success)}
+.b-off{background:#eef0f3;color:var(--text-2)}
+.b-p1{background:#eef0f3;color:var(--text-2)}
+.quiet{color:var(--text-2);font-size:12px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tabs button{border:0;background:none;padding:8px 14px;cursor:pointer;color:var(--text-2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button.on{color:var(--brand);border-color:var(--brand);font-weight:600}
+.toolbar{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+.pick-list{border:1px solid var(--border);border-radius:var(--r);max-height:260px;overflow:auto}
+.pick-list .row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border)}
+.pick-list .row:last-child{border-bottom:0}
+.pick-list .row .sp{flex:1}
+.subhead{font-size:12px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}
+.tier-tbl td{padding:6px 8px}
+/* ── transaction ── */
+.tx-head{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 20px;padding:20px 24px;border-bottom:1px solid var(--border)}
+.tx-lines td{padding:8px}
+.tx-lines .inp{padding:6px 8px}
+.note{font-size:12px;margin-top:4px;line-height:1.45}
+.note .rn{color:var(--text-2)}
+.note .lk{color:var(--warn);font-weight:600}
+.note .ed{color:var(--info);font-weight:600}
+.note .np{color:var(--warn)}
+.totals{display:flex;justify-content:flex-end;padding:16px 24px}
+.totals table{width:340px}
+.totals td{border:0;padding:4px 0}
+.totals tr.grand td{font-weight:700;font-size:16px;border-top:1px solid var(--border);padding-top:10px}
+.banner{border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;display:flex;gap:8px}
+.banner.info{background:var(--info-soft);color:#174ea6}
+.banner.err{background:var(--danger-soft);color:#a3241d}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#232933;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:20}
+.toast.show{opacity:1}
+/* ── guide ── */
+.guide h3{font-size:14px;margin:0 0 4px}
+.guide .step{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px}
+.guide .step .t{font-weight:600;font-size:13px}
+.guide .step .e{font-size:12px;color:var(--text-2);margin:4px 0 8px}
+.guide .ac{font-size:11px;color:var(--brand);font-weight:600}
+.legend{font-size:12px;color:var(--text-2);line-height:1.6;margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.legend b{color:var(--text)}
+.empty{padding:32px;text-align:center;color:var(--text-2)}
+</style>
+</head>
+<body>
+<div class="proto-bar">
+  <b>Purchase Price Rule · prototype v5</b>
+  <span class="seg" id="prodSeg"><button data-p="jurnal">Jurnal</button><button data-p="erp">Mekari ERP</button></span>
+  <span class="muted">Mock data · not connected to production · PRD: Confluence PD 51412239134</span>
+  <span class="sp"></span>
+  <button class="btn sm" id="resetBtn" style="background:#353b48;border-color:#353b48;color:#fff">Reset data</button>
+  <button class="btn sm" id="guideBtn" style="background:#353b48;border-color:#353b48;color:#fff">Demo steps</button>
+</div>
+<div class="app" id="app">
+  <aside class="side"><div class="brand"><span class="logo" id="logo">J</span><span id="brandName">mekari jurnal</span></div><nav class="nav" id="nav"></nav></aside>
+  <div class="main">
+    <div class="top"><span class="crumb" id="crumb"></span><span class="sp"></span><span class="quiet" id="company">PT Contoh Kuliner · Outlet user: Rina</span><span class="avatar">RA</span></div>
+    <div class="body"><div class="page" id="page"></div><aside class="guide" id="guide"></aside></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+/* ═════════════════════════ DATA (mock) ═════════════════════════ */
+const SEED = () => ({
+  categories: ['Bahan Baku', 'Bumbu', 'Kemasan'],
+  products: [
+    { id: 'P01', name: 'Mie Basah 1 kg', category: 'Bahan Baku', buy: 18000, sell: 24000 },
+    { id: 'P02', name: 'Tepung Terigu 25 kg', category: 'Bahan Baku', buy: 210000, sell: 245000 },
+    { id: 'P03', name: 'Daging Ayam Fillet 1 kg', category: 'Bahan Baku', buy: 38000, sell: 46000 },
+    { id: 'P04', name: 'Sawi Hijau 1 kg', category: 'Bahan Baku', buy: 12000, sell: 16000 },
+    { id: 'P05', name: 'Bawang Putih 1 kg', category: 'Bumbu', buy: 35000, sell: 42000 },
+    { id: 'P06', name: 'Kecap Manis 5 L', category: 'Bumbu', buy: 95000, sell: 112000 },
+    { id: 'P07', name: 'Cup Kertas 1.000 pcs', category: 'Kemasan', buy: 450000, sell: 520000 },
+    { id: 'P08', name: 'Kantong Plastik 1 kg', category: 'Kemasan', buy: 40000, sell: 48000 },
+  ],
+  vendors: [
+    { id: 'V1', name: 'Central Kitchen Bandung', pkp: true },
+    { id: 'V2', name: 'Central Kitchen Jakarta', pkp: true },
+    { id: 'V3', name: 'UD Sumber Sayur', pkp: false },
+    { id: 'V4', name: 'PT Kemasan Prima', pkp: true },
+  ],
+  customers: [
+    { id: 'C1', name: 'Outlet Dago' },
+    { id: 'C2', name: 'Outlet Kemang' },
+    { id: 'C3', name: 'Catering Sejahtera' },
+  ],
+  // id order = age (higher = newer). Ties inside a precedence level go to the newest rule.
+  rules: [
+    { id: 101, name: 'CK Bandung · Outlet Kemang deal', tx: 'purchase', type: 'fixed_price', amount: 0, tiers: [], prices: { P01: 16000, P03: 35000 }, products: ['P01', 'P03'], categories: [], contacts: ['V1'], allow: false, active: true, start: '', end: '' },
+    { id: 102, name: 'CK Bandung · price list Nov 2026', tx: 'purchase', type: 'fixed_price', amount: 0, tiers: [], prices: { P01: 16500, P02: 198000, P03: 36000 }, products: ['P01', 'P02', 'P03'], categories: [], contacts: ['V1'], allow: false, active: true, start: '2026-11-01', end: '' },
+    { id: 103, name: 'CK Jakarta · price list Nov 2026', tx: 'purchase', type: 'fixed_price', amount: 0, tiers: [], prices: { P01: 17250, P03: 37000 }, products: ['P01', 'P03'], categories: [], contacts: ['V2'], allow: false, active: true, start: '2026-11-01', end: '' },
+    { id: 104, name: 'CK Bandung · bumbu 5%', tx: 'purchase', type: 'percent', amount: 5, tiers: [], prices: {}, products: [], categories: ['Bumbu'], contacts: ['V1'], allow: true, active: true, start: '', end: '' },
+    { id: 105, name: 'Sumber Sayur · all products 3%', tx: 'purchase', type: 'percent', amount: 3, tiers: [], prices: {}, products: [], categories: [], contacts: ['V3'], allow: true, active: true, start: '', end: '' },
+    { id: 106, name: 'Kemasan Prima · cup volume tiers', tx: 'purchase', type: 'tier', amount: 0, tiers: [{ t: 10, d: 5 }, { t: 50, d: 8 }], prices: {}, products: ['P07'], categories: [], contacts: ['V4'], allow: false, active: true, start: '', end: '' },
+    { id: 107, name: 'All vendors · kemasan Rp 2.000/unit', tx: 'purchase', type: 'value', amount: 2000, tiers: [], prices: {}, products: [], categories: ['Kemasan'], contacts: [], allow: true, active: true, start: '', end: '' },
+    { id: 108, name: 'Outlet Kemang · markup 10%', tx: 'sales', type: 'markup_percent', amount: 10, tiers: [], prices: {}, products: [], categories: [], contacts: ['C2'], allow: true, active: true, start: '', end: '' },
+    { id: 109, name: 'All customers · bahan baku subtotal tiers', tx: 'sales', type: 'subtotal_tier', amount: 0, tiers: [{ t: 1000000, d: 2 }, { t: 5000000, d: 4 }], prices: {}, products: [], categories: ['Bahan Baku'], contacts: [], allow: true, active: true, start: '', end: '' },
+    { id: 110, name: 'Catering Sejahtera · price list', tx: 'sales', type: 'fixed_price', amount: 0, tiers: [], prices: { P02: 238000, P06: 105000 }, products: ['P02', 'P06'], categories: [], contacts: ['C3'], allow: false, active: true, start: '', end: '' },
+  ],
+});
+let DB = SEED();
+let nextRuleId = 200, nextProdId = 9;
+
+/* ═════════════════════════ PRODUCT LABELS ═════════════════════════ */
+const PROD = {
+  jurnal: {
+    brand: 'mekari jurnal', logo: 'J', rulesPath: 'Products › Price rules',
+    types: { percent: 'Discount percentage', value: 'Discount value', tier: 'Tiered discount', subtotal_tier: 'Subtotal tiered discount', end_discount: 'End discount', markup_percent: 'Markup percentage', markup_value: 'Markup value', fixed_price: 'Fixed price per product' },
+    unit: { purchase: 'Unit price', sales: 'Unit price' },
+    nav: [['', [['dashboard', 'Dashboard'], ['sales', 'Sales'], ['purchases', 'Purchases'], ['products', 'Products'], ['rules', 'Price rules'], ['vendors', 'Contacts (vendors)']]]],
+    docs: { po: 'Purchase Order', pi: 'Purchase Invoice', so: 'Sales Order' },
+  },
+  erp: {
+    brand: 'Mekari ERP', logo: 'E', rulesPath: 'Inventory › Price rules',
+    types: { percent: 'Percentage discount', value: 'Price amount discount', tier: 'Tier percentage discount', subtotal_tier: 'Subtotal discount', end_discount: 'Last price discount', markup_percent: 'Percentage markup', markup_value: 'Price amount markup', fixed_price: 'Fixed price per product' },
+    unit: { purchase: 'Unit cost', sales: 'Unit price' },
+    nav: [['Sales', [['sales', 'Sales orders']]], ['Purchase', [['purchases', 'Purchase orders / invoices']]], ['Inventory', [['products', 'Products'], ['rules', 'Price rules']]], ['Contacts', [['vendors', 'Vendors']]]],
+    docs: { po: 'Purchase order', pi: 'Purchase invoice', so: 'Sales order' },
+  },
+};
+const TYPE_ORDER = ['percent', 'value', 'tier', 'subtotal_tier', 'end_discount', 'fixed_price', 'markup_percent', 'markup_value'];
+const SHAPE = { percent: 'pct', markup_percent: 'pct', value: 'amt', markup_value: 'amt', end_discount: 'amt', tier: 'tier', subtotal_tier: 'tier', fixed_price: 'list' };
+const LEVEL = { 1: 'Contact + product', 2: 'Contact + category', 3: 'Contact only', 4: 'Product only', 5: 'Category only' };
+const levelLabel = (lvl, tx) => LEVEL[lvl].replace('Contact', tx === 'purchase' ? 'Vendor' : 'Customer');
+
+/* ═════════════════════════ ENGINE (same for sales and purchase) ═════════════════════════
+   Precedence (no stacking): 1 contact+product › 2 contact+category › 3 contact+all products ›
+   4 product only › 5 category only. Ties → newest rule. A picked rule wins on lines it covers.
+   Category is a LIVE scope: membership is read at transaction time.                          */
+const prod = (id) => DB.products.find((p) => p.id === id);
+const ruleById = (id) => DB.rules.find((r) => r.id === id);
+function inPeriod(r, iso) { return (!r.start || iso >= r.start) && (!r.end || iso <= r.end); }
+function levelFor(r, contactId, pid) {
+  const hasC = r.contacts.length > 0;
+  if (hasC && !r.contacts.includes(contactId)) return null;
+  if (r.type === 'fixed_price') return pid in r.prices ? (hasC ? 1 : 4) : null;
+  if (r.products.includes(pid)) return hasC ? 1 : 4;
+  const cat = prod(pid)?.category;
+  if (cat && r.categories.includes(cat)) return hasC ? 2 : 5;
+  if (!r.products.length && !r.categories.length && hasC) return 3;
+  return null;
+}
+function activeRules(tx, iso) { return DB.rules.filter((r) => r.tx === tx && r.active && inPeriod(r, iso)); }
+function ruleOptions(tx, contactId, iso) {
+  if (!contactId) return [];
+  return activeRules(tx, iso).filter((r) => (!r.contacts.length || r.contacts.includes(contactId)) && (r.contacts.length || r.products.length || r.categories.length)).sort((a, b) => b.id - a.id);
+}
+function step(r, measure) { return [...r.tiers].sort((a, b) => b.t - a.t).find((s) => measure >= s.t)?.d ?? 0; }
+function applyRule(r, base, qty, docSub, pid) {
+  switch (r.type) {
+    case 'percent': return { price: base, disc: r.amount };
+    case 'value': return { price: base, disc: base > 0 ? Math.round((r.amount / base) * 10000) / 100 : 0 };
+    case 'tier': return { price: base, disc: step(r, qty) };
+    case 'subtotal_tier': return { price: base, disc: step(r, docSub) };
+    case 'end_discount': return { price: r.amount, disc: 0 };
+    case 'markup_percent': return { price: Math.round(base * (1 + r.amount / 100)), disc: 0 };
+    case 'markup_value': return { price: base + r.amount, disc: 0 };
+    case 'fixed_price': return { price: r.prices[pid] ?? base, disc: 0 };
+  }
+}
+function resolve({ tx, contactId, pid, base, qty, docSub, iso, pick }) {
+  if (!contactId || !pid || pick === 'none') return null;
+  const rules = activeRules(tx, iso);
+  let chosen = null;
+  if (pick !== 'auto') {
+    const r = rules.find((x) => x.id === pick); const lvl = r ? levelFor(r, contactId, pid) : null;
+    if (lvl) chosen = { rule: r, level: lvl, picked: true };
+  }
+  if (!chosen) {
+    const best = rules.map((rule) => ({ rule, level: levelFor(rule, contactId, pid) })).filter((c) => c.level).sort((a, b) => a.level - b.level || b.rule.id - a.rule.id)[0];
+    if (best) chosen = { ...best, picked: false };
+  }
+  if (!chosen) return null;
+  const out = applyRule(chosen.rule, base, qty, docSub, pid);
+  return { ...chosen, price: out.price, disc: Math.min(Math.max(out.disc, 0), 100), editable: chosen.rule.allow };
+}
+
+/* ═════════════════════════ STATE / UTIL ═════════════════════════ */
+const S = { product: 'jurnal', page: 'rules', filter: 'all', search: '', form: null, formErr: {}, tx: null, guide: true };
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const rp = (n) => 'Rp ' + Math.round(n).toLocaleString('id-ID');
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const pct = (n) => (Math.round(n * 100) / 100).toLocaleString('id-ID') + '%';
+const L = () => PROD[S.product];
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600); }
+const today = '2026-11-19';
+const contactsOf = (tx) => (tx === 'purchase' ? DB.vendors : DB.customers);
+const contactName = (tx, id) => contactsOf(tx).find((c) => c.id === id)?.name ?? id;
+
+/* ═════════════════════════ RENDER: chrome ═════════════════════════ */
+function render() {
+  document.getElementById('app').className = 'app ' + S.product;
+  $('#brandName').textContent = L().brand; $('#logo').textContent = L().logo;
+  document.querySelectorAll('#prodSeg button').forEach((b) => b.classList.toggle('on', b.dataset.p === S.product));
+  const navKey = S.page === 'ruleForm' ? 'rules' : S.page === 'tx' ? (S.tx?.doc === 'so' ? 'sales' : 'purchases') : S.page;
+  $('#nav').innerHTML = L().nav.map(([g, items]) => (g ? `<div class="grp">${g}</div>` : '') + items.map(([k, t]) => `<a data-nav="${k}" class="${navKey === k ? 'on' : ''}"><span class="dot"></span>${t}</a>`).join('')).join('');
+  $('#crumb').textContent = { rules: L().rulesPath, ruleForm: L().rulesPath + (S.form?.id ? ' › Edit' : ' › New'), tx: S.tx ? (S.tx.doc === 'so' ? 'Sales' : 'Purchases') + ' › New ' + L().docs[S.tx.doc] : '', vendors: 'Contacts › Vendors', products: 'Products', sales: 'Sales', purchases: 'Purchases', dashboard: 'Dashboard' }[S.page] || '';
+  const pg = $('#page');
+  ({ rules: renderRules, ruleForm: renderForm, tx: renderTx, vendors: renderVendors, products: renderProducts, sales: () => openTx('so'), purchases: () => openTx('po'), dashboard: renderDash })[S.page](pg);
+  renderGuide();
+}
+function go(page) { S.page = page; render(); }
+
+/* ═════════════════════════ PAGE: price rules list ═════════════════════════ */
+function scopeText(r) {
+  const parts = [];
+  if (r.type === 'fixed_price') parts.push(plural(Object.keys(r.prices).length, 'product'));
+  else if (!r.products.length && !r.categories.length) parts.push('All products');
+  else { if (r.categories.length) parts.push(`${r.categories.length} categor${r.categories.length > 1 ? 'ies' : 'y'} (${r.categories.join(', ')})`); if (r.products.length) parts.push(`${r.products.length} product${r.products.length > 1 ? 's' : ''}`); }
+  return parts.join(' · ');
+}
+function contactText(r) {
+  const noun = r.tx === 'purchase' ? 'vendor' : 'customer';
+  if (!r.contacts.length) return `All ${noun}s`;
+  if (r.contacts.length === 1) return contactName(r.tx, r.contacts[0]);
+  return `${r.contacts.length} ${noun}s`;
+}
+function valueText(r) {
+  switch (SHAPE[r.type]) {
+    case 'pct': return pct(r.amount);
+    case 'amt': return rp(r.amount) + (r.type === 'end_discount' ? ' final price' : ' / unit');
+    case 'tier': return r.tiers.length ? `${pct(Math.min(...r.tiers.map((t) => t.d)))}–${pct(Math.max(...r.tiers.map((t) => t.d)))} · ${r.tiers.length} tiers` : '—';
+    case 'list': return `Price list · ${plural(Object.keys(r.prices).length, 'product')}`;
+  }
+}
+function renderRules(pg) {
+  const rows = DB.rules.filter((r) => (S.filter === 'all' || r.tx === S.filter) && (!S.search || r.name.toLowerCase().includes(S.search.toLowerCase()))).sort((a, b) => b.id - a.id);
+  pg.innerHTML = `
+  <div class="head"><div><h1>Price rules</h1><p class="cap">One price rule feature for customers and vendors. Pick <b>Transaction type</b> on each rule.</p></div><span class="sp"></span><button class="btn pri" data-act="newRule">New price rule</button></div>
+  <div class="card">
+    <div class="tabs" style="padding:0 16px;margin:0">${[['all', 'All'], ['sales', 'Sales'], ['purchase', 'Purchase']].map(([k, t]) => `<button data-filter="${k}" class="${S.filter === k ? 'on' : ''}">${t} <span class="quiet">${k === 'all' ? DB.rules.length : DB.rules.filter((r) => r.tx === k).length}</span></button>`).join('')}</div>
+    <div class="toolbar"><input class="inp" style="max-width:280px" placeholder="Search rule name" id="ruleSearch" value="${esc(S.search)}"></div>
+    <table><thead><tr><th>Rule name</th><th>Transaction type</th><th>Rule type</th><th>Discount / price</th><th>Products</th><th>Contacts</th><th>Status</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td><a data-edit="${r.id}">${esc(r.name)}</a>${r.allow ? '' : '<div class="quiet">🔒 Locked on transactions</div>'}</td>
+      <td><span class="badge b-${r.tx}">${r.tx === 'sales' ? 'Sales' : 'Purchase'}</span></td><td>${L().types[r.type]}</td><td>${valueText(r)}</td><td>${esc(scopeText(r))}</td><td>${esc(contactText(r))}</td>
+      <td><span class="badge ${r.active ? 'b-on' : 'b-off'}">${r.active ? 'Active' : 'Inactive'}</span></td></tr>`).join('') || '<tr><td colspan="7" class="empty">No price rules match.</td></tr>'}
+    </tbody></table>
+  </div>`;
+}
+
+/* ═════════════════════════ PAGE: rule form ═════════════════════════ */
+function blankForm(tx = 'sales') { return { id: null, name: '', tx, type: 'percent', amount: 0, tiers: [{ t: 0, d: 0 }], prices: {}, products: [], categories: [], contacts: [], allContacts: true, allProducts: true, allow: true, active: true, start: '', end: '' }; }
+function openForm(id) {
+  const r = id ? ruleById(id) : null;
+  S.form = r ? { ...JSON.parse(JSON.stringify(r)), allContacts: !r.contacts.length, allProducts: r.type !== 'fixed_price' && !r.products.length && !r.categories.length, tiers: r.tiers.length ? JSON.parse(JSON.stringify(r.tiers)) : [{ t: 0, d: 0 }] } : blankForm();
+  S.formErr = {}; go('ruleForm');
+}
+function renderForm(pg) {
+  const f = S.form, e = S.formErr, sh = SHAPE[f.type], noun = f.tx === 'purchase' ? 'vendor' : 'customer', Noun = f.tx === 'purchase' ? 'Vendors' : 'Customers';
+  const list = f.type === 'fixed_price';
+  const prodRows = DB.products.map((p) => {
+    const on = f.products.includes(p.id);
+    return `<div class="row"><label class="chk" style="flex:1"><input type="checkbox" data-fprod="${p.id}" ${on ? 'checked' : ''}><span>${esc(p.name)} <span class="quiet">· ${esc(p.category)} · base ${rp(f.tx === 'purchase' ? p.buy : p.sell)}</span></span></label>
+      ${list && on ? `<div style="width:170px"><input class="inp num ${e['price_' + p.id] ? 'err' : ''}" data-fprice="${p.id}" placeholder="Fixed price" value="${f.prices[p.id] ?? ''}"></div>` : ''}</div>`;
+  }).join('');
+  pg.innerHTML = `
+  <div class="head"><div><h1>${f.id ? 'Edit price rule' : 'Create price rule'}</h1><p class="cap">Customer and vendor rules have exactly the same settings.</p></div></div>
+  ${Object.keys(e).length ? `<div class="banner err">⚠ Please fix: ${Object.values(e).filter((x, i, a) => a.indexOf(x) === i).join(' · ')}</div>` : ''}
+  <div class="card">
+    <div class="section"><h2>Rule info</h2><p class="cap" style="margin-bottom:16px">Name the rule and choose how it changes the price.</p>
+      <div class="grid">
+        <div class="c6"><label class="f">Rule name <span class="req">*</span></label><input class="inp ${e.name ? 'err' : ''}" data-f="name" value="${esc(f.name)}" placeholder="e.g. CK Bandung · price list Nov 2026">${e.name ? `<div class="errtxt">${e.name}</div>` : ''}</div>
+        <div class="c3"><label class="f">Transaction type</label><select class="inp" data-f="tx"><option value="sales" ${f.tx === 'sales' ? 'selected' : ''}>Sales</option><option value="purchase" ${f.tx === 'purchase' ? 'selected' : ''}>Purchase</option></select><div class="help">Changing it clears the selected ${noun}s and prices.</div></div>
+        <div class="c3"><label class="f">Rule type</label><select class="inp" data-f="type">${TYPE_ORDER.map((t) => `<option value="${t}" ${f.type === t ? 'selected' : ''}>${L().types[t]}</option>`).join('')}</select></div>
+        ${sh === 'pct' ? `<div class="c3"><label class="f">${f.type === 'markup_percent' ? 'Markup' : 'Discount'} (%)</label><input class="inp num" data-f="amount" value="${f.amount}"></div>` : ''}
+        ${sh === 'amt' ? `<div class="c3"><label class="f">${f.type === 'end_discount' ? 'Final price (Rp)' : f.type === 'markup_value' ? 'Markup (Rp / unit)' : 'Discount (Rp / unit)'}</label><input class="inp num" data-f="amount" value="${f.amount}"></div>` : ''}
+        ${sh === 'list' ? `<div class="c6 help" style="margin-top:-6px">Set each product's price under <b>Products</b> below.</div>` : ''}
+        ${sh === 'tier' ? `<div class="c6"><label class="f">Tiers <span class="quiet">(max 5)</span></label>
+          <table class="tier-tbl card" style="max-width:460px"><thead><tr><th>${f.type === 'tier' ? 'Minimum qty' : 'Minimum subtotal (Rp)'}</th><th>Discount (%)</th><th></th></tr></thead><tbody>
+          ${f.tiers.map((t, i) => `<tr><td><input class="inp num" data-tier="${i}" data-k="t" value="${t.t}"></td><td><input class="inp num" data-tier="${i}" data-k="d" value="${t.d}"></td><td><button class="btn icon" data-deltier="${i}">✕</button></td></tr>`).join('')}
+          </tbody></table>${f.tiers.length < 5 ? '<button class="btn ghost sm" data-act="addTier" style="margin-top:6px">+ Add tier</button>' : ''}${e.tiers ? `<div class="errtxt">${e.tiers}</div>` : ''}</div>` : ''}
+        <div class="c3"><label class="f">Start date</label><input type="date" class="inp" data-f="start" value="${f.start}"></div>
+        <div class="c3"><label class="f">End date</label><input type="date" class="inp" data-f="end" value="${f.end}"><div class="help">Leave empty for no end.</div></div>
+        <div class="c6"><label class="chk"><input type="checkbox" data-f="allow" ${f.allow ? 'checked' : ''}><span><span class="t">Allow changes on transaction</span><div class="help" style="margin:2px 0 0">When off, the price and discount this rule sets can't be edited on the transaction.</div></span></label></div>
+        <div class="c6"><label class="chk"><input type="checkbox" data-f="active" ${f.active ? 'checked' : ''}><span><span class="t">Active</span><div class="help" style="margin:2px 0 0">Changes apply to new transactions only. Saved transactions keep their prices.</div></span></label></div>
+      </div>
+    </div>
+    <div class="section"><h2>${Noun}</h2><p class="cap" style="margin-bottom:12px">Which ${noun}s the rule applies to.</p>
+      <div class="radio-row"><label><input type="radio" name="cs" data-cs="all" ${f.allContacts ? 'checked' : ''}> All ${noun}s</label><label><input type="radio" name="cs" data-cs="some" ${f.allContacts ? '' : 'checked'}> Specific ${noun}s</label></div>
+      ${f.allContacts ? '' : `<div class="pick-list" style="margin-top:10px;max-width:640px">${contactsOf(f.tx).map((c) => `<div class="row"><label class="chk"><input type="checkbox" data-fcontact="${c.id}" ${f.contacts.includes(c.id) ? 'checked' : ''}><span>${esc(c.name)}${f.tx === 'purchase' ? ` <span class="badge ${c.pkp ? 'b-pkp' : 'b-nonpkp'}">${c.pkp ? 'PKP' : 'Non-PKP'}</span>` : ''}</span></label></div>`).join('')}</div>${e.contacts ? `<div class="errtxt">${e.contacts}</div>` : ''}`}
+    </div>
+    <div class="section"><h2>Products</h2><p class="cap" style="margin-bottom:12px">${list ? 'A fixed price is set per product, so pick the products and enter each price.' : 'All products, whole categories (new products in a category are covered automatically), or specific products.'}</p>
+      ${list ? '' : `<div class="radio-row"><label><input type="radio" name="ps" data-ps="all" ${f.allProducts ? 'checked' : ''}> All products</label><label><input type="radio" name="ps" data-ps="some" ${f.allProducts ? '' : 'checked'}> Categories and / or products</label></div>`}
+      ${list || !f.allProducts ? `<div style="max-width:720px">
+        ${list ? '' : `<div class="subhead">Categories · live</div><div class="pick-list">${DB.categories.map((c) => `<div class="row"><label class="chk"><input type="checkbox" data-fcat="${esc(c)}" ${f.categories.includes(c) ? 'checked' : ''}><span>${esc(c)} <span class="quiet">· ${DB.products.filter((p) => p.category === c).length} products today</span></span></label></div>`).join('')}</div>`}
+        <div class="subhead">Products${list ? ' and fixed prices' : ''}</div><div class="pick-list" style="max-height:none">${prodRows}</div>${e.products ? `<div class="errtxt">${e.products}</div>` : ''}${e.prices ? `<div class="errtxt">${e.prices}</div>` : ''}
+      </div>` : ''}
+    </div>
+    <div class="section" style="display:flex;gap:8px;justify-content:flex-end">${f.id ? '<button class="btn" data-act="delRule" style="margin-right:auto;color:var(--danger)">Delete</button>' : ''}<button class="btn" data-act="cancelForm">Cancel</button><button class="btn pri" data-act="saveRule">${f.id ? 'Save changes' : 'Save'}</button></div>
+  </div>`;
+}
+function saveRule() {
+  const f = S.form, e = {};
+  if (!f.name.trim()) e.name = 'Rule name is required';
+  if (!f.allContacts && !f.contacts.length) e.contacts = 'Pick at least one contact';
+  if (f.type === 'fixed_price') {
+    if (!f.products.length) e.products = 'Pick at least one product';
+    f.products.forEach((id) => { if (!(Number(f.prices[id]) > 0)) { e['price_' + id] = 'Enter a fixed price above 0 for every product'; } });
+  } else if (!f.allProducts && !f.products.length && !f.categories.length) e.products = 'Pick a category or a product';
+  if (SHAPE[f.type] === 'tier') { const ts = f.tiers.map((t) => Number(t.t)); if (!f.tiers.length || ts.some((t, i) => t <= 0 || (i && t <= ts[i - 1])) || f.tiers.some((t) => t.d < 0 || t.d > 100)) e.tiers = 'Tier minimums must be above 0 and go up row by row; discounts 0–100'; }
+  S.formErr = e; if (Object.keys(e).length) return render();
+  const list = f.type === 'fixed_price';
+  const rule = { id: f.id ?? nextRuleId++, name: f.name.trim(), tx: f.tx, type: f.type, amount: Number(f.amount) || 0, tiers: SHAPE[f.type] === 'tier' ? f.tiers.map((t) => ({ t: Number(t.t), d: Number(t.d) })) : [],
+    prices: list ? Object.fromEntries(f.products.map((id) => [id, Number(f.prices[id])])) : {}, products: list || !f.allProducts ? [...f.products] : [], categories: !list && !f.allProducts ? [...f.categories] : [],
+    contacts: f.allContacts ? [] : [...f.contacts], allow: f.allow, active: f.active, start: f.start, end: f.end };
+  const i = DB.rules.findIndex((r) => r.id === rule.id); if (i >= 0) DB.rules[i] = rule; else DB.rules.push(rule);
+  toast(f.id ? 'Price rule updated' : 'Price rule created'); S.form = null; go('rules');
+}
+
+/* ═════════════════════════ PAGE: transaction ═════════════════════════ */
+function openTx(doc) { S.tx = { doc, contact: '', pick: 'auto', lines: [] }; S.page = 'tx'; render(); }
+const txType = () => (S.tx.doc === 'so' ? 'sales' : 'purchase');
+function baseOf(pid) { const p = prod(pid); return txType() === 'purchase' ? p.buy : p.sell; }
+function reapply(force = false) {
+  const t = S.tx, tx = txType();
+  const docSub = t.lines.reduce((s, l) => s + (l.pid ? baseOf(l.pid) * l.qty : 0), 0);
+  for (let pass = 0; pass < 2; pass++) t.lines.forEach((l) => {
+    if (!l.pid) return;
+    const m = resolve({ tx, contactId: t.contact, pid: l.pid, base: baseOf(l.pid), qty: l.qty, docSub, iso: today, pick: t.pick });
+    if (m && !m.editable) l.manual = false;
+    if (l.manual && !force) { l.match = m; return; }
+    l.match = m; l.manual = false;
+    if (m) { l.price = m.price; l.disc = m.disc; } else { l.price = baseOf(l.pid); l.disc = 0; }
+  });
+}
+function vendorPkp() { if (txType() !== 'purchase' || !S.tx.contact) return null; return DB.vendors.find((v) => v.id === S.tx.contact)?.pkp ?? null; }
+function lineTax(l) { if (!l.pid) return { label: '—', rate: 0, np: false }; if (vendorPkp() === false) return { label: 'Non-taxable', rate: 0, np: true }; return { label: 'PPN 11%', rate: 11, np: false }; }
+function renderTx(pg) {
+  const t = S.tx, tx = txType(), noun = tx === 'purchase' ? 'Vendor' : 'Customer', pkp = vendorPkp();
+  const opts = ruleOptions(tx, t.contact, today);
+  let sub = 0, disc = 0, tax = 0;
+  t.lines.forEach((l) => { if (!l.pid) return; const g = l.qty * l.price, d = (g * l.disc) / 100; sub += g; disc += d; tax += ((g - d) * lineTax(l).rate) / 100; });
+  pg.innerHTML = `
+  <div class="head"><div><h1>New ${L().docs[t.doc]}</h1><p class="cap">${tx === 'purchase' ? 'Purchase rules fill price and discount per line. PPN follows the vendor\'s PKP status.' : 'Sales side: same rules engine. The header Price rule field on sales is P1.'}</p></div><span class="sp"></span>
+    <select class="inp" style="width:200px" data-txdoc>${Object.entries(L().docs).map(([k, v]) => `<option value="${k}" ${k === t.doc ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+  <div class="card">
+    <div class="tx-head">
+      <div><label class="f">${noun} <span class="req">*</span></label><select class="inp" data-txcontact><option value="">Select ${noun.toLowerCase()}</option>${contactsOf(tx).map((c) => `<option value="${c.id}" ${c.id === t.contact ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+        ${pkp !== null ? `<div style="margin-top:6px"><span class="badge ${pkp ? 'b-pkp' : 'b-nonpkp'}">${pkp ? 'PKP' : 'Non-PKP'}</span> <span class="quiet">From vendor master</span></div>` : ''}</div>
+      <div><label class="f">Price rule ${tx === 'sales' ? '<span class="badge b-p1">P1</span>' : ''}</label><select class="inp" data-txpick ${t.contact ? '' : 'disabled'}><option value="auto" ${t.pick === 'auto' ? 'selected' : ''}>Automatic</option>${opts.map((r) => `<option value="${r.id}" ${t.pick === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}<option value="none" ${t.pick === 'none' ? 'selected' : ''}>No price rule</option></select>
+        <div class="help">Automatic picks the best rule per line. Pick a rule to use it on every line it covers.</div></div>
+      <div><label class="f">Transaction date</label><input class="inp" value="19/11/2026" readonly></div>
+      <div><label class="f">Warehouse</label><select class="inp"><option>Outlet Kemang</option><option>Outlet Dago</option><option>Gudang Pusat</option></select></div>
+    </div>
+    <div style="padding:8px 16px 0;overflow:auto"><table class="tx-lines"><thead><tr><th style="width:26%">Product</th><th style="width:9%">Qty</th><th class="r" style="width:16%">${L().unit[tx]}</th><th class="r" style="width:11%">Discount (%)</th><th style="width:13%">Tax</th><th class="r" style="width:15%">Amount</th><th></th></tr></thead><tbody>
+      ${t.lines.map((l, i) => { const m = l.match, lock = m && !m.editable, tl = lineTax(l), amt = l.pid ? l.qty * l.price * (1 - l.disc / 100) : 0; return `<tr>
+        <td><select class="inp" data-lp="${i}"><option value="">Select product</option>${DB.products.map((p) => `<option value="${p.id}" ${p.id === l.pid ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+          ${m ? `<div class="note"><span class="rn">Rule: ${esc(m.rule.name)}</span><br><span class="rn">${m.picked ? 'Picked · ' : ''}${levelLabel(m.level, tx)}</span>${lock ? ' · <span class="lk">🔒 Locked by rule</span>' : ''}${l.manual ? ` · <span class="ed">Edited manually</span> · <a data-reset="${i}">Reset to rule</a>` : ''}</div>` : l.pid ? '<div class="note rn">No price rule</div>' : ''}</td>
+        <td><input class="inp num" data-lq="${i}" value="${l.qty}"></td>
+        <td><input class="inp num" data-lu="${i}" value="${l.pid ? l.price : ''}" ${lock ? 'readonly' : ''}></td>
+        <td><input class="inp num" data-ld="${i}" value="${l.pid ? l.disc : ''}" ${lock ? 'readonly' : ''}></td>
+        <td><select class="inp" disabled><option>${tl.label}</option></select>${tl.np ? '<div class="note np">PPN not applied: Non-PKP vendor</div>' : ''}</td>
+        <td class="r" style="padding-top:14px">${l.pid ? rp(amt) : ''}</td><td><button class="btn icon" data-ldel="${i}">✕</button></td></tr>`; }).join('')}
+    </tbody></table><button class="btn ghost sm" data-act="addLine" style="margin:8px 0">+ Add line</button></div>
+    <div class="totals"><table><tr><td>Subtotal</td><td class="r">${rp(sub)}</td></tr><tr><td>Discount</td><td class="r">− ${rp(disc)}</td></tr><tr><td>PPN</td><td class="r">${rp(tax)}</td></tr><tr class="grand"><td>Total</td><td class="r">${rp(sub - disc + tax)}</td></tr></table></div>
+  </div>`;
+}
+function addLine(pid = '', qty = 1) { S.tx.lines.push({ pid, qty, price: pid ? baseOf(pid) : 0, disc: 0, manual: false, match: null }); }
+
+/* ═════════════════════════ PAGES: vendors / products / dash ═════════════════════════ */
+function renderVendors(pg) {
+  pg.innerHTML = `<div class="head"><div><h1>Vendors</h1><p class="cap"><b>PKP status</b> lives on the vendor master. Non-PKP vendors don't charge PPN: purchases from them skip PPN on every line, with or without a price rule. PPh still applies.</p></div></div>
+  <div class="card"><table><thead><tr><th>Vendor</th><th style="width:240px">PKP status</th><th>Purchase rules naming this vendor</th></tr></thead><tbody>
+  ${DB.vendors.map((v) => `<tr><td>${esc(v.name)}</td><td><select class="inp" data-pkp="${v.id}"><option value="1" ${v.pkp ? 'selected' : ''}>PKP</option><option value="0" ${v.pkp ? '' : 'selected'}>Non-PKP</option></select></td><td class="quiet">${DB.rules.filter((r) => r.tx === 'purchase' && r.contacts.includes(v.id)).map((r) => esc(r.name)).join('<br>') || '—'}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function renderProducts(pg) {
+  pg.innerHTML = `<div class="head"><div><h1>Products</h1><p class="cap">Add a product to a category to see the <b>live category scope</b>: category rules cover it without editing the rule.</p></div></div>
+  <div class="card" style="margin-bottom:16px"><div class="section"><h2>New product</h2><div class="grid" style="max-width:820px;margin-top:12px;grid-template-columns:2fr 1fr 1fr 1fr auto">
+    <div><label class="f">Name</label><input class="inp" id="npName" value="Saus Sambal 1 L"></div>
+    <div><label class="f">Category</label><select class="inp" id="npCat">${DB.categories.map((c) => `<option ${c === 'Bumbu' ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+    <div><label class="f">Buy price</label><input class="inp num" id="npBuy" value="28000"></div>
+    <div><label class="f">Sell price</label><input class="inp num" id="npSell" value="34000"></div>
+    <div style="align-self:end"><button class="btn pri" data-act="addProduct">Add</button></div></div></div></div>
+  <div class="card"><table><thead><tr><th>Product</th><th>Category</th><th class="r">Buy price</th><th class="r">Sell price</th></tr></thead><tbody>
+  ${DB.products.map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.category)}</td><td class="r">${rp(p.buy)}</td><td class="r">${rp(p.sell)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function renderDash(pg) { pg.innerHTML = `<div class="card section"><h2>Prototype</h2><p class="cap">Use the menu or the <b>Demo steps</b> panel. Everything is mock data stored in this page only.</p></div>`; }
+
+/* ═════════════════════════ DEMO STEPS ═════════════════════════ */
+const STEPS = [
+  { t: 'Price rules: one list, Sales + Purchase', e: 'Every rule type, period, contact scope, product/category scope and "Allow changes" works on both sides.', ac: 'AC12', run: () => { S.filter = 'all'; go('rules'); } },
+  { t: 'Price list (Fixed price per product)', e: 'CK Bandung + Mie Basah → Rp 16.500 from the Nov price list, locked. Tepung → Rp 198.000.', ac: 'AC7a · AC8', run: () => { openTx('po'); S.tx.contact = 'V1'; addLine('P01', 10); addLine('P02', 2); reapply(true); render(); } },
+  { t: 'Pick a rule on the transaction (outlet deal)', e: 'Price rule → "CK Bandung · Outlet Kemang deal": Mie Basah Rp 16.000 (Picked). Tepung isn\'t on that rule, so it keeps Automatic.', ac: 'AC4', run: () => { openTx('po'); S.tx.contact = 'V1'; addLine('P01', 10); addLine('P02', 2); S.tx.pick = 101; reapply(true); render(); } },
+  { t: '"No price rule"', e: 'No rule on any line; base purchase prices.', ac: 'AC5', run: () => { openTx('po'); S.tx.contact = 'V1'; addLine('P01', 10); addLine('P05', 3); S.tx.pick = 'none'; reapply(true); render(); } },
+  { t: 'Category rule (Vendor + category)', e: 'CK Bandung + Bawang Putih → 5% from "bumbu 5%". Editable: type another discount to see "Edited manually" + Reset.', ac: 'AC1 · AC8', run: () => { openTx('po'); S.tx.contact = 'V1'; addLine('P05', 4); addLine('P06', 1); reapply(true); render(); } },
+  { t: 'Live category scope', e: 'Adds "Saus Sambal 1 L" to Bumbu, then orders it from CK Bandung → 5% without touching the rule.', ac: 'AC7b', run: () => { if (!DB.products.some((p) => p.name === 'Saus Sambal 1 L')) DB.products.push({ id: 'P' + String(nextProdId++).padStart(2, '0'), name: 'Saus Sambal 1 L', category: 'Bumbu', buy: 28000, sell: 34000 }); openTx('po'); S.tx.contact = 'V1'; addLine(DB.products.find((p) => p.name === 'Saus Sambal 1 L').id, 6); reapply(true); render(); toast('Saus Sambal 1 L added to Bumbu'); } },
+  { t: 'Quantity tiers, locked', e: 'PT Kemasan Prima + Cup Kertas: qty 5 → 0%, change qty to 60 → 8%. Price and discount read-only.', ac: 'AC6 · AC8', run: () => { openTx('po'); S.tx.contact = 'V4'; addLine('P07', 5); addLine('P08', 3); reapply(true); render(); } },
+  { t: 'Precedence', e: 'UD Sumber Sayur + Kantong Plastik: the vendor-only 3% rule beats the all-vendors Kemasan category rule (Rp 2.000/unit).', ac: 'AC3 · AC7c', run: () => { openTx('po'); S.tx.contact = 'V3'; addLine('P08', 5); addLine('P04', 10); reapply(true); render(); } },
+  { t: 'Non-PKP vendor (vendor master)', e: 'UD Sumber Sayur is Non-PKP: every line shows Non-taxable, PPN total is 0; its rule still applies. Change PKP status under Vendors.', ac: 'AC9', run: () => { openTx('pi'); S.tx.contact = 'V3'; addLine('P04', 10); addLine('P03', 5); reapply(true); render(); } },
+  { t: 'Sales parity', e: 'Sales Order, Outlet Kemang: markup 10% on everything. Catering Sejahtera: its price list. Big Bahan Baku orders get the subtotal tier.', ac: 'AC12', run: () => { openTx('so'); S.tx.contact = 'C2'; addLine('P01', 20); addLine('P06', 2); reapply(true); render(); } },
+  { t: 'Create a purchase price list', e: 'New rule → Purchase → "Fixed price per product": category choice disappears, a price per product is required.', ac: 'AC7a', run: () => { S.form = blankForm('purchase'); S.form.type = 'fixed_price'; S.form.allContacts = false; S.form.allProducts = false; S.form.name = 'CK Jakarta · price list Des 2026'; S.form.contacts = ['V2']; S.formErr = {}; go('ruleForm'); } },
+];
+function renderGuide() {
+  const g = $('#guide'); g.classList.toggle('hide', !S.guide);
+  g.innerHTML = `<h3>Demo steps</h3><div class="quiet">Click <b>Run</b> to set up each scenario. Switch Jurnal / Mekari ERP at the top: same behaviour, each product's own labels.</div>
+  ${STEPS.map((s, i) => `<div class="step"><div class="t">${i + 1}. ${esc(s.t)}</div><div class="e">${esc(s.e)}</div><div style="display:flex;align-items:center"><span class="ac">${s.ac}</span><span style="flex:1"></span><button class="btn sm" data-step="${i}">Run</button></div></div>`).join('')}
+  <div class="legend"><b>Precedence (no stacking)</b><br>1 Contact + product › 2 Contact + category › 3 Contact, all products › 4 Product only › 5 Category only. Ties → newest rule. A rule picked in the <b>Price rule</b> field wins on the lines it covers.<br><br><b>Not in this prototype</b>: PR visibility for outlet users, import/API, saved-document edit flows.</div>`;
+}
+
+/* ═════════════════════════ EVENTS ═════════════════════════ */
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-nav],[data-act],[data-edit],[data-filter],[data-step],[data-reset],[data-ldel],[data-deltier],#prodSeg button,#resetBtn,#guideBtn');
+  if (!el) return;
+  if (el.matches('#prodSeg button')) { S.product = el.dataset.p; return render(); }
+  if (el.id === 'resetBtn') { DB = SEED(); S.tx = null; toast('Mock data reset'); return go('rules'); }
+  if (el.id === 'guideBtn') { S.guide = !S.guide; return renderGuide(); }
+  if (el.dataset.nav) return el.dataset.nav === 'sales' ? openTx('so') : el.dataset.nav === 'purchases' ? openTx('po') : go(el.dataset.nav);
+  if (el.dataset.filter) { S.filter = el.dataset.filter; return render(); }
+  if (el.dataset.edit) return openForm(Number(el.dataset.edit));
+  if (el.dataset.step) return STEPS[Number(el.dataset.step)].run();
+  if (el.dataset.reset !== undefined) { const l = S.tx.lines[Number(el.dataset.reset)]; l.manual = false; reapply(); return render(); }
+  if (el.dataset.ldel !== undefined) { S.tx.lines.splice(Number(el.dataset.ldel), 1); reapply(); return render(); }
+  if (el.dataset.deltier !== undefined) { S.form.tiers.splice(Number(el.dataset.deltier), 1); return render(); }
+  const a = el.dataset.act;
+  if (a === 'newRule') { S.form = blankForm(S.filter === 'purchase' ? 'purchase' : 'sales'); S.formErr = {}; return go('ruleForm'); }
+  if (a === 'cancelForm') { S.form = null; return go('rules'); }
+  if (a === 'saveRule') return saveRule();
+  if (a === 'delRule') { DB.rules = DB.rules.filter((r) => r.id !== S.form.id); toast('Price rule deleted'); S.form = null; return go('rules'); }
+  if (a === 'addTier') { S.form.tiers.push({ t: 0, d: 0 }); return render(); }
+  if (a === 'addLine') { addLine(); return render(); }
+  if (a === 'addProduct') { const n = $('#npName').value.trim(); if (!n) return; DB.products.push({ id: 'P' + String(nextProdId++).padStart(2, '0'), name: n, category: $('#npCat').value, buy: Number($('#npBuy').value) || 0, sell: Number($('#npSell').value) || 0 }); toast(`${n} added to ${$('#npCat').value}`); return render(); }
+});
+document.addEventListener('change', (ev) => {
+  const el = ev.target, f = S.form;
+  if (el.dataset.f && f) {
+    const k = el.dataset.f;
+    if (k === 'tx') { f.tx = el.value; f.contacts = []; f.prices = {}; f.categories = []; f.products = []; }
+    else if (k === 'type') { const was = f.type; f.type = el.value; if (el.value === 'fixed_price' && was !== 'fixed_price') { if (f.categories.length || f.allProducts) toast('Fixed price is set per product: categories / All products removed'); f.categories = []; f.allProducts = false; } if (SHAPE[el.value] === 'tier' && !f.tiers.length) f.tiers = [{ t: 0, d: 0 }]; }
+    else if (k === 'allow' || k === 'active') f[k] = el.checked;
+    else f[k] = el.value;
+    return render();
+  }
+  if (el.dataset.cs && f) { f.allContacts = el.dataset.cs === 'all'; return render(); }
+  if (el.dataset.ps && f) { f.allProducts = el.dataset.ps === 'all'; return render(); }
+  if (el.dataset.fcontact && f) { const id = el.dataset.fcontact; f.contacts = el.checked ? [...f.contacts, id] : f.contacts.filter((x) => x !== id); return; }
+  if (el.dataset.fcat && f) { const c = el.dataset.fcat; f.categories = el.checked ? [...f.categories, c] : f.categories.filter((x) => x !== c); return; }
+  if (el.dataset.fprod && f) { const id = el.dataset.fprod; f.products = el.checked ? [...f.products, id] : f.products.filter((x) => x !== id); return render(); }
+  if (el.dataset.fprice && f) { f.prices[el.dataset.fprice] = Number(String(el.value).replace(/\D/g, '')); return; }
+  if (el.dataset.tier !== undefined && f) { f.tiers[Number(el.dataset.tier)][el.dataset.k] = Number(el.value); return; }
+  if (el.dataset.pkp) { DB.vendors.find((v) => v.id === el.dataset.pkp).pkp = el.value === '1'; toast('PKP status saved. Applies to new transactions.'); return render(); }
+  if (el.matches('[data-txdoc]')) { const keep = S.tx.lines.filter((l) => l.pid).map((l) => [l.pid, l.qty]); const wasSales = S.tx.doc === 'so'; openTx(el.value); if (wasSales === (el.value === 'so')) keep.forEach(([p, q]) => addLine(p, q)); reapply(true); return render(); }
+  if (el.matches('[data-txcontact]')) { S.tx.contact = el.value; S.tx.pick = 'auto'; reapply(); return render(); }
+  if (el.matches('[data-txpick]')) { S.tx.pick = el.value === 'auto' || el.value === 'none' ? el.value : Number(el.value); reapply(); return render(); }
+  if (el.dataset.lp !== undefined) { const l = S.tx.lines[Number(el.dataset.lp)]; l.pid = el.value; l.manual = false; l.price = el.value ? baseOf(el.value) : 0; l.disc = 0; reapply(); return render(); }
+  if (el.dataset.lq !== undefined) { S.tx.lines[Number(el.dataset.lq)].qty = Math.max(0, Number(el.value) || 0); reapply(); return render(); }
+  if (el.dataset.lu !== undefined || el.dataset.ld !== undefined) {
+    const i = Number(el.dataset.lu ?? el.dataset.ld), l = S.tx.lines[i], v = Number(String(el.value).replace(',', '.')) || 0;
+    if (l.match && !l.match.editable) return render();
+    if (el.dataset.lu !== undefined) l.price = v; else l.disc = Math.min(Math.max(v, 0), 100);
+    if (l.match) l.manual = l.price !== l.match.price || l.disc !== l.match.disc;
+    return render();
+  }
+});
+document.addEventListener('input', (ev) => {
+  const el = ev.target;
+  if (el.id === 'ruleSearch') { S.search = el.value; const pos = el.selectionStart; render(); const n = $('#ruleSearch'); n.focus(); n.setSelectionRange(pos, pos); }
+  if (el.dataset.f === 'name' && S.form) S.form.name = el.value;
+});
+render();
+</script>
+</body>
+</html>
