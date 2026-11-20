@@ -129,6 +129,20 @@ td.r,th.r{text-align:right}
 .legend{font-size:12px;color:var(--text-2);line-height:1.6;margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
 .legend b{color:var(--text)}
 .empty{padding:32px;text-align:center;color:var(--text-2)}
+.cb{position:relative}
+.cb-trigger{display:flex;align-items:center;justify-content:space-between;gap:8px;text-align:left;cursor:pointer}
+.cb-trigger:disabled{cursor:not-allowed}
+.cb-trigger .ph{color:var(--text-3)}
+.cb-trigger .caret{color:var(--text-3);font-size:11px}
+.cb-pop{position:absolute;z-index:10;top:calc(100% + 4px);left:0;right:0;min-width:260px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 20px rgba(35,41,51,.14);padding:8px}
+.cb-list{max-height:240px;overflow:auto;margin-top:6px}
+.cb-item{padding:7px 8px;border-radius:6px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.cb-item:hover,.cb-item.act{background:var(--brand-soft)}
+.cb-item.sel{font-weight:600;color:var(--brand)}
+.cb-item .sp{flex:1}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.chip{background:var(--brand-soft);color:var(--brand);border-radius:12px;padding:2px 4px 2px 10px;font-size:13px;display:inline-flex;align-items:center;gap:2px}
+.chip button{border:0;background:none;cursor:pointer;color:inherit;padding:0 4px}
 </style>
 </head>
 <body>
@@ -289,7 +303,34 @@ function render() {
   ({ rules: renderRules, ruleForm: renderForm, tx: renderTx, vendors: renderVendors, products: renderProducts, sales: () => openTx('so'), purchases: () => openTx('po'), dashboard: renderDash })[S.page](pg);
   renderGuide();
 }
-function go(page) { S.page = page; render(); }
+function go(page) { S.page = page; S.combo = null; render(); }
+
+/* ═════════════════════════ SEARCHABLE DROPDOWN (vendor / customer) ═════════════════════════ */
+const COMBO = {};
+function combo({ key, items, value, multi = false, placeholder, disabled = false, onPick }) {
+  COMBO[key] = { items, value, multi, onPick };
+  const open = S.combo?.key === key, sel = multi ? value : [value].filter(Boolean);
+  const name = (id) => items.find((i) => i.id === id)?.name ?? id;
+  return `<div class="cb" data-cb="${key}">
+    ${multi && sel.length ? `<div class="chips">${sel.map((id) => `<span class="chip">${esc(name(id))}<button type="button" data-cbrm="${key}" data-id="${id}" aria-label="Remove">✕</button></span>`).join('')}</div>` : ''}
+    <button type="button" class="inp cb-trigger" data-cbopen="${key}" ${disabled ? 'disabled' : ''}>${!multi && value ? esc(name(value)) : `<span class="ph">${esc(placeholder)}</span>`}<span class="caret">▾</span></button>
+    ${open ? `<div class="cb-pop"><input class="inp cb-q" data-cbq="${key}" placeholder="Search" autocomplete="off" value="${esc(S.combo.q)}"><div class="cb-list" data-cblist="${key}">${comboList(key)}</div></div>` : ''}
+  </div>`;
+}
+function comboMatches(key) { const c = COMBO[key], q = (S.combo?.q ?? '').trim().toLowerCase(); return c.items.filter((i) => !q || i.name.toLowerCase().includes(q)); }
+function comboList(key) {
+  const c = COMBO[key], sel = c.multi ? c.value : [c.value], rows = comboMatches(key);
+  return rows.map((i, n) => `<div class="cb-item ${sel.includes(i.id) ? 'sel' : ''} ${n === 0 && S.combo?.q ? 'act' : ''}" data-cbitem="${key}" data-id="${i.id}">${c.multi ? `<input type="checkbox" tabindex="-1" ${sel.includes(i.id) ? 'checked' : ''}>` : ''}<span class="sp">${esc(i.name)}</span>${i.extra ?? ''}</div>`).join('') || '<div class="quiet" style="padding:8px">No results</div>';
+}
+function comboOpen(key) { S.combo = { key, q: '' }; render(); const q = document.querySelector(`[data-cbq="${key}"]`); q && q.focus(); }
+function comboPick(key, id) {
+  const c = COMBO[key], q = S.combo?.q ?? '';
+  c.onPick(id);
+  if (c.multi) { S.combo = { key, q }; render(); const n = document.querySelector(`[data-cbq="${key}"]`); if (n) { n.focus(); n.setSelectionRange(q.length, q.length); } }
+  else { S.combo = null; render(); }
+}
+const pkpBadge = (v) => `<span class="badge ${v.pkp ? 'b-pkp' : 'b-nonpkp'}">${v.pkp ? 'PKP' : 'Non-PKP'}</span>`;
+const contactItems = (tx) => contactsOf(tx).map((c) => ({ id: c.id, name: c.name, extra: tx === 'purchase' ? pkpBadge(c) : '' }));
 
 /* ═════════════════════════ PAGE: price rules list ═════════════════════════ */
 function scopeText(r) {
@@ -362,12 +403,12 @@ function renderForm(pg) {
         <div class="c3"><label class="f">Start date</label><input type="date" class="inp" data-f="start" value="${f.start}"></div>
         <div class="c3"><label class="f">End date</label><input type="date" class="inp" data-f="end" value="${f.end}"><div class="help">Leave empty for no end.</div></div>
         <div class="c6"><label class="chk"><input type="checkbox" data-f="allow" ${f.allow ? 'checked' : ''}><span><span class="t">Allow changes on transaction</span><div class="help" style="margin:2px 0 0">When off, the price and discount this rule sets can't be edited on the transaction.</div></span></label></div>
-        <div class="c6"><label class="chk"><input type="checkbox" data-f="active" ${f.active ? 'checked' : ''}><span><span class="t">Active</span><div class="help" style="margin:2px 0 0">Changes apply to new transactions only. Saved transactions keep their prices.</div></span></label></div>
+        <div class="c6"><label class="chk"><input type="checkbox" data-f="active" ${f.active ? 'checked' : ''}><span><span class="t">Active</span></span></label></div>
       </div>
     </div>
     <div class="section"><h2>${Noun}</h2><p class="cap" style="margin-bottom:12px">Which ${noun}s the rule applies to.</p>
       <div class="radio-row"><label><input type="radio" name="cs" data-cs="all" ${f.allContacts ? 'checked' : ''}> All ${noun}s</label><label><input type="radio" name="cs" data-cs="some" ${f.allContacts ? '' : 'checked'}> Specific ${noun}s</label></div>
-      ${f.allContacts ? '' : `<div class="pick-list" style="margin-top:10px;max-width:640px">${contactsOf(f.tx).map((c) => `<div class="row"><label class="chk"><input type="checkbox" data-fcontact="${c.id}" ${f.contacts.includes(c.id) ? 'checked' : ''}><span>${esc(c.name)}${f.tx === 'purchase' ? ` <span class="badge ${c.pkp ? 'b-pkp' : 'b-nonpkp'}">${c.pkp ? 'PKP' : 'Non-PKP'}</span>` : ''}</span></label></div>`).join('')}</div>${e.contacts ? `<div class="errtxt">${e.contacts}</div>` : ''}`}
+      ${f.allContacts ? '' : `<div style="margin-top:10px;max-width:640px">${combo({ key: 'fcontacts', items: contactItems(f.tx), value: f.contacts, multi: true, placeholder: `Search and add ${noun}s`, onPick: (id) => { f.contacts = f.contacts.includes(id) ? f.contacts.filter((x) => x !== id) : [...f.contacts, id]; } })}</div>${e.contacts ? `<div class="errtxt">${e.contacts}</div>` : ''}`}
     </div>
     <div class="section"><h2>Products</h2><p class="cap" style="margin-bottom:12px">${list ? 'A fixed price is set per product, so pick the products and enter each price.' : 'All products, whole categories (new products in a category are covered automatically), or specific products.'}</p>
       ${list ? '' : `<div class="radio-row"><label><input type="radio" name="ps" data-ps="all" ${f.allProducts ? 'checked' : ''}> All products</label><label><input type="radio" name="ps" data-ps="some" ${f.allProducts ? '' : 'checked'}> Categories and / or products</label></div>`}
@@ -398,7 +439,7 @@ function saveRule() {
 }
 
 /* ═════════════════════════ PAGE: transaction ═════════════════════════ */
-function openTx(doc) { S.tx = { doc, contact: '', pick: 'auto', lines: [] }; S.page = 'tx'; render(); }
+function openTx(doc) { S.tx = { doc, contact: '', pick: 'auto', lines: [] }; S.page = 'tx'; S.combo = null; render(); }
 const txType = () => (S.tx.doc === 'so' ? 'sales' : 'purchase');
 function baseOf(pid) { const p = prod(pid); return txType() === 'purchase' ? p.buy : p.sell; }
 function reapply(force = false) {
@@ -425,7 +466,7 @@ function renderTx(pg) {
     <select class="inp" style="width:200px" data-txdoc>${Object.entries(L().docs).map(([k, v]) => `<option value="${k}" ${k === t.doc ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
   <div class="card">
     <div class="tx-head">
-      <div><label class="f">${noun} <span class="req">*</span></label><select class="inp" data-txcontact><option value="">Select ${noun.toLowerCase()}</option>${contactsOf(tx).map((c) => `<option value="${c.id}" ${c.id === t.contact ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+      <div><label class="f">${noun} <span class="req">*</span></label>${combo({ key: 'txcontact', items: contactItems(tx), value: t.contact, placeholder: `Select ${noun.toLowerCase()}`, onPick: (id) => { t.contact = id; t.pick = 'auto'; reapply(); } })}
         ${pkp !== null ? `<div style="margin-top:6px"><span class="badge ${pkp ? 'b-pkp' : 'b-nonpkp'}">${pkp ? 'PKP' : 'Non-PKP'}</span> <span class="quiet">From vendor master</span></div>` : ''}</div>
       <div><label class="f">Price rule ${tx === 'sales' ? '<span class="badge b-p1">P1</span>' : ''}</label><select class="inp" data-txpick ${t.contact ? '' : 'disabled'}><option value="auto" ${t.pick === 'auto' ? 'selected' : ''}>Automatic</option>${opts.map((r) => `<option value="${r.id}" ${t.pick === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}<option value="none" ${t.pick === 'none' ? 'selected' : ''}>No price rule</option></select>
         <div class="help">Automatic picks the best rule per line. Pick a rule to use it on every line it covers.</div></div>
@@ -485,11 +526,18 @@ function renderGuide() {
   const g = $('#guide'); g.classList.toggle('hide', !S.guide);
   g.innerHTML = `<h3>Demo steps</h3><div class="quiet">Click <b>Run</b> to set up each scenario. Switch Jurnal / Mekari ERP at the top: same behaviour, each product's own labels.</div>
   ${STEPS.map((s, i) => `<div class="step"><div class="t">${i + 1}. ${esc(s.t)}</div><div class="e">${esc(s.e)}</div><div style="display:flex;align-items:center"><span class="ac">${s.ac}</span><span style="flex:1"></span><button class="btn sm" data-step="${i}">Run</button></div></div>`).join('')}
-  <div class="legend"><b>Precedence (no stacking)</b><br>1 Contact + product › 2 Contact + category › 3 Contact, all products › 4 Product only › 5 Category only. Ties → newest rule. A rule picked in the <b>Price rule</b> field wins on the lines it covers.<br><br><b>Not in this prototype</b>: PR visibility for outlet users, import/API, saved-document edit flows.</div>`;
+  <div class="legend"><b>Precedence (no stacking)</b><br>1 Contact + product › 2 Contact + category › 3 Contact, all products › 4 Product only › 5 Category only. Ties → newest rule. A rule picked in the <b>Price rule</b> field wins on the lines it covers.<br><br><b>Not in this prototype</b>: PR visibility for outlet users, import/API.</div>`;
 }
 
 /* ═════════════════════════ EVENTS ═════════════════════════ */
 document.addEventListener('click', (ev) => {
+  const cbEl = ev.target.closest('[data-cbopen],[data-cbitem],[data-cbrm]');
+  if (cbEl) {
+    if (cbEl.dataset.cbopen) return S.combo?.key === cbEl.dataset.cbopen ? ((S.combo = null), render()) : comboOpen(cbEl.dataset.cbopen);
+    if (cbEl.dataset.cbitem) return comboPick(cbEl.dataset.cbitem, cbEl.dataset.id);
+    if (cbEl.dataset.cbrm) { COMBO[cbEl.dataset.cbrm].onPick(cbEl.dataset.id); return render(); }
+  }
+  if (S.combo && !ev.target.closest('.cb')) { S.combo = null; render(); }
   const el = ev.target.closest('[data-nav],[data-act],[data-edit],[data-filter],[data-step],[data-reset],[data-ldel],[data-deltier],#prodSeg button,#resetBtn,#guideBtn');
   if (!el) return;
   if (el.matches('#prodSeg button')) { S.product = el.dataset.p; return render(); }
@@ -528,7 +576,7 @@ document.addEventListener('change', (ev) => {
   if (el.dataset.fprod && f) { const id = el.dataset.fprod; f.products = el.checked ? [...f.products, id] : f.products.filter((x) => x !== id); return render(); }
   if (el.dataset.fprice && f) { f.prices[el.dataset.fprice] = Number(String(el.value).replace(/\D/g, '')); return; }
   if (el.dataset.tier !== undefined && f) { f.tiers[Number(el.dataset.tier)][el.dataset.k] = Number(el.value); return; }
-  if (el.dataset.pkp) { DB.vendors.find((v) => v.id === el.dataset.pkp).pkp = el.value === '1'; toast('PKP status saved. Applies to new transactions.'); return render(); }
+  if (el.dataset.pkp) { DB.vendors.find((v) => v.id === el.dataset.pkp).pkp = el.value === '1'; toast('PKP status updated'); return render(); }
   if (el.matches('[data-txdoc]')) { const keep = S.tx.lines.filter((l) => l.pid).map((l) => [l.pid, l.qty]); const wasSales = S.tx.doc === 'so'; openTx(el.value); if (wasSales === (el.value === 'so')) keep.forEach(([p, q]) => addLine(p, q)); reapply(true); return render(); }
   if (el.matches('[data-txcontact]')) { S.tx.contact = el.value; S.tx.pick = 'auto'; reapply(); return render(); }
   if (el.matches('[data-txpick]')) { S.tx.pick = el.value === 'auto' || el.value === 'none' ? el.value : Number(el.value); reapply(); return render(); }
@@ -544,8 +592,15 @@ document.addEventListener('change', (ev) => {
 });
 document.addEventListener('input', (ev) => {
   const el = ev.target;
+  if (el.dataset.cbq) { S.combo.q = el.value; document.querySelector(`[data-cblist="${el.dataset.cbq}"]`).innerHTML = comboList(el.dataset.cbq); return; }
   if (el.id === 'ruleSearch') { S.search = el.value; const pos = el.selectionStart; render(); const n = $('#ruleSearch'); n.focus(); n.setSelectionRange(pos, pos); }
   if (el.dataset.f === 'name' && S.form) S.form.name = el.value;
+});
+document.addEventListener('keydown', (ev) => {
+  const el = ev.target;
+  if (!el.dataset || !el.dataset.cbq) return;
+  if (ev.key === 'Escape') { S.combo = null; render(); }
+  if (ev.key === 'Enter') { ev.preventDefault(); const first = comboMatches(el.dataset.cbq)[0]; if (first) comboPick(el.dataset.cbq, first.id); }
 });
 render();
 </script>
