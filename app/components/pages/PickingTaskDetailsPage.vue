@@ -1033,7 +1033,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
       <!-- Cancel task lives in the primary action's split-button dropdown, never as a
            standalone "Cancel" footer button. -->
       <template v-if="localStatus === 'open'">
-        <div v-if="canCancel" class="detail-split-btn">
+        <div v-if="canCancel" class="detail-split-btn" data-devchange="split-btn-chevron-height">
           <MpTooltip v-if="needsRearrangement" id="pkd-start-tt-split" :label="t('Cannot start picking. Clear the re-arrangement first.')" placement="top" use-portal>
             <MpButton class="btn-enterprise detail-btn detail-btn--primary detail-btn--disabled detail-split-btn__main" variant="primary" is-disabled>{{ t('Start picking') }}</MpButton>
           </MpTooltip>
@@ -1055,7 +1055,7 @@ function goBack() { router.push('/outbound-delivery?tab=Picking') }
         <MpButton v-else class="btn-enterprise detail-btn detail-btn--primary" variant="primary" @click="startPickingAndNavigate">{{ t('Start picking') }}</MpButton>
       </template>
       <template v-else-if="localStatus === 'in progress'">
-        <div v-if="canCancel" class="detail-split-btn">
+        <div v-if="canCancel" class="detail-split-btn" data-devchange="split-btn-chevron-height">
           <MpButton class="detail-btn detail-btn--primary detail-split-btn__main" variant="primary" @click="continuePicking">{{ t('Continue picking') }}</MpButton>
           <MpPopover id="pkd-actions-prog" is-close-on-select use-portal :is-keep-alive="false" placement="top-end">
             <MpPopoverTrigger>

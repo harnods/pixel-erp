@@ -190,6 +190,15 @@
   border-top-left-radius: 0 !important;
   border-bottom-left-radius: 0 !important;
   border-left: 1px solid rgba(255, 255, 255, 0.28) !important;
+  /* Pixel's md button pins height: 34px, but the label half grows to 38px (14px
+   * text + 8px padding + border) — so the icon-only chevron sat 4px short of its
+   * main button. Let it stretch to the main segment's height instead. */
+  height: auto !important;
+  align-self: stretch;
+}
+.detail-split-btn,
+.detail-split {
+  align-items: stretch;
 }
 .detail-split-btn__main,
 .detail-split-main {

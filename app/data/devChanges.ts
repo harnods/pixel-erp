@@ -28,6 +28,14 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'split-btn-chevron-height',
+    title: 'Split button: chevron is now the same height as its main button',
+    description:
+      'Pixel pins md buttons at 34px, so the icon-only chevron of every primary split button (e.g. Start picking ▾) sat 4px shorter than its 38px label half. The shared .detail-split-btn__chevron rule in erp.css now stretches it to the main segment, fixing every detail-page split button.',
+    date: '2026-11-20',
+    files: ['erp.css'],
+  },
+  {
     id: 'wms-scan-guidance-hint',
     title: 'WMS: next-step line under every scan bar',
     description:
