@@ -25,7 +25,7 @@ import { useLocale } from '~/composables/useLocale'
 
 const { t } = useLocale()
 // Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
-const scanHelp = computed(() => scanGuidance('handover', {}, t))
+const scanHelp = computed(() => scanGuidance('handover', { count: taskIds.value.length }, t))
 
 const router = useRouter()
 const route = useRoute()
@@ -397,7 +397,9 @@ async function handleSave() {
           </div>
 
           <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" class="ns-scanbar" @scan="handleScan">
-            <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</MpButton>
+            <template #actions>
+              <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</MpButton>
+            </template>
           </ScanBar>
 
           <section class="ho-items-section" :class="{ 'ho-items-section--bordered': isProgressive }">

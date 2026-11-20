@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { css, MpIcon, MpInput, MpTooltip } from '@mekari/pixel3'
+import { css, MpIcon, MpInput, MpPopover, MpPopoverTrigger, MpPopoverContent } from '@mekari/pixel3'
 import { useLocale } from '~/composables/useLocale'
 
 /**
- * WMS scan bar. `hint` is the live one-line guidance under the bar (what to scan
- * next, following the step's state); `tips` are the step's scan rules, shown in
- * the "How scanning works" tooltip on the info icon. Build both with
+ * WMS scan bar. `hint` is the one-line next step under the bar (what the
+ * operator needs to do next, following the step's progress); `tips` are the
+ * step's general scan rules, shown in the "How scanning works" hover popover
+ * (white MpPopoverContent, same as the Progress invoice flag) on the help icon, which sits directly left of the `#actions` slot (Reset count). Build both with
  * `scanGuidance()` from `~/data/scanGuidance` so every step reads the same way.
  */
 const props = defineProps<{ placeholder?: string; hint?: string; tips?: string[] }>()
@@ -71,10 +72,14 @@ const infoClass = css({
 })
 
 const tipsClass = css({
-  maxWidth: '320px',
+  width: '320px',
+  padding: '3',
   textAlign: 'left',
-  '& p': { margin: '0 0 1', fontWeight: 'semiBold' },
-  '& ul': { margin: '0', paddingLeft: '4', listStyle: 'disc outside' },
+  fontSize: 'md',
+  lineHeight: 'md',
+  color: 'text.default',
+  '& p': { margin: '0 0 2', fontWeight: 'semiBold' },
+  '& ul': { margin: '0', paddingLeft: '5', listStyle: 'disc outside', display: 'flex', flexDirection: 'column', gap: '1' },
   '& li': { display: 'list-item' },
 })
 
@@ -108,25 +113,28 @@ const hintClass = css({
           @keydown.enter.prevent="onEnter"
         />
       </div>
-      <MpTooltip v-if="props.tips?.length" :id="tipId" placement="bottom-end" use-portal>
-        <span
-          class="scan-bar-info"
-          :class="infoClass"
-          tabindex="0"
-          role="img"
-          :aria-label="t('How scanning works')"
-          data-devchange="wms-scan-guidance-tips"
-        ><MpIcon name="info" size="sm" /></span>
-        <template #label>
-          <div :class="tipsClass">
-            <p>{{ t('How scanning works') }}</p>
-            <ul>
-              <li v-for="tip in props.tips" :key="tip">{{ tip }}</li>
-            </ul>
-          </div>
-        </template>
-      </MpTooltip>
+      <!-- Context next to the input (e.g. the active location chip). -->
       <slot />
+      <MpPopover v-if="props.tips?.length" :id="tipId" trigger="hover" placement="bottom-end" use-portal :is-keep-alive="false">
+        <MpPopoverTrigger>
+          <span
+            class="scan-bar-info"
+            :class="infoClass"
+            tabindex="0"
+            role="img"
+            :aria-label="t('How scanning works')"
+            data-devchange="wms-scan-guidance-tips"
+          ><MpIcon name="help" size="sm" /></span>
+        </MpPopoverTrigger>
+        <MpPopoverContent :class="tipsClass">
+          <p>{{ t('How scanning works') }}</p>
+          <ul>
+            <li v-for="tip in props.tips" :key="tip">{{ tip }}</li>
+          </ul>
+        </MpPopoverContent>
+      </MpPopover>
+      <!-- Bar actions (e.g. Reset count) — the help icon sits directly to their left. -->
+      <slot name="actions" />
     </div>
     <p
       v-if="props.hint"

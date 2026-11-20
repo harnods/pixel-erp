@@ -31,7 +31,20 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
 // Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
-const scanHelp = computed(() => scanGuidance('stock-count', { activeBin: activeBin.value }, t))
+const scanHelp = computed(() => scanGuidance('stock-count', {
+  activeBin: activeBin.value,
+  // Only the last item counted in the CURRENT location — after switching
+  // location the line goes back to "Scan the SKU to count items in …".
+  last: (() => {
+    const k = lastScanKey.value
+    const bin = activeBin.value
+    if (!k || !bin) return null
+    const merged = mergedCountRows.value.find(r => r.key === k)
+    if (merged) return sameCode(merged.storageLocation, bin) ? { name: merged.product.name, done: draftCounted.value[k] ?? 0 } : null
+    const added = Object.entries(addedByLoc.value).find(([loc]) => sameCode(loc, bin))?.[1]?.find(r => r.id === k)
+    return added ? { name: added.productName, done: added.counted ?? 0 } : null
+  })(),
+}, t))
 
 const adjustment = computed(() => getWmsAdjustment(props.orderId))
 
@@ -194,6 +207,10 @@ function batchTotalFor(key: string): number {
 const scanLocations = computed(() => [...new Set(wmsCountLines.value.map(i => i.storageLocation).filter((l): l is string => !!l))])
 const activeBin = ref<string | null>(null)
 const flashRowKey = ref<string | null>(null)
+// The item scanned last — drives the next-step line under the scan bar. Every
+// successful scan flashes its row, so follow the flash (it clears; this sticks).
+const lastScanKey = ref<string | null>(null)
+watch(flashRowKey, v => { if (v) lastScanKey.value = v })
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 function flashRow(key: string) {
   flashRowKey.value = key
@@ -773,7 +790,9 @@ onUnmounted(() => {
             </svg>
           </MpButton>
         </div>
-        <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetCount">{{ t('Reset count') }}</MpButton>
+        <template #actions>
+          <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetCount">{{ t('Reset count') }}</MpButton>
+        </template>
       </ScanBar>
       </div>
 

@@ -29,7 +29,13 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
 // Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
-const scanHelp = computed(() => scanGuidance('receive', {}, t))
+const scanHelp = computed(() => scanGuidance('receive', {
+  allDone: lineItems.value.length > 0 && draftOutstanding.value === 0,
+  last: (() => {
+    const it = lineItems.value.find(i => i.skuCode === lastScanKey.value)
+    return it ? { name: it.productName, done: draftQty.value[it.skuCode] ?? 0, total: it.targetQty } : null
+  })(),
+}, t))
 
 const entry     = computed(() => findTaskWithPO(props.orderId))
 const task      = computed(() => entry.value?.task)
@@ -243,6 +249,10 @@ watch(search, () => {
 
 // ── Scan bar ──────────────────────────────────────────────────────────────────
 const flashRowId = ref<string | null>(null)
+// The item scanned last — drives the next-step line under the scan bar. Every
+// successful scan flashes its row, so follow the flash (it clears; this sticks).
+const lastScanKey = ref<string | null>(null)
+watch(flashRowId, v => { if (v) lastScanKey.value = v })
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 
 function handleScan(rawValue: string) {

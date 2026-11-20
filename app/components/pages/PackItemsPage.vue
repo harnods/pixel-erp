@@ -32,7 +32,13 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
 // Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
-const scanHelp = computed(() => scanGuidance('pack', {}, t))
+const scanHelp = computed(() => scanGuidance('pack', {
+  allDone: pickedTotal.value > 0 && draftOutstanding.value === 0,
+  last: (() => {
+    const it = lineItems.value.find(i => i.key === lastScanKey.value)
+    return it ? { name: it.productName, done: draftQty.value[it.key] ?? 0, total: it.pickedQty } : null
+  })(),
+}, t))
 
 const task = computed(() => getPackingTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -149,6 +155,10 @@ watch([() => props.orderId, lineItems], () => {
 
 // ── Page-level scan bar ─────────────────────────────────────────────────────────
 const flashRowKey = ref<string | null>(null)
+// The item scanned last — drives the next-step line under the scan bar. Every
+// successful scan flashes its row, so follow the flash (it clears; this sticks).
+const lastScanKey = ref<string | null>(null)
+watch(flashRowKey, v => { if (v) lastScanKey.value = v })
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 function flashRow(key: string) {
   flashRowKey.value = key
@@ -467,7 +477,9 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
         </div>
 
         <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan barcode...')" @scan="handleScan">
-          <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
+          <template #actions>
+            <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
+          </template>
         </ScanBar>
 
         <p v-if="finishError" class="pak-finish-error">{{ finishError }}</p>

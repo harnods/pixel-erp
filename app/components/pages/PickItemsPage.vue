@@ -37,7 +37,19 @@ const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
 // Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
-const scanHelp = computed(() => scanGuidance('pick', { activeBin: activeBin.value }, t))
+const scanHelp = computed(() => scanGuidance('pick', {
+  activeBin: activeBin.value,
+  allDone: lineItems.value.length > 0 && draftOutstanding.value === 0,
+  last: (() => {
+    const lines = lineItems.value.filter(it => it.skuCode === lastScanKey.value)
+    if (!lines.length) return null
+    return {
+      name: lines[0]!.productName,
+      done: lines.reduce((s, it) => s + effectivePickedQty(it), 0),
+      total: lines.reduce((s, it) => s + it.expectedQty, 0),
+    }
+  })(),
+}, t))
 
 const task = computed(() => getPickingTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -350,6 +362,10 @@ function saveSerialLines(serials: CommittedSerial[]) {
 // while the operator is standing at the wrong physical location.
 const activeBin = ref<string | null>(null)
 const flashRowKey = ref<string | null>(null)
+// The item scanned last — drives the next-step line under the scan bar. Every
+// successful scan flashes its row, so follow the flash (it clears; this sticks).
+const lastScanKey = ref<string | null>(null)
+watch(flashRowKey, v => { if (v) lastScanKey.value = v })
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 function flashRow(key: string) {
   flashRowKey.value = key
@@ -1045,7 +1061,9 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
               </svg>
             </MpButton>
           </div>
-          <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
+          <template #actions>
+            <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
+          </template>
         </ScanBar>
 
         <p v-if="finishError" class="pik-finish-error">{{ finishError }}</p>

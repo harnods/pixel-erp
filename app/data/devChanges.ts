@@ -29,17 +29,17 @@ export interface DevChange {
 export const DEV_CHANGES: DevChange[] = [
   {
     id: 'wms-scan-guidance-hint',
-    title: 'WMS: live scan hint under every scan bar',
+    title: 'WMS: next-step line under every scan bar',
     description:
-      'Each scan step (Receive, Put-away, Pick, Pack, Handover, New shipment, Stock counting, Manage/View batch & serial drawers) now shows a one-line hint that follows the step: e.g. "Scan the storage location first, then scan the SKU." becomes "Scan the SKU, batch number, or serial number to pick from A-01-02." once a location is active. Copy lives in app/data/scanGuidance.ts.',
+      'Each scan step (Receive, Put-away, Pick, Pack, Handover, New shipment, Stock counting, Manage/View batch & serial drawers) shows one line saying what to do next, following progress: "Scan the storage location first, then scan the SKU." → "Coffee Grinder: 2 of 4 picked. Scan the next unit." → "Coffee Grinder is fully picked. Scan the next SKU." → "All items picked. Click Finish picking." Copy lives in app/data/scanGuidance.ts.',
     date: '2026-11-20',
     files: ['ScanBar.vue', 'scanGuidance.ts'],
   },
   {
     id: 'wms-scan-guidance-tips',
-    title: 'WMS: "How scanning works" tooltip on the scan bar',
+    title: 'WMS: "How scanning works" help popover on the scan bar',
     description:
-      'An info icon in the scan bar opens a tooltip listing the step\'s scan rules (location first, +1 per scan, tracked SKUs open their details, caps), so operators learn the flow up front instead of from error toasts.',
+      'A help icon in the scan bar, directly left of Reset count, opens a white hover popover (MpPopover trigger="hover") listing the step\'s scan rules (location first, +1 per scan, tracked SKUs open their details, caps), so operators learn the flow up front instead of from error toasts.',
     date: '2026-11-20',
     files: ['ScanBar.vue', 'scanGuidance.ts'],
   },

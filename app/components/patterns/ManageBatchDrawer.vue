@@ -275,7 +275,15 @@ const isDelivery = computed(() => props.kind === 'purchase-delivery')
 // picking) only show them. The product's attribute set drives the extra columns.
 const { t } = useLocale()
 // Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
-const scanHelp = computed(() => scanGuidance('batch-drawer', { activeBin: activeBin.value, kind: props.kind }, t))
+const scanHelp = computed(() => scanGuidance('batch-drawer', {
+  activeBin: activeBin.value,
+  kind: props.kind,
+  progress: isPicking.value && Number.isFinite(pickMaxCount.value)
+    ? { done: totalPickCount.value, total: pickMaxCount.value }
+    : isReceiving.value && props.targetCount !== undefined
+      ? { done: totalPickCount.value, total: props.targetCount }
+      : null,
+}, t))
 const attrMode = computed(() => drawerModeFor(props.kind ?? 'count'))
 const isReceivingMode = computed(() => attrMode.value === 'receiving')
 const attrCols = useBatchAttributeColumns(toRef(props, 'sku'))
@@ -1277,12 +1285,14 @@ function fmtNum(n: number | null): string {
               </svg>
             </MpButton>
           </div>
-          <MpButton
-            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-            variant="secondary"
-            type="button"
-            @click="resetPickedCount"
-          >Reset count</MpButton>
+          <template #actions>
+            <MpButton
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+              variant="secondary"
+              type="button"
+              @click="resetPickedCount"
+            >Reset count</MpButton>
+          </template>
         </ScanBar>
 
         <template v-if="rows.length === 0 && !isInOut">

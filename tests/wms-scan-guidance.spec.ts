@@ -63,10 +63,50 @@ describe('scanGuidance()', () => {
 
   it('every guidance string has an Indonesian translation', () => {
     const src = readFileSync(resolve(__dirname, '../app/data/scanGuidance.ts'), 'utf8')
-    const keys = [...src.matchAll(/t\(\s*(['"])((?:\\.|(?!\1).)*)\1/g)].map(m => m[2]!.replace(/\\'/g, "'"))
-    const verbs = [...src.matchAll(/'(Scan the \{code\}[^']*)'/g)].map(m => m[1]!)
-    expect(keys.length).toBeGreaterThan(30)
-    for (const k of [...keys, ...verbs]) expect(ID_TRANSLATIONS[k], k).toBeTruthy()
+      .split('\n').filter(l => !l.trim().startsWith('*') && !l.trim().startsWith('//')).join('\n')
+    // Every quoted sentence (has a space, ends with a period) is UI copy.
+    const keys = [...src.matchAll(/'((?:\\'|[^'\n])* (?:\\'|[^'\n])*\.)'/g)].map(m => m[1]!.replace(/\\'/g, "'"))
+    expect(keys.length).toBeGreaterThan(50)
+    for (const k of keys) expect(ID_TRANSLATIONS[k], k).toBeTruthy()
+  })
+})
+
+describe('scanGuidance() next step', () => {
+  const coffee = (done: number, total?: number) => ({ name: 'Coffee Grinder', done, total })
+
+  it('walks a list step from first scan to finish', () => {
+    expect(scanGuidance('pick', { activeBin: 'Bin 01' }, id).hint).toBe('Scan the SKU, batch number, or serial number to pick from Bin 01.')
+    expect(scanGuidance('pick', { activeBin: 'Bin 01', last: coffee(2, 4) }, id).hint).toBe('Coffee Grinder: 2 of 4 picked. Scan the next unit.')
+    expect(scanGuidance('pick', { activeBin: 'Bin 01', last: coffee(4, 4) }, id).hint).toBe('Coffee Grinder is fully picked. Scan the next SKU.')
+    expect(scanGuidance('pick', { activeBin: 'Bin 01', last: coffee(4, 4), allDone: true }, id).hint).toBe('All items picked. Click Finish picking.')
+  })
+
+  it('names each step\'s own finish button', () => {
+    expect(scanGuidance('receive', { allDone: true }, id).hint).toBe('All items received. Click Finish receiving.')
+    expect(scanGuidance('put-away', { allDone: true }, id).hint).toBe('All items have a storage location. Click Finish put-away.')
+    expect(scanGuidance('pack', { allDone: true }, id).hint).toBe('All items packed. Click Finish packing.')
+  })
+
+  it('picking still asks for a location first when none is active', () => {
+    expect(scanGuidance('pick', { activeBin: null, last: coffee(2, 4) }, id).hint).toMatch(/storage location first/)
+  })
+
+  it('ignores a last scan with nothing done (e.g. after Reset count)', () => {
+    expect(scanGuidance('receive', { last: coffee(0, 4) }, id).hint).toBe('Scan the SKU or batch number to receive items.')
+  })
+
+  it('stock counting reports the count in the active location', () => {
+    expect(scanGuidance('stock-count', { activeBin: 'Bin 01', last: coffee(3) }, id).hint).toBe('Coffee Grinder: 3 counted in Bin 01. Scan the next unit, or the next SKU.')
+  })
+
+  it('handover counts the deliveries added', () => {
+    expect(scanGuidance('handover', { count: 1 }, id).hint).toBe('1 delivery added. Scan the next delivery, or click Save.')
+    expect(scanGuidance('new-shipment', { hasWarehouse: true, count: 3 }, id).hint).toBe('3 deliveries added. Scan the next delivery, or click Save.')
+  })
+
+  it('drawers show scanned vs. target, then point to Save', () => {
+    expect(scanGuidance('serial-drawer', { kind: 'receiving', progress: { done: 1, total: 3 } }, id).hint).toBe('1 of 3 scanned. Scan the next serial number.')
+    expect(scanGuidance('batch-drawer', { kind: 'picking', activeBin: 'Bin 01', progress: { done: 3, total: 3 } }, id).hint).toBe('All qty scanned. Click Save.')
   })
 })
 
@@ -79,7 +119,17 @@ describe('ScanBar guidance', () => {
     expect(w.find('input').attributes('aria-describedby')).toBe(hint.attributes('id'))
   })
 
-  it('shows the info icon with an accessible name only when there are tips', () => {
+  it('puts the help icon directly left of the bar actions (Reset count)', () => {
+    const w = mount(ScanBar, {
+      props: { tips: ['a'] },
+      slots: { default: '<span class="chip">Bin 01</span>', actions: '<button class="reset">Reset count</button>' },
+    })
+    const bar = w.find('.scan-bar-info').element.closest('div')!.parentElement!
+    const order = [...bar.querySelectorAll('.chip, .scan-bar-info, .reset')].map(e => e.className.split(' ')[0])
+    expect(order).toEqual(['chip', 'scan-bar-info', 'reset'])
+  })
+
+  it('shows the help icon with an accessible name only when there are tips', () => {
     const withTips = mount(ScanBar, { props: { tips: ['Each scan adds 1 to the picked qty.'] } })
     const info = withTips.find('.scan-bar-info')
     expect(info.exists()).toBe(true)

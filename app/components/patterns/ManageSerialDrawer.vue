@@ -97,7 +97,13 @@ const emit = defineEmits<{
 
 const { t } = useLocale()
 // Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
-const scanHelp = computed(() => scanGuidance('serial-drawer', { activeBin: activeBin.value, kind: props.kind }, t))
+const scanHelp = computed(() => scanGuidance('serial-drawer', {
+  activeBin: activeBin.value,
+  kind: props.kind,
+  progress: (isPicking.value || isReceiving.value) && props.targetCount > 0
+    ? { done: countedCount.value, total: props.targetCount }
+    : null,
+}, t))
 
 const PAGE_SIZE = 20
 
@@ -835,12 +841,14 @@ async function handleSave() {
               </svg>
             </MpButton>
           </div>
-          <MpButton
-            class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
-            variant="secondary"
-            type="button"
-            @click="resetPicked"
-          >Reset count</MpButton>
+          <template #actions>
+            <MpButton
+              class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm"
+              variant="secondary"
+              type="button"
+              @click="resetPicked"
+            >Reset count</MpButton>
+          </template>
         </ScanBar>
 
         <template v-if="rows.length === 0">
