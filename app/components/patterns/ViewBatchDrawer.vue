@@ -2,6 +2,7 @@
 import { computed, toRef } from 'vue'
 import { MpIcon, MpButton } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 import { batchAttributesFor, findProductBatch } from '~/data/productDetails'
@@ -117,6 +118,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('batch-verify', {}, t))
 function onScan(raw: string) { emit('scan', raw) }
 const isVerify = computed(() => props.verifiedQty !== undefined)
 /** Verify mode with the per-batch breakdown to render — a caller that only tracks a
@@ -435,7 +438,7 @@ function close() { emit('update:open', false) }
 
         <!-- Match-order verify: scan each batch to confirm it matches the pick -->
         <div v-if="isVerify" class="vbd-scan">
-          <ScanBar :placeholder="t('Scan batch number to verify…')" @scan="onScan" />
+          <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan batch number to verify…')" @scan="onScan" />
         </div>
 
         <!-- Table -->

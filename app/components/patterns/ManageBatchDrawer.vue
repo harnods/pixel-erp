@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, reactive, nextTick, toRef } from 'vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import {
   MpIcon, MpTooltip, MpButton,
   MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem,
@@ -273,6 +274,8 @@ const isDelivery = computed(() => props.kind === 'purchase-delivery')
 // and for an existing batch's EMPTY attributes; issuing kinds (transfer, put-away,
 // picking) only show them. The product's attribute set drives the extra columns.
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('batch-drawer', { activeBin: activeBin.value, kind: props.kind }, t))
 const attrMode = computed(() => drawerModeFor(props.kind ?? 'count'))
 const isReceivingMode = computed(() => attrMode.value === 'receiving')
 const attrCols = useBatchAttributeColumns(toRef(props, 'sku'))
@@ -1262,7 +1265,7 @@ function fmtNum(n: number | null): string {
              even with zero rows — count mode's "genuinely unrecognized code" fallback
              in handleDrawerScan is exactly how a first batch with no prior record
              gets registered, so it can't be hidden behind the empty state. -->
-        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+        <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" placeholder="Scan barcode..." @scan="handleDrawerScan">
           <div v-if="(isPutAway || isPicking) && activeBin" class="mbd-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -1281,7 +1284,6 @@ function fmtNum(n: number | null): string {
             @click="resetPickedCount"
           >Reset count</MpButton>
         </ScanBar>
-        <p v-if="isPutAway || isPicking" class="mbd-scan-caption">Scan the storage location first before scanning the batch number.</p>
 
         <template v-if="rows.length === 0 && !isInOut">
           <div class="mbd-empty">
@@ -2191,7 +2193,6 @@ function fmtNum(n: number | null): string {
   color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
 }
 .mbd-active-bin-clear:hover { opacity: 1; }
-.mbd-scan-caption { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4) - 20px) 0 calc(var(--mp-spacing-4) - 20px); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 .mbd-td--num { text-align: right; white-space: nowrap; padding: 8px var(--mp-spacing-2) 8px var(--mp-spacing-4); }
 
 /* White editable cells — focus ring via ::after (box-shadow: inset is painted

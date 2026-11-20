@@ -15,6 +15,7 @@ import ProductCell from '~/components/patterns/ProductCell.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import { getWmsAdjustment, saveWmsCountDraft, finishWmsCount } from '~/data/wmsStockAdjustments'
 import { adjustmentLineItems, type AdjustmentLine, type MisplacedSerial } from '~/data/stockAdjustments'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
@@ -29,6 +30,8 @@ import { playScanSuccessSound } from '~/utils/sound'
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('stock-count', { activeBin: activeBin.value }, t))
 
 const adjustment = computed(() => getWmsAdjustment(props.orderId))
 
@@ -758,7 +761,7 @@ onUnmounted(() => {
 
       <!-- Scan bar -->
       <div class="sc-scanbar-row">
-      <ScanBar :placeholder="t('Scan barcode')" @scan="handleScan">
+      <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan barcode')" @scan="handleScan">
         <div v-if="activeBin" class="sc-active-bin">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -772,7 +775,6 @@ onUnmounted(() => {
         </div>
         <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetCount">{{ t('Reset count') }}</MpButton>
       </ScanBar>
-      <p class="sc-scan-caption">{{ t('Scan the storage location first before scanning the SKU.') }}</p>
       </div>
 
       <!-- By location: accordion -->
@@ -1309,7 +1311,6 @@ onUnmounted(() => {
 
 .sc-scanbar-row { padding: 0 var(--mp-spacing-6) var(--mp-spacing-4); }
 .sc-scanbar-row .scan-bar { margin-bottom: 0; }
-.sc-scan-caption { margin: var(--mp-spacing-1) 0 0; font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 
 /* Active bin chip + row flash on scan */
 .sc-active-bin {

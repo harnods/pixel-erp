@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { MpIcon, MpBadge, MpSpinner, MpButton } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { productBySku } from '~/data/inventory'
 
@@ -89,6 +90,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'update:open': [boolean]; scan: [string] }>()
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('serial-verify', {}, t))
 function onScan(raw: string) { emit('scan', raw) }
 
 const isPacking = computed(() => props.kind === 'packing')
@@ -312,7 +315,7 @@ function close() { emit('update:open', false) }
 
         <!-- Match-order verify: scan each serial to confirm it matches the pick -->
         <div v-if="isVerify" class="vsd-scan">
-          <ScanBar :placeholder="t('Scan serial number to verify…')" @scan="onScan" />
+          <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan serial number to verify…')" @scan="onScan" />
         </div>
 
         <!-- Filter bar -->

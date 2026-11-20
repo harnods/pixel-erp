@@ -11,6 +11,7 @@ import ContentList from '~/components/patterns/ContentList.vue'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import ViewBatchDrawer from '~/components/patterns/ViewBatchDrawer.vue'
 import ViewSerialDrawer from '~/components/patterns/ViewSerialDrawer.vue'
 import { getPackingLineItems, type PackLineItem } from '~/data/packingTaskDetails'
@@ -30,6 +31,8 @@ import ShippingDetailsModal from '~/components/patterns/ShippingDetailsModal.vue
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('pack', {}, t))
 
 const task = computed(() => getPackingTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -463,7 +466,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           </div>
         </div>
 
-        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan">
+        <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan barcode...')" @scan="handleScan">
           <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
         </ScanBar>
 

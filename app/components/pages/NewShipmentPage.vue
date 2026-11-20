@@ -17,6 +17,7 @@ import {
 } from '@mekari/pixel3'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import {
   getDeliveryTask, findReadyToShipByScan, findReadyToShipByScanAnyWarehouse,
   handoverToCourierBulk, deliveryTasks, type DeliveryTask,
@@ -30,6 +31,11 @@ import { getWarehouseTeam } from '~/data/warehouseTeam'
 import { picForWarehouse } from '~/data/warehouses'
 import { notifyScanError } from '~/utils/scan'
 import { playScanSuccessSound } from '~/utils/sound'
+import { useLocale } from '~/composables/useLocale'
+
+const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('new-shipment', { hasWarehouse: !!warehouseId.value }, t))
 
 const router = useRouter()
 const emptyIllustration = '/illustrations/empty-folder.png'
@@ -408,7 +414,7 @@ async function handleSave() {
           </div>
         </div>
 
-        <ScanBar placeholder="Scan tracking no., packing no., or order no." class="ns-scanbar" @scan="handleScan">
+        <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" class="ns-scanbar" @scan="handleScan">
           <MpButton variant="secondary" class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" type="button" @click="resetScan">Reset scan</MpButton>
         </ScanBar>
 

@@ -28,6 +28,22 @@ export interface DevChange {
 
 export const DEV_CHANGES: DevChange[] = [
   {
+    id: 'wms-scan-guidance-hint',
+    title: 'WMS: live scan hint under every scan bar',
+    description:
+      'Each scan step (Receive, Put-away, Pick, Pack, Handover, New shipment, Stock counting, Manage/View batch & serial drawers) now shows a one-line hint that follows the step: e.g. "Scan the storage location first, then scan the SKU." becomes "Scan the SKU, batch number, or serial number to pick from A-01-02." once a location is active. Copy lives in app/data/scanGuidance.ts.',
+    date: '2026-11-20',
+    files: ['ScanBar.vue', 'scanGuidance.ts'],
+  },
+  {
+    id: 'wms-scan-guidance-tips',
+    title: 'WMS: "How scanning works" tooltip on the scan bar',
+    description:
+      'An info icon in the scan bar opens a tooltip listing the step\'s scan rules (location first, +1 per scan, tracked SKUs open their details, caps), so operators learn the flow up front instead of from error toasts.',
+    date: '2026-11-20',
+    files: ['ScanBar.vue', 'scanGuidance.ts'],
+  },
+  {
     id: 'replenishment-all-filters-standard',
     title: 'Replenishment: "All filters" is the standard secondary pill button',
     description:

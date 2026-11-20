@@ -10,6 +10,7 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import { findTaskWithPO, getTaskLineItems } from '~/data/receivingTaskDetails'
@@ -27,6 +28,8 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('receive', {}, t))
 
 const entry     = computed(() => findTaskWithPO(props.orderId))
 const task      = computed(() => entry.value?.task)
@@ -578,7 +581,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
 
         <!-- Scan bar -->
-        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan" />
+        <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan barcode...')" @scan="handleScan" />
 
         <!-- SKU table -->
         <section class="ri-items-section" :class="{ 'ri-items-section--bordered': isProgressive }">

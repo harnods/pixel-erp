@@ -2,6 +2,7 @@
 import { ref, computed, watch, reactive, nextTick } from 'vue'
 import { MpIcon, MpBadge, MpTooltip, MpPopover, MpPopoverTrigger, MpPopoverContent, MpPopoverList, MpPopoverListItem, MpButton, css } from '@mekari/pixel3'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import { productBySku } from '~/data/inventory'
 import { getWarehouseDetail } from '~/data/warehouseDetails'
 import { getWarehouseConfig, scanRequiredForQty } from '~/data/warehouseConfig'
@@ -95,6 +96,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('serial-drawer', { activeBin: activeBin.value, kind: props.kind }, t))
 
 const PAGE_SIZE = 20
 
@@ -820,7 +823,7 @@ async function handleSave() {
              rows). Put-away instead uses an active-bin scan model: scan a bin barcode
              to make it active, then scan a serial barcode to assign it to that bin —
              same model as ManageBatchDrawer / the page-level scan bar. -->
-        <ScanBar placeholder="Scan barcode..." @scan="handleDrawerScan">
+        <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" placeholder="Scan barcode..." @scan="handleDrawerScan">
           <div v-if="(isPutAway || isPicking) && activeBin" class="msn-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -839,7 +842,6 @@ async function handleSave() {
             @click="resetPicked"
           >Reset count</MpButton>
         </ScanBar>
-        <p v-if="isPutAway || isPicking" class="msn-scan-caption">Scan the storage location first before scanning the serial number.</p>
 
         <template v-if="rows.length === 0">
           <div class="msn-empty">
@@ -1227,7 +1229,6 @@ async function handleSave() {
   color: inherit; display: flex; align-items: center; opacity: 0.7; line-height: 1;
 }
 .msn-active-bin-clear:hover { opacity: 1; }
-.msn-scan-caption { margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4) - 20px) 0 calc(var(--mp-spacing-4) - 20px); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 
 /* Form-table rules — only when INTO LOCATION is a real editable picker (transfer/
    put-away's destination bin). Read-only location display (picking) stays plain:

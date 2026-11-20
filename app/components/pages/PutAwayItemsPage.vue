@@ -9,6 +9,7 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
 import {
@@ -27,6 +28,8 @@ import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('put-away', { activeBin: activeBin.value }, t))
 
 const task            = computed(() => getPutAwayTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -751,7 +754,7 @@ watch([() => props.orderId, shownCount], () => nextTick(checkStageOverflow))
         </div>
 
         <!-- ── Scan bar ── -->
-        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan">
+        <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan barcode...')" @scan="handleScan">
           <div v-if="activeBin" class="pi-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>

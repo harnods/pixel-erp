@@ -11,6 +11,7 @@ import {
 import ContentList from '~/components/patterns/ContentList.vue'
 import ProductCell from '~/components/patterns/ProductCell.vue'
 import ScanBar from '~/components/patterns/ScanBar.vue'
+import { scanGuidance } from '~/data/scanGuidance'
 import SourceLabel from '~/components/patterns/SourceLabel.vue'
 import ManageBatchDrawer, { type CommittedBatch } from '~/components/patterns/ManageBatchDrawer.vue'
 import ManageSerialDrawer, { type CommittedSerial } from '~/components/patterns/ManageSerialDrawer.vue'
@@ -35,6 +36,8 @@ import { playScanSuccessSound } from '~/utils/sound'
 const props = defineProps<{ orderId: string }>()
 const router = useRouter()
 const { t } = useLocale()
+// Live scan hint + "How scanning works" tips under the scan bar (WMS scan guidance).
+const scanHelp = computed(() => scanGuidance('pick', { activeBin: activeBin.value }, t))
 
 const task = computed(() => getPickingTask(props.orderId))
 // Below the warehouse's scan threshold, manual qty entry is disabled — the
@@ -1030,7 +1033,7 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           </div>
         </div>
 
-        <ScanBar :placeholder="t('Scan barcode...')" @scan="handleScan">
+        <ScanBar :hint="scanHelp.hint" :tips="scanHelp.tips" :placeholder="t('Scan barcode...')" @scan="handleScan">
           <div v-if="activeBin" class="pik-active-bin">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -1044,7 +1047,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
           </div>
           <MpButton class="btn-enterprise btn-enterprise--secondary btn-enterprise--sm" variant="secondary" type="button" @click="resetProgress">{{ t('Reset count') }}</MpButton>
         </ScanBar>
-        <p class="pik-scan-caption">{{ t('Scan the storage location first before scanning the SKU.') }}</p>
 
         <p v-if="finishError" class="pik-finish-error">{{ finishError }}</p>
 
@@ -1472,7 +1474,6 @@ watch([() => props.orderId, shownCount, filteredItems], () => nextTick(() => { c
 .pik-sku-section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .pik-filter-bar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--mp-spacing-3); margin-bottom: var(--mp-spacing-5); }
 .pik-finish-error { flex-shrink: 0; margin: calc(var(--mp-spacing-1) - var(--mp-spacing-5)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-danger, #c0392b); font-weight: var(--mp-font-weights-medium); }
-.pik-scan-caption { flex-shrink: 0; margin: calc(var(--mp-spacing-1) - var(--mp-spacing-4)) 0 var(--mp-spacing-4); font-size: var(--mp-font-sizes-sm); line-height: var(--mp-line-heights-sm); color: var(--mp-text-secondary); }
 .pik-search-wrap {
   display: flex; align-items: center; gap: var(--mp-spacing-2);
   padding: var(--mp-spacing-1\.5) var(--mp-spacing-3);
